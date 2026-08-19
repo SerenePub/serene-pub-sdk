@@ -72,7 +72,7 @@ export interface ComponentDecl {
     /** Component-side settings this component reads through `ctx` (12 §6). */
     settings?: SettingsSchema;
 }
-export declare const component: (d: Omit<ComponentDecl, "__decl">) => ComponentDecl;
+export declare const component: (d: Omit<ComponentDecl, '__decl'>) => ComponentDecl;
 export interface ExtensionDecl {
     /** `vendor.plugin` — the owner segment of every id this plugin registers (F2). */
     slug: string;

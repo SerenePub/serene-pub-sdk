@@ -1,0 +1,32 @@
+{
+	"name": "serene-pub-sdk",
+	"version": "0.6.0-preview.0",
+	"private": true,
+	"description": "The Serene Pub pipeline SDK — four packages a plugin author builds against.",
+	"license": "AGPL-3.0-only",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/doolijb/serene-pub-sdk.git"
+	},
+	"type": "module",
+	"workspaces": [
+		"sdk",
+		"contracts",
+		"cli",
+		"conformance",
+		"sdk-tests"
+	],
+	"scripts": {
+		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance -w @serene-pub/cli",
+		"test": "npm run build && npm run test -w @serene-pub/sdk-tests",
+		"typecheck": "npm run typecheck -w @serene-pub/sdk-tests",
+		"format": "prettier --write .",
+		"lint": "prettier --check ."
+	},
+	"devDependencies": {
+		"prettier": "^3.6.2",
+		"tsx": "^4.0.0",
+		"typescript": "~7.0.0",
+		"@types/node": "^22.0.0"
+	}
+}

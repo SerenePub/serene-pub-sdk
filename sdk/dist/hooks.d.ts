@@ -64,7 +64,7 @@ export declare function assertHookSurface(kind: 'event' | 'lifecycle', surface: 
  * than only from 13 §7c.
  */
 export declare const SCHEDULED_WORK_PATH: {
-    readonly instead: "core:event/schedule-tick@1";
+    readonly instead: 'core:event/schedule-tick@1';
     readonly because: string;
 };
 //# sourceMappingURL=hooks.d.ts.map

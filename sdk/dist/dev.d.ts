@@ -110,20 +110,20 @@ export declare function reloadPlan(prev: DevOverlay, next: DevOverlay, inFlight?
  * remember it — the persistence rule is the one that silently stops being true.
  */
 export declare const DEV_INVARIANTS: readonly [{
-    readonly id: "D1";
-    readonly rule: "a dev overlay writes no rows";
-    readonly breaks: "a dev plugin whose rows outlive the session leaves chats pinning types with no install to uninstall";
+    readonly id: 'D1';
+    readonly rule: 'a dev overlay writes no rows';
+    readonly breaks: 'a dev plugin whose rows outlive the session leaves chats pinning types with no install to uninstall';
 }, {
-    readonly id: "D2";
-    readonly rule: "permissions are compiled and double-checked identically";
-    readonly breaks: "dev mode would become a way to hold permissions the manifest never declared (F28)";
+    readonly id: 'D2';
+    readonly rule: 'permissions are compiled and double-checked identically';
+    readonly breaks: 'dev mode would become a way to hold permissions the manifest never declared (F28)';
 }, {
-    readonly id: "D3";
+    readonly id: 'D3';
     readonly rule: "every receipt records source: 'dev'";
-    readonly breaks: "\"it worked on my machine\" stops being distinguishable from \"it worked\"";
+    readonly breaks: '"it worked on my machine" stops being distinguishable from "it worked"';
 }, {
-    readonly id: "D4";
-    readonly rule: "no in-flight run changes underneath itself";
-    readonly breaks: "a receipt claims to describe a run of a specific spec version, and that claim becomes false";
+    readonly id: 'D4';
+    readonly rule: 'no in-flight run changes underneath itself';
+    readonly breaks: 'a receipt claims to describe a run of a specific spec version, and that claim becomes false';
 }];
 //# sourceMappingURL=dev.d.ts.map

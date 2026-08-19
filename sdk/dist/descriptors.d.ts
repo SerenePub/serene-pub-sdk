@@ -117,220 +117,125 @@ export interface Descriptor<Out extends PortDecl = PortDecl, In extends PortDecl
 export declare function getType(id: string): Descriptor | undefined;
 export declare function allTypes(): Descriptor[];
 export declare function _clearTypes(): void;
-export declare const describeInput: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, "kind">) => {
-    kind: "input";
+export declare const describeInput: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, 'kind'>) => {
     id: Id;
     i18n?: {
         name?: I18n;
         description?: I18n;
-    } | undefined;
-    slots?: Record<string, SlotDecl> | undefined;
+    };
+    slots?: Record<string, SlotDecl>;
     ports: {
         in?: I | undefined;
         out?: O | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit"
-    /**
-     * An author may default review **on** for their own node. There is no value here
-     * that forbids it — that is the enforcement, not a rule someone checks (F14).
-     */
-     | undefined;
-    reviewDefault?: "off" | "async" | "sync"
-    /** Connection kind for providers (== produced shape). */
-     | undefined;
-    shape?: ShapeId
-    /** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
-     | undefined;
-    toggleable?: boolean
-    /** Declares it consumes the run seed — keeps Tasks pure (F11). */
-     | undefined;
-    declaresRandomness?: boolean
-    /** May finish before an upstream stream ends (01 §11). */
-     | undefined;
-    earlyExit?: boolean
-    /** Public pipeline hooks may be pinned by any spec (01 §9b). */
-     | undefined;
-    public?: boolean
-    /** F36 — every hook invocation is bounded. */
-     | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle"
-    /** Which core event a write causes. Declared here, never per spec (01 §8). */
-     | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'input';
 };
-export declare const describeQueryType: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, "kind">) => {
-    kind: "query";
+export declare const describeQueryType: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, 'kind'>) => {
     id: Id;
     i18n?: {
         name?: I18n;
         description?: I18n;
-    } | undefined;
-    slots?: Record<string, SlotDecl> | undefined;
+    };
+    slots?: Record<string, SlotDecl>;
     ports: {
         in?: I | undefined;
         out?: O | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit"
-    /**
-     * An author may default review **on** for their own node. There is no value here
-     * that forbids it — that is the enforcement, not a rule someone checks (F14).
-     */
-     | undefined;
-    reviewDefault?: "off" | "async" | "sync"
-    /** Connection kind for providers (== produced shape). */
-     | undefined;
-    shape?: ShapeId
-    /** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
-     | undefined;
-    toggleable?: boolean
-    /** Declares it consumes the run seed — keeps Tasks pure (F11). */
-     | undefined;
-    declaresRandomness?: boolean
-    /** May finish before an upstream stream ends (01 §11). */
-     | undefined;
-    earlyExit?: boolean
-    /** Public pipeline hooks may be pinned by any spec (01 §9b). */
-     | undefined;
-    public?: boolean
-    /** F36 — every hook invocation is bounded. */
-     | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle"
-    /** Which core event a write causes. Declared here, never per spec (01 §8). */
-     | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 };
-export declare const describeTaskType: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, "kind">) => {
-    kind: "task";
+export declare const describeTaskType: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, 'kind'>) => {
     id: Id;
     i18n?: {
         name?: I18n;
         description?: I18n;
-    } | undefined;
-    slots?: Record<string, SlotDecl> | undefined;
+    };
+    slots?: Record<string, SlotDecl>;
     ports: {
         in?: I | undefined;
         out?: O | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit"
-    /**
-     * An author may default review **on** for their own node. There is no value here
-     * that forbids it — that is the enforcement, not a rule someone checks (F14).
-     */
-     | undefined;
-    reviewDefault?: "off" | "async" | "sync"
-    /** Connection kind for providers (== produced shape). */
-     | undefined;
-    shape?: ShapeId
-    /** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
-     | undefined;
-    toggleable?: boolean
-    /** Declares it consumes the run seed — keeps Tasks pure (F11). */
-     | undefined;
-    declaresRandomness?: boolean
-    /** May finish before an upstream stream ends (01 §11). */
-     | undefined;
-    earlyExit?: boolean
-    /** Public pipeline hooks may be pinned by any spec (01 §9b). */
-     | undefined;
-    public?: boolean
-    /** F36 — every hook invocation is bounded. */
-     | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle"
-    /** Which core event a write causes. Declared here, never per spec (01 §8). */
-     | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 };
-export declare const describeProvider: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, "kind">) => {
-    kind: "provider";
+export declare const describeProvider: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, 'kind'>) => {
     id: Id;
     i18n?: {
         name?: I18n;
         description?: I18n;
-    } | undefined;
-    slots?: Record<string, SlotDecl> | undefined;
+    };
+    slots?: Record<string, SlotDecl>;
     ports: {
         in?: I | undefined;
         out?: O | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit"
-    /**
-     * An author may default review **on** for their own node. There is no value here
-     * that forbids it — that is the enforcement, not a rule someone checks (F14).
-     */
-     | undefined;
-    reviewDefault?: "off" | "async" | "sync"
-    /** Connection kind for providers (== produced shape). */
-     | undefined;
-    shape?: ShapeId
-    /** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
-     | undefined;
-    toggleable?: boolean
-    /** Declares it consumes the run seed — keeps Tasks pure (F11). */
-     | undefined;
-    declaresRandomness?: boolean
-    /** May finish before an upstream stream ends (01 §11). */
-     | undefined;
-    earlyExit?: boolean
-    /** Public pipeline hooks may be pinned by any spec (01 §9b). */
-     | undefined;
-    public?: boolean
-    /** F36 — every hook invocation is bounded. */
-     | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle"
-    /** Which core event a write causes. Declared here, never per spec (01 §8). */
-     | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 };
-export declare const describeConsumerTarget: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, "kind">) => {
-    kind: "consumer";
+export declare const describeConsumerTarget: <O extends PortDecl, I extends PortDecl, const Id extends string>(d: Omit<Descriptor<O, I, Id>, 'kind'>) => {
     id: Id;
     i18n?: {
         name?: I18n;
         description?: I18n;
-    } | undefined;
-    slots?: Record<string, SlotDecl> | undefined;
+    };
+    slots?: Record<string, SlotDecl>;
     ports: {
         in?: I | undefined;
         out?: O | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit"
-    /**
-     * An author may default review **on** for their own node. There is no value here
-     * that forbids it — that is the enforcement, not a rule someone checks (F14).
-     */
-     | undefined;
-    reviewDefault?: "off" | "async" | "sync"
-    /** Connection kind for providers (== produced shape). */
-     | undefined;
-    shape?: ShapeId
-    /** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
-     | undefined;
-    toggleable?: boolean
-    /** Declares it consumes the run seed — keeps Tasks pure (F11). */
-     | undefined;
-    declaresRandomness?: boolean
-    /** May finish before an upstream stream ends (01 §11). */
-     | undefined;
-    earlyExit?: boolean
-    /** Public pipeline hooks may be pinned by any spec (01 §9b). */
-     | undefined;
-    public?: boolean
-    /** F36 — every hook invocation is bounded. */
-     | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle"
-    /** Which core event a write causes. Declared here, never per spec (01 §8). */
-     | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 };
 /**
  * A pinned constructor. The builder method names the *kind*; this names the

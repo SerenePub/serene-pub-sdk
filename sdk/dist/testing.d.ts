@@ -89,7 +89,7 @@ export interface ProbeResult {
 }
 export declare function probeBinding(hook: (input: any, ctx: any) => any, descriptor: Descriptor, ctx: ProbeCtx): Promise<ProbeResult[]>;
 /** A context shaped like the executor's, per kind — so a probe tests the real surface. */
-export declare const probeCtxFor: (kind: Descriptor["kind"], sampleInput?: unknown) => ProbeCtx;
+export declare const probeCtxFor: (kind: Descriptor['kind'], sampleInput?: unknown) => ProbeCtx;
 /**
  * F26 as a one-liner an author can run: parallel and forced-sequential must produce the
  * same result. If your hook has a hidden ordering dependency, this is where it shows up

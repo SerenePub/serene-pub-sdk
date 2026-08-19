@@ -6,13 +6,12 @@
  * nothing anywhere switches on modality (17 §1).
  */
 export declare const userMessage: import("@serene-pub/sdk").Pinned<{
-    kind: "input";
     id: "core:input/user-message@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: import("@serene-pub/sdk").PortDecl | undefined;
         out?: {
@@ -21,17 +20,18 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<{
             chatScope: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'input';
 }>;
 /**
  * A message that already exists — the trigger carries its id.
@@ -42,13 +42,12 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<{
  * existing message carries (13 §10b).
  */
 export declare const messageCreated: import("@serene-pub/sdk").Pinned<{
-    kind: "input";
     id: "core:input/message-created@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: import("@serene-pub/sdk").PortDecl | undefined;
         out?: {
@@ -56,26 +55,26 @@ export declare const messageCreated: import("@serene-pub/sdk").Pinned<{
             messageId: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'input';
 }>;
 export declare const chatHistory: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/chat-history@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             scope: string;
@@ -86,26 +85,26 @@ export declare const chatHistory: import("@serene-pub/sdk").Pinned<{
             messages: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const lorebookTriggers: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/lorebook-triggers@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -116,27 +115,27 @@ export declare const lorebookTriggers: import("@serene-pub/sdk").Pinned<{
             hits: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 /** Probability rolls come from the run seed, so they replay (13 §7i). */
 export declare const lorebookProbabilistic: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/lorebook-probabilistic@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -146,26 +145,26 @@ export declare const lorebookProbabilistic: import("@serene-pub/sdk").Pinned<{
             hits: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const vectorSearch: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/vector-search@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             /** Several query vectors, one ranked list each. */
@@ -184,26 +183,26 @@ export declare const vectorSearch: import("@serene-pub/sdk").Pinned<{
             similarity: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const personaCard: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/persona-card@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             characterId: string;
@@ -213,26 +212,26 @@ export declare const personaCard: import("@serene-pub/sdk").Pinned<{
             card: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const messageText: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/message-text@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             messageId: string;
@@ -242,53 +241,53 @@ export declare const messageText: import("@serene-pub/sdk").Pinned<{
             plain: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 /** Illegal by construction elsewhere; used to prove the purity probe. */
 export declare const network: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "test:query/network@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: import("@serene-pub/sdk").PortDecl | undefined;
         out?: {
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const contextBudget: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/context-budget@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: import("@serene-pub/sdk").PortDecl | undefined;
         out?: {
@@ -296,26 +295,26 @@ export declare const contextBudget: import("@serene-pub/sdk").Pinned<{
             available: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const mergeCandidates: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/merge-candidates@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             sources: string;
@@ -325,26 +324,26 @@ export declare const mergeCandidates: import("@serene-pub/sdk").Pinned<{
             candidates: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const rankHybrid: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/rank-hybrid@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             candidates: string;
@@ -365,26 +364,26 @@ export declare const rankHybrid: import("@serene-pub/sdk").Pinned<{
             decisions: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const rankByRecency: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/rank-by-recency@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             candidates: string;
@@ -405,17 +404,18 @@ export declare const rankByRecency: import("@serene-pub/sdk").Pinned<{
             decisions: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * The two retrieval query windows, as text.
@@ -427,13 +427,12 @@ export declare const rankByRecency: import("@serene-pub/sdk").Pinned<{
  * first.
  */
 export declare const queryWindows: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/query-windows@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             messages: string;
@@ -445,17 +444,18 @@ export declare const queryWindows: import("@serene-pub/sdk").Pinned<{
             recent: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * The semantic arm's ranking, as a Task.
@@ -475,13 +475,12 @@ export declare const queryWindows: import("@serene-pub/sdk").Pinned<{
  * not the embeddings — derived, bounded, and not reversible into the vectors.
  */
 export declare const rankSemantic: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/rank-semantic@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             /**
@@ -498,17 +497,18 @@ export declare const rankSemantic: import("@serene-pub/sdk").Pinned<{
             diagnostics: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * A plugin's ranker — same kind, same shape, so the swap list offers it (16 §5c).
@@ -520,13 +520,12 @@ export declare const rankSemantic: import("@serene-pub/sdk").Pinned<{
  * naming its ranker after its own product is the better name anyway.
  */
 export declare const rankRecall: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "chariot.recall:rank-recall@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             candidates: string;
@@ -547,26 +546,26 @@ export declare const rankRecall: import("@serene-pub/sdk").Pinned<{
             decisions: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const renderEntries: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/render-entries@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             entries: string;
@@ -575,26 +574,26 @@ export declare const renderEntries: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const assemble: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/assemble@2";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             candidates: string;
@@ -606,17 +605,18 @@ export declare const assemble: import("@serene-pub/sdk").Pinned<{
             context: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * Builds the object a context template renders against.
@@ -631,13 +631,12 @@ export declare const assemble: import("@serene-pub/sdk").Pinned<{
  * cards should not have to reimplement token allocation to get them.
  */
 export declare const chatCast: import("@serene-pub/sdk").Pinned<{
-    kind: "query";
     id: "core:query/chat-cast@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             scope: string;
@@ -647,26 +646,26 @@ export declare const chatCast: import("@serene-pub/sdk").Pinned<{
             cast: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
 }>;
 export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/build-template-context@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             cast: string;
@@ -687,17 +686,18 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
             seedName: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * Chat rows into the objects a template renders.
@@ -708,13 +708,12 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
  * rows; this says who spoke.
  */
 export declare const processMessages: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/process-messages@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             messages: string;
@@ -727,27 +726,27 @@ export declare const processMessages: import("@serene-pub/sdk").Pinned<{
             messages: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /** Turns provider output back into candidate blocks — the map/reduce join. */
 export declare const toCandidates: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/to-candidates@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             items: string;
@@ -757,27 +756,27 @@ export declare const toCandidates: import("@serene-pub/sdk").Pinned<{
             candidates: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /** An author defaulting review ON for their own consumer — and unable to forbid it (F14). */
 export declare const attachImage: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/attach-image@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             image: string;
@@ -786,26 +785,26 @@ export declare const attachImage: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 export declare const chunkText: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/chunk-text@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -815,26 +814,26 @@ export declare const chunkText: import("@serene-pub/sdk").Pinned<{
             items: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const roll: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "chariot.dice-tray:roll@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             notation: string;
@@ -844,26 +843,26 @@ export declare const roll: import("@serene-pub/sdk").Pinned<{
             total: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const gate: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "test:task/gate@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -872,26 +871,26 @@ export declare const gate: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const slow: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "test:task/slow@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -900,26 +899,26 @@ export declare const slow: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const passthrough: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "test:task/passthrough@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -928,26 +927,26 @@ export declare const passthrough: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const badToggleable: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "test:task/bad-toggleable@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -956,26 +955,26 @@ export declare const badToggleable: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 export declare const embedText: import("@serene-pub/sdk").Pinned<{
-    kind: "provider";
     id: "core:provider/embed-text@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -988,26 +987,26 @@ export declare const embedText: import("@serene-pub/sdk").Pinned<{
             vectors: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 }>;
 export declare const generateText: import("@serene-pub/sdk").Pinned<{
-    kind: "provider";
     id: "core:provider/generate-text@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             context: string;
@@ -1017,26 +1016,26 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<{
             text: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 }>;
 export declare const speak: import("@serene-pub/sdk").Pinned<{
-    kind: "provider";
     id: "core:provider/speak@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -1046,26 +1045,26 @@ export declare const speak: import("@serene-pub/sdk").Pinned<{
             audio: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 }>;
 export declare const renderImage: import("@serene-pub/sdk").Pinned<{
-    kind: "provider";
     id: "chariot.comfy:render-image@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             context: string;
@@ -1075,27 +1074,27 @@ export declare const renderImage: import("@serene-pub/sdk").Pinned<{
             image: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 }>;
 /** An MCP tool. Effectful by default — annotations never decide gating (F31, 14 §4). */
 export declare const mcpTool: import("@serene-pub/sdk").Pinned<{
-    kind: "provider";
     id: "core:provider/mcp-tool@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             args: string;
@@ -1105,27 +1104,27 @@ export declare const mcpTool: import("@serene-pub/sdk").Pinned<{
             result: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
 }>;
 /** Consumes a stream and may finish before it ends (01 §11). */
 export declare const firstJson: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "core:task/first-json@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -1134,27 +1133,27 @@ export declare const firstJson: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /** Same in-port, but no earlyExit declared — used to prove stream-abandoned. */
 export declare const sloppyStream: import("@serene-pub/sdk").Pinned<{
-    kind: "task";
     id: "test:task/sloppy-stream@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             main: string;
@@ -1163,17 +1162,18 @@ export declare const sloppyStream: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
 }>;
 /**
  * Create a message.
@@ -1187,13 +1187,12 @@ export declare const sloppyStream: import("@serene-pub/sdk").Pinned<{
  * (13 §7j-b). Under async review this is a proposal a reviewer may still reject.
  */
 export declare const createMessage: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/create-message@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             text: string;
@@ -1203,17 +1202,18 @@ export declare const createMessage: import("@serene-pub/sdk").Pinned<{
             messageId: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 /**
  * Update an existing message — a regenerate, a swipe, an edit.
@@ -1229,13 +1229,12 @@ export declare const createMessage: import("@serene-pub/sdk").Pinned<{
  * clicked a message, so the id is on the Input.
  */
 export declare const updateMessage: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/update-message@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             target: string;
@@ -1246,26 +1245,26 @@ export declare const updateMessage: import("@serene-pub/sdk").Pinned<{
             messageId: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 export declare const attachAudio: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/attach-audio@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             audio: string;
@@ -1274,26 +1273,26 @@ export declare const attachAudio: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 export declare const savePluginData: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/save-plugin-data@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             value: string;
@@ -1302,26 +1301,26 @@ export declare const savePluginData: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 export declare const emitSocket: import("@serene-pub/sdk").Pinned<{
-    kind: "consumer";
     id: "core:consumer/emit-socket@1";
     i18n?: {
         name?: import("@serene-pub/sdk").I18n;
         description?: import("@serene-pub/sdk").I18n;
-    } | undefined;
-    slots?: Record<string, import("@serene-pub/sdk").SlotDecl> | undefined;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
             from: string;
@@ -1330,16 +1329,17 @@ export declare const emitSocket: import("@serene-pub/sdk").Pinned<{
             main: string;
         } | undefined;
     };
-    effects?: "none" | "external" | "write" | "emit" | undefined;
-    reviewDefault?: "off" | "async" | "sync" | undefined;
-    shape?: import("@serene-pub/sdk").ShapeId | undefined;
-    toggleable?: boolean | undefined;
-    declaresRandomness?: boolean | undefined;
-    earlyExit?: boolean | undefined;
-    public?: boolean | undefined;
-    timeoutMs?: number | undefined;
-    timeoutKind?: "wall" | "idle" | undefined;
-    causesEvent?: string | undefined;
-    usage?: string | undefined;
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: 'off' | 'async' | 'sync';
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
 }>;
 //# sourceMappingURL=index.d.ts.map
