@@ -414,12 +414,18 @@ test('33 · extraction finds loop sources and expressions', () => {
 
 // ── 34 · the correction: scope comes from the slot, not the port ────────────
 test('34 · template scope is declared on the slot — typed ports alone cannot supply it', () => {
-	const trigger = C.lorebookTriggers.v1().descriptor
+	// `render-entries`, not `lorebook-triggers`: the trigger query declared the
+	// same scope on a template slot no binding read and no row was ever seeded
+	// for, so the panel showed an empty picker. The declaration lives on the
+	// node whose job is the rendering.
+	const render = C.renderEntries.v1().descriptor
 	const asm = C.assemble.v2().descriptor
 
 	// A source template's scope is the *item*, which lives inside the port payload.
-	assert.deepEqual(trigger.slots!['template']!.variables, { entry: ['title', 'content', 'keys'] })
-	assert.equal(trigger.ports.out!['hits'], 'core:shape/context-candidates@1')
+	const entry = render.slots!['template']!.variables!['entry']
+	assert.equal(typeof entry, 'object')
+	assert.deepEqual(Object.keys((entry as any).fields), ['title', 'content', 'keys'])
+	assert.equal(render.ports.in!['entries'], 'core:shape/context-candidates@1')
 
 	// An assembly template's scope does correspond to its inputs — so 16 §4 is half right.
 	assert.ok(asm.slots!['template']!.variables!['blocks'])

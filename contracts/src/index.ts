@@ -49,13 +49,22 @@ export const chatHistory = pin(
 		i18n: { name: { en: 'Chat history' } },
 		timeoutMs: 2000,
 		slots: {
-			template: {
-				kind: 'template',
-				engine: jinja2.id,
-				facet: 'templates',
-				description:
-					'How each chat message is written into the context. Leave empty to use the built-in wording.',
-			},
+			/**
+			 * ⚠ No `template` slot, and there was one.
+			 *
+			 * It declared "how each chat message is written into the context",
+			 * and three things were true of it: no binding ever read it, no row
+			 * was ever seeded for its pool, and so the panel rendered a picker
+			 * with **nothing in it** on every pipeline that used this node. A
+			 * control that cannot be given a value and would not be used if it
+			 * could is worse than the absence of the feature — the same
+			 * judgement `variableLayouts.ts` records about a layout for
+			 * `characterLore`.
+			 *
+			 * If per-message wording becomes configurable, it belongs on
+			 * `core:task/process-messages@1`, which is what actually formats a
+			 * line. This node fetches rows.
+			 */
 			params: {
 				kind: 'parameters',
 				facet: 'weights',
@@ -100,16 +109,16 @@ export const lorebookTriggers = pin(
 		i18n: { name: { en: 'Lorebook triggers' } },
 		timeoutMs: 2000,
 		slots: {
-			// A *source* template: it renders one entry, so its scope is the item's shape —
-			// which is inside the port's payload, not on the port (16 §4 correction).
-			template: {
-				kind: 'template',
-				engine: jinja2.id,
-				facet: 'templates',
-				variables: { entry: ['title', 'content', 'keys'] },
-				description:
-					'How one triggered lorebook entry is written into the context. Leave empty to use the built-in wording.',
-			},
+			/**
+			 * ⚠ No `template` slot, and there was one — a *source* template for
+			 * "how one triggered entry is written into the context".
+			 *
+			 * Nothing read it and nothing seeded a row for it, so it rendered as
+			 * an empty picker. The node that exists to do this job is
+			 * `core:task/render-entries@1`, which keeps its own template slot
+			 * and is where the feature should land when something binds it; two
+			 * declarations of one idea, one of them inert, is how they drift.
+			 */
 			params: {
 				kind: 'parameters',
 				facet: 'weights',
@@ -633,10 +642,30 @@ export const renderEntries = pin(
 		id: 'core:task/render-entries@1',
 		timeoutMs: 500,
 		slots: {
+			// A *source* template: it renders one entry, so its scope is the
+			// item's shape — which lives inside the port's payload, not on the
+			// port (16 §4 correction). The declaration moved here from
+			// `lorebook-triggers`, which declared the same scope on a slot
+			// nothing read; this is the node whose whole job is the rendering.
 			template: {
 				kind: 'template',
 				engine: jinja2.id,
 				facet: 'templates',
+				variables: {
+					entry: {
+						type: 'object',
+						fields: {
+							title: { type: 'string', description: { en: "The entry's name." } },
+							content: { type: 'string', description: { en: 'The text itself.' } },
+							keys: {
+								type: 'list',
+								of: { type: 'string' },
+								optional: true,
+								description: { en: 'The keywords that triggered it.' },
+							},
+						},
+					},
+				},
 				description:
 					'How a retrieved entry is written into the context. Leave empty to use the built-in wording.',
 			},
@@ -1173,13 +1202,15 @@ export const generateText = pin(
 					postHistory: { type: 'text' },
 				},
 			},
-			template: {
-				kind: 'template',
-				engine: jinja2.id,
-				facet: 'templates',
-				description:
-					'How the assembled context is wrapped for this model before sending. Leave empty to use the format the connection expects.',
-			},
+			/**
+			 * ⚠ No `template` slot, and there was one — "how the assembled
+			 * context is wrapped for this model before sending".
+			 *
+			 * Nothing read it and nothing seeded a row, so it rendered as an
+			 * empty picker beside the settings that do work. Wrapping for the
+			 * wire is the `wire` slot's job and the connection adapter's; a
+			 * second, inert way to express it invited the two to disagree.
+			 */
 			params: {
 				kind: 'parameters',
 				facet: 'weights',

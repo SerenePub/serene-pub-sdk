@@ -294,12 +294,16 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 		// Safe because source templates render *before* Assemble (16 §3b, enforced by
 		// port shapes), so only text crosses into allocation — the budget never sees a
 		// template and cannot be confused by a mixture.
+		// `render-entries` supplies the jinja2 slot. It used to be
+		// `lorebook-triggers`, whose template slot was removed — nothing read it
+		// and no row was ever seeded for it, so it rendered as an empty picker.
 		const b = spec('demo:mixed@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
+			.task('render', ($) => C.renderEntries.v1({ entries: $.lore.hits }))
 			.task('prompt', C.assemble.v2({ candidates: [] }))
 			.preset('x', { label: 'X' }, (p) =>
-				p.template('prompt', jinja(ASSEMBLY)).template('lore', text('a fixed preamble')),
+				p.template('prompt', jinja(ASSEMBLY)).template('render', text('a fixed preamble')),
 			)
 		assert.equal(findings(b).filter((x) => x.severity === 'error').length, 0)
 	})
