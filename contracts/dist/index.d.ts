@@ -21,9 +21,10 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -56,9 +57,10 @@ export declare const messageCreated: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -86,9 +88,10 @@ export declare const chatHistory: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -116,9 +119,10 @@ export declare const lorebookTriggers: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -146,9 +150,10 @@ export declare const lorebookProbabilistic: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -184,9 +189,10 @@ export declare const vectorSearch: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -213,9 +219,10 @@ export declare const personaCard: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -242,9 +249,10 @@ export declare const messageText: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -269,9 +277,10 @@ export declare const network: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -296,9 +305,10 @@ export declare const contextBudget: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -325,9 +335,10 @@ export declare const mergeCandidates: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -365,9 +376,10 @@ export declare const rankHybrid: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -405,9 +417,10 @@ export declare const rankByRecency: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -445,9 +458,10 @@ export declare const queryWindows: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -498,9 +512,10 @@ export declare const rankSemantic: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -547,9 +562,10 @@ export declare const rankRecall: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -575,9 +591,10 @@ export declare const renderEntries: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -606,9 +623,10 @@ export declare const assemble: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -647,9 +665,10 @@ export declare const chatCast: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -659,6 +678,71 @@ export declare const chatCast: import("@serene-pub/sdk").Pinned<{
     usage?: string;
     kind: 'query';
 }>;
+/**
+ * The speaker-centric relationship summary from the narrative graph.
+ *
+ * A Query, not part of the context Task, because it is a *read* — three layers
+ * of relationship rows scoped to the chat's lorebook and the speaking
+ * character's bound node — and a Task is handed no services (F11). Making it
+ * its own node is also what puts it on the spine: visible to the receipt, and
+ * removable by anyone who does not want it, without editing the context
+ * builder.
+ *
+ * Emits text rather than rows: `buildGraphContext` already renders the summary
+ * to JSON, and re-deriving it here would be a second implementation of a shape
+ * the legacy path and the pipeline both have to agree on.
+ */
+export declare const graphContext: import("@serene-pub/sdk").Pinned<{
+    id: "core:query/graph-context@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scope: string;
+        } | undefined;
+        out?: {
+            main: string;
+            speakerRelationships: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
+}>;
+/**
+ * The reply pipeline's context builder.
+ *
+ * ## Why the narrator has its own type
+ *
+ * Through 0.6.0 both pipelines pinned this one, and the panel is generated from
+ * the registry row — so each advertised the other's controls. Reply prompts all
+ * carried an empty `narratorName` box, and the narrator offered layout pickers
+ * for `exampleDialogue` (which comes from the speaking character it does not
+ * have) and `speakerRelationships` (which its spec deliberately never supplies).
+ * Three controls wired to nothing, in both directions.
+ *
+ * A type is the unit that declares a configurable surface — it is how a plugin
+ * declares one, and `RegistryEntry.slots` carries the declaration precisely so
+ * core can render a form without executing the plugin that owns it (12 §2, F6).
+ * Narrowing per-spec instead would have meant the row said one thing and the
+ * running pipeline another, which is the defect widening that column fixed.
+ *
+ * The two share `contextPorts` and `sharedRenders` rather than restating them,
+ * so the halves that must not drift cannot.
+ */
 export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
     id: "core:task/build-template-context@1";
     i18n?: {
@@ -668,11 +752,11 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
     slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
     ports: {
         in?: {
-            cast: string;
+            readonly cast: string;
         } | undefined;
         out?: {
-            main: string;
-            templateContext: string;
+            readonly main: string;
+            readonly templateContext: string;
             /**
              * The name on the trailing assistant line.
              *
@@ -683,13 +767,73 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<{
              * must *not* be the joined cast list: seeding "Alice and Cara:"
              * teaches the model to write joint dialogue instead of narrating.
              */
-            seedName: string;
+            readonly seedName: string;
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
+}>;
+/**
+ * The narrator pipeline's context builder.
+ *
+ * Same implementation, same ports, different surface — see
+ * `buildTemplateContext` for why that makes it a different type.
+ *
+ * What it drops: `exampleDialogue`, which `characterExampleDialogue` reads off
+ * the speaking character and so is always empty here, and
+ * `speakerRelationships`, which the narrate spec never supplies because graph
+ * context needs a speaker's perspective and a narrator has none.
+ *
+ * What it adds: `narratorName`. Load-bearing rather than cosmetic — it is the
+ * name on the seed line the model continues from, and `{{narratorName}}` in the
+ * narrator's own prompt text.
+ *
+ * No `declaresRandomness`: the only random choice this node ever made was which
+ * example dialogue to use, and it has none to choose from.
+ */
+export declare const buildNarratorContext: import("@serene-pub/sdk").Pinned<{
+    id: "core:task/build-narrator-context@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            readonly cast: string;
+        } | undefined;
+        out?: {
+            readonly main: string;
+            readonly templateContext: string;
+            /**
+             * The name on the trailing assistant line.
+             *
+             * Its own port rather than a field inside the context, because
+             * nothing renders `{{seedName}}` — it is not a template variable.
+             * It is what the message processor writes on the line the model
+             * continues from, and in narrator mode it is the one name that
+             * must *not* be the joined cast list: seeding "Alice and Cara:"
+             * teaches the model to write joint dialogue instead of narrating.
+             */
+            readonly seedName: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -727,9 +871,10 @@ export declare const processMessages: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -757,9 +902,10 @@ export declare const toCandidates: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -786,9 +932,10 @@ export declare const attachImage: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -815,9 +962,10 @@ export declare const chunkText: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -844,9 +992,10 @@ export declare const roll: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -872,9 +1021,10 @@ export declare const gate: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -900,9 +1050,10 @@ export declare const slow: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -928,9 +1079,10 @@ export declare const passthrough: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -956,9 +1108,10 @@ export declare const badToggleable: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -988,9 +1141,10 @@ export declare const embedText: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1017,9 +1171,10 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1046,9 +1201,10 @@ export declare const speak: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1075,9 +1231,10 @@ export declare const renderImage: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1105,9 +1262,10 @@ export declare const mcpTool: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1134,9 +1292,10 @@ export declare const firstJson: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1163,9 +1322,10 @@ export declare const sloppyStream: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1203,9 +1363,10 @@ export declare const createMessage: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1246,9 +1407,10 @@ export declare const updateMessage: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1274,9 +1436,10 @@ export declare const attachAudio: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1302,9 +1465,10 @@ export declare const savePluginData: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;
@@ -1330,9 +1494,497 @@ export declare const emitSocket: import("@serene-pub/sdk").Pinned<{
         } | undefined;
     };
     effects?: 'none' | 'external' | 'write' | 'emit';
-    reviewDefault?: 'off' | 'async' | 'sync';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
     shape?: import("@serene-pub/sdk").ShapeId;
     toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
+}>;
+export declare const summarizeRequest: import("@serene-pub/sdk").Pinned<{
+    id: "core:input/summarize-request@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: import("@serene-pub/sdk").PortDecl | undefined;
+        out?: {
+            main: string;
+            scope: string;
+            request: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'input';
+}>;
+/** The messages a summary is drawn from, already scoped and ordered. */
+export declare const summarizeSource: import("@serene-pub/sdk").Pinned<{
+    id: "core:query/summarize-source@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scope: string;
+            request: string;
+        } | undefined;
+        out?: {
+            main: string;
+            messages: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
+}>;
+/**
+ * Cut the messages into batches a model can hold.
+ *
+ * A Task, not a Query: the cut is a *decision* — how many tokens per batch, and
+ * therefore how much context each draft is written against — and it is the
+ * first parameter a user with long posts reaches for.
+ */
+export declare const batchMessages: import("@serene-pub/sdk").Pinned<{
+    id: "core:task/batch-messages@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            messages: string;
+        } | undefined;
+        out?: {
+            main: string;
+            batches: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'task';
+}>;
+/** Phase 1 — one batch, drafted without sight of any other. */
+export declare const summarizeBatch: import("@serene-pub/sdk").Pinned<{
+    id: "core:provider/summarize-batch@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            batch: string;
+            request: string;
+        } | undefined;
+        out?: {
+            main: string;
+            draft: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** Phase 2 — the ordered drafts merged into one past-tense narrative. */
+export declare const summarizeSynth: import("@serene-pub/sdk").Pinned<{
+    id: "core:provider/summarize-synth@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            drafts: string;
+            request: string;
+        } | undefined;
+        out?: {
+            main: string;
+            content: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** What the entry gets called. Its own step because it has its own prompt. */
+export declare const nameEntry: import("@serene-pub/sdk").Pinned<{
+    id: "core:provider/name-entry@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            content: string;
+        } | undefined;
+        out?: {
+            main: string;
+            name: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/**
+ * Who was in the scene — scene summaries only.
+ *
+ * Present on one summarize pipeline and not the other three, which is exactly
+ * why they are four specs rather than one spec with a flag. A flag would put the
+ * difference in a condition somebody has to find; four specs put it in the shape.
+ */
+export declare const extractCast: import("@serene-pub/sdk").Pinned<{
+    id: "core:provider/extract-cast@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            content: string;
+            messages: string;
+            request: string;
+        } | undefined;
+        out?: {
+            main: string;
+            cast: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** Write the finished entry. Gate-eligible, so it publishes a write result. */
+export declare const createLoreEntry: import("@serene-pub/sdk").Pinned<{
+    id: "core:consumer/create-lore-entry@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            name: string;
+            content: string;
+        } | undefined;
+        out?: {
+            main: string;
+            entryId: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'consumer';
+}>;
+export declare const graphScenes: import("@serene-pub/sdk").Pinned<{
+    id: "core:query/graph-scenes@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scope: string;
+        } | undefined;
+        out?: {
+            main: string;
+            scenes: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'query';
+}>;
+/** Which existing node a mentioned name refers to, or whether it is new. */
+export declare const graphNodeResolution: import("@serene-pub/sdk").Pinned<{
+    id: string;
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scenes: string;
+        } | undefined;
+        out?: {
+            main: string;
+            result: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** Drop what is not worth graphing before the expensive steps run. */
+export declare const graphPreFilter: import("@serene-pub/sdk").Pinned<{
+    id: string;
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scenes: string;
+        } | undefined;
+        out?: {
+            main: string;
+            result: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** Whose account of the scene this is. */
+export declare const graphPerspective: import("@serene-pub/sdk").Pinned<{
+    id: string;
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scenes: string;
+        } | undefined;
+        out?: {
+            main: string;
+            result: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** The two-sentence introduction written for a newly discovered character. */
+export declare const graphNodeDescription: import("@serene-pub/sdk").Pinned<{
+    id: string;
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scenes: string;
+        } | undefined;
+        out?: {
+            main: string;
+            result: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/** Did any present character reach a new lifecycle state this scene? */
+export declare const graphStateDetection: import("@serene-pub/sdk").Pinned<{
+    id: string;
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            scenes: string;
+        } | undefined;
+        out?: {
+            main: string;
+            result: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    public?: boolean;
+    timeoutMs?: number;
+    timeoutKind?: 'wall' | 'idle';
+    causesEvent?: string;
+    usage?: string;
+    kind: 'provider';
+}>;
+/**
+ * The proposal, held for review.
+ *
+ * `effects: 'write'` and therefore gate-eligible, which is the mechanism behind
+ * the rule that a graph build **stops at the review screen** and never applies
+ * itself. Under `async` review the proposal is exactly that — a proposal — and
+ * `write-result@1` is the shape that refuses to be mistaken for row ids.
+ */
+export declare const graphProposal: import("@serene-pub/sdk").Pinned<{
+    id: "core:consumer/graph-proposal@1";
+    i18n?: {
+        name?: import("@serene-pub/sdk").I18n;
+        description?: import("@serene-pub/sdk").I18n;
+    };
+    slots?: Record<string, import("@serene-pub/sdk").SlotDecl>;
+    ports: {
+        in?: {
+            proposal: string;
+        } | undefined;
+        out?: {
+            main: string;
+            proposalId: string;
+        } | undefined;
+    };
+    effects?: 'none' | 'external' | 'write' | 'emit';
+    reviewDefault?: import("@serene-pub/sdk").ReviewPosition;
+    shape?: import("@serene-pub/sdk").ShapeId;
+    toggleable?: boolean;
+    optional?: boolean;
     declaresRandomness?: boolean;
     earlyExit?: boolean;
     public?: boolean;

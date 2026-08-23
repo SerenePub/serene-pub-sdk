@@ -76,6 +76,13 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	group?: string
 	/** Show only when another field has a given value. One level; not a rules engine. */
 	showIf?: { field: string; equals: unknown }
+	/**
+	 * For `text` fields holding structured data a form cannot decompose: the
+	 * renderer shows JSON and the submit path parses it back. Produced by
+	 * `inferSchema` for nested payloads; an author declaring settings should
+	 * declare real fields instead.
+	 */
+	format?: 'json'
 }
 
 export type SettingsSchema = Record<string, FieldDecl>
@@ -393,3 +400,122 @@ export function defineSettings<const S extends SettingsSchema>(schema: S): Plugi
 
 /** Back-compat alias for the earlier name. */
 export const validateSettingsSchema = (s: SettingsSchema) => checkSchema(s).map((f) => f.message)
+
+// ── Forms from data (review pauses, arbitrary extension forms) ──────────────
+
+const humanize = (key: string): string =>
+	key
+		.replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+		.replace(/[_-]+/g, ' ')
+		.replace(/^./, (c) => c.toUpperCase())
+
+/**
+ * A `SettingsSchema` inferred from a payload — the review gate's form producer.
+ *
+ * One field language for everything a person edits in a generated form: an
+ * extension's declared settings, an extension's arbitrary forms, and a paused
+ * node's payload all render through the same schema and the same renderer. A
+ * review form is therefore 100% defined by the data the node received: a
+ * string is a text field, a number is a number field, a flag is a checkbox,
+ * and structure a form cannot decompose arrives as JSON rather than being
+ * silently dropped — an edit surface that hides part of the payload is a
+ * review gate a write can sneak past.
+ */
+export function inferSchema(payload: unknown): SettingsSchema {
+	const source =
+		payload && typeof payload === 'object' && !Array.isArray(payload)
+			? (payload as Record<string, unknown>)
+			: { value: payload }
+
+	const schema: SettingsSchema = {}
+	for (const [key, v] of Object.entries(source)) {
+		const label = humanize(key)
+		if (typeof v === 'string') {
+			schema[key] = {
+				type: v.length > 80 || v.includes('\n') ? 'text' : 'string',
+				label,
+			}
+		} else if (typeof v === 'number') {
+			schema[key] = { type: Number.isInteger(v) ? 'integer' : 'number', label }
+		} else if (typeof v === 'boolean') {
+			schema[key] = { type: 'boolean', label }
+		} else if (Array.isArray(v) && v.every((x) => typeof x === 'string')) {
+			schema[key] = { type: 'string[]', label }
+		} else {
+			schema[key] = { type: 'text', label, format: 'json' }
+		}
+	}
+	return schema
+}
+
+/** The payload as form values — JSON-format fields serialized for editing. */
+export function valuesForForm(
+	schema: SettingsSchema,
+	payload: unknown,
+): Record<string, unknown> {
+	const source =
+		payload && typeof payload === 'object' && !Array.isArray(payload)
+			? (payload as Record<string, unknown>)
+			: { value: payload }
+	const out: Record<string, unknown> = {}
+	for (const [key, decl] of Object.entries(schema)) {
+		const v = source[key]
+		out[key] = decl.format === 'json' ? JSON.stringify(v ?? null, null, 2) : v
+	}
+	return out
+}
+
+/**
+ * Fold edited form values back into the payload shape the node expects.
+ *
+ * The inverse of `valuesForForm`: JSON-format fields parse back (an
+ * unparseable edit throws with the field named rather than committing a
+ * string where an object stood), untouched keys keep their original values —
+ * a form is an edit surface, never a filter.
+ */
+export function applyFormValues(
+	schema: SettingsSchema,
+	payload: unknown,
+	edited: Record<string, unknown>,
+): unknown {
+	const wrapped = !(
+		payload &&
+		typeof payload === 'object' &&
+		!Array.isArray(payload)
+	)
+	const base: Record<string, unknown> = wrapped
+		? { value: payload }
+		: { ...(payload as Record<string, unknown>) }
+
+	for (const [key, decl] of Object.entries(schema)) {
+		if (!(key in edited)) continue
+		const v = edited[key]
+		if (decl.format === 'json') {
+			try {
+				base[key] = JSON.parse(String(v))
+			} catch {
+				throw new SettingsError(
+					`'${key}' is not valid JSON — the field holds structure the form ` +
+						`cannot decompose, so it must parse before it can be committed.`,
+				)
+			}
+		} else if (decl.type === 'number' || decl.type === 'integer') {
+			const n = typeof v === 'number' ? v : Number(v)
+			if (Number.isNaN(n))
+				throw new SettingsError(`'${key}' must be a number.`)
+			base[key] = decl.type === 'integer' ? Math.trunc(n) : n
+		} else if (decl.type === 'boolean') {
+			base[key] = !!v
+		} else if (decl.type === 'string[]') {
+			base[key] = Array.isArray(v)
+				? v.map(String)
+				: String(v ?? '')
+						.split('\n')
+						.map((l) => l.trim())
+						.filter(Boolean)
+		} else {
+			base[key] = String(v ?? '')
+		}
+	}
+	return wrapped ? base['value'] : base
+}

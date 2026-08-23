@@ -19,10 +19,21 @@ const IF = /\{%\s*if\s+([^%]+?)\s*%\}/g;
 export function extractRefs(src) {
     const bound = new Set();
     const loopSources = [];
-    for (const m of src.matchAll(FOR)) {
+    for (const m of src.matchAll(FOR))
         bound.add(m[1]);
+    for (const m of src.matchAll(FOR)) {
         const parts = m[2].split('.');
-        loopSources.push({ root: parts[0], path: parts.slice(1), bound: false, dynamic: false });
+        // ⚠ This used to be an unconditional `bound: false`, which made every
+        // nested loop a false error: `{% for l in c.lore %}` reported `'c' is
+        // not available to this template`, because the thing being iterated is
+        // itself a loop variable and nothing said so. Two passes, because a
+        // loop can be bound by one that appears later in the source.
+        loopSources.push({
+            root: parts[0],
+            path: parts.slice(1),
+            bound: bound.has(parts[0]),
+            dynamic: false,
+        });
     }
     const refs = [...loopSources];
     for (const m of src.matchAll(EXPR)) {
@@ -105,16 +116,36 @@ export function templateScope(decl) {
 }
 export function checkTemplate(src, scope) {
     const known = Object.keys(scope);
+    const bindings = loopBindings(src);
     const out = [];
+    const report = (r, base) => out.push({
+        severity: 'error',
+        message: r.message ?? `'${base}' does not exist`,
+        fix: r.available?.length
+            ? `'${base}' has: ${r.available.join(', ')}`
+            : 'check the shape this template declares — the path does not exist on it',
+    });
     for (const ref of extractRefs(src)) {
-        if (ref.bound)
-            continue;
         if (ref.dynamic) {
             out.push({
                 severity: 'warning',
                 message: `'${ref.root}' is accessed dynamically and cannot be checked`,
-                fix: 'this is allowed — verification covers top-level references only, so confirm this one yourself',
+                fix: 'this is allowed — a computed key is not knowable here, so confirm this one yourself',
             });
+            continue;
+        }
+        // A loop-bound name is one *element* of what it iterates. Before the
+        // schema there was no way to say what that was, so every reference
+        // through a loop variable went unchecked — which is where the typos
+        // live, because a loop body is the only place a template writes a
+        // nested path at all.
+        if (ref.bound) {
+            const element = boundType(ref.root, bindings, scope, new Set());
+            if (!element)
+                continue;
+            const r = resolvePath(element, ref.path, ref.root);
+            if (!r.ok)
+                report(r, ref.root);
             continue;
         }
         if (!known.includes(ref.root)) {
@@ -127,16 +158,251 @@ export function checkTemplate(src, scope) {
             });
             continue;
         }
-        const allowed = scope[ref.root];
-        if (Array.isArray(allowed) && ref.path.length && !allowed.includes(ref.path[0])) {
-            out.push({
-                severity: 'error',
-                message: `'${ref.root}.${ref.path[0]}' does not exist`,
-                fix: `'${ref.root}' has: ${allowed.join(', ')}`,
-            });
-        }
+        const r = resolvePath(scope[ref.root], ref.path, ref.root);
+        if (!r.ok)
+            report(r, ref.root);
     }
     return out;
+}
+/** `{% for x in a.b %}` — every loop variable, and what it iterates. */
+function loopBindings(src) {
+    const out = new Map();
+    for (const m of src.matchAll(FOR))
+        out.set(m[1], m[2].split('.'));
+    return out;
+}
+/**
+ * The element type a loop variable is bound to, or `undefined` when it cannot
+ * be known.
+ *
+ * `seen` guards a template that binds a name from itself. That is not a
+ * template anyone means to write, but it is one somebody can type, and a lint
+ * that hangs the editor on it is worse than the typo.
+ */
+function boundType(name, bindings, scope, seen) {
+    const source = bindings.get(name);
+    if (!source || seen.has(name))
+        return undefined;
+    seen.add(name);
+    const [root, ...rest] = source;
+    const decl = bindings.has(root)
+        ? boundType(root, bindings, scope, seen)
+        : scope[root];
+    const r = resolvePath(decl, rest);
+    return r.ok ? elementOf(r.field) : undefined;
+}
+const UNCHECKED = { ok: true, checked: false };
+/**
+ * `length` is not a declared field and never will be, but Handlebars and the
+ * `{% for %}` engine both answer it on a list and a string. Flagging it would
+ * be the first false positive an author hit.
+ */
+const INTRINSIC = 'length';
+/**
+ * Resolve `path` against a declared type.
+ *
+ * `list` is the interesting case. A list is reached by *position*, so
+ * `characters.name` is not a near-miss to be corrected — it is a category
+ * error, and saying so is the whole reason the old flattened `string[]` form
+ * had to go: it accepted exactly that and rejected `characters.0.name`.
+ */
+export function resolvePath(decl, path, base = '') {
+    if (decl === undefined || decl === 'any')
+        return UNCHECKED;
+    // The legacy form answers for its own first segment and nothing deeper —
+    // exactly what it could answer before schemas existed.
+    if (Array.isArray(decl)) {
+        if (!path.length)
+            return UNCHECKED;
+        if (decl.includes(path[0]))
+            return UNCHECKED;
+        return {
+            ok: false,
+            checked: true,
+            at: path[0],
+            available: decl,
+            message: `'${label(base, [path[0]])}' does not exist`,
+        };
+    }
+    let cur = decl;
+    for (let i = 0; i < path.length; i++) {
+        const seg = path[i];
+        const where = label(base, path.slice(0, i + 1));
+        switch (cur.type) {
+            case 'object': {
+                const fields = cur.fields;
+                if (!fields)
+                    return UNCHECKED;
+                const next = fields[seg];
+                if (!next)
+                    return {
+                        ok: false,
+                        checked: true,
+                        at: seg,
+                        available: Object.keys(fields),
+                        message: `'${where}' does not exist`,
+                    };
+                cur = next;
+                break;
+            }
+            case 'record': {
+                // Keyed by whatever the author of the *data* chose. Any key is
+                // plausible and none can be verified, so the walk continues
+                // with the value's type and stops claiming certainty.
+                if (!cur.of)
+                    return UNCHECKED;
+                cur = cur.of;
+                break;
+            }
+            case 'list': {
+                if (seg === INTRINSIC)
+                    return { ok: true, checked: true, field: { type: 'number' } };
+                if (!/^\d+$/.test(seg))
+                    return {
+                        ok: false,
+                        checked: true,
+                        at: seg,
+                        message: `'${where}' does not exist — '${label(base, path.slice(0, i)) || 'this'}' is a ` +
+                            `list, so it is reached by position. Loop over it and read '${seg}' from ` +
+                            `each entry instead.`,
+                    };
+                if (!cur.of)
+                    return UNCHECKED;
+                cur = cur.of;
+                break;
+            }
+            default: {
+                if (seg === INTRINSIC && cur.type === 'string')
+                    return { ok: true, checked: true, field: { type: 'number' } };
+                return {
+                    ok: false,
+                    checked: true,
+                    at: seg,
+                    message: `'${where}' does not exist — '${label(base, path.slice(0, i)) || 'this'}' is a ${cur.type}.`,
+                };
+            }
+        }
+    }
+    return { ok: true, checked: true, field: cur };
+}
+/**
+ * What one iteration of a collection is.
+ *
+ * `undefined` where the answer is unknown rather than absent — a scalar has no
+ * element, but so does an `'any'`, and a caller that cannot tell those apart
+ * would report iterating an unchecked value as an error.
+ */
+function label(base, path) {
+    return [base, ...path].filter(Boolean).join('.');
+}
+export function elementOf(decl) {
+    if (!decl || decl === 'any' || Array.isArray(decl))
+        return undefined;
+    if (decl.type === 'list' || decl.type === 'record')
+        return decl.of;
+    return undefined;
+}
+/**
+ * Does a value match a declared schema?
+ *
+ * This exists so a `sample` and its `scope` cannot drift apart. A sample is not
+ * decoration: it is what the layout editor renders a live preview against, so a
+ * sample whose shape is wrong shows the author a preview that works and a chat
+ * that doesn't — a lie told at exactly the moment they are trusting the tool.
+ * The declaration and the example of it have to be checkable against each
+ * other, and this is the check.
+ *
+ * Findings are errors, not warnings, and an undeclared key is one of them. A
+ * sample carrying a field the schema omits means the schema is incomplete, and
+ * an incomplete schema is a completion list missing an entry the author needs —
+ * silently, with no way to tell it apart from a field that truly is not there.
+ */
+export function checkValue(value, field, path = '') {
+    const at = path || 'value';
+    const out = [];
+    const wrong = (want) => [`${at}: expected ${want}, got ${describe(value)}`];
+    switch (field.type) {
+        case 'string':
+            return typeof value === 'string' ? [] : wrong('a string');
+        case 'number':
+            return typeof value === 'number' ? [] : wrong('a number');
+        case 'boolean':
+            return typeof value === 'boolean' ? [] : wrong('a boolean');
+        case 'list': {
+            if (!Array.isArray(value))
+                return wrong('a list');
+            if (!field.of)
+                return out;
+            value.forEach((item, i) => out.push(...checkValue(item, field.of, `${at}[${i}]`)));
+            return out;
+        }
+        case 'record': {
+            if (!isPlainObject(value))
+                return wrong('a record');
+            if (!field.of)
+                return out;
+            for (const [k, v] of Object.entries(value))
+                out.push(...checkValue(v, field.of, `${at}.${k}`));
+            return out;
+        }
+        case 'object': {
+            if (!isPlainObject(value))
+                return wrong('an object');
+            const fields = field.fields ?? {};
+            for (const [k, f] of Object.entries(fields)) {
+                const has = k in value && value[k] !== undefined && value[k] !== null;
+                if (!has) {
+                    if (!f.optional)
+                        out.push(`${at}.${k}: declared but missing from the sample`);
+                    continue;
+                }
+                out.push(...checkValue(value[k], f, `${at}.${k}`));
+            }
+            for (const k of Object.keys(value)) {
+                if (k in fields)
+                    continue;
+                if (value[k] === undefined)
+                    continue;
+                out.push(`${at}.${k}: present in the sample but not declared — ` +
+                    `add it to \`fields\`, or drop it from the sample`);
+            }
+            return out;
+        }
+    }
+}
+/**
+ * Check every key of a scope against the values a declaration samples for it.
+ *
+ * Legacy declarations are skipped rather than guessed at. `'any'` means
+ * unchecked by definition, and a bare `string[]` carries no types to check
+ * against — pretending otherwise would fail honest declarations that simply
+ * predate the schema.
+ */
+export function checkScopeSample(values, scope, label = '') {
+    const out = [];
+    const prefix = label ? `${label} ` : '';
+    for (const [key, decl] of Object.entries(scope)) {
+        if (decl === 'any' || Array.isArray(decl))
+            continue;
+        if (!(key in values) || values[key] === undefined) {
+            out.push(`${prefix}${key}: declared in scope but the sample supplies no value for it`);
+            continue;
+        }
+        out.push(...checkValue(values[key], decl, `${prefix}${key}`));
+    }
+    return out;
+}
+function isPlainObject(v) {
+    return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+function describe(v) {
+    if (v === null)
+        return 'null';
+    if (v === undefined)
+        return 'undefined';
+    if (Array.isArray(v))
+        return 'a list';
+    return `a ${typeof v}`;
 }
 /**
  * Mask top-level `{% for %}…{% endfor %}` blocks with placeholders, matching them balanced

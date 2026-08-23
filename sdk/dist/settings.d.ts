@@ -70,6 +70,13 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
         field: string;
         equals: unknown;
     };
+    /**
+     * For `text` fields holding structured data a form cannot decompose: the
+     * renderer shows JSON and the submit path parses it back. Produced by
+     * `inferSchema` for nested payloads; an author declaring settings should
+     * declare real fields instead.
+     */
+    format?: 'json';
 }
 export type SettingsSchema = Record<string, FieldDecl>;
 type ValueOf<F> = F extends {
@@ -184,5 +191,29 @@ export declare class SettingsError extends Error {
 export declare function defineSettings<const S extends SettingsSchema>(schema: S): PluginSettings<S>;
 /** Back-compat alias for the earlier name. */
 export declare const validateSettingsSchema: (s: SettingsSchema) => string[];
+/**
+ * A `SettingsSchema` inferred from a payload — the review gate's form producer.
+ *
+ * One field language for everything a person edits in a generated form: an
+ * extension's declared settings, an extension's arbitrary forms, and a paused
+ * node's payload all render through the same schema and the same renderer. A
+ * review form is therefore 100% defined by the data the node received: a
+ * string is a text field, a number is a number field, a flag is a checkbox,
+ * and structure a form cannot decompose arrives as JSON rather than being
+ * silently dropped — an edit surface that hides part of the payload is a
+ * review gate a write can sneak past.
+ */
+export declare function inferSchema(payload: unknown): SettingsSchema;
+/** The payload as form values — JSON-format fields serialized for editing. */
+export declare function valuesForForm(schema: SettingsSchema, payload: unknown): Record<string, unknown>;
+/**
+ * Fold edited form values back into the payload shape the node expects.
+ *
+ * The inverse of `valuesForForm`: JSON-format fields parse back (an
+ * unparseable edit throws with the field named rather than committing a
+ * string where an object stood), untouched keys keep their original values —
+ * a form is an edit surface, never a filter.
+ */
+export declare function applyFormValues(schema: SettingsSchema, payload: unknown, edited: Record<string, unknown>): unknown;
 export {};
 //# sourceMappingURL=settings.d.ts.map

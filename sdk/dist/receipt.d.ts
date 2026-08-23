@@ -26,6 +26,12 @@ export interface NodeReceipt {
     iteration?: number;
     timeoutMsApplied?: number;
     timedOut?: boolean;
+    /**
+     * The node failed, its type declares `optional`, and the run continued with
+     * an empty value. `result` and `reason` still say what happened — this is
+     * the flag that stops that reading as a success.
+     */
+    recoveredAsEmpty?: boolean;
     /** Which sampler fields the adapter honoured vs dropped (12 §2). */
     samplingApplied?: Record<string, unknown>;
     samplingIgnored?: string[];

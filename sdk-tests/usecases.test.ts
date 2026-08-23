@@ -9,24 +9,40 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { spec, fragment } from '@serene-pub/sdk'
-import { compile, canonical, canonicalHash, importDocument, resolveDownstreamProvider } from '@serene-pub/sdk'
+import {
+	compile,
+	canonical,
+	canonicalHash,
+	importDocument,
+	resolveDownstreamProvider,
+} from '@serene-pub/sdk'
 import { validate } from '@serene-pub/sdk'
 import { run, replay, ok, halt, err, seededRandom } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
-import { resolveConfig, assertWritable, mayWrite } from '@serene-pub/sdk'
+import { resolveConfig, resolveConfigSources, assertWritable, mayWrite } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { publish, findings, errorsFor, bindings, world, withEmbeddings, fakeClock } from './helpers.js'
+import {
+	publish,
+	findings,
+	errorsFor,
+	bindings,
+	world,
+	withEmbeddings,
+	fakeClock,
+} from './helpers.js'
 
 // ── 01 · Minimal chat turn ──────────────────────────────────────────────────
 describe('01 · a minimal chat turn runs end to end', () => {
 	const s = () =>
 		spec('demo:minimal@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
-			.task('prompt', $ => C.assemble.v2({ candidates: $.history.messages }))
-			.provider('generate', $ => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
-			.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
+			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+			.provider('generate', ($) =>
+				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+			)
+			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 	test('publishes and runs', async () => {
 		const doc = publish(s())
@@ -58,7 +74,10 @@ describe('01 · a minimal chat turn runs end to end', () => {
 describe('02 · exactly one Input, positionally first', () => {
 	test('a second .input() throws at authoring time', () => {
 		assert.throws(
-			() => spec('demo:two-inputs@1', { version: '1.0.0' }).input('a', C.userMessage.v1()).input('b', C.userMessage.v1()),
+			() =>
+				spec('demo:two-inputs@1', { version: '1.0.0' })
+					.input('a', C.userMessage.v1())
+					.input('b', C.userMessage.v1()),
 			/exactly one Input/,
 		)
 	})
@@ -90,9 +109,13 @@ describe('03 · one primary write, emits unlimited', () => {
 			spec('demo:emits@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.consume('stream', $ => C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }))
-				.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
-				.consume('done', $ => C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId })),
+				.consume('stream', ($) =>
+					C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
+				)
+				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.consume('done', ($) =>
+					C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+				),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
 		assert.equal(r.outcome, 'ok')
@@ -104,7 +127,10 @@ describe('03 · one primary write, emits unlimited', () => {
 // ── 04 · No branching (F25) ─────────────────────────────────────────────────
 describe('04 · no branching', () => {
 	test('there is no branch method to call', () => {
-		const b: any = spec('demo:nobranch@1', { version: '1.0.0' }).input('input', C.userMessage.v1())
+		const b: any = spec('demo:nobranch@1', { version: '1.0.0' }).input(
+			'input',
+			C.userMessage.v1(),
+		)
 		assert.equal(typeof b.branch, 'undefined')
 		assert.equal(typeof b.if, 'undefined')
 	})
@@ -112,9 +138,11 @@ describe('04 · no branching', () => {
 		const doc = publish(
 			spec('demo:fanin@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
-				.query('lore', $ => C.lorebookTriggers.v1({ text: $.input.text }))
-				.task('merge', $ => C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] })),
+				.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+				.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
+				.task('merge', ($) =>
+					C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
+				),
 		)
 		assert.equal(validate(doc).filter((f) => f.severity === 'error').length, 0)
 	})
@@ -126,19 +154,24 @@ describe('05 · halt stops the run and records why', () => {
 		const doc = publish(
 			spec('demo:halt@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.task('gate', $ => C.gate.v1({ main: $.input.main }))
+				.task('gate', ($) => C.gate.v1({ main: $.input.main }))
 				.provider('generate', C.generateText.v1({ connection: slot.connection() })),
 		)
 		const r = await run(doc, {
 			input: { chatType: 'dungeon' },
 			world,
-			bindings: bindings({ 'test:task/gate@1': async () => halt('chat type not applicable to this pipeline') }),
+			bindings: bindings({
+				'test:task/gate@1': async () => halt('chat type not applicable to this pipeline'),
+			}),
 		})
 		assert.equal(r.outcome, 'halt')
 		assert.equal(r.haltNodeKey, 'gate')
 		assert.match(r.haltReason!, /not applicable/)
 		// downstream never ran
-		assert.equal(r.nodes.find((n) => n.nodeKey === 'generate'), undefined)
+		assert.equal(
+			r.nodes.find((n) => n.nodeKey === 'generate'),
+			undefined,
+		)
 	})
 })
 
@@ -150,7 +183,7 @@ describe('06 · dice rolls are seeded, so they replay', () => {
 				.input('input', C.userMessage.v1())
 				.task('roll', C.roll.v1({ notation: '1d20' }))
 				.provider('narrate', C.generateText.v1({ connection: slot.connection() }))
-				.consume('save', $ => C.createMessage.v1({ text: $.narrate.text })),
+				.consume('save', ($) => C.createMessage.v1({ text: $.narrate.text })),
 		)
 
 	test('same seed, same roll', async () => {
@@ -171,7 +204,9 @@ describe('06 · dice rolls are seeded, so they replay', () => {
 
 	test('a Task without declaresRandomness gets no random handle (F11)', async () => {
 		const doc2 = publish(
-			spec('demo:purity@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).task('gate', C.gate.v1()),
+			spec('demo:purity@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.task('gate', C.gate.v1()),
 		)
 		let sawRandom: boolean | undefined
 		await run(doc2, {
@@ -191,11 +226,16 @@ describe('06 · dice rolls are seeded, so they replay', () => {
 // ── 07 · Queries have no network handle (16 §1) ─────────────────────────────
 test('07 · a Query is handed no fetch, so it cannot reach the network', async () => {
 	const doc = publish(
-		spec('demo:querypurity@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).query('n', C.network.v1()),
+		spec('demo:querypurity@1', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.query('n', C.network.v1()),
 	)
 	const r = await run(doc, { input: {}, bindings: bindings(), world })
 	assert.equal(r.outcome, 'ok')
-	assert.equal((r.nodes.find((n) => n.nodeKey === 'n')!.output as any).main, 'no network handle available')
+	assert.equal(
+		(r.nodes.find((n) => n.nodeKey === 'n')!.output as any).main,
+		'no network handle available',
+	)
 })
 
 // ── 08 · Async block, and forced-sequential equivalence (F26) ───────────────
@@ -205,40 +245,66 @@ describe('08 · async block equivalence', () => {
 			.input('input', C.userMessage.v1())
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
-					.chain('history', (c) => c.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope })))
-					.chain('keyword', (c) => c.query('triggers', $ => C.lorebookTriggers.v1({ text: $.input.text })))
+					.chain('history', (c) =>
+						c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })),
+					)
+					.chain('keyword', (c) =>
+						c.query('triggers', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
+					)
 					.chain('semantic', (c) =>
 						c
-							.provider('embed', $ => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
-							.query('vsearch', $ => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
+							.provider('embed', ($) =>
+								C.embedText.v1({
+									text: $.input.text,
+									connection: slot.connection(),
+								}),
+							)
+							.query('vsearch', ($) =>
+								C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector }),
+							),
 					),
 			)
-			.task('merge', $ => C.mergeCandidates.v1({
-				sources: [
-					$.gather.semantic.vsearch.hits,
-					$.gather.keyword.triggers.hits,
-					$.gather.history.history.messages,
-				],
-			}))
+			.task('merge', ($) =>
+				C.mergeCandidates.v1({
+					sources: [
+						$.gather.semantic.vsearch.hits,
+						$.gather.keyword.triggers.hits,
+						$.gather.history.history.messages,
+					],
+				}),
+			)
 
 	test('parallel and forced-sequential produce identical results', async () => {
 		const doc = publish(build())
 		const par = await run(doc, { input: { text: 'hi' }, bindings: bindings(), world })
-		const seq = await run(doc, { input: { text: 'hi' }, bindings: bindings(), world, forceSequential: true })
+		const seq = await run(doc, {
+			input: { text: 'hi' },
+			bindings: bindings(),
+			world,
+			forceSequential: true,
+		})
 		const norm = (r: typeof par) =>
 			r.nodes
 				.map((n) => `${n.nodeKey}:${n.result}:${JSON.stringify(n.output)}`)
 				.sort()
 				.join('\n')
 		assert.equal(norm(par), norm(seq))
-		assert.equal(par.nodes.find((n) => n.nodeKey === 'gather.history.history')!.blockMode, 'parallel')
-		assert.equal(seq.nodes.find((n) => n.nodeKey === 'gather.history.history')!.blockMode, 'sequential')
+		assert.equal(
+			par.nodes.find((n) => n.nodeKey === 'gather.history.history')!.blockMode,
+			'parallel',
+		)
+		assert.equal(
+			seq.nodes.find((n) => n.nodeKey === 'gather.history.history')!.blockMode,
+			'sequential',
+		)
 	})
 
 	test('a write-class consumer inside a block is rejected (01 §4)', () => {
 		const b = spec('demo:blockwrite@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.async('blk', {}, (bb) => bb.chain('c', (c) => c.consume('save', C.createMessage.v1({ text: 'x' }))))
+			.async('blk', {}, (bb) =>
+				bb.chain('c', (c) => c.consume('save', C.createMessage.v1({ text: 'x' }))),
+			)
 		const e = errorsFor(b, '01 §4')
 		assert.equal(e.length, 1)
 		assert.match(e[0]!.fix, /move the write onto the spine/)
@@ -250,12 +316,12 @@ describe('09 · map over chunks', () => {
 	const build = (max = 64) =>
 		spec('demo:summarize@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.task('chunks', $ => C.chunkText.v1({ text: $.input.text }))
+			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
 			.map('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
 				m.provider('sum', C.generateText.v1({ connection: slot.connection() })),
 			)
-			.task('collect', $ => C.toCandidates.v1({ items: $.summarize.values }))
-			.task('prompt', $ => C.assemble.v2({ candidates: $.collect.candidates }))
+			.task('collect', ($) => C.toCandidates.v1({ items: $.summarize.values }))
+			.task('prompt', ($) => C.assemble.v2({ candidates: $.collect.candidates }))
 
 	test('publishes with a declared max', () => {
 		assert.doesNotThrow(() => publish(build()))
@@ -275,7 +341,7 @@ describe('10 · streaming', () => {
 			spec('demo:stream@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.task('first', $ => C.firstJson.v1({ main: $.generate.text })),
+				.task('first', ($) => C.firstJson.v1({ main: $.generate.text })),
 		)
 		const edge = doc.edges.find((e) => e.from === 'generate' && e.to === 'first')!
 		assert.equal(edge.streaming, true, 'the document says this edge streams')
@@ -286,8 +352,8 @@ describe('10 · streaming', () => {
 	test('earlyExit on a settled input is a warning — there is nothing to exit early from', () => {
 		const b = spec('demo:pointless-early@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('text', $ => C.messageText.v1({ messageId: $.input.main }))
-			.task('first', $ => C.firstJson.v1({ main: $.text.plain }))
+			.query('text', ($) => C.messageText.v1({ messageId: $.input.main }))
+			.task('first', ($) => C.firstJson.v1({ main: $.text.plain }))
 		const f = findings(b).filter((x) => x.law === 'F22')
 		assert.equal(f.length, 1)
 		assert.match(f[0]!.fix, /nothing to exit early from/)
@@ -298,7 +364,9 @@ describe('10 · streaming', () => {
 describe('11 · timeouts', () => {
 	test('a hook that overruns yields a routable err(timeout), recorded with the limit', async () => {
 		const doc = publish(
-			spec('demo:timeout@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).task('slow', C.slow.v1()),
+			spec('demo:timeout@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.task('slow', C.slow.v1()),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
 		const n = r.nodes.find((x) => x.nodeKey === 'slow')!
@@ -310,7 +378,9 @@ describe('11 · timeouts', () => {
 
 	test('the admin ceiling wins over a descriptor default', async () => {
 		const doc = publish(
-			spec('demo:ceiling@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).query('h', C.chatHistory.v1()),
+			spec('demo:ceiling@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.query('h', C.chatHistory.v1()),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world, timeoutCeilingMs: 5 })
 		assert.equal(r.nodes.find((n) => n.nodeKey === 'h')!.timeoutMsApplied, 5)
@@ -319,7 +389,9 @@ describe('11 · timeouts', () => {
 	test('waiting is not execution — a long simulated wait does not trip a timeout', async () => {
 		const clock = fakeClock()
 		const doc = publish(
-			spec('demo:park@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).task('gate', C.gate.v1()),
+			spec('demo:park@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.task('gate', C.gate.v1()),
 		)
 		const r = await run(doc, {
 			input: {},
@@ -346,7 +418,12 @@ describe('12 · budgets', () => {
 				.provider('a', C.generateText.v1({ connection: slot.connection() }))
 				.provider('b', C.generateText.v1({ connection: slot.connection() })),
 		)
-		const r = await run(doc, { input: {}, bindings: bindings(), world, budget: { tokens: 300 } })
+		const r = await run(doc, {
+			input: {},
+			bindings: bindings(),
+			world,
+			budget: { tokens: 300 },
+		})
 		assert.equal(r.outcome, 'err')
 		assert.match(r.haltReason!, /token budget exceeded/)
 	})
@@ -354,7 +431,9 @@ describe('12 · budgets', () => {
 	test('a long wait consumes nothing', async () => {
 		const clock = fakeClock()
 		const doc = publish(
-			spec('demo:waitfree@1', { version: '1.0.0' }).input('input', C.userMessage.v1()).task('gate', C.gate.v1()),
+			spec('demo:waitfree@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.task('gate', C.gate.v1()),
 		)
 		const r = await run(doc, {
 			input: {},
@@ -380,10 +459,36 @@ describe('13 · configuration resolves per slot through five layers', () => {
 			{
 				...world,
 				overrides: [
-					{ nodeKey: 'generate', slot: 'sampling', path: 'temperature', value: 0.2, scopeKind: 'instance' },
-					{ nodeKey: 'generate', slot: 'sampling', path: 'temperature', value: 0.7, scopeKind: 'user', scopeId: 42 },
-					{ nodeKey: 'generate', slot: 'sampling', path: 'temperature', value: 1.1, scopeKind: 'chat', scopeId: 991 },
-					{ nodeKey: 'generate', slot: 'sampling', path: 'top_p', value: 0.9, scopeKind: 'instance' },
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'temperature',
+						value: 0.2,
+						scopeKind: 'instance',
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'temperature',
+						value: 0.7,
+						scopeKind: 'user',
+						scopeId: 42,
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'temperature',
+						value: 1.1,
+						scopeKind: 'chat',
+						scopeId: 991,
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'top_p',
+						value: 0.9,
+						scopeKind: 'instance',
+					},
 				],
 			},
 			['generate'],
@@ -397,8 +502,21 @@ describe('13 · configuration resolves per slot through five layers', () => {
 			{
 				...world,
 				overrides: [
-					{ nodeKey: 'generate', slot: 'prompts', path: 'system', value: 'be terse', scopeKind: 'user', scopeId: 42 },
-					{ nodeKey: 'generate', slot: 'connection', path: '$ref', value: 'ollama-local', scopeKind: 'instance' },
+					{
+						nodeKey: 'generate',
+						slot: 'prompts',
+						path: 'system',
+						value: 'be terse',
+						scopeKind: 'user',
+						scopeId: 42,
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'connection',
+						path: '$ref',
+						value: 'ollama-local',
+						scopeKind: 'instance',
+					},
 				],
 			},
 			['generate'],
@@ -412,6 +530,78 @@ describe('13 · configuration resolves per slot through five layers', () => {
 		assert.equal(mayWrite('prompts', 'chat'), true)
 		assert.throws(() => assertWritable('connection', 'chat'), /admin-only/)
 	})
+
+	test('resolution reports which layer won, and agrees with the plain resolver', () => {
+		// The UI needs the label, not only the value: "I changed this and nothing
+		// happened" is answerable only if the resolver says an admin pinned it.
+		// Asserting the two agree is what stops the labelled path becoming a second
+		// implementation that drifts from the one execution uses.
+		const w = {
+			...world,
+			authorDefaults: { generate: { params: { stopSequences: [] } } },
+			overrides: [
+				{
+					nodeKey: 'generate',
+					slot: 'sampling',
+					path: 'temperature',
+					value: 0.2,
+					scopeKind: 'instance' as const,
+				},
+				{
+					nodeKey: 'generate',
+					slot: 'sampling',
+					path: 'temperature',
+					value: 0.7,
+					scopeKind: 'user' as const,
+					scopeId: 42,
+				},
+				{
+					nodeKey: 'generate',
+					slot: 'prompts',
+					path: 'system',
+					value: 'be terse',
+					scopeKind: 'preset' as const,
+				},
+			],
+		}
+		const sourced = resolveConfigSources(w, ['generate'])
+		assert.equal(sourced['generate']!['sampling']!['temperature']!.scopeKind, 'user')
+		assert.equal(sourced['generate']!['sampling']!['temperature']!.scopeId, 42)
+		assert.equal(sourced['generate']!['prompts']!['system']!.scopeKind, 'preset')
+		assert.equal(sourced['generate']!['params']!['stopSequences']!.scopeKind, 'author')
+
+		const plain = resolveConfig(w, ['generate'])
+		for (const [slot, paths] of Object.entries(sourced['generate']!))
+			for (const [path, resolved] of Object.entries(paths))
+				assert.deepEqual(
+					plain['generate']![slot]?.[path],
+					resolved.value,
+					`${slot}.${path}`,
+				)
+	})
+
+	test('a path containing a space resolves as itself (12 §2)', () => {
+		// Paths were grouped by joining slot and path with a space and splitting
+		// back, so a declared field named 'opening line' resolved against the path
+		// 'opening' — matching nothing, silently, for whoever declared it. No core
+		// field has a space; nothing stops a plugin's from having one.
+		const resolved = resolveConfig(
+			{
+				...world,
+				overrides: [
+					{
+						nodeKey: 'generate',
+						slot: 'prompts',
+						path: 'opening line',
+						value: 'Once upon',
+						scopeKind: 'user' as const,
+					},
+				],
+			},
+			['generate'],
+		)
+		assert.equal(resolved['generate']!['prompts']!['opening line'], 'Once upon')
+	})
 })
 
 // ── 14 · Sampling: referenced, overridable, and honestly reported (12 §2) ───
@@ -420,7 +610,10 @@ describe('14 · sampling', () => {
 		const doc = publish(
 			spec('demo:sampling@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() })),
+				.provider(
+					'generate',
+					C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }),
+				),
 		)
 		const r = await run(doc, {
 			input: {},
@@ -428,8 +621,21 @@ describe('14 · sampling', () => {
 			world: {
 				...world,
 				overrides: [
-					{ nodeKey: 'generate', slot: 'sampling', path: '$ref', value: 'cfg_creative', scopeKind: 'instance' },
-					{ nodeKey: 'generate', slot: 'sampling', path: 'temperature', value: 0.5, scopeKind: 'chat', scopeId: 991 },
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: '$ref',
+						value: 'cfg_creative',
+						scopeKind: 'instance',
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'temperature',
+						value: 0.5,
+						scopeKind: 'chat',
+						scopeId: 991,
+					},
 				],
 			},
 		})
@@ -442,17 +648,30 @@ describe('14 · sampling', () => {
 		const doc = publish(
 			spec('demo:ignored@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() })),
+				.provider(
+					'generate',
+					C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }),
+				),
 		)
 		const r = await run(doc, {
 			input: {},
 			bindings: bindings(),
 			world: {
 				...world,
-				overrides: [{ nodeKey: 'generate', slot: 'sampling', path: '$ref', value: 'cfg_creative', scopeKind: 'instance' }],
+				overrides: [
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: '$ref',
+						value: 'cfg_creative',
+						scopeKind: 'instance',
+					},
+				],
 			},
 		})
-		assert.deepEqual(r.nodes.find((x) => x.nodeKey === 'generate')!.samplingIgnored, ['mirostat_tau'])
+		assert.deepEqual(r.nodes.find((x) => x.nodeKey === 'generate')!.samplingIgnored, [
+			'mirostat_tau',
+		])
 	})
 })
 
@@ -485,8 +704,10 @@ describe('16 · the context budget flows forward', () => {
 		spec('demo:budgetflow@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.task('budget', C.contextBudget.v1({ connection: slot.downstreamProvider() }))
-			.query('history', $ => C.chatHistory.v1({ budget: $.budget.available }))
-			.task('prompt', $ => C.assemble.v2({ candidates: $.history.messages, budget: $.budget.available }))
+			.query('history', ($) => C.chatHistory.v1({ budget: $.budget.available }))
+			.task('prompt', ($) =>
+				C.assemble.v2({ candidates: $.history.messages, budget: $.budget.available }),
+			)
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
 
 	test('downstreamProvider resolves at publish and is stored explicitly', () => {
@@ -498,7 +719,10 @@ describe('16 · the context budget flows forward', () => {
 	test('the resolved metadata reaches the query as data', async () => {
 		const doc = publish(build())
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
-		assert.equal((r.nodes.find((n) => n.nodeKey === 'budget')!.output as any).available, 4096 - 512)
+		assert.equal(
+			(r.nodes.find((n) => n.nodeKey === 'budget')!.output as any).available,
+			4096 - 512,
+		)
 	})
 
 	test('no Provider downstream is a publish error naming the fix', () => {
@@ -514,10 +738,12 @@ test('17 · assemble reads declared weights off its inputs, so adding a source n
 	const doc = publish(
 		spec('demo:alloc@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
-			.query('lore', $ => C.lorebookTriggers.v1({ text: $.input.text }))
-			.task('merge', $ => C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }))
-			.task('prompt', $ => C.assemble.v2({ candidates: $.merge.candidates })),
+			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
+			.task('merge', ($) =>
+				C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
+			)
+			.task('prompt', ($) => C.assemble.v2({ candidates: $.merge.candidates })),
 	)
 	const r = await run(doc, { input: { text: 'hi' }, bindings: bindings(), world })
 	const alloc = (r.nodes.find((n) => n.nodeKey === 'prompt')!.output as any).main.alloc
@@ -531,10 +757,12 @@ describe('18 · retrieval strategy', () => {
 	const build = () =>
 		spec('demo:strategy@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.provider('embed', $ => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
-			.query('vsearch', $ => C.vectorSearch.v1({ vector: $.embed.vector }))
-			.query('lore', $ => C.lorebookTriggers.v1({ text: $.input.text }))
-			.task('merge', $ => C.mergeCandidates.v1({ sources: [$.vsearch.hits, $.lore.hits] }))
+			.provider('embed', ($) =>
+				C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
+			)
+			.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.embed.vector }))
+			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
+			.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.vsearch.hits, $.lore.hits] }))
 
 	test('no embeddings connection: embed returns null, auto resolves to keyword, nothing is skipped', async () => {
 		const doc = publish(build())
@@ -543,13 +771,23 @@ describe('18 · retrieval strategy', () => {
 		assert.equal(embed.result, 'ok')
 		assert.equal((embed.output as any).vector, null)
 		assert.match(embed.notes!.join(), /no active embeddings connection/)
-		assert.equal((r.nodes.find((n) => n.nodeKey === 'merge')!.output as any).strategyResolved, 'keyword')
+		assert.equal(
+			(r.nodes.find((n) => n.nodeKey === 'merge')!.output as any).strategyResolved,
+			'keyword',
+		)
 	})
 
 	test('with an embeddings connection, auto resolves to vector', async () => {
 		const doc = publish(build())
-		const r = await run(doc, { input: { text: 'hi' }, bindings: bindings(), world: withEmbeddings() })
-		assert.equal((r.nodes.find((n) => n.nodeKey === 'merge')!.output as any).strategyResolved, 'vector')
+		const r = await run(doc, {
+			input: { text: 'hi' },
+			bindings: bindings(),
+			world: withEmbeddings(),
+		})
+		assert.equal(
+			(r.nodes.find((n) => n.nodeKey === 'merge')!.output as any).strategyResolved,
+			'vector',
+		)
 	})
 })
 
@@ -559,8 +797,8 @@ test('19 · a plugin ranker substitutes for core with no other change', async ()
 		publish(
 			spec('demo:rank@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('lore', $ => C.lorebookTriggers.v1({ text: $.input.text }))
-				.task('rank', $ => ranker.v1({ candidates: $.lore.hits })),
+				.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
+				.task('rank', ($) => ranker.v1({ candidates: $.lore.hits })),
 		)
 	for (const ranker of [C.rankHybrid, C.rankByRecency, C.rankRecall]) {
 		const r = await run(build(ranker), { input: { text: 'x' }, bindings: bindings(), world })
@@ -580,7 +818,7 @@ test('20 · an included fragment expands to flat, namespaced rows', () => {
 		spec('demo:fragment@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.include('ctx', ctxInfill)
-			.task('prompt', $ => C.assemble.v2({ candidates: $.ctx.merge.candidates })),
+			.task('prompt', ($) => C.assemble.v2({ candidates: $.ctx.merge.candidates })),
 	)
 	assert.deepEqual(
 		doc.nodes.map((n) => n.key),
@@ -594,7 +832,7 @@ test('21 · import(export(rows)) is identity, and the hash is stable', () => {
 	const doc = publish(
 		spec('demo:roundtrip@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
 			.consume('save', C.createMessage.v1({ text: 'x' })),
 	)
 	const round = importDocument(doc)
@@ -637,19 +875,26 @@ test('23 · replay reproduces the run from the receipt without calling the provi
 		spec('demo:replay@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', $ => C.createMessage.v1({ text: $.generate.text })),
+			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text })),
 	)
 	const first = await run(doc, { input: {}, bindings: bindings(), world, seed: 'seed:xyz' })
 
 	let called = 0
-	const replayed = await replay(doc, first, bindings({
-		'core:provider/generate-text@1': async () => {
-			called++
-			return ok({ main: 'DIFFERENT', text: 'DIFFERENT' })
-		},
-	}))
+	const replayed = await replay(
+		doc,
+		first,
+		bindings({
+			'core:provider/generate-text@1': async () => {
+				called++
+				return ok({ main: 'DIFFERENT', text: 'DIFFERENT' })
+			},
+		}),
+	)
 	assert.equal(called, 0, 'the provider must not be called during replay')
-	assert.equal((replayed.nodes.find((n) => n.nodeKey === 'generate')!.output as any).text, 'the reply text')
+	assert.equal(
+		(replayed.nodes.find((n) => n.nodeKey === 'generate')!.output as any).text,
+		'the reply text',
+	)
 	assert.equal(replayed.seed, 'seed:xyz')
 })
 
@@ -660,9 +905,15 @@ describe('24 · modality agnosticism', () => {
 			spec('chariot.tts:speak-reply@1', { version: '1.0.0' })
 				.on('core:event/message-created@1')
 				.input('input', C.messageCreated.v1())
-				.query('text', $ => C.messageText.v1({ messageId: $.input.messageId }))
-				.provider('audio', $ => C.speak.v1({ text: $.text.plain, connection: slot.connection(), sampling: slot.sampling() }))
-				.consume('attach', $ => C.attachAudio.v1({ audio: $.audio.audio })),
+				.query('text', ($) => C.messageText.v1({ messageId: $.input.messageId }))
+				.provider('audio', ($) =>
+					C.speak.v1({
+						text: $.text.plain,
+						connection: slot.connection(),
+						sampling: slot.sampling(),
+					}),
+				)
+				.consume('attach', ($) => C.attachAudio.v1({ audio: $.audio.audio })),
 		)
 		const r = await run(doc, {
 			input: { messageId: 'm1' },
@@ -681,10 +932,16 @@ describe('24 · modality agnosticism', () => {
 				.on('core:event/message-created@1')
 				.input('input', C.messageCreated.v1())
 				.task('scene', C.assemble.v2({ candidates: [] }))
-				.provider('render', $ => C.renderImage.v1({ context: $.scene.context, connection: slot.connection(), sampling: slot.sampling() }))
-				.consume('attach', $ => C.attachImage.v1({ image: $.render.image })),
+				.provider('render', ($) =>
+					C.renderImage.v1({
+						context: $.scene.context,
+						connection: slot.connection(),
+						sampling: slot.sampling(),
+					}),
+				)
+				.consume('attach', ($) => C.attachImage.v1({ image: $.render.image })),
 		)
-		// attachImage declares reviewDefault: 'sync', so the gate fires here too — the
+		// attachImage declares reviewDefault: 'on', so the gate fires here too — the
 		// author raised the floor and nothing about image-gen made that a special case.
 		const r = await run(doc, {
 			input: { messageId: 'm1' },
@@ -693,14 +950,17 @@ describe('24 · modality agnosticism', () => {
 			reviewer: async () => ({ action: 'approve', by: 'jody', at: 1 }),
 		})
 		assert.equal(r.outcome, 'ok')
-		assert.equal(r.reviews!.find((x) => x.nodeKey === 'attach')!.position, 'sync')
+		assert.equal(r.reviews!.find((x) => x.nodeKey === 'attach')!.position, 'on')
 	})
 
 	test('an MCP tool is a Provider, effectful, and gateable like any other', async () => {
 		const doc = publish(
 			spec('demo:mcp@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.provider('tool', C.mcpTool.v1({ args: { path: '/tmp/x' }, connection: slot.connection() })),
+				.provider(
+					'tool',
+					C.mcpTool.v1({ args: { path: '/tmp/x' }, connection: slot.connection() }),
+				),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
 		assert.equal(r.outcome, 'ok')
@@ -712,15 +972,29 @@ describe('24 · modality agnosticism', () => {
 // ── Cross-cutting: every error names an alternative (15 §1.3) ───────────────
 test('every validation error states what to do instead', () => {
 	const specs = [
-		spec('x:1@1', { version: '1' }).input('i', C.userMessage.v1()).consume('a', C.createMessage.v1()).consume('b', C.createMessage.v1()),
-		spec('x:2@1', { version: '1' }).input('i', C.userMessage.v1()).async('b', {}, (bb) => bb.chain('c', (c) => c.consume('w', C.createMessage.v1()))),
-		spec('x:3@1', { version: '1' }).input('i', C.userMessage.v1()).map('m', { over: [], max: 0 }, (c) => c.task('t', C.gate.v1())),
-		spec('x:4@1', { version: '1' }).input('i', C.userMessage.v1()).consume('e', C.createMessage.v1({ emits: ['x'] })),
-		spec('x:5@1', { version: '1' }).input('i', C.userMessage.v1()).task('t', C.badToggleable.v1()),
+		spec('x:1@1', { version: '1' })
+			.input('i', C.userMessage.v1())
+			.consume('a', C.createMessage.v1())
+			.consume('b', C.createMessage.v1()),
+		spec('x:2@1', { version: '1' })
+			.input('i', C.userMessage.v1())
+			.async('b', {}, (bb) => bb.chain('c', (c) => c.consume('w', C.createMessage.v1()))),
+		spec('x:3@1', { version: '1' })
+			.input('i', C.userMessage.v1())
+			.map('m', { over: [], max: 0 }, (c) => c.task('t', C.gate.v1())),
+		spec('x:4@1', { version: '1' })
+			.input('i', C.userMessage.v1())
+			.consume('e', C.createMessage.v1({ emits: ['x'] })),
+		spec('x:5@1', { version: '1' })
+			.input('i', C.userMessage.v1())
+			.task('t', C.badToggleable.v1()),
 	]
 	for (const s of specs) {
 		for (const f of findings(s).filter((x) => x.severity === 'error')) {
-			assert.ok(f.fix && f.fix.length > 20, `[${f.law}] "${f.message}" has no usable fix text`)
+			assert.ok(
+				f.fix && f.fix.length > 20,
+				`[${f.law}] "${f.message}" has no usable fix text`,
+			)
 		}
 	}
 })
@@ -734,29 +1008,74 @@ test('a full chat turn renders a legible receipt', async () => {
 			.task('budget', C.contextBudget.v1({ connection: slot.downstreamProvider() }))
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
-					.chain('history', (c) => c.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope, budget: $.budget.available })))
-					.chain('keyword', (c) => c.query('triggers', $ => C.lorebookTriggers.v1({ text: $.input.text })))
+					.chain('history', (c) =>
+						c.query('history', ($) =>
+							C.chatHistory.v1({
+								scope: $.input.chatScope,
+								budget: $.budget.available,
+							}),
+						),
+					)
+					.chain('keyword', (c) =>
+						c.query('triggers', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
+					)
 					.chain('semantic', (c) =>
 						c
-							.provider('embed', $ => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
-							.query('vsearch', $ => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
+							.provider('embed', ($) =>
+								C.embedText.v1({
+									text: $.input.text,
+									connection: slot.connection(),
+								}),
+							)
+							.query('vsearch', ($) =>
+								C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector }),
+							),
 					),
 			)
-			.task('merge', $ => C.mergeCandidates.v1({
-				sources: [$.gather.semantic.vsearch.hits, $.gather.keyword.triggers.hits, $.gather.history.history.messages],
-			}))
-			.task('rank', $ => C.rankHybrid.v1({ candidates: $.merge.candidates }))
-			.task('prompt', $ => C.assemble.v2({ candidates: $.rank.candidates, budget: $.budget.available }))
-			.provider('generate', $ => C.generateText.v1({ context: $.prompt.context, connection: slot.connection(), sampling: slot.sampling() }))
-			.consume('stream', $ => C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }))
-			.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
-			.consume('done', $ => C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId })),
+			.task('merge', ($) =>
+				C.mergeCandidates.v1({
+					sources: [
+						$.gather.semantic.vsearch.hits,
+						$.gather.keyword.triggers.hits,
+						$.gather.history.history.messages,
+					],
+				}),
+			)
+			.task('rank', ($) => C.rankHybrid.v1({ candidates: $.merge.candidates }))
+			.task('prompt', ($) =>
+				C.assemble.v2({ candidates: $.rank.candidates, budget: $.budget.available }),
+			)
+			.provider('generate', ($) =>
+				C.generateText.v1({
+					context: $.prompt.context,
+					connection: slot.connection(),
+					sampling: slot.sampling(),
+				}),
+			)
+			.consume('stream', ($) =>
+				C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
+			)
+			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+			.consume('done', ($) =>
+				C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+			),
 	)
 
 	const r = await run(doc, {
 		input: { text: 'where is my sister', chatScope: 'chat:991' },
 		bindings: bindings(),
-		world: { ...world, overrides: [{ nodeKey: 'generate', slot: 'sampling', path: '$ref', value: 'cfg_creative', scopeKind: 'instance' }] },
+		world: {
+			...world,
+			overrides: [
+				{
+					nodeKey: 'generate',
+					slot: 'sampling',
+					path: '$ref',
+					value: 'cfg_creative',
+					scopeKind: 'instance',
+				},
+			],
+		},
 		seed: 'seed:demo',
 		actorUserId: '42',
 		subscribers: { 'core:event/message-created@1': 1 },

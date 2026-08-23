@@ -15,7 +15,21 @@
  * one. An author picks a default; the user's setting wins over it. Forbidding review is
  * not a value this type can hold, which is the enforcement (F14).
  */
-export const POSITIONS = ['off', 'async', 'sync'];
+export const POSITIONS = ['off', 'on'];
+/**
+ * What the two retired spellings mean now.
+ *
+ * `sync` is `on` by definition. `async` becomes `on` rather than `off` because
+ * somebody who asked to review a write should keep being asked: quietly
+ * dropping the gate is the one migration outcome that could let an unreviewed
+ * write land on an install that had deliberately gated it.
+ */
+const LEGACY_POSITIONS = {
+    off: 'off',
+    sync: 'on',
+    async: 'on',
+    on: 'on',
+};
 export function hashPayload(v) {
     const s = JSON.stringify(v ?? null);
     let h = 2166136261;
@@ -28,10 +42,11 @@ export function hashPayload(v) {
  * else off. An author can raise the floor and never lower it below what a user chose.
  */
 export function resolvePosition(authorDefault, userSetting) {
-    if (typeof userSetting === 'string' && POSITIONS.includes(userSetting)) {
-        return userSetting;
-    }
-    return authorDefault ?? 'off';
+    if (typeof userSetting === 'string' && userSetting in LEGACY_POSITIONS)
+        return LEGACY_POSITIONS[userSetting];
+    if (authorDefault && authorDefault in LEGACY_POSITIONS)
+        return LEGACY_POSITIONS[authorDefault];
+    return 'off';
 }
 /** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). */
 export function isGated(effects) {

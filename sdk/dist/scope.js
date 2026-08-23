@@ -60,7 +60,8 @@ export function makeScope(knownKeys, localPrefix, blockId) {
             return `${localPrefix}.${joined}`;
         return knownKeys.has(joined) ? joined : undefined;
     };
-    const isPrefix = (joined) => [...knownKeys].some((k) => k.startsWith(`${joined}.`) || (!!localPrefix && k.startsWith(`${localPrefix}.${joined}.`)));
+    const isPrefix = (joined) => [...knownKeys].some((k) => k.startsWith(`${joined}.`) ||
+        (!!localPrefix && k.startsWith(`${localPrefix}.${joined}.`)));
     /**
      * A path segment can be three things at once, and the order matters:
      *
@@ -75,7 +76,17 @@ export function makeScope(knownKeys, localPrefix, blockId) {
     const walk = (path) => {
         const joined = path.join('.');
         const selfKey = joined ? resolveKey(joined) : undefined;
-        const target = selfKey ? $ref(selfKey, 'main') : Object.create(null);
+        // `$.block.item`, written from inside that block, is the iteration item when
+        // used as a *value* — while staying a step on the walk to the chain's inner
+        // nodes (`$.agent.item.turn` still reaches the node). Without this the path
+        // was a bare prefix, so the reference silently serialized to nothing: the
+        // one wiring mistake that produces plausible output against missing input.
+        const itemKey = !selfKey && blockId && joined === `${blockId}.item` ? `${blockId}.${ITEM}` : undefined;
+        const target = selfKey
+            ? $ref(selfKey, 'main')
+            : itemKey
+                ? $ref(itemKey, 'main')
+                : Object.create(null);
         return new Proxy(target, {
             get(t, prop, recv) {
                 if (typeof prop !== 'string')
@@ -90,7 +101,14 @@ export function makeScope(knownKeys, localPrefix, blockId) {
                     return refAccessor(`${blockId}.${ITEM}`);
                 const next = [...path, prop];
                 const nextJoined = next.join('.');
-                if (resolveKey(nextJoined) || isPrefix(nextJoined))
+                // Inside a block, `block.item` is always a walkable path — the chain
+                // itself — even before any inner node is declared. Without this,
+                // authoring `$.drafting.item` while *declaring* the first inner node
+                // fell through to the port branch and quietly produced an edge from
+                // the block's (not yet existing) `item` port.
+                if (resolveKey(nextJoined) ||
+                    isPrefix(nextJoined) ||
+                    (blockId && nextJoined === `${blockId}.item`))
                     return walk(next);
                 if (selfKey)
                     return refAccessor(selfKey, prop);

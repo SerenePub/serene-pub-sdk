@@ -176,7 +176,13 @@ function isWrittenOut(raw, blanked) {
 export function scanSource(files) {
     const findings = [];
     const permissions = new Set();
-    const declared = { extensions: 0, pipelineHooks: 0, lifecycleHooks: 0, eventHooks: 0, components: 0 };
+    const declared = {
+        extensions: 0,
+        pipelineHooks: 0,
+        lifecycleHooks: 0,
+        eventHooks: 0,
+        components: 0,
+    };
     for (const f of files) {
         const code = blankNonCode(f.text);
         for (const name of Object.keys(MUST_BE_STATIC)) {

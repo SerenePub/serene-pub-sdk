@@ -10,12 +10,27 @@
  *   · plugin code cannot decline it, detect it, or tell an approved payload from an edited one
  *   · an author may default it **on** for their own node; forbidding it is not expressible
  */
-export type ReviewPosition = 'off' | 'async' | 'sync';
+/**
+ * On or off, and nothing between.
+ *
+ * There used to be a third position, `async`: run the node, land the write as a
+ * proposal, and record it for somebody to look at later. Nobody could name a
+ * case for it. A graph proposal must never auto-apply, so it wants the blocking
+ * position; a review record per generated message is noise nobody reads. It was
+ * a shape the spec allowed rather than a thing anyone asked for, and every
+ * screen that offered it had to explain the difference before the reader could
+ * choose.
+ *
+ * `on` is the old `sync`: the run parks until somebody decides. `resolvePosition`
+ * still reads the two old spellings, because a stored setting or a plugin's
+ * `reviewDefault` may predate this.
+ */
+export type ReviewPosition = 'off' | 'on';
 export interface ReviewRequest {
     nodeKey: string;
     typeId: string;
     payload: unknown;
-    position: Extract<ReviewPosition, 'sync' | 'async'>;
+    position: Extract<ReviewPosition, 'on'>;
 }
 export interface ReviewDecision {
     action: 'approve' | 'edit' | 'reject';

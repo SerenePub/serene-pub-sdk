@@ -3,10 +3,32 @@
  * independently per path — which is what makes an admin's connection change reach a
  * user who has customized their prompts (F20).
  *
+ * ## Why `instance` sits above `preset` (0.6 revision)
+ *
+ * The original order put the selected config above the instance layer, reading
+ * `instance` as "the defaults a config sits on". That made an administrator's
+ * live edit the one write in the system that could store cleanly and do
+ * nothing: the shipped default config covers most paths, so an instance
+ * override under it was permanently shadowed — found the day an admin changed
+ * a budget on screen and the run kept using the config's number.
+ *
+ * The revised reading: a *named config* is a value source you select; an
+ * *override* is a decision someone made on top of it. Overrides therefore
+ * always beat the selected config, and among overrides the more specific
+ * scope wins — chat, then user, then instance.
+ *
+ * `defaults` is the sixth scope the split forced into the open: values a host
+ * *projects* — system settings, a legacy layer — rather than values anyone
+ * decided. They sit under the selected config, which is where "defaults" have
+ * always belonged; the old chain filed them under `instance` and the two
+ * meanings of that word are exactly what shadowed the admin's edits. Nothing
+ * interactive ever writes at `defaults` (it appears in no write matrix row);
+ * `author` — the type's declared parameter defaults — stays the floor.
+ *
  * Resolved run-wide *before* execution, which is why referencing another node's
  * config is not a data edge (F35).
  */
-export type ScopeKind = 'chat' | 'user' | 'preset' | 'instance' | 'author';
+export type ScopeKind = 'chat' | 'user' | 'preset' | 'instance' | 'defaults' | 'author';
 export declare const SCOPE_ORDER: ScopeKind[];
 export interface OverrideRow {
     nodeKey: string;
@@ -46,6 +68,31 @@ export interface ConfigWorld {
     authorDefaults?: Record<string, Record<string, Record<string, unknown>>>;
 }
 export type ResolvedConfig = Record<string, Record<string, Record<string, unknown>>>;
+/**
+ * A resolved value **and the layer it won at**.
+ *
+ * The layer is not decoration. *"I changed this and nothing happened"* is the
+ * most common support question this system can produce, and it is unanswerable
+ * from the value alone — the answer is always "something above you set it too",
+ * and only this says which something.
+ */
+export interface ResolvedSource {
+    value: unknown;
+    /** Which layer won. `author` means the declared default was never overridden. */
+    scopeKind: ScopeKind | 'author';
+    /** The user or chat the winning row belonged to, where one applies. */
+    scopeId?: string | number;
+}
+export type ResolvedConfigSources = Record<string, Record<string, Record<string, ResolvedSource>>>;
+/**
+ * Effective config **with provenance** = base ⊕ overrides, per (nodeKey, slot, path).
+ *
+ * This is the primitive; `resolveConfig` is derived from it rather than written
+ * beside it. Two implementations of a five-layer walk are two implementations
+ * that eventually disagree about which layer wins — and the one that disagrees
+ * silently is whichever one the UI is not using.
+ */
+export declare function resolveConfigSources(world: ConfigWorld, nodeKeys: string[]): ResolvedConfigSources;
 /** Effective config = base ⊕ overrides, per (nodeKey, slot, path). */
 export declare function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedConfig;
 /**

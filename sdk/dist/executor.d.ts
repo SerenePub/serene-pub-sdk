@@ -5,21 +5,21 @@
  * discriminated results including halt, per-run seed, timeouts that bound execution
  * but never waiting, consumption budgets, per-kind injection, and core-emitted events.
  */
-import type { SpecDocument } from "./document.js";
-import type { Receipt } from "./receipt.js";
-import { type ConfigWorld } from "./config.js";
-import { type Reviewer } from "./review.js";
+import type { SpecDocument } from './document.js';
+import type { Receipt } from './receipt.js';
+import { type ConfigWorld } from './config.js';
+import { type Reviewer } from './review.js';
 export type Result<T = unknown> = {
-    kind: "ok";
+    kind: 'ok';
     value: T;
 } | {
-    kind: "err";
+    kind: 'err';
     reason: string;
 } | {
-    kind: "cancelled";
+    kind: 'cancelled';
     reason?: string;
 } | {
-    kind: "halt";
+    kind: 'halt';
     reason: string;
 };
 export declare const ok: <T>(value: T) => Result<T>;
@@ -45,21 +45,21 @@ export interface BranchResults {
     ok: boolean;
 }
 export type WriteResult = {
-    status: "committed";
+    status: 'committed';
     ids: Record<string, unknown>;
 } | {
-    status: "pending";
+    status: 'pending';
     proposalId: string;
 };
 export declare const isCommitted: (w: WriteResult) => w is Extract<WriteResult, {
-    status: "committed";
+    status: 'committed';
 }>;
 export interface TaskCtx {
     /** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
     random?: () => number;
     signal: AbortSignal;
     progress(message: string): void;
-    log(level: "info" | "warn", message: string): void;
+    log(level: 'info' | 'warn', message: string): void;
 }
 export interface QueryCtx extends TaskCtx {
     read(table: string, q?: unknown): unknown;
@@ -81,13 +81,34 @@ export interface Bindings {
     [typeIdAtVersion: string]: Hook;
 }
 export declare function seededRandom(seed: string): () => number;
+/**
+ * One node invocation, starting or settling. Identity only — no payloads, no
+ * values: this exists so a progress card can say "step 3 of 7 · drafting",
+ * and anything richer belongs to the receipt.
+ */
+export interface NodeEvent {
+    phase: 'start' | 'end';
+    nodeKey: string;
+    typeId: string;
+    kind: string;
+    /** Invocations begun so far — a done-count, monotonic within the run. */
+    seq: number;
+    /**
+     * Nodes the document declares. A floor, not a total: map fan-out adds
+     * invocations at runtime, so `seq` may legitimately pass it.
+     */
+    declared: number;
+    iteration?: number;
+    /** Present on `end`. */
+    result?: Result['kind'];
+}
 export interface RunOptions {
     input: unknown;
     bindings: Bindings;
     world?: ConfigWorld;
     seed?: string;
     runId?: string;
-    triggerSource?: Receipt["triggerSource"];
+    triggerSource?: Receipt['triggerSource'];
     triggerRef?: string;
     actorUserId?: string;
     /** Instance ceiling — config may not exceed it (F36). */
@@ -104,6 +125,17 @@ export interface RunOptions {
     now?: () => number;
     /** Host-supplied review resolver. `sync` parks on it; waiting is free (F13). */
     reviewer?: Reviewer;
+    /**
+     * Node lifecycle observation, for progress display and nothing else.
+     *
+     * Fired as each node's invocation starts and again when it settles, with
+     * enough identity to drive a progress card — never the payload. Progress is
+     * not a second receipt: it carries no values, it is not recorded, and a
+     * host that wants what ran reads the receipt afterwards (F34). Inherent to
+     * every run rather than wired per trigger, which is what lets any UI show
+     * "step 3 of 7" without knowing what the pipeline does.
+     */
+    onNode?: (event: NodeEvent) => void;
     /**
      * Time this run sat in the admin-visible queue before being dequeued (13 §3).
      * Recorded, and deliberately **not** added to any elapsed figure: queue wait

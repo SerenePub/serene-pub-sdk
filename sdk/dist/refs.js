@@ -10,15 +10,55 @@ export function $ref(node, port = 'main') {
 }
 const addr = (n) => (typeof n === 'object' ? n.node : n);
 export const slot = {
-    connection: (ofNode) => ({ __ref: 'slot', slot: 'connection', ofNode: addr(ofNode) }),
-    sampling: (ofNode) => ({ __ref: 'slot', slot: 'sampling', ofNode: addr(ofNode) }),
-    prompts: () => ({ __ref: 'slot', slot: 'prompts' }),
+    connection: (ofNode) => ({
+        __ref: 'slot',
+        slot: 'connection',
+        ofNode: addr(ofNode),
+    }),
+    sampling: (ofNode) => ({
+        __ref: 'slot',
+        slot: 'sampling',
+        ofNode: addr(ofNode),
+    }),
+    /**
+     * With a target, the slot is *shared*: the node reads the target's authored
+     * prompts and declares none of its own to configure. One authored text, one
+     * place to edit it — three nodes that each demanded the same system prompt
+     * is the defect this exists to close (13 §12 finding i).
+     */
+    prompts: (ofNode) => ({
+        __ref: 'slot',
+        slot: 'prompts',
+        ofNode: addr(ofNode),
+    }),
     template: () => ({ __ref: 'slot', slot: 'template' }),
     params: () => ({ __ref: 'slot', slot: 'params' }),
+    /**
+     * With a target, the slot is *shared* — the same reading as `prompts`. A node
+     * that consumes another's rendered variables reads that node's selections
+     * rather than declaring a parallel set nobody would think to keep in step.
+     */
+    variables: (ofNode) => ({
+        __ref: 'slot',
+        slot: 'variables',
+        ofNode: addr(ofNode),
+    }),
     /** Explicit provider reference — always unambiguous. */
-    providerRef: (node) => ({ __ref: 'slot', slot: 'connection', ofNode: addr(node) }),
-    connectionOf: (node) => ({ __ref: 'slot', slot: 'connection', ofNode: addr(node) }),
-    samplingOf: (node) => ({ __ref: 'slot', slot: 'sampling', ofNode: addr(node) }),
+    providerRef: (node) => ({
+        __ref: 'slot',
+        slot: 'connection',
+        ofNode: addr(node),
+    }),
+    connectionOf: (node) => ({
+        __ref: 'slot',
+        slot: 'connection',
+        ofNode: addr(node),
+    }),
+    samplingOf: (node) => ({
+        __ref: 'slot',
+        slot: 'sampling',
+        ofNode: addr(node),
+    }),
     /**
      * Resolves at publish to the first Provider reachable forward. Compiles to the
      * explicit form, so nothing implicit survives into rows (16 §5b-i).

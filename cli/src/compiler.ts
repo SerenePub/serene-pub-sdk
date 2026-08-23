@@ -48,7 +48,7 @@ export interface Manifest {
 	/** Node types this plugin registers, summarized for the audit screen (10 §10.2). */
 	types: TypeSummary[]
 	hooks: {
-		pipeline: Array<{ typeId: string; visibility: 'private' | 'public'; runtime: 'node' | 'process' }>
+		pipeline: Array<{ typeId: string; visibility: 'private' | 'public'; runtime: 'process' }>
 		lifecycle: Array<{ moment: string; cadence?: string }>
 		event: Array<{ event: string }>
 	}
@@ -76,7 +76,8 @@ export interface CompileResult {
 /** Calls whose arguments must be written out, and why a computed one is refused. */
 const MUST_BE_STATIC: Record<string, string> = {
 	defineExtension: 'the manifest is built from this call without running it',
-	pipelineHook: 'a hook assembled at runtime cannot appear in the manifest, so it could never be permitted',
+	pipelineHook:
+		'a hook assembled at runtime cannot appear in the manifest, so it could never be permitted',
 	lifecycleHook: 'lifecycle moments are fixed; a computed one cannot be audited',
 	eventHook: 'an event subscription nobody can see is a side effect nobody consented to',
 	component: 'surfaces are declared so core can render them without loading your code',
@@ -151,7 +152,11 @@ function matchParen(code: string, open: number): number {
 	return -1
 }
 
-function topLevelSplit(code: string, from: number, to: number): Array<{ start: number; end: number }> {
+function topLevelSplit(
+	code: string,
+	from: number,
+	to: number,
+): Array<{ start: number; end: number }> {
 	const parts: Array<{ start: number; end: number }> = []
 	let depth = 0
 	let start = from
@@ -208,7 +213,13 @@ export interface StaticScan {
 	findings: CompileFinding[]
 	permissions: string[]
 	/** Declaration call sites found, for cross-checking against the evaluated module. */
-	declared: { extensions: number; pipelineHooks: number; lifecycleHooks: number; eventHooks: number; components: number }
+	declared: {
+		extensions: number
+		pipelineHooks: number
+		lifecycleHooks: number
+		eventHooks: number
+		components: number
+	}
 }
 
 /**
@@ -223,7 +234,13 @@ export interface StaticScan {
 export function scanSource(files: Array<{ path: string; text: string }>): StaticScan {
 	const findings: CompileFinding[] = []
 	const permissions = new Set<string>()
-	const declared = { extensions: 0, pipelineHooks: 0, lifecycleHooks: 0, eventHooks: 0, components: 0 }
+	const declared = {
+		extensions: 0,
+		pipelineHooks: 0,
+		lifecycleHooks: 0,
+		eventHooks: 0,
+		components: 0,
+	}
 
 	for (const f of files) {
 		const code = blankNonCode(f.text)
@@ -242,7 +259,13 @@ export function scanSource(files: Array<{ path: string; text: string }>): Static
 				if (name === 'component') declared.components++
 
 				for (const [i, part] of topLevelSplit(code, open + 1, close).entries()) {
-					if (isWrittenOut(f.text.slice(part.start, part.end), code.slice(part.start, part.end))) continue
+					if (
+						isWrittenOut(
+							f.text.slice(part.start, part.end),
+							code.slice(part.start, part.end),
+						)
+					)
+						continue
 					findings.push({
 						severity: 'error',
 						file: f.path,
@@ -403,7 +426,10 @@ export function compilePlugin(input: CompileInput): CompileResult {
 export function renderFindings(findings: CompileFinding[]): string {
 	if (!findings.length) return 'compiled cleanly'
 	return findings
-		.map((f) => `${f.severity === 'error' ? '✗' : '⚠'} ${f.file}:${f.line}  [${f.code}] ${f.message}\n    → ${f.fix}`)
+		.map(
+			(f) =>
+				`${f.severity === 'error' ? '✗' : '⚠'} ${f.file}:${f.line}  [${f.code}] ${f.message}\n    → ${f.fix}`,
+		)
 		.join('\n')
 }
 

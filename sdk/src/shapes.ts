@@ -33,14 +33,10 @@ export function isStreaming(id: ShapeId): boolean {
 }
 
 /** The permissive sink: anything serializable may flow into a json port. */
-export const JSON_SHAPE = "core:shape/json@1"
+export const JSON_SHAPE = 'core:shape/json@1'
 
 /** Assignability: identical, into json, or declared assignable (transitively). */
-export function assignable(
-	from: ShapeId,
-	to: ShapeId,
-	seen = new Set<ShapeId>()
-): boolean {
+export function assignable(from: ShapeId, to: ShapeId, seen = new Set<ShapeId>()): boolean {
 	if (from === to) return true
 	if (to === JSON_SHAPE) return true
 	if (seen.has(from)) return false
@@ -57,17 +53,17 @@ export function _clearShapes(): void {
 
 // ── Core shapes ─────────────────────────────────────────────────────────────
 export const S = {
-	text: defineShape({ id: "core:shape/text@1" }),
+	text: defineShape({ id: 'core:shape/text@1' }),
 	textStream: defineShape({
-		id: "core:shape/text-stream@1",
-		assignableTo: ["core:shape/text@1"],
-		streaming: true
+		id: 'core:shape/text-stream@1',
+		assignableTo: ['core:shape/text@1'],
+		streaming: true,
 	}),
-	chatScope: defineShape({ id: "core:shape/chat-scope@1" }),
-	messages: defineShape({ id: "core:shape/messages@1" }),
-	candidates: defineShape({ id: "core:shape/context-candidates@1" }),
-	renderedBlocks: defineShape({ id: "core:shape/rendered-blocks@1" }),
-	assembled: defineShape({ id: "core:shape/assembled-context@1" }),
+	chatScope: defineShape({ id: 'core:shape/chat-scope@1' }),
+	messages: defineShape({ id: 'core:shape/messages@1' }),
+	candidates: defineShape({ id: 'core:shape/context-candidates@1' }),
+	renderedBlocks: defineShape({ id: 'core:shape/rendered-blocks@1' }),
+	assembled: defineShape({ id: 'core:shape/assembled-context@1' }),
 
 	/**
 	 * What Assemble publishes after the allocation/formatting split (16 §7): ordered
@@ -79,8 +75,8 @@ export const S = {
 	 * thrown away everything the panel and the budget need.
 	 */
 	allocated: defineShape({
-		id: "core:shape/allocated-context@1",
-		assignableTo: ["core:shape/assembled-context@1"]
+		id: 'core:shape/allocated-context@1',
+		assignableTo: ['core:shape/assembled-context@1'],
 	}),
 	/**
 	 * The object a context template renders against: characters, personas,
@@ -97,11 +93,11 @@ export const S = {
 	 * is shown or named. The input to the context builder, kept distinct from the
 	 * built context so the two can be replaced independently.
 	 */
-	chatCast: defineShape({ id: "core:shape/chat-cast@1" }),
-	templateContext: defineShape({ id: "core:shape/template-context@1" }),
-	vector: defineShape({ id: "core:shape/vector@1" }),
-	budget: defineShape({ id: "core:shape/context-budget@1" }),
-	rowIds: defineShape({ id: "core:shape/row-ids@1" }),
+	chatCast: defineShape({ id: 'core:shape/chat-cast@1' }),
+	templateContext: defineShape({ id: 'core:shape/template-context@1' }),
+	vector: defineShape({ id: 'core:shape/vector@1' }),
+	budget: defineShape({ id: 'core:shape/context-budget@1' }),
+	rowIds: defineShape({ id: 'core:shape/row-ids@1' }),
 
 	/**
 	 * The output of an async block or a map (01 §1, 13 §1). An ordered list in
@@ -110,7 +106,7 @@ export const S = {
 	 * somebody. `async` and `map` produce the same shape, so one equivalence
 	 * harness covers both (F26).
 	 */
-	branchResults: defineShape({ id: "core:shape/branch-results@1" }),
+	branchResults: defineShape({ id: 'core:shape/branch-results@1' }),
 
 	/**
 	 * What a **gate-eligible** Consumer publishes (13 §7j-b). Discriminated, because
@@ -124,14 +120,41 @@ export const S = {
 	 * is no branch node to check `status` with (F25), so the obligation belongs to
 	 * the type, not to the spec.
 	 */
-	writeResult: defineShape({ id: "core:shape/write-result@1" }),
-	audio: defineShape({ id: "core:shape/audio@1" }),
-	image: defineShape({ id: "core:shape/image@1" }),
-	json: defineShape({ id: "core:shape/json@1" }),
+	writeResult: defineShape({ id: 'core:shape/write-result@1' }),
+	/**
+	 * A request to summarize something into a lore entry.
+	 *
+	 * Its own shape rather than `json@1` because it is what the summarize
+	 * pipelines take as *input*, and 11 §2 matches an event's payload against a
+	 * pipeline's Input contract by shape. A request typed as bare json would make
+	 * every pipeline compatible with every event.
+	 */
+	summarizeRequest: defineShape({ id: 'core:shape/summarize-request@1' }),
+	/**
+	 * The ordered batch drafts phase 1 produces, before synthesis merges them.
+	 *
+	 * Ordered, and the order is load-bearing: the drafts are chronological
+	 * slices of a conversation and synthesis reads them as a sequence. A shape
+	 * that permitted reordering would turn a narrative into a pile of events.
+	 */
+	drafts: defineShape({ id: 'core:shape/drafts@1' }),
+	/** Scenes with their messages, as the graph builder walks them. */
+	graphScenes: defineShape({ id: 'core:shape/graph-scenes@1' }),
+	/**
+	 * A proposed set of graph nodes and relationships, before a person approves it.
+	 *
+	 * Distinct from anything holding row ids, for the reason `write-result@1`
+	 * exists: a proposal is not yet a row, and a downstream node that treated it
+	 * as one would wire a foreign key to something a reviewer may still reject.
+	 */
+	graphProposal: defineShape({ id: 'core:shape/graph-proposal@1' }),
+	audio: defineShape({ id: 'core:shape/audio@1' }),
+	image: defineShape({ id: 'core:shape/image@1' }),
+	json: defineShape({ id: 'core:shape/json@1' }),
 
 	// connection / sampling kinds — the same ids, which is the point (F17)
-	textGen: defineShape({ id: "core:shape/text-gen@1" }),
-	embeddings: defineShape({ id: "core:shape/embeddings@1" }),
-	tts: defineShape({ id: "core:shape/tts@1" }),
-	imageGen: defineShape({ id: "core:shape/image-gen@1" })
+	textGen: defineShape({ id: 'core:shape/text-gen@1' }),
+	embeddings: defineShape({ id: 'core:shape/embeddings@1' }),
+	tts: defineShape({ id: 'core:shape/tts@1' }),
+	imageGen: defineShape({ id: 'core:shape/image-gen@1' }),
 } as const

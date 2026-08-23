@@ -32,14 +32,27 @@ export interface PipelineHookDecl<D extends Descriptor<any, any, any> = Descript
 	type: D
 	visibility: 'private' | 'public'
 	handler: (input: any, ctx: any) => Result | Promise<Result>
-	/** `node` runs in-process; `process` is the transport that can actually stop (13 §7h). */
-	runtime?: 'node' | 'process'
+	/**
+	 * Always its own process. There is no in-process option, and that is a rule
+	 * rather than a default.
+	 *
+	 * An extension hook running inside Serene Pub's process cannot be stopped —
+	 * a runaway loop or a blocking call takes the whole application with it, and
+	 * F36's promise that every hook invocation is bounded becomes unenforceable
+	 * (13 §7h). It also shares the host's memory, so a crash is the host's crash
+	 * and a leak is the host's leak.
+	 *
+	 * Kept as a field rather than dropped because the *value* still travels into
+	 * the registry row, where install-time validation reads it without executing
+	 * the plugin (F6). A manifest claiming anything else is refused there.
+	 */
+	runtime?: 'process'
 }
 
 export function pipelineHook<D extends Descriptor<any, any, any>>(
 	type: D | { descriptor: D },
 	handler: PipelineHookDecl<D>['handler'],
-	opts: { visibility?: 'private' | 'public'; runtime?: 'node' | 'process' } = {},
+	opts: { visibility?: 'private' | 'public' } = {},
 ): PipelineHookDecl<D> {
 	const descriptor = ('descriptor' in type ? type.descriptor : type) as D
 	return {
@@ -47,7 +60,8 @@ export function pipelineHook<D extends Descriptor<any, any, any>>(
 		type: descriptor,
 		visibility: opts.visibility ?? (descriptor.public ? 'public' : 'private'),
 		handler,
-		runtime: opts.runtime,
+		// Not configurable. See the note on the field.
+		runtime: 'process',
 	}
 }
 
@@ -74,7 +88,11 @@ export interface EventHookDecl {
 	timeoutMs?: number
 }
 
-export const eventHook = (event: string, handler: EventHook, opts: { timeoutMs?: number } = {}): EventHookDecl => ({
+export const eventHook = (
+	event: string,
+	handler: EventHook,
+	opts: { timeoutMs?: number } = {},
+): EventHookDecl => ({
 	__decl: 'event-hook',
 	event,
 	handler,
@@ -97,7 +115,10 @@ export interface ComponentDecl {
 	settings?: SettingsSchema
 }
 
-export const component = (d: Omit<ComponentDecl, '__decl'>): ComponentDecl => ({ __decl: 'component', ...d })
+export const component = (d: Omit<ComponentDecl, '__decl'>): ComponentDecl => ({
+	__decl: 'component',
+	...d,
+})
 
 // ── The extension ───────────────────────────────────────────────────────────
 
@@ -143,7 +164,9 @@ export function defineExtension(d: ExtensionDecl): Extension {
 		)
 	}
 	if (!/^\d+\.\d+\.\d+/.test(d.version)) {
-		problems.push(`'${d.version}' is not semver. A plugin upgrades by version comparison (12 §3b).`)
+		problems.push(
+			`'${d.version}' is not semver. A plugin upgrades by version comparison (12 §3b).`,
+		)
 	}
 
 	// Every id a plugin registers must sit under its own namespace. `core:` is reserved
@@ -170,12 +193,15 @@ export function defineExtension(d: ExtensionDecl): Extension {
 
 	const seen = new Set<string>()
 	for (const c of d.components ?? []) {
-		if (seen.has(c.slug)) problems.push(`duplicate component slug '${c.slug}' — slugs are the sync key (12 §3b).`)
+		if (seen.has(c.slug))
+			problems.push(`duplicate component slug '${c.slug}' — slugs are the sync key (12 §3b).`)
 		seen.add(c.slug)
 	}
 
 	if (problems.length) {
-		throw new ExtensionError(`invalid extension '${d.slug}':\n` + problems.map((p) => `  • ${p}`).join('\n'))
+		throw new ExtensionError(
+			`invalid extension '${d.slug}':\n` + problems.map((p) => `  • ${p}`).join('\n'),
+		)
 	}
 	return { __extension: true, ...d }
 }

@@ -33,7 +33,6 @@ const gated = () =>
 
 const reviewOff = { ...world, overrides: [{ nodeKey: 'save', slot: 'settings', path: 'review', value: 'off', scopeKind: 'user' as const }] }
 const reviewSync = { ...world, overrides: [{ nodeKey: 'save', slot: 'settings', path: 'review', value: 'sync', scopeKind: 'user' as const }] }
-const reviewAsync = { ...world, overrides: [{ nodeKey: 'save', slot: 'settings', path: 'review', value: 'async', scopeKind: 'user' as const }] }
 
 // ── 25 · off commits straight through ───────────────────────────────────────
 test('25 · review off invokes the binding directly', async () => {
@@ -147,17 +146,30 @@ describe('28 · author defaults, user overrides', () => {
 			},
 			bindings: bindings(),
 		})
-		assert.ok(reviewed, 'attachImage declares reviewDefault: sync')
+		assert.ok(reviewed, 'attachImage declares reviewDefault: on')
 	})
 
 	test('the user can turn it off — the author cannot prevent that', () => {
-		assert.equal(resolvePosition('sync', 'off'), 'off')
-		assert.equal(resolvePosition('sync', undefined), 'sync')
+		assert.equal(resolvePosition('on', 'off'), 'off')
+		assert.equal(resolvePosition('on', undefined), 'on')
 	})
 
 	test('there is no position that forbids review (F14)', () => {
-		assert.deepEqual([...POSITIONS], ['off', 'async', 'sync'])
+		assert.deepEqual([...POSITIONS], ['off', 'on'])
 		assert.ok(!(POSITIONS as readonly string[]).includes('never'))
+	})
+
+	test('the two retired spellings still resolve, and resolve to on', () => {
+		// A stored setting or a plugin's `reviewDefault` can predate the
+		// removal of `async`. Reading them as `off` would silently drop a gate
+		// somebody deliberately turned on, which is the one outcome of this
+		// change that could let an unreviewed write land.
+		assert.equal(resolvePosition(undefined, 'sync'), 'on')
+		assert.equal(resolvePosition(undefined, 'async'), 'on')
+		assert.equal(resolvePosition('sync' as never, undefined), 'on')
+		assert.equal(resolvePosition('async' as never, undefined), 'on')
+		assert.equal(resolvePosition(undefined, 'off'), 'off')
+		assert.equal(resolvePosition(undefined, undefined), 'off')
 	})
 
 	test('the gate keys on effects, not on kind — an effectful Provider gates too', () => {
@@ -177,34 +189,16 @@ test('29 · the receipt records the decision, both hashes and who', async () => 
 		bindings: bindings(),
 	})
 	const rec = r.reviews!.find((x) => x.nodeKey === 'save')!
-	assert.equal(rec.position, 'sync')
+	assert.equal(rec.position, 'on')
 	assert.equal(rec.action, 'edit')
 	assert.equal(rec.by, 'jody')
 	assert.notEqual(rec.originalHash, rec.editedHash)
 	assert.equal(rec.editedHash, hashPayload({ text: 'edited' }))
-	assert.match(renderReceipt(r), /review save: sync → edit \(edited/)
+	assert.match(renderReceipt(r), /review save: on → edit \(edited/)
 })
 
-// ── 30 · async proposes and does not block — and one real finding ───────────
-describe('30 · async review', () => {
-	test('the run continues without invoking the binding', async () => {
-		let invoked = 0
-		const r = await run(publish(gated()), {
-			input: {},
-			world: reviewAsync,
-			reviewer: approver,
-			bindings: bindings({
-				'core:consumer/create-message@1': async () => {
-					invoked++
-					return ok({ main: 'x' })
-				},
-			}),
-		})
-		assert.equal(r.outcome, 'ok', 'the run does not block')
-		assert.equal(invoked, 0, 'the write lands pending; the binding has not run')
-		assert.equal(r.reviews!.find((x) => x.nodeKey === 'save')!.action, 'proposed')
-	})
-
+// ── 30 · a write result is discriminated, whoever produces it ───────────────
+describe('30 · pending and committed are one shape', () => {
 	/**
 	 * RULED (13 §7j-b) — the finding this test opened is now closed. A gate-eligible
 	 * write publishes a **discriminated** result, so `pending` and `committed` are the
@@ -221,13 +215,32 @@ describe('30 · async review', () => {
 			.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
 			.consume('done', $ => C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }))
 
-	const sawFrom = async (world: any) => {
+	/**
+	 * The producer is a binding rather than the review gate.
+	 *
+	 * `async` review used to be the only thing that published a `pending`
+	 * write, and it is gone — but `WriteResult` still carries the case, because
+	 * a host's `commit` may queue rather than write. Driving it from a binding
+	 * tests the type's contract instead of one retired path into it, which is
+	 * what the ruling was actually about.
+	 */
+	const sawFrom = async (pending: boolean) => {
 		let seen: any
 		await run(publish(downstreamSpec()), {
 			input: {},
-			world,
+			world: undefined,
 			reviewer: approver,
 			bindings: bindings({
+				...(pending
+					? {
+							// Returned as the WriteResult itself, not nested under a
+							// port: `isWriteResult` inspects the binding's whole
+							// return value, and anything else is wrapped as
+							// committed with the return as its ids.
+							'core:consumer/create-message@1': async () =>
+								ok({ status: 'pending', proposalId: 'proposal:save' }),
+						}
+					: {}),
 				'core:consumer/emit-socket@1': async (i: any) => {
 					seen = i.from
 					return ok({ main: 'emitted' })
@@ -237,22 +250,22 @@ describe('30 · async review', () => {
 		return seen
 	}
 
-	test('under async review downstream receives status:pending, never a bare id', async () => {
-		const seen = await sawFrom(reviewAsync)
+	test('a pending write reaches downstream as status:pending, never a bare id', async () => {
+		const seen = await sawFrom(true)
 		assert.equal(seen.status, 'pending')
 		assert.match(String(seen.proposalId), /^proposal:/)
 		assert.equal(seen.ids, undefined, 'there are no ids yet — that is the point')
 	})
 
-	test('with the gate off the same port carries status:committed and the ids', async () => {
-		const seen = await sawFrom(undefined)
+	test('a committed write carries status:committed and the ids', async () => {
+		const seen = await sawFrom(false)
 		assert.equal(seen.status, 'committed')
 		assert.ok(seen.ids, 'committed carries ids; pending does not')
 	})
 
 	test('the two cases are one shape, so a hook that handles both cannot be surprised', async () => {
-		const pending = await sawFrom(reviewAsync)
-		const committed = await sawFrom(undefined)
+		const pending = await sawFrom(true)
+		const committed = await sawFrom(false)
 		// A hook discriminates on one field it is guaranteed to have. There is no branch
 		// node to do this in the spec (F25), which is why the obligation is the type's.
 		for (const w of [pending, committed]) {
@@ -333,7 +346,7 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 				overrides: [{ nodeKey: 'tool', slot: 'settings', path: 'review', value: 'sync', scopeKind: 'instance' as const }],
 			},
 		})
-		assert.equal(r.reviews!.find((x) => x.nodeKey === 'tool')!.position, 'sync')
+		assert.equal(r.reviews!.find((x) => x.nodeKey === 'tool')!.position, 'on')
 	})
 })
 
@@ -382,7 +395,11 @@ describe('32 · variable awareness', () => {
 		const f = checkTemplate('{{ entry[key] }}', scope)
 		assert.equal(f.length, 1)
 		assert.equal(f[0]!.severity, 'warning')
-		assert.match(f[0]!.fix, /top-level references only/)
+		// This used to say verification covered "top-level references only",
+		// which stopped being true when the lint learned to walk paths. What
+		// is still true, and is the reason the finding exists, is narrower: a
+		// computed key is not knowable from the source.
+		assert.match(f[0]!.fix, /computed key is not knowable/)
 	})
 })
 

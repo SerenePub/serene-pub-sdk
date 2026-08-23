@@ -12,7 +12,7 @@ export interface DataRef {
 }
 export interface SlotRef {
     readonly __ref: 'slot';
-    slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params';
+    slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables';
     /** Whose config. Undefined = this node's own. */
     ofNode?: string;
     /** Unresolved marker: resolve to the first Provider reachable forward (16 §5b-i). */
@@ -30,9 +30,21 @@ export type NodeAddress = string | {
 export declare const slot: {
     connection: (ofNode?: NodeAddress) => SlotRef;
     sampling: (ofNode?: NodeAddress) => SlotRef;
-    prompts: () => SlotRef;
+    /**
+     * With a target, the slot is *shared*: the node reads the target's authored
+     * prompts and declares none of its own to configure. One authored text, one
+     * place to edit it — three nodes that each demanded the same system prompt
+     * is the defect this exists to close (13 §12 finding i).
+     */
+    prompts: (ofNode?: NodeAddress) => SlotRef;
     template: () => SlotRef;
     params: () => SlotRef;
+    /**
+     * With a target, the slot is *shared* — the same reading as `prompts`. A node
+     * that consumes another's rendered variables reads that node's selections
+     * rather than declaring a parallel set nobody would think to keep in step.
+     */
+    variables: (ofNode?: NodeAddress) => SlotRef;
     /** Explicit provider reference — always unambiguous. */
     providerRef: (node: NodeAddress) => SlotRef;
     connectionOf: (node: NodeAddress) => SlotRef;
