@@ -1,7 +1,7 @@
 # Serene Pub SDK
 
-The pipeline SDK a Serene Pub plugin is built against. Four packages, published
-independently, so a plugin can depend on the parts it needs and nothing else.
+The pipeline SDK a Serene Pub plugin is built against. Published independently,
+so a plugin can depend on the parts it needs and nothing else.
 
 | package | what it is |
 |---|---|
@@ -9,8 +9,16 @@ independently, so a plugin can depend on the parts it needs and nothing else.
 | `@serene-pub/contracts` | the node types core ships, as pinned descriptors |
 | `@serene-pub/cli` | build-time tooling — the packager and the contracts generator |
 | `@serene-pub/conformance` | the suite a host must pass to claim it runs specs |
+| `@serene-pub/core-catalog` | core's own announcement: the genres, pipelines and hooks SP ships |
+| `@serene-pub/controls` | the Svelte control per value-type id (24 §9) |
+| `@serene-pub/ui-preview` | the surface harness `serene-pub ui` launches — dev-time only |
 
 `@serene-pub/sdk-tests` is the test suite for all of them and is not published.
+
+`controls` and `ui-preview` carry a Svelte (and, for the harness, a SvelteKit
+and Vite) dependency; everything else is pure TypeScript. That split is the
+reason they are separate packages rather than folders — a plugin that ships no
+UI never installs a frontend toolchain.
 
 ## Why four rather than one
 
@@ -58,8 +66,16 @@ and it is the kind of change that reaches CI before anyone notices.
 
 ## Licence
 
-AGPL-3.0-only, inherited from Serene Pub. **Worth a deliberate decision before
-the first publish**: a copyleft licence on an SDK reaches the plugins that link
-it, which may not be the intent for a plugin ecosystem. A permissive licence for
-the SDK packages with the application staying AGPL is the usual shape, and is a
-call for the project owner rather than a detail to inherit by default.
+The Serene Pub SDK is licensed under the **Apache License 2.0**.
+
+This is deliberately different from Serene Pub itself, which is **AGPL-3.0**.
+The SDK is the contract extensions are written against, so it is permissive:
+building on it does not place your extension under the AGPL, and you may ship
+your extension under whatever licence you choose, including a proprietary one.
+
+The application remains AGPL — a modified Serene Pub served over a network still
+has to offer its source. Permissive SDK, copyleft app: the contract is free to
+adopt, the product is not free to close.
+
+"Serene Pub" and its logo are trademarks and are **not** granted by the Apache
+licence (§6). See [TRADEMARK.md](https://github.com/doolijb/serene-pub/blob/main/TRADEMARK.md).

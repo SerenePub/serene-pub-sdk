@@ -14,7 +14,18 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec, compile, run, ok, err, halt, describeQueryType, describeTaskType, pin, S } from '@serene-pub/sdk'
+import {
+	spec,
+	compile,
+	run,
+	ok,
+	err,
+	halt,
+	describeQueryType,
+	describeTaskType,
+	pin,
+	S,
+} from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { world } from './helpers.js'
 
@@ -58,8 +69,7 @@ const go = async (which: any, hook: any) =>
 		},
 	})
 
-const nodeFor = (receipt: any, key: string) =>
-	receipt.nodes.find((n: any) => n.nodeKey === key)
+const nodeFor = (receipt: any, key: string) => receipt.nodes.find((n: any) => n.nodeKey === key)
 
 test('an optional node that errors does not stop the run', async () => {
 	const receipt: any = await go(flaky, async () => err('the graph is unreachable'))

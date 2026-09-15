@@ -25,24 +25,39 @@ const world = withEmbeddings()
 const chat = () =>
 	spec('demo:preview@1', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
-		.task('budget', C.contextBudget.v1({ connection: slot.downstreamProvider(), params: slot.params() }))
+		.task(
+			'budget',
+			C.contextBudget.v1({ connection: slot.downstreamProvider(), params: slot.params() }),
+		)
 		.async('gather', { mode: 'parallel' }, (b) =>
 			b
-				.chain('history', (c) => c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })))
+				.chain('history', (c) =>
+					c.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
+				)
 				.chain('semantic', (c) =>
 					c
-						.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
-						.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
+						.provider('embed', ($) =>
+							C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
+						)
+						.query('vsearch', ($) =>
+							C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector }),
+						),
 				),
 		)
 		.task('merge', ($) =>
-			C.mergeCandidates.v1({ sources: [$.gather.history.history.messages, $.gather.semantic.vsearch.hits] }),
+			C.mergeCandidates.v1({
+				sources: [$.gather.history.history.messages, $.gather.semantic.vsearch.hits],
+			}),
 		)
-		.task('prompt', ($) => C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }))
-		.provider('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
+		.task('prompt', ($) =>
+			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
+		)
+		.provider('generate', ($) =>
+			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+		)
 		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
-const input = { text: 'where is my sister', chatScope: { chatId: 'c1' } }
+const input = { text: 'where is my sister', sessionScope: { sessionId: 'c1' } }
 
 // ── 59 · Where it stops ─────────────────────────────────────────────────────
 describe('59 · the preview stops at the first Provider on the spine', () => {
@@ -57,8 +72,18 @@ describe('59 · the preview stops at the first Provider on the spine', () => {
 
 	test('everything upstream really ran — a preview costs the retrieval it shows', async () => {
 		const r = await run(publish(chat()), { input, world, bindings: bindings(), preview: true })
-		for (const key of ['budget', 'gather.history.history', 'gather.semantic.vsearch', 'merge', 'prompt']) {
-			assert.equal(r.nodes.find((n) => n.nodeKey === key)?.result, 'ok', `${key} should have run`)
+		for (const key of [
+			'budget',
+			'gather.history.history',
+			'gather.semantic.vsearch',
+			'merge',
+			'prompt',
+		]) {
+			assert.equal(
+				r.nodes.find((n) => n.nodeKey === key)?.result,
+				'ok',
+				`${key} should have run`,
+			)
 		}
 	})
 
@@ -76,7 +101,10 @@ describe('59 · the preview stops at the first Provider on the spine', () => {
 			}),
 		})
 		assert.equal(called, 0, 'the whole point: nothing is sent')
-		assert.equal(r.nodes.find((n) => n.nodeKey === 'save'), undefined)
+		assert.equal(
+			r.nodes.find((n) => n.nodeKey === 'save'),
+			undefined,
+		)
 		assert.equal(r.consumption.tokens, 0)
 	})
 
@@ -109,7 +137,11 @@ test('60 · the previewed payload is byte-identical to the one actually sent', a
 		}),
 	})
 
-	assert.deepEqual(previewed.preview!.context.rendered, sent, 'same payload, not a parallel estimate')
+	assert.deepEqual(
+		previewed.preview!.context.rendered,
+		sent,
+		'same payload, not a parallel estimate',
+	)
 	assert.equal(previewed.preview!.context.tokens, roughTokens(sent), 'same count')
 })
 
@@ -135,7 +167,11 @@ describe('61 · the report', () => {
 		const p = r.preview!
 		assert.ok(p.connection?.kind, 'metadata is readable')
 		const body = JSON.stringify(p)
-		assert.equal(/api[_-]?key|secret|credential|bearer/i.test(body), false, 'no material reaches the preview')
+		assert.equal(
+			/api[_-]?key|secret|credential|bearer/i.test(body),
+			false,
+			'no material reaches the preview',
+		)
 	})
 
 	test('it renders as a panel a human can read', async () => {

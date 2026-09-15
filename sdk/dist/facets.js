@@ -18,10 +18,12 @@
  * undeclared facet still gets a group of its own rather than disappearing:
  * unknown is not the same as absent, and the panel should say so.
  */
+import { refuseUnlessIdentical } from './hash.js';
 const facets = new Map();
 export function defineFacet(decl) {
-    if (facets.has(decl.id))
-        throw new Error(`duplicate facet: ${decl.id}`);
+    const existing = facets.get(decl.id);
+    if (existing)
+        refuseUnlessIdentical(existing, decl, `duplicate facet: ${decl.id}`);
     facets.set(decl.id, decl);
     return decl;
 }

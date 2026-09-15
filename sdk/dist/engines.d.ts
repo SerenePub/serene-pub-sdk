@@ -87,6 +87,16 @@ export declare const plain: TemplateEngine;
  * rather than a redesign, which is the argument for having built it.
  */
 export declare const handlebars: TemplateEngine;
+/**
+ * Liquid — core's **second** template engine, added beside Handlebars rather than
+ * instead of it.
+ *
+ * Host-supplied for the same reason Handlebars is: core renders with its own
+ * registered tag and filter set (`systemBlock`/`assistantBlock`/`userBlock`, `json`,
+ * `jsonValue`, `pad`) under a configuration a second implementation would not
+ * reproduce, and a near-miss renderer fails as what reads like a template bug.
+ */
+export declare const liquid: TemplateEngine;
 /** Sugar so a spec reads `template: jinja(SOURCE)` rather than repeating the id. */
 export declare const templateOf: (engine: TemplateEngine) => (source: string) => TemplateValue;
 export declare const jinja: (source: string) => TemplateValue;

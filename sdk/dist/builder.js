@@ -14,6 +14,7 @@
  */
 import { makeScope, ITEM } from './scope.js';
 import { assertSpecId, parseSpecId } from './identity.js';
+import { genreIdOf } from './genres.js';
 /** Lowercase kebab. A slug is a database reference, not display text. */
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const parseId = (typeId) => {
@@ -40,7 +41,9 @@ class ChainBuilder {
         // Inside a map, the current item is addressable without naming the block.
         if (this.blockCtx)
             known.add(`${this.blockCtx.blockId}.${ITEM}`);
-        const localPrefix = this.blockCtx ? `${this.blockCtx.blockId}.${this.blockCtx.chain}` : undefined;
+        const localPrefix = this.blockCtx
+            ? `${this.blockCtx.blockId}.${this.blockCtx.chain}`
+            : undefined;
         const scope = makeScope(known, localPrefix, this.blockCtx?.blockId);
         return arg(scope);
     }
@@ -86,7 +89,12 @@ class ChainBuilder {
     /** Chains run concurrently and are awaited together (01 §4). */
     async(id, opts, fn) {
         const qualified = this.qualify(id);
-        this.declareBlock({ id: qualified, kind: 'async', mode: opts.mode ?? 'parallel', chains: [] });
+        this.declareBlock({
+            id: qualified,
+            kind: 'async',
+            mode: opts.mode ?? 'parallel',
+            chains: [],
+        });
         fn(new BlockBuilder(this.spec, qualified));
         return this;
     }
@@ -130,13 +138,42 @@ class ChainBuilder {
         // is the only place a predicate that ever changes can come from.
         block.repeatWhile =
             typeof opts.repeatWhile === 'function'
-                ? new ChainBuilder(this.spec, { blockId: qualified, chain: 'item' }).resolvePublic(opts.repeatWhile)
+                ? new ChainBuilder(this.spec, {
+                    blockId: qualified,
+                    chain: 'item',
+                }).resolvePublic(opts.repeatWhile)
                 : opts.repeatWhile;
         return this;
     }
     /** Internal: the callback resolver, reachable from `loop` after the body is built. */
     resolvePublic(arg) {
         return this.resolve(arg);
+    }
+    /**
+     * Branches selected by declared predicates over a value on the spine
+     * (20 §10). Any subset fires — one, several, or none — plus an optional
+     * `otherwise` that fires exactly when nothing else did. The decision is
+     * *data a task computed* (the routed value); the routing is declaration;
+     * the receipt records every predicate's evaluation, fired and skipped
+     * alike. Not a back-edge and not code in the executor — the loop block's
+     * whole argument, applied to fan-out.
+     *
+     * Skipped branches publish `halt('not selected')` results marked
+     * `fired: false`; the union's `ok`/`values` read the *fired* branches, so
+     * downstream folds see what ran, in declaration order (13 §1).
+     */
+    route(id, opts, fn) {
+        const qualified = this.qualify(id);
+        const block = this.declareBlock({
+            id: qualified,
+            kind: 'route',
+            mode: opts.mode ?? 'parallel',
+            on: typeof opts.on === 'function' ? this.resolve(opts.on) : opts.on,
+            routes: {},
+            chains: [],
+        });
+        fn(new RouteBuilder(this.spec, qualified, block));
+        return this;
     }
     query(key, node) {
         return this.add('query', key, node);
@@ -166,7 +203,45 @@ class BlockBuilder {
     chain(name, fn) {
         const block = this.spec.blocks.find((b) => b.id === this.blockId);
         block.chains.push(name);
-        fn(new ChainBuilder(this.spec, { blockId: this.blockId, chain: name }));
+        fn(new ChainBuilder(this.spec, {
+            blockId: this.blockId,
+            chain: name,
+        }));
+        return this;
+    }
+}
+/**
+ * The route block's own builder: every branch is a named chain *with a
+ * declared predicate*, and the two are stated together so a branch without a
+ * condition cannot be written at all.
+ */
+export class RouteBuilder {
+    spec;
+    blockId;
+    block;
+    constructor(spec, blockId, block) {
+        this.spec = spec;
+        this.blockId = blockId;
+        this.block = block;
+    }
+    /** A branch that fires when its predicate matches the routed value. */
+    when(name, predicate, fn) {
+        this.block.chains.push(name);
+        this.block.routes[name] = { ...predicate };
+        fn(new ChainBuilder(this.spec, {
+            blockId: this.blockId,
+            chain: name,
+        }));
+        return this;
+    }
+    /** The branch that fires exactly when nothing else did. At most one. */
+    otherwise(name, fn) {
+        this.block.chains.push(name);
+        this.block.routes[name] = { default: true };
+        fn(new ChainBuilder(this.spec, {
+            blockId: this.blockId,
+            chain: name,
+        }));
         return this;
     }
 }
@@ -210,9 +285,34 @@ export class SpecBuilder extends ChainBuilder {
     constructor(id, meta) {
         assertSpecId(id);
         const parsed = parseSpecId(id);
+        // The deep rename (24 §2): `mode` is accepted as a deprecated alias and
+        // normalized here, so documents only ever carry `genre`.
+        const normalized = { ...meta };
+        if (normalized.mode && !normalized.genre)
+            normalized.genre = normalized.mode;
+        delete normalized.mode;
+        if (normalized.taxonomy) {
+            const t = { ...normalized.taxonomy };
+            if (t.mode && !t.genre)
+                t.genre = t.mode;
+            delete t.mode;
+            normalized.taxonomy = t;
+        }
+        if (normalized.contributes?.triggers) {
+            normalized.contributes = {
+                ...normalized.contributes,
+                triggers: normalized.contributes.triggers.map((t) => {
+                    const out = { ...t };
+                    if (out.mode && !out.genre)
+                        out.genre = out.mode;
+                    delete out.mode;
+                    return out;
+                }),
+            };
+        }
         super({
             id,
-            meta: { ...meta, owner: meta.owner ?? parsed.owner },
+            meta: { ...normalized, owner: normalized.owner ?? parsed.owner },
             subscribes: [],
             nodes: [],
             blocks: [],
@@ -259,7 +359,12 @@ export class SpecBuilder extends ChainBuilder {
             throw new Error(`'${slug}' is a second default preset. A spec ships at most one default; ` +
                 `an admin chooses among the rest (12 §3a)`);
         }
-        const built = { slug, ...meta, owner: meta.owner ?? this.spec.meta.owner, values: [] };
+        const built = {
+            slug,
+            ...meta,
+            owner: meta.owner ?? this.spec.meta.owner,
+            values: [],
+        };
         fn(new PresetBuilder(built));
         this.spec.presets.push(built);
         return this;
@@ -272,12 +377,26 @@ export class SpecBuilder extends ChainBuilder {
     /**
      * Exactly one Input, positionally first (01 §2). Enforced here rather than by
      * the validator, so it is a throw at authoring time.
+     *
+     * The optional third argument is the **usage lock** (24 §4): the session
+     * event this input answers and the genre it serves. A session-event spec
+     * without it does not compile — required for now, and relaxing later
+     * (`genre: string[]`, `"*"`) is additive, never breaking.
      */
-    input(key, node) {
+    input(key, node, binding) {
         if (this.inputDone)
             throw new Error('a spec has exactly one Input (01 §2) — .input() may be called once');
         if (this.spec.nodes.length > 0)
             throw new Error('the Input must be the first node (01 §2)');
+        if (binding) {
+            if (!binding.event)
+                throw new Error('an input binding names its event — { genre, event } (24 §4)');
+            if (!binding.genre)
+                throw new Error(`a spec answering '${binding.event}' must declare the genre it serves — ` +
+                    `{ genre, event } (24 §4). Required for now; multi-genre opens later ` +
+                    `without breaking this declaration.`);
+            this.spec.input = { genre: genreIdOf(binding.genre), event: binding.event };
+        }
         this.inputDone = true;
         return this.add('input', key, node);
     }
@@ -291,6 +410,9 @@ export class SpecBuilder extends ChainBuilder {
     }
     loop(id, opts, fn) {
         return super.loop(id, opts, fn);
+    }
+    route(id, opts, fn) {
+        return super.route(id, opts, fn);
     }
     /** Compile-time include — expanded here, so rows hold the flat chain (16 §3a). */
     include(key, fragment) {

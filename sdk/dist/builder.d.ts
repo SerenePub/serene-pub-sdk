@@ -15,7 +15,9 @@
 import { type NodeSpec, type Kind, type PortDecl, type OutPortsOf, type Descriptor } from './descriptors.js';
 import { ITEM, type Scope } from './scope.js';
 import type { DataRef } from './refs.js';
+import type { SessionShape } from './descriptors.js';
 import type { TemplateValue } from './engines.js';
+import { type GenreDecl } from './genres.js';
 export interface SpecMeta {
     /**
      * Semver. **The upgrade key, not part of the identity** — an import replaces the
@@ -31,13 +33,94 @@ export interface SpecMeta {
      * overwrite somebody else's row.
      */
     owner?: string;
-    mode?: {
+    /**
+     * For the genre's create pipeline this carries the genre's declaration
+     * (24 §3): display name, family, standing `SessionShape`, event surface.
+     * Stored on the version row so shape checks stay SELECTs, never document
+     * loads. `genre` replaced `mode` in the deep rename (24 §2); `mode` is
+     * accepted as a deprecated alias and normalized at construction.
+     */
+    genre?: {
         name: unknown;
         family: string;
+        /** The picker card's subtitle. */
+        description?: unknown;
+        shape?: SessionShape;
+        /**
+         * The genre's event surface (24 §5), persisted with the declaration
+         * so "which events exist and which are required" stays a SELECT —
+         * the genre dashboard and the preset editor read it off the row.
+         */
+        events?: Record<string, {
+            required?: boolean;
+            open?: boolean;
+        }>;
     };
+    /** @deprecated renamed to `genre` (24 §2) — normalized at construction. */
+    mode?: SpecMeta['genre'];
     i18n?: {
         name?: unknown;
     };
+    /**
+     * Where this spec sits in the catalogue (ruled 2026-08-27): declared
+     * metadata, **never** encoded into the id — an id is an address that
+     * receipts and configs hold forever, while a classification is a claim
+     * that changes. The admin surface sorts, groups and filters on these;
+     * nothing may parse them out of the id.
+     */
+    taxonomy?: SpecTaxonomy;
+    /**
+     * What this spec contributes to *other* surfaces (19 §3–§4). Triggers are
+     * the first kind: "I offer this event function on chats of that mode" —
+     * the narrate spec contributes the narrator button to the standard mode,
+     * and the mode never has to know. Rides the document (hashed with it,
+     * stored with it, exported with it), so contribution is content, not
+     * registration.
+     */
+    contributes?: {
+        triggers?: Array<{
+            /** The genre this trigger serves — a genre id (24 §3). */
+            genre?: string;
+            /** @deprecated renamed to `genre` (24 §2) — normalized at construction. */
+            mode?: string;
+            /** The function key several specs may share (19 §3). */
+            function: string;
+            kind: 'button' | 'menu' | 'event' | 'schedule';
+            i18n?: unknown;
+            icon?: string;
+            /** What the trigger lets a person choose — e.g. 'characters'. */
+            pick?: string;
+        }>;
+    };
+}
+/**
+ * The catalogue claims (ruled 2026-08-27). All optional — an undeclared spec
+ * still lists, it just sorts under "unclassified" — and all open to change on
+ * republish without touching identity.
+ */
+export interface SpecTaxonomy {
+    /**
+     * Where the pipeline is used — `session` for anything sessions trigger,
+     * with room for `library`, `system`, a plugin's own zone. Open vocabulary:
+     * a surface renders the word, it never switches on it.
+     */
+    zone?: string;
+    /**
+     * What the pipeline is to its zone: `create` instantiates sessions of its
+     * type (23 §7 — the required one; the spec IS the session type), `primary`
+     * carries the main turn, `action` is invoked by a person or trigger,
+     * `maintenance` runs off the critical path (summaries, graph builds).
+     */
+    role?: 'create' | 'primary' | 'action' | 'maintenance';
+    /**
+     * The one session genre this spec serves — a genre id (24 §3), e.g.
+     * `core:genre/chat`. Absent = not genre-bound. Superseded as the source
+     * of truth by the input-node lock (24 §4) — kept as a projection the
+     * catalogue reads; the input declaration wins when both exist.
+     */
+    genre?: string;
+    /** @deprecated renamed to `genre` (24 §2) — normalized at construction. */
+    mode?: string;
 }
 export interface BuiltNode {
     key: string;
@@ -47,13 +130,30 @@ export interface BuiltNode {
     config: Record<string, unknown>;
     /** Set when the node sits inside an async block or a map. */
     blockId?: string;
-    blockKind?: 'async' | 'map' | 'loop';
+    blockKind?: 'async' | 'map' | 'loop' | 'route';
     blockChain?: string;
     position: number;
 }
+/**
+ * One branch's condition (20 §10). Exactly one of `equals` / `truthy` /
+ * `default` per predicate; `path` narrows what `equals`/`truthy` read off the
+ * routed value (dot path, e.g. `call.tool`). Deliberately not a rules engine —
+ * a decision too rich for this table belongs in a Task that computes a value
+ * this table can read.
+ */
+export interface RoutePredicate {
+    /** Dot path read off the routed value first. Absent = the value itself. */
+    path?: string;
+    /** Fires when the (possibly path-read) value strictly equals this literal. */
+    equals?: unknown;
+    /** Fires when the value is truthy. */
+    truthy?: boolean;
+    /** Fires exactly when no other branch fired. At most one per route. */
+    default?: boolean;
+}
 export interface BuiltBlock {
     id: string;
-    kind: 'async' | 'map' | 'loop';
+    kind: 'async' | 'map' | 'loop' | 'route';
     mode: 'sequential' | 'parallel';
     /** map only — the list to iterate. */
     over?: unknown;
@@ -73,6 +173,21 @@ export interface BuiltBlock {
      * language out of the design.
      */
     repeatWhile?: unknown;
+    /**
+     * route only. The routed value — a port reference resolved when the block
+     * runs. A reference for the same reason `repeatWhile` is one: the
+     * construct stays renderable ("routes on parse.call") and no second
+     * expression language enters the design (20 §10).
+     */
+    on?: unknown;
+    /**
+     * route only. Each chain's declared predicate over the routed value. Any
+     * subset of branches may fire; a `default: true` branch fires exactly when
+     * nothing else did. Declarations, never code — the executor evaluates
+     * them, the receipt records every evaluation, and the panel can render
+     * the whole table without running anything.
+     */
+    routes?: Record<string, RoutePredicate>;
     chains: string[];
     /** Blocks nest: which block and chain this one sits inside. Undefined = the spine. */
     blockId?: string;
@@ -133,6 +248,15 @@ export interface BuiltSpec {
     }>;
     /** Author-shipped named configurations (12 §3a). Round-trips with the document (F4). */
     presets: BuiltPreset[];
+    /**
+     * The usage lock (24 §4): the session event this spec's input answers,
+     * and the genre it serves. Declared on `.input()`, serialized with the
+     * document, hashed with it, enforced at compile, publish and dispatch.
+     */
+    input?: {
+        genre?: string;
+        event?: string;
+    };
 }
 /** What a node method accepts: the value, or a function of the scope that returns it. */
 export type NodeArg<N, Nodes extends Record<string, PortDecl>> = N | (($: Scope<Nodes>) => N);
@@ -227,6 +351,23 @@ declare class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix e
     }, fn: (c: ChainBuilder<Nodes, `${Qualify<Prefix, Id>}.item`>) => R): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>;
     /** Internal: the callback resolver, reachable from `loop` after the body is built. */
     resolvePublic<N>(arg: NodeArg<N, any>): N;
+    /**
+     * Branches selected by declared predicates over a value on the spine
+     * (20 §10). Any subset fires — one, several, or none — plus an optional
+     * `otherwise` that fires exactly when nothing else did. The decision is
+     * *data a task computed* (the routed value); the routing is declaration;
+     * the receipt records every predicate's evaluation, fired and skipped
+     * alike. Not a back-edge and not code in the executor — the loop block's
+     * whole argument, applied to fan-out.
+     *
+     * Skipped branches publish `halt('not selected')` results marked
+     * `fired: false`; the union's `ok`/`values` read the *fired* branches, so
+     * downstream folds see what ran, in declaration order (13 §1).
+     */
+    route<Id extends string, R extends RouteBuilder<any, any>>(id: Id, opts: {
+        on: (($: Scope<any>) => DataRef) | DataRef;
+        mode?: 'sequential' | 'parallel';
+    }, fn: (r: RouteBuilder<Nodes, Qualify<Prefix, Id>>) => R): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>;
     query<K extends string, N extends NodeOf<'query'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
     task<K extends string, N extends NodeOf<'task'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
     provider<K extends string, N extends NodeOf<'provider'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
@@ -242,6 +383,21 @@ declare class BlockBuilder<Nodes extends Record<string, PortDecl> = {}, Id exten
      * qualified key it actually has.
      */
     chain<Name extends string, R extends ChainBuilder<any, any>>(name: Name, fn: (c: ChainBuilder<Nodes, Qualify<Id, Name>>) => R): BlockBuilder<NodesOf<R>, Id>;
+}
+/**
+ * The route block's own builder: every branch is a named chain *with a
+ * declared predicate*, and the two are stated together so a branch without a
+ * condition cannot be written at all.
+ */
+export declare class RouteBuilder<Nodes extends Record<string, PortDecl> = {}, Id extends string = string> {
+    private spec;
+    private blockId;
+    private block;
+    constructor(spec: BuiltSpec, blockId: string, block: BuiltBlock);
+    /** A branch that fires when its predicate matches the routed value. */
+    when<Name extends string, R extends ChainBuilder<any, any>>(name: Name, predicate: Omit<RoutePredicate, 'default'>, fn: (c: ChainBuilder<Nodes, Qualify<Id, Name>>) => R): RouteBuilder<NodesOf<R>, Id>;
+    /** The branch that fires exactly when nothing else did. At most one. */
+    otherwise<Name extends string, R extends ChainBuilder<any, any>>(name: Name, fn: (c: ChainBuilder<Nodes, Qualify<Id, Name>>) => R): RouteBuilder<NodesOf<R>, Id>;
 }
 /**
  * Slot-named methods, for the same reason the chain has kind-named ones (04 §4a): the
@@ -293,8 +449,16 @@ export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> ex
     /**
      * Exactly one Input, positionally first (01 §2). Enforced here rather than by
      * the validator, so it is a throw at authoring time.
+     *
+     * The optional third argument is the **usage lock** (24 §4): the session
+     * event this input answers and the genre it serves. A session-event spec
+     * without it does not compile — required for now, and relaxing later
+     * (`genre: string[]`, `"*"`) is additive, never breaking.
      */
-    input<K extends string, N extends NodeOf<'input'>>(key: K, node: N): SpecBuilder<Add<Nodes, K, N>>;
+    input<K extends string, N extends NodeOf<'input'>>(key: K, node: N, binding?: {
+        genre: GenreDecl | string;
+        event: string;
+    }): SpecBuilder<Add<Nodes, K, N>>;
     async<Id extends string, R extends BlockBuilder<any, any>>(id: Id, opts: {
         mode?: 'sequential' | 'parallel';
     }, fn: (b: BlockBuilder<Nodes, Id>) => R): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>>;
@@ -309,6 +473,10 @@ export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> ex
         repeatWhile: (($: Scope<any>) => DataRef) | DataRef;
         max: number;
     }, fn: (c: ChainBuilder<Nodes, `${Id}.item`>) => R): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>>;
+    route<Id extends string, R extends RouteBuilder<any, any>>(id: Id, opts: {
+        on: (($: Scope<any>) => DataRef) | DataRef;
+        mode?: 'sequential' | 'parallel';
+    }, fn: (r: RouteBuilder<Nodes, Id>) => R): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>>;
     /** Compile-time include — expanded here, so rows hold the flat chain (16 §3a). */
     include<K extends string, F extends Fragment<any>>(key: K, fragment: F): SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>>;
     build(): BuiltSpec;

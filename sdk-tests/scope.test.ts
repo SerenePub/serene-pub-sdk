@@ -22,7 +22,7 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 	const withStrings = () =>
 		spec('demo:chat@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', C.chatHistory.v1({ scope: $ref('input', 'chatScope') }))
+			.query('history', C.sessionHistory.v1({ scope: $ref('input', 'sessionScope') }))
 			.task('prompt', C.assemble.v2({ candidates: $ref('history', 'messages') }))
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
 			.consume('save', C.createMessage.v1({ text: $ref('generate', 'text') }))
@@ -30,13 +30,16 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 	const withScope = () =>
 		spec('demo:chat@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
 			.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
 			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 	test('identical canonical hash — the rows are the same rows', () => {
-		assert.equal(canonicalHash(compile(withStrings().build())), canonicalHash(compile(withScope().build())))
+		assert.equal(
+			canonicalHash(compile(withStrings().build())),
+			canonicalHash(compile(withScope().build())),
+		)
 	})
 
 	test('identical edges, ports and all', () => {
@@ -49,12 +52,16 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 		const doc = compile(withScope().build())
 		const cfg = doc.nodes.find((n) => n.key === 'history')!.config
 		assert.deepEqual(JSON.parse(JSON.stringify(cfg)), {
-			scope: { __ref: 'data', node: 'input', port: 'chatScope' },
+			scope: { __ref: 'data', node: 'input', port: 'sessionScope' },
 		})
 	})
 
 	test('and it still runs', async () => {
-		const r = await run(publish(withScope()), { input: { text: 'hi' }, bindings: bindings(), world })
+		const r = await run(publish(withScope()), {
+			input: { text: 'hi' },
+			bindings: bindings(),
+			world,
+		})
 		assert.equal(r.outcome, 'ok')
 		assert.deepEqual(
 			r.nodes.map((n) => n.nodeKey),
@@ -67,7 +74,7 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 test('53 · `$.history` means main; `$.history.messages` refines the port', () => {
 	const b = spec('demo:bare@1', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
-		.query('history', ($) => C.chatHistory.v1({ scope: $.input }))
+		.query('history', ($) => C.sessionHistory.v1({ scope: $.input }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
 	const doc = compile(b.build())
 	const bare = doc.edges.find((e) => e.to === 'history' && !e.implicit)!
@@ -85,8 +92,10 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 					.input('input', C.userMessage.v1())
 					// `generate` is declared *below* — under the old string form this was a
 					// publish-time finding; here the scope simply does not contain it.
-					.query('history', ($: any) => C.chatHistory.v1({ scope: $.generate.text }))
-					.provider('generate', () => C.generateText.v1({ connection: slot.connection() })),
+					.query('history', ($: any) => C.sessionHistory.v1({ scope: $.generate.text }))
+					.provider('generate', () =>
+						C.generateText.v1({ connection: slot.connection() }),
+					),
 			/is not a node declared before this point/,
 		)
 	})
@@ -95,7 +104,7 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 		try {
 			spec('demo:forward2@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($: any) => C.chatHistory.v1({ scope: $.nope.thing }))
+				.query('history', ($: any) => C.sessionHistory.v1({ scope: $.nope.thing }))
 			assert.fail('should have thrown')
 		} catch (e) {
 			assert.match((e as Error).message, /Available: input/)
@@ -107,7 +116,9 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 		try {
 			spec('demo:empty@1', { version: '1.0.0' }).input('input', C.userMessage.v1())
 			// A ref inside the Input itself has nothing to point at.
-			spec('demo:empty2@1', { version: '1.0.0' }).query('q', ($: any) => C.chatHistory.v1({ scope: $.x.y }))
+			spec('demo:empty2@1', { version: '1.0.0' }).query('q', ($: any) =>
+				C.sessionHistory.v1({ scope: $.x.y }),
+			)
 			assert.fail('should have thrown')
 		} catch (e) {
 			assert.match((e as Error).message, /Input comes first/)
@@ -121,7 +132,9 @@ test('55 · `$.a.b.c` is refused with the reason, not a confusing ref', () => {
 		() =>
 			spec('demo:deep@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($: any) => C.chatHistory.v1({ scope: $.input.chatScope.deeper })),
+				.query('history', ($: any) =>
+					C.sessionHistory.v1({ scope: $.input.sessionScope.deeper }),
+				),
 		/ports are flat/,
 	)
 })
@@ -133,12 +146,23 @@ describe('56 · block chains', () => {
 			.input('input', C.userMessage.v1())
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
-					.chain('history', (c) => c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })))
+					.chain('history', (c) =>
+						c.query('history', ($) =>
+							C.sessionHistory.v1({ scope: $.input.sessionScope }),
+						),
+					)
 					.chain('semantic', (c) =>
 						c
-							.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
+							.provider('embed', ($) =>
+								C.embedText.v1({
+									text: $.input.text,
+									connection: slot.connection(),
+								}),
+							)
 							// `$.embed` — the sibling, by its short key.
-							.query('vsearch', ($: any) => C.vectorSearch.v1({ vector: $.embed.vector })),
+							.query('vsearch', ($: any) =>
+								C.vectorSearch.v1({ vector: $.embed.vector }),
+							),
 					),
 			)
 			.task('merge', ($: any) =>
@@ -157,7 +181,9 @@ describe('56 · block chains', () => {
 
 	test('from the spine, the block path reads like the key', () => {
 		const doc = compile(built().build())
-		const froms = doc.edges.filter((x) => x.to === 'merge' && !x.implicit).map((x) => `${x.from}.${x.fromPort}`)
+		const froms = doc.edges
+			.filter((x) => x.to === 'merge' && !x.implicit)
+			.map((x) => `${x.from}.${x.fromPort}`)
 		assert.deepEqual(froms.sort(), [
 			'gather.history.history.messages',
 			'gather.semantic.vsearch.hits',
@@ -169,17 +195,42 @@ describe('56 · block chains', () => {
 			.input('input', C.userMessage.v1())
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
-					.chain('history', (c) => c.query('history', C.chatHistory.v1({ scope: $ref('input', 'chatScope') })))
+					.chain('history', (c) =>
+						c.query(
+							'history',
+							C.sessionHistory.v1({ scope: $ref('input', 'sessionScope') }),
+						),
+					)
 					.chain('semantic', (c) =>
 						c
-							.provider('embed', C.embedText.v1({ text: $ref('input', 'text'), connection: slot.connection() }))
-							.query('vsearch', C.vectorSearch.v1({ vector: $ref('gather.semantic.embed', 'vector') })),
+							.provider(
+								'embed',
+								C.embedText.v1({
+									text: $ref('input', 'text'),
+									connection: slot.connection(),
+								}),
+							)
+							.query(
+								'vsearch',
+								C.vectorSearch.v1({
+									vector: $ref('gather.semantic.embed', 'vector'),
+								}),
+							),
 					),
 			)
-			.task('merge', C.mergeCandidates.v1({
-				sources: [$ref('gather.semantic.vsearch', 'hits'), $ref('gather.history.history', 'messages')],
-			}))
-		assert.equal(canonicalHash(compile(strung.build())), canonicalHash(compile(built().build())))
+			.task(
+				'merge',
+				C.mergeCandidates.v1({
+					sources: [
+						$ref('gather.semantic.vsearch', 'hits'),
+						$ref('gather.history.history', 'messages'),
+					],
+				}),
+			)
+		assert.equal(
+			canonicalHash(compile(strung.build())),
+			canonicalHash(compile(built().build())),
+		)
 	})
 })
 
@@ -190,7 +241,9 @@ describe('57 · map', () => {
 			.input('input', C.userMessage.v1())
 			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
 			.map('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
-				m.provider('sum', ($: any) => C.generateText.v1({ text: $.$item, connection: slot.connection() })),
+				m.provider('sum', ($: any) =>
+					C.generateText.v1({ text: $.$item, connection: slot.connection() }),
+				),
 			)
 			.task('collect', ($: any) => C.toCandidates.v1({ items: $.summarize.values }))
 
@@ -210,7 +263,11 @@ describe('57 · map', () => {
 	})
 
 	test('it runs, once per item', async () => {
-		const r = await run(publish(built()), { input: { text: 'a|b|c' }, bindings: bindings(), world })
+		const r = await run(publish(built()), {
+			input: { text: 'a|b|c' },
+			bindings: bindings(),
+			world,
+		})
 		assert.equal(r.outcome, 'ok')
 		assert.equal(r.nodes.filter((n) => n.nodeKey === 'summarize.item.sum').length, 3)
 	})
@@ -221,7 +278,9 @@ test('58 · slot.connectionOf($.generate) — a node is never named twice, two w
 	const b = spec('demo:slotref@1', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
 		.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
-		.task('budget', ($: any) => C.contextBudget.v1({ connection: slot.connectionOf($.generate) }))
+		.task('budget', ($: any) =>
+			C.contextBudget.v1({ connection: slot.connectionOf($.generate) }),
+		)
 	const doc = compile(b.build())
 	assert.equal(doc.nodes.find((n) => n.key === 'budget')!.resolvedRefs!['connection'], 'generate')
 

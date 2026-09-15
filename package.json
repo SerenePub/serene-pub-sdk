@@ -2,8 +2,8 @@
 	"name": "serene-pub-sdk",
 	"version": "0.6.0-preview.0",
 	"private": true,
-	"description": "The Serene Pub pipeline SDK — four packages a plugin author builds against.",
-	"license": "AGPL-3.0-only",
+	"description": "The Serene Pub pipeline SDK \u2014 four packages a plugin author builds against.",
+	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/doolijb/serene-pub-sdk.git"
@@ -14,10 +14,13 @@
 		"contracts",
 		"cli",
 		"conformance",
+		"core-catalog",
+		"controls",
+		"ui-preview",
 		"sdk-tests"
 	],
 	"scripts": {
-		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance -w @serene-pub/cli",
+		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance -w @serene-pub/cli && npm run build -w @serene-pub/core-catalog",
 		"test": "npm run build && npm run test -w @serene-pub/sdk-tests",
 		"typecheck": "npm run typecheck -w @serene-pub/sdk-tests",
 		"format": "prettier --write .",

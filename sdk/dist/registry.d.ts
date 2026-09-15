@@ -28,7 +28,9 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
-import type { Descriptor, SlotDecl } from './descriptors.js';
+import type { Descriptor, EntryShape, SlotDecl } from './descriptors.js';
+import { type ScriptTypeDecl } from './scripts.js';
+import type { SettingsSchema } from './settings.js';
 import type { SpecDocument } from './document.js';
 /** A `type_registry` row (02 §3), as data. */
 export interface RegistryEntry {
@@ -42,6 +44,25 @@ export interface RegistryEntry {
      * failure.
      */
     optional?: boolean;
+    /**
+     * Interior script points (18 §4e) — carried into the row for the same
+     * reason `slots` is: the panel offers one chain option per point and must
+     * render it without loading the plugin (F6). Keys are contract and hash;
+     * labels are display text, stripped like `i18n` everywhere else.
+     */
+    scriptPoints?: Array<{
+        key: string;
+        i18n?: unknown;
+        description?: unknown;
+    }>;
+    /**
+     * The chat-shape contract (19 §1) — present only on mode-bearing input
+     * types. Carried for the reason `slots` is: the mode picker and the chat
+     * settings render from rows (F6), never from a loaded spec. Hashed —
+     * widening a capability changes what existing sessions legally contain —
+     * with any embedded `i18n`/`description` stripped like everywhere.
+     */
+    sessionShape?: unknown;
     ports: {
         in: Record<string, string | undefined>;
         out: Record<string, string | undefined>;
@@ -64,6 +85,51 @@ export interface RegistryEntry {
      * core's with nothing authored twice.
      */
     slots: Record<string, SlotDecl>;
+    /**
+     * The entry-row contract (Part 1), minus its `fields` — present only on
+     * entry types. Carried for the reason `slots` is: the ranker, the assembler
+     * and the constraint projection all read the declaration from **rows**, and
+     * the row is the only source that exists for a type this process never
+     * loaded (F6).
+     *
+     * Hashed whole. Roles decide where a row competes, how it sorts, who may
+     * see it and where it renders, so moving one changes what an untouched
+     * install does — `@N+1`, deliberately.
+     */
+    entryShape?: Omit<EntryShape, 'fields'>;
+    /**
+     * The declared schema of the type-specific half of a row — `entryShape.fields`,
+     * living in the column that already exists for a declared schema rather
+     * than riding inside the blob above.
+     *
+     * Split out because the readers differ: the boot step that projects CHECK
+     * constraints and indexes wants a schema, generically, from a column it can
+     * name — the same shape the form renderer already reads everywhere else.
+     * Hashed for the reason the constraint projection makes unavoidable: a
+     * schema change *is* a constraint change.
+     */
+    configSchema?: SettingsSchema;
+    /**
+     * What the type calls itself — the name a screen shows for it.
+     *
+     * Outside the content hash, like every other piece of display text: naming
+     * a node better is not a contract change. Carried in the row for the same
+     * reason `slots` is — the pipeline builder renders from rows and never
+     * loads the plugin (F6), so a name only the descriptor knows is a name no
+     * plugin's node can have.
+     */
+    i18n?: unknown;
+    /**
+     * Script types only: how a chain of this operation treats what its links
+     * return — `transform` folds into the flowing bag, `verdict` is consumed by
+     * the hook and reduced (18 §5).
+     *
+     * Hashed, and it has to be. Flipping it moves no port and keeps every
+     * attachment compiling, while turning "each link rewrites the text" into
+     * "the earliest answer wins" — the same shape of silent behaviour change
+     * `optional` was, and the reason that one is hashed.
+     */
+    semantics?: string;
     effects?: string;
     causesEvent?: string;
     public?: boolean;
@@ -73,7 +139,7 @@ export interface RegistryEntry {
     release?: string;
 }
 /** Project descriptors into registry rows — how core seeds and refreshes the table. */
-export declare function snapshotRegistry(types: Descriptor[], meta?: {
+export declare function snapshotRegistry(types: Array<Descriptor | ScriptTypeDecl>, meta?: {
     owner?: string;
     release?: string;
 }): RegistryEntry[];

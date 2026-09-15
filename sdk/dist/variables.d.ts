@@ -103,7 +103,30 @@ export declare const varHistory: VariableDecl;
  * nothing renders any more: this one is speaker-centric and always-on wherever
  * a chat has a lorebook and the speaker has a bound node.
  */
-export declare const varSpeakerRelationships: VariableDecl;
+/**
+ * How the speaking character regards everyone else.
+ *
+ * ⚠ Split, with its sibling below, out of `core:var/speaker-relationships@1`.
+ * That one variable held both directions and the legendary figures under a
+ * single "Your relationships:" heading — so a model was handed what the speaker
+ * thinks of Brannoc and what Rell thinks of the speaker as one undifferentiated
+ * list, and a user who wanted one and not the other had no setting for it. Two
+ * variables means two layouts, two priorities and two switches.
+ */
+export declare const varRelationshipsPerspectives: VariableDecl;
+/**
+ * How everyone else regards the speaking character, and who the world knows of.
+ *
+ * `legendaryFigures` sits here rather than in its own variable because it is
+ * the same kind of claim — what is publicly known — and the opposite kind from
+ * "what you think of them". A third variable would put a mostly-empty block in
+ * every prompt on every install that has never marked a node legendary.
+ *
+ * Both sections are conditional: an install with no legendary figures has no
+ * `legendaryFigures` key at all rather than an empty object, and the shipped
+ * layout's guards are written against exactly that.
+ */
+export declare const varRelationshipsKnown: VariableDecl;
 export declare const varCurrentDate: VariableDecl;
 /**
  * A declaration's `sample`, spread across the keys of its `scope`.

@@ -48,13 +48,15 @@ describe('core declarations', () => {
 	// named a field an author could write and get nothing back from, and empty
 	// is indistinguishable from "this character has no bound lore".
 	test('a character card names "extra lore", not "lore"', () => {
-		const fields = (getVariable('core:var/characters@1')!.scope.characters as VarField).of!.fields!
+		const fields = (getVariable('core:var/characters@1')!.scope.characters as VarField).of!
+			.fields!
 		assert.ok(fields['extra lore'], 'the key attachCharacterLoreToCharacters actually writes')
 		assert.equal(fields.lore, undefined, 'never written by anything')
 	})
 
 	test('a character card does not claim an exampleDialogue field', () => {
-		const fields = (getVariable('core:var/characters@1')!.scope.characters as VarField).of!.fields!
+		const fields = (getVariable('core:var/characters@1')!.scope.characters as VarField).of!
+			.fields!
 		assert.equal(fields.exampleDialogue, undefined)
 		// It is a top-level variable, resolved from the speaking character.
 		assert.ok(getVariable('core:var/example-dialogue@1'))
@@ -121,7 +123,11 @@ describe('checkValue', () => {
 	})
 
 	test('a record checks its values and reports the key', () => {
-		const f = checkValue({ 'The Gate': 3 }, { type: 'record', of: { type: 'string' } }, 'worldLore')
+		const f = checkValue(
+			{ 'The Gate': 3 },
+			{ type: 'record', of: { type: 'string' } },
+			'worldLore',
+		)
 		assert.equal(f.length, 1)
 		assert.match(f[0]!, /worldLore\.The Gate: expected a string, got a number/)
 	})
@@ -163,10 +169,10 @@ describe('sampleValues', () => {
 	})
 
 	test('a multi-key scope reads one key per entry', () => {
-		assert.deepEqual(
-			sampleValues({ scope: { a: 'any', b: 'any' }, sample: { a: 1, b: 2 } }),
-			{ a: 1, b: 2 },
-		)
+		assert.deepEqual(sampleValues({ scope: { a: 'any', b: 'any' }, sample: { a: 1, b: 2 } }), {
+			a: 1,
+			b: 2,
+		})
 	})
 
 	test('a multi-key scope with no object sample yields undefined per key', () => {
@@ -184,7 +190,10 @@ describe('sampleValues', () => {
 describe('checkTemplate over a schema', () => {
 	test('an object schema checks first-level fields, as string[] always did', () => {
 		const scope = {
-			entry: { type: 'object', fields: { title: { type: 'string' }, content: { type: 'string' } } },
+			entry: {
+				type: 'object',
+				fields: { title: { type: 'string' }, content: { type: 'string' } },
+			},
 		} as const
 		assert.deepEqual(checkTemplate('{{ entry.title }}', scope), [])
 		const f = checkTemplate('{{ entry.nope }}', scope)
@@ -297,7 +306,10 @@ describe('checkTemplate through a loop', () => {
 	}
 
 	test('a correct nested path through a loop is not flagged', () => {
-		assert.deepEqual(checkTemplate('{% for c in characters %}{{ c.name }}{% endfor %}', scope), [])
+		assert.deepEqual(
+			checkTemplate('{% for c in characters %}{{ c.name }}{% endfor %}', scope),
+			[],
+		)
 	})
 
 	test('a misspelled path through a loop is caught', () => {
@@ -328,7 +340,9 @@ describe('checkTemplate through a loop', () => {
 
 	test('looping an unchecked declaration leaves its body unchecked', () => {
 		assert.deepEqual(
-			checkTemplate('{% for e in entry %}{{ e.whatever.deep }}{% endfor %}', { entry: 'any' }),
+			checkTemplate('{% for e in entry %}{{ e.whatever.deep }}{% endfor %}', {
+				entry: 'any',
+			}),
 			[],
 		)
 	})

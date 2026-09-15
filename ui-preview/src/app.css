@@ -1,0 +1,144 @@
+/**
+ * The harness's stylesheet — and it is the product's, not a tool's.
+ *
+ * An earlier draft kept this token-free on the argument that SP promises no
+ * token compatibility (RESEARCH §7b), so a harness dressed in core's theme
+ * would be teaching a contract that does not exist. That was wrong for one
+ * concrete reason: **the controls cannot render without it.** Skeleton ships
+ * `input`/`select`/`btn`/`checkbox`/`textarea` as Tailwind `@utility`, which
+ * means candidate-driven — a rule exists only if the scanner saw the literal
+ * class string. Without this layer a generated form is a column of unstyled
+ * boxes, which is 10 §6's "no rule at all" failure reproduced inside the very
+ * tool built to catch it.
+ *
+ * So the harness loads exactly what the app loads, in exactly the app's order
+ * (`src/app.css` there), and switches theme the way the app switches it:
+ * `data-theme="<name>"` and `data-mode="light|dark"` on <html>. Anything the
+ * modder sees here is therefore what the shipped Skeleton version does — and
+ * when SP moves to a new Skeleton major, this file moves with it and the
+ * harness keeps telling the truth.
+ */
+@import "tailwindcss";
+
+@plugin '@tailwindcss/forms';
+
+@import "@skeletonlabs/skeleton";
+
+/* Every stock theme, so the picker can offer all of them without a build
+   step per theme. Themes come after the base import: they override the
+   monochrome defaults in Skeleton's own theme.css. */
+@import "@skeletonlabs/skeleton/themes/catppuccin";
+@import "@skeletonlabs/skeleton/themes/cerberus";
+@import "@skeletonlabs/skeleton/themes/concord";
+@import "@skeletonlabs/skeleton/themes/crimson";
+@import "@skeletonlabs/skeleton/themes/dracula";
+@import "@skeletonlabs/skeleton/themes/fennec";
+@import "@skeletonlabs/skeleton/themes/hamlindigo";
+@import "@skeletonlabs/skeleton/themes/legacy";
+@import "@skeletonlabs/skeleton/themes/mint";
+@import "@skeletonlabs/skeleton/themes/modern";
+@import "@skeletonlabs/skeleton/themes/mona";
+@import "@skeletonlabs/skeleton/themes/nosh";
+@import "@skeletonlabs/skeleton/themes/nouveau";
+@import "@skeletonlabs/skeleton/themes/pine";
+@import "@skeletonlabs/skeleton/themes/reign";
+@import "@skeletonlabs/skeleton/themes/rocket";
+@import "@skeletonlabs/skeleton/themes/rose";
+@import "@skeletonlabs/skeleton/themes/rosepine";
+@import "@skeletonlabs/skeleton/themes/sahara";
+@import "@skeletonlabs/skeleton/themes/seafoam";
+@import "@skeletonlabs/skeleton/themes/terminus";
+@import "@skeletonlabs/skeleton/themes/vintage";
+@import "@skeletonlabs/skeleton/themes/vox";
+@import "@skeletonlabs/skeleton/themes/wintry";
+
+/**
+ * `data-mode` is not a Skeleton convention — it is the app's, wired by this
+ * one line, and Skeleton's base layer turns it into `color-scheme` so every
+ * `light-dark()` token resolves. Copied verbatim from the app because a
+ * harness whose dark mode worked differently would be a harness that lies
+ * about dark mode.
+ */
+@custom-variant dark (&:where([data-mode="dark"], [data-mode="dark"] *));
+
+/**
+ * The scanner's reach, and the reason it is stated twice.
+ *
+ * `@serene-pub/controls` is raw Svelte source living under node_modules,
+ * which Tailwind v4 skips by a hardcoded default — not by .gitignore, so
+ * there is no way to opt in except by naming it. Both spellings are here
+ * because the package sits in a different place in the two layouts this
+ * harness runs in: hoisted to the workspace root when developed inside the
+ * SDK repo, and beside ui-preview in a modder's own node_modules. A path
+ * that matches nothing costs nothing; a path that is missing costs every
+ * control its styling, silently.
+ */
+@source "../../node_modules/@serene-pub/controls/src";
+@source "../../controls/src";
+
+/**
+ * Harness chrome.
+ *
+ * Four semantic aliases over Skeleton's tokens, because the stage components
+ * (`FrameStage`, `ComponentStage`, `Problems`) style borders and dim text in
+ * their own scoped CSS and need a name for "a line" and "quieter text". They
+ * resolve to theme tokens rather than fixed colours, so switching the theme
+ * moves them — which is the point, and which a literal `#2a2f3e` would not do.
+ */
+:root {
+	--line: var(--color-surface-200);
+	--muted: var(--color-surface-600);
+	--accent: var(--color-primary-500);
+	--panel: var(--color-surface-50);
+}
+[data-mode='dark'] {
+	--line: var(--color-surface-800);
+	--muted: var(--color-surface-400);
+	--panel: var(--color-surface-950);
+}
+
+html,
+body {
+	height: 100%;
+}
+body {
+	margin: 0;
+	background: var(--panel);
+	color: var(--color-surface-950);
+}
+[data-mode='dark'] body {
+	color: var(--color-surface-50);
+}
+
+/* Shared by the stage components' scoped CSS. */
+.muted {
+	color: var(--muted);
+}
+.problems {
+	border: 1px solid var(--color-warning-500);
+	border-radius: 8px;
+	padding: 0.7rem 0.9rem;
+	margin: 0 0 1rem;
+	background: color-mix(in srgb, var(--color-warning-500) 12%, transparent);
+	font-size: 0.85rem;
+}
+.problems h3 {
+	margin: 0 0 0.4rem;
+	font-size: 0.8rem;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	color: var(--color-warning-600);
+}
+.problems ul {
+	margin: 0;
+	padding-inline-start: 1.1rem;
+}
+.problems li {
+	white-space: pre-wrap;
+}
+.harness-mono {
+	font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.harness-scroll {
+	scrollbar-width: thin;
+}

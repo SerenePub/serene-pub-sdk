@@ -31,13 +31,44 @@ const S = defineSettings({
 		side: 'extension',
 		group: 'Connection',
 	},
-	apiKey: { type: 'secret', label: 'API key', required: true, scope: 'instance', side: 'extension', group: 'Connection' },
-	mode: { type: 'enum', of: ['simple', 'advanced'] as const, default: 'simple', group: 'Behaviour' },
-	retries: { type: 'integer', default: 2, min: 0, max: 10, group: 'Behaviour', showIf: { field: 'mode', equals: 'advanced' } },
-	showBadge: { type: 'boolean', default: true, scope: 'user', side: 'component', group: 'Display' },
+	apiKey: {
+		type: 'secret',
+		label: 'API key',
+		required: true,
+		scope: 'instance',
+		side: 'extension',
+		group: 'Connection',
+	},
+	mode: {
+		type: 'enum',
+		of: ['simple', 'advanced'] as const,
+		default: 'simple',
+		group: 'Behaviour',
+	},
+	retries: {
+		type: 'integer',
+		default: 2,
+		min: 0,
+		max: 10,
+		group: 'Behaviour',
+		showIf: { field: 'mode', equals: 'advanced' },
+	},
+	showBadge: {
+		type: 'boolean',
+		default: true,
+		scope: 'user',
+		side: 'component',
+		group: 'Display',
+	},
 })
 
-const configured = { endpoint: 'https://example.test', apiKey: secret('cipher:abc'), mode: 'simple', retries: 2, showBadge: true }
+const configured = {
+	endpoint: 'https://example.test',
+	apiKey: secret('cipher:abc'),
+	mode: 'simple',
+	retries: 2,
+	showBadge: true,
+}
 
 // ── 77 · One declaration, four uses ─────────────────────────────────────────
 describe('77 · the schema drives the form, validation, the manifest and the types', () => {
@@ -46,14 +77,21 @@ describe('77 · the schema drives the form, validation, the manifest and the typ
 			S.layout().map((g) => g.group),
 			['Connection', 'Behaviour', 'Display'],
 		)
-		assert.deepEqual(S.layout()[0]!.fields.map((f) => f.key), ['endpoint', 'apiKey'])
+		assert.deepEqual(
+			S.layout()[0]!.fields.map((f) => f.key),
+			['endpoint', 'apiKey'],
+		)
 	})
 
 	test('conditional fields are one level, not a rules engine', () => {
 		const decl = S.schema.retries
 		assert.equal(isVisible(decl, { mode: 'simple' }), false)
 		assert.equal(isVisible(decl, { mode: 'advanced' }), true)
-		assert.equal(isVisible(S.schema.endpoint, {}), true, 'a field with no showIf is always shown')
+		assert.equal(
+			isVisible(S.schema.endpoint, {}),
+			true,
+			'a field with no showIf is always shown',
+		)
 	})
 
 	test('defaults come from the declaration, and required fields have none', () => {
@@ -68,8 +106,15 @@ describe('77 · the schema drives the form, validation, the manifest and the typ
 			mode: 'advanced',
 		}
 		assert.equal(v.mode, 'advanced')
-		// @ts-expect-error — 'aggressive' is not one of the declared options
-		const bad: SettingsValues<typeof S.schema> = { endpoint: 'x', apiKey: secret('y'), mode: 'aggressive' }
+		const bad: SettingsValues<typeof S.schema> = {
+			endpoint: 'x',
+			apiKey: secret('y'),
+			// @ts-expect-error — 'aggressive' is not one of the declared options.
+			// The directive sits on the property, not on the declaration: the
+			// error is reported where the bad value is, so a reformat that
+			// splits the literal must not move the suppression off it.
+			mode: 'aggressive',
+		}
 		void bad
 	})
 })
@@ -80,7 +125,9 @@ describe('78 · value validation', () => {
 		const f = checkValues(S.schema, { ...configured, retries: 99, mode: 'turbo' })
 		assert.equal(f.length, 2)
 		assert.ok(f.some((x) => x.field === 'retries' && /above the maximum 10/.test(x.message)))
-		assert.ok(f.some((x) => x.field === 'mode' && /not one of simple, advanced/.test(x.message)))
+		assert.ok(
+			f.some((x) => x.field === 'mode' && /not one of simple, advanced/.test(x.message)),
+		)
 		for (const x of f) assert.ok(x.fix, 'every finding names what to do instead (15 §1.3)')
 	})
 
@@ -105,7 +152,10 @@ describe('79 · declaration-time refusals', () => {
 	})
 
 	test('a shipped default credential is not a credential', () => {
-		assert.throws(() => defineSettings({ k: { type: 'secret', default: 'sk-live' } }), /not a credential/)
+		assert.throws(
+			() => defineSettings({ k: { type: 'secret', default: 'sk-live' } }),
+			/not a credential/,
+		)
 	})
 
 	test('an enum with no options is a dead form field', () => {
@@ -114,7 +164,11 @@ describe('79 · declaration-time refusals', () => {
 
 	test('a showIf naming a field that does not exist is refused, and lists what does', () => {
 		assert.throws(
-			() => defineSettings({ a: { type: 'string' }, b: { type: 'string', showIf: { field: 'c', equals: 1 } } }),
+			() =>
+				defineSettings({
+					a: { type: 'string' },
+					b: { type: 'string', showIf: { field: 'c', equals: 1 } },
+				}),
 			/name a field this schema declares \(a, b\)/,
 		)
 	})
@@ -133,7 +187,11 @@ describe('80 · reconcile on update', () => {
 		// still get them back.
 		const r = reconcile(S.schema, { ...configured, legacyTimeout: 30 })
 		assert.deepEqual(r.orphaned, [
-			{ field: 'legacyTimeout', value: 30, reason: 'the updated schema no longer declares this field' },
+			{
+				field: 'legacyTimeout',
+				value: 30,
+				reason: 'the updated schema no longer declares this field',
+			},
 		])
 		assert.equal(r.values.endpoint, 'https://example.test')
 	})

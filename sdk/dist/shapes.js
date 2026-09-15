@@ -45,7 +45,7 @@ export const S = {
         assignableTo: ['core:shape/text@1'],
         streaming: true,
     }),
-    chatScope: defineShape({ id: 'core:shape/chat-scope@1' }),
+    sessionScope: defineShape({ id: 'core:shape/session-scope@1' }),
     messages: defineShape({ id: 'core:shape/messages@1' }),
     candidates: defineShape({ id: 'core:shape/context-candidates@1' }),
     renderedBlocks: defineShape({ id: 'core:shape/rendered-blocks@1' }),
@@ -78,7 +78,15 @@ export const S = {
      * is shown or named. The input to the context builder, kept distinct from the
      * built context so the two can be replaced independently.
      */
-    chatCast: defineShape({ id: 'core:shape/chat-cast@1' }),
+    sessionCast: defineShape({ id: 'core:shape/session-cast@1' }),
+    /**
+     * The MCP connection kind (14 §1). A connection whose shape is `mcp` is a
+     * Model Context Protocol server core talks to — foreign code SP speaks
+     * JSON-RPC with, never code SP loads. The shape doubles as the connection
+     * kind (F17), so only MCP connections are offerable on an MCP provider's
+     * connection slot.
+     */
+    mcp: defineShape({ id: 'core:shape/mcp@1' }),
     templateContext: defineShape({ id: 'core:shape/template-context@1' }),
     vector: defineShape({ id: 'core:shape/vector@1' }),
     budget: defineShape({ id: 'core:shape/context-budget@1' }),
@@ -131,12 +139,95 @@ export const S = {
      * as one would wire a foreign key to something a reviewer may still reject.
      */
     graphProposal: defineShape({ id: 'core:shape/graph-proposal@1' }),
-    audio: defineShape({ id: 'core:shape/audio@1' }),
-    image: defineShape({ id: 'core:shape/image@1' }),
+    /**
+     * Who speaks next, and how that was decided (19 §5).
+     *
+     * Its own shape rather than `row-ids@1` because it is the swap-list
+     * membership test: a task whose `main` publishes this shape *is* a
+     * next-speaker strategy, and the dropdown is a SELECT over such rows — an
+     * extension's strategy appears beside core's by existing, the same way a
+     * chat mode does. The bundle carries `{characterId, strategy, via}`; the
+     * bare id rides a separate `characterId` port for wiring.
+     */
+    speakerSelection: defineShape({ id: 'core:shape/speaker-selection@1' }),
+    /**
+     * A reference to stored media of any kind — the general port type.
+     *
+     * `image@1` and `audio@1` stay, and are assignable **to** this, so every
+     * spec wired to them keeps connecting while the general ports arrive. The
+     * reverse is not assignable: a port that accepts any media cannot be handed
+     * to one that has declared it only understands images. Same rule, and the
+     * same reason, as `allocated-context` → `assembled-context`.
+     */
+    media: defineShape({ id: 'core:shape/media-ref@1' }),
+    /** An ordered list of media references — what a multimodal request carries
+     *  as its attachments. */
+    mediaList: defineShape({ id: 'core:shape/media-refs@1' }),
+    audio: defineShape({
+        id: 'core:shape/audio@1',
+        assignableTo: ['core:shape/media-ref@1'],
+    }),
+    image: defineShape({
+        id: 'core:shape/image@1',
+        assignableTo: ['core:shape/media-ref@1'],
+    }),
     json: defineShape({ id: 'core:shape/json@1' }),
     // connection / sampling kinds — the same ids, which is the point (F17)
+    /**
+     * A model reply as an ordered list of typed parts (text, reasoning, media,
+     * tool calls) rather than a string — see `OutputPart` in media.ts for why
+     * that is now the honest shape of a completion.
+     *
+     * Assignable **to** `text-stream@1`, so a provider may start emitting parts
+     * without breaking a single spec wired to its text output: the degrade
+     * concatenates the prose and drops the rest. Not assignable in reverse,
+     * because by then the ordering and the media are gone — the same
+     * richer-to-poorer rule the allocated/assembled pair established.
+     */
+    partStream: defineShape({
+        id: 'core:shape/part-stream@1',
+        assignableTo: ['core:shape/text-stream@1'],
+        streaming: true,
+    }),
     textGen: defineShape({ id: 'core:shape/text-gen@1' }),
+    /**
+     * Vector embedding — the connection kind, and deliberately **not** a
+     * sampling vocabulary (yet).
+     *
+     * It is absent from `SAMPLING_SCHEMAS` on purpose, and the reason is
+     * structural rather than unfinished work: every parameter an embedding call
+     * would take — input truncation, pooling, normalisation, output dimensions,
+     * the asymmetric query/passage prefixes E5/BGE/GTE want — changes what a
+     * *stored* vector means, and nothing records which setting produced the
+     * vectors already in the table. A text sampler affects one reply; an
+     * embedding parameter silently re-defines a whole persistent index against
+     * rows that will never be recomputed. That is the same re-index story the
+     * prefixes are held back for, so none of them ship until it is decided.
+     *
+     * What is left after removing those is either not per-invocation at all
+     * (model identity, transport, residency TTL — those belong to the
+     * connection) or has no consumer (nothing chunks a batch). An empty
+     * vocabulary is worse than no vocabulary here: `isKnownSamplingShape` in
+     * core admits any shape this record has a key for, so registering `{}`
+     * would let the write path accept a config that exists, looks saved, and
+     * can never send anything — the exact state that guard was written to
+     * refuse.
+     */
     embeddings: defineShape({ id: 'core:shape/embeddings@1' }),
+    /**
+     * Named-entity recognition — the connection kind for a mention detector.
+     *
+     * Declared ahead of its adapter so the model side has a stable noun to
+     * name; core's extractor is dictionary-based and model-free today
+     * (`core:extract/entities-heuristic@1`), and takes no parameters at all
+     * beyond the text and the gazetteer.
+     *
+     * Like `embeddings`, and for the same two reasons, it has no entry in
+     * `SAMPLING_SCHEMAS`: its one real knob (how much of a passage the
+     * extractor is handed) is part of the annotation freshness triple, and an
+     * empty vocabulary would defeat core's do-nothing-config guard.
+     */
+    ner: defineShape({ id: 'core:shape/ner@1' }),
     tts: defineShape({ id: 'core:shape/tts@1' }),
     imageGen: defineShape({ id: 'core:shape/image-gen@1' }),
 };

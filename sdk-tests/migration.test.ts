@@ -36,14 +36,16 @@ const legacyEngine = (systemPrompt: string, history: string[]) =>
 const migrated = () =>
 	spec('core:spec/chat-turn@1', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
-		.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-		.provider('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
+		.provider('generate', ($) =>
+			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+		)
 
 /** Renders exactly what the legacy engine renders — that is the point of the exercise. */
 const parityBindings = (systemPrompt: string, history: string[]) =>
 	bindings({
-		'core:query/chat-history@1': async () => ok({ main: history, messages: history }),
+		'core:query/session-history@1': async () => ok({ main: history, messages: history }),
 		'core:task/assemble@2': async (i: any) => {
 			const out = legacyEngine(systemPrompt, i.candidates ?? [])
 			return ok({ main: out, context: out })
@@ -52,7 +54,7 @@ const parityBindings = (systemPrompt: string, history: string[]) =>
 
 const previewOf = async (systemPrompt: string, history: string[]) =>
 	run(publish(migrated()), {
-		input: { text: 'hi', chatScope: { chatId: 'c1' } },
+		input: { text: 'hi', sessionScope: { sessionId: 'c1' } },
 		world,
 		preview: true,
 		bindings: parityBindings(systemPrompt, history),
@@ -84,7 +86,12 @@ describe('73 · parity against the legacy engine', () => {
 	const HISTORY = ['user: where are we?', 'assistant: three days east of the pass.']
 
 	test('a faithful migration is byte-identical', async () => {
-		const r = checkParity('chat/basic', legacyEngine(SYSTEM, HISTORY), await previewOf(SYSTEM, HISTORY), roughTokens)
+		const r = checkParity(
+			'chat/basic',
+			legacyEngine(SYSTEM, HISTORY),
+			await previewOf(SYSTEM, HISTORY),
+			roughTokens,
+		)
 		assert.equal(r.identical, true, renderParity(r))
 		assert.equal(r.tokensLegacy, r.tokensPipeline)
 	})
@@ -114,7 +121,8 @@ describe('73 · parity against the legacy engine', () => {
 
 // ── 74 · The gate on dropping the old path ─────────────────────────────────
 describe('74 · the parity gate', () => {
-	const green = (n: number) => Array.from({ length: n }, (_, i) => ({ fixture: `f${i}`, identical: true }))
+	const green = (n: number) =>
+		Array.from({ length: n }, (_, i) => ({ fixture: `f${i}`, identical: true }))
 
 	test('all green over a real corpus passes', () => {
 		assert.deepEqual(parityGate(green(20), 10), { pass: true })
@@ -146,7 +154,12 @@ describe('75 · the migration report', () => {
 			{
 				source: { table: 'prompt_configs', id: 1, label: 'My chat setup' },
 				outcome: 'migrated',
-				target: { slug: migratedSlug('prompt_configs', 1), scopeKind: 'user', nodeKey: 'prompt', slot: 'prompts' },
+				target: {
+					slug: migratedSlug('prompt_configs', 1),
+					scopeKind: 'user',
+					nodeKey: 'prompt',
+					slot: 'prompts',
+				},
 			},
 			{
 				source: { table: 'prompt_configs', id: 2, label: 'Old experiment' },
@@ -167,7 +180,10 @@ describe('75 · the migration report', () => {
 	test('a silent drop is a bug in the migration, not in the data', () => {
 		const bad: MigrationReport = {
 			...report,
-			entries: [...report.entries, { source: { table: 'prompt_configs', id: 3 }, outcome: 'skipped' }],
+			entries: [
+				...report.entries,
+				{ source: { table: 'prompt_configs', id: 3 }, outcome: 'skipped' },
+			],
 		}
 		assert.throws(() => assertReportComplete(bad), /gave no reason/)
 	})

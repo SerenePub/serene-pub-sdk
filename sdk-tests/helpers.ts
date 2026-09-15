@@ -30,6 +30,18 @@ export const world: ConfigWorld = {
 		{ id: 'cfg_creative', name: 'Creative', shape: 'core:shape/text-gen@1', values: { temperature: 0.92, top_p: 0.95, mirostat_tau: 5 } },
 		{ id: 'cfg_precise', name: 'Precise', shape: 'core:shape/text-gen@1', values: { temperature: 0.2 } },
 		{ id: 'cfg_voice', name: 'Aria', shape: 'core:shape/tts@1', values: { voice: 'aria', speed: 1 } },
+		// Carries a switchboard, unlike the three above — which deliberately do
+		// not, because a world with no `enabled` is the older shape and slot
+		// resolution still has to read it as all-on. Here `topK` is remembered
+		// but off, and `topP` is on with no stored value so its declared default
+		// is what should arrive.
+		{
+			id: 'cfg_switched',
+			name: 'Switched',
+			shape: 'core:shape/text-gen@1',
+			values: { temperature: 0.4, topK: 99 },
+			enabled: ['temperature', 'topP'],
+		},
 	],
 	connections: [
 		{
@@ -78,7 +90,7 @@ export function bindings(over: Bindings = {}): Bindings {
 		'core:input/user-message@1': async (i) => ok(i),
 		'core:input/message-created@1': async (i) => ok(i),
 
-		'core:query/chat-history@1': async (i: any) =>
+		'core:query/session-history@1': async (i: any) =>
 			ok({
 				main: 'history',
 				messages: {

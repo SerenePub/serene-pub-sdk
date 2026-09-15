@@ -1,0 +1,34 @@
+{
+	"name": "@serene-pub/core-catalog",
+	"version": "0.6.0-preview.0",
+	"type": "module",
+	"description": "Core's announcement (24 \u00a79): the genres, pipelines and hook declarations Serene Pub ships. SP boot-seeds from this package; conformance consumes it as fixtures; modders import it for typed references.",
+	"license": "Apache-2.0",
+	"sideEffects": [
+		"./dist/entries.js"
+	],
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"peerDependencies": {
+		"@serene-pub/sdk": ">=0.6.0-preview.0",
+		"@serene-pub/contracts": ">=0.6.0-preview.0"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json"
+	},
+	"devDependencies": {
+		"@serene-pub/sdk": "0.6.0-preview.0",
+		"@serene-pub/contracts": "0.6.0-preview.0"
+	}
+}

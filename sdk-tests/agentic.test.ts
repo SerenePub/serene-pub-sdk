@@ -46,7 +46,10 @@ const foldResults = pin(
 	describeTaskType({
 		id: 'demo:task/fold-tool-results@1',
 		timeoutMs: 500,
-		ports: { in: { results: S.json, context: S.assembled }, out: { main: S.assembled, context: S.assembled } },
+		ports: {
+			in: { results: S.json, context: S.assembled },
+			out: { main: S.assembled, context: S.assembled },
+		},
 	}),
 )
 
@@ -55,16 +58,22 @@ const agentic = (max = 8) =>
 	spec('demo:agent', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
 		.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
-		.loop(
-			'agent',
-			{ repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max },
-			(l) =>
-				l
-					.provider('turn', ($: any) => agentTurn.v1({ context: $.prompt.context, connection: slot.connection() }))
-					.map('tools', { over: ($: any) => $.agent.item.turn.toolCalls, max: 16 }, (m) =>
-						m.provider('call', ($: any) => C.mcpTool.v1({ args: $.$item, connection: slot.connection() })),
-					)
-					.task('fold', ($: any) => foldResults.v1({ results: $.agent.item.tools.values, context: $.prompt.context })),
+		.loop('agent', { repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max }, (l) =>
+			l
+				.provider('turn', ($: any) =>
+					agentTurn.v1({ context: $.prompt.context, connection: slot.connection() }),
+				)
+				.map('tools', { over: ($: any) => $.agent.item.turn.toolCalls, max: 16 }, (m) =>
+					m.provider('call', ($: any) =>
+						C.mcpTool.v1({ args: $.$item, connection: slot.connection() }),
+					),
+				)
+				.task('fold', ($: any) =>
+					foldResults.v1({
+						results: $.agent.item.tools.values,
+						context: $.prompt.context,
+					}),
+				),
 		)
 		.consume('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
 
@@ -81,7 +90,8 @@ const scripted = (rounds: number) => {
 				hasToolCalls: more,
 			})
 		},
-		'core:provider/mcp-tool@1': async (i: any) => ok({ main: `ran ${i.args?.tool}`, result: `ran ${i.args?.tool}` }),
+		'core:provider/mcp-tool@1': async (i: any) =>
+			ok({ main: `ran ${i.args?.tool}`, result: `ran ${i.args?.tool}` }),
 		'demo:task/fold-tool-results@1': async () => ok({ main: 'folded', context: 'folded' }),
 	})
 }
@@ -92,7 +102,11 @@ describe('83 · a tool-calling turn', () => {
 		const r = await run(publish(agentic()), { input: {}, world, bindings: scripted(2) })
 		assert.equal(r.outcome, 'ok')
 		const turns = r.nodes.filter((n) => n.nodeKey === 'agent.item.turn')
-		assert.equal(turns.length, 3, 'two tool rounds, then the answer — do-while, so always at least one')
+		assert.equal(
+			turns.length,
+			3,
+			'two tool rounds, then the answer — do-while, so always at least one',
+		)
 	})
 
 	test('every tool call is its own receipt entry, not one opaque provider call', async () => {
@@ -113,7 +127,11 @@ describe('83 · a tool-calling turn', () => {
 
 	test('a truncated loop never looks like a finished one', async () => {
 		const finished = await run(publish(agentic(8)), { input: {}, world, bindings: scripted(1) })
-		const truncated = await run(publish(agentic(2)), { input: {}, world, bindings: scripted(99) })
+		const truncated = await run(publish(agentic(2)), {
+			input: {},
+			world,
+			bindings: scripted(99),
+		})
 		assert.equal((finished.notes ?? []).length, 0)
 		assert.equal((truncated.notes ?? []).length, 1)
 	})
@@ -145,7 +163,11 @@ describe('85 · nesting', () => {
 		const tools = doc.blocks.find((b) => b.id === 'agent.item.tools')!
 		assert.equal(tools.blockId, 'agent', 'the map knows which block it sits in')
 		assert.equal(tools.blockChain, 'item')
-		assert.equal(doc.blocks.find((b) => b.id === 'agent')!.blockId, undefined, 'the loop is on the spine')
+		assert.equal(
+			doc.blocks.find((b) => b.id === 'agent')!.blockId,
+			undefined,
+			'the loop is on the spine',
+		)
 	})
 
 	test('two iterations never see each other’s values', async () => {
@@ -181,7 +203,9 @@ test('86 · a loop publishes branch-results, exactly like a map', async () => {
 // ── 87 · What the validator refuses ────────────────────────────────────────
 describe('87 · the bounds are enforced, not advised', () => {
 	const base = () =>
-		spec('demo:badloop', { version: '1.0.0' }).input('input', C.userMessage.v1()).task('prompt', C.assemble.v2({}))
+		spec('demo:badloop', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.task('prompt', C.assemble.v2({}))
 
 	test('an unbounded loop is refused, and the fix says why max is not optional', () => {
 		const b = base().loop('l', { repeatWhile: ($: any) => $.l.item.t.main, max: 0 }, (l) =>
@@ -212,7 +236,9 @@ describe('87 · the bounds are enforced, not advised', () => {
 
 	test('referencing into a repeating block from outside is refused, and names the fix', () => {
 		const b = base()
-			.loop('l', { repeatWhile: ($: any) => $.l.item.t.main, max: 4 }, (l) => l.task('t', C.gate.v1({})))
+			.loop('l', { repeatWhile: ($: any) => $.l.item.t.main, max: 4 }, (l) =>
+				l.task('t', C.gate.v1({})),
+			)
 			.task('after', ($: any) => C.assemble.v2({ candidates: $['l.item.t'] }))
 		const e = errorsFor(b, '01 §4a')
 		assert.ok(e.some((x) => /runs more than once/.test(x.message)))
@@ -229,9 +255,110 @@ test('88 · halt means halt — the loop does not swallow it', async () => {
 	const r = await run(publish(agentic()), {
 		input: {},
 		world,
-		bindings: { ...scripted(5), 'demo:task/fold-tool-results@1': async () => halt('nothing worth folding') },
+		bindings: {
+			...scripted(5),
+			'demo:task/fold-tool-results@1': async () => halt('nothing worth folding'),
+		},
 	})
 	assert.equal(r.outcome, 'halt')
 	assert.equal(r.haltReason, 'nothing worth folding')
-	assert.equal(r.nodes.filter((n) => n.nodeKey === 'agent.item.turn').length, 1, 'it stopped in the first iteration')
+	assert.equal(
+		r.nodes.filter((n) => n.nodeKey === 'agent.item.turn').length,
+		1,
+		'it stopped in the first iteration',
+	)
+})
+
+// ── 89 · What an iteration knows about the ones before it ───────────────────
+describe('89 · the carry', () => {
+	/**
+	 * A tool loop is only a loop if the next prompt can see the last result.
+	 * The body cannot reference a node declared after it (F9 — the scope makes
+	 * a back-edge unwritable), so the carry rides the one address that is
+	 * declared before the body: the block's own accumulating output.
+	 */
+	const carrying = (max = 8) =>
+		spec('demo:carry', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
+			.loop(
+				'agent',
+				{ repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max },
+				(l) =>
+					l
+						.task('sofar', ($: any) => C.gate.v1({ main: $.agent.values }))
+						.provider('turn', ($: any) =>
+							agentTurn.v1({
+								context: $.prompt.context,
+								connection: slot.connection(),
+							}),
+						),
+			)
+			.consume('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
+
+	test('an iteration reads the results of the ones before it', async () => {
+		const seen: unknown[] = []
+		await run(publish(carrying()), {
+			input: {},
+			world,
+			bindings: {
+				...scripted(2),
+				'test:task/gate@1': async (i: any) => {
+					seen.push(i.main)
+					return ok({ main: i.main })
+				},
+			},
+		})
+		assert.equal(seen.length, 3)
+		assert.deepEqual(seen[0], [], 'the first iteration has nothing behind it')
+		assert.equal(
+			(seen[1] as unknown[]).length,
+			1,
+			'the second sees the first iteration’s result',
+		)
+		assert.equal((seen[2] as unknown[]).length, 2)
+	})
+
+	test('an iteration still cannot read another iteration’s node values', async () => {
+		// The carry is the block's *published* output and nothing else: the
+		// per-iteration scope stays private, which is what keeps a loop and a
+		// parallel map one construct (F26).
+		const r = await run(publish(carrying()), { input: {}, world, bindings: scripted(2) })
+		const turns = r.nodes.filter((n) => n.nodeKey === 'agent.item.turn')
+		assert.deepEqual(
+			turns.map((t) => t.iteration),
+			[0, 1, 2],
+		)
+	})
+})
+
+// ── 90 · Why a loop stopped, as a fact rather than a sentence ───────────────
+describe('90 · the stop reason', () => {
+	test('stopping on the predicate and stopping on the ceiling are told apart', async () => {
+		const finished = await run(publish(agentic(8)), { input: {}, world, bindings: scripted(1) })
+		assert.deepEqual(finished.loops, [
+			{ blockId: 'agent', iterations: 2, stopped: 'predicate' },
+		])
+
+		const truncated = await run(publish(agentic(2)), {
+			input: {},
+			world,
+			bindings: scripted(99),
+		})
+		assert.deepEqual(truncated.loops, [
+			{ blockId: 'agent', iterations: 2, stopped: 'ceiling' },
+		])
+	})
+
+	test('a loop that stopped because the run did says so too', async () => {
+		const r = await run(publish(agentic()), {
+			input: {},
+			world,
+			bindings: {
+				...scripted(5),
+				'demo:task/fold-tool-results@1': async () => halt('nothing worth folding'),
+			},
+		})
+		assert.deepEqual(r.loops, [{ blockId: 'agent', iterations: 1, stopped: 'interrupted' }])
+	})
 })

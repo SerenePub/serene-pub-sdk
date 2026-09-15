@@ -30,7 +30,7 @@ const doc = (): SpecDocument =>
 	publish(
 		spec('chariot.dice-tray:turn', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
 			.provider('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
@@ -59,7 +59,7 @@ describe('108 · checkInstall decides from data alone', () => {
 
 	test('shape drift is caught even though every id still resolves', () => {
 		// The failure a version number alone misses: the plugin was built when
-		// chat-history published something else, so nothing looks wrong until the value
+		// session-history published something else, so nothing looks wrong until the value
 		// reaches a node that cannot read it.
 		const stale = doc()
 		stale.edges = stale.edges.map((e) =>
@@ -143,7 +143,7 @@ describe('108 · checkInstall decides from data alone', () => {
 		const f = checkInstall({
 			declares: [{ id: 'core:task/assemble@2' }],
 			documents: [doc()],
-			registry: coreRegistry().filter((r) => r.id !== 'core:query/chat-history'),
+			registry: coreRegistry().filter((r) => r.id !== 'core:query/session-history'),
 			owner: 'x',
 		})
 		assert.ok(f.length > 0)

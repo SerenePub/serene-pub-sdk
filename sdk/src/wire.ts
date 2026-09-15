@@ -23,6 +23,8 @@
  * and resolved in the receipt; logic inside a leaf is none of those.**
  */
 
+import { refuseUnlessIdentical } from './hash.js'
+
 export type BlockRole = 'system' | 'user' | 'assistant' | 'tool' | 'note'
 
 export interface ContextBlock {
@@ -86,7 +88,13 @@ export interface WireFormat {
 const formats = new Map<string, WireFormat>()
 
 export function defineWireFormat(w: WireFormat): WireFormat {
-	if (formats.has(w.id)) throw new Error(`duplicate wire format id: ${w.id}`)
+	const existing = formats.get(w.id)
+	// Display text for the same reason a template engine's is: the picker shows
+	// `label`, the wire carries `format`.
+	if (existing)
+		refuseUnlessIdentical(existing, w, `duplicate wire format id: ${w.id}`, {
+			display: ['label'],
+		})
 	formats.set(w.id, w)
 	return w
 }

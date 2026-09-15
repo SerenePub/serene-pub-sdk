@@ -13,6 +13,7 @@ import { spec } from '@serene-pub/sdk'
 import { run, ok } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { hashPayload, resolvePosition, isGated, POSITIONS } from '@serene-pub/sdk'
+import { resolveBlockMode } from '@serene-pub/sdk'
 import type { Reviewer } from '@serene-pub/sdk'
 import { extractRefs, render, checkTemplate } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
@@ -23,16 +24,40 @@ import { publish, bindings, world, fakeClock, findings } from './helpers.js'
 
 const approver: Reviewer = async () => ({ action: 'approve', by: 'jody', at: 1 })
 const rejecter: Reviewer = async () => ({ action: 'reject', by: 'jody', at: 1 })
-const editor = (payload: unknown): Reviewer => async () => ({ action: 'edit', payload, by: 'jody', at: 1 })
+const editor =
+	(payload: unknown): Reviewer =>
+	async () => ({ action: 'edit', payload, by: 'jody', at: 1 })
 
 const gated = () =>
 	spec('demo:gate@1', { version: '1.0.0' })
 		.input('input', C.userMessage.v1())
 		.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-		.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
+		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
-const reviewOff = { ...world, overrides: [{ nodeKey: 'save', slot: 'settings', path: 'review', value: 'off', scopeKind: 'user' as const }] }
-const reviewSync = { ...world, overrides: [{ nodeKey: 'save', slot: 'settings', path: 'review', value: 'sync', scopeKind: 'user' as const }] }
+const reviewOff = {
+	...world,
+	overrides: [
+		{
+			nodeKey: 'save',
+			slot: 'settings',
+			path: 'review',
+			value: 'off',
+			scopeKind: 'user' as const,
+		},
+	],
+}
+const reviewSync = {
+	...world,
+	overrides: [
+		{
+			nodeKey: 'save',
+			slot: 'settings',
+			path: 'review',
+			value: 'sync',
+			scopeKind: 'user' as const,
+		},
+	],
+}
 
 // ── 25 · off commits straight through ───────────────────────────────────────
 test('25 · review off invokes the binding directly', async () => {
@@ -111,7 +136,12 @@ test('27 · an edited payload is indistinguishable to the binding', async () => 
 		},
 	})
 
-	await run(publish(gated()), { input: {}, world: reviewSync, reviewer: approver, bindings: capture })
+	await run(publish(gated()), {
+		input: {},
+		world: reviewSync,
+		reviewer: approver,
+		bindings: capture,
+	})
 	await run(publish(gated()), {
 		input: {},
 		world: reviewSync,
@@ -134,7 +164,7 @@ describe('28 · author defaults, user overrides', () => {
 			spec('demo:authordefault@1', { version: '1.0.0' })
 				.input('input', C.messageCreated.v1())
 				.provider('render', C.renderImage.v1({ connection: slot.connection() }))
-				.consume('attach', $ => C.attachImage.v1({ image: $.render.image })),
+				.consume('attach', ($) => C.attachImage.v1({ image: $.render.image })),
 		)
 		let reviewed = false
 		await run(doc, {
@@ -212,8 +242,10 @@ describe('30 · pending and committed are one shape', () => {
 		spec('demo:asyncdownstream@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
-			.consume('done', $ => C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }))
+			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+			.consume('done', ($) =>
+				C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+			)
 
 	/**
 	 * The producer is a binding rather than the review gate.
@@ -286,8 +318,8 @@ describe('30 · pending and committed are one shape', () => {
 			spec('demo:rawids@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
-				.consume('done', $ => badConsumer.v1({ from: $.save.messageId })),
+				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.consume('done', ($) => badConsumer.v1({ from: $.save.messageId })),
 		)
 		const e = findingList.find((x) => x.law === '13 §7j-b')
 		assert.ok(e, 'the write-result mismatch is caught at publish, not at runtime')
@@ -311,7 +343,13 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 	const mcp = () =>
 		spec('demo:mcp-gate@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.provider('tool', C.mcpTool.v1({ args: { to: 'someone@example.com' }, connection: slot.connection() }))
+			.provider(
+				'tool',
+				C.mcpTool.v1({
+					args: { to: 'someone@example.com' },
+					connection: slot.connection(),
+				}),
+			)
 
 	test('it is eligible', () => {
 		assert.equal(isGated(C.mcpTool.v1().descriptor.effects), true)
@@ -343,7 +381,15 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 			world: {
 				...world,
 				// what an MCP snapshot should write until an admin marks the tool read-only
-				overrides: [{ nodeKey: 'tool', slot: 'settings', path: 'review', value: 'sync', scopeKind: 'instance' as const }],
+				overrides: [
+					{
+						nodeKey: 'tool',
+						slot: 'settings',
+						path: 'review',
+						value: 'sync',
+						scopeKind: 'instance' as const,
+					},
+				],
 			},
 		})
 		assert.equal(r.reviews!.find((x) => x.nodeKey === 'tool')!.position, 'on')
@@ -360,7 +406,10 @@ test('31 · a source template renders one item, an assembly template renders blo
 
 	const assembly = '{{ prompts.system }}\n{% for b in blocks %}[{{ b.sourceKey }}]{% endfor %}'
 	assert.equal(
-		render(assembly, { prompts: { system: 'be terse' }, blocks: [{ sourceKey: 'lore' }, { sourceKey: 'history' }] }),
+		render(assembly, {
+			prompts: { system: 'be terse' },
+			blocks: [{ sourceKey: 'lore' }, { sourceKey: 'history' }],
+		}),
 		'be terse\n[lore][history]',
 	)
 })
@@ -405,11 +454,14 @@ describe('32 · variable awareness', () => {
 
 // ── 33 · refs are extracted from both expressions and loops ─────────────────
 test('33 · extraction finds loop sources and expressions', () => {
-	const refs = extractRefs('{% for b in blocks.items %}{{ b.text }}{{ budget.remaining }}{% endfor %}')
-	assert.deepEqual(
-		refs.map((r) => `${r.root}${r.bound ? '(bound)' : ''}`).sort(),
-		['b(bound)', 'blocks', 'budget'],
+	const refs = extractRefs(
+		'{% for b in blocks.items %}{{ b.text }}{{ budget.remaining }}{% endfor %}',
 	)
+	assert.deepEqual(refs.map((r) => `${r.root}${r.bound ? '(bound)' : ''}`).sort(), [
+		'b(bound)',
+		'blocks',
+		'budget',
+	])
 })
 
 // ── 34 · the correction: scope comes from the slot, not the port ────────────
@@ -434,4 +486,229 @@ test('34 · template scope is declared on the slot — typed ports alone cannot 
 	// The point: knowing the port shape tells you nothing about `entry.title`.
 	const f = checkTemplate('{{ entry.title }}', {})
 	assert.equal(f[0]!.severity, 'error')
+})
+
+// ── 33 · a block's mode is the author's default, not their decision ─────────
+describe('33 · block mode is configurable', () => {
+	const twoReads = () =>
+		spec('demo:blockmode@1', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.async('reads', {}, (b) =>
+				b
+					.chain('slow', (c) =>
+						c.query('one', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
+					)
+					.chain('fast', (c) =>
+						c.query('two', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
+					),
+			)
+
+	test('the declaration defaults to parallel and the setting overrides it', () => {
+		// The executor's own resolution, checked directly: the author says what
+		// is usually right, the administrator says what is right here. Same
+		// precedence `review` uses, and for the same reason — the person who
+		// knows the provider is rate-limited is not the person who wrote the
+		// spec.
+		assert.equal(resolveBlockMode('parallel', undefined), 'parallel')
+		assert.equal(resolveBlockMode('parallel', 'sequential'), 'sequential')
+		assert.equal(resolveBlockMode('sequential', 'parallel'), 'parallel')
+		// An unset or nonsense setting falls back rather than throwing: this is
+		// read on every block of every run.
+		assert.equal(resolveBlockMode('sequential', 'whenever'), 'sequential')
+		assert.equal(resolveBlockMode(undefined, undefined), 'parallel')
+	})
+
+	test('the setting reaches the executor, addressed by block id', async () => {
+		// Blocks were absent from `resolveConfig`'s key list, so a value stored
+		// against a block id resolved to nothing and the author's mode always
+		// won. Ordering is the observable: sequential chains finish in order.
+		const order: string[] = []
+		const timed = (name: string, ms: number) => async () => {
+			await new Promise((r) => setTimeout(r, ms))
+			order.push(name)
+			return ok({ main: [], messages: [] })
+		}
+		const world = {
+			overrides: [
+				{
+					nodeKey: 'reads',
+					slot: 'settings',
+					path: 'mode',
+					value: 'sequential',
+					scopeKind: 'user' as const,
+				},
+			],
+		}
+		await run(publish(twoReads()), {
+			input: {},
+			world: world as any,
+			bindings: bindings({
+				'core:query/session-history@1': timed('slow', 25),
+				'core:query/lorebook-triggers@1': timed('fast', 1),
+			}),
+		})
+		// The observable: under `parallel` the 1ms chain finishes first, so
+		// `fast` leads. Under `sequential` declaration order holds regardless
+		// of duration, so `slow` does.
+		assert.deepEqual(order, ['slow', 'fast'])
+	})
+})
+
+// ── 34 · a params slot can be shared, like a prompts slot ───────────────────
+describe('34 · shared params', () => {
+	const policySpec = () =>
+		spec('demo:sharedparams@1', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.task('rank', C.rankHybrid.v1({ params: slot.params() } as any))
+			.query('history', ($: any) =>
+				C.sessionHistory.v1({
+					scope: $.input.sessionScope,
+					// The policy lives on the ranker; this reads it rather than
+					// keeping a second copy that agrees until somebody edits one.
+					params: slot.params('rank'),
+				} as any),
+			)
+
+	test("the reader gets the owner's values, not its own", async () => {
+		let seen: any
+		const world = {
+			overrides: [
+				{
+					nodeKey: 'rank',
+					slot: 'params',
+					path: 'budget',
+					value: 777,
+					scopeKind: 'user' as const,
+				},
+				// The reader's own params are deliberately different: if the
+				// resolution used `node.key` this is the number that would show
+				// up, and the test would pass while sharing did nothing.
+				{
+					nodeKey: 'history',
+					slot: 'params',
+					path: 'budget',
+					value: 111,
+					scopeKind: 'user' as const,
+				},
+			],
+		}
+		await run(publish(policySpec()), {
+			input: {},
+			world: world as any,
+			bindings: bindings({
+				'core:query/session-history@1': async (i: any) => {
+					seen = i.params
+					return ok({ main: [], messages: [] })
+				},
+			}),
+		})
+		assert.equal(seen?.budget, 777)
+	})
+
+	test("defaults come from the owner's schema too", async () => {
+		// Filling the reader's gaps from the reader's schema and calling the
+		// result the owner's policy is the subtle half of the same bug.
+		let seen: any
+		await run(publish(policySpec()), {
+			input: {},
+			bindings: bindings({
+				'core:query/session-history@1': async (i: any) => {
+					seen = i.params
+					return ok({ main: [], messages: [] })
+				},
+			}),
+		})
+		assert.ok(seen, 'the query never ran')
+		assert.equal('limit' in seen, false, "got the reader's own schema defaults")
+	})
+})
+
+// ── 35 · a source can be switched off ───────────────────────────────────────
+describe('35 · switched off', () => {
+	const withLore = () =>
+		spec('demo:toggle@1', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.query('lore', ($: any) => C.worldLore.v1({ scope: $.input.sessionScope }))
+
+	const runWith = async (enabled: boolean | undefined) => {
+		let asked = 0
+		const world =
+			enabled === undefined
+				? undefined
+				: {
+						overrides: [
+							{
+								nodeKey: 'lore',
+								slot: 'settings',
+								path: 'enabled',
+								value: enabled,
+								scopeKind: 'user' as const,
+							},
+						],
+					}
+		const r = await run(publish(withLore()), {
+			input: {},
+			world: world as any,
+			bindings: bindings({
+				'core:query/world-lore@1': async () => {
+					asked++
+					return ok({ main: [{ id: 1 }], hits: [{ id: 1 }] })
+				},
+			}),
+		})
+		return { asked, r }
+	}
+
+	test('off means the query never runs, not that its result is discarded', async () => {
+		// The whole point of the toggle over `share: 0`: a starved source is
+		// still fetched and then thrown away, which costs the same as using it.
+		const { asked, r } = await runWith(false)
+		assert.equal(asked, 0)
+		assert.equal(r.outcome, 'ok')
+	})
+
+	test('the receipt says it was skipped rather than reporting nothing', async () => {
+		const { r } = await runWith(false)
+		const node = r.nodes.find((n: any) => n.nodeKey === 'lore')
+		assert.ok(node, 'the node vanished from the receipt entirely')
+		assert.equal(node!.result, 'ok')
+		assert.match(String(node!.notes?.join(' ')), /switched off/)
+	})
+
+	test('on, and unset, both run it', async () => {
+		assert.equal((await runWith(true)).asked, 1)
+		assert.equal((await runWith(undefined)).asked, 1)
+	})
+
+	test('a node that is not optional cannot be switched off', async () => {
+		// `optional` is the contract that says an empty result is fine here.
+		// Without that check, switching off a node whose output something
+		// downstream requires fails at the consumer with a confusing message
+		// instead of being refused where it was asked for.
+		let asked = 0
+		const s = spec('demo:notoggle@1', { version: '1.0.0' })
+			.input('input', C.userMessage.v1())
+			.query('history', ($: any) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+		await run(publish(s), {
+			input: {},
+			world: {
+				overrides: [
+					{
+						nodeKey: 'history',
+						slot: 'settings',
+						path: 'enabled',
+						value: false,
+						scopeKind: 'user' as const,
+					},
+				],
+			} as any,
+			bindings: bindings({
+				'core:query/session-history@1': async () => {
+					asked++
+					return ok({ main: [], messages: [] })
+				},
+			}),
+		})
+		assert.equal(asked, 1, 'a non-optional node honoured a switch it should ignore')
+	})
 })

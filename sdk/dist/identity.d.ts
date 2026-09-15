@@ -4,7 +4,7 @@
  * Two versioning schemes live in this system and conflating them causes real confusion,
  * so they are stated apart:
  *
- * - **Types pin at an integer version** — `core:query/chat-history@1`. A pin is exact;
+ * - **Types pin at an integer version** — `core:query/session-history@1`. A pin is exact;
  *   a spec references one version and never floats.
  * - **Specs upgrade at semver** — `1.2.0`. An import replaces the installed copy when it
  *   is newer and is ignored when it is not, which is the rule already ruled for imported

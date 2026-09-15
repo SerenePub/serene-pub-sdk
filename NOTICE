@@ -1,0 +1,17 @@
+Serene Pub SDK
+Copyright (c) 2025-2026 Jody Doolittle
+
+This product includes software developed as part of the Serene Pub project
+(https://github.com/doolijb/serene-pub).
+
+The Serene Pub SDK is licensed under the Apache License, Version 2.0.
+
+Note that the Serene Pub application itself is a separate work, licensed under
+the GNU Affero General Public License v3.0. Building on this SDK does not place
+your extension under the AGPL — that is the reason this SDK is licensed
+permissively.
+
+"Serene Pub" and the Serene Pub logo are trademarks of the project owner and are
+not licensed by the Apache License (see Section 6). Their use is governed by the
+project's trademark policy:
+https://github.com/doolijb/serene-pub/blob/main/TRADEMARK.md

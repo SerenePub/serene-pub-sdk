@@ -87,6 +87,24 @@ function blankNonCode(text) {
     return out.join('');
 }
 const lineAt = (text, index) => text.slice(0, index).split('\n').length;
+/**
+ * Best-effort source location for a finding about an evaluated value: the id is written
+ * out in the descriptor (register refuses computed ids), so it appears literally in some
+ * source file. Falls back to the entry file when it does not — a finding with a rough
+ * address beats one with none.
+ */
+function locate(sources, needle) {
+    for (const s of sources) {
+        const i = s.text.indexOf(needle);
+        if (i !== -1)
+            return { file: s.path, line: lineAt(s.text, i) };
+    }
+    return { file: sources[0]?.path ?? '(none)', line: 1 };
+}
+/** Is there any locale with actual text in it? (Mirrors the SDK's private check.) */
+const hasDisplayText = (v) => typeof v === 'string'
+    ? v.trim().length > 0
+    : !!v && Object.values(v).some((s) => typeof s === 'string' && s.trim().length > 0);
 /** Index just past the `)` matching the `(` at `open`. Operates on blanked code. */
 function matchParen(code, open) {
     let depth = 0;
@@ -133,7 +151,7 @@ function isWrittenOut(raw, blanked) {
     const r = raw.trim();
     // The scanner blanks string bodies so that a call written inside a comment or a string
     // cannot be mistaken for a real one — which means a *legitimate* quoted argument also
-    // blanks to nothing. `eventHook('core:event/chat-created@1', h)` is the most written-out
+    // blanks to nothing. `eventHook('core:event/session-created@1', h)` is the most written-out
     // form there is, so emptiness only means "computed" when the raw text was not a literal.
     const quoted = /^['"`]/.test(r);
     if (!t && !quoted)
@@ -285,6 +303,39 @@ export function compilePlugin(input) {
     mismatch('lifecycleHook', scan.declared.lifecycleHooks, lifecycle.length);
     mismatch('eventHook', scan.declared.eventHooks, events.length);
     mismatch('component', scan.declared.components, (e.components ?? []).length);
+    // A shape-bearing input type *is* a chat mode (19 §2), and the New Chat picker
+    // renders one card per mode: `i18n.name` is the card's face, `i18n.description` its
+    // subtitle. The SDK already refuses an untitled mode at declaration; the packager
+    // repeats the check because the evaluated extension may have been built against an
+    // older SDK — and warns on a missing description, which is a poorer card rather
+    // than a broken one.
+    for (const h of pipelineHooks) {
+        const t = h.type;
+        if (t?.kind !== 'input' || !t.sessionShape)
+            continue;
+        const at = locate(input.sources, t.id);
+        if (!hasDisplayText(t.i18n?.name))
+            findings.push({
+                severity: 'error',
+                file: at.file,
+                line: at.line,
+                code: 'E_MODE_NO_TITLE',
+                message: `chat mode '${t.id}' has no i18n.name`,
+                fix: `give the type a title — i18n: { name: { en: '…' } }. The New Chat picker ` +
+                    `renders every mode as a card, and an untitled card can only show the type id, ` +
+                    `which is an address rather than a name.`,
+            });
+        if (!hasDisplayText(t.i18n?.description))
+            findings.push({
+                severity: 'warning',
+                file: at.file,
+                line: at.line,
+                code: 'W_MODE_NO_DESCRIPTION',
+                message: `chat mode '${t.id}' has no i18n.description`,
+                fix: `add i18n: { description: { en: '…' } } — the card's subtitle is how a user ` +
+                    `chooses between modes without trying them.`,
+            });
+    }
     const documents = [];
     for (const p of e.pipelines ?? []) {
         try {

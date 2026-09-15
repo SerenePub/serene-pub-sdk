@@ -3,7 +3,7 @@
   "version": "0.6.0-preview.0",
   "type": "module",
   "description": "Author Serene Pub pipelines and plugins: nodes, specs, the executor, and the author-side test harness.",
-  "license": "AGPL-3.0",
+  "license": "Apache-2.0",
   "sideEffects": false,
   "files": ["dist", "README.md"],
   "main": "./dist/index.js",
@@ -11,6 +11,7 @@
   "exports": {
     ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
     "./testing": { "types": "./dist/testing.d.ts", "import": "./dist/testing.js" },
+    "./tokenizers": { "types": "./dist/tokenizers.d.ts", "import": "./dist/tokenizers.js" },
     "./package.json": "./package.json"
   },
   "scripts": { "build": "tsc -p tsconfig.build.json" }

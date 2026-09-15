@@ -3,7 +3,7 @@
 	"version": "0.6.0-preview.0",
 	"private": true,
 	"type": "module",
-	"description": "The SDK's own suite. Kept as a workspace package so it runs against the vendored sources, not a published build — the point of the monorepo is that a change to the SDK fails here before it reaches core.",
+	"description": "The SDK's own suite. Kept as a workspace package so it runs against the vendored sources, not a published build \u2014 the point of the monorepo is that a change to the SDK fails here before it reaches core.",
 	"scripts": {
 		"test": "tsc --noEmit && tsx --test *.test.ts",
 		"typecheck": "tsc --noEmit"
@@ -13,6 +13,8 @@
 		"@serene-pub/contracts": "0.6.0-preview.0",
 		"@serene-pub/conformance": "0.6.0-preview.0",
 		"@serene-pub/cli": "0.6.0-preview.0",
-		"tsx": "^4.0.0"
+		"tsx": "^4.0.0",
+		"@serene-pub/core-catalog": "0.6.0-preview.0",
+		"@serene-pub/controls": "0.6.0-preview.0"
 	}
 }

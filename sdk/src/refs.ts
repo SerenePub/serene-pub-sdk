@@ -56,7 +56,23 @@ export const slot = {
 		ofNode: addr(ofNode),
 	}),
 	template: (): SlotRef => ({ __ref: 'slot', slot: 'template' }),
-	params: (): SlotRef => ({ __ref: 'slot', slot: 'params' }),
+	/**
+	 * With a target, the slot is *shared* — the same reading as `prompts`.
+	 *
+	 * This took no target until now, which was an oversight rather than a
+	 * decision: cross-source policy has to live on one node and be read by the
+	 * several that answer to it. Retrieval is the case — every query wants the
+	 * ranker's floors and weights, and a copy per query is a set of numbers
+	 * that agree until somebody edits one.
+	 *
+	 * The alternative was reordering the graph to put the policy node first,
+	 * which puts a node named for ranking in front of everything it ranks.
+	 */
+	params: (ofNode?: NodeAddress): SlotRef => ({
+		__ref: 'slot',
+		slot: 'params',
+		ofNode: addr(ofNode),
+	}),
 	/**
 	 * With a target, the slot is *shared* — the same reading as `prompts`. A node
 	 * that consumes another's rendered variables reads that node's selections

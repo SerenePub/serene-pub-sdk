@@ -17,14 +17,54 @@
  * what the exporter did, and independent of whether the exporter was even configured.
  */
 import { getType } from './descriptors.js';
-/** Every connection this document needs, derived from its types. */
+import { capabilityLabel, satisfies, } from './capabilities.js';
+/**
+ * A slot this node reads from ANOTHER node's config (16 §5b-i).
+ *
+ * `resolvedRefs` is what publish leaves behind for `slot.connectionOf('x')`, and
+ * the executor honours it: `resolveSlot` reads the TARGET's stored value, so a
+ * value written against this node would be resolved by nothing.
+ *
+ * Same rule the config panel already applies — a slot wired to another node's is
+ * not this node's to configure, and offering a second box for one value is the
+ * defect that rule exists to close. It reaches here for the first time because
+ * `core:task/assemble@2` is the first core type to share a CONNECTION reference:
+ * it renders the prompt for whatever the sending Provider is bound to, and has
+ * nothing of its own for an importer to bind.
+ */
+const sharedWithAnotherNode = (n, slot) => {
+    const target = n.resolvedRefs?.[slot];
+    if (target !== undefined)
+        return target !== n.key;
+    // A document that predates `resolvedRefs`, or one hand-written: the wiring is
+    // still in the stored config as a slot reference carrying `ofNode`.
+    const wired = n.config?.[slot];
+    return (!!wired &&
+        typeof wired === 'object' &&
+        wired.__ref === 'slot' &&
+        !!wired.ofNode &&
+        wired.ofNode !== n.key);
+};
+/**
+ * Every connection this document needs, derived from its types.
+ *
+ * "Needs" means a binding an importer has to make. A slot the document already
+ * points at another node's is not one of those — see `sharedWithAnotherNode`.
+ */
 export function requiredConnections(doc) {
     const out = [];
     for (const n of doc.nodes) {
         const d = getType(`${n.typeId}@${n.typeVersion}`);
         for (const [slot, decl] of Object.entries(d?.slots ?? {}))
-            if (decl.kind === 'connection')
-                out.push({ nodeKey: n.key, slot, kind: decl.shape, typeId: n.typeId });
+            if (decl.kind === 'connection' && !sharedWithAnotherNode(n, slot))
+                out.push({
+                    nodeKey: n.key,
+                    slot,
+                    kind: decl.shape,
+                    typeId: n.typeId,
+                    ...(decl.requires ? { requires: decl.requires } : {}),
+                    ...(decl.optional ? { optional: decl.optional } : {}),
+                });
     }
     return out;
 }
@@ -40,8 +80,48 @@ export function unwiredConnections(doc, bound) {
     return requiredConnections(doc).filter((r) => !has.has(`${r.nodeKey} ${r.slot}`));
 }
 /**
- * The line an import screen shows. Names the kind, because F17 means only connections
- * producing that shape are eligible — offering the rest is offering a mistake.
+ * The line an import screen shows.
+ *
+ * Names the capability in the words the connection form used — "needs a
+ * connection that supports Image generation" — rather than a shape id. Somebody
+ * reading this is deciding which of their connections to point at it, and
+ * `core:shape/image-gen@1` does not help them decide anything.
+ *
+ * `supports`, not `can`: every capability label is a noun phrase ("Vision",
+ * "Embeddings", "Image generation"), so `can` only reads for the handful that
+ * happen to start with a verb and gives "a connection that can Embeddings" for
+ * the rest.
  */
-export const renderRequirement = (r) => `${r.nodeKey}.${r.slot} — needs a ${r.kind ?? 'connection'} connection (${r.typeId})`;
+export const renderRequirement = (r) => {
+    const caps = (r.requires ?? []).map(capabilityLabel);
+    const what = caps.length
+        ? `a connection that supports ${caps.join(' and ')}`
+        : `a ${r.kind ?? 'connection'} connection`;
+    return `${r.nodeKey}.${r.slot} — needs ${what} (${r.typeId})`;
+};
+/**
+ * Which bound connections cannot do what their slot asks.
+ *
+ * Distinct from `unwiredConnections`, and the distinction is the whole point of
+ * the capability model: *unwired* means nobody chose yet, *unsatisfied* means
+ * somebody chose and the choice will not work. The first is an unfinished setup;
+ * the second is a setup that looks finished and fails at the first run.
+ *
+ * Takes the resolved capability set per slot rather than a connection id, so
+ * this stays pure — the caller does the lookup it was going to do anyway.
+ */
+export function unsatisfiedConnections(doc, boundCapabilities) {
+    const byAddress = new Map(boundCapabilities.map((b) => [`${b.nodeKey} ${b.slot}`, b.capabilities]));
+    const out = [];
+    for (const r of requiredConnections(doc)) {
+        const have = byAddress.get(`${r.nodeKey} ${r.slot}`);
+        // Nothing bound is `unwiredConnections`' business, not this one.
+        if (!have)
+            continue;
+        const verdict = satisfies({ requires: r.requires, optional: r.optional }, have);
+        if (!verdict.ok)
+            out.push({ ...r, verdict });
+    }
+    return out;
+}
 //# sourceMappingURL=connections.js.map

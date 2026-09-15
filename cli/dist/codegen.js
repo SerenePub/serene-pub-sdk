@@ -19,14 +19,14 @@
  * - **Task / Provider / Consumer types are verb phrases** — they *do* something:
  *   `generate-text`, `embed-text`, `render-image`, `create-message`, `assemble`.
  * - **Query types name their source** — a Query is chosen by what it returns, which is
- *   what a user tuning "how much should lore matter" is looking at: `chat-history`,
+ *   what a user tuning "how much should lore matter" is looking at: `session-history`,
  *   `persona-card`, `lorebook-triggers`.
  *
  * Renaming `core:provider/text-gen@1` to `core:provider/generate-text@1` also removed a
  * collision worth naming: it was the same string as `core:shape/text-gen@1`, the operation
  * and the category spelled identically in different namespaces.
  */
-/** `'core:query/chat-history@2'` → `{ ns: 'core', kind: 'query', name: 'chat-history', version: 2 }` */
+/** `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
 export function parseTypeId(id) {
     const at = /@(\d+)$/.exec(id);
     const version = at ? Number(at[1]) : 1;

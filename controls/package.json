@@ -1,0 +1,37 @@
+{
+	"name": "@serene-pub/controls",
+	"version": "0.6.0-preview.0",
+	"type": "module",
+	"description": "Value-declaration control components (24 \u00a79): one Svelte editor per value-type id plus the schema form renderer \u2014 the render leg of the four-way registry. Shipped as raw source; the consuming app's Svelte compiles it.",
+	"license": "Apache-2.0",
+	"svelte": "./src/index.ts",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"svelte": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./registry": {
+			"types": "./src/registry.ts",
+			"import": "./src/registry.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"peerDependencies": {
+		"svelte": ">=5",
+		"@serene-pub/sdk": ">=0.6.0-preview.0"
+	},
+	"scripts": {
+		"build": "echo 'raw-source svelte library \u2014 nothing to build'"
+	},
+	"peerDependenciesMeta": {
+		"svelte": {
+			"optional": true
+		}
+	},
+	"files": [
+		"src",
+		"README.md"
+	]
+}

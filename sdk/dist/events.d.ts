@@ -47,11 +47,11 @@ export declare const cycleRelevantEvents: () => EventDef[];
 export declare function _clearEvents(): void;
 export declare const CORE_EVENTS: {
     readonly messageCreated: EventDef;
-    readonly chatCreated: EventDef;
+    readonly sessionCreated: EventDef;
     /**
      * A UI action asked for a run (13 §7). Carrying both users is what answers the
      * budget-owner question without a separate rule: **budget and quota attach to the
-     * owner; the receipt's attribution records the trigger.** Group chats need no
+     * owner; the receipt's attribution records the trigger.** Group sessions need no
      * special case.
      */
     readonly uiAction: EventDef;
@@ -64,13 +64,13 @@ export declare const CORE_EVENTS: {
     readonly scheduleTick: EventDef;
 };
 export interface UiActionPayload {
-    chatId: string;
+    sessionId: string;
     /** Budget and quota attach here. */
     ownerUserId: string;
-    /** Attribution records this. May differ from the owner in a group chat. */
+    /** Attribution records this. May differ from the owner in a group session. */
     triggeringUserId: string;
     action: string;
-    chatType: string;
+    modeId: string;
     input: unknown;
 }
 //# sourceMappingURL=events.d.ts.map

@@ -13,6 +13,7 @@ import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
 import { getType } from './descriptors.js'
 import { requiredConnections, type ConnectionRequirement } from './connections.js'
 import { isStreaming } from './shapes.js'
+import { canonicalize, contentHash } from './hash.js'
 
 export interface DocEdge {
 	from: string
@@ -43,7 +44,16 @@ export interface SpecDocument {
 	schemaVersion: 1
 	id: string
 	version: string
+	/** The genre declaration a create pipeline carries (24 §3). Replaces `mode` (24 §2). */
+	genre?: unknown
+	/** @deprecated pre-rename documents only; compile never writes it. */
 	mode?: unknown
+	/** Contributed surfaces (19 §3–§4) — content like `genre`, hashed with the document. */
+	contributes?: unknown
+	/** Catalogue claims (ruled 2026-08-27) — content like the two above, hashed with the document. */
+	taxonomy?: unknown
+	/** The usage lock (24 §4): { genre, event } the input declared. Hashed with the document. */
+	input?: { genre?: string; event?: string }
 	subscribes: string[]
 	includes: Array<{ key: string; fragmentId: string }>
 	/** Author-shipped presets. Execution-affecting, so they round-trip (F4). */
@@ -75,7 +85,9 @@ export function compile(built: BuiltSpec): SpecDocument {
 	for (const n of built.nodes) {
 		for (const { path, ref } of collectDataRefs(n.config)) {
 			const upstream = built.nodes.find((x) => x.key === ref.node)
-			const outShape = upstream ? getType(`${upstream.typeId}@${upstream.typeVersion}`)?.ports.out?.[ref.port] : undefined
+			const outShape = upstream
+				? getType(`${upstream.typeId}@${upstream.typeVersion}`)?.ports.out?.[ref.port]
+				: undefined
 			// Whether an edge streams is decided here, at publish — so it is readable
 			// off the spec rather than discovered by running it (01 §11).
 			edges.push({
@@ -95,7 +107,14 @@ export function compile(built: BuiltSpec): SpecDocument {
 		const prev = spine[i - 1]!
 		const cur = spine[i]!
 		const already = edges.some((e) => e.to === cur.key && e.from === prev.key)
-		if (!already) edges.push({ from: prev.key, fromPort: 'main', to: cur.key, toPort: 'main', implicit: true })
+		if (!already)
+			edges.push({
+				from: prev.key,
+				fromPort: 'main',
+				to: cur.key,
+				toPort: 'main',
+				implicit: true,
+			})
 	}
 
 	// Resolve config references that were left to publish (16 §5b-i).
@@ -109,7 +128,9 @@ export function compile(built: BuiltSpec): SpecDocument {
 				resolved[k] = target
 			} else if (ref.ofNode) {
 				if (!built.nodes.some((x) => x.key === ref.ofNode)) {
-					throw new Error(`node '${n.key}' references config of unknown node '${ref.ofNode}'`)
+					throw new Error(
+						`node '${n.key}' references config of unknown node '${ref.ofNode}'`,
+					)
 				}
 				resolved[k] = ref.ofNode
 			}
@@ -121,7 +142,10 @@ export function compile(built: BuiltSpec): SpecDocument {
 		schemaVersion: 1,
 		id: built.id,
 		version: built.meta.version,
-		mode: built.meta.mode,
+		genre: built.meta.genre,
+		input: built.input,
+		contributes: built.meta.contributes,
+		taxonomy: built.meta.taxonomy,
 		subscribes: built.subscribes,
 		includes: built.includes,
 		presets: built.presets,
@@ -154,35 +178,20 @@ export function resolveDownstreamProvider(built: BuiltSpec, fromKey: string): st
 	return spineProviders[0]!.key
 }
 
-/** Canonical form — stable key order, for hashing and round-trip identity (F3). */
+/**
+ * Canonical form — stable key order, for hashing and round-trip identity (F3).
+ *
+ * The sort and the digest below moved to `hash.ts` unchanged, because the type
+ * registries now need the same two and a document and a declaration must not
+ * disagree about what identical content is. Same bytes in, same string out.
+ */
 export function canonical(doc: SpecDocument): string {
-	const sortObj = (v: unknown): unknown => {
-		if (Array.isArray(v)) return v.map(sortObj)
-		if (v && typeof v === 'object') {
-			return Object.fromEntries(
-				Object.entries(v as Record<string, unknown>)
-					.sort(([a], [b]) => a.localeCompare(b))
-					.map(([k, val]) => [k, sortObj(val)]),
-			)
-		}
-		return v
-	}
-	return JSON.stringify(sortObj(doc))
+	return canonicalize(doc)
 }
 
 /** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). */
 export function canonicalHash(doc: SpecDocument): string {
-	const s = canonical(doc)
-	let h1 = 0xdeadbeef
-	let h2 = 0x41c6ce57
-	for (let i = 0; i < s.length; i++) {
-		const c = s.charCodeAt(i)
-		h1 = Math.imul(h1 ^ c, 2654435761)
-		h2 = Math.imul(h2 ^ c, 1597334677)
-	}
-	h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
-	h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
-	return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16)
+	return contentHash(doc)
 }
 
 /** Import: document → the same in-memory form. `import(export(x))` is identity (F3). */
@@ -273,7 +282,11 @@ export function exportDocument(doc: SpecDocument, opts: ExportOptions = {}): Exp
 	// A preset with a default that did not travel would import as a spec with no default.
 	if (presets.length && !presets.some((p) => p.default)) {
 		const lost = (doc.presets ?? []).find((p) => p.default)
-		if (lost) omitted.push({ what: `default preset '${lost.slug}'`, reason: 'not selected; the import has no shipped default' })
+		if (lost)
+			omitted.push({
+				what: `default preset '${lost.slug}'`,
+				reason: 'not selected; the import has no shipped default',
+			})
 	}
 
 	return { doc: { ...doc, presets }, omitted, requires: requiredConnections(doc) }

@@ -33,6 +33,7 @@ import {
 	type TemplateFinding,
 	type TemplateScope
 } from "./template.js"
+import { refuseUnlessIdentical } from './hash.js'
 
 export type EngineId = string // 'core:template/jinja2@1'
 
@@ -75,8 +76,13 @@ export interface TemplateEngine {
 const engines = new Map<EngineId, TemplateEngine>()
 
 export function defineEngine(e: TemplateEngine): TemplateEngine {
-	if (engines.has(e.id))
-		throw new Error(`duplicate template engine id: ${e.id}`)
+	const existing = engines.get(e.id)
+	// `label` is the name in the editor's language picker and nothing else reads
+	// it, so renaming one is display text — the same rule `i18n` gets everywhere.
+	if (existing)
+		refuseUnlessIdentical(existing, e, `duplicate template engine id: ${e.id}`, {
+			display: ['label'],
+		})
 	engines.set(e.id, e)
 	return e
 }
@@ -200,6 +206,53 @@ export const handlebars = defineEngine({
 	check: () => [],
 	// Not exact: the helper set can expand a reference into arbitrary text, so a
 	// character count is an estimate and says so (16 §7a).
+	costProfile: (s, count) => ({
+		fixed: count(s),
+		perIteration: {},
+		exact: false
+	})
+})
+
+/**
+ * Liquid — core's **second** template engine, added beside Handlebars rather than
+ * instead of it.
+ *
+ * Host-supplied for the same reason Handlebars is: core renders with its own
+ * registered tag and filter set (`systemBlock`/`assistantBlock`/`userBlock`, `json`,
+ * `jsonValue`, `pad`) under a configuration a second implementation would not
+ * reproduce, and a near-miss renderer fails as what reads like a template bug.
+ */
+export const liquid = defineEngine({
+	id: "core:template/liquid@1",
+	label: "Liquid",
+	render: () => {
+		throw new Error(
+			"the Liquid engine is host-supplied: core renders with its own registered " +
+				"tag and filter set, and a second implementation here would differ in ways " +
+				"that read as template bugs"
+		)
+	},
+	// `{{ a.b }}`, `{% for x in xs %}`, `{% if x %}` — enough to answer "what does this
+	// template reference", which is what variable-awareness needs (16 §4). Filters,
+	// literals and the loop's own binding are excluded: a diagnostics list with
+	// `upcase` or `"quoted"` in it teaches a user to distrust the panel.
+	extract: (s) => {
+		const found = new Set<string>()
+		for (const m of s.matchAll(/\{\{-?\s*([A-Za-z_][\w.]*)/g))
+			found.add(m[1]!)
+		for (const m of s.matchAll(
+			/\{%-?\s*(?:if|elsif|unless|case|when|assign\s+\w+\s*=|echo)\s+([A-Za-z_][\w.]*)/g
+		))
+			found.add(m[1]!)
+		for (const m of s.matchAll(
+			/\{%-?\s*(?:for|tablerow)\s+\w+\s+in\s+([A-Za-z_][\w.]*)/g
+		))
+			found.add(m[1]!)
+		return [...found]
+	},
+	check: () => [],
+	// Not exact, for the same reason Handlebars is not: a filter or a custom tag can
+	// expand a reference into arbitrary text (16 §7a).
 	costProfile: (s, count) => ({
 		fixed: count(s),
 		perIteration: {},

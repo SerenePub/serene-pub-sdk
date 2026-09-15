@@ -28,7 +28,100 @@
  * Resolved run-wide *before* execution, which is why referencing another node's
  * config is not a data edge (F35).
  */
-export const SCOPE_ORDER = ['chat', 'user', 'instance', 'preset', 'defaults', 'author'];
+export const SCOPE_ORDER = ['session', 'user', 'instance', 'preset', 'defaults', 'author'];
+/**
+ * The path a REF slot's single value lives at.
+ *
+ * A `connection` or `sampling` slot holds exactly one thing — the id of a row in
+ * its own table — so it has no sub-paths and its address is the empty one.
+ *
+ * This constant exists because that fact was written down three different ways
+ * and the three never met. The panel wrote `''`, the app's legacy projection
+ * wrote `'ref'`, and this file's own executor read `'$ref'`; resolution below is
+ * exact-match on `(nodeKey, slot, path)`, so the three were unrelated addresses
+ * that could never collide and never warn. A pick made in the config panel was
+ * saved, shown back, and read by nobody — for as long as the feature has existed.
+ *
+ * `''` is the winner because it is what the writer already emits, so it is what
+ * is already in every user's `pipeline_config_values`. Any other choice would
+ * migrate live data to match a convention only the reader believed in.
+ *
+ * @see normalizeSlotPath — accepts the two dead spellings, loudly.
+ */
+export const SLOT_VALUE = '';
+/** Slots whose value is a row reference, not a structure. */
+const REF_SLOTS = new Set(['connection', 'sampling']);
+/** The two spellings that were never written by the panel but were read for. */
+const LEGACY_SLOT_PATHS = new Set(['ref', '$ref']);
+const warned = new Set();
+/**
+ * A ref slot's path, with the historical spellings folded in.
+ *
+ * Deliberately narrow: it applies only to `connection` and `sampling`, and only
+ * to the two exact strings. A `sampling` slot legitimately carries *other* paths
+ * — a node-level override of one sampler is stored at that sampler's own name —
+ * and none of those is `ref` or `$ref`, so nothing real is captured by accident.
+ *
+ * It warns once per address rather than staying quiet, because the failure this
+ * replaces was silent. A row that still needs migrating should say so.
+ */
+function normalizeSlotPath(slot, path) {
+    if (!REF_SLOTS.has(slot) || !LEGACY_SLOT_PATHS.has(path))
+        return path;
+    const key = `${slot}:${path}`;
+    if (!warned.has(key)) {
+        warned.add(key);
+        console.warn(`[config] a ${slot} slot value is stored at the legacy path '${path}'; ` +
+            `reading it as '${SLOT_VALUE}'. Migration 0175 normalises these — ` +
+            `if this appears after it has run, something is still writing the old address.`);
+    }
+    return SLOT_VALUE;
+}
+/** Test seam: the warn-once set is process-global by design. */
+export function _resetSlotPathWarnings() {
+    warned.clear();
+}
+/**
+ * The endpoint half of a connection slot's value, or null when it names none.
+ *
+ * Returns the id **exactly as stored** — a string stays a string, a number
+ * stays a number. Row ids belong to the host, and this package has no business
+ * ruling that they are one or the other; the string/number divide is reconciled
+ * where the comparison happens, not here.
+ */
+export function slotConnectionId(value) {
+    if (typeof value === 'number')
+        return Number.isFinite(value) ? value : null;
+    if (typeof value === 'string')
+        return value === '' ? null : value;
+    if (value && typeof value === 'object') {
+        const o = value;
+        const inner = o.ref ?? o.id;
+        if (typeof inner === 'number')
+            return Number.isFinite(inner) ? inner : null;
+        if (typeof inner === 'string')
+            return inner === '' ? null : inner;
+    }
+    return null;
+}
+/**
+ * The model half of a connection slot's value, or null when it names no model.
+ *
+ * Null for every value written before the pair existed, which is the whole
+ * compatibility story — and null is *absence*, never a model the endpoint is
+ * taken to mean. Same id-type rule as {@link slotConnectionId}: stored as
+ * given, back as stored.
+ */
+export function slotConnectionModelId(value) {
+    if (!value || typeof value !== 'object')
+        return null;
+    const inner = value.modelId;
+    if (typeof inner === 'number')
+        return Number.isFinite(inner) ? inner : null;
+    if (typeof inner === 'string')
+        return inner === '' ? null : inner;
+    return null;
+}
 /**
  * Effective config **with provenance** = base ⊕ overrides, per (nodeKey, slot, path).
  *
@@ -62,10 +155,15 @@ export function resolveConfigSources(world, nodeKeys) {
         // version of this fix was lost in transit.
         const SEP = '\u0000';
         const addresses = new Map();
-        for (const r of rows)
-            addresses.set(`${r.slot}${SEP}${r.path}`, [r.slot, r.path]);
+        // Normalised as the address is formed, so this is the ONE chokepoint every
+        // read passes through — a legacy spelling can never again resolve to its
+        // own private address (see SLOT_VALUE).
+        for (const r of rows) {
+            const path = normalizeSlotPath(r.slot, r.path);
+            addresses.set(`${r.slot}${SEP}${path}`, [r.slot, path]);
+        }
         for (const [slot, path] of addresses.values()) {
-            const candidates = rows.filter((r) => r.slot === slot && r.path === path);
+            const candidates = rows.filter((r) => r.slot === slot && normalizeSlotPath(r.slot, r.path) === path);
             for (const scope of SCOPE_ORDER) {
                 const hit = candidates.find((c) => c.scopeKind === scope);
                 if (hit) {
@@ -102,17 +200,30 @@ export function resolveConfig(world, nodeKeys) {
  * everyone automatically.
  */
 export const WRITE_MATRIX = {
-    connection: ['instance', 'preset'],
-    sampling: ['chat', 'user', 'preset', 'instance'],
+    // `session` added 2026-08-26 so a chat may point at its own connection —
+    // the per-session connection 0.5 had. Still admin-only in practice:
+    // `visibleTo` shows the slot to admins alone and `resolveWriteScope`
+    // refuses a non-admin every non-prompt write, so "credentials and compute
+    // stay under admin control" holds by a different gate than the matrix.
+    // This narrows F20's instance-only reading rather than dropping it: a
+    // *preset* still may not carry a connection (it does not export), which is
+    // the ruling's actual concern.
+    connection: ['session', 'instance', 'preset'],
+    sampling: ['session', 'user', 'preset', 'instance'],
     template: ['preset', 'instance'],
     // How a context variable is presented is a property of the instance's
     // configuration, not a personal preference: two users whose characters render
     // differently are two users whose bug reports cannot be compared. Same
     // scopes as `template`, which is the same decision one level up.
     variables: ['preset', 'instance'],
-    prompts: ['chat', 'user', 'preset', 'instance'],
-    params: ['chat', 'user', 'preset', 'instance'],
-    settings: ['chat', 'user', 'preset', 'instance'],
+    prompts: ['session', 'user', 'preset', 'instance'],
+    params: ['session', 'user', 'preset', 'instance'],
+    settings: ['session', 'user', 'preset', 'instance'],
+    // A chain changes what every run of the pipeline sends — the `variables`
+    // argument one tier up: two users whose chains differ are two users whose
+    // reports cannot be compared. Same scopes as `template`; widening to
+    // chat/user later is one entry here, additively (18 §4a).
+    scripts: ['preset', 'instance'],
 };
 export function mayWrite(slot, scope) {
     return (WRITE_MATRIX[slot] ?? []).includes(scope);

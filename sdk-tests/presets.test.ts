@@ -36,15 +36,22 @@ const withPresets = () =>
 		.input('input', C.userMessage.v1())
 		.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.lore.hits }))
-		.provider('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
-		.preset('balanced', { label: 'Balanced', description: 'The default mix.', default: true }, (p) =>
-			p.params('lore', { weight: 0.3, minInclude: 1 }),
+		.provider('generate', ($) =>
+			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
-		.preset('lore-heavy', { label: 'Lore-heavy', description: 'Favours world detail over history.' }, (p) =>
-			p
-				.params('lore', { weight: 0.5, minInclude: 3 })
-				.prompts('generate', { system: 'Stay in the world.' })
-				.template('prompt', jinja(ASSEMBLY)),
+		.preset(
+			'balanced',
+			{ label: 'Balanced', description: 'The default mix.', default: true },
+			(p) => p.params('lore', { weight: 0.3, minInclude: 1 }),
+		)
+		.preset(
+			'lore-heavy',
+			{ label: 'Lore-heavy', description: 'Favours world detail over history.' },
+			(p) =>
+				p
+					.params('lore', { weight: 0.5, minInclude: 3 })
+					.prompts('generate', { system: 'Stay in the world.' })
+					.template('prompt', jinja(ASSEMBLY)),
 		)
 		.preset('fast', { label: 'Fast' }, (p) => p.params('lore', { weight: 0.1, minInclude: 0 }))
 
@@ -52,13 +59,15 @@ const withPresets = () =>
 describe('64 · author presets', () => {
 	test('three presets, one default, addressed by node key', () => {
 		const doc = compile(withPresets().build())
-		assert.deepEqual(doc.presets.map((p) => p.slug), ['balanced', 'lore-heavy', 'fast'])
+		assert.deepEqual(
+			doc.presets.map((p) => p.slug),
+			['balanced', 'lore-heavy', 'fast'],
+		)
 		assert.equal(doc.presets.filter((p) => p.default).length, 1)
-		assert.deepEqual(doc.presets[1]!.values.map((v) => `${v.nodeKey}.${v.slot}`), [
-			'lore.params',
-			'generate.prompts',
-			'prompt.template',
-		])
+		assert.deepEqual(
+			doc.presets[1]!.values.map((v) => `${v.nodeKey}.${v.slot}`),
+			['lore.params', 'generate.prompts', 'prompt.template'],
+		)
 	})
 
 	test('values are flat override rows — the shape node_overrides already stores', () => {
@@ -99,10 +108,17 @@ describe('64 · author presets', () => {
 		const renamed = spec('chariot.rp:chat@1', { version: '1.1.0' })
 			.input('input', C.userMessage.v1())
 			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
-			.preset('balanced', { label: 'Standard', default: true }, (p) => p.params('lore', { weight: 0.3 }))
-			.preset('lore-heavy', { label: 'World-focused' }, (p) => p.params('lore', { weight: 0.5 }))
+			.preset('balanced', { label: 'Standard', default: true }, (p) =>
+				p.params('lore', { weight: 0.3 }),
+			)
+			.preset('lore-heavy', { label: 'World-focused' }, (p) =>
+				p.params('lore', { weight: 0.5 }),
+			)
 			.preset('fast', { label: 'Quick' }, (p) => p.params('lore', { weight: 0.1 }))
-		assert.deepEqual(compile(renamed.build()).presets.map((p) => p.slug), before)
+		assert.deepEqual(
+			compile(renamed.build()).presets.map((p) => p.slug),
+			before,
+		)
 	})
 
 	test('presets round-trip with the document (F3, F4)', () => {
@@ -173,7 +189,11 @@ describe('65 · the author/admin line', () => {
 		// imports documents it did not author (F6) — a hand-edited or third-party document
 		// can carry anything, and "the SDK wouldn't emit this" is not a defence.
 		const doc = compile(b.build())
-		doc.presets[0]!.values.push({ nodeKey: 'generate', slot: 'connection', value: { $ref: 'c1' } })
+		doc.presets[0]!.values.push({
+			nodeKey: 'generate',
+			slot: 'connection',
+			value: { $ref: 'c1' },
+		})
 		const e = validate(doc).filter((x) => x.law === '12 §4')
 		assert.equal(e.length, 1)
 		assert.match(e[0]!.fix, /admin cascade works because connection has no writable scope/)
@@ -185,7 +205,10 @@ describe('65a · selective export', () => {
 	test('the user picks which presets travel; the rest are reported, not silently dropped', () => {
 		const doc = compile(withPresets().build())
 		const { doc: out, omitted } = exportDocument(doc, { presets: ['lore-heavy'] })
-		assert.deepEqual(out.presets.map((p) => p.slug), ['lore-heavy'])
+		assert.deepEqual(
+			out.presets.map((p) => p.slug),
+			['lore-heavy'],
+		)
 		assert.equal(omitted.length, 3, 'two presets, plus the lost default')
 		assert.ok(omitted.some((o) => /default preset 'balanced'/.test(o.what)))
 	})
@@ -196,7 +219,11 @@ describe('65a · selective export', () => {
 		const doc = compile(withPresets().build())
 		const { doc: out } = exportDocument(doc, { presets: ['fast'] })
 		assert.notEqual(canonicalHash(out), canonicalHash(doc))
-		assert.equal(canonicalHash(importDocument(out)), canonicalHash(out), 'import(export(x)) is still identity')
+		assert.equal(
+			canonicalHash(importDocument(out)),
+			canonicalHash(out),
+			'import(export(x)) is still identity',
+		)
 	})
 
 	test('SDK compile ships everything — there is no instance to choose from', () => {
@@ -210,7 +237,9 @@ describe('65a · selective export', () => {
 			spec('demo:bindings@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.preset('creative', { label: 'Creative' }, (p) => p.sampling('generate', { $ref: 'sampling:creative' }))
+				.preset('creative', { label: 'Creative' }, (p) =>
+					p.sampling('generate', { $ref: 'sampling:creative' }),
+				)
 				.build(),
 		)
 		const base = exportDocument(doc, { bindings: 'base' })
@@ -218,7 +247,8 @@ describe('65a · selective export', () => {
 
 		const flat = exportDocument(doc, {
 			bindings: 'flattened',
-			resolve: (_slot, ref) => (ref === 'sampling:creative' ? { temperature: 1.1 } : undefined),
+			resolve: (_slot, ref) =>
+				ref === 'sampling:creative' ? { temperature: 1.1 } : undefined,
 		})
 		assert.deepEqual(flat.doc.presets[0]!.values[0]!.value, { temperature: 1.1 })
 	})
@@ -228,10 +258,15 @@ describe('65a · selective export', () => {
 			spec('demo:unresolved@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.preset('x', { label: 'X' }, (p) => p.sampling('generate', { $ref: 'sampling:gone' }))
+				.preset('x', { label: 'X' }, (p) =>
+					p.sampling('generate', { $ref: 'sampling:gone' }),
+				)
 				.build(),
 		)
-		const { doc: out, omitted } = exportDocument(doc, { bindings: 'flattened', resolve: () => undefined })
+		const { doc: out, omitted } = exportDocument(doc, {
+			bindings: 'flattened',
+			resolve: () => undefined,
+		})
 		assert.equal(out.presets[0]!.values.length, 0)
 		assert.match(omitted[0]!.reason, /could not resolve 'sampling:gone'/)
 	})
@@ -246,9 +281,16 @@ describe('65a · selective export', () => {
 		)
 		// As if an admin had bound one at preset scope — the builder cannot write it (§3a),
 		// but an instance's own preset rows can, and those are what an app export reads.
-		doc.presets[0]!.values.push({ nodeKey: 'generate', slot: 'connection', value: { $ref: 'conn:local' } })
+		doc.presets[0]!.values.push({
+			nodeKey: 'generate',
+			slot: 'connection',
+			value: { $ref: 'conn:local' },
+		})
 		for (const bindings of ['base', 'flattened'] as const) {
-			const { doc: out, omitted } = exportDocument(doc, { bindings, resolve: () => ({ anything: true }) })
+			const { doc: out, omitted } = exportDocument(doc, {
+				bindings,
+				resolve: () => ({ anything: true }),
+			})
 			assert.equal(out.presets[0]!.values.length, 0)
 			assert.match(omitted[0]!.reason, /never leave an instance/)
 		}
@@ -277,7 +319,8 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 		const mustache = defineEngine({
 			id: 'chariot.mustache:engine@1',
 			label: 'Mustache-ish',
-			render: (src, scope) => src.replace(/\{(\w+)\}/g, (_, k) => String((scope as any)[k] ?? '')),
+			render: (src, scope) =>
+				src.replace(/\{(\w+)\}/g, (_, k) => String((scope as any)[k] ?? '')),
 			extract: (src) => [...src.matchAll(/\{(\w+)\}/g)].map((m) => m[1]!),
 			check: () => [],
 			costProfile: (src, count) => ({
@@ -287,7 +330,10 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 			}),
 		})
 		assert.equal(getEngine('chariot.mustache:engine@1'), mustache)
-		assert.equal(renderWith({ engine: mustache.id, source: 'hi {name}' }, { name: 'Mira' }), 'hi Mira')
+		assert.equal(
+			renderWith({ engine: mustache.id, source: 'hi {name}' }, { name: 'Mira' }),
+			'hi Mira',
+		)
 	})
 
 	test('two slots in one spec may use different engines', () => {
@@ -331,7 +377,7 @@ describe('67 · cost profiles', () => {
 		const p = jinja2.costProfile(ASSEMBLY, count)
 		const forTen = p.fixed + p.perIteration['blocks']! * 10
 		const forOne = p.fixed + p.perIteration['blocks']! * 1
-        assert.ok(forTen > forOne)
+		assert.ok(forTen > forOne)
 	})
 
 	test('plain text is trivially exact — the reference implementation', () => {
@@ -372,7 +418,9 @@ describe('76 · spec identity and ownership', () => {
 			spec('chariot.rp:chat', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
 				.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
-				.preset('grimdark', { label: 'Grimdark', owner: 'someone.else' }, (p) => p.params('lore', { weight: 0.9 }))
+				.preset('grimdark', { label: 'Grimdark', owner: 'someone.else' }, (p) =>
+					p.params('lore', { weight: 0.9 }),
+				)
 				.build(),
 		)
 		assert.equal(doc.presets[0]!.owner, 'someone.else')

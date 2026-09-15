@@ -35,7 +35,14 @@ import { publish, bindings, world } from './helpers.js'
 
 const ctx = (): AllocatedContext => ({
 	blocks: [
-		{ sourceKey: 'persona', role: 'system', rendered: 'You are Mira.', tokens: 4, included: true, why: ['constant'] },
+		{
+			sourceKey: 'persona',
+			role: 'system',
+			rendered: 'You are Mira.',
+			tokens: 4,
+			included: true,
+			why: ['constant'],
+		},
 		{
 			sourceKey: 'lore',
 			role: 'system',
@@ -44,7 +51,14 @@ const ctx = (): AllocatedContext => ({
 			included: true,
 			why: ["key 'pass' matched at depth 1", 'won its inclusion group over "weather-2"'],
 		},
-		{ sourceKey: 'history', role: 'user', rendered: 'where are we?', tokens: 4, included: true, why: ['recent'] },
+		{
+			sourceKey: 'history',
+			role: 'user',
+			rendered: 'where are we?',
+			tokens: 4,
+			included: true,
+			why: ['recent'],
+		},
 		{
 			sourceKey: 'lore',
 			role: 'system',
@@ -116,7 +130,10 @@ describe('90 · overhead', () => {
 	})
 
 	test('an unregistered format fails with the likely cause named', () => {
-		assert.throws(() => formatWith('nobody.ships:this@1', ctx()), /the connection's plugin is disabled/)
+		assert.throws(
+			() => formatWith('nobody.ships:this@1', ctx()),
+			/the connection's plugin is disabled/,
+		)
 	})
 
 	test('an adapter can register its own wire format', () => {
@@ -126,7 +143,11 @@ describe('90 · overhead', () => {
 			format: (c) => included(c).map((b) => b.rendered.toUpperCase()),
 			overhead: () => 0,
 		})
-		assert.deepEqual(custom.format(ctx()), ['YOU ARE MIRA.', 'THE PASS IS SNOWED IN.', 'WHERE ARE WE?'])
+		assert.deepEqual(custom.format(ctx()), [
+			'YOU ARE MIRA.',
+			'THE PASS IS SNOWED IN.',
+			'WHERE ARE WE?',
+		])
 	})
 })
 
@@ -157,7 +178,9 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 		spec('demo:wire', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.task('alloc', allocate.v1({}))
-			.provider('send', ($: any) => wired.v1({ context: $.alloc.context, connection: slot.connection() }))
+			.provider('send', ($: any) =>
+				wired.v1({ context: $.alloc.context, connection: slot.connection() }),
+			)
 
 	const binds = (over: any = {}) =>
 		bindings({
@@ -209,7 +232,11 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 				.input('input', C.userMessage.v1())
 				.task('alloc', allocate.v1({}))
 				.provider('send', ($: any) =>
-					tiny.v1({ context: $.alloc.context, budget: { available: 3 }, connection: slot.connection() }),
+					tiny.v1({
+						context: $.alloc.context,
+						budget: { available: 3 },
+						connection: slot.connection(),
+					}),
 				),
 		)
 		const r = await run(doc, { input: {}, world, bindings: binds() })

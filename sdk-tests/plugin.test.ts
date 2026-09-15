@@ -14,7 +14,7 @@ import { spec } from '@serene-pub/sdk'
 import { run, ok, halt } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
-import { pin, describeTaskType, allTypes } from '@serene-pub/sdk'
+import { pin, describeInput, describeTaskType, allTypes } from '@serene-pub/sdk'
 import { defineSettings, secret } from '@serene-pub/sdk'
 import {
 	defineExtension,
@@ -27,7 +27,13 @@ import {
 	ExtensionError,
 } from '@serene-pub/sdk'
 import { compilePlugin, scanSource, renderFindings, cannotDo } from '@serene-pub/cli'
-import { bindingNameFor, checkDerivable, checkUnique, generateContracts, parseTypeId } from '@serene-pub/cli'
+import {
+	bindingNameFor,
+	checkDerivable,
+	checkUnique,
+	generateContracts,
+	parseTypeId,
+} from '@serene-pub/cli'
 import type { Golden } from '@serene-pub/sdk/testing'
 import {
 	toGolden,
@@ -63,7 +69,9 @@ const dicePipeline = spec('chariot.dice-tray:roll-turn', { version: '1.2.0' })
 	.task('roll', rollDice.v1({ notation: '1d20' }))
 	.provider('narrate', C.generateText.v1({ connection: slot.connection() }))
 	.consume('save', ($: any) => C.createMessage.v1({ text: $.narrate.text }))
-	.preset('dramatic', { label: 'Dramatic', default: true }, (p) => p.params('roll', { notation: '2d20' }))
+	.preset('dramatic', { label: 'Dramatic', default: true }, (p) =>
+		p.params('roll', { notation: '2d20' }),
+	)
 	.build()
 
 const dicePlugin = defineExtension({
@@ -74,13 +82,37 @@ const dicePlugin = defineExtension({
 	engines: { 'serene-pub': '>=0.7 <0.9' },
 	settings,
 	hooks: [
-		pipelineHook(rollDice, async (i: any, ctx: any) => ok({ main: 1, total: Math.floor(ctx.random() * 20) + 1 })),
-		lifecycleHook('startup', async (s) => {
-			s.readOwnRows('stats')
+		pipelineHook(rollDice, async (i: any, ctx: any) =>
+			ok({ main: 1, total: Math.floor(ctx.random() * 20) + 1 }),
+		),
+		// (input, ctx) too — the surface is argument 1 on every hook there is,
+		// lifecycle included. Core sends no envelope for a moment you already
+		// registered against, so argument 0 goes unread.
+		lifecycleHook('startup', async (_input, ctx) => {
+			// The storage surface: queryable, and it reports what it cost.
+			const page = await ctx.storage.query({ prefix: 'stats/', limit: 20 })
+			const { availableBytes } = await ctx.storage.usage()
+			ctx.log('debug', 'loaded stats', {
+				rows: page.rows.length,
+				availableBytes,
+			})
 			return ok(null)
 		}),
-		eventHook('core:event/chat-created@1', async (s) => {
-			s.writeOwnRows('seen', true)
+		// (input, ctx) — the occurrence arrives as argument 0, and `input.event`
+		// says which one, so one hook can answer several subscriptions.
+		eventHook('core:event/session-created@1', async (input, ctx) => {
+			const wrote = await ctx.storage.put(`seen/${input.event}`, true)
+			// A write that would exceed quota comes back `err` with the usage
+			// figures, rather than throwing or silently dropping.
+			if (wrote.kind !== 'ok') {
+				await ctx.storage.deleteAll('stats/')
+				ctx.log('warn', 'pruned stats to stay under quota')
+			}
+			return ok(null)
+		}),
+		lifecycleHook('uninstall', async (_input, ctx) => {
+			// Best effort, for the state core cannot retire on our behalf.
+			ctx.log('info', 'dice plugin removed')
 			return ok(null)
 		}),
 	],
@@ -113,12 +145,17 @@ describe('96 · defineExtension', () => {
 					version: '1.0.0',
 					hooks: [pipelineHook(C.rankHybrid.descriptor, async () => ok({}))],
 				}),
-			(e: Error) => e instanceof ExtensionError && /ownership is what lets an update replace your rows/.test(e.message),
+			(e: Error) =>
+				e instanceof ExtensionError &&
+				/ownership is what lets an update replace your rows/.test(e.message),
 		)
 	})
 
 	test('a non-semver version is refused', () => {
-		assert.throws(() => defineExtension({ slug: 'a.b', name: 'x', version: 'v1' }), /not semver/)
+		assert.throws(
+			() => defineExtension({ slug: 'a.b', name: 'x', version: 'v1' }),
+			/not semver/,
+		)
 	})
 
 	test('bindingsOf builds the executor map from the declaration, not a parallel list', async () => {
@@ -129,7 +166,12 @@ describe('96 · defineExtension', () => {
 				.input('input', C.userMessage.v1())
 				.task('roll', rollDice.v1({ notation: '1d6' })),
 		)
-		const r = await run(doc, { input: {}, world, seed: 'seed:dice', bindings: bindings(bindingsOf(dicePlugin) as any) })
+		const r = await run(doc, {
+			input: {},
+			world,
+			seed: 'seed:dice',
+			bindings: bindings(bindingsOf(dicePlugin) as any),
+		})
 		assert.equal(r.outcome, 'ok')
 		assert.ok((r.nodes.find((n) => n.nodeKey === 'roll')!.output as any).total >= 1)
 	})
@@ -143,7 +185,7 @@ describe('97 · the manifest is extracted without running the code', () => {
 			slug: 'chariot.dice-tray',
 			hooks: [
 				pipelineHook(rollDice, async (i, ctx) => { ctx.readOwnRows('x'); return ok({}) }),
-				eventHook('core:event/chat-created@1', async (s) => { s.writeOwnRows('k', 1); return ok(null) }),
+				eventHook('core:event/session-created@1', async (s) => { s.writeOwnRows('k', 1); return ok(null) }),
 			],
 		})
 	`
@@ -166,7 +208,9 @@ describe('97 · the manifest is extracted without running the code', () => {
 	})
 
 	test('a hook calling fetch() directly is refused, and pointed at the Provider', () => {
-		const scan = scanSource([{ path: 'net.ts', text: `async function h() { const r = await fetch('https://x') }` }])
+		const scan = scanSource([
+			{ path: 'net.ts', text: `async function h() { const r = await fetch('https://x') }` },
+		])
 		const e = scan.findings.find((f) => f.code === 'E_DIRECT_NETWORK')!
 		assert.ok(e)
 		assert.match(e.fix, /through the injected `ctx.call`/)
@@ -177,7 +221,7 @@ describe('97 · the manifest is extracted without running the code', () => {
 		const tricky = `
 			// eventHook('commented-out@1', h)
 			const s = "eventHook('in-a-string@1', h)"
-			eventHook('core:event/chat-created@1', h)
+			eventHook('core:event/session-created@1', h)
 		`
 		const scan = scanSource([{ path: 'tricky.ts', text: tricky }])
 		assert.equal(scan.declared.eventHooks, 1)
@@ -192,8 +236,9 @@ describe('98 · compilePlugin', () => {
 			text: `
 				export default defineExtension({ slug: 'chariot.dice-tray' })
 				pipelineHook(rollDice, async (i, ctx) => ok({}))
-				lifecycleHook('startup', async (s) => { s.readOwnRows('stats'); return ok(null) })
-				eventHook('core:event/chat-created@1', async (s) => { s.writeOwnRows('seen', true); return ok(null) })
+				lifecycleHook('startup', async (s) => { await s.storage.query({ prefix: 'stats/' }); return ok(null) })
+				lifecycleHook('uninstall', async (s) => { s.log('info', 'removed'); return ok(null) })
+				eventHook('core:event/session-created@1', async (s) => { await s.storage.put('seen', true); return ok(null) })
 				component({ surface: 'core:surface/chat-message@1', slug: 'dice-result' })
 			`,
 		},
@@ -204,22 +249,36 @@ describe('98 · compilePlugin', () => {
 		assert.ok(r.ok, renderFindings(r.findings))
 		assert.equal(r.documents.length, 1)
 		assert.equal(r.manifest!.types[0]!.id, 'chariot.dice-tray:roll@1')
-		assert.equal(r.manifest!.types[0]!.binding, 'roll', 'the binding name is derived from the id')
+		assert.equal(
+			r.manifest!.types[0]!.binding,
+			'roll',
+			'the binding name is derived from the id',
+		)
 		assert.deepEqual(r.manifest!.pipelines, [
-			{ id: 'chariot.dice-tray:roll-turn', version: '1.2.0', nodes: 4, presets: ['dramatic'] },
+			{
+				id: 'chariot.dice-tray:roll-turn',
+				version: '1.2.0',
+				nodes: 4,
+				presets: ['dramatic'],
+			},
 		])
 	})
 
 	test('a pipeline subscription is a permission, because it is a side effect a user consents to', () => {
 		const r = compilePlugin({ sources, extension: dicePlugin })
 		assert.ok(r.manifest!.permissions.includes('event:core:event/message-created@1'))
-		assert.ok(r.manifest!.permissions.includes('event:core:event/chat-created@1'))
+		assert.ok(r.manifest!.permissions.includes('event:core:event/session-created@1'))
 	})
 
 	test('a hook registered conditionally is caught by cross-checking the two halves', () => {
 		// The AST sees three hook declarations; the built extension exposes one. That
 		// means something is behind an `if`, and the manifest would understate the plugin.
-		const half = defineExtension({ slug: 'chariot.dice-tray', name: 'x', version: '1.0.0', hooks: [] })
+		const half = defineExtension({
+			slug: 'chariot.dice-tray',
+			name: 'x',
+			version: '1.0.0',
+			hooks: [],
+		})
 		const r = compilePlugin({ sources, extension: half })
 		assert.equal(r.ok, false)
 		const e = r.findings.find((f) => f.code === 'E_CONDITIONAL_REGISTRATION')!
@@ -232,6 +291,140 @@ describe('98 · compilePlugin', () => {
 		const cant = cannotDo(r.manifest!)
 		assert.ok(cant.includes('cannot read your chats, characters or messages'))
 		assert.ok(!cant.includes('cannot render anything in the interface'), 'it ships a component')
+	})
+})
+
+// ── 98b · a chat mode carries its card ──────────────────────────────────────
+// A shape-bearing input type is a chat mode (19 §2), and the New Chat picker
+// renders one card per mode: `i18n.name` is the face, `i18n.description` the
+// subtitle. The title is required — refused at declaration and again by the
+// packager — while a missing description is a warning: a poorer card, not a
+// broken one.
+describe('98b · chat modes must be titled, and should be described', () => {
+	test('a shape-bearing input with no title is refused at declaration, before the id is claimed', () => {
+		assert.throws(
+			() =>
+				describeInput({
+					id: 'chariot.crawl:input/crawl@1',
+					ports: { out: { main: S.json } },
+					sessionShape: { personas: { min: 1, max: 1 }, composer: 'text' },
+				}),
+			/declares a sessionShape but no i18n\.name/,
+		)
+		// The refusal came before the id was claimed, so fixing the declaration
+		// and retrying works — an author is not locked out by their own typo.
+		const fixed = describeInput({
+			id: 'chariot.crawl:input/crawl@1',
+			i18n: { name: { en: 'Dungeon Crawl' } },
+			ports: { out: { main: S.json } },
+			sessionShape: { personas: { min: 1, max: 1 }, composer: 'text' },
+		})
+		assert.equal(fixed.kind, 'input')
+	})
+
+	test('an input without a sessionShape is not a mode, and needs no title', () => {
+		// messageCreated in core's own contracts is the precedent: a plumbing
+		// input with no i18n at all.
+		const plumbing = describeInput({
+			id: 'chariot.crawl:input/internal-tick@1',
+			ports: { out: { main: S.json } },
+		})
+		assert.equal(plumbing.kind, 'input')
+	})
+
+	test('the packager warns when a mode ships without a description', () => {
+		// The type registered in the first test: titled, undescribed.
+		const crawl = allTypes().find((t) => t.id === 'chariot.crawl:input/crawl@1')!
+		const ext = defineExtension({
+			slug: 'chariot.crawl',
+			name: 'Dungeon Crawl',
+			version: '1.0.0',
+			hooks: [pipelineHook(crawl, async () => ok({}))],
+		})
+		const r = compilePlugin({
+			sources: [
+				{
+					path: 'index.ts',
+					text: `export default defineExtension({ slug: 'chariot.crawl' })`,
+				},
+			],
+			extension: ext,
+		})
+		assert.ok(r.ok, renderFindings(r.findings))
+		assert.ok(r.manifest, 'a warning does not cost the build')
+		const w = r.findings.find((f) => f.code === 'W_MODE_NO_DESCRIPTION')!
+		assert.ok(w)
+		assert.equal(w.severity, 'warning')
+		assert.match(w.fix, /subtitle/)
+	})
+
+	test('an untitled mode from an older-SDK build is an error at the packager, not a blank card', () => {
+		// Hand-built, because this SDK refuses the declaration outright — the
+		// packager's check exists for extensions evaluated against an older one.
+		const forged = {
+			slug: 'chariot.relic',
+			name: 'Relic',
+			version: '1.0.0',
+			hooks: [
+				{
+					__decl: 'pipeline-hook',
+					visibility: 'private',
+					runtime: 'process',
+					handler: async () => ok({}),
+					type: {
+						id: 'chariot.relic:input/expedition@1',
+						kind: 'input',
+						ports: { out: { main: 'core:shape/json@1' } },
+						sessionShape: { composer: 'none' },
+					},
+				},
+			],
+		}
+		const r = compilePlugin({
+			sources: [
+				{
+					path: 'index.ts',
+					text: `export default defineExtension({ slug: 'chariot.relic' })`,
+				},
+			],
+			extension: forged as never,
+		})
+		assert.equal(r.ok, false)
+		const e = r.findings.find((f) => f.code === 'E_MODE_NO_TITLE')!
+		assert.ok(e)
+		assert.match(e.fix, /renders every mode as a card/)
+		// Both facts are reported independently — fixing the title should not
+		// surface a brand-new complaint about the description.
+		assert.ok(r.findings.some((f) => f.code === 'W_MODE_NO_DESCRIPTION'))
+	})
+
+	test('a titled, described mode compiles with nothing to say about its card', () => {
+		const heist = describeInput({
+			id: 'chariot.crawl:input/heist@1',
+			i18n: {
+				name: { en: 'Heist' },
+				description: { en: 'One persona, one plan. No lorebook, no cast.' },
+			},
+			ports: { out: { main: S.json } },
+			sessionShape: { personas: { min: 1, max: 1 }, composer: 'text' },
+		})
+		const ext = defineExtension({
+			slug: 'chariot.crawl',
+			name: 'Heist',
+			version: '1.0.0',
+			hooks: [pipelineHook(heist, async () => ok({}))],
+		})
+		const r = compilePlugin({
+			sources: [
+				{
+					path: 'index.ts',
+					text: `export default defineExtension({ slug: 'chariot.crawl' })`,
+				},
+			],
+			extension: ext,
+		})
+		assert.ok(r.ok, renderFindings(r.findings))
+		assert.ok(!r.findings.some((f) => f.code.includes('MODE')))
 	})
 })
 
@@ -276,10 +469,10 @@ describe('99 · contracts generation', () => {
 	test('the derivation is the camelCase of the id’s name segment, nothing else', () => {
 		assert.equal(bindingNameFor('core:provider/generate-text@1'), 'generateText')
 		assert.equal(bindingNameFor('chariot.dice-tray:roll@1'), 'roll')
-		assert.deepEqual(parseTypeId('core:query/chat-history@2'), {
+		assert.deepEqual(parseTypeId('core:query/session-history@2'), {
 			ns: 'core',
 			kind: 'query',
-			name: 'chat-history',
+			name: 'session-history',
 			version: 2,
 		})
 	})
@@ -298,7 +491,7 @@ describe('100 · goldens', () => {
 		publish(
 			spec('chariot.dice-tray:golden', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.provider('generate', C.generateText.v1({ connection: slot.connection() })),
 		)
 
@@ -307,16 +500,25 @@ describe('100 · goldens', () => {
 		const g = toGolden('turn', r)
 		assert.equal(g.seed, 'seed:g')
 		assert.ok(g.nodes.length > 0)
-		assert.equal(JSON.stringify(g).includes('elapsedMs'), false, 'a golden that fails on 3ms vs 2ms is one nobody keeps')
+		assert.equal(
+			JSON.stringify(g).includes('elapsedMs'),
+			false,
+			'a golden that fails on 3ms vs 2ms is one nobody keeps',
+		)
 	})
 
 	test('a changed prompt fails the golden and the diff names the path', async () => {
-		const before = toGolden('turn', await run(doc(), { input: {}, world, bindings: bindings(), seed: 'seed:g' }))
+		const before = toGolden(
+			'turn',
+			await run(doc(), { input: {}, world, bindings: bindings(), seed: 'seed:g' }),
+		)
 		const after = await run(doc(), {
 			input: {},
 			world,
 			seed: 'seed:g',
-			bindings: bindings({ 'core:query/chat-history@1': async () => ok({ main: [], messages: ['CHANGED'] }) }),
+			bindings: bindings({
+				'core:query/session-history@1': async () => ok({ main: [], messages: ['CHANGED'] }),
+			}),
 		})
 		assert.throws(
 			() => checkGolden('turn', after, before),
@@ -353,11 +555,19 @@ describe('101 · binding conformance', () => {
 			rollDice.descriptor,
 			probeCtxFor('task', { notation: '1d20' }),
 		)
-		assert.deepEqual(results.filter((r) => !r.pass), [], renderProbes(results))
+		assert.deepEqual(
+			results.filter((r) => !r.pass),
+			[],
+			renderProbes(results),
+		)
 	})
 
 	test('a hook returning a bare value fails, and the consequence explains why it matters', async () => {
-		const results = await probeBinding(async () => ({ total: 4 }) as any, rollDice.descriptor, probeCtxFor('task'))
+		const results = await probeBinding(
+			async () => ({ total: 4 }) as any,
+			rollDice.descriptor,
+			probeCtxFor('task'),
+		)
 		const b1 = results.find((r) => r.id === 'B1')!
 		assert.equal(b1.pass, false)
 		assert.match(b1.consequence!, /correct "not applicable" is recorded as an error/)
@@ -374,11 +584,16 @@ describe('101 · binding conformance', () => {
 
 	test('a Task context carries no services at all (F11)', async () => {
 		const ctx = probeCtxFor('task').makeCtx()
-		for (const forbidden of ['read', 'call', 'commit', 'emit']) assert.equal(forbidden in ctx, false)
+		for (const forbidden of ['read', 'call', 'commit', 'emit'])
+			assert.equal(forbidden in ctx, false)
 	})
 
 	test('a hook that never settles is caught here rather than in production', async () => {
-		const results = await probeBinding(() => new Promise(() => {}), rollDice.descriptor, probeCtxFor('task'))
+		const results = await probeBinding(
+			() => new Promise(() => {}),
+			rollDice.descriptor,
+			probeCtxFor('task'),
+		)
 		assert.equal(results.find((r) => r.id === 'B4')!.pass, false)
 	})
 })
@@ -390,8 +605,14 @@ test('102 · assertEquivalent gives an author the equivalence law in one call', 
 			.input('input', C.userMessage.v1())
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
-					.chain('a', (c) => c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })))
-					.chain('b', (c) => c.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))),
+					.chain('a', (c) =>
+						c.query('history', ($) =>
+							C.sessionHistory.v1({ scope: $.input.sessionScope }),
+						),
+					)
+					.chain('b', (c) =>
+						c.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
+					),
 			),
 	)
 	await assertEquivalent(doc, { input: { text: 'hi' }, world, bindings: bindings() })
@@ -407,13 +628,19 @@ describe('103 · serene-pub CLI', () => {
 	}
 
 	test('`check` reports what core would refuse and exits non-zero', async () => {
-		await write('src/index.ts', `eventHook(EVENTS[i], h)\nasync function f() { await fetch('https://x') }`)
+		await write(
+			'src/index.ts',
+			`eventHook(EVENTS[i], h)\nasync function f() { await fetch('https://x') }`,
+		)
 		const code = await main(['check', dir])
 		assert.equal(code, 1, 'a plugin core would refuse must not exit 0 — CI is the whole point')
 	})
 
 	test('`check` on a clean plugin exits zero and lists the permissions it computed', async () => {
-		await write('src/index.ts', `export default defineExtension({ slug: 'demo.thing' })\neventHook('core:event/chat-created@1', async (s) => { s.writeOwnRows('k', 1) })`)
+		await write(
+			'src/index.ts',
+			`export default defineExtension({ slug: 'demo.thing' })\neventHook('core:event/session-created@1', async (s) => { s.writeOwnRows('k', 1) })`,
+		)
 		assert.equal(await main(['check', dir]), 0)
 	})
 

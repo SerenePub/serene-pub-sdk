@@ -40,6 +40,8 @@ export function renderReceipt(r) {
             (rev.editedHash ? ` (edited ${rev.originalHash} → ${rev.editedHash})` : '') +
             (rev.by ? ` by ${rev.by}` : ''));
     }
+    for (const l of r.loops ?? [])
+        out.push(` ▸ loop ${l.blockId}: ${l.iterations} iteration(s), stopped on ${l.stopped}`);
     for (const note of r.notes ?? [])
         out.push(` ▸ ${note}`);
     for (const e of r.emitted) {

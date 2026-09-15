@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en" data-theme="cerberus" data-mode="dark">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Serene Pub — surface harness</title>
+		<script>
+			/**
+			 * The persisted theme, applied before first paint.
+			 *
+			 * The harness renders client-only (plugin UI is client-only by
+			 * contract, 10 §9), so without this the attributes above are on
+			 * screen for the whole bundle load and every reload flashes the
+			 * default theme. Blocking and tiny on purpose: it has to run before
+			 * the first paint or it is not solving anything. Keep the fallbacks
+			 * in step with `src/lib/theme.svelte.ts`.
+			 */
+			try {
+				var t = JSON.parse(localStorage.getItem('serene-pub:harness-theme') || 'null')
+				if (t && typeof t.theme === 'string')
+					document.documentElement.setAttribute('data-theme', t.theme)
+				if (t && (t.mode === 'light' || t.mode === 'dark'))
+					document.documentElement.setAttribute('data-mode', t.mode)
+			} catch (e) {
+				/* a corrupt preference is not worth a blank page */
+			}
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+	</body>
+</html>

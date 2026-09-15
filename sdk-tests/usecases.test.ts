@@ -8,7 +8,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec, fragment } from '@serene-pub/sdk'
+import { spec, fragment, SLOT_VALUE } from '@serene-pub/sdk'
 import {
 	compile,
 	canonical,
@@ -37,7 +37,7 @@ describe('01 · a minimal chat turn runs end to end', () => {
 	const s = () =>
 		spec('demo:minimal@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
 			.provider('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
@@ -138,7 +138,7 @@ describe('04 · no branching', () => {
 		const doc = publish(
 			spec('demo:fanin@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 				.task('merge', ($) =>
 					C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
@@ -158,7 +158,7 @@ describe('05 · halt stops the run and records why', () => {
 				.provider('generate', C.generateText.v1({ connection: slot.connection() })),
 		)
 		const r = await run(doc, {
-			input: { chatType: 'dungeon' },
+			input: { modeId: 'dungeon' },
 			world,
 			bindings: bindings({
 				'test:task/gate@1': async () => halt('chat type not applicable to this pipeline'),
@@ -246,7 +246,9 @@ describe('08 · async block equivalence', () => {
 			.async('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
-						c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })),
+						c.query('history', ($) =>
+							C.sessionHistory.v1({ scope: $.input.sessionScope }),
+						),
 					)
 					.chain('keyword', (c) =>
 						c.query('triggers', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
@@ -380,7 +382,7 @@ describe('11 · timeouts', () => {
 		const doc = publish(
 			spec('demo:ceiling@1', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('h', C.chatHistory.v1()),
+				.query('h', C.sessionHistory.v1()),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world, timeoutCeilingMs: 5 })
 		assert.equal(r.nodes.find((n) => n.nodeKey === 'h')!.timeoutMsApplied, 5)
@@ -479,7 +481,7 @@ describe('13 · configuration resolves per slot through five layers', () => {
 						slot: 'sampling',
 						path: 'temperature',
 						value: 1.1,
-						scopeKind: 'chat',
+						scopeKind: 'session',
 						scopeId: 991,
 					},
 					{
@@ -513,7 +515,7 @@ describe('13 · configuration resolves per slot through five layers', () => {
 					{
 						nodeKey: 'generate',
 						slot: 'connection',
-						path: '$ref',
+						path: SLOT_VALUE,
 						value: 'ollama-local',
 						scopeKind: 'instance',
 					},
@@ -522,13 +524,20 @@ describe('13 · configuration resolves per slot through five layers', () => {
 			['generate'],
 		)
 		assert.equal(resolved['generate']!['prompts']!['system'], 'be terse')
-		assert.equal(resolved['generate']!['connection']!['$ref'], 'ollama-local')
+		assert.equal(resolved['generate']!['connection']![SLOT_VALUE], 'ollama-local')
 	})
 
-	test('users may not write the connection slot, and the refusal says why', () => {
+	test('the connection slot is admin/session/preset, never a plain user override', () => {
+		// A chat may point at its own connection (`session`, added 2026-08-26 —
+		// the per-session connection 0.5 had), but a plain `user` override may
+		// not: admin-only is enforced in the app's resolveWriteScope, and the
+		// matrix keeps `user` out so a non-session personal override cannot
+		// carry one. Presets still cannot export a connection — F20's actual
+		// concern — which the sibling test above pins.
 		assert.equal(mayWrite('connection', 'user'), false)
-		assert.equal(mayWrite('prompts', 'chat'), true)
-		assert.throws(() => assertWritable('connection', 'chat'), /admin-only/)
+		assert.equal(mayWrite('connection', 'session'), true)
+		assert.equal(mayWrite('prompts', 'session'), true)
+		assert.throws(() => assertWritable('connection', 'user'), /admin-only/)
 	})
 
 	test('resolution reports which layer won, and agrees with the plain resolver', () => {
@@ -624,7 +633,7 @@ describe('14 · sampling', () => {
 					{
 						nodeKey: 'generate',
 						slot: 'sampling',
-						path: '$ref',
+						path: SLOT_VALUE,
 						value: 'cfg_creative',
 						scopeKind: 'instance',
 					},
@@ -633,7 +642,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: 'temperature',
 						value: 0.5,
-						scopeKind: 'chat',
+						scopeKind: 'session',
 						scopeId: 991,
 					},
 				],
@@ -642,6 +651,143 @@ describe('14 · sampling', () => {
 		const n = r.nodes.find((x) => x.nodeKey === 'generate')!
 		assert.equal(n.samplingApplied!['temperature'], 0.5) // chat override wins
 		assert.equal(n.samplingApplied!['top_p'], 0.95) // from the referenced preset
+	})
+
+	test("a config's switched-off samplers do not reach the provider", async () => {
+		// The direct path has always applied the switchboard; slot resolution did
+		// not, because the world had nowhere to carry it. A sampler turned off in
+		// the sidebar went on being sent whenever a pipeline was what asked, and
+		// the only symptom was generation not matching the settings on screen.
+		const doc = publish(
+			spec('demo:switched@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.provider(
+					'generate',
+					C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }),
+				),
+		)
+		const r = await run(doc, {
+			input: {},
+			bindings: bindings(),
+			world: {
+				...world,
+				overrides: [
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: SLOT_VALUE,
+						value: 'cfg_switched',
+						scopeKind: 'instance',
+					},
+				],
+			},
+		})
+		const n = r.nodes.find((x) => x.nodeKey === 'generate')!
+		// Two different reasons a sampler can be absent from `samplingApplied`,
+		// and reporting both exists precisely because they are not the same
+		// thing: delivered-but-unhonoured is the connection's limitation and gets
+		// recorded, while never-delivered is the user's choice and leaves no trace.
+		assert.equal(n.samplingApplied!['temperature'], 0.4) // on, stored value
+		assert.ok(
+			n.samplingIgnored!.includes('topP'),
+			'on with no stored value: its declared default is still delivered, and ' +
+				'this fixture connection happens not to honour it',
+		)
+		assert.equal('topK' in n.samplingApplied!, false)
+		assert.equal(
+			n.samplingIgnored!.includes('topK'),
+			false,
+			'switched off: never sent, so there is nothing to report ignoring',
+		)
+	})
+
+	test('a node override sits above the switchboard, not under it', async () => {
+		// Switching a sampler off says "do not send my stored value"; a spec
+		// naming one for this node is stating it outright. The second has to win,
+		// or a pipeline could never set a parameter its chosen config had off.
+		const doc = publish(
+			spec('demo:switched-override@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.provider(
+					'generate',
+					C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }),
+				),
+		)
+		const r = await run(doc, {
+			input: {},
+			bindings: bindings(),
+			world: {
+				...world,
+				// A connection that honours topK, so the delivered VALUE is
+				// visible in `samplingApplied` rather than just its key in the
+				// ignored list — the value is the half this test is about.
+				connections: world.connections.map((c) =>
+					c.id === 'ollama-local'
+						? {
+								...c,
+								metadata: {
+									...c.metadata,
+									supportedSamplers: ['temperature', 'topK'],
+								},
+							}
+						: c,
+				),
+				overrides: [
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: SLOT_VALUE,
+						value: 'cfg_switched',
+						scopeKind: 'instance',
+					},
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: 'topK',
+						value: 12,
+						scopeKind: 'session',
+						scopeId: 991,
+					},
+				],
+			},
+		})
+		// Delivered despite being switched off in the config — which is exactly
+		// what "above the switchboard" means. The switchboard winning would have
+		// left topK out entirely.
+		const n = r.nodes.find((x) => x.nodeKey === 'generate')!
+		assert.equal(n.samplingApplied!['topK'], 12)
+	})
+
+	test('a world with no switchboard at all is still read as all-on', async () => {
+		// Every config written before `enabled` existed, and every plugin-supplied
+		// world that has not learned about it.
+		const doc = publish(
+			spec('demo:legacy-sampling@1', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.provider(
+					'generate',
+					C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }),
+				),
+		)
+		const r = await run(doc, {
+			input: {},
+			bindings: bindings(),
+			world: {
+				...world,
+				overrides: [
+					{
+						nodeKey: 'generate',
+						slot: 'sampling',
+						path: SLOT_VALUE,
+						value: 'cfg_creative',
+						scopeKind: 'instance',
+					},
+				],
+			},
+		})
+		const applied = r.nodes.find((x) => x.nodeKey === 'generate')!.samplingApplied!
+		assert.equal(applied['temperature'], 0.92)
+		assert.equal(applied['top_p'], 0.95)
 	})
 
 	test('samplers the adapter cannot honour are recorded as ignored, not dropped silently', async () => {
@@ -662,7 +808,7 @@ describe('14 · sampling', () => {
 					{
 						nodeKey: 'generate',
 						slot: 'sampling',
-						path: '$ref',
+						path: SLOT_VALUE,
 						value: 'cfg_creative',
 						scopeKind: 'instance',
 					},
@@ -704,7 +850,7 @@ describe('16 · the context budget flows forward', () => {
 		spec('demo:budgetflow@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
 			.task('budget', C.contextBudget.v1({ connection: slot.downstreamProvider() }))
-			.query('history', ($) => C.chatHistory.v1({ budget: $.budget.available }))
+			.query('history', ($) => C.sessionHistory.v1({ budget: $.budget.available }))
 			.task('prompt', ($) =>
 				C.assemble.v2({ candidates: $.history.messages, budget: $.budget.available }),
 			)
@@ -738,7 +884,7 @@ test('17 · assemble reads declared weights off its inputs, so adding a source n
 	const doc = publish(
 		spec('demo:alloc@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 			.task('merge', ($) =>
 				C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
@@ -810,7 +956,7 @@ test('19 · a plugin ranker substitutes for core with no other change', async ()
 test('20 · an included fragment expands to flat, namespaced rows', () => {
 	const ctxInfill = fragment('core:fragment/context-infill@2', (f) =>
 		f
-			.query('history', C.chatHistory.v1())
+			.query('history', C.sessionHistory.v1())
 			.query('lore', C.lorebookTriggers.v1())
 			.task('merge', C.mergeCandidates.v1()),
 	)
@@ -832,7 +978,7 @@ test('21 · import(export(rows)) is identity, and the hash is stable', () => {
 	const doc = publish(
 		spec('demo:roundtrip@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.consume('save', C.createMessage.v1({ text: 'x' })),
 	)
 	const round = importDocument(doc)
@@ -1010,8 +1156,8 @@ test('a full chat turn renders a legible receipt', async () => {
 				b
 					.chain('history', (c) =>
 						c.query('history', ($) =>
-							C.chatHistory.v1({
-								scope: $.input.chatScope,
+							C.sessionHistory.v1({
+								scope: $.input.sessionScope,
 								budget: $.budget.available,
 							}),
 						),
@@ -1062,7 +1208,7 @@ test('a full chat turn renders a legible receipt', async () => {
 	)
 
 	const r = await run(doc, {
-		input: { text: 'where is my sister', chatScope: 'chat:991' },
+		input: { text: 'where is my sister', sessionScope: 'chat:991' },
 		bindings: bindings(),
 		world: {
 			...world,
@@ -1070,7 +1216,7 @@ test('a full chat turn renders a legible receipt', async () => {
 				{
 					nodeKey: 'generate',
 					slot: 'sampling',
-					path: '$ref',
+					path: SLOT_VALUE,
 					value: 'cfg_creative',
 					scopeKind: 'instance',
 				},

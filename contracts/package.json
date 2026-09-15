@@ -3,7 +3,7 @@
 	"version": "0.6.0-preview.0",
 	"type": "module",
 	"description": "Generated, frozen type declarations for one Serene Pub release. The version IS the SP release: @serene-pub/contracts@0.6.x compiles against SP 0.6.x.",
-	"license": "AGPL-3.0",
+	"license": "Apache-2.0",
 	"sideEffects": false,
 	"files": [
 		"dist",

@@ -36,7 +36,19 @@ export interface SpecDocument {
     schemaVersion: 1;
     id: string;
     version: string;
+    /** The genre declaration a create pipeline carries (24 §3). Replaces `mode` (24 §2). */
+    genre?: unknown;
+    /** @deprecated pre-rename documents only; compile never writes it. */
     mode?: unknown;
+    /** Contributed surfaces (19 §3–§4) — content like `genre`, hashed with the document. */
+    contributes?: unknown;
+    /** Catalogue claims (ruled 2026-08-27) — content like the two above, hashed with the document. */
+    taxonomy?: unknown;
+    /** The usage lock (24 §4): { genre, event } the input declared. Hashed with the document. */
+    input?: {
+        genre?: string;
+        event?: string;
+    };
     subscribes: string[];
     includes: Array<{
         key: string;
@@ -55,7 +67,13 @@ export declare function compile(built: BuiltSpec): SpecDocument;
  * the candidates — the teaching-error pattern (15 §1.3).
  */
 export declare function resolveDownstreamProvider(built: BuiltSpec, fromKey: string): string;
-/** Canonical form — stable key order, for hashing and round-trip identity (F3). */
+/**
+ * Canonical form — stable key order, for hashing and round-trip identity (F3).
+ *
+ * The sort and the digest below moved to `hash.ts` unchanged, because the type
+ * registries now need the same two and a document and a declaration must not
+ * disagree about what identical content is. Same bytes in, same string out.
+ */
 export declare function canonical(doc: SpecDocument): string;
 /** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). */
 export declare function canonicalHash(doc: SpecDocument): string;

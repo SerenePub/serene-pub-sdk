@@ -70,14 +70,28 @@ export interface PreviewReport {
 }
 
 /**
- * A stand-in tokenizer. The real one comes from connection metadata (`tokenizer`), is
- * loaded once per connection and reused — counting sixty blocks should be sixty cheap
- * calls against something already resident, not sixty model loads.
+ * What a counter measures when it is handed something that is not a string.
+ *
+ * A wire payload is a messages array as often as it is prose, and every counter
+ * in the SDK has to agree about what counting one of those means — otherwise a
+ * receipt's figure and a budget's figure are measurements of two different
+ * things. Shared with `src/tokenizers.ts` rather than reimplemented there.
  */
-export const roughTokens = (v: unknown): number => {
-	const s = typeof v === 'string' ? v : JSON.stringify(v ?? '')
-	return Math.ceil(s.length / 4)
-}
+export const countableText = (v: unknown): string =>
+	typeof v === 'string' ? v : JSON.stringify(v ?? '')
+
+/**
+ * A stand-in tokenizer, and the floor everything else degrades to.
+ *
+ * The real one comes from connection metadata (`tokenizer`), is resolved and
+ * loaded ONCE before the run starts (`RunOptions.tokenizer`, `loadTokenizer`)
+ * and reused — counting sixty blocks should be sixty cheap calls against
+ * something already resident, not sixty model loads. This is what counts when
+ * no id was configured, when no loader is registered for the one that was, and
+ * when a loader threw: budgeting degrades to an estimate rather than failing a
+ * run over a tokenizer.
+ */
+export const roughTokens = (v: unknown): number => Math.ceil(countableText(v).length / 4)
 
 /** Choose where a preview stops. */
 export function previewTarget(

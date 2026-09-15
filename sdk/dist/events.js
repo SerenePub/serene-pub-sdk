@@ -20,18 +20,26 @@
  *    Without the distinction, `ui-action` would either blur F8's "occurrences core
  *    observes" or need a special case in the CTE.
  */
+import { refuseUnlessIdentical } from './hash.js';
 const bySlug = new Map();
 let nextId = 1;
 export function defineEvent(def) {
-    if (bySlug.has(def.slug)) {
-        throw new Error(`duplicate event slug '${def.slug}' — slugs are unique because they are the ` +
+    const existing = bySlug.get(def.slug);
+    // Built against the id the slug already holds, so an identical re-declaration
+    // compares like for like and — the part that matters here rather than in the
+    // other registries — does not consume a second number from the sequence. The
+    // id is local; the slug is what syncs the row across instances, and a module
+    // re-evaluating must not renumber what it re-declares.
+    const e = { ...def, id: existing?.id ?? nextId, ownerPluginId: null };
+    if (existing)
+        refuseUnlessIdentical(existing, e, `duplicate event slug '${def.slug}' — slugs are unique because they are the ` +
             `reference used to sync seeded rows across instances (13 §7g)`);
-    }
     if (def.family === 'action' && def.causedBy?.length) {
         throw new Error(`action event '${def.slug}' declares causedBy. Action events are requests, not ` +
             `consequences of a write — that is what keeps them out of the cycle graph (13 §7)`);
     }
-    const e = { ...def, id: nextId++, ownerPluginId: null };
+    if (!existing)
+        nextId++;
     bySlug.set(def.slug, e);
     return e;
 }
@@ -54,20 +62,20 @@ export const CORE_EVENTS = {
         family: 'data',
         affectsUser: true,
         causedBy: ['core:consumer/save-message'],
-        description: 'A message was written to a chat.',
+        description: 'A message was written to a session.',
     }),
-    chatCreated: defineEvent({
-        slug: 'chat-created',
+    sessionCreated: defineEvent({
+        slug: 'session-created',
         version: 1,
         family: 'data',
         affectsUser: true,
-        causedBy: ['core:consumer/create-chat'],
-        description: 'A chat was created.',
+        causedBy: ['core:consumer/create-session'],
+        description: 'A session was created.',
     }),
     /**
      * A UI action asked for a run (13 §7). Carrying both users is what answers the
      * budget-owner question without a separate rule: **budget and quota attach to the
-     * owner; the receipt's attribution records the trigger.** Group chats need no
+     * owner; the receipt's attribution records the trigger.** Group sessions need no
      * special case.
      */
     uiAction: defineEvent({
@@ -76,7 +84,7 @@ export const CORE_EVENTS = {
         family: 'action',
         affectsUser: true,
         description: 'Someone asked for a run from the interface — a composer action, a message action, ' +
-            'a re-roll. Payload: chatId, ownerUserId, triggeringUserId, action, chatType, input.',
+            'a re-roll. Payload: sessionId, ownerUserId, triggeringUserId, action, modeId, input.',
     }),
     /**
      * The path for scheduled model work (13 §7c). No hook may call a Provider (F32),

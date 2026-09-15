@@ -15,7 +15,13 @@ import { compile, canonicalHash, importDocument } from '@serene-pub/sdk'
 import { validate } from '@serene-pub/sdk'
 import { run, replay, ok, halt } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
-import { conform, renderConformance, REQUIREMENTS, type HostUnderTest, type Fixtures } from '@serene-pub/conformance'
+import {
+	conform,
+	renderConformance,
+	REQUIREMENTS,
+	type HostUnderTest,
+	type Fixtures,
+} from '@serene-pub/conformance'
 import * as C from '@serene-pub/contracts'
 import { bindings, world } from './helpers.js'
 
@@ -44,9 +50,11 @@ const fixtures: Fixtures = {
 		compile(
 			spec('conformance:chat-turn', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-				.provider('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
+				.provider('generate', ($) =>
+					C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+				)
 				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 				.build(),
 		),
@@ -67,9 +75,19 @@ const fixtures: Fixtures = {
 				.input('input', C.userMessage.v1())
 				.async('gather', { mode: 'parallel' }, (b) =>
 					b
-						.chain('history', (c) => c.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope })))
-						.chain('keyword', (c) => c.query('triggers', ($) => C.lorebookTriggers.v1({ text: $.input.text })))
-						.chain('persona', (c) => c.query('card', ($) => C.personaCard.v1({ characterId: $.input.main }))),
+						.chain('history', (c) =>
+							c.query('history', ($) =>
+								C.sessionHistory.v1({ scope: $.input.sessionScope }),
+							),
+						)
+						.chain('keyword', (c) =>
+							c.query('triggers', ($) =>
+								C.lorebookTriggers.v1({ text: $.input.text }),
+							),
+						)
+						.chain('persona', (c) =>
+							c.query('card', ($) => C.personaCard.v1({ characterId: $.input.main })),
+						),
 				)
 				.build(),
 		),
@@ -122,7 +140,9 @@ const fixtures: Fixtures = {
 				spec('conformance:unbounded', { version: '1.0.0' })
 					.input('input', C.userMessage.v1())
 					.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-					.map('m', { over: ($) => $.chunks.items, max: 0 }, (m) => m.task('t', C.gate.v1({})))
+					.map('m', { over: ($) => $.chunks.items, max: 0 }, (m) =>
+						m.task('t', C.gate.v1({})),
+					)
 					.build(),
 			),
 		},
@@ -133,7 +153,9 @@ const fixtures: Fixtures = {
 				spec('conformance:badloop', { version: '1.0.0' })
 					.input('input', C.userMessage.v1())
 					.task('outside', C.gate.v1({}))
-					.loop('l', { repeatWhile: ($: any) => $.outside.main, max: 4 }, (l) => l.task('t', C.passthrough.v1({})))
+					.loop('l', { repeatWhile: ($: any) => $.outside.main, max: 4 }, (l) =>
+						l.task('t', C.passthrough.v1({})),
+					)
 					.build(),
 			),
 		},

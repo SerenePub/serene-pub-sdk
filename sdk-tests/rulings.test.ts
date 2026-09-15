@@ -43,12 +43,22 @@ describe('42 · async blocks publish branch-results, and joined effects are gone
 			.input('input', C.userMessage.v1())
 			.async('gather', { mode }, (b) =>
 				b
-					.chain('history', (c) => c.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope })))
-					.chain('keyword', (c) => c.query('triggers', $ => C.lorebookTriggers.v1({ text: $.input.text }))),
+					.chain('history', (c) =>
+						c.query('history', ($) =>
+							C.sessionHistory.v1({ scope: $.input.sessionScope }),
+						),
+					)
+					.chain('keyword', (c) =>
+						c.query('triggers', ($) => C.lorebookTriggers.v1({ text: $.input.text })),
+					),
 			)
 
 	test('one entry per branch, in declaration order', async () => {
-		const r = await run(publish(build()), { input: { text: 'hi' }, bindings: bindings(), world })
+		const r = await run(publish(build()), {
+			input: { text: 'hi' },
+			bindings: bindings(),
+			world,
+		})
 		assert.equal(r.outcome, 'ok')
 		// The value the block publishes is what a downstream node would $ref.
 		// Asserting the *shape* here; the ordering claim is the next test.
@@ -61,7 +71,7 @@ describe('42 · async blocks publish branch-results, and joined effects are gone
 		// reverse them; declaration order is the same rule 11 §3 gives event dispatch,
 		// so the system has one ordering rule rather than two.
 		const slowFirst = bindings({
-			'core:query/chat-history@1': async () => {
+			'core:query/session-history@1': async () => {
 				await new Promise((r) => setTimeout(r, 15))
 				return ok({ messages: ['slow'] })
 			},
@@ -82,7 +92,11 @@ describe('42 · async blocks publish branch-results, and joined effects are gone
 		const collide = { hits: [1, 2] }
 		const alsoCollide = { hits: [3] }
 		const merged = { ...collide, ...alsoCollide }
-		assert.deepEqual(merged.hits, [3], 'a merge silently discarded a branch — this is the failure')
+		assert.deepEqual(
+			merged.hits,
+			[3],
+			'a merge silently discarded a branch — this is the failure',
+		)
 	})
 })
 
@@ -91,13 +105,17 @@ describe('43 · map', () => {
 	const build = (max = 8) =>
 		spec('demo:mapunion@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.task('chunks', $ => C.chunkText.v1({ text: $.input.text }))
+			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
 			.map('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
 				m.provider('sum', C.generateText.v1({ connection: slot.connection() })),
 			)
 
 	test('the chain runs once per item, and each iteration is identified in the receipt', async () => {
-		const r = await run(publish(build()), { input: { text: 'a|b|c' }, bindings: bindings(), world })
+		const r = await run(publish(build()), {
+			input: { text: 'a|b|c' },
+			bindings: bindings(),
+			world,
+		})
 		const iters = r.nodes.filter((n) => n.nodeKey === 'summarize.item.sum')
 		assert.ok(iters.length > 1, `expected several iterations, got ${iters.length}`)
 		assert.deepEqual(
@@ -108,7 +126,11 @@ describe('43 · map', () => {
 	})
 
 	test('exceeding the declared max fails the run rather than silently truncating', async () => {
-		const r = await run(publish(build(1)), { input: { text: 'a|b|c' }, bindings: bindings(), world })
+		const r = await run(publish(build(1)), {
+			input: { text: 'a|b|c' },
+			bindings: bindings(),
+			world,
+		})
 		assert.equal(r.outcome, 'err')
 		assert.match(String(r.haltReason), /declares max 1/)
 	})
@@ -125,12 +147,12 @@ describe('44 · compact halt receipts', () => {
 	const haltEarly = () =>
 		spec('demo:halts@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', $ => C.createMessage.v1({ text: $.generate.text }))
+			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 	const halting = bindings({
-		'core:query/chat-history@1': async () => halt('this chat type is not applicable'),
+		'core:query/session-history@1': async () => halt('this chat type is not applicable'),
 	})
 
 	test('an event-triggered run that halts before any effect keeps attribution, drops payloads', async () => {
@@ -152,7 +174,12 @@ describe('44 · compact halt receipts', () => {
 	test('the same halt from a click keeps its full detail', async () => {
 		// A run someone started happens once per click. The multiplier is a hot event ×
 		// every subscribed pipeline × every message, and only that case is compacted.
-		const r = await run(publish(haltEarly()), { input: {}, bindings: halting, world, triggerSource: 'ui' })
+		const r = await run(publish(haltEarly()), {
+			input: {},
+			bindings: halting,
+			world,
+			triggerSource: 'ui',
+		})
 		assert.equal(r.outcome, 'halt')
 		assert.notEqual(r.compact, true)
 		assert.ok(r.nodes.length > 0)
@@ -173,7 +200,12 @@ describe('44 · compact halt receipts', () => {
 	})
 
 	test('the rendered receipt says it was compacted rather than looking empty', async () => {
-		const r = await run(publish(haltEarly()), { input: {}, bindings: halting, world, triggerSource: 'event' })
+		const r = await run(publish(haltEarly()), {
+			input: {},
+			bindings: halting,
+			world,
+			triggerSource: 'event',
+		})
 		assert.match(renderReceipt(r), /compact:.*before any effectful node/)
 	})
 })
@@ -183,7 +215,7 @@ describe('45 · admin kill', () => {
 	const s = () =>
 		spec('demo:kill@1', { version: '1.0.0' })
 			.input('input', C.userMessage.v1())
-			.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope }))
+			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
 
 	test('the run ends cancelled, with the actor recorded', async () => {
@@ -192,7 +224,10 @@ describe('45 · admin kill', () => {
 			input: {},
 			bindings: bindings(),
 			world,
-			cancelSignal: () => (++calls > 2 ? { by: 'admin:jody', reason: 'killed from the queue view' } : undefined),
+			cancelSignal: () =>
+				++calls > 2
+					? { by: 'admin:jody', reason: 'killed from the queue view' }
+					: undefined,
 		})
 		assert.equal(r.outcome, 'cancelled')
 		assert.equal(r.cancelledBy, 'admin:jody')
@@ -208,7 +243,10 @@ describe('45 · admin kill', () => {
 		})
 		const broke = await run(publish(s()), {
 			input: {},
-			bindings: bindings({ 'core:query/chat-history@1': async () => ({ kind: 'err', reason: 'db down' }) as any }),
+			bindings: bindings({
+				'core:query/session-history@1': async () =>
+					({ kind: 'err', reason: 'db down' }) as any,
+			}),
 			world,
 		})
 		assert.equal(killed.outcome, 'cancelled')
@@ -226,7 +264,7 @@ describe('46 · queued time', () => {
 			publish(
 				spec('demo:queued@1', { version: '1.0.0' })
 					.input('input', C.userMessage.v1())
-					.query('history', $ => C.chatHistory.v1({ scope: $.input.chatScope })),
+					.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
 			),
 			{
 				input: {},
@@ -294,11 +332,17 @@ describe('47 · secret settings', () => {
 			{
 				input: {},
 				world,
-				bindings: bindings({ 'demo:task/echo-settings@1': async (i: any) => ok({ main: i.creds }) }),
+				bindings: bindings({
+					'demo:task/echo-settings@1': async (i: any) => ok({ main: i.creds }),
+				}),
 			},
 		)
 		const body = JSON.stringify(r)
-		assert.equal(body.includes('cipher:abc123'), false, 'the ciphertext never reaches a receipt')
+		assert.equal(
+			body.includes('cipher:abc123'),
+			false,
+			'the ciphertext never reaches a receipt',
+		)
 		assert.ok(body.includes('[secret]'))
 		// A free-form column could not have done this: core would not know which key
 		// held a credential and which held a note (13 §6).
@@ -314,7 +358,8 @@ describe('47 · secret settings', () => {
 					leaky: { type: 'secret', scope: 'user', side: 'component' },
 					shipped: { type: 'secret', scope: 'instance', default: 'sk-live-default' },
 				}),
-			(e: Error) => /runs in the browser/.test(e.message) && /not a credential/.test(e.message),
+			(e: Error) =>
+				/runs in the browser/.test(e.message) && /not a credential/.test(e.message),
 		)
 	})
 })
@@ -323,7 +368,14 @@ describe('47 · secret settings', () => {
 describe('48 · events registry', () => {
 	test('slugs are unique, because the slug is what syncs a seeded row across instances', () => {
 		assert.throws(
-			() => defineEvent({ slug: 'message-created', version: 1, family: 'data', affectsUser: true, description: 'dupe' }),
+			() =>
+				defineEvent({
+					slug: 'message-created',
+					version: 1,
+					family: 'data',
+					affectsUser: true,
+					description: 'dupe',
+				}),
 			/duplicate event slug/,
 		)
 	})
@@ -332,7 +384,11 @@ describe('48 · events registry', () => {
 		for (const e of allEvents()) {
 			assert.ok(e.slug.length > 0)
 			assert.equal(typeof e.id, 'number')
-			assert.equal(e.ownerPluginId, null, 'reserved for plugin events; reopening is a permission')
+			assert.equal(
+				e.ownerPluginId,
+				null,
+				'reserved for plugin events; reopening is a permission',
+			)
 		}
 	})
 
@@ -363,11 +419,11 @@ describe('48 · events registry', () => {
 describe('49 · ui-action carries both users', () => {
 	test('budget attaches to the owner; attribution records the trigger', async () => {
 		const payload: UiActionPayload = {
-			chatId: 'chat:1',
+			sessionId: 'chat:1',
 			ownerUserId: 'user:owner',
 			triggeringUserId: 'user:guest',
 			action: 're-roll',
-			chatType: 'dungeon-crawl',
+			modeId: 'dungeon-crawl',
 			input: { text: 'roll again' },
 		}
 		const r = await run(
@@ -388,7 +444,11 @@ describe('49 · ui-action carries both users', () => {
 		)
 		assert.equal(r.triggerRef, 'ui-action')
 		assert.equal(r.actorUserId, 'user:owner')
-		assert.notEqual(payload.ownerUserId, payload.triggeringUserId, 'the two can differ — that was the question')
+		assert.notEqual(
+			payload.ownerUserId,
+			payload.triggeringUserId,
+			'the two can differ — that was the question',
+		)
 	})
 
 	test('re-roll is the existing regenerate contract, not a new spend path', () => {
@@ -401,8 +461,22 @@ describe('49 · ui-action carries both users', () => {
 
 // ── 50 · No hook calls a Provider (13 §7c, F32) ─────────────────────────────
 describe('50 · hook surfaces', () => {
-	const eventSurface = { readEvent: () => ({}), readOwnRows: () => [], writeOwnRows: () => {}, log: () => {}, signal: new AbortController().signal }
-	const lifecycleSurface = { readCore: () => [], readOwnRows: () => [], writeOwnRows: () => {}, log: () => {}, signal: new AbortController().signal }
+	const eventSurface = {
+		// No `readEvent`: the occurrence arrives as argument 0, never as a
+		// method on the surface. Depicting one here would re-teach the shape
+		// the SDK just retired.
+		readOwnRows: () => [],
+		writeOwnRows: () => {},
+		log: () => {},
+		signal: new AbortController().signal,
+	}
+	const lifecycleSurface = {
+		readCore: () => [],
+		readOwnRows: () => [],
+		writeOwnRows: () => {},
+		log: () => {},
+		signal: new AbortController().signal,
+	}
 
 	test('neither surface carries Provider access', () => {
 		assert.deepEqual(assertHookSurface('event', eventSurface), { ok: true })
@@ -419,6 +493,38 @@ describe('50 · hook surfaces', () => {
 	test('a lifecycle hook may not trigger a pipeline either', () => {
 		const regressed = { ...lifecycleSurface, trigger: async () => {} }
 		assert.equal(assertHookSurface('lifecycle', regressed).ok, false)
+	})
+
+	// The whole list, pinned by name. It is the executor handles and only those —
+	// narrowing it is a ruling, and a narrowing that happens by accident (someone
+	// deleting an entry to make their own surface pass) fails here.
+	test('every executor handle is refused, on both kinds', () => {
+		for (const name of ['callProvider', 'call', 'provider', 'trigger', 'run', 'emit']) {
+			for (const [kind, base] of [
+				['event', eventSurface],
+				['lifecycle', lifecycleSurface],
+			] as const) {
+				const res = assertHookSurface(kind, { ...base, [name]: () => {} })
+				assert.equal(res.ok, false, `${kind} surface accepted ${name}`)
+				assert.deepEqual((res as { found: string[] }).found, [name])
+			}
+		}
+	})
+
+	// `fetch` was on that list, which made the probe reject the ctx both sandbox
+	// backends actually hand out. The line is Provider/trigger access, not network:
+	// host-scoped fetch is a manifest-declared, admin-deniable grant with a consent
+	// surface, so it is declared on the surfaces and metered by permissions instead.
+	test('a declared, host-scoped fetch is not an executor handle', () => {
+		const withFetch = { ...eventSurface, fetch: async () => ({ status: 200 }) }
+		assert.deepEqual(assertHookSurface('event', withFetch), { ok: true })
+		assert.deepEqual(
+			assertHookSurface('lifecycle', {
+				...lifecycleSurface,
+				fetch: async () => ({ status: 200 }),
+			}),
+			{ ok: true },
+		)
 	})
 
 	test('scheduled model work has a path, and it is an event', () => {

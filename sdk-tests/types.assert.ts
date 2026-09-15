@@ -15,8 +15,8 @@ import * as C from '@serene-pub/contracts'
 spec('types:ports@1', { version: '1.0.0' })
 	.input('input', C.userMessage.v1())
 	.query('history', ($) =>
-		C.chatHistory.v1({
-			// @ts-expect-error — `chatScopes` is not a port on the Input; the real one is `chatScope`
+		C.sessionHistory.v1({
+			// @ts-expect-error — `chatScopes` is not a port on the Input; the real one is `sessionScope`
 			scope: $.input.chatScopes,
 		}),
 	)
@@ -25,13 +25,13 @@ spec('types:ports@1', { version: '1.0.0' })
 // about the whole expression being rejected.
 spec('types:ports-ok@1', { version: '1.0.0' })
 	.input('input', C.userMessage.v1())
-	.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
+	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 
 // ── A node that does not exist ──────────────────────────────────────────────
 spec('types:unknown@1', { version: '1.0.0' })
 	.input('input', C.userMessage.v1())
 	.query('history', ($) =>
-		C.chatHistory.v1({
+		C.sessionHistory.v1({
 			// @ts-expect-error — no node named `histry` has been declared
 			scope: $.histry.messages,
 		}),
@@ -41,7 +41,7 @@ spec('types:unknown@1', { version: '1.0.0' })
 spec('types:forward@1', { version: '1.0.0' })
 	.input('input', C.userMessage.v1())
 	.query('history', ($) =>
-		C.chatHistory.v1({
+		C.sessionHistory.v1({
 			// @ts-expect-error — `generate` is declared *below*; the scope contains only
 			// what precedes this call, so a back-edge is unwritable rather than caught later
 			scope: $.generate.text,

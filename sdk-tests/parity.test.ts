@@ -31,7 +31,11 @@ describe('35 · activation matching', () => {
 	const es = [
 		entry({ id: 'mira', keys: ['Mira', 'sister'] }),
 		entry({ id: 'castle', keys: ['^the castle'], useRegex: true }),
-		entry({ id: 'gated', keys: ['sword'], secondary: { op: 'AND_ALL', keys: ['forge', 'ember'] } }),
+		entry({
+			id: 'gated',
+			keys: ['sword'],
+			secondary: { op: 'AND_ALL', keys: ['forge', 'ember'] },
+		}),
 		entry({ id: 'excluded', keys: ['sword'], secondary: { op: 'NOT_ANY', keys: ['forge'] } }),
 	]
 
@@ -46,7 +50,9 @@ describe('35 · activation matching', () => {
 	})
 
 	test('AND_ALL requires every secondary key; NOT_ANY excludes', () => {
-		const both = activate(es, ['the sword from the forge, still ember-hot'], P).map((h) => h.entry.id)
+		const both = activate(es, ['the sword from the forge, still ember-hot'], P).map(
+			(h) => h.entry.id,
+		)
 		assert.deepEqual(both, ['gated'])
 
 		const neither = activate(es, ['just a sword'], P).map((h) => h.entry.id)
@@ -66,11 +72,19 @@ describe('36 · recursion', () => {
 		entry({ id: 'a', keys: ['dragon'], content: 'the dragon guards the hoard' }),
 		entry({ id: 'b', keys: ['hoard'], content: 'the hoard sits beneath the mountain' }),
 		entry({ id: 'c', keys: ['mountain'], content: 'the mountain is cold' }),
-		entry({ id: 'stop', keys: ['hoard'], content: 'mentions mountain', preventRecursion: true }),
+		entry({
+			id: 'stop',
+			keys: ['hoard'],
+			content: 'mentions mountain',
+			preventRecursion: true,
+		}),
 	]
 
 	test('depth 0 activates only direct hits', () => {
-		assert.deepEqual(activate(es, ['a dragon!'], P).map((h) => h.entry.id), ['a'])
+		assert.deepEqual(
+			activate(es, ['a dragon!'], P).map((h) => h.entry.id),
+			['a'],
+		)
 	})
 
 	test('depth 1 activates entries the first pass mentioned', () => {
@@ -94,30 +108,47 @@ describe('36 · recursion', () => {
 
 // ── 37 · constants are a priority tier, honoured before the budget ─────────
 test('37 · a constant entry activates without a key match', () => {
-	const es = [entry({ id: 'always', constant: true, keys: ['never-typed'] }), entry({ id: 'other', keys: ['xyz'] })]
-	assert.deepEqual(activate(es, ['unrelated text'], P).map((h) => h.entry.id), ['always'])
+	const es = [
+		entry({ id: 'always', constant: true, keys: ['never-typed'] }),
+		entry({ id: 'other', keys: ['xyz'] }),
+	]
+	assert.deepEqual(
+		activate(es, ['unrelated text'], P).map((h) => h.entry.id),
+		['always'],
+	)
 })
 
 // ── 38 · probability rolls against the run seed — better than the original ──
 describe('38 · probability', () => {
-	const es = Array.from({ length: 12 }, (_, i) => entry({ id: `e${i}`, constant: true, probability: 0.5 }))
+	const es = Array.from({ length: 12 }, (_, i) =>
+		entry({ id: `e${i}`, constant: true, probability: 0.5 }),
+	)
 	const hits = () => activate(es, [''], P)
 
 	test('the same seed produces the same winners — ST cannot do this', () => {
 		const a = rollProbability(hits(), seededRandom('seed:parity'))
 		const b = rollProbability(hits(), seededRandom('seed:parity'))
-		assert.deepEqual(a.kept.map((e) => e.id), b.kept.map((e) => e.id))
+		assert.deepEqual(
+			a.kept.map((e) => e.id),
+			b.kept.map((e) => e.id),
+		)
 		assert.ok(a.rolledOut.length > 0, 'some entries lost their roll')
 	})
 
 	test('a different seed produces different winners', () => {
 		const a = rollProbability(hits(), seededRandom('seed:1'))
 		const b = rollProbability(hits(), seededRandom('seed:2'))
-		assert.notDeepEqual(a.kept.map((e) => e.id), b.kept.map((e) => e.id))
+		assert.notDeepEqual(
+			a.kept.map((e) => e.id),
+			b.kept.map((e) => e.id),
+		)
 	})
 
 	test('probability 1 or absent always wins', () => {
-		const certain = [entry({ id: 'sure', constant: true }), entry({ id: 'explicit', constant: true, probability: 1 })]
+		const certain = [
+			entry({ id: 'sure', constant: true }),
+			entry({ id: 'explicit', constant: true, probability: 1 }),
+		]
 		const { kept } = rollProbability(activate(certain, [''], P), seededRandom('any'))
 		assert.equal(kept.length, 2)
 	})
@@ -151,15 +182,32 @@ describe('39 · inclusion groups', () => {
 		// resolveGroups is a pure function over candidates: exactly what a Task is.
 		const a = resolveGroups(members, seededRandom('same'))
 		const b = resolveGroups(members, seededRandom('same'))
-		assert.deepEqual(a.kept.map((x) => x.id), b.kept.map((x) => x.id))
+		assert.deepEqual(
+			a.kept.map((x) => x.id),
+			b.kept.map((x) => x.id),
+		)
 	})
 })
 
 // ── 40 · insertion order is a sort key ─────────────────────────────────────
 test('40 · larger order sits closer to the end', () => {
 	const items: PositionedItem[] = [
-		{ id: 'late', rendered: 'LATE', order: 100, position: 'after_char', weight: 1, priority: 'normal' },
-		{ id: 'early', rendered: 'EARLY', order: 1, position: 'after_char', weight: 1, priority: 'normal' },
+		{
+			id: 'late',
+			rendered: 'LATE',
+			order: 100,
+			position: 'after_char',
+			weight: 1,
+			priority: 'normal',
+		},
+		{
+			id: 'early',
+			rendered: 'EARLY',
+			order: 1,
+			position: 'after_char',
+			weight: 1,
+			priority: 'normal',
+		},
 	]
 	const { text } = assembleWithPositions([], items, 999, (s) => s.length)
 	assert.ok(text.indexOf('EARLY') < text.indexOf('LATE'))
@@ -198,8 +246,14 @@ describe('41 · positional insertion at chat depth', () => {
 		// The only real requirement is guidance: a Query that flattens its messages into one
 		// opaque string forecloses this. That is advice, not a schema change.
 		const flattened = [{ rendered: 'm1\nm2\nm3\nm4\nm5' }]
-		const out = render(TEMPLATE, { messages: flattened, lore: [{ rendered: 'NOTE', depth: 1 }] })
-		assert.ok(!out.includes('m3\nNOTE\nm4'), 'flattening it away is the only thing that breaks it')
+		const out = render(TEMPLATE, {
+			messages: flattened,
+			lore: [{ rendered: 'NOTE', depth: 1 }],
+		})
+		assert.ok(
+			!out.includes('m3\nNOTE\nm4'),
+			'flattening it away is the only thing that breaks it',
+		)
 	})
 
 	test('the Task-side alternative also works, for authors who prefer computing placement', () => {
@@ -212,15 +266,39 @@ describe('41 · positional insertion at chat depth', () => {
 			priority: 'normal',
 		}))
 		const lore: PositionedItem[] = [
-			{ id: 'note', rendered: 'NOTE', order: 0, position: { atDepth: 2 }, weight: 0.3, priority: 'normal' },
+			{
+				id: 'note',
+				rendered: 'NOTE',
+				order: 0,
+				position: { atDepth: 2 },
+				weight: 0.3,
+				priority: 'normal',
+			},
 		]
-		assert.equal(assembleWithPositions(history, lore, 999, (s) => s.length).text, 'm1\nm2\nm3\nNOTE\nm4\nm5')
+		assert.equal(
+			assembleWithPositions(history, lore, 999, (s) => s.length).text,
+			'm1\nm2\nm3\nNOTE\nm4\nm5',
+		)
 	})
 
 	test('constants survive the budget; normal entries are dropped', () => {
 		const lore: PositionedItem[] = [
-			{ id: 'must', rendered: 'X'.repeat(50), order: 0, position: 'after_char', weight: 1, priority: 'always' },
-			{ id: 'maybe', rendered: 'Y'.repeat(50), order: 1, position: 'after_char', weight: 1, priority: 'normal' },
+			{
+				id: 'must',
+				rendered: 'X'.repeat(50),
+				order: 0,
+				position: 'after_char',
+				weight: 1,
+				priority: 'always',
+			},
+			{
+				id: 'maybe',
+				rendered: 'Y'.repeat(50),
+				order: 1,
+				position: 'after_char',
+				weight: 1,
+				priority: 'normal',
+			},
 		]
 		const { included, dropped } = assembleWithPositions([], lore, 60, (s) => s.length)
 		assert.ok(included.includes('must'))

@@ -40,9 +40,14 @@ describe('104 · createMessage and updateMessage are different types', () => {
 		const doc = publish(
 			spec('demo:edit', { version: '1.0.0' })
 				.input('input', C.messageCreated.v1())
-				.consume('save', ($) => C.updateMessage.v1({ target: $.input.messageId, text: 'edited' })),
+				.consume('save', ($) =>
+					C.updateMessage.v1({ target: $.input.messageId, text: 'edited' }),
+				),
 		)
-		assert.equal(doc.nodes.find((n) => n.key === 'save')!.typeId, 'core:consumer/update-message')
+		assert.equal(
+			doc.nodes.find((n) => n.key === 'save')!.typeId,
+			'core:consumer/update-message',
+		)
 	})
 
 	test('a message created in the same run cannot be updated by a second node', () => {
@@ -56,7 +61,9 @@ describe('104 · createMessage and updateMessage are different types', () => {
 					spec('demo:create-then-edit', { version: '1.0.0' })
 						.input('input', C.userMessage.v1())
 						.consume('first', ($) => C.createMessage.v1({ text: $.input.text }))
-						.consume('second', ($) => C.updateMessage.v1({ target: $.first.messageId, text: $.input.text })),
+						.consume('second', ($) =>
+							C.updateMessage.v1({ target: $.first.messageId, text: $.input.text }),
+						),
 				),
 			/write-result|row-ids/,
 		)
@@ -80,9 +87,17 @@ describe('105 · a gate-eligible write publishes write-result@1', () => {
 	test('every core write type obeys it — which three of them did not', () => {
 		// This assertion is why the check exists. Hand-maintained, three core Consumers
 		// published raw ids while declaring effects: 'write'.
-		const offenders = [C.createMessage, C.updateMessage, C.attachImage, C.attachAudio, C.savePluginData]
+		const offenders = [
+			C.createMessage,
+			C.updateMessage,
+			C.attachImage,
+			C.attachAudio,
+			C.savePluginData,
+		]
 			.map((t) => t.descriptor)
-			.filter((d) => Object.values(d.ports.out ?? {}).some((s) => s === 'core:shape/row-ids@1'))
+			.filter((d) =>
+				Object.values(d.ports.out ?? {}).some((s) => s === 'core:shape/row-ids@1'),
+			)
 		assert.deepEqual(offenders, [])
 	})
 
@@ -98,7 +113,10 @@ describe('105 · a gate-eligible write publishes write-result@1', () => {
 
 // ── 106 · Migrating the legacy type ────────────────────────────────────────
 describe('106 · splitCommitMessage recovers the decision or refuses to guess', () => {
-	const legacy = (over: Partial<SpecDocument['nodes'][number]> = {}, edges: SpecDocument['edges'] = []): SpecDocument => ({
+	const legacy = (
+		over: Partial<SpecDocument['nodes'][number]> = {},
+		edges: SpecDocument['edges'] = [],
+	): SpecDocument => ({
 		schemaVersion: 1,
 		id: 'legacy:chat-turn',
 		version: '1.0.0',
@@ -107,7 +125,14 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 		presets: [],
 		blocks: [],
 		nodes: [
-			{ key: 'input', kind: 'input', typeId: 'core:input/user-message', typeVersion: 1, config: {}, position: 0 },
+			{
+				key: 'input',
+				kind: 'input',
+				typeId: 'core:input/user-message',
+				typeVersion: 1,
+				config: {},
+				position: 0,
+			},
 			{
 				key: 'save',
 				kind: 'consumer',
@@ -123,16 +148,30 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 
 	test('nothing supplies an id → create', () => {
 		const { document, report } = splitCommitMessage(legacy())
-		assert.equal(document.nodes.find((n) => n.key === 'save')!.typeId, 'core:consumer/create-message')
+		assert.equal(
+			document.nodes.find((n) => n.key === 'save')!.typeId,
+			'core:consumer/create-message',
+		)
 		assert.equal(report.entries[0]!.outcome, 'migrated')
 		assert.match(report.entries[0]!.reason!, /only ever created/)
 	})
 
 	test('an id wired from outside the run → update, and the port is renamed', () => {
 		const { document, report } = splitCommitMessage(
-			legacy({}, [{ from: 'input', fromPort: 'rowIds', to: 'save', toPort: 'messageId', shape: 'core:shape/row-ids@1' }]),
+			legacy({}, [
+				{
+					from: 'input',
+					fromPort: 'rowIds',
+					to: 'save',
+					toPort: 'messageId',
+					shape: 'core:shape/row-ids@1',
+				},
+			]),
 		)
-		assert.equal(document.nodes.find((n) => n.key === 'save')!.typeId, 'core:consumer/update-message')
+		assert.equal(
+			document.nodes.find((n) => n.key === 'save')!.typeId,
+			'core:consumer/update-message',
+		)
 		assert.equal(document.edges[0]!.toPort, 'target')
 		assert.equal(report.entries[0]!.outcome, 'migrated')
 	})
@@ -141,10 +180,20 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 		// Converting this would produce a spec that is wrong in a way nobody can see.
 		const { document, report } = splitCommitMessage(
 			legacy({}, [
-				{ from: 'first', fromPort: 'messageId', to: 'save', toPort: 'messageId', shape: 'core:shape/write-result@1' },
+				{
+					from: 'first',
+					fromPort: 'messageId',
+					to: 'save',
+					toPort: 'messageId',
+					shape: 'core:shape/write-result@1',
+				},
 			]),
 		)
-		assert.equal(document.nodes.find((n) => n.key === 'save')!.typeId, 'core:consumer/commit-message', 'left alone')
+		assert.equal(
+			document.nodes.find((n) => n.key === 'save')!.typeId,
+			'core:consumer/commit-message',
+			'left alone',
+		)
 		assert.equal(unmappedEntries(report).length, 1)
 		assert.match(report.entries[0]!.reason!, /may never exist/)
 	})
@@ -152,7 +201,13 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 	test('two id sources is ambiguous, so it is unmapped rather than decided', () => {
 		const { report } = splitCommitMessage(
 			legacy({ config: { messageId: 'row:7' } }, [
-				{ from: 'input', fromPort: 'rowIds', to: 'save', toPort: 'messageId', shape: 'core:shape/row-ids@1' },
+				{
+					from: 'input',
+					fromPort: 'rowIds',
+					to: 'save',
+					toPort: 'messageId',
+					shape: 'core:shape/row-ids@1',
+				},
 			]),
 		)
 		assert.equal(unmappedEntries(report).length, 1)
@@ -170,10 +225,23 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		publish(
 			spec('demo:needs-wiring', { version: '1.0.0' })
 				.input('input', C.userMessage.v1())
-				.query('history', ($) => C.chatHistory.v1({ scope: $.input.chatScope }))
-				.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
-				.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-				.provider('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() })),
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+				.provider('embed', ($) =>
+					C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
+				)
+				// `assemble` declares a connection slot of its own — it renders the
+				// prompt for a specific wire format — and every shipped spec
+				// SHARES the sending Provider's, which is what the assertion
+				// below about `prompt` is checking.
+				.task('prompt', ($) =>
+					C.assemble.v2({
+						candidates: $.history.messages,
+						connection: slot.connectionOf('generate'),
+					}),
+				)
+				.provider('generate', ($) =>
+					C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+				),
 		)
 
 	test('an export names every connection needed, including ones nobody configured', () => {
@@ -187,18 +255,61 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		)
 	})
 
+	test('a slot SHARED with another node is not a binding an importer has to make', () => {
+		// `prompt.connection` is `slot.connectionOf('generate')`, and the executor
+		// resolves a shared slot against the TARGET's stored value — so a value
+		// bound here would be read by nothing. Listing it would ask an importer
+		// to configure a second box for one connection, which is the defect the
+		// config panel's identical rule already closes.
+		const keys = requiredConnections(doc()).map((x) => `${x.nodeKey}.${x.slot}`)
+		assert.ok(!keys.includes('prompt.connection'), keys.join(', '))
+
+		// The skip is about SHARING, not about the type: the same node with an
+		// unshared slot is still a requirement.
+		const own = publish(
+			spec('demo:own-connection', { version: '1.0.0' })
+				.input('input', C.userMessage.v1())
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+				.task('prompt', ($) =>
+					C.assemble.v2({ candidates: $.history.messages, connection: slot.connection() }),
+				),
+		)
+		assert.deepEqual(
+			requiredConnections(own).map((x) => `${x.nodeKey}.${x.slot}`),
+			['prompt.connection'],
+		)
+	})
+
 	test('each requirement carries the connection kind, so only compatible ones are offered', () => {
 		const r = requiredConnections(doc())
 		assert.equal(r.find((x) => x.nodeKey === 'embed')!.kind, 'core:shape/embeddings@1')
 		assert.equal(r.find((x) => x.nodeKey === 'generate')!.kind, 'core:shape/text-gen@1')
-		assert.match(renderRequirement(r[0]!), /needs a core:shape\/embeddings@1 connection/)
+		// The line a person reads names the capability in the words the connection
+		// form used, not the shape id the two assertions above check. They are
+		// deciding which of their connections to point at this, and
+		// `core:shape/embeddings@1` helps them decide nothing — while `kind` above
+		// proves the shape is still carried for the machinery that filters on it.
+		assert.match(
+			renderRequirement(r[0]!),
+			/needs a connection that supports Embeddings/,
+		)
+		assert.doesNotMatch(renderRequirement(r[0]!), /core:shape/)
 	})
 
 	test('what is still unwired drives needs-configuration, not broken', () => {
 		const missing = unwiredConnections(doc(), [{ nodeKey: 'embed', slot: 'connection' }])
-		assert.deepEqual(missing.map((m) => m.nodeKey), ['generate'])
+		assert.deepEqual(
+			missing.map((m) => m.nodeKey),
+			['generate'],
+		)
 		// A spec nobody has configured is unfinished, not damaged — the difference decides
 		// whether a user files a bug or opens settings.
-		assert.equal(unwiredConnections(doc(), missing.concat({ nodeKey: 'embed', slot: 'connection', typeId: '', kind: '' })).length, 0)
+		assert.equal(
+			unwiredConnections(
+				doc(),
+				missing.concat({ nodeKey: 'embed', slot: 'connection', typeId: '', kind: '' }),
+			).length,
+			0,
+		)
 	})
 })

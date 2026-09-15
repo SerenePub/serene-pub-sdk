@@ -80,11 +80,32 @@ export const lifecycleHook = (
 	opts: { cadence?: string; timeoutMs?: number } = {},
 ): LifecycleHookDecl => ({ __decl: 'lifecycle-hook', moment, handler, ...opts })
 
+/**
+ * One subscription. **Many may register against one event** — several
+ * extensions, and several of one extension's hooks — so this is an entry in a
+ * list rather than a claim on a name.
+ *
+ * There is deliberately nothing here for ordering or for using your return
+ * value, and both absences are the same absence. Delivery is fire-and-forget
+ * (01 §9c, 11 §3): your return is dropped, and dispatch order is **declaration
+ * order** — the order you wrote your own subscriptions in, tie-broken across
+ * extensions by plugin id. A `priority` field would manufacture an ordering
+ * guarantee core does not give, and be a collision of its own the moment two
+ * extensions claimed the same number; a `kind: 'filter'` field would let one
+ * extension rewrite what the next one is told. Neither is a thing you can ask
+ * for, which is why neither is a thing you have to defend against.
+ */
 export interface EventHookDecl {
 	readonly __decl: 'event-hook'
 	/** A core event slug. Plugins cannot define events in SDK 1.0 (F8, 13 §7g). */
 	event: string
 	handler: EventHook
+	/**
+	 * This subscription's own budget. Defaults to a small one, and is clamped by
+	 * the host: an event's subscribers **share one budget** rather than each
+	 * getting their own, so a long deadline here is a claim on how much of a
+	 * shared ceiling you intend to spend, not a private allowance.
+	 */
 	timeoutMs?: number
 }
 

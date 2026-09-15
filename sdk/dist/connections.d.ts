@@ -17,14 +17,24 @@
  * what the exporter did, and independent of whether the exporter was even configured.
  */
 import type { SpecDocument } from './document.js';
+import { type CapabilityId, type CapabilitySet, type Verdict } from './capabilities.js';
 export interface ConnectionRequirement {
     nodeKey: string;
     slot: string;
     /** Which connection kind satisfies it — the produced shape (F17). */
     kind?: string;
     typeId: string;
+    /** What the connection must be able to do. Unmet is a hard failure at bind. */
+    requires?: readonly CapabilityId[];
+    /** What it would use if available. The binding handles absence either way. */
+    optional?: readonly CapabilityId[];
 }
-/** Every connection this document needs, derived from its types. */
+/**
+ * Every connection this document needs, derived from its types.
+ *
+ * "Needs" means a binding an importer has to make. A slot the document already
+ * points at another node's is not one of those — see `sharedWithAnotherNode`.
+ */
 export declare function requiredConnections(doc: SpecDocument): ConnectionRequirement[];
 /**
  * What is still unwired, given what the importing instance has bound so far.
@@ -38,8 +48,37 @@ export declare function unwiredConnections(doc: SpecDocument, bound: ReadonlyArr
     slot: string;
 }>): ConnectionRequirement[];
 /**
- * The line an import screen shows. Names the kind, because F17 means only connections
- * producing that shape are eligible — offering the rest is offering a mistake.
+ * The line an import screen shows.
+ *
+ * Names the capability in the words the connection form used — "needs a
+ * connection that supports Image generation" — rather than a shape id. Somebody
+ * reading this is deciding which of their connections to point at it, and
+ * `core:shape/image-gen@1` does not help them decide anything.
+ *
+ * `supports`, not `can`: every capability label is a noun phrase ("Vision",
+ * "Embeddings", "Image generation"), so `can` only reads for the handful that
+ * happen to start with a verb and gives "a connection that can Embeddings" for
+ * the rest.
  */
 export declare const renderRequirement: (r: ConnectionRequirement) => string;
+/** One slot, checked against what the connection bound to it can actually do. */
+export interface UnsatisfiedConnection extends ConnectionRequirement {
+    verdict: Verdict;
+}
+/**
+ * Which bound connections cannot do what their slot asks.
+ *
+ * Distinct from `unwiredConnections`, and the distinction is the whole point of
+ * the capability model: *unwired* means nobody chose yet, *unsatisfied* means
+ * somebody chose and the choice will not work. The first is an unfinished setup;
+ * the second is a setup that looks finished and fails at the first run.
+ *
+ * Takes the resolved capability set per slot rather than a connection id, so
+ * this stays pure — the caller does the lookup it was going to do anyway.
+ */
+export declare function unsatisfiedConnections(doc: SpecDocument, boundCapabilities: ReadonlyArray<{
+    nodeKey: string;
+    slot: string;
+    capabilities: CapabilitySet;
+}>): UnsatisfiedConnection[];
 //# sourceMappingURL=connections.d.ts.map

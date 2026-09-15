@@ -131,6 +131,41 @@ describe('111 · a review form is defined by the data the node received', () => 
 		assert.deepEqual(edited.tags, payload.tags)
 	})
 
+	test('approving without editing returns the payload unchanged', () => {
+		// The identity case, and the one a review gate actually rests on:
+		// open a payload in the form, touch nothing, approve. Every other test
+		// here edits something, so a round-trip that quietly coerced an
+		// untouched field — an empty string, a zero, a null, a key with a
+		// space — would pass all of them and corrupt the write.
+		//
+		// Worth asserting explicitly because this module was once destroyed by
+		// a `git checkout` in an uncommitted tree and rebuilt from a
+		// transcript. Code reconstructed from a description compiles and
+		// satisfies tests written from the same description; this checks the
+		// behaviour instead.
+		const nasty = {
+			name: 'The Sealed Gate',
+			content: 'a long line\nwith a "quote" and a tab\there',
+			pinned: false,
+			zero: 0,
+			ratio: 0.5,
+			empty: '',
+			// Deliberately padded. Without it a `.trim()` slipped into the
+			// string branch survives every assertion here, which is exactly
+			// how an untouched field gets quietly rewritten.
+			padded: '  leading and trailing  ',
+			tags: ['gate', 'underworld'],
+			noTags: [] as string[],
+			cast: { participants: [1, 2], mentioned: [], nested: { deep: 'ok' } },
+			nothing: null,
+			emoji: '🜏 non-BMP',
+			spaced: { 'extra lore': 'a key with a space' },
+		}
+		const schema = inferSchema(nasty)
+		const back = applyFormValues(schema, nasty, valuesForForm(schema, nasty))
+		assert.deepEqual(back, nasty)
+	})
+
 	test('unparseable JSON refuses with the field named, instead of committing a string', () => {
 		const schema = inferSchema(payload)
 		assert.throws(

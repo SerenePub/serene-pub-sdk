@@ -30,6 +30,7 @@
  * which is what lets the template editor show output while you type.
  */
 import { checkScopeSample } from './template.js';
+import { refuseUnlessIdentical } from './hash.js';
 const variables = new Map();
 /**
  * Register a variable declaration.
@@ -41,8 +42,9 @@ const variables = new Map();
  * in exactly the way a prompt change is not.
  */
 export function defineVariable(decl) {
-    if (variables.has(decl.id))
-        throw new Error(`duplicate variable id: ${decl.id}`);
+    const existing = variables.get(decl.id);
+    if (existing)
+        refuseUnlessIdentical(existing, decl, `duplicate variable id: ${decl.id}`);
     variables.set(decl.id, decl);
     return decl;
 }
@@ -257,7 +259,10 @@ export const varWorldLore = defineVariable({
 });
 export const varHistory = defineVariable({
     id: 'core:var/history@1',
-    i18n: { name: { en: 'Story history' } },
+    // "Story history" until 0.6. It is a *list of dated history entries*, and
+    // calling it a story invited people to look for the story — the summary of
+    // the chat so far, which is a different feature that does not exist here.
+    i18n: { name: { en: 'History entries' } },
     description: {
         en: 'Earlier events from the chat that fit the budget, newest first, keyed by date.',
     },
@@ -310,21 +315,60 @@ const BY_OTHER = { type: 'record', of: { type: 'list', of: RELATIONSHIP } };
  * nothing renders any more: this one is speaker-centric and always-on wherever
  * a chat has a lorebook and the speaker has a bound node.
  */
-export const varSpeakerRelationships = defineVariable({
-    id: 'core:var/speaker-relationships@1',
-    i18n: { name: { en: 'Your relationships' } },
+/**
+ * How the speaking character regards everyone else.
+ *
+ * ⚠ Split, with its sibling below, out of `core:var/speaker-relationships@1`.
+ * That one variable held both directions and the legendary figures under a
+ * single "Your relationships:" heading — so a model was handed what the speaker
+ * thinks of Brannoc and what Rell thinks of the speaker as one undifferentiated
+ * list, and a user who wanted one and not the other had no setting for it. Two
+ * variables means two layouts, two priorities and two switches.
+ */
+export const varRelationshipsPerspectives = defineVariable({
+    id: 'core:var/relationships-perspectives@1',
+    i18n: { name: { en: 'Relationships: their perspective' } },
     description: {
-        en: "How the speaking character relates to everyone else, and how they're regarded in return, from the narrative graph.",
+        en: 'How the speaking character regards each of the others, from the narrative graph.',
     },
     scope: {
-        speakerRelationships: {
+        relationshipsPerspectives: {
+            ...BY_OTHER,
+            description: { en: 'How the speaker regards each other character.' },
+        },
+    },
+    sample: {
+        Brannoc: [
+            {
+                type: 'wary respect',
+                secrecy: 'Only I know',
+                note: 'Ash has never forgotten who opened the lower gate.',
+            },
+        ],
+    },
+});
+/**
+ * How everyone else regards the speaking character, and who the world knows of.
+ *
+ * `legendaryFigures` sits here rather than in its own variable because it is
+ * the same kind of claim — what is publicly known — and the opposite kind from
+ * "what you think of them". A third variable would put a mostly-empty block in
+ * every prompt on every install that has never marked a node legendary.
+ *
+ * Both sections are conditional: an install with no legendary figures has no
+ * `legendaryFigures` key at all rather than an empty object, and the shipped
+ * layout's guards are written against exactly that.
+ */
+export const varRelationshipsKnown = defineVariable({
+    id: 'core:var/relationships-known@1',
+    i18n: { name: { en: 'Relationships: how others see them' } },
+    description: {
+        en: 'How the others regard the speaking character, plus any figures the world knows of.',
+    },
+    scope: {
+        relationshipsKnown: {
             type: 'object',
             fields: {
-                yourRelationships: {
-                    ...BY_OTHER,
-                    optional: true,
-                    description: { en: 'How the speaker regards each other character.' },
-                },
                 howOthersRegardYou: {
                     ...BY_OTHER,
                     optional: true,
@@ -347,15 +391,6 @@ export const varSpeakerRelationships = defineVariable({
         },
     },
     sample: {
-        yourRelationships: {
-            Brannoc: [
-                {
-                    type: 'wary respect',
-                    secrecy: 'Only I know',
-                    note: 'Ash has never forgotten who opened the lower gate.',
-                },
-            ],
-        },
         howOthersRegardYou: {
             Rell: [
                 {
@@ -374,8 +409,38 @@ export const varCurrentDate = defineVariable({
     description: {
         en: "The story's present date, taken from the most recent history entry.",
     },
-    scope: { currentDate: { type: 'string' } },
-    sample: 'Year 412, Month 3',
+    /**
+     * ⚠ Was `{ currentDate: { type: 'string' } }` with the sample
+     * `'Year 412, Month 3'`, and the sample was **wrong** — the value arrived
+     * pre-formatted by `formatDate` as `412-03`, so the preview showed a
+     * rendering the prompt never contained. That is the failure mode a sample
+     * exists to prevent, and it happened because the shape was a finished
+     * string: nothing could disagree with the formatting, so nothing did.
+     *
+     * The parts travel separately now and the layout joins them, which is what
+     * makes "state the date differently" a setting rather than a code change.
+     * `month` and `day` are absent rather than null when the entry has no such
+     * precision — `{{#if (isSet …)}}` is what a layout tests.
+     */
+    scope: {
+        currentDate: {
+            type: 'object',
+            fields: {
+                year: { type: 'number', description: { en: 'The story year.' } },
+                month: {
+                    type: 'number',
+                    optional: true,
+                    description: { en: 'Absent when the entry is only dated to a year.' },
+                },
+                day: {
+                    type: 'number',
+                    optional: true,
+                    description: { en: 'Absent when the entry is only dated to a month.' },
+                },
+            },
+        },
+    },
+    sample: { year: 412, month: 3, day: 5 },
 });
 // ── Samples ─────────────────────────────────────────────────────────────────
 /**

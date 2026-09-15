@@ -28,12 +28,45 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
+import { isScriptTypeId } from './scripts.js';
 const versionOf = (id) => Number(/@(\d+)$/.exec(id)?.[1] ?? 1);
 const bare = (id) => id.replace(/@\d+$/, '');
 const shapeId = (s) => typeof s === 'string' ? s : (s?.id ?? undefined);
 /** Project descriptors into registry rows — how core seeds and refreshes the table. */
 export function snapshotRegistry(types, meta = {}) {
-    return types.map((d) => ({
+    return types.map((t) => isScriptTypeId(t.id) ? scriptEntry(t, meta) : nodeEntry(t, meta));
+}
+/**
+ * A script type as a registry row.
+ *
+ * ⚠ Projected through the *same* function as node types, deliberately. 18 §2
+ * puts scripts "under the same sync, conflict-refusal and re-projection rules
+ * as node types", and the cheapest way to keep that true is for there to be one
+ * projection, one hash and one sync rather than a parallel set that drifts.
+ *
+ * `blastRadius` rides inside `i18n` rather than earning a column, because that
+ * is what it is: display text, stripped from the hash, read from the row by a
+ * panel that must not load the plugin to render a badge (F6). `semantics` does
+ * earn one — it is contract.
+ */
+function scriptEntry(d, meta) {
+    return {
+        id: bare(d.id),
+        version: versionOf(d.id),
+        kind: 'script',
+        semantics: d.semantics,
+        ports: { in: { ...d.ports.in }, out: { ...d.ports.out } },
+        // No slots: a script type is a contract, not a configurable surface.
+        // What is configurable about a script is the script — its source and its
+        // declared variable I/O — which lives on its row, not on its type.
+        slots: {},
+        i18n: { ...(d.i18n ?? {}), blastRadius: d.blastRadius },
+        owner: meta.owner,
+        release: meta.release,
+    };
+}
+function nodeEntry(d, meta) {
+    return {
         id: bare(d.id),
         version: versionOf(d.id),
         kind: d.kind,
@@ -42,13 +75,44 @@ export function snapshotRegistry(types, meta = {}) {
             out: Object.fromEntries(Object.entries(d.ports?.out ?? {}).map(([k, v]) => [k, shapeId(v)])),
         },
         slots: { ...(d.slots ?? {}) },
+        /**
+         * What the type calls itself.
+         *
+         * ⚠ Not projected until 0.6, so the column existed and was always NULL
+         * — and every reader that wanted a name invented one from the id
+         * instead. The pipeline builder rendered
+         * `core:query/graph-context@1` as "Graph context" while its
+         * declaration said "Graph relationships", and nothing anywhere showed
+         * the second.
+         *
+         * Excluded from the content hash, like every other piece of display
+         * text, which is exactly why it has to be *refreshed* rather than only
+         * written on insert: a renamed type never takes the conflict path.
+         */
+        i18n: d.i18n,
+        /**
+         * Entry types only, and split in two on the way into the row: the
+         * facets to `entryShape`, the declared `fields` schema to
+         * `configSchema`. `undefined` on every node type, and `JSON.stringify`
+         * drops undefined keys, so no node type's hash moves by this being
+         * here.
+         */
+        entryShape: d.entryShape ? entryFacets(d.entryShape) : undefined,
+        configSchema: d.entryShape?.fields,
         effects: d.effects,
         causesEvent: d.causesEvent,
         public: d.public,
         optional: d.optional,
+        scriptPoints: d.scriptPoints,
+        sessionShape: d.sessionShape,
         owner: meta.owner,
         release: meta.release,
-    }));
+    };
+}
+/** The entry contract without the half that has its own column. */
+function entryFacets(shape) {
+    const { fields: _fields, ...facets } = shape;
+    return facets;
 }
 /**
  * Decide whether a plugin is installable, from data alone.

@@ -8,6 +8,16 @@
 import type { SpecDocument } from './document.js'
 import { getType } from './descriptors.js'
 import { assignable, isStreaming } from './shapes.js'
+import {
+	capabilityLabel,
+	FEATURES,
+	IO_KINDS,
+	isTransformId,
+	parseTransform,
+	transformId,
+	type CapabilityId,
+	type TransformId,
+} from './capabilities.js'
 
 export interface Finding {
 	law: string
@@ -167,6 +177,59 @@ export function validate(doc: SpecDocument): Finding[] {
 			cur = blockById.get(cur)?.blockId
 		}
 		return false
+	}
+
+	for (const b of doc.blocks) {
+		if (b.kind !== 'route') continue
+		const routes = (b as { routes?: Record<string, Record<string, unknown>> }).routes ?? {}
+		const on = (b as { on?: { __ref?: string } }).on
+		if (!on || on.__ref !== 'data') {
+			f.push({
+				law: '20 §10',
+				severity: 'error',
+				message: `route '${b.id}' has no routed value`,
+				fix: 'reference a port with on:, e.g. on: $ => $.parse.call — the decision is data a task computed',
+			})
+		}
+		if (!b.chains.length) {
+			f.push({
+				law: '20 §10',
+				severity: 'error',
+				message: `route '${b.id}' declares no branches`,
+				fix: 'declare at least one when() branch',
+			})
+		}
+		let defaults = 0
+		for (const chain of b.chains) {
+			const p = routes[chain]
+			if (!p) {
+				f.push({
+					law: '20 §10',
+					severity: 'error',
+					message: `route '${b.id}' branch '${chain}' has no predicate`,
+					fix: 'declare it with when(name, predicate) or otherwise(name)',
+				})
+				continue
+			}
+			const stated = ['equals', 'truthy', 'default'].filter((k) => p[k] !== undefined)
+			if (p.default) defaults++
+			if (stated.length !== 1) {
+				f.push({
+					law: '20 §10',
+					severity: 'error',
+					message: `route '${b.id}' branch '${chain}' states ${stated.length || 'no'} conditions`,
+					fix: 'exactly one of equals / truthy / default per branch — a richer decision belongs in a Task the route reads',
+				})
+			}
+		}
+		if (defaults > 1) {
+			f.push({
+				law: '20 §10',
+				severity: 'error',
+				message: `route '${b.id}' declares ${defaults} default branches`,
+				fix: "at most one otherwise() — 'fires when nothing else did' cannot be true of two branches",
+			})
+		}
 	}
 
 	for (const b of doc.blocks) {
@@ -331,7 +394,119 @@ export function validate(doc: SpecDocument): Finding[] {
 		}
 	}
 
+	// ── capability declarations ───────────────────────────────────────────────
+	//
+	// Checked HERE and not by `satisfies`, because at publish time there is no
+	// connection to satisfy — the document may be imported onto an instance whose
+	// connections nobody has created yet. What is checkable statically is whether
+	// the declaration itself is coherent, and every one of these is a mistake that
+	// would otherwise surface as a slot that silently never matches anything.
+	for (const n of doc.nodes) {
+		const d = getType(`${n.typeId}@${n.typeVersion}`)
+		for (const [slotName, decl] of Object.entries(d?.slots ?? {})) {
+			const requires = decl.requires ?? []
+			const optional = decl.optional ?? []
+			if (!requires.length && !optional.length) continue
+
+			if (decl.kind !== 'connection') {
+				f.push({
+					law: 'capabilities',
+					severity: 'error',
+					nodeKey: n.key,
+					message: `'${n.key}.${slotName}' declares capabilities but is a ${decl.kind} slot`,
+					fix: 'capabilities describe a connection; declare them on the connection slot that resolves it',
+				})
+				continue
+			}
+
+			for (const id of [...requires, ...optional]) {
+				if (isKnownCapability(id)) continue
+
+				// A transform built from known kinds but written in the wrong
+				// ORDER is a different mistake from a typo, and telling them
+				// apart is the difference between a one-word fix and a hunt.
+				// `image+audio->video` and `audio+image->video` name one
+				// capability, but only the canonical spelling is what
+				// `transformId()` ever produces — so the other matches nothing,
+				// forever, and the node's requirement is unsatisfiable by any
+				// connection however capable.
+				const canonical = isTransformId(id) ? canonicalise(id) : undefined
+				f.push({
+					law: 'capabilities',
+					severity: 'error',
+					nodeKey: n.key,
+					message: canonical
+						? `'${n.key}.${slotName}' spells the capability '${id}' non-canonically`
+						: `'${n.key}.${slotName}' names an unknown capability '${id}'`,
+					fix: canonical
+						? `write it as '${canonical}' — kinds are ordered by IO_KINDS (text, image, audio, video, document, embedding), and only that spelling is ever matched`
+						: `use a declared transform (e.g. 'text->image') or feature (${FEATURES.join(', ')})`,
+				})
+			}
+
+			// Both at once is not a stricter requirement, it is a contradiction:
+			// `requires` guarantees presence, `optional` obliges the binding to
+			// handle absence. One of the two branches would be unreachable.
+			const both = requires.filter((r) => optional.includes(r))
+			for (const id of both) {
+				f.push({
+					law: 'capabilities',
+					severity: 'error',
+					nodeKey: n.key,
+					message: `'${n.key}.${slotName}' lists ${capabilityLabel(id)} as both required and optional`,
+					fix: 'pick one — required means the run fails without it; optional means the binding handles its absence',
+				})
+			}
+		}
+	}
+
 	return f
+}
+
+/**
+ * A capability id core or a plugin has actually declared.
+ *
+ * Transforms are checked structurally rather than against `TRANSFORMS`, because
+ * that table names the ones core ships and a plugin may legitimately introduce
+ * another — `image+audio->video` is not core's business but it is well-formed.
+ * A feature, by contrast, is a closed set: it names a mechanism something has to
+ * implement, so an unrecognised one is always a typo.
+ *
+ * ⚠ "Structurally" used to mean `!!lhs && !!rhs`, which passed `'text->tex'`,
+ * `'txet->text'` and `'->'` — every typo this check exists to catch, since the
+ * ones it did catch were already impossible to write. The real structure is
+ * that both sides are non-empty lists of KNOWN kinds in CANONICAL order, which
+ * is exactly "the id round-trips through `parseTransform` and back". That
+ * rejects an unknown kind, a misspelled one, an empty side and `image+text->text`
+ * (whose canonical spelling is `text+image->text`, so two ids would name one
+ * capability and only one of them would ever match) — while still admitting
+ * `image+audio->video`, because the plugin escape hatch above is the point.
+ *
+ * There is no registry of plugin-declared transforms to consult here: `validate`
+ * reads a spec document, not an instance, so a set-membership test would have to
+ * be `TRANSFORMS` alone and would close the door this docblock holds open. With
+ * `tf()` emitting canonical spellings by construction, this is the runtime
+ * backstop for hand-written strings rather than a check anything trips over.
+ */
+function isKnownCapability(id: CapabilityId): boolean {
+	if (isTransformId(id)) return canonicalise(id) === id
+	return (FEATURES as readonly string[]).includes(id)
+}
+
+/**
+ * The canonical spelling of a transform id, or `undefined` if it is not one.
+ *
+ * `undefined` covers an empty side and any kind this build does not know —
+ * neither of which has a canonical form to suggest, because there is nothing to
+ * reorder. A mis-ORDERED id, by contrast, round-trips to a different string,
+ * and that string is the fix.
+ */
+function canonicalise(id: TransformId): TransformId | undefined {
+	const t = parseTransform(id)
+	if (!t.in.length || !t.out.length) return undefined
+	const known = (k: string) => (IO_KINDS as readonly string[]).includes(k)
+	if (!t.in.every(known) || !t.out.every(known)) return undefined
+	return transformId(t)
 }
 
 function reaches(doc: SpecDocument, from: string, to: string, seen = new Set<string>()): boolean {

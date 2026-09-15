@@ -22,12 +22,18 @@
  * retrieval-strategy switch: **a declared field is visible in config, rendered in a lens
  * and resolved in the receipt; logic inside a leaf is none of those.**
  */
+import { refuseUnlessIdentical } from './hash.js';
 export const isAllocatedContext = (v) => !!v && typeof v === 'object' && Array.isArray(v.blocks);
 export const included = (c) => c.blocks.filter((b) => b.included);
 const formats = new Map();
 export function defineWireFormat(w) {
-    if (formats.has(w.id))
-        throw new Error(`duplicate wire format id: ${w.id}`);
+    const existing = formats.get(w.id);
+    // Display text for the same reason a template engine's is: the picker shows
+    // `label`, the wire carries `format`.
+    if (existing)
+        refuseUnlessIdentical(existing, w, `duplicate wire format id: ${w.id}`, {
+            display: ['label'],
+        });
     formats.set(w.id, w);
     return w;
 }

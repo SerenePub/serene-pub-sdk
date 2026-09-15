@@ -1,0 +1,108 @@
+/**
+ * Generate an image and post it, from a button in the composer.
+ *
+ * The end-to-end case for local image generation, and deliberately the smallest
+ * spec that is one: a person presses the button, the run parks at the provider
+ * for them to write the prompt, the image is rendered and stored, and a message
+ * carrying it is posted. Three nodes, no queries, no assembled context.
+ *
+ * ## Why the review gate is the prompt entry
+ *
+ * There is no bespoke "SD prompt" modal, and there should not be. The provider is
+ * `effects: 'external'`, which makes it gate-eligible, and the shipped default
+ * preset turns its review ON — so the executor parks there and infers a form from
+ * the node's own payload. The prompt fields a person fills in ARE the payload the
+ * run resumes with. `echo.ts` proved that round trip with no backend at all; this
+ * is the same mechanism with something at the other end of it.
+ *
+ * The consequence worth stating: the modal is generated from the contract, so a
+ * parameter added to the provider appears in it with no client change, and there
+ * is no second place for the prompt to live and drift.
+ *
+ * ## Why `caption` becomes the message text
+ *
+ * The rendered prompt is the honest description of what was made, and a message
+ * with an image and no text reads as broken in every client that shows a preview.
+ * A spec that wanted something else would wire `text` from somewhere else; this
+ * one has nowhere else to get it from.
+ */
+import { compile, spec, sessionEvents, slot } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+import { chatGenre } from './genres.js'
+
+export const GENERATE_IMAGE_SPEC_ID = 'core:spec/generate-image'
+export const GENERATE_IMAGE_VERSION = '1.0.0'
+
+export const generateImageSpec = () =>
+	compile(
+		spec(GENERATE_IMAGE_SPEC_ID, {
+			version: GENERATE_IMAGE_VERSION,
+			/** A person-invoked action on chats (23 §2), same as narrate. */
+			taxonomy: {
+				zone: 'session',
+				role: 'action',
+				genre: chatGenre.id,
+			},
+			/**
+			 * The contributed trigger (19 §4): offers the `generate-image`
+			 * function on standard-mode sessions as a button. Same namespace as
+			 * the genre owner, so it lands as a companion — present by default —
+			 * and any `kind: 'button'` trigger renders itself in the composer's
+			 * extra controls with no client code.
+			 */
+			contributes: {
+				triggers: [
+					{
+						genre: chatGenre.id,
+						function: 'generate-image',
+						kind: 'button',
+						icon: 'image',
+						i18n: { en: 'Image' },
+					},
+				],
+			},
+		})
+			// Manually triggered — a person presses the button; no message drives it.
+			.on('core:event/ui-action@1')
+			/** The usage lock (24 §4): a person-invoked action on Chat sessions. */
+			.input('input', C.userMessage.v1(), {
+				genre: chatGenre,
+				event: sessionEvents.sessionAction,
+			})
+			/**
+			 * The render. Its slots are references rather than values so that the
+			 * connection, the sampling config, the prompt templates and the
+			 * node's own parameters are all things an admin edits in the panel —
+			 * the spec says WHICH slots exist, never what is in them.
+			 */
+			.provider('render', ($) =>
+				C.generateImage.v1({
+					prompt: $.input.text,
+					connection: slot.connection(),
+					sampling: slot.sampling(),
+					prompts: slot.prompts(),
+					params: slot.params(),
+				}),
+			)
+			/**
+			 * The write. One node, not a create followed by an attach: a message
+			 * created inside a run cannot be the target of a later node, so
+			 * posting an image as a NEW message has to be a single write.
+			 */
+			.consume('post', ($) =>
+				C.createMessage.v1({
+					text: $.render.caption,
+					media: $.render.media,
+				}),
+			)
+			/**
+			 * Review ON by default, because this is where the prompt is written.
+			 * Turning it off is a legitimate choice for a spec driven by an
+			 * upstream text node instead of by a person — which is why it is a
+			 * preset rather than a hardcoded setting.
+			 */
+			.preset('review-on', { label: 'Ask for the prompt', default: true }, (p) =>
+				p.settings('render', { review: 'on' }),
+			)
+			.build(),
+	)

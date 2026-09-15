@@ -31,11 +31,80 @@
  */
 export const secret = (value) => ({ $secret: true, value });
 export const isSecret = (v) => !!v && typeof v === 'object' && v.$secret === true;
+/** The label to render, from whichever key the author used. */
+export function fieldLabel(decl) {
+    return decl.label ?? decl.i18n;
+}
+/** The media kinds a `media` field offers. Images unless it says otherwise. */
+export function fieldAccepts(decl) {
+    return decl.accepts?.length ? decl.accepts : ['image'];
+}
 // ── Declaration-time checks ─────────────────────────────────────────────────
+/**
+ * A nested declaration's mistakes, reported at the path they live at.
+ *
+ * `list` and `object` make a schema a tree, and a finding that named only the
+ * top-level key would send an author looking at the wrong declaration. The path
+ * is the address a reader can follow: `blocks[].id`, `layout.columns[]`.
+ *
+ * ⚠ **A `secret` may not be nested**, and this is the guard for it rather than a
+ * documented caution. Redaction is flat everywhere it happens — `forClient`,
+ * `forExport` and `forOwningHook` all walk the schema's own keys and switch on
+ * `type === 'secret'` — so a credential inside a list would be exported, sent to
+ * the browser, and written into a receipt with nothing anywhere saying so. The
+ * refusal is at declaration time, which is the only place it is cheap.
+ */
+function checkNested(decl, path) {
+    const f = [];
+    if (decl.type === 'secret')
+        f.push({
+            field: path,
+            severity: 'error',
+            message: `'${path}' is a secret nested inside a list or object`,
+            fix: 'declare it as a top-level field — redaction, export and receipts read the schema flat, so a nested secret would leak',
+        });
+    if (decl.type === 'list') {
+        if (!decl.item)
+            f.push({
+                field: path,
+                severity: 'error',
+                message: `'${path}' is a list with no element declaration`,
+                fix: "declare `item: { type: 'string' }` — a list whose elements are undeclared cannot be rendered or checked",
+            });
+        else
+            f.push(...checkNested(decl.item, `${path}[]`));
+    }
+    if (decl.type === 'object') {
+        if (!decl.fields || !Object.keys(decl.fields).length)
+            f.push({
+                field: path,
+                severity: 'error',
+                message: `'${path}' is an object with no member declarations`,
+                fix: 'declare `fields: { … }` — a free-form map is `text` with `format: "json"`',
+            });
+        else
+            for (const [k, member] of Object.entries(decl.fields))
+                f.push(...checkNested(member, `${path}.${k}`));
+    }
+    if (decl.type === 'enum' && !decl.of?.length && !decl.members?.length && !decl.from)
+        f.push({
+            field: path,
+            severity: 'error',
+            message: `'${path}' is an enum with no options`,
+            fix: "declare `of: ['a','b'] as const`, or source them from the connection with `from`",
+        });
+    return f;
+}
 /** Mistakes that would otherwise become silent leaks or dead form fields. */
 export function checkSchema(schema) {
     const f = [];
     for (const [key, d] of Object.entries(schema)) {
+        // The tree below a `list` or an `object`, checked at its own address.
+        // The top-level cases below stay as they are: they are about the
+        // *field*, not the element, and two of them (`scope`, `side`) have no
+        // meaning inside a row.
+        if (d.type === 'list' || d.type === 'object')
+            f.push(...checkNested(d, key));
         if (d.type === 'secret') {
             if (d.side === 'component') {
                 f.push({
@@ -82,6 +151,95 @@ export function checkSchema(schema) {
     return f;
 }
 // ── Value validation ────────────────────────────────────────────────────────
+/**
+ * One value against one declaration, at the address it lives at.
+ *
+ * Extracted from `checkValues`'s loop so a `list`'s elements and an `object`'s
+ * members are checked by the same rules as a top-level field — a second copy of
+ * "an integer is whole and within its range" is a second set of rules to keep
+ * in step, and the first divergence is a stored value one layer accepts and the
+ * other refuses.
+ */
+function checkOne(decl, value, path) {
+    const f = [];
+    const bad = (why, fix) => f.push({ field: path, severity: 'error', message: `'${path}' ${why}`, fix });
+    switch (decl.type) {
+        case 'secret':
+            if (!isSecret(value))
+                bad('is not a secret value', 'write it through the settings form; secrets are never set as plain strings');
+            break;
+        case 'boolean':
+            if (typeof value !== 'boolean')
+                bad(`should be a boolean, got ${typeof value}`, 'store true or false');
+            break;
+        case 'integer':
+        case 'number': {
+            if (typeof value !== 'number' || Number.isNaN(value)) {
+                bad(`should be a number, got ${typeof value}`, 'store a number');
+                break;
+            }
+            if (decl.type === 'integer' && !Number.isInteger(value))
+                bad('should be a whole number', 'round it, or declare the field as `number`');
+            if (decl.min !== undefined && value < decl.min)
+                bad(`is below the minimum ${decl.min}`, `use a value ≥ ${decl.min}`);
+            if (decl.max !== undefined && value > decl.max)
+                bad(`is above the maximum ${decl.max}`, `use a value ≤ ${decl.max}`);
+            break;
+        }
+        case 'enum':
+            // `decl.of` only, deliberately: a `members`-declared enum has never
+            // been checked here, and starting to check it is a tightening this
+            // extension has no business making.
+            if (decl.of && !decl.of.includes(value))
+                bad(`is not one of ${decl.of.join(', ')}`, `use one of: ${decl.of.join(', ')}`);
+            break;
+        case 'string[]':
+            if (!Array.isArray(value))
+                bad('should be a list of strings', 'store an array');
+            break;
+        case 'list': {
+            if (!Array.isArray(value)) {
+                bad('should be a list', 'store an array — the order is part of the value');
+                break;
+            }
+            // `min`/`max` are the element COUNT on a list, not a numeric range.
+            if (decl.min !== undefined && value.length < decl.min)
+                bad(`has fewer than ${decl.min} entries`, `keep at least ${decl.min}`);
+            if (decl.max !== undefined && value.length > decl.max)
+                bad(`has more than ${decl.max} entries`, `keep at most ${decl.max}`);
+            if (decl.item)
+                for (let i = 0; i < value.length; i++)
+                    f.push(...checkOne(decl.item, value[i], `${path}[${i}]`));
+            break;
+        }
+        case 'object': {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) {
+                bad('should be an object', 'store a record of the declared members');
+                break;
+            }
+            const row = value;
+            for (const [k, member] of Object.entries(decl.fields ?? {})) {
+                const mv = row[k];
+                if (mv === undefined || mv === null) {
+                    if (member.required && member.default === undefined)
+                        f.push({
+                            field: `${path}.${k}`,
+                            severity: 'error',
+                            message: `'${path}.${k}' is required and not set`,
+                            fix: 'fill it in — the row is incomplete without it',
+                        });
+                    continue;
+                }
+                f.push(...checkOne(member, mv, `${path}.${k}`));
+            }
+            break;
+        }
+        default:
+            if (typeof value !== 'string')
+                bad(`should be a string, got ${typeof value}`, 'store a string');
+    }
+    return f;
+}
 export function checkValues(schema, values) {
     const f = [];
     for (const [key, d] of Object.entries(schema)) {
@@ -97,42 +255,7 @@ export function checkValues(schema, values) {
             }
             continue;
         }
-        const bad = (why, fix) => f.push({ field: key, severity: 'error', message: `'${key}' ${why}`, fix });
-        switch (d.type) {
-            case 'secret':
-                if (!isSecret(v))
-                    bad('is not a secret value', 'write it through the settings form; secrets are never set as plain strings');
-                break;
-            case 'boolean':
-                if (typeof v !== 'boolean')
-                    bad(`should be a boolean, got ${typeof v}`, 'store true or false');
-                break;
-            case 'integer':
-            case 'number': {
-                if (typeof v !== 'number' || Number.isNaN(v)) {
-                    bad(`should be a number, got ${typeof v}`, 'store a number');
-                    break;
-                }
-                if (d.type === 'integer' && !Number.isInteger(v))
-                    bad('should be a whole number', 'round it, or declare the field as `number`');
-                if (d.min !== undefined && v < d.min)
-                    bad(`is below the minimum ${d.min}`, `use a value ≥ ${d.min}`);
-                if (d.max !== undefined && v > d.max)
-                    bad(`is above the maximum ${d.max}`, `use a value ≤ ${d.max}`);
-                break;
-            }
-            case 'enum':
-                if (d.of && !d.of.includes(v))
-                    bad(`is not one of ${d.of.join(', ')}`, `use one of: ${d.of.join(', ')}`);
-                break;
-            case 'string[]':
-                if (!Array.isArray(v))
-                    bad('should be a list of strings', 'store an array');
-                break;
-            default:
-                if (typeof v !== 'string')
-                    bad(`should be a string, got ${typeof v}`, 'store a string');
-        }
+        f.push(...checkOne(d, v, key));
     }
     return f;
 }

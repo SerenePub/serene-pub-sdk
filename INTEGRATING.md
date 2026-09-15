@@ -92,6 +92,96 @@ waiting), **C8** (forced-sequential is identical to parallel).
 against real rows (`src/lib/server/pipelines/`). `assemble` and `generate-text` halt with a
 reason, for the structural reason below.
 
+### Handler input types come from the contract
+
+A handler's `input` is **derived from the type it is bound to** — its `ports.in`, its
+declared slot names, and its `params` slot's schema. It is not hand-written and it is not
+`any`:
+
+```ts
+import type { InputOf } from '@serene-pub/sdk'
+import type * as C from '@serene-pub/contracts'
+
+const semanticSearch = async (input: InputOf<typeof C.vectorSearch>, ctx) => {
+	input.vectors // ✅ a declared in-port
+	input.scope // ✅ likewise
+	input.params?.topK // ✅ a declared parameter — typed `number`, from `type: 'integer'`
+	input.topK // ❌ compile error: a parameter, not a port
+	input.params?.minScore // ❌ compile error: not in the schema
+}
+```
+
+Two things follow, and both are the point:
+
+1. **A declared field nothing reads is visible.** It has a name in the type; if no handler
+   touches it, that is a fact somebody can go and look at rather than a control that
+   renders, validates, saves and does nothing.
+2. **A read of an undeclared name does not compile.** That is the class of defect this
+   replaced. `core:query/vector-search@1`'s binding read `input.topK` — a _parameter_, not
+   a port — so every install searched at the literal behind the `??` while a rendered,
+   validated, saved and scope-resolved value reached nothing at all.
+   `core:query/session-history@1`'s `limit` was the same defect, and both were found by
+   hand, after shipping.
+
+Parameter _values_ are typed from the field language: `type: 'integer'` is a `number`,
+`type: 'enum'` with `of: [...]` narrows to those choices. Port _values_ stay `any` on
+purpose — a port declares a `ShapeId`, which is a string id in a runtime registry with no
+TS payload behind it, so there is nothing to derive a value type from. The names are the
+half that was broken.
+
+#### One handler, several types
+
+A handler is coupled to a **shape**, never to a type id. Bind one to several types and its
+input is the **intersection** of what they supply — it may read only what _every_ one of
+them declares:
+
+```ts
+// world lore, character lore and history are one scan filtered three ways
+async function loreFor(
+  source: string,
+  input: SharedInput<[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]>,
+  ctx,
+) { … }
+```
+
+That is what makes binding one function to three ids sound: whichever type the run
+resolved, every name the handler touches is declared by it. Typing it against _one_ of
+them and assuming the others match is only ever right by coincidence — the day one lane
+declares a port the others lack, the handler reads `undefined` on two lanes out of three
+with nothing failing anywhere.
+
+#### The runtime check
+
+Two consumers of this rule cannot typecheck anything: **a plugin binding another plugin's
+public handler** (two separately compiled artefacts, neither `tsc` run saw the other), and
+**the admin-side orchestrator**, where a person composes nodes in a form. For those the
+same rule is checked as data:
+
+```ts
+structuralCompat(
+	{ ports: ['vectors', 'scope'], params: ['topK'] }, // what the handler reads
+	C.vectorSearch, // what the type supplies
+)
+// → { ok: true }
+// → { ok: false, missingPorts, missingParams, typeMismatches, message }
+```
+
+A handler declares what it reads with `declaresReads(hook, { ports, params })`; a plugin
+declares it in its manifest, on the `nodeTypes` entry
+(`{ hook: 'search', reads: { ports: [...], params: [...] } }`). Core's handlers declare
+nothing, because theirs is **generated**: `requiresOf(...contracts)` is the runtime twin of
+`SharedInput`, derived from the same contracts the type annotation names, so there is no
+second list to keep in step.
+
+The supplying side reads a pinned contract, a bare descriptor, **or a
+`pipeline_type_registry` row** — the last one is not a convenience. A `transport: 'process'`
+plugin type has no in-process descriptor, and F6 says core reads a plugin's declaration
+from what it stored at install rather than loading the plugin to ask. A check that only
+worked on descriptors would be a check that did not work on plugins.
+
+The verdict is a **report**, never a bare boolean: "incompatible" with nothing named is the
+kind of refusal people work around rather than fix.
+
 ### ⚠ The seam this step actually hit: assembly and dispatch are one thing today
 
 `BaseConnectionAdapter.generate()` **builds its own prompt**. It owns a `PromptBuilder`,
@@ -187,6 +277,195 @@ slower one is the user's.
 
 ---
 
+## 1b. Tool loops
+
+A **tool** is a named, read-only function a model may ask for by name mid-run.
+Canonically it is a plugin's sandboxed hook; core ships four. The three nodes
+around it are deliberately small, and two of the three are pure — what makes an
+agentic turn expressible is the `loop` block, not a clever node.
+
+### The reference
+
+`core:spec/tool-loop` in `@serene-pub/core-catalog` is the worked example.
+Read it; this section is the argument, not the API.
+
+```
+input → history ─┐
+      → tools ───┴→ advertise → loop( results → prompt → generate → parse → tool )
+                                       ↑                                      │
+                                       └────────── $.agent.values ────────────┘
+                                                                    → answer → save
+```
+
+- **`core:query/available-tools@1`** — what this install can offer, `{ name,
+  description, parameters }` each, `parameters` as JSON Schema. A Query and not
+  a literal on the spec, because which extensions are enabled is not a property
+  of a pipeline.
+- **`core:task/advertise-tools@1`** — publishes **both doors**: `prompt` (the
+  declarations written into the context, for models that never heard of tools)
+  and `native` (the list an API's own tool field takes). `style` picks which one
+  `main` carries.
+- **`core:provider/generate-text@1`** — the ordinary generate step. Swap it for
+  **`core:provider/generate-with-tools@1`** to take the native door: same node
+  with a `tools` in-port and a `toolCall` out-port. A second pin rather than two
+  more ports, because the first is published and frozen.
+- **`core:task/parse-tool-call@1`** — reads the fenced convention back out of
+  the reply as `{ tool, args } | null`, and hands on the prose with the block
+  stripped. **Not used on the native door**: the API already parsed it, and
+  parsing it again would be a second reading of one answer.
+- **`core:provider/run-tool@1`** — runs it. A Provider because a tool reads the
+  session or reaches an extension's sandbox, which is `effects: 'external'`
+  exactly.
+- **`core:task/join-text@1`** — the reduce a repeated block has always needed:
+  `map` and `loop` publish a **list**, and every write takes a scalar.
+
+### The exit is a null call, not an error
+
+`parse-tool-call` publishes `null` when the model answered instead of asking,
+and that is the loop's predicate. A reply with no call is the model being done —
+so an unparseable block, an unknown name and plain prose all read as "finished",
+never as a failure. `run-tool` on a null call runs nothing and passes the prose
+through on `answer`.
+
+### Tool resolution order
+
+1. **An enabled extension's tool hook.** `manifest.tools: { '<toolName>': {
+   hook, description, parameters } }` — the sibling of `hookTypes` (a script
+   link's hook) and `nodeTypes` (a node's), and read the same way: the stored
+   manifest is the one source of truth, never a convention guessed from an id.
+   The hook runs through the sandbox that already exists, so permissions, the
+   deadline, the seeded RNG and the invocation log all apply.
+2. **A core tool** — `search_entries`, `get_entry`, `grep_transcript`,
+   `read_summary`. All read-only, all reading the session through the host's own
+   enumerated read, so the hidden-message convention and the character-lore
+   privacy gate apply without a tool knowing they exist.
+3. **Refused, by name.** Not "no result": a model told "unknown tool" with no
+   name asks for the same one again.
+
+Extensions come first deliberately. A plugin shipping `get_entry` has written a
+better one for its own world model than core's, and core silently winning would
+make it unreachable with nothing to report it.
+
+An error is a **result**, never a throw: `main` is `{ tool, error }` and `text`
+renders it, so the model reads what went wrong and tries something else. A throw
+would end the run at the one moment the agent could have recovered. **A tool may
+not write** — a write inside a repeating block is N writes, which the validator
+refuses on the spine (F7) and which a writing tool would smuggle past it.
+
+### The carry
+
+An iteration cannot reference a node declared after it — the scope makes a
+back-edge unwritable (F9) — so the results of the passes before it arrive by the
+one address declared *before* the body: the block's own accumulating output,
+`$.agent.values`. Everything else stays private: each iteration runs in its own
+child scope, so a loop and a parallel map remain the same construct.
+
+That is why the prompt node is **inside** the loop. A loop whose prompt never
+changed would ask the same question until it hit its ceiling.
+
+### Receipts, ceilings and cancellation
+
+Every pass is receipted as its own step with its `iteration` index — per-step
+timings, per-step review, per-step budget. That is the whole argument for
+putting the loop on the spine instead of inside one opaque provider hook.
+
+The block records **why it stopped**, as a fact and not a sentence:
+
+```ts
+receipt.loops // [{ blockId: 'agent', iterations: 3, stopped: 'predicate' }]
+```
+
+`predicate` — the model stopped asking. `ceiling` — the declared `max` ended it,
+so the work may be unfinished. `interrupted` — the body halted, errored or was
+cancelled, and the run's own outcome says which. A truncated loop that returns
+`ok` is otherwise indistinguishable from a finished one.
+
+`max` is **mandatory** on a loop: an unbounded repeat is the likeliest source of
+a surprise bill in the system, and for a loop it is also the only thing between
+a bad predicate and a run that never ends. Cancellation is checked between
+iterations, on the executor's ordinary one-source rule — a tool already in
+flight finishes, and the loop stops before the next pass.
+
+### The native door on the wire
+
+`advertise-tools` with `style: 'native'`, wired into
+`core:provider/generate-with-tools@1`, reaches the request as the field each
+service calls it: `tools` (functions) on OpenAI-chat, `tools` with
+`input_schema` on Anthropic, `tools` on Ollama's `/api/chat`. The adapter reads
+the call back off the structured field, so `toolCall` arrives as data.
+
+Three rules the adapters share:
+
+- **No tools means no `tools` key**, never `tools: []`. Servers differ on the
+  empty array — some reject it, some switch tool mode on for it — so every
+  pipeline that is not a tool loop would start paying for a feature it never
+  asked for.
+- **The first call only.** One tool per iteration, receipted as one step; a
+  batch collapsed into one node would lose exactly the per-step accounting the
+  loop exists to provide.
+- **Refuse rather than strip.** A connection whose `tools` capability is off, or
+  whose adapter has no tool code, refuses a request carrying declarations. A
+  model that was never offered a tool and a model that declined one return the
+  same empty answer, so a silently stripped request reads as the model choosing
+  not to call.
+
+KoboldCPP, llama.cpp and LM Studio stay on the prompt door — which is what
+`tools: "emulated"` means in the adapter manifest: a thing this app supplies
+over a backend that never heard of tools, needing no adapter code at all.
+
+---
+
+## 1c. Attribute slots — declaring a stat
+
+A **stat** is a typed value about one owner that changes: health, mood, weather. Core owns the
+five *types* — whole number with optional bounds, one-of-a-set, text, on/off, and derived — and
+nobody adds a sixth. What a genre or a plugin declares is a **definition** composed from those:
+
+```ts
+import { defineAttributeSlot, definePluginAttributeSlot, derivations } from '@serene-pub/sdk'
+
+const hp = defineAttributeSlot('acme.crawl:slot/hp@1', {
+  type: 'integer',
+  label: { en: 'Health' },                       // what a person reads — free to copyedit
+  description: { en: 'How much punishment they can take.' },
+  descriptor: 'Current health out of the maximum; zero means down.',  // what the MODEL reads
+  appliesTo: ['cast'],                           // 'cast' | 'world'
+  config: { min: 0, max: 20 },                   // what attaching decides, by default
+  default: 20,                                   // what a read falls back to
+})
+
+genre('acme.crawl:genre/dungeon', { name: …, family: 'crawl', slots: [hp] })
+```
+
+`definePluginAttributeSlot(pluginId, id, props)` is the same door for an extension, minus the ability to
+claim the `core:` namespace. Read the registry with `getAttributeSlot(id)` and `attributeSlots()`.
+
+Three rules worth knowing before you write one:
+
+- **`descriptor` is contract, `label` and `description` are not.** The first is what the model
+  is told this slot means, so editing it changes every prompt the slot appears in: it is inside
+  the declaration's content hash and changing it means `@N+1`. The other two are stripped from
+  the hash, so renaming a slot in the UI is free.
+- **A declaration says what the slot *is*; attaching says what it is *here*.** `config` is the
+  base — "integer with a maximum" — and a card, a world or a session each store only the keys
+  they *change*. A value is validated against the configuration in force for its own owner, so
+  35 is refused on a 20-cap character and accepted on a 40-cap one.
+- **Derived slots are never written.** `type: 'derived'` names one of core's derivations
+  (`derivations.age.id` today) and the slot it reads (`config.from`). There is nothing to store
+  and nothing that can go stale.
+
+An inventory is **not** a slot: an item is a lorebook entry and carrying it is a possession
+edge, so the item keeps its prose, keywords and retrieval. Declaring an `items: text` slot is
+the one modelling mistake this vocabulary exists to prevent.
+
+On the pipeline side, `core:query/session-state@1` publishes the resolved state
+(`{ world, cast, possessions }`) and `core:task/set-state@1` changes it. Set state defaults to
+`mode: 'propose'`, which holds the change for a person to accept — the review gate a model's
+writes always pass through. The three core tools (`set_state`, `give_item`, `take_item`)
+likewise only ever propose.
+
+---
+
 ## 2. Seams that will need work — known, not discovered
 
 These are places where the draft is deliberately minimal. Each one is a substitution, not a
@@ -200,6 +479,8 @@ redesign, and the tests around them pin the contract rather than the implementat
 | **Map concurrency**        | forced sequential                       | real per-iteration scoping. The observable result is identical, which is exactly what C8 asserts, so this is a performance change and not a semantic one             |
 | **Secrets**                | tagged plaintext                        | encryption against the app secret in `meta.json`. `forOwningHook(decrypt)` is already the seam                                                                       |
 | **Sidecars**               | no transport                            | `jsonrpc-stdio@1` (U13)                                                                                                                                              |
+
+A template slot may name **one** language (`engine: handlebars.id`) or the **set** it accepts (`engines: [handlebars.id, liquid.id]`, most-preferred first — the first entry is what a new template in that slot is written in, and the host offers the union of the accepted pools in one picker); both spellings stay valid, so declare `engines` only when your slot genuinely renders more than one.
 
 ---
 
