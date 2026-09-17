@@ -1,0 +1,24 @@
+{
+	"$schema": "https://typedoc.org/schema.json",
+	"entryPoints": ["sdk/src", "contracts/src", "controls/src"],
+	"entryPointStrategy": "expand",
+	"exclude": [
+		"**/*.d.ts",
+		"**/dist/**",
+		"**/node_modules/**",
+		"sdk/src/index.ts"
+	],
+	"tsconfig": "tsconfig.base.json",
+	"plugin": ["typedoc-plugin-markdown"],
+	"out": "docs/generated/api",
+	"readme": "none",
+	"entryFileName": "index.md",
+	"outputFileStrategy": "modules",
+	"hideBreadcrumbs": true,
+	"hidePageHeader": true,
+	"useCodeBlocks": true,
+	"githubPages": false,
+	"excludePrivate": true,
+	"excludeInternal": true,
+	"excludeReferences": true
+}

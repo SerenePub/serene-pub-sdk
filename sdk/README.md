@@ -44,7 +44,7 @@ mistake that is supposed to be a compile error stops being one.**
 | | |
 |---|---|
 | `sdk/src/shapes.ts` | versioned shapes; assignability; connection **and** sampling kinds are the same ids (F17) |
-| `sdk/src/descriptors.ts` | `describeQueryType` / `describeTaskType` / `describeProvider` / `describeConsumerTarget`, slots, pinned constructors |
+| `sdk/src/descriptors.ts` | `describeInletDefinition` / `describeQueryDefinition` / `describeTaskDefinition` / `describeOracleDefinition` / `describeOutletDefinition`, slots, pinned constructors |
 | `sdk/src/refs.ts` | `$ref` (data edges) vs `slot.*` (config references — not edges, F35) |
 | `sdk/src/scope.ts` | the typed chain scope — `$.history.messages`, and F9 at the call site |
 | `sdk/src/builder.ts` | the kind-named chain: `on/input/query/task/provider/consume` + `async/map/include` |
@@ -75,8 +75,8 @@ mistake that is supposed to be a compile error stops being one.**
 
 ## What the draft demonstrates
 
-**Laws are compile errors, not validator findings.** `.input()` is the only method offered
-first and is never offered again. `.query()` given a Provider constructor is a type error.
+**Laws are compile errors, not validator findings.** `.inlet()` is the only method offered
+first and is never offered again. `.query()` given an oracle constructor is a type error.
 There is no branch method to call. And **a node cannot reference one declared below it** —
 the scope handed to each step holds only what precedes it, so F9's "no back-edges" is
 unwritable rather than reported:
@@ -84,7 +84,7 @@ unwritable rather than reported:
 ```ts
 .query('history', $ => C.chatHistory({ scope: $.input.chatScope }))
 .task ('prompt',  $ => C.assemble({ candidates: $.history.messages }))
-.consume('save',  $ => C.createMessage({ text: $.generate.text }))
+.outlet('save',  $ => C.createMessage({ text: $.generate.text }))
 ```
 
 `$ref('history','messages')` still works and produces the identical value — use case 52
@@ -94,20 +94,20 @@ form**; the two places `$ref` still appears are the parity tests that exist to c
 two forms.
 
 **Node keys accumulate fully qualified, exactly as they land in the rows**, and the scope
-type expands the dots back into a path. So a block's members, a map's members and an
+type expands the dots back into a path. So a gather clause's members, an each clause's members and an
 included fragment's members are all in scope afterwards:
 
 ```ts
-.async('gather', { mode: 'parallel' }, b => b
+.gather('gather', { mode: 'parallel' }, b => b
   .chain('semantic', c => c
-    .provider('embed',   $ => C.embedText({ text: $.input.text, connection: slot.connection() }))
+    .oracle('embed',   $ => C.embedText({ text: $.input.text, connection: slot.connection() }))
     .query   ('vsearch', $ => C.vectorSearch({ vector: $.gather.semantic.embed.vector }))))
 .include('ctx', contextInfill)
 .task('merge',  $ => C.mergeCandidates({ sources: [$.gather.semantic.vsearch.hits] }))
 .task('prompt', $ => C.assemble({ candidates: $.ctx.merge.candidates }))
 ```
 
-A block name alone is a **path**, not a ref — only the leaf is a node, which falls out of
+A clause name alone is a **path**, not a ref — only the leaf is a node, which falls out of
 the key split rather than needing a rule. `types.assert.ts` pins both directions: the
 qualified paths compile, and a misspelled chain name or a fragment node that doesn't exist
 is a compile error.

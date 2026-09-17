@@ -20,7 +20,7 @@ import {
 	samplingSchemaFor,
 	resolveSamplingValues,
 	normalizeSamplingRow,
-	allTypes,
+	allDefinitions,
 } from '@serene-pub/sdk'
 // Imported for its side effect: the contracts register the core descriptors, and
 // the coverage test below has nothing to walk until they have.
@@ -49,9 +49,9 @@ describe('the vocabularies', () => {
 		// The empty-schema fallback above is right for a shape nobody here knows,
 		// and indistinguishable from a bug for a shape a shipped type declares a
 		// slot on: resolution would drop every enabled key and report nothing.
-		// `core:provider/speak@1` was exactly that for a while.
+		// `core:oracle/speak@1` was exactly that for a while.
 		const missing: string[] = []
-		for (const d of allTypes()) {
+		for (const d of allDefinitions()) {
 			const slot = (d.slots as Record<string, { kind?: string; shape?: string }> | undefined)
 				?.sampling
 			if (slot?.kind !== 'sampling') continue

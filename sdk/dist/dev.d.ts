@@ -25,7 +25,7 @@
  *
  * Three constraints follow, and they are not negotiable if the loader is to stay honest:
  *
- * 1. **Memory only.** A dev overlay never writes `type_registry`, spec or preset rows. A dev
+ * 1. **Memory only.** A dev overlay never writes `pipeline_definition_registry`, spec or preset rows. A dev
  *    plugin whose rows outlived the session would leave a user's chats pinning types that no
  *    longer exist — a broken install with no install to uninstall.
  * 2. **Permissions are compiled and enforced identically.** Dev mode changes the source of

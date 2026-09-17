@@ -24,19 +24,19 @@ const world = withEmbeddings()
 /** The canonical retrieval shape: `embed` is a Provider, and it lives inside the block. */
 const chat = () =>
 	spec('demo:preview@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.task(
 			'budget',
-			C.contextBudget.v1({ connection: slot.downstreamProvider(), params: slot.params() }),
+			C.contextBudget.v1({ connection: slot.downstreamOracle(), params: slot.params() }),
 		)
-		.async('gather', { mode: 'parallel' }, (b) =>
+		.gather('gather', { mode: 'parallel' }, (b) =>
 			b
 				.chain('history', (c) =>
 					c.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
 				)
 				.chain('semantic', (c) =>
 					c
-						.provider('embed', ($) =>
+						.oracle('embed', ($) =>
 							C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
 						)
 						.query('vsearch', ($) =>
@@ -52,10 +52,10 @@ const chat = () =>
 		.task('prompt', ($) =>
 			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
 		)
-		.provider('generate', ($) =>
+		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
-		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+		.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 const input = { text: 'where is my sister', sessionScope: { sessionId: 'c1' } }
 
@@ -94,7 +94,7 @@ describe('59 · the preview stops at the first Provider on the spine', () => {
 			world,
 			preview: true,
 			bindings: bindings({
-				'core:provider/generate-text@1': async () => {
+				'core:oracle/generate-text@1': async () => {
 					called++
 					return ok({ main: 'x', text: 'x' })
 				},
@@ -130,7 +130,7 @@ test('60 · the previewed payload is byte-identical to the one actually sent', a
 		input,
 		world,
 		bindings: bindings({
-			'core:provider/generate-text@1': async (i: any) => {
+			'core:oracle/generate-text@1': async (i: any) => {
 				sent = i.context
 				return ok({ main: 'reply', text: 'reply' })
 			},

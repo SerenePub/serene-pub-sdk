@@ -6,6 +6,7 @@
  * vectors (16 §1a, recorded by reference).
  */
 import { renderPreview } from './preview.js';
+import { renderStatusText } from './status.js';
 /** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. */
 export function renderReceipt(r) {
     const out = [];
@@ -21,6 +22,10 @@ export function renderReceipt(r) {
         if (r.haltReason)
             out.push(`     reason: ${r.haltReason}`);
     }
+    // The one status the receipt keeps (R-21): what the run was doing when it
+    // ended badly. Rendered in `en` here; the inspector resolves the locale.
+    if (r.lastStatus)
+        out.push(` ▸ while: ${renderStatusText(r.lastStatus.text)} (status set by ${r.lastStatus.nodeKey})`);
     if (r.preview)
         out.push(renderPreview(r.preview));
     for (const n of r.nodes) {
@@ -41,11 +46,13 @@ export function renderReceipt(r) {
             (rev.by ? ` by ${rev.by}` : ''));
     }
     for (const l of r.loops ?? [])
-        out.push(` ▸ loop ${l.blockId}: ${l.iterations} iteration(s), stopped on ${l.stopped}`);
+        out.push(` ▸ loop ${l.clauseId}: ${l.iterations} iteration(s), stopped on ${l.stopped}`);
     for (const note of r.notes ?? [])
         out.push(` ▸ ${note}`);
     for (const e of r.emitted) {
-        out.push(` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${e.subscribers} subscriber(s)`);
+        out.push(e.dry
+            ? ` ▸ core would emit ${e.event} (cause: ${e.cause}) — dry run, not dispatched`
+            : ` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${e.subscribers} subscriber(s)`);
     }
     out.push(` consumption: ${r.consumption.tokens} tokens, ${r.consumption.nodeExecutions} node executions`);
     return out.join('\n');

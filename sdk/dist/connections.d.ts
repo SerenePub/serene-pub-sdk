@@ -23,7 +23,7 @@ export interface ConnectionRequirement {
     slot: string;
     /** Which connection kind satisfies it — the produced shape (F17). */
     kind?: string;
-    typeId: string;
+    definitionId: string;
     /** What the connection must be able to do. Unmet is a hard failure at bind. */
     requires?: readonly CapabilityId[];
     /** What it would use if available. The binding handles absence either way. */

@@ -34,8 +34,8 @@ const withDefaultSampling = {
 const doc = () =>
 	publish(
 		makeSpec('demo:sampling-fallback@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ sampling: slot.sampling() })),
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ sampling: slot.sampling() })),
 	)
 
 function capturing() {
@@ -43,7 +43,7 @@ function capturing() {
 	return {
 		seen,
 		bindings: bindings({
-			'core:provider/generate-text@1': async (i: any, ctx: any) => {
+			'core:oracle/generate-text@1': async (i: any, ctx: any) => {
 				seen.sampling = i.sampling
 				ctx.reportSampling({}, [])
 				return ok({ main: 'x', text: 'x' })
@@ -72,7 +72,7 @@ describe('an unpicked sampling slot falls back to the instance default', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'instance' as const,
+						scopeKind: 'preset' as const,
 					},
 				],
 			},
@@ -93,7 +93,7 @@ describe('an unpicked sampling slot falls back to the instance default', () => {
 		const seen: { sampling?: any } = {}
 		const budgetDoc = publish(
 			makeSpec('demo:sampling-fallback-task@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.task('budget', C.contextBudget.v1({ sampling: slot.sampling() })),
 		)
 		await run(budgetDoc, {

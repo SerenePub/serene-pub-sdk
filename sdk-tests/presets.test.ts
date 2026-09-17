@@ -33,10 +33,10 @@ const ASSEMBLY = `{% for b in blocks %}== {{ b.title }} ==
 
 const withPresets = () =>
 	spec('chariot.rp:chat@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.lore.hits }))
-		.provider('generate', ($) =>
+		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
 		.preset(
@@ -83,7 +83,7 @@ describe('64 · author presets', () => {
 		assert.throws(
 			() =>
 				spec('demo:twodefault@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
 					.preset('a', { label: 'A', default: true }, (p) => p.params('lore', {}))
 					.preset('b', { label: 'B', default: true }, (p) => p.params('lore', {})),
@@ -95,7 +95,7 @@ describe('64 · author presets', () => {
 		assert.throws(
 			() =>
 				spec('demo:badslug@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.preset('Lore Heavy!', { label: 'Lore-heavy' }, (p) => p),
 			/not a valid preset slug/,
 		)
@@ -106,7 +106,7 @@ describe('64 · author presets', () => {
 		// copy must not silently reset what users have selected.
 		const before = compile(withPresets().build()).presets.map((p) => p.slug)
 		const renamed = spec('chariot.rp:chat@1', { version: '1.1.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 			.preset('balanced', { label: 'Standard', default: true }, (p) =>
 				p.params('lore', { weight: 0.3 }),
@@ -133,7 +133,7 @@ describe('64 · author presets', () => {
 describe('65 · the author/admin line', () => {
 	test('an unknown node key is a publish error, not a dead override row', () => {
 		const b = spec('demo:badnode@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
 			.preset('typo', { label: 'Typo' }, (p) => p.params('lorebook' as any, { weight: 1 }))
 		const e = errorsFor(b, '12 §3a')
@@ -147,7 +147,7 @@ describe('65 · the author/admin line', () => {
 		// nothing and the user would report the preset "not working" with no error
 		// anywhere. Same class of mistake as a typo'd key, so same treatment.
 		const b = spec('demo:badslot@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('vsearch', C.vectorSearch.v1({}))
 			.preset('x', { label: 'X' }, (p) => p.template('vsearch', jinja('{{ a }}')))
 		const e = errorsFor(b, '12 §3a')
@@ -159,7 +159,7 @@ describe('65 · the author/admin line', () => {
 		// Compile-time, not a finding: the preset builder is parameterised by the same
 		// accumulated node map the scope uses (src/scope.ts).
 		spec('demo:typedkeys@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
 			// @ts-expect-error — 'lorebook' was never declared
 			.preset('x', { label: 'X' }, (p) => p.params('lorebook', {}))
@@ -170,8 +170,8 @@ describe('65 · the author/admin line', () => {
 		// an author preset pinning compute would put a layer under the admin and break
 		// the cascade the write matrix exists to guarantee (12 §4).
 		const b = spec('demo:conn@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 		let hasConnection = false
 		b.preset('x', { label: 'X' }, (p) => {
 			hasConnection = typeof (p as any).connection === 'function'
@@ -182,8 +182,8 @@ describe('65 · the author/admin line', () => {
 
 	test('and if one is smuggled in as data, the validator names why', () => {
 		const b = spec('demo:conn2@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 			.preset('x', { label: 'X' }, (p) => p)
 		// The builder offers no way to write one. The rule still has to exist, because SP
 		// imports documents it did not author (F6) — a hand-edited or third-party document
@@ -235,8 +235,8 @@ describe('65a · selective export', () => {
 	test('flattening inlines a binding; base keeps the reference (02 §6, never silent)', () => {
 		const doc = compile(
 			spec('demo:bindings@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 				.preset('creative', { label: 'Creative' }, (p) =>
 					p.sampling('generate', { $ref: 'sampling:creative' }),
 				)
@@ -256,8 +256,8 @@ describe('65a · selective export', () => {
 	test('an unresolvable reference is dropped **and reported**', () => {
 		const doc = compile(
 			spec('demo:unresolved@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 				.preset('x', { label: 'X' }, (p) =>
 					p.sampling('generate', { $ref: 'sampling:gone' }),
 				)
@@ -274,8 +274,8 @@ describe('65a · selective export', () => {
 	test('connection bindings never leave, whichever mode was chosen', () => {
 		const doc = compile(
 			spec('demo:connexport@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 				.preset('x', { label: 'X' }, (p) => p)
 				.build(),
 		)
@@ -307,7 +307,7 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 
 	test('a bare string is refused, and the fix shows the wrappers', () => {
 		const b = spec('demo:barestring@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('prompt', C.assemble.v2({ candidates: [] }))
 			.preset('x', { label: 'X' }, (p) => p.template('prompt', ASSEMBLY as any))
 		const e = errorsFor(b, '12 §3a')
@@ -344,7 +344,7 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 		// `lorebook-triggers`, whose template slot was removed — nothing read it
 		// and no row was ever seeded for it, so it rendered as an empty picker.
 		const b = spec('demo:mixed@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
 			.task('render', ($) => C.renderEntries.v1({ entries: $.lore.hits }))
 			.task('prompt', C.assemble.v2({ candidates: [] }))
@@ -416,7 +416,7 @@ describe('76 · spec identity and ownership', () => {
 		// if the preset says who it belongs to (12 §3b).
 		const doc = compile(
 			spec('chariot.rp:chat', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
 				.preset('grimdark', { label: 'Grimdark', owner: 'someone.else' }, (p) =>
 					p.params('lore', { weight: 0.9 }),

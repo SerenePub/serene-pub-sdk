@@ -17,7 +17,7 @@
  * before it ever runs the plugin's code — F6 means core imports documents, never
  * authoring JS — so install-time validation reads two things that are both plain data:
  * the plugin's **manifest** (types summarized, permissions compiled from usage) and its
- * **documents** (nodes pinned by `typeId@version`, edges carrying the shapes they were
+ * **documents** (nodes pinned by `definitionId@version`, edges carrying the shapes they were
  * compiled against).
  *
  * ## What that makes checkable
@@ -28,11 +28,11 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
-import type { Descriptor, EntryShape, SlotDecl } from './descriptors.js';
-import { type ScriptTypeDecl } from './scripts.js';
+import { type Descriptor, type EntryShape, type ScriptPointDecl, type SlotDecl } from './descriptors.js';
+import { type ScriptKindDecl } from './scripts.js';
 import type { SettingsSchema } from './settings.js';
 import type { SpecDocument } from './document.js';
-/** A `type_registry` row (02 §3), as data. */
+/** A `pipeline_definition_registry` row (02 §3), as data. */
 export interface RegistryEntry {
     id: string;
     version: number;
@@ -47,14 +47,13 @@ export interface RegistryEntry {
     /**
      * Interior script points (18 §4e) — carried into the row for the same
      * reason `slots` is: the panel offers one chain option per point and must
-     * render it without loading the plugin (F6). Keys are contract and hash;
-     * labels are display text, stripped like `i18n` everywhere else.
+     * render it without loading the plugin (F6). Keys and `accepts` are
+     * contract and hash; labels are display text, stripped like `i18n`
+     * everywhere else. Always the full shape — the projection folds the
+     * deprecated spellings through `scriptPointsOf`, so a row never carries a
+     * bare string or a point without `accepts`.
      */
-    scriptPoints?: Array<{
-        key: string;
-        i18n?: unknown;
-        description?: unknown;
-    }>;
+    scriptPoints?: ScriptPointDecl[];
     /**
      * The chat-shape contract (19 §1) — present only on mode-bearing input
      * types. Carried for the reason `slots` is: the mode picker and the chat
@@ -83,6 +82,11 @@ export interface RegistryEntry {
      * Storing the declaration makes the pipeline view (05 §0a) and the lens view
      * (05 §3) generated from rows, which is what lets a plugin's sliders appear beside
      * core's with nothing authored twice.
+     *
+     * One of them the author did not write: `settings` (R-9), which the
+     * projection derives from `optional` / `effects` / `reviewDefault` so the
+     * panel finds the switch and the gate here like any slot. It is left out
+     * of the content hash — `authoredSlots` — for the reason that file gives.
      */
     slots: Record<string, SlotDecl>;
     /**
@@ -139,7 +143,7 @@ export interface RegistryEntry {
     release?: string;
 }
 /** Project descriptors into registry rows — how core seeds and refreshes the table. */
-export declare function snapshotRegistry(types: Array<Descriptor | ScriptTypeDecl>, meta?: {
+export declare function snapshotRegistry(types: Array<Descriptor | ScriptKindDecl>, meta?: {
     owner?: string;
     release?: string;
 }): RegistryEntry[];

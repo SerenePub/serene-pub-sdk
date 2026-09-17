@@ -25,12 +25,12 @@ export declare const BLOCK_MODES: readonly BlockMode[];
  * drew it. Naming it here keeps the rule that every label comes from the SDK,
  * and means a host and a plugin's tooling say the same thing.
  */
-export declare const BLOCK_MODE_DECL: {
+export declare const CLAUSE_MODE_DECL: {
     path: 'mode';
     i18n: I18n;
     description: I18n;
     of: readonly BlockMode[];
 };
 /** The author's declaration is the default; the user's setting wins. */
-export declare function resolveBlockMode(authorDefault: string | undefined, userSetting: unknown): BlockMode;
+export declare function resolveClauseMode(authorDefault: string | undefined, userSetting: unknown): BlockMode;
 //# sourceMappingURL=blocks.d.ts.map

@@ -10,7 +10,7 @@ export declare const TOOL_LOOP_VERSION = "1.0.0";
  * pipeline — what it asks, what it offers and how it repeats — is one file.
  *
  * ⚠ The instructions it opens and closes with are NOT here. `system` and
- * `postHistory` are the `prompts` slot `agent.item.prompt` owns, seeded from
+ * `postHistory` are the `prompts` slot `tools.item.prompt` owns, seeded from
  * `CORE_PROMPTS` like every other shipped step's prompt — so a person edits
  * the wording in the panel and this file holds the layout alone. Written into
  * the template as literal prose they would be a second copy of text the pool

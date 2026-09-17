@@ -15,8 +15,17 @@ export interface SlotRef {
     slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables';
     /** Whose config. Undefined = this node's own. */
     ofNode?: string;
-    /** Unresolved marker: resolve to the first Provider reachable forward (16 §5b-i). */
-    resolveDownstreamProvider?: boolean;
+    /**
+     * An **envoy's** config (plans/29 R-18 (2); built 2026-09-16 as U5g):
+     * the genre-declared defaults for `envoy:<key>`, resolved through the
+     * config chain at the address `envoy:<key>` exactly as a node's are —
+     * the host projects the declaration at `author` and an admin's tuning
+     * sits above it. Compiles to `resolvedRefs[slot] = 'envoy:<key>'`
+     * after the genre the spec serves is checked for the key.
+     */
+    ofEnvoy?: string;
+    /** Unresolved marker: resolve to the first oracle reachable forward (16 §5b-i). */
+    resolveDownstreamOracle?: boolean;
 }
 export declare function $ref(node: string, port?: string): DataRef;
 /**
@@ -27,6 +36,19 @@ export declare function $ref(node: string, port?: string): DataRef;
 export type NodeAddress = string | {
     node: string;
 };
+/** An envoy's config, by the genre-local key: `slot.prompts({ envoy: 'mascot' })`. */
+export type EnvoyAddress = {
+    envoy: string;
+};
+/**
+ * The address an envoy's config lives at in the resolved config — the
+ * synthetic node key `envoy:<key>`. One spelling, shared by the compiler
+ * (`resolvedRefs`), the executor (`resolveConfig`'s key list) and the host's
+ * projection, so the three cannot disagree about where a mascot's prompt is.
+ */
+export declare const ENVOY_CONFIG_PREFIX = "envoy:";
+export declare const envoyConfigKey: (key: string) => string;
+export declare const isEnvoyConfigKey: (key: string) => boolean;
 export declare const slot: {
     connection: (ofNode?: NodeAddress) => SlotRef;
     sampling: (ofNode?: NodeAddress) => SlotRef;
@@ -36,19 +58,25 @@ export declare const slot: {
      * place to edit it — three nodes that each demanded the same system prompt
      * is the defect this exists to close (13 §12 finding i).
      */
-    prompts: (ofNode?: NodeAddress) => SlotRef;
+    prompts: (of?: NodeAddress | EnvoyAddress) => SlotRef;
     template: () => SlotRef;
     /**
-     * With a target, the slot is *shared* — the same reading as `prompts`.
+     * With a target, the slot's **shared** fields resolve at the target — and
+     * only those (R-7 P2, refined 2026-09-16; `FieldDecl.shared`).
      *
-     * This took no target until now, which was an oversight rather than a
-     * decision: cross-source policy has to live on one node and be read by the
-     * several that answer to it. Retrieval is the case — every query wants the
-     * ranker's floors and weights, and a copy per query is a set of numbers
-     * that agree until somebody edits one.
+     * A definition marks the `params` fields several nodes of one spec hold in
+     * common — the lore lanes' seven scan knobs, the embed pair's switch —
+     * `shared: true`; a spec then names ONE owner and the other nodes reference
+     * it here. A referencing node's *unmarked* fields stay its own and resolve
+     * at its own address through the same reference: each lore lane's share
+     * of the window is that lane's, while the scan depth they run on is one
+     * number. One reference, both halves, and the panel draws the same line.
      *
-     * The alternative was reordering the graph to put the policy node first,
-     * which puts a node named for ranking in front of everything it ranks.
+     * ⚠ It used to read the whole slot at the target, and its docblock argued
+     * for the ranker as the owner of "every query's minimums and weights". That
+     * is the per-source map on the ranker 16 §5a rejected; per-source intent
+     * lives on the source now (R-7 P5) and travels as candidate metadata, so
+     * nothing needs to read the ranker's params from a query any more.
      */
     params: (ofNode?: NodeAddress) => SlotRef;
     /**
@@ -57,15 +85,15 @@ export declare const slot: {
      * rather than declaring a parallel set nobody would think to keep in step.
      */
     variables: (ofNode?: NodeAddress) => SlotRef;
-    /** Explicit provider reference — always unambiguous. */
-    providerRef: (node: NodeAddress) => SlotRef;
+    /** Explicit oracle reference — always unambiguous. */
+    oracleRef: (node: NodeAddress) => SlotRef;
     connectionOf: (node: NodeAddress) => SlotRef;
     samplingOf: (node: NodeAddress) => SlotRef;
     /**
-     * Resolves at publish to the first Provider reachable forward. Compiles to the
+     * Resolves at publish to the first oracle reachable forward. Compiles to the
      * explicit form, so nothing implicit survives into rows (16 §5b-i).
      */
-    downstreamProvider: () => SlotRef;
+    downstreamOracle: () => SlotRef;
 };
 export declare const isDataRef: (v: unknown) => v is DataRef;
 export declare const isSlotRef: (v: unknown) => v is SlotRef;

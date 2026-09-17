@@ -34,6 +34,7 @@
 	},
 	"peerDependencies": {
 		"@serene-pub/sdk": ">=0.6.0-preview.0",
+		"@serene-pub/conformance": ">=0.6.0-preview.0",
 		"esbuild": "*",
 		"@serene-pub/ui-preview": ">=0.6.0-preview.0"
 	},
@@ -43,7 +44,9 @@
 	"devDependencies": {
 		"@serene-pub/sdk": "0.6.0-preview.0",
 		"@serene-pub/contracts": "0.6.0-preview.0",
+		"@serene-pub/conformance": "0.6.0-preview.0",
 		"@serene-pub/core-catalog": "0.6.0-preview.0",
+		"@serene-pub/docs": "0.6.0-preview.0",
 		"@serene-pub/ui-preview": "0.6.0-preview.0"
 	},
 	"peerDependenciesMeta": {

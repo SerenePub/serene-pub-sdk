@@ -23,6 +23,8 @@ describe('the core catalog', () => {
 		assert.deepEqual(document.genres.map((g) => g.id).sort(), [
 			'core:genre/adventure',
 			'core:genre/chat',
+			// The guide (R-18, U5g): the pure user/assistant session type.
+			'core:genre/guide',
 		])
 		assert.equal(document.pipelines.length, CORE_SPECS.length)
 		// Core references nothing it does not ship.
@@ -49,9 +51,19 @@ describe('the core catalog', () => {
 		assert.deepEqual(serving(adventureGenre.id, sessionEvents.messageRespond), [
 			'core:spec/adventure-respond',
 		])
-		// The open slot takes any number: three actions, and adding a fourth is
-		// a package change rather than a schema one.
-		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 3)
+		// The open slot takes any number: five actions since U5d (look, rest,
+		// advance-time, ask, answer), and adding a sixth is a package change
+		// rather than a schema one.
+		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 5)
+		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
+		// optional `form-addressed` event, bound by each shipped preset.
+		for (const g of [chatGenre, adventureGenre]) {
+			const [spec, ...rest] = serving(g.id, sessionEvents.formAddressed)
+			assert.equal(rest.length, 0)
+			assert.ok(spec?.startsWith('core:spec/answer-form-'), g.id)
+			const preset = document.presets.find((p) => p.genre === g.id)
+			assert.equal(preset?.bindings[sessionEvents.formAddressed]?.spec, spec)
+		}
 	})
 
 	test('hook declarations are fully-qualified core ids', () => {

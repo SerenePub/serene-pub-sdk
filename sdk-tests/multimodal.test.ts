@@ -25,7 +25,7 @@ import {
 	validateValue,
 	fieldLabel,
 	fieldAccepts,
-	getType,
+	getDefinition,
 	FRAME_PROTOCOL,
 	type MediaRef,
 	type OutputPart,
@@ -103,7 +103,7 @@ describe('a completion is an ordered list of parts', () => {
 })
 
 describe('generate-text can finally receive media', () => {
-	const d = getType('core:provider/generate-text@1')
+	const d = getDefinition('core:oracle/generate-text@1')
 
 	test('it declares both directions', () => {
 		assert.ok(d, 'the provider type is registered')

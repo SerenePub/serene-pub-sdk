@@ -1,0 +1,327 @@
+/*
+ * Two palettes and nothing else.
+ *
+ * The frame is on an opaque origin and cannot read the host's stylesheet, so
+ * every colour here is its own — no Skeleton, no Tailwind, no shared tokens. It
+ * still has to LOOK like the page it sits in, so the roles and the ladder are
+ * the ones `src/lib/client/styles/docs.css` uses in the app: a page ground, a
+ * card one step off it, a border, an ink, a muted ink, and one accent.
+ *
+ * `data-theme` on <html> is set from the host's `load` / `theme` messages. There
+ * is deliberately no `prefers-color-scheme` fallback: the host knows which theme
+ * the reader chose and says so, and a frame that guessed differently would be
+ * the one light rectangle in a dark page.
+ */
+
+:root {
+	--pg-surface-1: #ffffff;
+	--pg-surface-2: #f4f4f6;
+	--pg-surface-3: #e9e9ee;
+	--pg-border: #d8d8e0;
+	--pg-ink: #1b1b1f;
+	--pg-muted: #62626e;
+	--pg-accent: #4459c9;
+	--pg-accent-ink: #ffffff;
+	--pg-focus: #4459c9;
+	--pg-selection: #cfd6f5;
+	--pg-error: #a21b2b;
+
+	/* Graph kinds — the effect taxonomy, in the app's own role colours. */
+	--pg-kind-inlet: #4459c9;
+	--pg-kind-query: #7a4bbd;
+	--pg-kind-task: #8a8a96;
+	--pg-kind-oracle: #b26b00;
+	--pg-kind-outlet: #2c7a45;
+
+	--pg-font-sans:
+		ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+	--pg-font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace;
+
+	color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+	--pg-surface-1: #17171b;
+	--pg-surface-2: #1e1e24;
+	--pg-surface-3: #26262e;
+	--pg-border: #35353f;
+	--pg-ink: #e6e6ec;
+	--pg-muted: #9a9aa8;
+	--pg-accent: #8d9bf0;
+	--pg-accent-ink: #14141a;
+	--pg-focus: #8d9bf0;
+	--pg-selection: #34406e;
+	--pg-error: #ef8d99;
+
+	--pg-kind-inlet: #8d9bf0;
+	--pg-kind-query: #b490e8;
+	--pg-kind-task: #7d7d8c;
+	--pg-kind-oracle: #e0a355;
+	--pg-kind-outlet: #63b483;
+
+	color-scheme: dark;
+}
+
+* {
+	box-sizing: border-box;
+}
+
+html,
+body {
+	margin: 0;
+	padding: 0;
+}
+
+body {
+	background: var(--pg-surface-1);
+	color: var(--pg-ink);
+	font-family: var(--pg-font-sans);
+	font-size: 14px;
+	line-height: 1.5;
+}
+
+.pg {
+	display: flex;
+	flex-direction: column;
+	border: 1px solid var(--pg-border);
+	border-radius: 10px;
+	overflow: hidden;
+	background: var(--pg-surface-1);
+}
+
+/* --- Toolbar ------------------------------------------------------------ */
+
+.pg-toolbar {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	padding: 0.5rem 0.625rem;
+	background: var(--pg-surface-2);
+	border-bottom: 1px solid var(--pg-border);
+}
+
+.pg-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4rem;
+	padding: 0.3rem 0.7rem;
+	font: inherit;
+	font-weight: 500;
+	color: var(--pg-ink);
+	background: var(--pg-surface-1);
+	border: 1px solid var(--pg-border);
+	border-radius: 6px;
+	cursor: pointer;
+}
+
+.pg-button:hover:not(:disabled) {
+	background: var(--pg-surface-3);
+}
+
+.pg-button-run {
+	background: var(--pg-accent);
+	border-color: var(--pg-accent);
+	color: var(--pg-accent-ink);
+}
+
+.pg-button-run:hover:not(:disabled) {
+	filter: brightness(1.08);
+}
+
+.pg-button:disabled {
+	opacity: 0.55;
+	cursor: default;
+}
+
+/* Never `outline: none`. The frame has its own focus ring because it cannot
+   inherit the host's, and a keyboard reader inside an iframe with no visible
+   focus has no way back out of the editor. */
+.pg-button:focus-visible,
+.pg-tab:focus-visible,
+.pg-panel:focus-visible {
+	outline: 2px solid var(--pg-focus);
+	outline-offset: 2px;
+}
+
+.pg-kbd {
+	font-family: var(--pg-font-mono);
+	font-size: 0.75em;
+	opacity: 0.8;
+}
+
+.pg-status {
+	margin-left: auto;
+	font-size: 0.8125rem;
+	color: var(--pg-muted);
+}
+
+/* --- Editor ------------------------------------------------------------- */
+
+.pg-editor {
+	min-height: 12rem;
+	max-height: 26rem;
+	overflow: auto;
+	background: var(--pg-surface-1);
+}
+
+.pg-editor .cm-editor {
+	height: 100%;
+}
+
+/* --- Tabs --------------------------------------------------------------- */
+
+.pg-tabs {
+	display: flex;
+	gap: 0.125rem;
+	padding: 0 0.375rem;
+	background: var(--pg-surface-2);
+	border-top: 1px solid var(--pg-border);
+	border-bottom: 1px solid var(--pg-border);
+	overflow-x: auto;
+}
+
+.pg-tab {
+	padding: 0.45rem 0.7rem;
+	font: inherit;
+	font-size: 0.8125rem;
+	color: var(--pg-muted);
+	background: none;
+	border: none;
+	border-bottom: 2px solid transparent;
+	cursor: pointer;
+	white-space: nowrap;
+}
+
+.pg-tab[aria-selected='true'] {
+	color: var(--pg-ink);
+	border-bottom-color: var(--pg-accent);
+	font-weight: 500;
+}
+
+/* --- Panes -------------------------------------------------------------- */
+
+.pg-output {
+	background: var(--pg-surface-1);
+}
+
+.pg-panel {
+	max-height: 24rem;
+	overflow: auto;
+	padding: 0.75rem 0.875rem;
+}
+
+.pg-pre {
+	margin: 0;
+	font-family: var(--pg-font-mono);
+	font-size: 0.8125rem;
+	line-height: 1.55;
+	white-space: pre;
+	tab-size: 2;
+}
+
+.pg[data-status='error'] #pg-panel-result .pg-pre,
+.pg[data-status='findings'] #pg-panel-result .pg-pre {
+	color: var(--pg-error);
+}
+
+.pg-empty {
+	margin: 0;
+	font-size: 0.8125rem;
+	color: var(--pg-muted);
+}
+
+/* --- The graph ----------------------------------------------------------
+   The SVG is the docs compiler's, and every stroke and fill in it is
+   `currentColor` or `none` on purpose — the app, the site and this frame theme
+   the same markup differently, so this is the only place it gets a colour. The
+   rules are the app's `docs.css` "Pipeline graphs" section, with its Skeleton
+   tokens swapped for the two palettes above. */
+
+.pg-graph .doc-graph {
+	display: block;
+	max-width: 100%;
+	overflow: auto;
+	/* A big spec lays out at ~2400×1400px; the reader scrolls inside the card
+	   rather than the frame growing by a screen and a half. */
+	max-height: 22rem;
+	margin: 0;
+	padding: 0.75rem;
+	border: 1px solid var(--pg-border);
+	border-radius: 12px;
+	background: var(--pg-surface-2);
+}
+
+/* The svg carries its own viewBox and matching width/height and must NOT be
+   stretched — the wrapper above scrolls instead. Setting `color` here is what
+   tints the arrowhead `<marker>`: its path lives in `<defs>`, which can only
+   inherit from the svg itself. */
+.pg-graph .doc-graph svg {
+	display: block;
+	color: var(--pg-border);
+}
+
+.pg-graph .doc-graph figcaption {
+	margin-top: 0.625rem;
+	text-align: center;
+	font-size: 0.8125rem;
+	color: var(--pg-muted);
+}
+
+.pg-graph .doc-graph-node rect {
+	fill: var(--pg-surface-3);
+	stroke-width: 1.5;
+}
+
+.pg-graph .doc-graph-node-inlet rect {
+	stroke: var(--pg-kind-inlet);
+}
+
+.pg-graph .doc-graph-node-query rect {
+	stroke: var(--pg-kind-query);
+}
+
+.pg-graph .doc-graph-node-task rect {
+	stroke: var(--pg-kind-task);
+}
+
+.pg-graph .doc-graph-node-oracle rect {
+	stroke: var(--pg-kind-oracle);
+}
+
+.pg-graph .doc-graph-node-outlet rect {
+	stroke: var(--pg-kind-outlet);
+}
+
+.pg-graph .doc-graph-node text {
+	fill: var(--pg-ink);
+	font: 500 13px/1.2 var(--pg-font-sans);
+}
+
+.pg-graph .doc-graph-node .doc-graph-sublabel {
+	fill: var(--pg-muted);
+	font-size: 11px;
+	font-family: var(--pg-font-mono);
+}
+
+.pg-graph .doc-graph-edge {
+	fill: none;
+	stroke: var(--pg-border);
+	stroke-width: 1.25;
+}
+
+.pg-graph .doc-graph-edge-label {
+	fill: var(--pg-muted);
+	font: 400 11px/1.2 var(--pg-font-sans);
+}
+
+/* --- Narrow ------------------------------------------------------------- */
+
+@media (max-width: 420px) {
+	.pg-toolbar {
+		flex-wrap: wrap;
+	}
+
+	.pg-status {
+		margin-left: 0;
+	}
+}

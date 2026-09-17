@@ -1,0 +1,497 @@
+{
+	"name": "retrieved-reply",
+	"specId": "example:retrieved-reply",
+	"specVersion": "1.0.0",
+	"seed": "seed:example",
+	"outcome": "ok",
+	"nodes": [
+		{
+			"nodeKey": "input",
+			"kind": "inlet",
+			"result": "ok",
+			"output": {
+				"text": "where is my sister",
+				"sessionScope": "session:991"
+			}
+		},
+		{
+			"nodeKey": "budget",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"connection": {
+					"id": "ollama-local",
+					"kind": "core:shape/text-gen@1",
+					"metadata": {
+						"contextLength": 4096,
+						"tokenizer": "llama-bpe",
+						"model": "llama3",
+						"supportedSamplers": [
+							"temperature",
+							"top_p"
+						]
+					},
+					"modelId": null,
+					"contextWindow": null
+				}
+			},
+			"output": {
+				"main": 3584,
+				"available": 3584,
+				"tokenizer": "llama-bpe"
+			}
+		},
+		{
+			"nodeKey": "history",
+			"kind": "query",
+			"result": "ok",
+			"input": {
+				"scope": "session:991",
+				"budget": 3584
+			},
+			"output": {
+				"main": "history",
+				"messages": {
+					"sourceKey": "history",
+					"items": [
+						"msg0",
+						"msg1",
+						"msg2",
+						"msg3",
+						"msg4",
+						"msg5",
+						"msg6",
+						"msg7",
+						"msg8",
+						"msg9",
+						"msg10",
+						"msg11"
+					],
+					"weight": 0.4,
+					"minInclude": 6,
+					"priority": "normal"
+				}
+			}
+		},
+		{
+			"nodeKey": "lore",
+			"kind": "query",
+			"result": "ok",
+			"input": {
+				"text": "where is my sister"
+			},
+			"output": {
+				"main": "lore",
+				"hits": {
+					"sourceKey": "lore",
+					"items": [
+						"elf",
+						"sister",
+						"castle"
+					],
+					"weight": 0.35,
+					"minInclude": 3,
+					"priority": "high"
+				}
+			}
+		},
+		{
+			"nodeKey": "merge",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"sources": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				]
+			},
+			"output": {
+				"main": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				],
+				"candidates": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				],
+				"strategyResolved": "keyword"
+			}
+		},
+		{
+			"nodeKey": "rank",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"candidates": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				]
+			},
+			"output": {
+				"main": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				],
+				"candidates": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				]
+			}
+		},
+		{
+			"nodeKey": "prompt",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"candidates": [
+					{
+						"sourceKey": "lore",
+						"items": [
+							"elf",
+							"sister",
+							"castle"
+						],
+						"weight": 0.35,
+						"minInclude": 3,
+						"priority": "high"
+					},
+					{
+						"sourceKey": "history",
+						"items": [
+							"msg0",
+							"msg1",
+							"msg2",
+							"msg3",
+							"msg4",
+							"msg5",
+							"msg6",
+							"msg7",
+							"msg8",
+							"msg9",
+							"msg10",
+							"msg11"
+						],
+						"weight": 0.4,
+						"minInclude": 6,
+						"priority": "normal"
+					}
+				],
+				"budget": 3584
+			},
+			"output": {
+				"main": {
+					"budget": 3584,
+					"alloc": [
+						{
+							"sourceKey": "lore",
+							"weight": 0.35,
+							"minInclude": 3,
+							"included": 3,
+							"available": 3
+						},
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				},
+				"context": {
+					"budget": 3584,
+					"alloc": [
+						{
+							"sourceKey": "lore",
+							"weight": 0.35,
+							"minInclude": 3,
+							"included": 3,
+							"available": 3
+						},
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				}
+			}
+		},
+		{
+			"nodeKey": "generate",
+			"kind": "oracle",
+			"result": "ok",
+			"input": {
+				"context": {
+					"budget": 3584,
+					"alloc": [
+						{
+							"sourceKey": "lore",
+							"weight": 0.35,
+							"minInclude": 3,
+							"included": 3,
+							"available": 3
+						},
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				},
+				"connection": {
+					"id": "ollama-local",
+					"kind": "core:shape/text-gen@1",
+					"metadata": {
+						"contextLength": 4096,
+						"tokenizer": "llama-bpe",
+						"model": "llama3",
+						"supportedSamplers": [
+							"temperature",
+							"top_p"
+						]
+					},
+					"modelId": null,
+					"contextWindow": null
+				},
+				"sampling": {
+					"temperature": 0.92,
+					"top_p": 0.95,
+					"mirostat_tau": 5
+				}
+			},
+			"output": {
+				"main": "the reply text",
+				"text": "the reply text"
+			}
+		},
+		{
+			"nodeKey": "stream",
+			"kind": "outlet",
+			"result": "ok",
+			"input": {
+				"handle": "session:reply",
+				"from": "the reply text"
+			},
+			"output": {
+				"main": "emitted"
+			}
+		},
+		{
+			"nodeKey": "save",
+			"kind": "outlet",
+			"result": "ok",
+			"input": {
+				"text": "the reply text"
+			},
+			"output": {
+				"status": "committed",
+				"ids": {
+					"main": "row:save",
+					"messageId": "row:save"
+				},
+				"main": {
+					"status": "committed",
+					"ids": {
+						"main": "row:save",
+						"messageId": "row:save"
+					}
+				},
+				"messageId": {
+					"status": "committed",
+					"ids": {
+						"main": "row:save",
+						"messageId": "row:save"
+					}
+				}
+			}
+		}
+	],
+	"emitted": [
+		{
+			"event": "core:event/message-created@1",
+			"cause": "save"
+		}
+	]
+}

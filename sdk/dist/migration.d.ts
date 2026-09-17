@@ -16,8 +16,9 @@
  * be sent, from the same formatter and the same tokenizer as a real run (src/preview.ts).
  * The parity test is the preview, not a second renderer written for the occasion.
  */
-import type { Receipt } from "./receipt.js";
-import type { SpecDocument } from "./document.js";
+import type { ScopeKind } from './config.js';
+import type { Receipt } from './receipt.js';
+import type { SpecDocument } from './document.js';
 /**
  * A migrated row's slug is derived from where it came from, not generated.
  *
@@ -26,7 +27,7 @@ import type { SpecDocument } from "./document.js";
  * (12 §3b). A migration that cannot be safely re-run is a migration nobody dares fix.
  */
 export declare function migratedSlug(sourceTable: string, sourceId: string | number): string;
-export type MigrationOutcome = "migrated" | "unmapped" | "skipped";
+export type MigrationOutcome = 'migrated' | 'unmapped' | 'skipped';
 export interface MigrationEntry {
     source: {
         table: string;
@@ -37,7 +38,8 @@ export interface MigrationEntry {
     /** Where the value landed: the scope it was written at, and what it became. */
     target?: {
         slug: string;
-        scopeKind: "instance" | "preset" | "user" | "chat";
+        /** A `ScopeKind` (config.ts): `session · preset · defaults · author` since R-10. */
+        scopeKind: ScopeKind;
         nodeKey?: string;
         slot?: string;
     };
@@ -103,7 +105,7 @@ export declare function renderParity(r: ParityResult): string;
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
  * is already the shape 08 §5b uses for "a human has to look at this."
  */
-export declare const LEGACY_COMMIT_MESSAGE = "core:consumer/commit-message";
+export declare const LEGACY_COMMIT_MESSAGE = "core:outlet/commit-message";
 export interface SplitResult {
     document: SpecDocument;
     report: MigrationReport;

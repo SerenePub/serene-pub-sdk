@@ -23,7 +23,7 @@ export const BLOCK_MODES = ['parallel', 'sequential'];
  * drew it. Naming it here keeps the rule that every label comes from the SDK,
  * and means a host and a plugin's tooling say the same thing.
  */
-export const BLOCK_MODE_DECL = {
+export const CLAUSE_MODE_DECL = {
     path: 'mode',
     i18n: { en: 'Run' },
     description: {
@@ -32,7 +32,7 @@ export const BLOCK_MODE_DECL = {
     of: BLOCK_MODES,
 };
 /** The author's declaration is the default; the user's setting wins. */
-export function resolveBlockMode(authorDefault, userSetting) {
+export function resolveClauseMode(authorDefault, userSetting) {
     if (typeof userSetting === 'string' && BLOCK_MODES.includes(userSetting))
         return userSetting;
     return authorDefault === 'sequential' ? 'sequential' : 'parallel';

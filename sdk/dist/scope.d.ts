@@ -55,7 +55,7 @@ export type Scope<Nodes extends Record<string, PortDecl>> = Nested<Nodes>;
  *   sibling can be named by its short key (`$.embed`) while an outside node is still
  *   reachable by its full path (`$.gather.semantic.embed`).
  */
-export declare function makeScope(knownKeys: Set<string>, localPrefix?: string, blockId?: string): any;
+export declare function makeScope(knownKeys: Set<string>, localPrefix?: string, clauseId?: string): any;
 /** The current item inside a map, addressed without knowing the block's key. */
 export declare const ITEM = "$item";
 export {};

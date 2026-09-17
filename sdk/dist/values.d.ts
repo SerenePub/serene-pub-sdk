@@ -52,7 +52,7 @@ export interface ValueCommon {
  * versioned type id; the payload is that type's own schema.
  */
 export type ValueDecl = {
-    readonly [typeId: string]: Record<string, unknown>;
+    readonly [definitionId: string]: Record<string, unknown>;
 };
 /** The one key of a declaration — its type id. Throws on malformed decls. */
 export declare function valueKind(decl: ValueDecl): string;

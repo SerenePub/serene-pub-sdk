@@ -9,8 +9,9 @@
  */
 
 import type { BuiltSpec, BuiltNode } from './builder.js'
-import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
-import { getType } from './descriptors.js'
+import { collectDataRefs, envoyConfigKey, isEnvoyConfigKey, isSlotRef, type SlotRef } from './refs.js'
+import { getDefinition } from './descriptors.js'
+import { getGenre } from './genres.js'
 import { requiredConnections, type ConnectionRequirement } from './connections.js'
 import { isStreaming } from './shapes.js'
 import { canonicalize, contentHash } from './hash.js'
@@ -29,12 +30,12 @@ export interface DocEdge {
 export interface DocNode {
 	key: string
 	kind: string
-	typeId: string
-	typeVersion: number
+	definitionId: string
+	definitionVersion: number
 	config: Record<string, unknown>
-	blockId?: string
-	blockKind?: string
-	blockChain?: string
+	clauseId?: string
+	clauseKind?: string
+	clauseChain?: string
 	position: number
 	/** Config references resolved at publish and stored explicitly (16 §5b-i). */
 	resolvedRefs?: Record<string, string>
@@ -52,30 +53,33 @@ export interface SpecDocument {
 	contributes?: unknown
 	/** Catalogue claims (ruled 2026-08-27) — content like the two above, hashed with the document. */
 	taxonomy?: unknown
-	/** The usage lock (24 §4): { genre, event } the input declared. Hashed with the document. */
+	/**
+	 * The usage lock (24 §4): { genre, event } the inlet declared. Hashed with
+	 * the document. **The only subscription** (R-4) — `subscribes` was deleted
+	 * 2026-09-16 with `.on()`.
+	 */
 	input?: { genre?: string; event?: string }
-	subscribes: string[]
 	includes: Array<{ key: string; fragmentId: string }>
 	/** Author-shipped presets. Execution-affecting, so they round-trip (F4). */
 	presets: BuiltSpec['presets']
 	nodes: DocNode[]
 	edges: DocEdge[]
-	blocks: BuiltSpec['blocks']
+	clauses: BuiltSpec['clauses']
 }
 
-/** Nodes that participate in the top-level sequential spine (not inside a block). */
-const spineOf = (nodes: BuiltNode[]) => nodes.filter((n) => !n.blockId)
+/** Nodes that participate in the top-level sequential spine (not inside a clause). */
+const spineOf = (nodes: BuiltNode[]) => nodes.filter((n) => !n.clauseId)
 
 export function compile(built: BuiltSpec): SpecDocument {
 	const nodes: DocNode[] = built.nodes.map((n) => ({
 		key: n.key,
 		kind: n.kind,
-		typeId: n.typeId,
-		typeVersion: n.typeVersion,
+		definitionId: n.definitionId,
+		definitionVersion: n.definitionVersion,
 		config: n.config,
-		blockId: n.blockId,
-		blockKind: n.blockKind,
-		blockChain: n.blockChain,
+		clauseId: n.clauseId,
+		clauseKind: n.clauseKind,
+		clauseChain: n.clauseChain,
 		position: n.position,
 	}))
 
@@ -86,7 +90,7 @@ export function compile(built: BuiltSpec): SpecDocument {
 		for (const { path, ref } of collectDataRefs(n.config)) {
 			const upstream = built.nodes.find((x) => x.key === ref.node)
 			const outShape = upstream
-				? getType(`${upstream.typeId}@${upstream.typeVersion}`)?.ports.out?.[ref.port]
+				? getDefinition(`${upstream.definitionId}@${upstream.definitionVersion}`)?.ports.out?.[ref.port]
 				: undefined
 			// Whether an edge streams is decided here, at publish — so it is readable
 			// off the spec rather than discovered by running it (01 §11).
@@ -123,9 +127,41 @@ export function compile(built: BuiltSpec): SpecDocument {
 		for (const [k, v] of Object.entries(n.config)) {
 			if (!isSlotRef(v)) continue
 			const ref = v as SlotRef
-			if (ref.resolveDownstreamProvider) {
-				const target = resolveDownstreamProvider(built, n.key)
+			if (ref.resolveDownstreamOracle) {
+				const target = resolveDownstreamOracle(built, n.key)
 				resolved[k] = target
+			} else if (ref.ofEnvoy) {
+				// An envoy's config (R-18 (2)): the genre the spec serves must
+				// declare the key. Checked against the registry when the genre
+				// is one this build declares; a genre this build has never
+				// seen (a plugin's, declared elsewhere) cannot be checked here.
+				// The host checks it where the document lands as rows
+				// (`saveDocument`, U5g review W4): the genre's declaration and
+				// each action's envoy are re-run through `envoysFindings` /
+				// `envoyFindings`, and a reference to a key the genre's
+				// published declaration does not carry is refused there.
+				// ⏳ Today no plugin document reaches `saveDocument` — the app
+				// publishes the core catalog only — so the host's check is
+				// the boundary a plugin publish path will meet, not one any
+				// plugin has met. The address is the synthetic node key the
+				// executor resolves config for.
+				const genreId = built.input?.genre
+				const known = genreId ? getGenre(genreId) : undefined
+				if (known && !known.envoys?.some((e) => e.key === ref.ofEnvoy))
+					throw new Error(
+						`node '${n.key}' references the prompts of envoy '${ref.ofEnvoy}', which ` +
+							`'${genreId}' does not declare` +
+							(known.envoys?.length
+								? ` — it declares ${known.envoys.map((e) => `'${e.key}'`).join(', ')}`
+								: ' — it declares no envoys'),
+					)
+				if (!genreId)
+					throw new Error(
+						`node '${n.key}' references the prompts of envoy '${ref.ofEnvoy}', but the spec ` +
+							`serves no genre — an envoy is a genre's (or an action's), and the inlet lock ` +
+							`names which (24 §4)`,
+					)
+				resolved[k] = envoyConfigKey(ref.ofEnvoy)
 			} else if (ref.ofNode) {
 				if (!built.nodes.some((x) => x.key === ref.ofNode)) {
 					throw new Error(
@@ -146,36 +182,35 @@ export function compile(built: BuiltSpec): SpecDocument {
 		input: built.input,
 		contributes: built.meta.contributes,
 		taxonomy: built.meta.taxonomy,
-		subscribes: built.subscribes,
 		includes: built.includes,
 		presets: built.presets,
 		nodes,
 		edges,
-		blocks: built.blocks,
+		clauses: built.clauses,
 	}
 }
 
 /**
- * Follow the spine forward from `fromKey` to the first Provider. Linearity is what
+ * Follow the spine forward from `fromKey` to the first oracle. Linearity is what
  * makes this well-defined (F25). Ambiguity or absence is a publish error that names
  * the candidates — the teaching-error pattern (15 §1.3).
  */
-export function resolveDownstreamProvider(built: BuiltSpec, fromKey: string): string {
+export function resolveDownstreamOracle(built: BuiltSpec, fromKey: string): string {
 	const ordered = built.nodes.slice().sort((a, b) => a.position - b.position)
 	const start = ordered.findIndex((n) => n.key === fromKey)
-	const after = ordered.slice(start + 1).filter((n) => n.kind === 'provider')
-	// Providers inside a block are per-chain; only spine providers are unambiguous targets.
-	const spineProviders = after.filter((n) => !n.blockId)
-	if (spineProviders.length === 0) {
+	const after = ordered.slice(start + 1).filter((n) => n.kind === 'oracle')
+	// Oracles inside a clause are per-chain; only spine oracles are unambiguous targets.
+	const spineOracles = after.filter((n) => !n.clauseId)
+	if (spineOracles.length === 0) {
 		const candidates = after.map((n) => n.key)
 		throw new Error(
-			`slot.downstreamProvider() on '${fromKey}' found no Provider downstream on the spine. ` +
+			`slot.downstreamOracle() on '${fromKey}' found no oracle downstream on the spine. ` +
 				(candidates.length
-					? `Providers exist inside blocks (${candidates.join(', ')}) — name one explicitly with slot.providerRef('…').`
-					: `Add a Provider, or use slot.providerRef('…').`),
+					? `Oracles exist inside clauses (${candidates.join(', ')}) — name one explicitly with slot.oracleRef('…').`
+					: `Add an oracle, or use slot.oracleRef('…').`),
 		)
 	}
-	return spineProviders[0]!.key
+	return spineOracles[0]!.key
 }
 
 /**
@@ -294,3 +329,19 @@ export function exportDocument(doc: SpecDocument, opts: ExportOptions = {}): Exp
 
 const isRef = (v: unknown): v is { $ref: string } =>
 	!!v && typeof v === 'object' && typeof (v as any).$ref === 'string'
+
+/**
+ * The envoy config addresses a document references — every `resolvedRefs`
+ * target spelled `envoy:<key>`, once each. The executor resolves config for
+ * these beside the nodes and clauses; the host projects the genre's
+ * declaration at exactly these keys.
+ */
+export function envoyConfigKeysOf(doc: {
+	nodes: ReadonlyArray<{ resolvedRefs?: Record<string, string> }>
+}): string[] {
+	const out = new Set<string>()
+	for (const n of doc.nodes)
+		for (const target of Object.values(n.resolvedRefs ?? {}))
+			if (isEnvoyConfigKey(target)) out.add(target)
+	return [...out]
+}

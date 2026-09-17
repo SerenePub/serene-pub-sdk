@@ -35,10 +35,10 @@ const legacyEngine = (systemPrompt: string, history: string[]) =>
 
 const migrated = () =>
 	spec('core:spec/chat-turn@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-		.provider('generate', ($) =>
+		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
 
@@ -156,7 +156,7 @@ describe('75 · the migration report', () => {
 				outcome: 'migrated',
 				target: {
 					slug: migratedSlug('prompt_configs', 1),
-					scopeKind: 'user',
+					scopeKind: 'session',
 					nodeKey: 'prompt',
 					slot: 'prompts',
 				},
@@ -202,8 +202,8 @@ describe('75 · the migration report', () => {
 
 	test('a migrated value records the scope it landed at', () => {
 		// The commonest way to lose a customisation is to migrate it to the wrong layer:
-		// a user's prompt written at instance scope now applies to everyone, and written
-		// at chat scope applies to one chat. Recording it makes that reviewable (12 §2).
-		assert.equal(report.entries[0]!.target!.scopeKind, 'user')
+		// a person's prompt written into the config now applies to everyone, and written
+		// at session scope applies to one session. Recording it makes that reviewable (12 §2).
+		assert.equal(report.entries[0]!.target!.scopeKind, 'session')
 	})
 })

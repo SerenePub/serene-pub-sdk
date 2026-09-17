@@ -19,12 +19,18 @@
  * at install time, because install reads documents and a manifest, both of which are data.
  */
 import { compile } from '@serene-pub/sdk';
-import { summarizeType } from './codegen.js';
+import { summarizeDefinition } from './codegen.js';
 // ── Static extraction ───────────────────────────────────────────────────────
 /** Calls whose arguments must be written out, and why a computed one is refused. */
 const MUST_BE_STATIC = {
     defineExtension: 'the manifest is built from this call without running it',
-    pipelineHook: 'a hook assembled at runtime cannot appear in the manifest, so it could never be permitted',
+    handler: 'a handler assembled at runtime cannot appear in the manifest, so it could never be permitted',
+    lifecycleCallback: 'lifecycle moments are fixed; a computed one cannot be audited',
+    eventListener: 'an event subscription nobody can see is a side effect nobody consented to',
+    // The pre-rename spellings (deprecated aliases, one release): counted with
+    // their replacements so a plugin written against the previous SDK still
+    // packages.
+    pipelineHook: 'a handler assembled at runtime cannot appear in the manifest, so it could never be permitted',
     lifecycleHook: 'lifecycle moments are fixed; a computed one cannot be audited',
     eventHook: 'an event subscription nobody can see is a side effect nobody consented to',
     component: 'surfaces are declared so core can render them without loading your code',
@@ -151,7 +157,7 @@ function isWrittenOut(raw, blanked) {
     const r = raw.trim();
     // The scanner blanks string bodies so that a call written inside a comment or a string
     // cannot be mistaken for a real one — which means a *legitimate* quoted argument also
-    // blanks to nothing. `eventHook('core:event/session-created@1', h)` is the most written-out
+    // blanks to nothing. `eventListener('core:event/session-created@1', h)` is the most written-out
     // form there is, so emptiness only means "computed" when the raw text was not a literal.
     const quoted = /^['"`]/.test(r);
     if (!t && !quoted)
@@ -196,9 +202,9 @@ export function scanSource(files) {
     const permissions = new Set();
     const declared = {
         extensions: 0,
-        pipelineHooks: 0,
-        lifecycleHooks: 0,
-        eventHooks: 0,
+        handlers: 0,
+        lifecycleCallbacks: 0,
+        eventListeners: 0,
         components: 0,
     };
     for (const f of files) {
@@ -213,12 +219,12 @@ export function scanSource(files) {
                     continue;
                 if (name === 'defineExtension')
                     declared.extensions++;
-                if (name === 'pipelineHook')
-                    declared.pipelineHooks++;
-                if (name === 'lifecycleHook')
-                    declared.lifecycleHooks++;
-                if (name === 'eventHook')
-                    declared.eventHooks++;
+                if (name === 'handler' || name === 'pipelineHook')
+                    declared.handlers++;
+                if (name === 'lifecycleCallback' || name === 'lifecycleHook')
+                    declared.lifecycleCallbacks++;
+                if (name === 'eventListener' || name === 'eventHook')
+                    declared.eventListeners++;
                 if (name === 'component')
                     declared.components++;
                 for (const [i, part] of topLevelSplit(code, open + 1, close).entries()) {
@@ -283,9 +289,9 @@ export function compilePlugin(input) {
         });
         return { documents: [], findings, ok: false };
     }
-    const pipelineHooks = (e.hooks ?? []).filter((h) => h.__decl === 'pipeline-hook');
-    const lifecycle = (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-hook');
-    const events = (e.hooks ?? []).filter((h) => h.__decl === 'event-hook');
+    const handlers = (e.hooks ?? []).filter((h) => h.__decl === 'handler');
+    const lifecycle = (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-callback');
+    const events = (e.hooks ?? []).filter((h) => h.__decl === 'event-listener');
     const mismatch = (kind, statically, evaluated) => {
         if (statically === evaluated || statically === 0)
             return;
@@ -299,9 +305,9 @@ export function compilePlugin(input) {
                 'the manifest on some machines and present on others, so the audit screen stops being true.',
         });
     };
-    mismatch('pipelineHook', scan.declared.pipelineHooks, pipelineHooks.length);
-    mismatch('lifecycleHook', scan.declared.lifecycleHooks, lifecycle.length);
-    mismatch('eventHook', scan.declared.eventHooks, events.length);
+    mismatch('handler', scan.declared.handlers, handlers.length);
+    mismatch('lifecycleCallback', scan.declared.lifecycleCallbacks, lifecycle.length);
+    mismatch('eventListener', scan.declared.eventListeners, events.length);
     mismatch('component', scan.declared.components, (e.components ?? []).length);
     // A shape-bearing input type *is* a chat mode (19 §2), and the New Chat picker
     // renders one card per mode: `i18n.name` is the card's face, `i18n.description` its
@@ -309,9 +315,9 @@ export function compilePlugin(input) {
     // repeats the check because the evaluated extension may have been built against an
     // older SDK — and warns on a missing description, which is a poorer card rather
     // than a broken one.
-    for (const h of pipelineHooks) {
+    for (const h of handlers) {
         const t = h.type;
-        if (t?.kind !== 'input' || !t.sessionShape)
+        if (t?.kind !== 'inlet' || !t.sessionShape)
             continue;
         const at = locate(input.sources, t.id);
         if (!hasDisplayText(t.i18n?.name))
@@ -353,11 +359,12 @@ export function compilePlugin(input) {
         }
     }
     // Subscriptions are a permission surface: a pipeline that runs on every message is a
-    // side effect a user consents to (11 §4), so it belongs in the manifest.
+    // side effect a user consents to (11 §4), so it belongs in the manifest. Since R-4
+    // the inlet lock is the only subscription a pipeline has.
     const permissions = new Set(scan.permissions);
     for (const p of e.pipelines ?? [])
-        for (const s of p.subscribes)
-            permissions.add(`event:${s}`);
+        if (p.input?.event)
+            permissions.add(`event:${p.input.event}`);
     for (const h of events)
         permissions.add(`event:${h.event}`);
     const manifest = {
@@ -367,15 +374,15 @@ export function compilePlugin(input) {
         version: e.version,
         description: e.description,
         engines: e.engines,
-        types: pipelineHooks.map((h) => summarizeType(h.type)),
+        nodeDefinitions: handlers.map((h) => summarizeDefinition(h.type)),
         hooks: {
-            pipeline: pipelineHooks.map((h) => ({
-                typeId: h.type.id,
+            handlers: handlers.map((h) => ({
+                definitionId: h.type.id,
                 visibility: h.visibility,
                 runtime: h.runtime ?? 'node',
             })),
-            lifecycle: lifecycle.map((h) => ({ moment: h.moment, cadence: h.cadence })),
-            event: events.map((h) => ({ event: h.event })),
+            lifecycleCallbacks: lifecycle.map((h) => ({ moment: h.moment, cadence: h.cadence })),
+            eventListeners: events.map((h) => ({ event: h.event })),
         },
         components: (e.components ?? []).map((c) => ({
             surface: c.surface,
@@ -416,11 +423,11 @@ export function cannotDo(m) {
         out.push('cannot read your chats, characters or messages');
     if (!has('provider:call'))
         out.push('cannot call a model or reach any external service');
-    if (!m.hooks.event.length && !m.permissions.some((p) => p.startsWith('event:')))
+    if (!m.hooks.eventListeners.length && !m.permissions.some((p) => p.startsWith('event:')))
         out.push('cannot run in response to anything you do');
     if (!m.components.length)
         out.push('cannot render anything in the interface');
-    if (!m.hooks.lifecycle.some((h) => h.cadence))
+    if (!m.hooks.lifecycleCallbacks.some((h) => h.cadence))
         out.push('cannot run on a schedule');
     return out;
 }

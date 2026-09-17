@@ -17,14 +17,17 @@
 import { announce } from '@serene-pub/sdk';
 import { CORE_PROMPTS } from './prompts.js';
 import { CORE_PRESETS } from './presets.js';
-import { adventureGenre, chatGenre } from './genres.js';
+import { adventureGenre, chatGenre, guideGenre } from './genres.js';
 import { CREATE_CHAT_SPEC_ID, createChatSpec } from './createChat.js';
+import { CREATE_GUIDE_SPEC_ID, createGuideSpec, GUIDE_RESPOND_SPEC_ID, guideRespondSpec, } from './guide.js';
 import { ADVENTURE_CREATE_SPEC_ID, ADVENTURE_RESPOND_SPEC_ID, adventureCreateSpec, adventureRespondSpec, } from './adventure.js';
-import { ADVENTURE_ADVANCE_TIME_SPEC_ID, ADVENTURE_LOOK_SPEC_ID, ADVENTURE_REST_SPEC_ID, adventureAdvanceTimeSpec, adventureLookSpec, adventureRestSpec, } from './adventureActions.js';
+import { ADVENTURE_ADVANCE_TIME_SPEC_ID, ADVENTURE_ANSWER_SPEC_ID, ADVENTURE_ASK_SPEC_ID, ADVENTURE_LOOK_SPEC_ID, ADVENTURE_REST_SPEC_ID, adventureAdvanceTimeSpec, adventureAnswerSpec, adventureAskSpec, adventureLookSpec, adventureRestSpec, } from './adventureActions.js';
+import { ANSWER_FORM_ADVENTURE_SPEC_ID, ANSWER_FORM_CHAT_SPEC_ID, ANSWER_FORM_GUIDE_SPEC_ID, answerFormAdventureSpec, answerFormChatSpec, answerFormGuideSpec, } from './answerForm.js';
 import { RESPOND_SPEC_ID, respondSpec } from './respond.js';
 import { NARRATE_SPEC_ID, narrateSpec } from './narrate.js';
 import { NARRATE_CHARACTER_SPEC_ID, narrateCharacterSpec, } from './narrateCharacter.js';
 import { ECHO_SPEC_ID, echoSpec } from './echo.js';
+import { BUILTIN_BRANCH_SPEC_ID, BUILTIN_DELETE_SPEC_ID, BUILTIN_EDIT_SPEC_ID, BUILTIN_HIDE_SPEC_ID, BUILTIN_SWIPE_SPEC_ID, builtinBranchSpec, builtinDeleteSpec, builtinEditSpec, builtinHideSpec, builtinSwipeSpec, } from './builtins.js';
 import { TOOL_LOOP_SPEC_ID, toolLoopSpec } from './toolLoop.js';
 import { GENERATE_IMAGE_SPEC_ID, generateImageSpec } from './generateImage.js';
 import { GRAPH_BUILD_SPEC_ID, graphBuildSpec } from './graphBuild.js';
@@ -42,7 +45,7 @@ export * from './slots.js';
 /**
  * Core's entry types (Part 1). Declaring one **registers** it, which is the
  * fact-about-the-code route node types take — so this re-export is what puts
- * them in `allTypes()` for the boot sync.
+ * them in `allDefinitions()` for the boot sync.
  *
  * ⚠ That makes this module the one in the package with a load-bearing side
  * effect, and the package says `sideEffects: false`. `./dist/entries.js` is
@@ -54,12 +57,15 @@ export * from './entries.js';
 export * from './prompts.js';
 export * from './presets.js';
 export * from './createChat.js';
+export * from './guide.js';
 export * from './adventure.js';
 export * from './adventureActions.js';
+export * from './answerForm.js';
 export * from './respond.js';
 export * from './narrate.js';
 export * from './narrateCharacter.js';
 export * from './echo.js';
+export * from './builtins.js';
 export * from './toolLoop.js';
 export * from './generateImage.js';
 export * from './graphBuild.js';
@@ -97,7 +103,28 @@ export const CORE_SPECS = [
         name: 'Time passes',
         build: adventureAdvanceTimeSpec,
     },
+    /** The worked form (R-15 *Forms*; U5d): the narrator asks, the cast answers. */
+    { slug: ADVENTURE_ASK_SPEC_ID, name: 'Ask', build: adventureAskSpec },
+    { slug: ADVENTURE_ANSWER_SPEC_ID, name: 'Answer', build: adventureAnswerSpec },
+    /**
+     * The guide genre (R-18, U5g): create first, for the reason above; its
+     * reply answers as the genre's envoy.
+     */
+    { slug: CREATE_GUIDE_SPEC_ID, name: 'Create guide session', build: createGuideSpec },
+    { slug: GUIDE_RESPOND_SPEC_ID, name: 'Guide reply', build: guideRespondSpec },
     { slug: RESPOND_SPEC_ID, name: 'Session reply', build: respondSpec },
+    /**
+     * The answer pipelines (R-15 *Forms*; U5d): one graph, published once
+     * per shipped genre because a preset binds a spec locked to its genre.
+     * After every genre's create spec, for the reason those come first.
+     */
+    { slug: ANSWER_FORM_CHAT_SPEC_ID, name: 'Answer a form (chat)', build: answerFormChatSpec },
+    {
+        slug: ANSWER_FORM_ADVENTURE_SPEC_ID,
+        name: 'Answer a form (adventure)',
+        build: answerFormAdventureSpec,
+    },
+    { slug: ANSWER_FORM_GUIDE_SPEC_ID, name: 'Answer a form (guide)', build: answerFormGuideSpec },
     { slug: NARRATE_SPEC_ID, name: 'World narration', build: narrateSpec },
     // The other half of the narrator split (ruling 2026-09-07). A NEW spec,
     // not a bump: the 0.6 freeze forbids moving an existing semver and says
@@ -108,6 +135,16 @@ export const CORE_SPECS = [
         build: narrateCharacterSpec,
     },
     { slug: ECHO_SPEC_ID, name: 'Echo', build: echoSpec },
+    /**
+     * The built-in writes (R-15): one one-node spec per message verb core
+     * implements, published like every other so a delete is a receipted,
+     * gate-eligible run pinning a hash. Bound to no genre — they serve all.
+     */
+    { slug: BUILTIN_DELETE_SPEC_ID, name: 'Delete message', build: builtinDeleteSpec },
+    { slug: BUILTIN_HIDE_SPEC_ID, name: 'Hide message', build: builtinHideSpec },
+    { slug: BUILTIN_EDIT_SPEC_ID, name: 'Edit message', build: builtinEditSpec },
+    { slug: BUILTIN_SWIPE_SPEC_ID, name: 'Swipe message', build: builtinSwipeSpec },
+    { slug: BUILTIN_BRANCH_SPEC_ID, name: 'Branch session', build: builtinBranchSpec },
     /**
      * The tool-loop reference (20 §9). Published like the others so the
      * integration suite runs it against a seeded database — an example nobody
@@ -177,7 +214,7 @@ export function coreAnnouncement() {
         repo: 'https://github.com/doolijb/serene-pub',
         summary: 'The genres and pipelines Serene Pub ships.',
     })
-        .genres({ chatGenre, adventureGenre })
+        .genres({ chatGenre, adventureGenre, guideGenre })
         .hooks(Object.fromEntries(Object.entries(CORE_HOOK_DECLARATIONS).map(([id, decl]) => [
         // Declarations are stored fully-qualified; announce()
         // namespaces bare keys, so strip the prefix it will re-add.

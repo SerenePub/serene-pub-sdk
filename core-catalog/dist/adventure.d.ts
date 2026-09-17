@@ -14,7 +14,7 @@
  *
  * The planner and the keeper produce documents, and the shape of the REQUEST is
  * what makes that true rather than the wording of the instructions. They pin
- * `core:provider/generate-json@1`: no speaker, no trailing line to continue, and
+ * `core:oracle/generate-json@1`: no speaker, no trailing line to continue, and
  * the answer's schema on the wire wherever the connection can carry one. Their
  * transcript is `core:task/prose-transcript@1` for the same reason, in the one
  * place a rendered prompt cannot be repaired afterwards.
@@ -91,76 +91,76 @@ export declare const adventureCreateSpec: () => import("@serene-pub/sdk").SpecDo
 export declare const ADVENTURE_RESPOND_SPEC_ID = "core:spec/adventure-respond";
 export declare const ADVENTURE_RESPOND_VERSION = "1.0.0";
 export declare const ADVENTURE_PLAN_SCHEMA: {
-    readonly type: "object";
+    readonly type: 'object';
     readonly properties: {
         readonly beats: {
-            readonly type: "array";
+            readonly type: 'array';
             readonly items: {
-                readonly type: "string";
+                readonly type: 'string';
             };
         };
         readonly speakers: {
-            readonly type: "array";
+            readonly type: 'array';
             readonly items: {
-                readonly type: "object";
+                readonly type: 'object';
                 readonly properties: {
                     readonly name: {
-                        readonly type: "string";
+                        readonly type: 'string';
                     };
                     readonly intent: {
-                        readonly type: "string";
+                        readonly type: 'string';
                     };
                 };
-                readonly required: readonly ["name", "intent"];
+                readonly required: readonly ['name', 'intent'];
                 readonly additionalProperties: false;
             };
         };
         readonly worldHints: {
-            readonly type: "object";
+            readonly type: 'object';
             readonly properties: {
                 readonly location: {
-                    readonly type: "string";
+                    readonly type: 'string';
                 };
                 readonly timeOfDay: {
-                    readonly type: "string";
-                    readonly enum: readonly ["morning", "day", "dusk", "night"];
+                    readonly type: 'string';
+                    readonly enum: readonly ['morning', 'day', 'dusk', 'night'];
                 };
                 readonly weather: {
-                    readonly type: "string";
-                    readonly enum: readonly ["clear", "fog", "rain", "storm", "snow"];
+                    readonly type: 'string';
+                    readonly enum: readonly ['clear', 'fog', 'rain', 'storm', 'snow'];
                 };
             };
-            readonly required: readonly ["location", "timeOfDay", "weather"];
+            readonly required: readonly ['location', 'timeOfDay', 'weather'];
             readonly additionalProperties: false;
         };
         readonly needsLookup: {
-            readonly type: "boolean";
+            readonly type: 'boolean';
         };
     };
-    readonly required: readonly ["beats", "speakers", "worldHints", "needsLookup"];
+    readonly required: readonly ['beats', 'speakers', 'worldHints', 'needsLookup'];
     readonly additionalProperties: false;
 };
 export declare const ADVENTURE_KEEPER_SCHEMA: {
-    readonly type: "object";
+    readonly type: 'object';
     readonly properties: {
         /** A tracked value the scene changed. Empty is the ordinary turn. */
         readonly values: {
-            readonly type: "array";
+            readonly type: 'array';
             readonly items: {
-                readonly type: "object";
+                readonly type: 'object';
                 readonly properties: {
                     readonly owner: {
-                        readonly type: "string";
+                        readonly type: 'string';
                     };
                     readonly slot: {
-                        readonly type: "string";
+                        readonly type: 'string';
                         readonly enum: string[];
                     };
                     readonly value: {
-                        readonly type: "string";
+                        readonly type: 'string';
                     };
                 };
-                readonly required: readonly ["owner", "slot", "value"];
+                readonly required: readonly ['owner', 'slot', 'value'];
                 readonly additionalProperties: false;
             };
         };
@@ -172,26 +172,26 @@ export declare const ADVENTURE_KEEPER_SCHEMA: {
          * The two are joined again by the `path` parameter naming both.
          */
         readonly possessions: {
-            readonly type: "array";
+            readonly type: 'array';
             readonly items: {
-                readonly type: "object";
+                readonly type: 'object';
                 readonly properties: {
                     readonly owner: {
-                        readonly type: "string";
+                        readonly type: 'string';
                     };
                     readonly entryId: {
-                        readonly type: "integer";
+                        readonly type: 'integer';
                     };
                     readonly delta: {
-                        readonly type: "integer";
+                        readonly type: 'integer';
                     };
                 };
-                readonly required: readonly ["owner", "entryId", "delta"];
+                readonly required: readonly ['owner', 'entryId', 'delta'];
                 readonly additionalProperties: false;
             };
         };
     };
-    readonly required: readonly ["values", "possessions"];
+    readonly required: readonly ['values', 'possessions'];
     readonly additionalProperties: false;
 };
 export declare const adventureRespondSpec: () => import("@serene-pub/sdk").SpecDocument;

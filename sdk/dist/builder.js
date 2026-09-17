@@ -1,7 +1,9 @@
 /**
- * The builder (04 §4). Kind-named methods, so reading a spec top to bottom shows
- * the effect taxonomy — and so the type system can enforce laws that a generic
- * .step() could only find at validation time (04 §4a).
+ * The builder (04 §4). Kind-named methods — `.inlet() .query() .task() .oracle()
+ * .outlet()` — so reading a spec top to bottom shows the effect taxonomy, and so
+ * the type system can enforce laws that a generic .step() could only find at
+ * validation time (04 §4a). Clauses are `.gather() .each() .loop() .junction()`
+ * (R-14, ruled 2026-09-15).
  *
  * The chain is a *value*. It compiles to a document; SP imports the document and
  * never this code (F6).
@@ -15,36 +17,37 @@
 import { makeScope, ITEM } from './scope.js';
 import { assertSpecId, parseSpecId } from './identity.js';
 import { genreIdOf } from './genres.js';
+import { actionFindings, normalizeContributes, slashCollisions, } from './actions.js';
 /** Lowercase kebab. A slug is a database reference, not display text. */
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const parseId = (typeId) => {
-    const m = /^(.*)@(\d+)$/.exec(typeId);
-    return m ? { base: m[1], version: Number(m[2]) } : { base: typeId, version: 1 };
+const parseId = (definitionId) => {
+    const m = /^(.*)@(\d+)$/.exec(definitionId);
+    return m ? { base: m[1], version: Number(m[2]) } : { base: definitionId, version: 1 };
 };
 // ── Chain builders ──────────────────────────────────────────────────────────
 class ChainBuilder {
     spec;
-    blockCtx;
-    constructor(spec, blockCtx) {
+    clauseCtx;
+    constructor(spec, clauseCtx) {
         this.spec = spec;
-        this.blockCtx = blockCtx;
+        this.clauseCtx = clauseCtx;
     }
     /** Resolve the callback form against the nodes declared so far. */
     resolve(arg) {
         if (typeof arg !== 'function')
             return arg;
         const known = new Set(this.spec.nodes.map((n) => n.key));
-        // Blocks publish under their own id, so they are addressable exactly like nodes —
-        // and for a map or a loop that is the *only* well-defined thing to address.
-        for (const b of this.spec.blocks)
+        // Clauses publish under their own id, so they are addressable exactly like nodes —
+        // and for an each or a loop that is the *only* well-defined thing to address.
+        for (const b of this.spec.clauses)
             known.add(b.id);
-        // Inside a map, the current item is addressable without naming the block.
-        if (this.blockCtx)
-            known.add(`${this.blockCtx.blockId}.${ITEM}`);
-        const localPrefix = this.blockCtx
-            ? `${this.blockCtx.blockId}.${this.blockCtx.chain}`
+        // Inside an each, the current item is addressable without naming the clause.
+        if (this.clauseCtx)
+            known.add(`${this.clauseCtx.clauseId}.${ITEM}`);
+        const localPrefix = this.clauseCtx
+            ? `${this.clauseCtx.clauseId}.${this.clauseCtx.chain}`
             : undefined;
-        const scope = makeScope(known, localPrefix, this.blockCtx?.blockId);
+        const scope = makeScope(known, localPrefix, this.clauseCtx?.clauseId);
         return arg(scope);
     }
     add(kind, key, arg) {
@@ -53,63 +56,86 @@ class ChainBuilder {
             throw new Error(`.${kind}('${key}', …) was given a ${node?.descriptor?.kind ?? 'non-node'} ` +
                 `('${node?.descriptor?.id ?? '?'}'). The method names the kind; use .${node?.descriptor?.kind}() instead.`);
         }
+        // A colon marks a synthetic config address, not a node: an envoy's
+        // config lives at `envoy:<key>` beside the node keys in the resolved
+        // config (`envoyConfigKey`), and a node spelled with one could shadow
+        // it — or be read as one. Refused at the key, before it can (U5g
+        // review, S2).
+        if (key.includes(':')) {
+            throw new Error(`node key '${key}' contains ':' — a colon marks a synthetic config address ` +
+                `(\`envoy:<key>\`), which a node key must never be mistaken for`);
+        }
         if (this.spec.nodes.some((n) => n.key === this.qualify(key))) {
             throw new Error(`duplicate node key '${this.qualify(key)}' — keys are explicit and unique (F21)`);
+        }
+        // Nodes and clauses share one address space: `$.tools` must name exactly
+        // one thing, and the executor publishes a clause's union under its id
+        // beside the node values. Found when the tool loop took the key `tools`
+        // (2026-09-16) beside a query of the same name.
+        if (this.spec.clauses.some((c) => c.id === this.qualify(key))) {
+            throw new Error(`node key '${this.qualify(key)}' is already a clause id — nodes and clauses share one address space`);
         }
         const { base, version } = parseId(node.descriptor.id);
         this.spec.nodes.push({
             key: this.qualify(key),
             kind,
-            typeId: base,
-            typeVersion: version,
+            definitionId: base,
+            definitionVersion: version,
             config: node.config,
-            blockId: this.blockCtx?.blockId,
-            blockKind: this.blockCtx
-                ? (this.spec.blocks.find((b) => b.id === this.blockCtx.blockId)?.kind ?? 'async')
+            clauseId: this.clauseCtx?.clauseId,
+            clauseKind: this.clauseCtx
+                ? (this.spec.clauses.find((b) => b.id === this.clauseCtx.clauseId)?.kind ?? 'gather')
                 : undefined,
-            blockChain: this.blockCtx?.chain,
+            clauseChain: this.clauseCtx?.chain,
             position: this.spec.nodes.length,
         });
         return this;
     }
     qualify(key) {
-        return this.blockCtx ? `${this.blockCtx.blockId}.${this.blockCtx.chain}.${key}` : key;
+        return this.clauseCtx ? `${this.clauseCtx.clauseId}.${this.clauseCtx.chain}.${key}` : key;
     }
-    /** Where a block declared here sits, so blocks nest exactly as nodes do. */
-    declareBlock(b) {
-        const block = {
+    /** Where a clause declared here sits, so clauses nest exactly as nodes do. */
+    declareClause(b) {
+        if (this.spec.nodes.some((n) => n.key === b.id) || this.spec.clauses.some((c) => c.id === b.id))
+            throw new Error(`clause id '${b.id}' is already a node key or clause id — nodes and clauses share one address space`);
+        const clause = {
             ...b,
-            blockId: this.blockCtx?.blockId,
-            blockChain: this.blockCtx?.chain,
+            clauseId: this.clauseCtx?.clauseId,
+            clauseChain: this.clauseCtx?.chain,
             position: this.spec.nodes.length,
         };
-        this.spec.blocks.push(block);
-        return block;
+        this.spec.clauses.push(clause);
+        return clause;
     }
-    /** Chains run concurrently and are awaited together (01 §4). */
-    async(id, opts, fn) {
+    /**
+     * A **gather** clause: several chains collected and awaited together (01 §4).
+     * `mode` is a setting — by the equivalence law (C8) parallel and sequential
+     * are unobservable, which is why the construct is named for what it does
+     * (gather) and not for how (was `.async()`).
+     */
+    gather(id, opts, fn) {
         const qualified = this.qualify(id);
-        this.declareBlock({
+        this.declareClause({
             id: qualified,
-            kind: 'async',
+            kind: 'gather',
             mode: opts.mode ?? 'parallel',
             chains: [],
         });
-        fn(new BlockBuilder(this.spec, qualified));
+        fn(new GatherBuilder(this.spec, qualified));
         return this;
     }
-    /** One contained chain, once per item of a list (01 §4). */
-    map(id, opts, fn) {
+    /** An **each** clause: one contained chain, once per item of a list (01 §4). Was `.map()`. */
+    each(id, opts, fn) {
         const qualified = this.qualify(id);
-        this.declareBlock({
+        this.declareClause({
             id: qualified,
-            kind: 'map',
+            kind: 'each',
             mode: opts.mode ?? 'parallel',
             over: typeof opts.over === 'function' ? this.resolve(opts.over) : opts.over,
             max: opts.max,
             chains: ['item'],
         });
-        fn(new ChainBuilder(this.spec, { blockId: qualified, chain: 'item' }));
+        fn(new ChainBuilder(this.spec, { clauseId: qualified, chain: 'item' }));
         return this;
     }
     /**
@@ -117,29 +143,29 @@ class ChainBuilder {
      * mandatory `max` (01 §4a).
      *
      * This is the construct that makes tool-calling expressible on the spine. It is **not
-     * a back-edge**: like `map`, the repetition lives in the block's declaration rather
+     * a back-edge**: like `each`, the repetition lives in the clause's declaration rather
      * than in an edge that points backwards, and the executor already knew how to run a
-     * chain more than once. A loop is a map whose iteration count comes from a predicate
+     * chain more than once. A loop is an each whose iteration count comes from a predicate
      * instead of a list length.
      *
      * Always sequential — each iteration depends on the last, so `mode` would be a lie.
      */
     loop(id, opts, fn) {
         const qualified = this.qualify(id);
-        const block = this.declareBlock({
+        const clause = this.declareClause({
             id: qualified,
             kind: 'loop',
             mode: 'sequential',
             max: opts.max,
             chains: ['item'],
         });
-        fn(new ChainBuilder(this.spec, { blockId: qualified, chain: 'item' }));
+        fn(new ChainBuilder(this.spec, { clauseId: qualified, chain: 'item' }));
         // Resolved *after* the body, so the predicate may name a node inside it — which
         // is the only place a predicate that ever changes can come from.
-        block.repeatWhile =
+        clause.repeatWhile =
             typeof opts.repeatWhile === 'function'
                 ? new ChainBuilder(this.spec, {
-                    blockId: qualified,
+                    clauseId: qualified,
                     chain: 'item',
                 }).resolvePublic(opts.repeatWhile)
                 : opts.repeatWhile;
@@ -150,29 +176,31 @@ class ChainBuilder {
         return this.resolve(arg);
     }
     /**
-     * Branches selected by declared predicates over a value on the spine
-     * (20 §10). Any subset fires — one, several, or none — plus an optional
-     * `otherwise` that fires exactly when nothing else did. The decision is
-     * *data a task computed* (the routed value); the routing is declaration;
-     * the receipt records every predicate's evaluation, fired and skipped
-     * alike. Not a back-edge and not code in the executor — the loop block's
-     * whole argument, applied to fan-out.
+     * A **junction** clause (was `.route()`): branches selected by declared
+     * predicates over a value on the spine (20 §10). Any subset fires — one,
+     * several, or none — plus an optional `otherwise` that fires exactly when
+     * nothing else did. The decision is *data a task computed* (the value the
+     * junction is `on`); the branching is declaration; the receipt records
+     * every predicate's evaluation, fired and skipped alike. Not a back-edge
+     * and not code in the executor — the loop clause's whole argument, applied
+     * to fan-out. 01 §4 amended: branching exists as a declared junction; no
+     * back-edges.
      *
      * Skipped branches publish `halt('not selected')` results marked
      * `fired: false`; the union's `ok`/`values` read the *fired* branches, so
      * downstream folds see what ran, in declaration order (13 §1).
      */
-    route(id, opts, fn) {
+    junction(id, opts, fn) {
         const qualified = this.qualify(id);
-        const block = this.declareBlock({
+        const clause = this.declareClause({
             id: qualified,
-            kind: 'route',
+            kind: 'junction',
             mode: opts.mode ?? 'parallel',
             on: typeof opts.on === 'function' ? this.resolve(opts.on) : opts.on,
-            routes: {},
+            branches: {},
             chains: [],
         });
-        fn(new RouteBuilder(this.spec, qualified, block));
+        fn(new JunctionBuilder(this.spec, qualified, clause));
         return this;
     }
     query(key, node) {
@@ -181,65 +209,65 @@ class ChainBuilder {
     task(key, node) {
         return this.add('task', key, node);
     }
-    provider(key, node) {
-        return this.add('provider', key, node);
+    oracle(key, node) {
+        return this.add('oracle', key, node);
     }
-    consume(key, node) {
-        return this.add('consumer', key, node);
+    outlet(key, node) {
+        return this.add('outlet', key, node);
     }
 }
-class BlockBuilder {
+class GatherBuilder {
     spec;
-    blockId;
-    constructor(spec, blockId) {
+    clauseId;
+    constructor(spec, clauseId) {
         this.spec = spec;
-        this.blockId = blockId;
+        this.clauseId = clauseId;
     }
     /**
-     * Each chain's nodes accumulate into the block's type, so by the time `.async()`
-     * returns, the spine's scope contains every node the block declared — under the
+     * Each chain's nodes accumulate into the clause's type, so by the time `.gather()`
+     * returns, the spine's scope contains every node the clause declared — under the
      * qualified key it actually has.
      */
     chain(name, fn) {
-        const block = this.spec.blocks.find((b) => b.id === this.blockId);
-        block.chains.push(name);
+        const clause = this.spec.clauses.find((b) => b.id === this.clauseId);
+        clause.chains.push(name);
         fn(new ChainBuilder(this.spec, {
-            blockId: this.blockId,
+            clauseId: this.clauseId,
             chain: name,
         }));
         return this;
     }
 }
 /**
- * The route block's own builder: every branch is a named chain *with a
+ * The junction clause's own builder: every branch is a named chain *with a
  * declared predicate*, and the two are stated together so a branch without a
  * condition cannot be written at all.
  */
-export class RouteBuilder {
+export class JunctionBuilder {
     spec;
-    blockId;
-    block;
-    constructor(spec, blockId, block) {
+    clauseId;
+    clause;
+    constructor(spec, clauseId, clause) {
         this.spec = spec;
-        this.blockId = blockId;
-        this.block = block;
+        this.clauseId = clauseId;
+        this.clause = clause;
     }
-    /** A branch that fires when its predicate matches the routed value. */
+    /** A branch that fires when its predicate matches the junction's value. */
     when(name, predicate, fn) {
-        this.block.chains.push(name);
-        this.block.routes[name] = { ...predicate };
+        this.clause.chains.push(name);
+        this.clause.branches[name] = { ...predicate };
         fn(new ChainBuilder(this.spec, {
-            blockId: this.blockId,
+            clauseId: this.clauseId,
             chain: name,
         }));
         return this;
     }
     /** The branch that fires exactly when nothing else did. At most one. */
     otherwise(name, fn) {
-        this.block.chains.push(name);
-        this.block.routes[name] = { default: true };
+        this.clause.chains.push(name);
+        this.clause.branches[name] = { default: true };
         fn(new ChainBuilder(this.spec, {
-            blockId: this.blockId,
+            clauseId: this.clauseId,
             chain: name,
         }));
         return this;
@@ -281,10 +309,18 @@ export class PresetBuilder {
     }
 }
 export class SpecBuilder extends ChainBuilder {
-    inputDone = false;
-    constructor(id, meta) {
-        assertSpecId(id);
-        const parsed = parseSpecId(id);
+    inletDone = false;
+    constructor(rawId, meta) {
+        assertSpecId(rawId);
+        const parsed = parseSpecId(rawId);
+        /**
+         * The stored id is the **slug**, versionless (`identity.ts`): a trailing
+         * `@N` is type-pin syntax `parseSpecId` tolerates, and until 2026-09-16
+         * it was kept verbatim here — so `demo:roll@1` contributed actions whose
+         * identity read `demo:roll@1#roll`, which the host's identity grammar
+         * (`<spec slug>#<key>`, no `@`) refuses. One spelling leaves the builder.
+         */
+        const id = rawId.replace(/@\d+$/, '');
         // The deep rename (24 §2): `mode` is accepted as a deprecated alias and
         // normalized here, so documents only ever carry `genre`.
         const normalized = { ...meta };
@@ -298,41 +334,41 @@ export class SpecBuilder extends ChainBuilder {
             delete t.mode;
             normalized.taxonomy = t;
         }
-        if (normalized.contributes?.triggers) {
-            normalized.contributes = {
-                ...normalized.contributes,
-                triggers: normalized.contributes.triggers.map((t) => {
-                    const out = { ...t };
-                    if (out.mode && !out.genre)
-                        out.genre = out.mode;
-                    delete out.mode;
-                    return out;
-                }),
-            };
+        // The action model (U5c): `triggers` folds into `actions`, every
+        // action's aliases fold with it, and a malformed declaration — an
+        // unknown venue kind, a slash name outside the spec's namespace, a
+        // bare-string-less label — is refused here, where the author is.
+        if (normalized.contributes) {
+            normalized.contributes = normalizeContributes(normalized.contributes);
+            const actions = normalized.contributes?.actions ?? [];
+            const faults = actions.flatMap((a) => actionFindings(a, id));
+            if (!faults.length)
+                faults.push(...slashCollisions(actions.map((a) => ({ ...a, specId: id }))));
+            if (faults.length)
+                throw new Error(`spec '${id}' declares an action core cannot offer:\n · ${faults.join('\n · ')}`);
         }
         super({
             id,
             meta: { ...normalized, owner: normalized.owner ?? parsed.owner },
-            subscribes: [],
             nodes: [],
-            blocks: [],
+            clauses: [],
             includes: [],
             presets: [],
         });
     }
     // The four node methods are re-declared here purely so the spine keeps offering
-    // .async(), .map(), .include() and .build(). Same implementation, narrower return.
+    // .gather(), .each(), .include() and .build(). Same implementation, narrower return.
     query(key, node) {
         return this.add('query', key, node);
     }
     task(key, node) {
         return this.add('task', key, node);
     }
-    provider(key, node) {
-        return this.add('provider', key, node);
+    oracle(key, node) {
+        return this.add('oracle', key, node);
     }
-    consume(key, node) {
-        return this.add('consumer', key, node);
+    outlet(key, node) {
+        return this.add('outlet', key, node);
     }
     /**
      * A named configuration the spec ships with (12 §3a). Declared **after** the nodes,
@@ -369,50 +405,47 @@ export class SpecBuilder extends ChainBuilder {
         this.spec.presets.push(built);
         return this;
     }
-    /** Seeds a default subscription. Admins manage the real ones (04 §4b). */
-    on(eventId) {
-        this.spec.subscribes.push(eventId);
-        return this;
-    }
     /**
-     * Exactly one Input, positionally first (01 §2). Enforced here rather than by
-     * the validator, so it is a throw at authoring time.
+     * Exactly one **inlet**, positionally first (01 §2). Enforced here rather than
+     * by the validator, so it is a throw at authoring time.
      *
      * The optional third argument is the **usage lock** (24 §4): the session
-     * event this input answers and the genre it serves. A session-event spec
+     * event this inlet answers and the genre it serves. A session-event spec
      * without it does not compile — required for now, and relaxing later
-     * (`genre: string[]`, `"*"`) is additive, never breaking.
+     * (`genre: string[]`, `"*"`) is additive, never breaking. **The lock is the
+     * only subscription** (R-4, 09-B B5): `.on()` and `subscribes` were deleted
+     * 2026-09-16 — nothing read them at dispatch.
      */
-    input(key, node, binding) {
-        if (this.inputDone)
-            throw new Error('a spec has exactly one Input (01 §2) — .input() may be called once');
+    inlet(key, node, binding) {
+        if (this.inletDone)
+            throw new Error('a spec has exactly one inlet (01 §2) — .inlet() may be called once');
         if (this.spec.nodes.length > 0)
-            throw new Error('the Input must be the first node (01 §2)');
+            throw new Error('the inlet must be the first node (01 §2)');
         if (binding) {
             if (!binding.event)
-                throw new Error('an input binding names its event — { genre, event } (24 §4)');
+                throw new Error('an inlet binding names its event — { genre, event } (24 §4)');
             if (!binding.genre)
                 throw new Error(`a spec answering '${binding.event}' must declare the genre it serves — ` +
                     `{ genre, event } (24 §4). Required for now; multi-genre opens later ` +
                     `without breaking this declaration.`);
             this.spec.input = { genre: genreIdOf(binding.genre), event: binding.event };
         }
-        this.inputDone = true;
-        return this.add('input', key, node);
+        this.inletDone = true;
+        return this.add('inlet', key, node);
     }
-    // Blocks are inherited from ChainBuilder so they nest; re-declared here only so the
+    // Clauses are inherited from ChainBuilder so they nest; re-declared here only so the
     // spine keeps offering .include() and .build() afterwards.
-    async(id, opts, fn) {
-        return super.async(id, opts, fn);
+    gather(id, opts, fn) {
+        return super.gather(id, opts, fn);
     }
-    map(id, opts, fn) {
-        return super.map(id, opts, fn);
+    each(id, opts, fn) {
+        return super.each(id, opts, fn);
     }
     loop(id, opts, fn) {
         return super.loop(id, opts, fn);
     }
-    route(id, opts, fn) {
-        return super.route(id, opts, fn);
+    junction(id, opts, fn) {
+        return super.junction(id, opts, fn);
     }
     /** Compile-time include — expanded here, so rows hold the flat chain (16 §3a). */
     include(key, fragment) {
@@ -421,15 +454,15 @@ export class SpecBuilder extends ChainBuilder {
             this.spec.nodes.push({
                 ...n,
                 key: `${key}.${n.key}`,
-                blockId: n.blockId ? `${key}.${n.blockId}` : undefined,
+                clauseId: n.clauseId ? `${key}.${n.clauseId}` : undefined,
                 position: this.spec.nodes.length,
             });
         }
-        for (const b of fragment.blocks) {
-            this.spec.blocks.push({
+        for (const b of fragment.clauses) {
+            this.spec.clauses.push({
                 ...b,
                 id: `${key}.${b.id}`,
-                blockId: b.blockId ? `${key}.${b.blockId}` : undefined,
+                clauseId: b.clauseId ? `${key}.${b.clauseId}` : undefined,
                 position: this.spec.nodes.length,
             });
         }
@@ -446,14 +479,13 @@ export function fragment(id, fn) {
     const inner = {
         id,
         meta: { version: '0.0.0' },
-        subscribes: [],
         nodes: [],
-        blocks: [],
+        clauses: [],
         includes: [],
         presets: [],
     };
     fn(new ChainBuilder(inner));
-    return { id, nodes: inner.nodes, blocks: inner.blocks };
+    return { id, nodes: inner.nodes, clauses: inner.clauses };
 }
 export { ChainBuilder };
 //# sourceMappingURL=builder.js.map

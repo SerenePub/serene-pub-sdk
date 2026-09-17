@@ -49,13 +49,15 @@ const twoConnections = {
 	activeConnection: { ...world.activeConnection },
 }
 
-const spec = () => makeSpec('demo:slot-address@1', { version: '1.0.0' })
+// Versionless, as a spec slug is by rule (`identity.ts`): the builder strips a
+// trailing `@N` anyway (W-C), so this spelling is the one the document carries.
+const spec = () => makeSpec('demo:slot-address', { version: '1.0.0' })
 
 const doc = () =>
 	publish(
 		spec()
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ connection: slot.connection() })),
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() })),
 	)
 
 /** Capture what the provider binding was handed as its connection. */
@@ -64,7 +66,7 @@ function capturing() {
 	return {
 		seen,
 		bindings: bindings({
-			'core:provider/generate-text@1': async (i: any, ctx: any) => {
+			'core:oracle/generate-text@1': async (i: any, ctx: any) => {
 				seen.connection = i.connection
 				ctx.reportSampling({}, [])
 				return ok({ main: 'x', text: 'x' })
@@ -87,7 +89,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 						slot: 'connection',
 						path: SLOT_VALUE,
 						value: 'picked-one',
-						scopeKind: 'instance',
+						scopeKind: 'preset',
 					},
 				],
 			},
@@ -130,7 +132,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 						slot: 'connection',
 						path: SLOT_VALUE,
 						value: 22, // a NUMBER, as the panel writes it
-						scopeKind: 'instance',
+						scopeKind: 'preset',
 					},
 				],
 			},
@@ -156,7 +158,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 							slot: 'connection',
 							path: legacy,
 							value: 'picked-one',
-							scopeKind: 'instance',
+							scopeKind: 'preset',
 						},
 					],
 				},
@@ -180,7 +182,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 	test('a sampling pick resolves at the same address', async () => {
 		const seenSampling: { values?: any } = {}
 		const b = bindings({
-			'core:provider/generate-text@1': async (i: any, ctx: any) => {
+			'core:oracle/generate-text@1': async (i: any, ctx: any) => {
 				seenSampling.values = i.sampling
 				ctx.reportSampling({}, [])
 				return ok({ main: 'x', text: 'x' })
@@ -189,8 +191,8 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 		await run(
 			publish(
 				spec()
-					.input('input', C.userMessage.v1())
-					.provider(
+					.inlet('input', C.userMessage.v1())
+					.oracle(
 						'generate',
 						C.generateText.v1({
 							connection: slot.connection(),
@@ -209,7 +211,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 							slot: 'sampling',
 							path: SLOT_VALUE,
 							value: 'cfg_precise',
-							scopeKind: 'instance',
+							scopeKind: 'preset',
 						},
 					],
 				},

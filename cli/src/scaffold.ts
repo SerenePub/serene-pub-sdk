@@ -13,7 +13,7 @@
  */
 import type { SpecDocument } from '@serene-pub/sdk'
 import type { AnnouncementDocument } from '@serene-pub/sdk'
-import { sessionEvents } from '@serene-pub/sdk'
+import { actionsOf, sessionEvents } from '@serene-pub/sdk'
 
 /** One registered node type's declared surface, as the scaffold needs it. */
 export interface TypeSurface {
@@ -59,7 +59,7 @@ function fieldLines(name: string, field: any): string[] {
  */
 export function scaffoldConfig(
 	doc: SpecDocument,
-	typeOf: (typeId: string, version: number) => TypeSurface | undefined,
+	typeOf: (definitionId: string, version: number) => TypeSurface | undefined,
 ): string {
 	const lines: string[] = []
 	lines.push(`// ${doc.id} @ ${doc.version} — the full configurable space.`)
@@ -73,11 +73,11 @@ export function scaffoldConfig(
 	lines.push(`export const myConfig = config(target, "mine", { label: "Mine" }, {`)
 
 	for (const node of doc.nodes) {
-		const surface = typeOf(node.typeId, node.typeVersion)
+		const surface = typeOf(node.definitionId, node.definitionVersion)
 		const slots = surface?.slots ?? {}
 		const slotNames = Object.keys(slots)
 		if (!slotNames.length) continue
-		lines.push(`\t// ── ${node.key}  (${node.typeId}@${node.typeVersion}) ──`)
+		lines.push(`\t// ── ${node.key}  (${node.definitionId}@${node.definitionVersion}) ──`)
 		lines.push(`\t// ${node.key}: {`)
 		for (const slotName of slotNames) {
 			const slot = slots[slotName]
@@ -165,9 +165,13 @@ export function scaffoldPreset(
 		.filter(([, d]) => (d as any)?.open)
 		.map(([e]) => e)
 	if (open.length) {
-		const actions = candidates(sessionEvents.sessionAction)
+		// By identity (`<spec>#<key>`): a preset curates declarations, not
+		// specs — every action each session-action pipeline contributes.
+		const actions = announcement.pipelines
+			.filter((p) => candidates(sessionEvents.sessionAction).includes(p.id))
+			.flatMap((p) => actionsOf(p).map((a) => `${p.id}#${a.key}`))
 		lines.push(
-			`\t// open slots (${open.join(', ')}): which actions come along.`,
+			`\t// open slots (${open.join(', ')}): which actions come along, by identity.`,
 		)
 		lines.push(
 			`\tactions: { include: [${actions.map((a) => JSON.stringify(a)).join(', ')}] },`,

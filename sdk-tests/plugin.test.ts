@@ -10,20 +10,20 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec } from '@serene-pub/sdk'
+import { spec, sessionEvents } from '@serene-pub/sdk'
 import { run, ok, halt } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
-import { pin, describeInput, describeTaskType, allTypes } from '@serene-pub/sdk'
+import { pin, describeInletDefinition, describeTaskDefinition, allDefinitions } from '@serene-pub/sdk'
 import { defineSettings, secret } from '@serene-pub/sdk'
 import {
 	defineExtension,
 	pipelineHook,
-	lifecycleHook,
-	eventHook,
+	lifecycleCallback,
+	eventListener,
 	component,
 	bindingsOf,
-	pipelineHooksOf,
+	handlersOf,
 	ExtensionError,
 } from '@serene-pub/sdk'
 import { compilePlugin, scanSource, renderFindings, cannotDo } from '@serene-pub/cli'
@@ -32,7 +32,7 @@ import {
 	checkDerivable,
 	checkUnique,
 	generateContracts,
-	parseTypeId,
+	parseDefinitionId,
 } from '@serene-pub/cli'
 import type { Golden } from '@serene-pub/sdk/testing'
 import {
@@ -64,11 +64,15 @@ const settings = defineSettings({
 })
 
 const dicePipeline = spec('chariot.dice-tray:roll-turn', { version: '1.2.0' })
-	.on('core:event/message-created@1')
-	.input('input', C.messageCreated.v1())
+	// The inlet lock is the pipeline's one subscription (R-4): answering the
+	// standard genre's primary turn is what the manifest lists as a permission.
+	.inlet('input', C.userMessage.v1(), {
+		genre: 'core:genre/chat',
+		event: sessionEvents.messageRespond,
+	})
 	.task('roll', rollDice.v1({ notation: '1d20' }))
-	.provider('narrate', C.generateText.v1({ connection: slot.connection() }))
-	.consume('save', ($: any) => C.createMessage.v1({ text: $.narrate.text }))
+	.oracle('narrate', C.generateText.v1({ connection: slot.connection() }))
+	.outlet('save', ($: any) => C.createMessage.v1({ text: $.narrate.text }))
 	.preset('dramatic', { label: 'Dramatic', default: true }, (p) =>
 		p.params('roll', { notation: '2d20' }),
 	)
@@ -88,7 +92,7 @@ const dicePlugin = defineExtension({
 		// (input, ctx) too — the surface is argument 1 on every hook there is,
 		// lifecycle included. Core sends no envelope for a moment you already
 		// registered against, so argument 0 goes unread.
-		lifecycleHook('startup', async (_input, ctx) => {
+		lifecycleCallback('startup', async (_input, ctx) => {
 			// The storage surface: queryable, and it reports what it cost.
 			const page = await ctx.storage.query({ prefix: 'stats/', limit: 20 })
 			const { availableBytes } = await ctx.storage.usage()
@@ -100,7 +104,7 @@ const dicePlugin = defineExtension({
 		}),
 		// (input, ctx) — the occurrence arrives as argument 0, and `input.event`
 		// says which one, so one hook can answer several subscriptions.
-		eventHook('core:event/session-created@1', async (input, ctx) => {
+		eventListener('core:event/session-created@1', async (input, ctx) => {
 			const wrote = await ctx.storage.put(`seen/${input.event}`, true)
 			// A write that would exceed quota comes back `err` with the usage
 			// figures, rather than throwing or silently dropping.
@@ -110,7 +114,7 @@ const dicePlugin = defineExtension({
 			}
 			return ok(null)
 		}),
-		lifecycleHook('uninstall', async (_input, ctx) => {
+		lifecycleCallback('uninstall', async (_input, ctx) => {
 			// Best effort, for the state core cannot retire on our behalf.
 			ctx.log('info', 'dice plugin removed')
 			return ok(null)
@@ -132,7 +136,7 @@ const dicePlugin = defineExtension({
 describe('96 · defineExtension', () => {
 	test('it ties hooks, settings, components and pipelines into one declaration', () => {
 		assert.equal(dicePlugin.slug, 'chariot.dice-tray')
-		assert.equal(pipelineHooksOf(dicePlugin).length, 1)
+		assert.equal(handlersOf(dicePlugin).length, 1)
 		assert.equal(Object.keys(bindingsOf(dicePlugin))[0], 'chariot.dice-tray:roll@1')
 	})
 
@@ -163,7 +167,7 @@ describe('96 · defineExtension', () => {
 		// drift is only discovered by a user.
 		const doc = publish(
 			spec('chariot.dice-tray:t', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.task('roll', rollDice.v1({ notation: '1d6' })),
 		)
 		const r = await run(doc, {
@@ -180,12 +184,12 @@ describe('96 · defineExtension', () => {
 // ── 97 · The packager: static half ─────────────────────────────────────────
 describe('97 · the manifest is extracted without running the code', () => {
 	const source = `
-		import { defineExtension, pipelineHook, eventHook } from '@serene-pub/sdk'
+		import { defineExtension, pipelineHook, eventListener } from '@serene-pub/sdk'
 		export default defineExtension({
 			slug: 'chariot.dice-tray',
 			hooks: [
 				pipelineHook(rollDice, async (i, ctx) => { ctx.readOwnRows('x'); return ok({}) }),
-				eventHook('core:event/session-created@1', async (s) => { s.writeOwnRows('k', 1); return ok(null) }),
+				eventListener('core:event/session-created@1', async (s) => { s.writeOwnRows('k', 1); return ok(null) }),
 			],
 		})
 	`
@@ -198,8 +202,8 @@ describe('97 · the manifest is extracted without running the code', () => {
 	test('a computed declaration is an error, not a silent omission', () => {
 		const dynamic = `
 			const which = pickHook()
-			eventHook(EVENTS[i], which)
-			eventHook(isDev ? 'a' : 'b', h)
+			eventListener(EVENTS[i], which)
+			eventListener(isDev ? 'a' : 'b', h)
 		`
 		const scan = scanSource([{ path: 'bad.ts', text: dynamic }])
 		const errs = scan.findings.filter((f) => f.code === 'E_DYNAMIC_DECLARATION')
@@ -219,12 +223,12 @@ describe('97 · the manifest is extracted without running the code', () => {
 
 	test('strings and comments cannot fool the scanner', () => {
 		const tricky = `
-			// eventHook('commented-out@1', h)
-			const s = "eventHook('in-a-string@1', h)"
-			eventHook('core:event/session-created@1', h)
+			// eventListener('commented-out@1', h)
+			const s = "eventListener('in-a-string@1', h)"
+			eventListener('core:event/session-created@1', h)
 		`
 		const scan = scanSource([{ path: 'tricky.ts', text: tricky }])
-		assert.equal(scan.declared.eventHooks, 1)
+		assert.equal(scan.declared.eventListeners, 1)
 	})
 })
 
@@ -236,9 +240,9 @@ describe('98 · compilePlugin', () => {
 			text: `
 				export default defineExtension({ slug: 'chariot.dice-tray' })
 				pipelineHook(rollDice, async (i, ctx) => ok({}))
-				lifecycleHook('startup', async (s) => { await s.storage.query({ prefix: 'stats/' }); return ok(null) })
-				lifecycleHook('uninstall', async (s) => { s.log('info', 'removed'); return ok(null) })
-				eventHook('core:event/session-created@1', async (s) => { await s.storage.put('seen', true); return ok(null) })
+				lifecycleCallback('startup', async (s) => { await s.storage.query({ prefix: 'stats/' }); return ok(null) })
+				lifecycleCallback('uninstall', async (s) => { s.log('info', 'removed'); return ok(null) })
+				eventListener('core:event/session-created@1', async (s) => { await s.storage.put('seen', true); return ok(null) })
 				component({ surface: 'core:surface/chat-message@1', slug: 'dice-result' })
 			`,
 		},
@@ -248,9 +252,9 @@ describe('98 · compilePlugin', () => {
 		const r = compilePlugin({ sources, extension: dicePlugin })
 		assert.ok(r.ok, renderFindings(r.findings))
 		assert.equal(r.documents.length, 1)
-		assert.equal(r.manifest!.types[0]!.id, 'chariot.dice-tray:roll@1')
+		assert.equal(r.manifest!.nodeDefinitions[0]!.id, 'chariot.dice-tray:roll@1')
 		assert.equal(
-			r.manifest!.types[0]!.binding,
+			r.manifest!.nodeDefinitions[0]!.binding,
 			'roll',
 			'the binding name is derived from the id',
 		)
@@ -265,9 +269,40 @@ describe('98 · compilePlugin', () => {
 	})
 
 	test('a pipeline subscription is a permission, because it is a side effect a user consents to', () => {
+		// The pipeline's inlet lock and the listener's event both surface — since
+		// R-4 the lock IS the pipeline's subscription (`.on()` is gone).
 		const r = compilePlugin({ sources, extension: dicePlugin })
-		assert.ok(r.manifest!.permissions.includes('event:core:event/message-created@1'))
+		assert.ok(r.manifest!.permissions.includes('event:core:event/message-respond@1'))
 		assert.ok(r.manifest!.permissions.includes('event:core:event/session-created@1'))
+	})
+
+	test('a locked pipeline alone yields `event:<inlet lock>` — no listener needed (R-4)', () => {
+		// Before R-4 only `.on()` subscriptions surfaced as permissions; a
+		// pipeline that ran on every primary turn listed nothing. The lock IS
+		// the subscription now, so a package with no hooks at all still says
+		// what it runs in response to (plans/30 §U3 review, W7).
+		const lockedOnly = defineExtension({
+			slug: 'chariot.dice-tray',
+			name: 'Dice Tray',
+			version: '1.2.0',
+			hooks: [],
+			pipelines: [dicePipeline],
+		})
+		const r = compilePlugin({
+			sources: [
+				{ path: 'index.ts', text: `export default defineExtension({ slug: 'chariot.dice-tray' })` },
+			],
+			extension: lockedOnly,
+		})
+		assert.ok(r.ok, renderFindings(r.findings))
+		assert.deepEqual(
+			r.manifest!.permissions.filter((p) => p.startsWith('event:')),
+			['event:core:event/message-respond@1'],
+		)
+		assert.equal(r.manifest!.hooks.eventListeners.length, 0)
+		// …and the consent screen's negative list agrees: it CAN run in
+		// response to something you do.
+		assert.ok(!cannotDo(r.manifest!).includes('cannot run in response to anything you do'))
 	})
 
 	test('a hook registered conditionally is caught by cross-checking the two halves', () => {
@@ -304,8 +339,8 @@ describe('98b · chat modes must be titled, and should be described', () => {
 	test('a shape-bearing input with no title is refused at declaration, before the id is claimed', () => {
 		assert.throws(
 			() =>
-				describeInput({
-					id: 'chariot.crawl:input/crawl@1',
+				describeInletDefinition({
+					id: 'chariot.crawl:inlet/crawl@1',
 					ports: { out: { main: S.json } },
 					sessionShape: { personas: { min: 1, max: 1 }, composer: 'text' },
 				}),
@@ -313,28 +348,28 @@ describe('98b · chat modes must be titled, and should be described', () => {
 		)
 		// The refusal came before the id was claimed, so fixing the declaration
 		// and retrying works — an author is not locked out by their own typo.
-		const fixed = describeInput({
-			id: 'chariot.crawl:input/crawl@1',
+		const fixed = describeInletDefinition({
+			id: 'chariot.crawl:inlet/crawl@1',
 			i18n: { name: { en: 'Dungeon Crawl' } },
 			ports: { out: { main: S.json } },
 			sessionShape: { personas: { min: 1, max: 1 }, composer: 'text' },
 		})
-		assert.equal(fixed.kind, 'input')
+		assert.equal(fixed.kind, 'inlet')
 	})
 
-	test('an input without a sessionShape is not a mode, and needs no title', () => {
-		// messageCreated in core's own contracts is the precedent: a plumbing
-		// input with no i18n at all.
-		const plumbing = describeInput({
-			id: 'chariot.crawl:input/internal-tick@1',
+	test('an inlet without a sessionShape is not a mode, and needs no title', () => {
+		// summarizeRequest in core's own contracts is the precedent: a plumbing
+		// inlet with no sessionShape and no title.
+		const plumbing = describeInletDefinition({
+			id: 'chariot.crawl:inlet/internal-tick@1',
 			ports: { out: { main: S.json } },
 		})
-		assert.equal(plumbing.kind, 'input')
+		assert.equal(plumbing.kind, 'inlet')
 	})
 
 	test('the packager warns when a mode ships without a description', () => {
 		// The type registered in the first test: titled, undescribed.
-		const crawl = allTypes().find((t) => t.id === 'chariot.crawl:input/crawl@1')!
+		const crawl = allDefinitions().find((t) => t.id === 'chariot.crawl:inlet/crawl@1')!
 		const ext = defineExtension({
 			slug: 'chariot.crawl',
 			name: 'Dungeon Crawl',
@@ -367,13 +402,13 @@ describe('98b · chat modes must be titled, and should be described', () => {
 			version: '1.0.0',
 			hooks: [
 				{
-					__decl: 'pipeline-hook',
+					__decl: 'handler',
 					visibility: 'private',
 					runtime: 'process',
 					handler: async () => ok({}),
 					type: {
-						id: 'chariot.relic:input/expedition@1',
-						kind: 'input',
+						id: 'chariot.relic:inlet/expedition@1',
+						kind: 'inlet',
 						ports: { out: { main: 'core:shape/json@1' } },
 						sessionShape: { composer: 'none' },
 					},
@@ -399,8 +434,8 @@ describe('98b · chat modes must be titled, and should be described', () => {
 	})
 
 	test('a titled, described mode compiles with nothing to say about its card', () => {
-		const heist = describeInput({
-			id: 'chariot.crawl:input/heist@1',
+		const heist = describeInletDefinition({
+			id: 'chariot.crawl:inlet/heist@1',
 			i18n: {
 				name: { en: 'Heist' },
 				description: { en: 'One persona, one plan. No lorebook, no cast.' },
@@ -467,9 +502,9 @@ describe('99 · contracts generation', () => {
 	})
 
 	test('the derivation is the camelCase of the id’s name segment, nothing else', () => {
-		assert.equal(bindingNameFor('core:provider/generate-text@1'), 'generateText')
+		assert.equal(bindingNameFor('core:oracle/generate-text@1'), 'generateText')
 		assert.equal(bindingNameFor('chariot.dice-tray:roll@1'), 'roll')
-		assert.deepEqual(parseTypeId('core:query/session-history@2'), {
+		assert.deepEqual(parseDefinitionId('core:query/session-history@2'), {
 			ns: 'core',
 			kind: 'query',
 			name: 'session-history',
@@ -478,7 +513,7 @@ describe('99 · contracts generation', () => {
 	})
 
 	test('generated output is readable TypeScript with the pin form at the call site', () => {
-		const out = generateContracts(allTypes().slice(0, 3), { release: '0.6.0' })
+		const out = generateContracts(allDefinitions().slice(0, 3), { release: '0.6.0' })
 		assert.match(out, /GENERATED — do not edit/)
 		assert.match(out, /export const \w+ = pin\(/)
 		assert.match(out, /pinned as \w+\.v\d+\(…\)/)
@@ -490,9 +525,9 @@ describe('100 · goldens', () => {
 	const doc = () =>
 		publish(
 			spec('chariot.dice-tray:golden', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-				.provider('generate', C.generateText.v1({ connection: slot.connection() })),
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() })),
 		)
 
 	test('a golden records decisions and payloads, and excludes timings', async () => {
@@ -539,7 +574,7 @@ describe('100 · goldens', () => {
 			specVersion: '1.0.0',
 			seed: 'seed:g',
 			outcome: 'ok',
-			nodes: [{ nodeKey: 'a', kind: 'provider', result: 'ok', output: { text } }],
+			nodes: [{ nodeKey: 'a', kind: 'oracle', result: 'ok', output: { text } }],
 			emitted: [],
 		})
 		const d = diffGolden(g('one'), g('two'))
@@ -602,8 +637,8 @@ describe('101 · binding conformance', () => {
 test('102 · assertEquivalent gives an author the equivalence law in one call', async () => {
 	const doc = publish(
 		spec('chariot.dice-tray:eq', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.async('gather', { mode: 'parallel' }, (b) =>
+			.inlet('input', C.userMessage.v1())
+			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('a', (c) =>
 						c.query('history', ($) =>
@@ -630,7 +665,7 @@ describe('103 · serene-pub CLI', () => {
 	test('`check` reports what core would refuse and exits non-zero', async () => {
 		await write(
 			'src/index.ts',
-			`eventHook(EVENTS[i], h)\nasync function f() { await fetch('https://x') }`,
+			`eventListener(EVENTS[i], h)\nasync function f() { await fetch('https://x') }`,
 		)
 		const code = await main(['check', dir])
 		assert.equal(code, 1, 'a plugin core would refuse must not exit 0 — CI is the whole point')

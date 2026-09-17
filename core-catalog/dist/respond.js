@@ -162,7 +162,7 @@ export const RESPOND_SPEC_ID = 'core:spec/respond';
 // vector space holding one vector per **name** (an entry's title, the aliases
 // its body declares, the bound character's names), queried with the descriptive
 // references the scene actually used. `core:query/mention-spans@1` finds them,
-// `core:provider/embed-text@1` embeds them, and `core:query/entity-link@1`
+// `core:oracle/embed-text@1` embeds them, and `core:query/entity-link@1`
 // matches them to names — so *"the captain"* reaches Captain Vell and *"the
 // order"* reaches The Ashguard Riders. Neither shares a character with its
 // target, so keys, trigrams and the gazetteer all miss them, and they are the
@@ -219,7 +219,7 @@ export const RESPOND_SPEC_ID = 'core:spec/respond';
 // Under the same version freeze, and therefore under the same terms as the
 // paragraph above: migration `0106` deletes this pin's published
 // `pipeline_spec_versions` row so boot republishes it, and re-projects
-// `core:task/process-messages@1` and `core:input/user-message@1`, whose port
+// `core:task/process-messages@1` and `core:inlet/user-message@1`, whose port
 // declarations moved. `specHashes.test.ts` and `registryHashes.test.ts` record
 // the moved hashes in the same change. Without the migration the edit reaches
 // no install that has already booted and is invisible on a fresh test database.
@@ -275,6 +275,18 @@ export const RESPOND_SPEC_ID = 'core:spec/respond';
 // stored `12`s `reconcileConfigs` back-filled from the old declaration.
 // `specHashes.test.ts` and `registryHashes.test.ts` record the moved hashes in
 // the same change; no half is optional.
+//
+// ⚠ **1.20.0, edited in place a FIFTH time — content-addressed now, so no
+// migration deletes the pin: boot publishes the changed document under its new
+// hash and moves the pointer (ruling 2026-09-10), and `specHashes.test.ts`
+// records the move.** Weights to the source (R-7 P5, 2026-09-16, plans/30
+// U3b): the `lore` concat takes `$.gather.history.read.band` first — the
+// conversation's **band intent**, alone — so the ranker reserves the
+// transcript's slice of the window from `session-history`'s own declaration
+// rather than from a `share` map on itself. The three lore lanes and the
+// ranked relationship read publish their intents at the head of `main`, which
+// this document already wired, so nothing else here moves. Same numbers, same
+// prompt; the parity corpus holds it. Migration 0135 moves the stored maps.
 export const RESPOND_VERSION = '1.20.0';
 /**
  * Core's answer-a-message pipeline.
@@ -289,17 +301,31 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     version: RESPOND_VERSION,
     /** Catalogue claims (23 §2): the standard chat's main turn. */
     taxonomy: {
-        zone: 'session',
         role: 'primary',
         genre: chatGenre.id,
     },
 })
-    .on('core:event/message-created@1')
     /** The usage lock (24 §4): this spec answers Chat's primary turn. */
-    .input('input', C.userMessage.v1(), {
+    .inlet('input', C.userMessage.v1(), {
     genre: chatGenre,
     event: sessionEvents.messageRespond,
 })
+    /**
+     * The reply row, created by the pipeline that fills it (R-17).
+     *
+     * Straight after the inlet, before anything costs a token: this is
+     * the placeholder the composer shows while the turn runs, the run's
+     * live row the oracle's stream lands in, and the row Stop finalises
+     * with whatever had arrived. `save` at the end updates it; the pair
+     * is one primary row. The trigger inserts nothing any more — a
+     * regenerate, swipe or continue hands its existing row in on
+     * `messageId` and this node claims it instead of inserting.
+     */
+    .outlet('placeholder', ($) => C.createMessage.v1({
+    generating: true,
+    characterId: $.input.characterId,
+    row: $.input.messageId,
+}))
     /**
      * The four reads, run together.
      *
@@ -319,7 +345,7 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
      * and may not suit a rate-limited remote one, and the person who
      * knows which is not the person who wrote this.
      */
-    .async('gather', { mode: 'parallel' }, (b) => b
+    .gather('gather', { mode: 'parallel' }, (b) => b
     // ⚠ `params` is wired here for the same reason the three
     // lore lanes below wire it, and it was missing for longer:
     // a slot absent from the node's config is never resolved, so
@@ -352,7 +378,10 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
 })))
     .chain('characterLore', (c) => c.query('read', ($) => C.characterLore.v1({
     scope: $.input.sessionScope,
-    params: slot.params(),
+    // The settings live on the world-lore lane (R-7 P2, one owner per
+    // setting per spec): the three lanes declare the same seven knobs,
+    // and a person tuning them tunes them once.
+    params: slot.params({ node: 'gather.worldLore.read' }),
 })))
     // The third lane. It was missing from 1.8.0 to 1.10.0 and
     // history was absent from every prompt in that window —
@@ -360,7 +389,10 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     // two lanes dropped a third source without failing.
     .chain('historyEntries', (c) => c.query('read', ($) => C.historyEntries.v1({
     scope: $.input.sessionScope,
-    params: slot.params(),
+    // The settings live on the world-lore lane (R-7 P2, one owner per
+    // setting per spec): the three lanes declare the same seven knobs,
+    // and a person tuning them tunes them once.
+    params: slot.params({ node: 'gather.worldLore.read' }),
 })))
     // The third mechanism (design §13.5). Same scope, same shared
     // read of the lorebook — what differs is the index it
@@ -483,7 +515,7 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
      * an unavailable mechanism subtracts a signal, it never disables a
      * path.
      */
-    .async('semantic', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
+    .gather('semantic', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
     // One window, not two. The RAG spec embeds a current and
     // a recent window and fuses their ranks, because it is
     // producing an *ordering*; this mechanism produces a score
@@ -496,7 +528,7 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     cast: $.gather.cast.read.cast,
     params: slot.params(),
 }))
-    .provider('embed', ($) => C.embedText.v1({
+    .oracle('embed', ($) => C.embedText.v1({
     texts: $.semantic.arm.queries.current,
     params: slot.params(),
 }))
@@ -507,13 +539,17 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
 }))))
     /**
      * Who speaks (19 §5). The trigger's pick arrives on
-     * `input.characterId` and always wins; the strategy decides only
-     * when the trigger did not. `turn-manual` never decides — see the
-     * 1.11.0 note for why that is today's correct pin.
+     * `input.speaker` — a participant reference (R-18 (3)), so a
+     * genre's envoy arrives the same way a library character does —
+     * and always wins; the strategy decides only when the trigger did
+     * not. `characterId` rides beside it one release longer for the
+     * readers that still take the bare id. `turn-manual` never decides
+     * — see the 1.11.0 note for why that is today's correct pin.
      */
     .task('speaker', ($) => C.turnManual.v1({
     cast: $.gather.cast.read.cast,
     messages: $.gather.history.read.messages,
+    speaker: $.input.speaker,
     characterId: $.input.characterId,
 }))
     /**
@@ -528,6 +564,10 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
      */
     .task('contextBudget', ($) => C.contextBudget.v1({
     sampling: slot.samplingOf('generate'),
+    // The other half of the same pair, for the model's own
+    // window (0114). Shared for the same reason, and read by the
+    // one computation dispatch sizes the request with (R-8).
+    connection: slot.connectionOf('generate'),
     params: slot.params(),
 }))
     // All three lanes reach the ranker, and the count is the point.
@@ -548,6 +588,18 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     // bands are for.
     .task('lore', ($) => C.concatCandidates.v1({
     sources: [
+        /**
+         * The conversation's **band intent** and nothing else
+         * (R-7 P5): `session-history` ranks no candidates — the
+         * transcript is built from `lines` — but its `share` is
+         * what reserves the transcript's slice of the window
+         * before the lore sources divide the rest. Each lore
+         * lane's own intent rides at the head of its `main`;
+         * this one needs a port of its own because `main`
+         * carries message rows. First, so a reader of the
+         * receipt sees the bands before the items.
+         */
+        $.gather.history.read.band,
         $.gather.worldLore.read.main,
         $.gather.characterLore.read.main,
         $.gather.historyEntries.read.main,
@@ -590,14 +642,16 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
      * `embed` Provider and show a reader a list of mention strings
      * instead of a prompt.
      */
-    .async('names', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
+    .gather('names', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
     .query('mentions', ($) => C.mentionSpans.v1({
     scope: $.input.sessionScope,
     params: slot.params(),
 }))
-    .provider('embed', ($) => C.embedText.v1({
+    .oracle('embed', ($) => C.embedText.v1({
     texts: $.names.arm.mentions.texts,
-    params: slot.params(),
+    // One `enabled` switch for both embed nodes (R-7 P2): the
+    // semantic mechanism's embed owns it, this one reads it.
+    params: slot.params({ node: 'semantic.arm.embed' }),
 }))
     .query('link', ($) => C.entityLink.v1({
     scope: $.input.sessionScope,
@@ -778,7 +832,7 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     // the receipt reported the format that was NOT used.
     connection: slot.connectionOf('generate'),
 }))
-    .provider('generate', ($) => C.generateText.v1({
+    .oracle('generate', ($) => C.generateText.v1({
     context: $.prompt.context,
     // The stop-string exclusion follows the speaker node's
     // output — the payload-wins seam in the host (19 §5).
@@ -816,7 +870,7 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     // ⚠ **The third slot this node owns, and the last half of
     // the stop-sequence ruling (2026-09-10).**
     //
-    // `core:provider/generate-text@1` declares
+    // `core:oracle/generate-text@1` declares
     // `params.stopSequences` — "sequences that end the reply the
     // moment the model writes one" — the binding reads
     // `input?.params?.stopSequences`, `DispatchRequest` carries
@@ -832,10 +886,19 @@ export const respondSpec = () => compile(spec(RESPOND_SPEC_ID, {
     // install that never typed one still resolves `undefined` and
     // sends exactly the stops it always did.
     params: slot.params(),
-    // Shared too, so the panel does not offer a third copy of
-    // the same authored text on the sending node.
-    prompts: slot.prompts({ node: 'context' }),
+    // No `prompts` here: `core:oracle/generate-text@1` declares
+    // no such slot any more (culled 2026-09-16, R-12) — the
+    // instructions travel inside `context`, from `prompt`.
 }))
-    .consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+    /**
+     * The reply row, filled. The placeholder above created it; this
+     * ends its generation with the text and the trace. One row, one
+     * run — see `placeholder`.
+     */
+    .outlet('save', ($) => C.updateMessage.v1({
+    target: $.placeholder.messageId,
+    text: $.generate.text,
+    thinking: $.generate.thinking,
+}))
     .build());
 //# sourceMappingURL=respond.js.map

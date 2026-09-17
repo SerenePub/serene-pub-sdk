@@ -39,33 +39,33 @@ export const generateImageSpec = () =>
 			version: GENERATE_IMAGE_VERSION,
 			/** A person-invoked action on chats (23 §2), same as narrate. */
 			taxonomy: {
-				zone: 'session',
 				role: 'action',
 				genre: chatGenre.id,
 			},
 			/**
-			 * The contributed trigger (19 §4): offers the `generate-image`
-			 * function on standard-mode sessions as a button. Same namespace as
-			 * the genre owner, so it lands as a companion — present by default —
-			 * and any `kind: 'button'` trigger renders itself in the composer's
-			 * extra controls with no client code.
+			 * The contributed action (19 §4; R-15, U5c): offers the
+			 * `generate-image` function on standard-mode sessions from the
+			 * composer's primary row (`quick`) and as `/generate-image`. Same
+			 * namespace as the genre owner, so it lands as a companion — present
+			 * by default — and renders itself with no client code.
 			 */
 			contributes: {
-				triggers: [
+				actions: [
 					{
+						key: 'generate-image',
 						genre: chatGenre.id,
 						function: 'generate-image',
-						kind: 'button',
+						venue: { kind: 'composer' },
+						quick: true,
 						icon: 'image',
-						i18n: { en: 'Image' },
+						label: { en: 'Image' },
 					},
 				],
 			},
 		})
 			// Manually triggered — a person presses the button; no message drives it.
-			.on('core:event/ui-action@1')
 			/** The usage lock (24 §4): a person-invoked action on Chat sessions. */
-			.input('input', C.userMessage.v1(), {
+			.inlet('input', C.userMessage.v1(), {
 				genre: chatGenre,
 				event: sessionEvents.sessionAction,
 			})
@@ -75,7 +75,7 @@ export const generateImageSpec = () =>
 			 * node's own parameters are all things an admin edits in the panel —
 			 * the spec says WHICH slots exist, never what is in them.
 			 */
-			.provider('render', ($) =>
+			.oracle('render', ($) =>
 				C.generateImage.v1({
 					prompt: $.input.text,
 					connection: slot.connection(),
@@ -89,7 +89,7 @@ export const generateImageSpec = () =>
 			 * created inside a run cannot be the target of a later node, so
 			 * posting an image as a NEW message has to be a single write.
 			 */
-			.consume('post', ($) =>
+			.outlet('post', ($) =>
 				C.createMessage.v1({
 					text: $.render.caption,
 					media: $.render.media,

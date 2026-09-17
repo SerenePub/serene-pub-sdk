@@ -7,23 +7,24 @@
  * Edges are derived here, 1:1 with pipeline_edges rows: the linear chain carries a
  * default edge, and every $ref becomes an explicit one.
  */
-import { collectDataRefs, isSlotRef } from './refs.js';
-import { getType } from './descriptors.js';
+import { collectDataRefs, envoyConfigKey, isEnvoyConfigKey, isSlotRef } from './refs.js';
+import { getDefinition } from './descriptors.js';
+import { getGenre } from './genres.js';
 import { requiredConnections } from './connections.js';
 import { isStreaming } from './shapes.js';
 import { canonicalize, contentHash } from './hash.js';
-/** Nodes that participate in the top-level sequential spine (not inside a block). */
-const spineOf = (nodes) => nodes.filter((n) => !n.blockId);
+/** Nodes that participate in the top-level sequential spine (not inside a clause). */
+const spineOf = (nodes) => nodes.filter((n) => !n.clauseId);
 export function compile(built) {
     const nodes = built.nodes.map((n) => ({
         key: n.key,
         kind: n.kind,
-        typeId: n.typeId,
-        typeVersion: n.typeVersion,
+        definitionId: n.definitionId,
+        definitionVersion: n.definitionVersion,
         config: n.config,
-        blockId: n.blockId,
-        blockKind: n.blockKind,
-        blockChain: n.blockChain,
+        clauseId: n.clauseId,
+        clauseKind: n.clauseKind,
+        clauseChain: n.clauseChain,
         position: n.position,
     }));
     const edges = [];
@@ -32,7 +33,7 @@ export function compile(built) {
         for (const { path, ref } of collectDataRefs(n.config)) {
             const upstream = built.nodes.find((x) => x.key === ref.node);
             const outShape = upstream
-                ? getType(`${upstream.typeId}@${upstream.typeVersion}`)?.ports.out?.[ref.port]
+                ? getDefinition(`${upstream.definitionId}@${upstream.definitionVersion}`)?.ports.out?.[ref.port]
                 : undefined;
             // Whether an edge streams is decided here, at publish — so it is readable
             // off the spec rather than discovered by running it (01 §11).
@@ -68,9 +69,38 @@ export function compile(built) {
             if (!isSlotRef(v))
                 continue;
             const ref = v;
-            if (ref.resolveDownstreamProvider) {
-                const target = resolveDownstreamProvider(built, n.key);
+            if (ref.resolveDownstreamOracle) {
+                const target = resolveDownstreamOracle(built, n.key);
                 resolved[k] = target;
+            }
+            else if (ref.ofEnvoy) {
+                // An envoy's config (R-18 (2)): the genre the spec serves must
+                // declare the key. Checked against the registry when the genre
+                // is one this build declares; a genre this build has never
+                // seen (a plugin's, declared elsewhere) cannot be checked here.
+                // The host checks it where the document lands as rows
+                // (`saveDocument`, U5g review W4): the genre's declaration and
+                // each action's envoy are re-run through `envoysFindings` /
+                // `envoyFindings`, and a reference to a key the genre's
+                // published declaration does not carry is refused there.
+                // ⏳ Today no plugin document reaches `saveDocument` — the app
+                // publishes the core catalog only — so the host's check is
+                // the boundary a plugin publish path will meet, not one any
+                // plugin has met. The address is the synthetic node key the
+                // executor resolves config for.
+                const genreId = built.input?.genre;
+                const known = genreId ? getGenre(genreId) : undefined;
+                if (known && !known.envoys?.some((e) => e.key === ref.ofEnvoy))
+                    throw new Error(`node '${n.key}' references the prompts of envoy '${ref.ofEnvoy}', which ` +
+                        `'${genreId}' does not declare` +
+                        (known.envoys?.length
+                            ? ` — it declares ${known.envoys.map((e) => `'${e.key}'`).join(', ')}`
+                            : ' — it declares no envoys'));
+                if (!genreId)
+                    throw new Error(`node '${n.key}' references the prompts of envoy '${ref.ofEnvoy}', but the spec ` +
+                        `serves no genre — an envoy is a genre's (or an action's), and the inlet lock ` +
+                        `names which (24 §4)`);
+                resolved[k] = envoyConfigKey(ref.ofEnvoy);
             }
             else if (ref.ofNode) {
                 if (!built.nodes.some((x) => x.key === ref.ofNode)) {
@@ -90,33 +120,32 @@ export function compile(built) {
         input: built.input,
         contributes: built.meta.contributes,
         taxonomy: built.meta.taxonomy,
-        subscribes: built.subscribes,
         includes: built.includes,
         presets: built.presets,
         nodes,
         edges,
-        blocks: built.blocks,
+        clauses: built.clauses,
     };
 }
 /**
- * Follow the spine forward from `fromKey` to the first Provider. Linearity is what
+ * Follow the spine forward from `fromKey` to the first oracle. Linearity is what
  * makes this well-defined (F25). Ambiguity or absence is a publish error that names
  * the candidates — the teaching-error pattern (15 §1.3).
  */
-export function resolveDownstreamProvider(built, fromKey) {
+export function resolveDownstreamOracle(built, fromKey) {
     const ordered = built.nodes.slice().sort((a, b) => a.position - b.position);
     const start = ordered.findIndex((n) => n.key === fromKey);
-    const after = ordered.slice(start + 1).filter((n) => n.kind === 'provider');
-    // Providers inside a block are per-chain; only spine providers are unambiguous targets.
-    const spineProviders = after.filter((n) => !n.blockId);
-    if (spineProviders.length === 0) {
+    const after = ordered.slice(start + 1).filter((n) => n.kind === 'oracle');
+    // Oracles inside a clause are per-chain; only spine oracles are unambiguous targets.
+    const spineOracles = after.filter((n) => !n.clauseId);
+    if (spineOracles.length === 0) {
         const candidates = after.map((n) => n.key);
-        throw new Error(`slot.downstreamProvider() on '${fromKey}' found no Provider downstream on the spine. ` +
+        throw new Error(`slot.downstreamOracle() on '${fromKey}' found no oracle downstream on the spine. ` +
             (candidates.length
-                ? `Providers exist inside blocks (${candidates.join(', ')}) — name one explicitly with slot.providerRef('…').`
-                : `Add a Provider, or use slot.providerRef('…').`));
+                ? `Oracles exist inside clauses (${candidates.join(', ')}) — name one explicitly with slot.oracleRef('…').`
+                : `Add an oracle, or use slot.oracleRef('…').`));
     }
-    return spineProviders[0].key;
+    return spineOracles[0].key;
 }
 /**
  * Canonical form — stable key order, for hashing and round-trip identity (F3).
@@ -192,4 +221,18 @@ export function exportDocument(doc, opts = {}) {
     return { doc: { ...doc, presets }, omitted, requires: requiredConnections(doc) };
 }
 const isRef = (v) => !!v && typeof v === 'object' && typeof v.$ref === 'string';
+/**
+ * The envoy config addresses a document references — every `resolvedRefs`
+ * target spelled `envoy:<key>`, once each. The executor resolves config for
+ * these beside the nodes and clauses; the host projects the genre's
+ * declaration at exactly these keys.
+ */
+export function envoyConfigKeysOf(doc) {
+    const out = new Set();
+    for (const n of doc.nodes)
+        for (const target of Object.values(n.resolvedRefs ?? {}))
+            if (isEnvoyConfigKey(target))
+                out.add(target);
+    return [...out];
+}
 //# sourceMappingURL=document.js.map

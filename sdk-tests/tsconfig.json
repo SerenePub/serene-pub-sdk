@@ -22,14 +22,19 @@
       ],
       "@serene-pub/cli/bin": [
         "../cli/src/bin.ts"
+      ],
+      "@serene-pub/docs": [
+        "../docs/src/index.ts"
       ]
     }
   },
   "include": [
     "*.ts",
+    "examples/*.ts",
     "../*/src/**/*.ts"
   ],
   "exclude": [
-    "../ui-preview/**"
+    "../ui-preview/**",
+    "../playground/**"
   ]
 }

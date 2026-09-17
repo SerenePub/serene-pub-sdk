@@ -21,6 +21,9 @@ const SLUG_PART = /^[a-z0-9]+([./-][a-z0-9]+)*$/;
 export function parseSpecId(id) {
     // Tolerated and ignored: a trailing @N. It is type-pin syntax that reads like a
     // version here, and silently treating it as one is how a spec ends up with two.
+    // `SpecBuilder` strips it the same way before storing the id, so a document's
+    // `id` is always the versionless slug and an action's identity (`<slug>#<key>`)
+    // never carries an `@`. An `@` anywhere else fails `SLUG_PART` below.
     const withoutPin = id.replace(/@\d+$/, '');
     const i = withoutPin.indexOf(':');
     if (i === -1)

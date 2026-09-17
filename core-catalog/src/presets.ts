@@ -8,8 +8,9 @@
  * cannot disagree.
  */
 import { preset, sessionEvents, type PresetDecl } from "@serene-pub/sdk"
-import { adventureGenre, chatGenre } from "./genres.js"
+import { adventureGenre, chatGenre, guideGenre } from "./genres.js"
 import { CREATE_CHAT_SPEC_ID } from "./createChat.js"
+import { CREATE_GUIDE_SPEC_ID, GUIDE_RESPOND_SPEC_ID } from "./guide.js"
 import { RESPOND_SPEC_ID } from "./respond.js"
 import { NARRATE_SPEC_ID } from "./narrate.js"
 import {
@@ -18,9 +19,16 @@ import {
 } from "./adventure.js"
 import {
 	ADVENTURE_ADVANCE_TIME_SPEC_ID,
+	ADVENTURE_ANSWER_SPEC_ID,
+	ADVENTURE_ASK_SPEC_ID,
 	ADVENTURE_LOOK_SPEC_ID,
 	ADVENTURE_REST_SPEC_ID
 } from "./adventureActions.js"
+import {
+	ANSWER_FORM_ADVENTURE_SPEC_ID,
+	ANSWER_FORM_CHAT_SPEC_ID,
+	ANSWER_FORM_GUIDE_SPEC_ID
+} from "./answerForm.js"
 
 export const chatDefaultPreset: PresetDecl = preset("chat-default", {
 	genre: chatGenre,
@@ -28,9 +36,15 @@ export const chatDefaultPreset: PresetDecl = preset("chat-default", {
 	description: "The standard roleplay chat, everything default.",
 	bindings: {
 		[sessionEvents.sessionCreated]: CREATE_CHAT_SPEC_ID,
-		[sessionEvents.messageRespond]: RESPOND_SPEC_ID
+		[sessionEvents.messageRespond]: RESPOND_SPEC_ID,
+		// A form put to a participant the AI portrays is answered by the
+		// genre's answer pipeline (R-15 *Forms*; U5d). Optional in the
+		// surface; bound here so it works out of the box.
+		[sessionEvents.formAddressed]: ANSWER_FORM_CHAT_SPEC_ID
 	},
-	actions: { include: [NARRATE_SPEC_ID] }
+	// By identity (W-A): the declaration, not the spec — `narrate` is the
+	// narrate spec's one action.
+	actions: { include: [`${NARRATE_SPEC_ID}#narrate`] }
 })
 
 /**
@@ -64,13 +78,19 @@ export const adventureDefaultPreset: PresetDecl = preset("adventure-default", {
 		"A narrated world with a cast that acts on its own, stats and an inventory that change as you play, and a story clock that moves.",
 	bindings: {
 		[sessionEvents.sessionCreated]: ADVENTURE_CREATE_SPEC_ID,
-		[sessionEvents.messageRespond]: ADVENTURE_RESPOND_SPEC_ID
+		[sessionEvents.messageRespond]: ADVENTURE_RESPOND_SPEC_ID,
+		[sessionEvents.formAddressed]: ANSWER_FORM_ADVENTURE_SPEC_ID
 	},
 	actions: {
 		include: [
-			ADVENTURE_LOOK_SPEC_ID,
-			ADVENTURE_REST_SPEC_ID,
-			ADVENTURE_ADVANCE_TIME_SPEC_ID
+			`${ADVENTURE_LOOK_SPEC_ID}#look`,
+			`${ADVENTURE_REST_SPEC_ID}#rest`,
+			`${ADVENTURE_ADVANCE_TIME_SPEC_ID}#advance-time`,
+			// The worked form (U5d): Ask puts a question to the cast, Answer
+			// is what its options fire — by a click, or by the answer
+			// pipeline committing an oracle's choice.
+			`${ADVENTURE_ASK_SPEC_ID}#ask`,
+			`${ADVENTURE_ANSWER_SPEC_ID}#answer`
 		]
 	},
 	defaults: {
@@ -83,9 +103,29 @@ export const adventureDefaultPreset: PresetDecl = preset("adventure-default", {
 	enabled: true
 })
 
+/**
+ * The guide genre's shipped preset (R-18; U5g). Enabled: the create path
+ * runs end to end with no model call, and the genre's one envoy is seated
+ * by its own `default: true` — the preset names nothing a session must
+ * choose. No actions come along: a guide session is questions and answers.
+ */
+export const guideDefaultPreset: PresetDecl = preset("guide-default", {
+	genre: guideGenre,
+	label: "Guide",
+	description:
+		"Ask Serene Pub's guide about the app itself — questions and answers grounded in the docs, no characters or story.",
+	bindings: {
+		[sessionEvents.sessionCreated]: CREATE_GUIDE_SPEC_ID,
+		[sessionEvents.messageRespond]: GUIDE_RESPOND_SPEC_ID,
+		[sessionEvents.formAddressed]: ANSWER_FORM_GUIDE_SPEC_ID
+	},
+	enabled: true
+})
+
 export const CORE_PRESETS: PresetDecl[] = [
 	chatDefaultPreset,
-	adventureDefaultPreset
+	adventureDefaultPreset,
+	guideDefaultPreset
 ]
 
 /** The seed-pass shape: idempotence key + the row fields SP writes. */
@@ -170,5 +210,7 @@ export const CORE_PRESET_SEEDS: CorePresetSeed[] = [
 	 * preset falls back to*, and there is exactly one of those on an instance.
 	 * Adventure is offered, not assumed.
 	 */
-	seedOf(adventureDefaultPreset, "core-adventure-default", false)
+	seedOf(adventureDefaultPreset, "core-adventure-default", false),
+	/** Offered, not assumed — the same footing as Adventure. */
+	seedOf(guideDefaultPreset, "core-guide-default", false)
 ]

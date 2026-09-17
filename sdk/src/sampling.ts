@@ -531,7 +531,7 @@ export const imageSamplingSchema: SettingsSchema = {
 /**
  * Speech synthesis.
  *
- * Present because `core:provider/speak@1` declares `sampling: { shape: S.tts }`,
+ * Present because `core:oracle/speak@1` declares `sampling: { shape: S.tts }`,
  * and a sampling slot whose shape has no vocabulary resolves to nothing at all —
  * silently, since an unknown shape is an empty schema by design. A declared slot
  * with no declared vocabulary is the one combination where that fallback is

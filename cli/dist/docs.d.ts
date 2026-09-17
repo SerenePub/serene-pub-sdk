@@ -16,5 +16,5 @@ export interface DocPage {
     path: string;
     markdown: string;
 }
-export declare function renderAnnouncementDocs(announcement: AnnouncementDocument, typeOf: (typeId: string, version: number) => TypeSurface | undefined): DocPage[];
+export declare function renderAnnouncementDocs(announcement: AnnouncementDocument, typeOf: (definitionId: string, version: number) => TypeSurface | undefined): DocPage[];
 //# sourceMappingURL=docs.d.ts.map

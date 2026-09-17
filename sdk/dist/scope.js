@@ -53,7 +53,7 @@ function refAccessor(node, port = 'main') {
  *   sibling can be named by its short key (`$.embed`) while an outside node is still
  *   reachable by its full path (`$.gather.semantic.embed`).
  */
-export function makeScope(knownKeys, localPrefix, blockId) {
+export function makeScope(knownKeys, localPrefix, clauseId) {
     /** A sibling inside the same chain wins over a same-named outside key. */
     const resolveKey = (joined) => {
         if (localPrefix && knownKeys.has(`${localPrefix}.${joined}`))
@@ -81,7 +81,7 @@ export function makeScope(knownKeys, localPrefix, blockId) {
         // nodes (`$.agent.item.turn` still reaches the node). Without this the path
         // was a bare prefix, so the reference silently serialized to nothing: the
         // one wiring mistake that produces plausible output against missing input.
-        const itemKey = !selfKey && blockId && joined === `${blockId}.item` ? `${blockId}.${ITEM}` : undefined;
+        const itemKey = !selfKey && clauseId && joined === `${clauseId}.item` ? `${clauseId}.${ITEM}` : undefined;
         const target = selfKey
             ? $ref(selfKey, 'main')
             : itemKey
@@ -97,8 +97,8 @@ export function makeScope(knownKeys, localPrefix, blockId) {
                     return Reflect.get(t, prop, recv);
                 // Inside a map or loop, the current item is addressable without naming the
                 // block — its key is bookkeeping the author should not have to repeat.
-                if (prop === ITEM && blockId && path.length === 0)
-                    return refAccessor(`${blockId}.${ITEM}`);
+                if (prop === ITEM && clauseId && path.length === 0)
+                    return refAccessor(`${clauseId}.${ITEM}`);
                 const next = [...path, prop];
                 const nextJoined = next.join('.');
                 // Inside a block, `block.item` is always a walkable path — the chain
@@ -108,7 +108,7 @@ export function makeScope(knownKeys, localPrefix, blockId) {
                 // the block's (not yet existing) `item` port.
                 if (resolveKey(nextJoined) ||
                     isPrefix(nextJoined) ||
-                    (blockId && nextJoined === `${blockId}.item`))
+                    (clauseId && nextJoined === `${clauseId}.item`))
                     return walk(next);
                 if (selfKey)
                     return refAccessor(selfKey, prop);

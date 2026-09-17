@@ -1,10 +1,15 @@
 /**
- * The three hook kinds and their injected surfaces (01 §9, F10, F32).
+ * The three kinds of extension callable and their injected surfaces (01 §9, F10, F32).
  *
- * "Hook" is never used bare — the three kinds have different rules, and the rules are
- * enforced by *what is in the object*, not by a document someone reads. A capability
- * that isn't on the surface cannot be called, which is why these are types rather than
- * a checklist.
+ * A **hook** is a declared point where authored code may run (NOMENCLATURE §12); the
+ * three callables are named for what they are (R-1, ruled 2026-09-14): a **handler**
+ * implements a node definition, a **lifecycle callback** answers a core moment, an
+ * **event listener** answers a core event. 01's *pipeline hook* / *lifecycle hook* /
+ * *event hook* are the same three under the old word; the code moved 2026-09-16 (U3).
+ *
+ * The rules are enforced by *what is in the object*, not by a document someone reads.
+ * A capability that isn't on the surface cannot be called, which is why these are
+ * types rather than a checklist.
  */
 // ── Conformance probes (03 §9) ──────────────────────────────────────────────
 /**
@@ -12,7 +17,7 @@
  *
  * Every one of these is a **handle back into the executor** — a way for a hook to
  * make core do work on its behalf rather than being the work core invoked. Only
- * pipeline hooks reach Providers, and they do it by *being* a node the executor
+ * handlers reach oracles, and they do it by *being* a node the executor
  * invokes, never by holding a handle; a hook that could call, trigger, run or emit
  * would have opted itself out of the receipt, the budget and the review gate that
  * being a node buys.
@@ -25,6 +30,9 @@
  * a hook that fetches a model API directly is still outside the receipt, and the
  * grant an admin reads is what says so.
  */
+// Member NAMES a surface must not hand out — not kind words, so `provider`
+// is right here after the U3 rename (`oracle` is the kind; a surface member
+// called `provider` would still be a model door and is still forbidden).
 const FORBIDDEN_ON_ANY_HOOK = [
     'callProvider',
     'call',
@@ -41,7 +49,7 @@ const FORBIDDEN_ON_ANY_HOOK = [
 export function assertHookSurface(kind, surface) {
     const keys = new Set(Object.keys(surface));
     const found = FORBIDDEN_ON_ANY_HOOK.filter((k) => keys.has(k));
-    // Kind-specific, so it cannot live in the list above: a lifecycle hook gets
+    // Kind-specific, so it cannot live in the list above: a lifecycle callback gets
     // scoped core *reads* and nothing else (13 §7c), so a `writeCore` beside its
     // `readCore` is the same regression one level down.
     if (kind === 'lifecycle' && keys.has('writeCore'))

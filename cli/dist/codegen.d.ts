@@ -2,7 +2,7 @@
  * `/contracts` generation (04 §2, §4b).
  *
  * Every SP release publishes frozen, generated type declarations. This is the generator:
- * descriptors in, a TypeScript module out. In core the input is `type_registry` rows; here
+ * descriptors in, a TypeScript module out. In core the input is `pipeline_definition_registry` rows; here
  * it is the in-memory registry, which is the same data.
  *
  * **The binding name is derived, never chosen.** It is the camelCase of the id's name
@@ -22,13 +22,13 @@
  *   what a user tuning "how much should lore matter" is looking at: `session-history`,
  *   `persona-card`, `lorebook-triggers`.
  *
- * Renaming `core:provider/text-gen@1` to `core:provider/generate-text@1` also removed a
+ * Renaming `core:oracle/text-gen@1` to `core:oracle/generate-text@1` also removed a
  * collision worth naming: it was the same string as `core:shape/text-gen@1`, the operation
  * and the category spelled identically in different namespaces.
  */
 import type { Descriptor } from "@serene-pub/sdk";
 /** `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
-export declare function parseTypeId(id: string): {
+export declare function parseDefinitionId(id: string): {
     ns: string;
     kind?: string;
     name: string;
@@ -84,10 +84,10 @@ export interface GenerateOptions {
  */
 export declare function generateContracts(types: Descriptor[], opts?: GenerateOptions): string;
 /**
- * The manifest's view of a type: what an admin's audit screen and the install-time
- * permission check read, without loading any code (10 §10.2).
+ * The manifest's view of a node definition: what an admin's audit screen and the
+ * install-time permission check read, without loading any code (10 §10.2).
  */
-export interface TypeSummary {
+export interface DefinitionSummary {
     id: string;
     binding: string;
     kind: string;
@@ -103,5 +103,5 @@ export interface TypeSummary {
     declaresRandomness?: boolean;
     timeoutMs?: number;
 }
-export declare const summarizeType: (d: Descriptor) => TypeSummary;
+export declare const summarizeDefinition: (d: Descriptor) => DefinitionSummary;
 //# sourceMappingURL=codegen.d.ts.map

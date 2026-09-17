@@ -2,8 +2,9 @@
  * `defineExtension` — the one entry point a plugin author starts from (03, 09).
  *
  * Before this existed, the SDK could express a pipeline and nothing else. An author could
- * build a spec but had nowhere to say *"this is my plugin, here are its lifecycle hooks,
- * its settings, its node types, its components, and the pipelines it ships."* That is the
+ * build a spec but had nowhere to say *"this is my plugin, here are its lifecycle
+ * callbacks, its settings, its node definitions, its components, and the pipelines it
+ * ships."* That is the
  * difference between authoring a pipeline and writing a plugin, and it is most of what
  * "download the SDK" has to mean.
  *
@@ -12,20 +13,20 @@
  * a lint error rather than a silent omission — the manifest has to be a complete statement
  * of what a plugin can do, or the permission model is a guess.
  */
-export function pipelineHook(type, handler, opts = {}) {
-    const descriptor = ('descriptor' in type ? type.descriptor : type);
+export function handler(definition, fn, opts = {}) {
+    const descriptor = ('descriptor' in definition ? definition.descriptor : definition);
     return {
-        __decl: 'pipeline-hook',
+        __decl: 'handler',
         type: descriptor,
         visibility: opts.visibility ?? (descriptor.public ? 'public' : 'private'),
-        handler,
+        handler: fn,
         // Not configurable. See the note on the field.
         runtime: 'process',
     };
 }
-export const lifecycleHook = (moment, handler, opts = {}) => ({ __decl: 'lifecycle-hook', moment, handler, ...opts });
-export const eventHook = (event, handler, opts = {}) => ({
-    __decl: 'event-hook',
+export const lifecycleCallback = (moment, handler, opts = {}) => ({ __decl: 'lifecycle-callback', moment, handler, ...opts });
+export const eventListener = (event, handler, opts = {}) => ({
+    __decl: 'event-listener',
     event,
     handler,
     ...opts,
@@ -54,7 +55,7 @@ export function defineExtension(d) {
     // and the registry rejects it, but a plugin claiming *another plugin's* namespace
     // would be accepted and would break ownership-based updates (12 §3b).
     for (const h of d.hooks ?? []) {
-        if (h.__decl !== 'pipeline-hook')
+        if (h.__decl !== 'handler')
             continue;
         const ns = h.type.id.split(':')[0];
         if (ns !== d.slug) {
@@ -81,16 +82,16 @@ export function defineExtension(d) {
     return { __extension: true, ...d };
 }
 // ── Derived views ───────────────────────────────────────────────────────────
-export const pipelineHooksOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'pipeline-hook');
-export const lifecycleHooksOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-hook');
-export const eventHooksOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'event-hook');
+export const handlersOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'handler');
+export const lifecycleCallbacksOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-callback');
+export const eventListenersOf = (e) => (e.hooks ?? []).filter((h) => h.__decl === 'event-listener');
 /**
  * The bindings map the executor wants, built from the declaration. So an author's tests
- * run their real hooks rather than a hand-maintained parallel map that drifts.
+ * run their real handlers rather than a hand-maintained parallel map that drifts.
  */
 export function bindingsOf(e) {
     const out = {};
-    for (const h of pipelineHooksOf(e))
+    for (const h of handlersOf(e))
         out[h.type.id] = h.handler;
     return out;
 }

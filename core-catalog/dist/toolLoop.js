@@ -33,7 +33,7 @@
  * in it — a loop whose prompt never changed would ask the same question until
  * it hit its ceiling. A body node cannot reference one declared after it (F9:
  * the scope makes a back-edge unwritable), so the results arrive by the one
- * address that IS declared before the body: `$.agent.values`, the block's own
+ * address that IS declared before the body: `$.tools.values`, the block's own
  * accumulating output. `results` joins them, and the assembly template renders
  * them above the transcript.
  *
@@ -59,7 +59,7 @@ export const TOOL_LOOP_VERSION = '1.0.0';
  * pipeline — what it asks, what it offers and how it repeats — is one file.
  *
  * ⚠ The instructions it opens and closes with are NOT here. `system` and
- * `postHistory` are the `prompts` slot `agent.item.prompt` owns, seeded from
+ * `postHistory` are the `prompts` slot `tools.item.prompt` owns, seeded from
  * `CORE_PROMPTS` like every other shipped step's prompt — so a person edits
  * the wording in the panel and this file holds the layout alone. Written into
  * the template as literal prose they would be a second copy of text the pool
@@ -93,10 +93,22 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
      * No `genre`, on purpose — see the header. `action` because a
      * person invokes it; `session` because it reads one.
      */
-    taxonomy: { zone: 'session', role: 'action' },
+    taxonomy: { role: 'action' },
 })
-    .on('core:event/ui-action@1')
-    .input('input', C.userMessage.v1())
+    .inlet('input', C.userMessage.v1())
+    /**
+     * The answer's row, created by the pipeline that fills it (R-17) —
+     * see `respond`'s `placeholder`. A tool loop is several calls; the
+     * row is what a person watches while they happen. `row` claims a
+     * verb's row when a genre binds this spec to a reply function and
+     * a regenerate re-drives it — an inlet with a null `messageId`
+     * inserts, as every fresh turn does.
+     */
+    .outlet('placeholder', ($) => C.createMessage.v1({
+    generating: true,
+    characterId: $.input.characterId,
+    row: $.input.messageId,
+}))
     .query('history', ($) => C.sessionHistory.v1({
     scope: $.input.sessionScope,
     params: slot.params(),
@@ -106,8 +118,12 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
      * listed here: which extensions are enabled is not a property of
      * the spec, and a hand-written list would advertise a tool that was
      * uninstalled and refuse one that was added.
+     *
+     * Keyed `available`, not `tools`: the loop clause below is `tools`
+     * (NOMENCLATURE §4, ruled 2026-09-15), and a node and a clause
+     * share one address space — `$.tools` must name exactly one thing.
      */
-    .query('tools', ($) => C.availableTools.v1({
+    .query('available', ($) => C.availableTools.v1({
     scope: $.input.sessionScope,
     params: slot.params(),
 }))
@@ -120,14 +136,14 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
      * same.
      */
     .task('advertise', ($) => C.advertiseTools.v1({
-    tools: $.tools.tools,
+    tools: $.available.tools,
     params: slot.params(),
 }))
     .task('lines', ($) => C.processMessages.v1({ messages: $.history.messages }))
-    .loop('agent', { repeatWhile: ($) => $.agent.item.parse.call, max: 6 }, (l) => l
+    .loop('tools', { repeatWhile: ($) => $.tools.item.parse.call, max: 6 }, (l) => l
     /** The carry — see the header. Empty on the first pass. */
     .task('results', ($) => C.joinText.v1({
-    items: $.agent.values,
+    items: $.tools.values,
     // `path` defaults to `text`, which is the
     // tool-result block — what the next prompt
     // carries. Named so the control is live rather
@@ -138,7 +154,7 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
     messages: $.lines.messages,
     templateContext: {
         advertisement: $.advertise.prompt,
-        results: $.agent.item.results.text,
+        results: $.tools.item.results.text,
     },
     /**
      * The slot, with the shipped text in the preset
@@ -170,37 +186,34 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
     // is wrong silently. Named by its QUALIFIED key:
     // a slot reference is to a node key, and inside
     // a block that key carries the block and chain.
-    connection: slot.connectionOf('agent.item.generate'),
+    connection: slot.connectionOf('tools.item.generate'),
 }))
-    .provider('generate', ($) => C.generateText.v1({
-    context: $.agent.item.prompt.context,
+    .oracle('generate', ($) => C.generateText.v1({
+    context: $.tools.item.prompt.context,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-    // Shared from `prompt`, which owns it — see
-    // the comment there. Left unwired, the
-    // contract's own `prompts` slot renders a
-    // control `resolveInput` never reads.
-    prompts: slot.prompts({
-        node: 'agent.item.prompt',
-    }),
+    // No `prompts` here: the contract declares no
+    // such slot any more (culled 2026-09-16, R-12);
+    // `prompt` owns the pool and the text rides in
+    // `context`.
 }))
     .task('parse', ($) => C.parseToolCall.v1({
-    text: $.agent.item.generate.text,
-    tools: $.tools.tools,
+    text: $.tools.item.generate.text,
+    tools: $.available.tools,
 }))
     /**
      * The one impure step. A tool that fails answers the
      * model rather than ending the run, so a bad call costs
      * one iteration of the six instead of the turn.
      */
-    .provider('tool', ($) => C.runTool.v1({
-    call: $.agent.item.parse.call,
-    tools: $.tools.tools,
-    text: $.agent.item.parse.text,
+    .oracle('tool', ($) => C.runTool.v1({
+    call: $.tools.item.parse.call,
+    tools: $.available.tools,
+    text: $.tools.item.parse.text,
 })))
     .task('answer', ($) => C.joinText.v1({
-    items: $.agent.values,
+    items: $.tools.values,
     // `path: 'answer'` — the iteration that answered instead of
     // asking. Shipped in the preset rather than written here for
     // the same reason the template is: a literal is a value
@@ -208,7 +221,11 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
     // default, so it has to be a choice something made.
     params: slot.params(),
 }))
-    .consume('save', ($) => C.createMessage.v1({ text: $.answer.text }))
+    /** The answer's row, filled — see `placeholder`. */
+    .outlet('save', ($) => C.updateMessage.v1({
+    target: $.placeholder.messageId,
+    text: $.answer.text,
+}))
     /**
      * What the reference ships, and the only place its two authored
      * values live.
@@ -218,7 +235,7 @@ export const toolLoopSpec = () => compile(spec(TOOL_LOOP_SPEC_ID, {
      * nothing.
      */
     .preset('tool-loop', { label: 'Tool loop', default: true }, (p) => p
-    .template('agent.item.prompt', {
+    .template('tools.item.prompt', {
     source: TOOL_LOOP_TEMPLATE,
     engine: handlebars.id,
 })

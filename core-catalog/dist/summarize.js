@@ -40,7 +40,7 @@ export const SUMMARIZE_VERSION = "1.3.0";
  * The ceiling on batches for one run.
  *
  * Mandatory — F9 makes repetition without a bound inexpressible, and the
- * database enforces it too (`pipeline_blocks_bounded_check`). 512 is chosen to
+ * database enforces it too (`pipeline_clauses_bounded_check`). 512 is chosen to
  * be far above any real session rather than tuned: the batch *size* is the knob a
  * user turns, and this is the guard that stops a runaway from becoming a bill.
  */
@@ -66,13 +66,12 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
     const base = spec(id, {
         version: SUMMARIZE_VERSION,
         /** Catalogue claims (23 §2): person-invoked, any mode. */
-        taxonomy: { zone: "session", role: "action" }
+        taxonomy: { role: "action" }
     })
         // Manually triggered: a person asks for a summary. ACTION events
         // carry no write targets, so this drops out of the cycle check by
         // construction rather than by exception (13 §7g).
-        .on("core:event/ui-action@1")
-        .input("input", C.summarizeRequest.v1())
+        .inlet("input", C.summarizeRequest.v1())
         .query("transcript", ($) => C.summarizeSource.v1({
         scope: $.input.scope,
         request: $.input.request
@@ -91,7 +90,7 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
         // `ofNode` is the owner's to configure, 13 §12 finding i).
         sampling: slot.samplingOf(DRAFT_NODE)
     }))
-        .map("drafting", { over: ($) => $.batches.batches, max: MAX_BATCHES }, (m) => m.provider("draft", ($) => C.summarizeBatch.v1({
+        .each("drafting", { over: ($) => $.batches.batches, max: MAX_BATCHES }, (m) => m.oracle("draft", ($) => C.summarizeBatch.v1({
         // The one batch this iteration drafts. Without it
         // the node has no input and every draft is written
         // against nothing — which produces plausible
@@ -108,7 +107,7 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
         sampling: slot.sampling(),
         prompts: slot.prompts()
     })))
-        .provider("synth", ($) => C.summarizeSynth.v1({
+        .oracle("synth", ($) => C.summarizeSynth.v1({
         drafts: $.drafting.main,
         request: $.input.request,
         loreType,
@@ -116,7 +115,7 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
         sampling: slot.sampling(),
         prompts: slot.prompts()
     }))
-        .provider("naming", ($) => C.nameEntry.v1({
+        .oracle("naming", ($) => C.nameEntry.v1({
         content: $.synth.content,
         loreType,
         connection: slot.connection(),
@@ -124,9 +123,8 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
         prompts: slot.prompts()
     }));
     const withCast = extractsCast
-        ? base.provider("cast", ($) => C.extractCast.v1({
+        ? base.oracle("cast", ($) => C.extractCast.v1({
             content: $.synth.content,
-            messages: $.transcript.messages,
             // The known-cast list ([id: N] entries), so the
             // extraction prompt references real ids instead of
             // inventing castIds the resolve step must drop.
@@ -137,7 +135,7 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
         }))
         : base;
     return withCast
-        .consume("save", ($) => C.createLoreEntry.v1({
+        .outlet("save", ($) => C.createLoreEntry.v1({
         name: $.naming.name,
         content: $.synth.content
     }))
@@ -149,7 +147,7 @@ export const summarizeCharacterSpec = () => summarizeSpec({ id: SUMMARIZE_CHARAC
  * ⚠ **The cast extraction is ON ICE, not deleted** (plan §2, ruled 2026-09-08).
  *
  * `extractsCast` is deliberately absent rather than removed: the branch above,
- * `core:provider/extract-cast@1` and its shipped prompt all stay exactly where
+ * `core:oracle/extract-cast@1` and its shipped prompt all stay exactly where
  * they are, so reviving the step is restoring this one property.
  *
  * Why it is off. The measured replacement for the *participant* half — the

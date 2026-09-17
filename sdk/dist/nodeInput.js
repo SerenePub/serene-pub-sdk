@@ -57,6 +57,70 @@
 export function declaresReads(hook, requires) {
     return Object.assign(hook, { requires });
 }
+/**
+ * Attach a read declaration a contract has checked (ruling R-12, 2026-09-15).
+ *
+ * ```ts
+ * reads<typeof C.sessionHistory>(
+ *   async (input: InputOf<typeof C.sessionHistory>, ctx) => …,
+ *   { ports: ['scope'], params: ['limit', 'channel'] },
+ * )
+ * ```
+ *
+ * The compile-time half of what `declaresReads` records at run time. `InputOf`
+ * makes a read of an **undeclared** name a type error; this makes the
+ * declaration name nothing `P` lacks — `params: ['limt']` does not compile.
+ * The reverse direction (a declared name **no** handler reads) is the guard's
+ * job, in the host, and it is what this declaration exists to feed.
+ *
+ * ⚠ **What this cannot check.** `P` is the contract the *declaration* is
+ * narrowed against; the handler is a plain `Hook`, so nothing here proves the
+ * handler's own `input` was typed against the same `P`. Pairing
+ * `reads<typeof C.X>` with a handler whose input is `NodeInput<typeof C.X>` is
+ * a **convention**, and the host keeps it by a test over the source of its
+ * bindings files (`boot/readsPairing.test.ts`) rather than by the type system.
+ *
+ * `P` is written explicitly and the hook is a plain `Hook`, rather than both
+ * inferred, because TypeScript infers all of a call's type arguments or none
+ * — and the contract cannot be inferred from a handler whose `input` is an
+ * intersection, an alias, or `any`.
+ *
+ * ⚠ **One declaration per function object.** Like `declaresReads` this attaches
+ * to the hook itself rather than wrapping it, so a handler two pins share
+ * carries ONE `requires` — and a second, different declaration on the same
+ * function would silently replace the first. That is refused here: bind a
+ * shared handler through a per-pin arrow (`(input, ctx) => shared(input, ctx)`)
+ * when the two pins read differently, and declare the intersection when they
+ * do not. An identical redeclaration is a no-op, on the registry's own terms.
+ */
+export function reads(hook, requires) {
+    const plain = {
+        ports: [...requires.ports],
+        params: [...(requires.params ?? [])],
+        ...(requires.paramTypes
+            ? { paramTypes: requires.paramTypes }
+            : {}),
+    };
+    const existing = readsOf(hook);
+    if (existing && !sameRequires(existing, plain))
+        throw new Error(`reads(): this handler already declares what it reads (ports ${JSON.stringify(existing.ports)}, params ${JSON.stringify(existing.params)}) and the new declaration differs ` +
+            `(ports ${JSON.stringify(plain.ports)}, params ${JSON.stringify(plain.params)}). ` +
+            `A declaration attaches to the function object, so a handler two pins share ` +
+            `can carry only one — bind each pin through its own arrow and declare there.`);
+    return declaresReads(hook, plain);
+}
+function sameRequires(a, b) {
+    const sorted = (xs) => [...new Set(xs)].sort();
+    const eq = (xs, ys) => {
+        const [p, q] = [sorted(xs), sorted(ys)];
+        return p.length === q.length && p.every((x, i) => x === q[i]);
+    };
+    if (!eq(a.ports, b.ports) || !eq(a.params, b.params))
+        return false;
+    const [ta, tb] = [a.paramTypes ?? {}, b.paramTypes ?? {}];
+    const keys = sorted([...Object.keys(ta), ...Object.keys(tb)]);
+    return keys.every((k) => ta[k] === tb[k]);
+}
 /** Does this hook carry a read declaration? */
 export function readsOf(hook) {
     const r = hook?.requires;

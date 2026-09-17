@@ -77,7 +77,7 @@ export type FieldType =
 	 *  totalling 100%, so there is no invalid state to explain. Zero is a
 	 *  member's off switch. */
 	| 'share'
-	/** A plain number per band over `members` — a ceiling, a floor, a count. */
+	/** A plain number per band over `members` — a ceiling, a minimum, a count. */
 	| 'perMember'
 	/**
 	 * An **independent** `0..1` strength per member, drawn as one bar each.
@@ -169,6 +169,17 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 */
 	quick?: boolean
 	/**
+	 * Which lens renders this one field (05 §3), when it is not the slot's.
+	 *
+	 * A slot carries a `facet` and every field of it lands there — which is
+	 * right for a `params` slot of tunables and wrong for the substrate's
+	 * `settings` slot, whose `review` has always had a heading of its own
+	 * beside `enabled`'s. Declared on the field rather than special-cased in
+	 * the panel, so a plugin whose one slot holds a weight and a switch can
+	 * say the same thing. Absent means the slot's.
+	 */
+	facet?: string
+	/**
 	 * For `share`, `perMember` and `strengths`: the bands, in render order. An `enum` may
 	 * use this **instead of** `of`, and should whenever the stored values are
 	 * not what a person should read — `of` is derived from the keys, so
@@ -247,6 +258,33 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	injected?: boolean
 	/** Show only when another field has a given value. One level; not a rules engine. */
 	showIf?: { field: string; equals: unknown }
+	/**
+	 * A node `params` field several nodes of one spec hold **in common**, and
+	 * therefore resolve at ONE owner's address (R-7 P2, one owner per setting
+	 * per spec; refined 2026-09-16, plans/30 U3b).
+	 *
+	 * Where a node's `params` slot is a reference — `slot.params({ node })` —
+	 * the executor resolves its fields in two halves: a field marked `shared`
+	 * is read from the **owner** node's declared default and stored value
+	 * (the three lore lanes' scan depth is one number for all three); a field
+	 * left unmarked is the node's **own**, read at its own address even
+	 * through the reference (each lane's `share` of the window is its own).
+	 * The panel draws the same line — a shared field renders once, on the
+	 * owner; an own field renders on every node that declares it.
+	 *
+	 * ⚠ It is a property of the *declaration*, not of the spec: the definition
+	 * says which of its settings are the same setting wherever two of it run
+	 * side by side, and a spec that references an owner gets exactly those.
+	 * A spec referencing an owner whose schema marks nothing `shared` has
+	 * written a reference that resolves nothing, and `validate()` says so.
+	 * `validate()`'s P2 diagnostic is keyed on it as well: two own-node
+	 * `params` owners in one spec that both declare a `shared` field under the
+	 * same name are two addresses for one setting.
+	 *
+	 * Unset on plugin settings, genre fields and entry shapes, where there is
+	 * no second node to share with.
+	 */
+	shared?: boolean
 	/**
 	 * For `text` fields holding structured data a form cannot decompose: the
 	 * renderer shows JSON and the submit path parses it back. Produced by

@@ -78,11 +78,13 @@ Bind the core types to the code that already does the work:
 | `core:query/chat-history@1`      | today's history loader                              |
 | `core:query/lorebook-triggers@1` | today's World Info scan                             |
 | `core:task/assemble@2`           | today's prompt builder, behind the allocation shape |
-| `core:provider/generate-text@1`  | today's connection adapters                         |
-| `core:consumer/create-message@1` | today's message insert                              |
+| `core:oracle/generate-text@1`  | today's connection adapters                         |
+| `core:outlet/create-message@1` | today's message insert                              |
 
 Nothing is rewritten in this step. Each binding is a wrapper, and the wrapper is where the
-old code keeps living.
+old code keeps living. One addition at the message outlet: blocks with choices/forms are
+stamped with the writing spec's identity via `stampBlockActions` — the seam U5d builds the
+`blocks` port on.
 
 **Proves it:** **C3** (halt is halt, not err), **C4** (seed recorded, replay identical),
 **C6** (budgets meter consumption, waiting is free), **C7** (timeouts bound execution, not
@@ -166,15 +168,21 @@ structuralCompat(
 // → { ok: false, missingPorts, missingParams, typeMismatches, message }
 ```
 
-A handler declares what it reads with `declaresReads(hook, { ports, params })`; a plugin
-declares it in its manifest, on the `nodeTypes` entry
-(`{ hook: 'search', reads: { ports: [...], params: [...] } }`). Core's handlers declare
-nothing, because theirs is **generated**: `requiresOf(...contracts)` is the runtime twin of
-`SharedInput`, derived from the same contracts the type annotation names, so there is no
-second list to keep in step.
+A handler declares what it reads with `reads<typeof C.x>(hook, { ports, params })` — the
+arrays are typed against the definition, so a misspelt name fails to compile — or with the
+untyped `declaresReads(hook, { ports, params })`; a plugin declares it in its manifest, on
+the `nodeDefinitions` entry (`{ hook: 'search', reads: { ports: [...], params: [...] } }`).
+**Every core handler carries one** (R-12, 2026-09-16), and the declaration is held in both
+directions: `bindingCompat.ts` refuses a boot where a handler reads what its definition does
+not supply, and `boot/declaredReads.ts` fails the suite where a definition declares an
+in-port, slot or parameter that no handler reads — the shape `topK`, `minScore` and
+`session-history.limit` shipped in. A declared name may go unread only on that file's
+allow-list, with a reason naming what closes it; the list is printed on every run.
+`requiresOf(...contracts)` stays as the runtime twin of `SharedInput`, for the *supplies*
+direction of a shared handler's group.
 
 The supplying side reads a pinned contract, a bare descriptor, **or a
-`pipeline_type_registry` row** — the last one is not a convenience. A `transport: 'process'`
+`pipeline_definition_registry` row** — the last one is not a convenience. A `transport: 'process'`
 plugin type has no in-process descriptor, and F6 says core reads a plugin's declaration
 from what it stored at install rather than loading the plugin to ask. A check that only
 worked on descriptors would be a check that did not work on plugins.
@@ -250,6 +258,52 @@ around.
 `cancelled` with an actor, not `err`), **C12** (an event-triggered halt before any effect
 compacts; a click does not), **C14** (no receipt in the corpus contains a credential).
 
+**The built-in writes (R-15, U5b).** *Anything that alters message state is a built-in*: core
+implements the write and it always emits what changed and what was lost. A venue's handler makes
+the permission checks it alone can make and hands the request to `runBuiltIn`
+(`runtime/builtins.ts`), which runs the built-in's own one-node spec — `core:spec/builtin-delete`
+… (`BUILTIN_SPEC_IDS`), `core:inlet/built-in-request@1` straight into the write outlet
+(`BUILTIN_OUTLET_IDS`) — through the same `runSpec` every turn takes, as an `action` run. Four
+things follow from "it is a run":
+
+- **It is receipted and gate-eligible.** An administrator may turn review on for a delete. An
+  effectful definition declares what a reviewer may edit — `Descriptor.review.fields`, an
+  allow-list of in-ports; the host builds the form through `reviewSchemaFor` and refuses a decision
+  naming anything else (`undeclaredReviewFields`). The five built-ins never list `target`,
+  `fromMessage` or `index`: identity is settled when the request is made. Absent a declaration the
+  form is the whole payload, as before.
+- **The host re-judges the actor at the commit.** `messages/permissions.ts` is the one item rule
+  (`canActOnMessage`); the handler asks it before the run and `host.ts` asks it again, against
+  `scope.userId`, on the id the write is about to use. A built-in outlet placed in any document but
+  the built-in's own is refused by `validate()` (finding `R-15`) and by the host on `scope.specId`.
+- **It records a session change.** Each commit writes a `session_changes` row
+  (`messages/sessionChanges.ts`); `runTurn` reads the unconsumed rows before the run and publishes
+  them on the turn inlets' **`sessionChanges`** port (was `changes`), marks them consumed after the
+  run and only when it produced a reply, nulls the content they carried on the row once consumed,
+  and ends the list with `core:event/session-changes-truncated@1` past the cap of fifty.
+- **The event is declared with its payload.** `EventDef.payload` names the shape
+  (`core:shape/session-change@1` for every built-in's event); the registry projection carries it to
+  `pipeline_event_registry.payload_shape`, so a listener can be checked against what it will receive
+  without loading anything.
+
+**Statuses (R-19, R-21, U5h).** Every kind's ctx carries `ctx.status({ i18n, vars })` — a query
+says *{speaker} is thinking*, `assemble` says *{speaker} is composing*, the oracle says *{speaker}
+is typing* before its call; a draft inside an `each` says *summarising part {n} of {total}* from
+`ctx.iteration` (`{ index, count? }`, present only inside an `each` or `loop` body). The text is a
+locale map with `{vars}`; the client resolves the locale. `{speaker}` is the ONE variable the host
+fills (`HOST_FILLED_STATUS_VARS`) — handlers stay blind to who is speaking. Optional on the type
+the way `reportCacheUsage` is, so a hand-built ctx in a test still compiles: a handler calls it as
+`ctx.status?.(…)`, and the executor always supplies it. The executor hands each
+*change* to the host (`RunOptions.onStatus(nodeKey, text)`; a repeat is not a change), keeps the
+last one, and writes `Receipt.lastStatus` only when the run ends `halt`, `err` or `cancelled` —
+never on `ok`, never on a preview's halt, never as a node row (F34). A status is not declared: no
+definition moved. Core's half is `runtime/runStatus.ts` — the relay that fills `{speaker}` from the
+run's speaker, writes the live row's `generation_status`, tells the run registry and the session's
+users (`sessions:runStatus`), and feeds the caller's own frame (`SpecRunRequest.onStatus`); the LLM
+queue's `queued` / `loading` are host statuses through the same relay, shown only once they last.
+⏳ A process-transport plugin hook receives `{ input }` only today; `ctx.status` is core-handler
+only until the sandbox ctx is projected (U6).
+
 ### Step 7 — Debug preview replaces the token estimator (U19d)
 
 Chat debug mode already estimates the next request. Point it at `previewTarget` +
@@ -268,6 +322,16 @@ Install reads the manifest and documents. `checkInstall` gates it; `cannotDo(man
 generates the negative list for the consent screen — generated, so it cannot flatter.
 Permissions are compiled from usage at build time and **re-checked at runtime** against the
 admin's grants.
+
+Since R-4 (2026-09-16) the inlet lock is a pipeline's one subscription, so the packager emits
+`event:<inlet lock>` for **every pipeline with an `input.event`** — a package that answers
+`core:event/message-respond@1` lists `event:core:event/message-respond@1` whether or not it
+registers an event listener. Before the fold only `.on()` subscriptions surfaced, and a
+pipeline that ran on every primary turn listed nothing; a manifest rebuilt against this
+release therefore carries one permission per locked pipeline that its previous build did
+not. Preset `bindings` are keyed by event **id** (`core:event/message-respond@1`), never by
+bare name; `announce.build()` refuses a bare key, and the host normalises one it finds in an
+already-installed manifest for one release, logging once.
 
 ### Step 9 — Retire the old tables (0.7–0.8)
 
@@ -305,15 +369,15 @@ input → history ─┐
   declarations written into the context, for models that never heard of tools)
   and `native` (the list an API's own tool field takes). `style` picks which one
   `main` carries.
-- **`core:provider/generate-text@1`** — the ordinary generate step. Swap it for
-  **`core:provider/generate-with-tools@1`** to take the native door: same node
+- **`core:oracle/generate-text@1`** — the ordinary generate step. Swap it for
+  **`core:oracle/generate-with-tools@1`** to take the native door: same node
   with a `tools` in-port and a `toolCall` out-port. A second pin rather than two
   more ports, because the first is published and frozen.
 - **`core:task/parse-tool-call@1`** — reads the fenced convention back out of
   the reply as `{ tool, args } | null`, and hands on the prose with the block
   stripped. **Not used on the native door**: the API already parsed it, and
   parsing it again would be a second reading of one answer.
-- **`core:provider/run-tool@1`** — runs it. A Provider because a tool reads the
+- **`core:oracle/run-tool@1`** — runs it. An oracle because a tool reads the
   session or reaches an extension's sandbox, which is `effects: 'external'`
   exactly.
 - **`core:task/join-text@1`** — the reduce a repeated block has always needed:
@@ -330,8 +394,8 @@ through on `answer`.
 ### Tool resolution order
 
 1. **An enabled extension's tool hook.** `manifest.tools: { '<toolName>': {
-   hook, description, parameters } }` — the sibling of `hookTypes` (a script
-   link's hook) and `nodeTypes` (a node's), and read the same way: the stored
+   hook, description, parameters } }` — the sibling of `hookKinds` (a script
+   link's hook) and `nodeDefinitions` (a node's), and read the same way: the stored
    manifest is the one source of truth, never a convention guessed from an id.
    The hook runs through the sandbox that already exists, so permissions, the
    deadline, the seeded RNG and the invocation log all apply.
@@ -389,7 +453,7 @@ flight finishes, and the loop stops before the next pass.
 ### The native door on the wire
 
 `advertise-tools` with `style: 'native'`, wired into
-`core:provider/generate-with-tools@1`, reaches the request as the field each
+`core:oracle/generate-with-tools@1`, reaches the request as the field each
 service calls it: `tools` (functions) on OpenAI-chat, `tools` with
 `input_schema` on Anthropic, `tools` on Ollama's `/api/chat`. The adapter reads
 the call back off the structured field, so `toolCall` arrives as data.
@@ -463,6 +527,77 @@ On the pipeline side, `core:query/session-state@1` publishes the resolved state
 `mode: 'propose'`, which holds the change for a person to accept — the review gate a model's
 writes always pass through. The three core tools (`set_state`, `give_item`, `take_item`)
 likewise only ever propose.
+
+---
+
+## 1d. Envoys — a speaker a genre (or an action) brings with it
+
+An **envoy** (plans/29 R-18, R-21 (6); U5g) is a cast member that exists nowhere in the
+library: the Guide genre's mascot, a dice plugin's "Dice Master". Two places declare one, and
+there is no third — no API adds an envoy to another genre and no user authors one:
+
+```ts
+import { genre, slot } from '@serene-pub/sdk'
+
+const guide = genre('acme:genre/guide', {
+  name: { en: 'Guide' }, family: 'assistant',
+  shape: { characters: { min: 0, max: 0 }, personas: { min: 0, max: 1 } },
+  envoys: [{
+    key: 'mascot',                          // the slug: `envoy:mascot`, config address `envoy:mascot`
+    name: { en: 'Guide' },                  // a locale map with `en` — refused otherwise
+    description: { en: '…' },
+    image: 'data:image/svg+xml;utf8,…',     // ⏳ a URL or data: URI until a package can ship an asset
+    prompts: { systemPrompt: '…' },         // the context builder's own prompt fields
+    default: true,                          // seated on every new session, no choice (at most one)
+    speaks: 'in-turn',                      // the default for a genre's; `on-action` never takes a turn
+  }],
+  events: { … },
+})
+
+// On a contributed action: `envoy:<plugin>.<key>`, `speaks: 'on-action'` by construction —
+// the speaker the action's results post as. `in-turn` is refused at publish.
+contributes: { actions: [{ key: 'roll', …, envoy: { key: 'master', name: { en: 'Dice Master' } } }] }
+```
+
+`genre()` refuses a duplicate key, two defaults, a name without `en`, a dotted key (a dot is
+an action's namespace, so a genre's key and an action's slug can never collide), and an
+`image` that is neither a `data:image/…` URI nor an `http(s)://` URL. The envoys are part of
+the genre's declaration and of the create spec's `meta.genre`, so a changed envoy is a
+changed hash. The host re-runs the same findings where a document lands as rows
+(`saveDocument`), so a plugin's genre — which `genre()` never saw — is refused with the same
+sentences there.
+
+**Its data is configuration, not a schema.** A pipeline reads the envoy's instructions with
+`prompts: slot.prompts({ envoy: 'mascot' })` on the context builder; the compiler checks the
+spec's genre declares the key and resolves it to the address `envoy:mascot`, and the executor
+resolves that address through the ordinary chain (`resolveConfig` is handed
+`envoyConfigKeysOf(doc)` beside the nodes and clauses). The host's job is the projection:
+`envoyPromptsSlotFor(envoy)` is the slot declaration — `parameters`, named `prompts`, the
+genre's text as each field's default — which the app's `declarations()` emits at
+`envoy:<key>` for every envoy a spec references, so the panel renders it as its own step
+(**Envoy · Guide**), `world.ts` projects the declaration at `author`, and a deviation an
+administrator writes lands at the same address the run resolves. `assemble`'s own
+`slot.prompts({ node: 'context' })` is one hop — it reads the config stored at `context`'s
+address, where an envoy-addressed builder keeps nothing — so the envoy's text reaches the
+story string through `templateContext`, which the builder resolved and `assemble` spreads
+over the raw slot.
+
+**Seating and speaking.** A seat is a cast row with `envoy_slug` and no `character_id`
+(`session_characters`, migration 0138; `seatDefaultEnvoys` on `sessions:create`,
+`sessions:setEnvoySeat` from the Edit Session form, `PresetDefaults.envoys` to pre-seat). The
+cast read carries `envoys` (declaration + `position`, `removedAt`), so the turn strategies
+offer an `in-turn` envoy beside the characters and never an `on-action` one; the resolver
+answers `ai` for a slug the session's genre or an installed action declares and `none`
+otherwise (`declaredEnvoys` is the one reader). The inlet's `speaker` carries `envoy:<slug>`
+with `characterId: null`; `create-message@1` takes `speaker` and stores it as
+`metadata.speaker` — the row's only identity, since there is no row to name — and
+`build-template-context@1` takes `speaker` and compiles the envoy's card (name, description
+off the declaration) where a cast member's would be, through the `speakerName` /
+`speakerCharacter` seam a side character already uses.
+
+**Proves it:** SDK `envoys.test.ts`; the app's `envoyRoad.int.test.ts` (a guide session seats
+the mascot, the reply runs as it end to end, the panel's deviation reaches the wire byte for
+byte) and `envoySeatMigration.int.test.ts`.
 
 ---
 

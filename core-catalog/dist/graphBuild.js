@@ -59,10 +59,9 @@ const MAX_SCENES = 500;
 export const graphBuildSpec = () => compile(spec(GRAPH_BUILD_SPEC_ID, {
     version: GRAPH_BUILD_VERSION,
     /** Catalogue claims (23 §2): off the critical path, any mode. */
-    taxonomy: { zone: "session", role: "maintenance" }
+    taxonomy: { role: "maintenance" }
 })
-    .on("core:event/ui-action@1")
-    .input("input", C.userMessage.v1())
+    .inlet("input", C.userMessage.v1())
     .query("scenes", ($) => C.graphScenes.v1({ scope: $.input.sessionScope }))
     // Scene by scene, and **sequential**.
     //
@@ -72,16 +71,16 @@ export const graphBuildSpec = () => compile(spec(GRAPH_BUILD_SPEC_ID, {
     // already introduced. Running them in parallel would make that
     // question unanswerable and duplicate every character discovered
     // twice.
-    .map("building", {
+    .each("building", {
     over: ($) => $.scenes.scenes,
     max: MAX_SCENES,
     mode: "sequential"
 }, (m) => m
-    .provider("prefilter", ($) => C.graphPreFilter.v1(step($)))
-    .provider("resolution", ($) => C.graphNodeResolution.v1(step($)))
-    .provider("perspective", ($) => C.graphPerspective.v1(step($)))
-    .provider("describe", ($) => C.graphNodeDescription.v1(step($)))
-    .provider("state", ($) => C.graphStateDetection.v1(step($))))
-    .consume("propose", ($) => C.graphProposal.v1({ proposal: $.building.main }))
+    .oracle("prefilter", ($) => C.graphPreFilter.v1(step($)))
+    .oracle("resolution", ($) => C.graphNodeResolution.v1(step($)))
+    .oracle("perspective", ($) => C.graphPerspective.v1(step($)))
+    .oracle("describe", ($) => C.graphNodeDescription.v1(step($)))
+    .oracle("state", ($) => C.graphStateDetection.v1(step($))))
+    .outlet("propose", ($) => C.graphProposal.v1({ proposal: $.building.main }))
     .build());
 //# sourceMappingURL=graphBuild.js.map

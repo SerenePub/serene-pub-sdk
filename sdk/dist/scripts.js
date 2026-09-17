@@ -34,7 +34,7 @@
 import { refuseUnlessIdentical } from './hash.js';
 const SCRIPT_ID = /^([a-z0-9][a-z0-9.-]*):script:([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)@(\d+)$/;
 /** Is this a script id at all? Cheap enough to call in a filter. */
-export const isScriptTypeId = (id) => SCRIPT_ID.test(id);
+export const isScriptKindId = (id) => SCRIPT_ID.test(id);
 /**
  * Parse, or throw with the grammar spelled out.
  *
@@ -44,7 +44,7 @@ export const isScriptTypeId = (id) => SCRIPT_ID.test(id);
  * nobody meant. An id is either well-formed or it is a bug in the thing that
  * produced it.
  */
-export function parseScriptTypeId(id) {
+export function parseScriptKindId(id) {
     const m = SCRIPT_ID.exec(id);
     if (!m)
         throw new Error(`'${id}' is not a valid script type id. The grammar is ` +
@@ -70,7 +70,7 @@ export function parseScriptTypeId(id) {
  * rather than at run time, and neither the registry nor the script body has to
  * be consulted to know it.
  */
-export const scriptSpace = (id) => parseScriptTypeId(id).space;
+export const scriptSpace = (id) => parseScriptKindId(id).space;
 const scriptTypes = new Map();
 /**
  * Register a script type.
@@ -81,13 +81,13 @@ const scriptTypes = new Map();
  * so a malformed one does not fail loudly, it quietly belongs to no chain and
  * no hook.
  */
-export function defineScriptType(decl) {
-    parseScriptTypeId(decl.id);
+export function defineScriptKind(decl) {
+    parseScriptKindId(decl.id);
     const existing = scriptTypes.get(decl.id);
     if (existing)
         refuseUnlessIdentical(existing, decl, `duplicate script type id: ${decl.id}`, {
             // `blastRadius` is a badge, and this is where the docblock on
-            // `ScriptTypeDecl` becomes true rather than aspirational: it sits beside
+            // `ScriptKindDecl` becomes true rather than aspirational: it sits beside
             // `i18n` instead of inside it because it is required on every type and
             // `i18n` is not, so the generic strip never saw it and re-wording a
             // warning threw. `semantics` is the same shape of word and is *not*
@@ -99,20 +99,20 @@ export function defineScriptType(decl) {
 }
 /**
  * The plugin-facing door. Same registration, minus the ability to claim core's
- * namespace — checked here rather than in `defineScriptType` so core's own
+ * namespace — checked here rather than in `defineScriptKind` so core's own
  * declarations do not have to argue past their own guard.
  */
-export function definePluginScriptType(pluginId, decl) {
+export function definePluginScriptKind(pluginId, decl) {
     if (decl.id.startsWith('core:'))
         throw new Error(`plugin '${pluginId}' may not declare '${decl.id}': the 'core:' namespace is ` +
             `reserved. Publish it under your own namespace — a script type two parties ` +
             `can define is one where the same chain means different things depending on ` +
             `load order.`);
-    return defineScriptType(decl);
+    return defineScriptKind(decl);
 }
-export const getScriptType = (id) => scriptTypes.get(id);
-export const allScriptTypes = () => [...scriptTypes.values()];
-export function _clearScriptTypes() {
+export const getScriptKind = (id) => scriptTypes.get(id);
+export const allScriptKinds = () => [...scriptTypes.values()];
+export function _clearScriptKinds() {
     scriptTypes.clear();
 }
 // ── Core's catalog, v1 (18 §3) ──────────────────────────────────────────────
@@ -124,7 +124,7 @@ export function _clearScriptTypes() {
 const TEXT = 'core:shape/text@1';
 const CANDIDATES = 'core:shape/context-candidates@1';
 const JSON_SHAPE = 'core:shape/json@1';
-export const textTransform = defineScriptType({
+export const textTransform = defineScriptKind({
     id: 'core:script:text/transform@1',
     i18n: {
         name: { en: 'Transform text' },
@@ -150,7 +150,7 @@ export const textTransform = defineScriptType({
  * a function of the accumulated text only, never of chunk boundaries, or a
  * reply replays differently than it streamed.
  */
-export const textStop = defineScriptType({
+export const textStop = defineScriptKind({
     id: 'core:script:text/stop@1',
     i18n: {
         name: { en: 'Stop generation' },
@@ -171,7 +171,7 @@ export const textStop = defineScriptType({
  * a single `messages/edit` would have made "add a reminder at depth 2" and
  * "delete half the history" the same permission.
  */
-export const messagesInject = defineScriptType({
+export const messagesInject = defineScriptKind({
     id: 'core:script:messages/inject@1',
     i18n: {
         name: { en: 'Inject messages' },
@@ -183,7 +183,7 @@ export const messagesInject = defineScriptType({
     semantics: 'transform',
     ports: { in: { context: JSON_SHAPE }, out: { injections: JSON_SHAPE } },
 });
-export const messagesTransform = defineScriptType({
+export const messagesTransform = defineScriptKind({
     id: 'core:script:messages/transform@1',
     i18n: {
         name: { en: 'Transform messages' },
@@ -193,7 +193,7 @@ export const messagesTransform = defineScriptType({
     semantics: 'transform',
     ports: { in: { messages: JSON_SHAPE }, out: { messages: JSON_SHAPE } },
 });
-export const candidatesFilter = defineScriptType({
+export const candidatesFilter = defineScriptKind({
     id: 'core:script:candidates/filter@1',
     i18n: {
         name: { en: 'Filter candidates' },
@@ -203,7 +203,7 @@ export const candidatesFilter = defineScriptType({
     semantics: 'transform',
     ports: { in: { candidates: CANDIDATES }, out: { candidates: CANDIDATES } },
 });
-export const candidatesRescore = defineScriptType({
+export const candidatesRescore = defineScriptKind({
     id: 'core:script:candidates/rescore@1',
     i18n: {
         name: { en: 'Rescore candidates' },
@@ -213,7 +213,7 @@ export const candidatesRescore = defineScriptType({
     semantics: 'transform',
     ports: { in: { candidates: CANDIDATES }, out: { candidates: CANDIDATES } },
 });
-export const contextTransform = defineScriptType({
+export const contextTransform = defineScriptKind({
     id: 'core:script:context/transform@1',
     i18n: {
         name: { en: 'Transform context' },
@@ -232,14 +232,14 @@ export const contextTransform = defineScriptType({
  * cast list by attachment mistake, silently. The scope is what makes the
  * mistake refusable at attach.
  *
- * The flowing value is what `core:provider/extract-cast@1` publishes on its
+ * The flowing value is what `core:oracle/extract-cast@1` publishes on its
  * `cast` port: `{ participants, mentioned }`. Scripts here rename, merge
  * aliases, drop a junk detection, or add someone the model missed — the
  * paste-rung half of replaceable cast extraction. The other half is the node
  * rebind: a whole different extractor is a same-shaped provider, never a
  * script, because scripts are pure compute and extraction calls a model.
  */
-export const castTransform = defineScriptType({
+export const castTransform = defineScriptKind({
     id: 'core:script:cast/transform@1',
     i18n: {
         name: { en: 'Transform cast' },
@@ -260,6 +260,6 @@ export const castTransform = defineScriptType({
  * kept in step by hand.
  */
 export const scriptContentScopes = () => [
-    ...new Set(allScriptTypes().map((t) => parseScriptTypeId(t.id).content)),
+    ...new Set(allScriptKinds().map((t) => parseScriptKindId(t.id).content)),
 ];
 //# sourceMappingURL=scripts.js.map

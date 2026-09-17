@@ -13,14 +13,19 @@
 		"sdk",
 		"contracts",
 		"cli",
+		"docs",
 		"conformance",
 		"core-catalog",
 		"controls",
 		"ui-preview",
-		"sdk-tests"
+		"playground",
+		"sdk-tests",
+		"api-docs"
 	],
 	"scripts": {
-		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance -w @serene-pub/cli && npm run build -w @serene-pub/core-catalog",
+		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance && npm run build -w @serene-pub/docs && npm run build -w @serene-pub/cli && npm run build -w @serene-pub/core-catalog && npm run docs:api && npm run docs:examples && npm run build -w @serene-pub/playground",
+		"docs:api": "npm run docs:api -w @serene-pub/api-docs",
+		"docs:examples": "cd sdk-tests && tsx ../cli/src/bin.ts docs --examples examples --goldens examples/goldens --out ../docs/generated/examples",
 		"test": "npm run build && npm run test -w @serene-pub/sdk-tests",
 		"typecheck": "npm run typecheck -w @serene-pub/sdk-tests",
 		"format": "prettier --write .",

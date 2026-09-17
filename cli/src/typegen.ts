@@ -48,11 +48,11 @@ const ident = (id: string) => {
 
 function specOptionsType(
 	doc: SpecDocument,
-	typeOf: (typeId: string, version: number) => TypeSurface | undefined,
+	typeOf: (definitionId: string, version: number) => TypeSurface | undefined,
 ): string {
 	const nodes: string[] = []
 	for (const node of doc.nodes) {
-		const surface = typeOf(node.typeId, node.typeVersion)
+		const surface = typeOf(node.definitionId, node.definitionVersion)
 		const slots = surface?.slots ?? {}
 		const slotLines: string[] = []
 		for (const [slotName, slot] of Object.entries(slots) as [string, any][]) {
@@ -88,7 +88,7 @@ function specOptionsType(
 /** The generated module: one typed handle per pipeline, one per genre id. */
 export function generateTypedHandles(
 	announcement: AnnouncementDocument,
-	typeOf: (typeId: string, version: number) => TypeSurface | undefined,
+	typeOf: (definitionId: string, version: number) => TypeSurface | undefined,
 ): string {
 	const ns = announcement.identity.ns
 	const lines: string[] = []

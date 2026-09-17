@@ -1,9 +1,9 @@
 /**
- * 20 §10 — the `route` block: branches selected by declared predicates over a
+ * 20 §10 — the `junction` clause (was `route`): branches selected by declared predicates over a
  * value on the spine. Any subset fires (one, several, none) plus an optional
  * `otherwise` that fires exactly when nothing else did; the receipt records
  * every predicate's evaluation; skipped branches are stated outcomes, never
- * failures; a fired branch's error is the block's error. The loop block's
+ * failures; a fired branch's error is the clause's error. The loop clause's
  * whole argument — declaration, not back-edge, not code in the executor —
  * applied to fan-out.
  */
@@ -11,19 +11,19 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec, run, ok, err, S, pin, describeTaskType } from '@serene-pub/sdk'
+import { spec, run, ok, err, S, pin, describeTaskDefinition } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { publish, bindings, errorsFor, world } from './helpers.js'
 
 const decide = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'demo:task/decide@1',
 		timeoutMs: 500,
 		ports: { in: { text: S.text }, out: { main: S.json, call: S.json } },
 	}),
 )
 const act = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'demo:task/act@1',
 		timeoutMs: 500,
 		ports: { in: { what: S.json }, out: { main: S.json } },
@@ -33,9 +33,9 @@ const act = pin(
 /** decide → route on the decision: dice and lore may both fire; otherwise narrates. */
 const routed = () =>
 	spec('demo:routed', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.task('decide', ($: any) => decide.v1({ text: $.input.text }))
-		.route('fan', { on: ($: any) => $.decide.call }, (r) =>
+		.junction('fan', { on: ($: any) => $.decide.call }, (r) =>
 			r
 				.when('dice', { path: 'tool', equals: 'roll_dice' }, (c) =>
 					c.task('go', ($: any) => act.v1({ what: 'rolled' })),
@@ -75,7 +75,7 @@ describe('20 §10 · routing', () => {
 		assert.equal(receipt.outcome, 'ok')
 		assert.deepEqual(branchesOf(receipt), ['fan.dice.go'])
 		// Every predicate's evaluation is in the receipt — fired and skipped.
-		const notes = (receipt.notes ?? []).filter((n: string) => n.startsWith("route 'fan'"))
+		const notes = (receipt.notes ?? []).filter((n: string) => n.startsWith("junction 'fan'"))
 		assert.equal(notes.length, 3)
 		assert.ok(notes.some((n: string) => n.includes("'dice' fired")))
 		assert.ok(notes.some((n: string) => n.includes("'lore' skipped")))
@@ -102,19 +102,19 @@ describe('20 §10 · routing', () => {
 	test('the validator holds the table honest', async () => {
 		// No routed value.
 		const noOn = spec('demo:r1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.route('fan', { on: undefined as any }, (r) =>
+			.inlet('input', C.userMessage.v1())
+			.junction('fan', { on: undefined as any }, (r) =>
 				r.when('a', { truthy: true }, (c) => c.task('go', () => act.v1({ what: 1 }))),
 			)
 		assert.ok(
-			errorsFor(noOn as any, '20 §10').some((f) => f.message.includes('no routed value')),
+			errorsFor(noOn as any, '20 §10').some((f) => f.message.includes('no value to branch on')),
 		)
 
 		// Two defaults.
 		const twoDefaults = spec('demo:r2', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('decide', ($: any) => decide.v1({ text: $.input.text }))
-			.route('fan', { on: ($: any) => $.decide.call }, (r) =>
+			.junction('fan', { on: ($: any) => $.decide.call }, (r) =>
 				r
 					.otherwise('a', (c) => c.task('go', () => act.v1({ what: 1 })))
 					.otherwise('b', (c) => c.task('go', () => act.v1({ what: 2 }))),

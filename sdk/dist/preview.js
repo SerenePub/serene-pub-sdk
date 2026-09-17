@@ -43,15 +43,15 @@ export function previewTarget(nodes, explicit) {
     // first Provider is `embed`, which lives inside the gather block — stopping there
     // would preview a context that had not been retrieved yet. Spine-only is the rule
     // that means what people intend, and it is the same rule
-    // `slot.downstreamProvider()` already resolves with (16 §5b-i).
+    // `slot.downstreamOracle()` already resolves with (16 §5b-i).
     const spine = nodes
-        .filter((n) => !n.blockId && n.kind === 'provider')
+        .filter((n) => !n.clauseId && n.kind === 'oracle')
         .sort((a, b) => a.position - b.position);
     return spine[0] ? { key: spine[0].key, targetedBy: 'first-provider-on-spine' } : undefined;
 }
 export function renderPreview(p) {
     const out = [];
-    out.push(`preview · stopped before ${p.atNode} (${p.typeId}) · ${p.targetedBy}`);
+    out.push(`preview · stopped before ${p.atNode} (${p.definitionId}) · ${p.targetedBy}`);
     if (p.connection) {
         out.push(`  connection ${p.connection.kind ?? '?'}` +
             (p.connection.contextLength ? ` · context ${p.connection.contextLength}` : '') +

@@ -146,6 +146,13 @@ export interface PresetDefaults {
     tags?: string[];
     /** The genre's declared fields, by key. */
     genreFields?: Record<string, unknown>;
+    /**
+     * Envoys to seat on creation, by slug (R-18; U5g) — beside the genre's
+     * `default: true` ones, which are seated with no choice. A slug the
+     * genre (or an installed action) does not declare is ignored, on the
+     * same advisory terms as every other key here.
+     */
+    envoys?: string[];
 }
 /**
  * A preset populates a genre's event slots (24 §1): for each event the genre
@@ -157,7 +164,14 @@ export interface PresetDecl {
     label: string;
     description?: string;
     bindings: Record<string, PresetBinding>;
-    /** For the open `session-action` slot: which actions come along. */
+    /**
+     * For the open `session-action` slot: which actions come along, each by
+     * its **identity** — `<spec slug>#<key>` (U5c review, W-A). A preset
+     * curates declarations, never functions: two specs contributing one
+     * function are two entries, and including one says nothing about the
+     * other. Absent means the host's companion rule (every action from the
+     * genre owner's own namespace).
+     */
     actions?: {
         include: string[];
     };
@@ -185,8 +199,16 @@ export declare function preset(slug: string, props: {
     label: string;
     description?: string;
     bindings: Record<string, BindingInput>;
+    /**
+     * Which actions come along (24 §7; W-A): an identity string
+     * (`'core:spec/narrate#narrate'`), or a spec handle — a `BuiltSpec`
+     * expands to every action it contributes. A bare spec id, as a string
+     * or an `ExternalRef`, is refused: the builder cannot know which keys
+     * that spec declares, and a preset naming a spec where the host
+     * expects a declaration would match nothing and say nothing.
+     */
     actions?: {
-        include: Array<BuiltSpec | ExternalRef | string>;
+        include: Array<BuiltSpec | string>;
     };
     defaults?: PresetDefaults;
     /** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */

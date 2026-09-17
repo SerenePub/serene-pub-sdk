@@ -5,14 +5,15 @@
  * discriminated results including halt, per-run seed, timeouts that bound execution
  * but never waiting, consumption budgets, per-kind injection, and core-emitted events.
  */
-import { getType } from './descriptors.js';
+import { envoyConfigKeysOf } from './document.js';
+import { getDefinition, scriptPointsOf } from './descriptors.js';
 import { collectDataRefs, isSlotRef } from './refs.js';
 import { resolveConfig, slotConnectionId, slotConnectionModelId, SLOT_VALUE, } from './config.js';
 import { resolveSamplingValues } from './sampling.js';
 import { hashPayload, isGated, resolvePosition, } from './review.js';
 import { isSecret } from './settings.js';
 import { previewTarget, roughTokens } from './preview.js';
-import { resolveBlockMode } from './blocks.js';
+import { resolveClauseMode } from './clauses.js';
 import { ITEM as ITEM_KEY } from './scope.js';
 import { isAllocatedContext, measureWire } from './wire.js';
 // ── The reference behind a resolved slot ────────────────────────────────────
@@ -86,7 +87,7 @@ export const cancelled = (reason) => ({
  *
  * A single shared map cannot hold two iterations of a map at once, which is why the
  * earlier draft forced every map sequential. A scope chain fixes that and is also what
- * makes nested blocks correct: an iteration writes into its own scope and reads through
+ * makes nested clauses correct: an iteration writes into its own scope and reads through
  * to its parent, so two iterations never see each other's intermediate values.
  */
 class ValueScope {
@@ -109,8 +110,9 @@ class ValueScope {
     }
 }
 export const isCommitted = (w) => w.status === 'committed';
+import { isStatusText, sameStatus } from './status.js';
 /**
- * A Provider binding, with `ctx.can()` narrowed to what its own type declared.
+ * An oracle handler, with `ctx.can()` narrowed to what its own definition declared.
  *
  * The one hop that matters. `pin` already carries the descriptor's literal type
  * through, so reading `optional` off it here is enough — there is no need to
@@ -195,13 +197,18 @@ export async function run(doc, opts) {
     const seed = opts.seed ?? 'seed:0';
     const rng = seededRandom(seed);
     const now = opts.now ?? (() => Date.now());
-    // Blocks are addressed alongside nodes so a block can carry a setting of
-    // its own — its execution mode. Keys cannot collide: a block id qualifies
+    // Clauses are addressed alongside nodes so a clause can carry a setting of
+    // its own — its execution mode. Keys cannot collide: a clause id qualifies
     // the nodes inside it (`drafting` contains `drafting.item.draft`), so the
-    // block's own id is never also a node's.
+    // clause's own id is never also a node's.
     const config = resolveConfig(world, [
         ...doc.nodes.map((n) => n.key),
-        ...doc.blocks.map((b) => b.id),
+        ...doc.clauses.map((b) => b.id),
+        // An envoy's config (R-18 (2)) is addressed like a node's, at the
+        // synthetic key a `slot.prompts({ envoy })` compiled to; the host
+        // projects the genre's declaration there and the panel's deviations
+        // sit above it.
+        ...envoyConfigKeysOf(doc),
     ]);
     // The one await a tokenizer costs, taken BEFORE `startedAt` is stamped: a
     // cold merge table is setup, not work, and charging the first run of a
@@ -219,7 +226,14 @@ export async function run(doc, opts) {
         triggerSource: opts.triggerSource ?? 'input',
         triggerRef: opts.triggerRef,
         actorUserId: opts.actorUserId,
-        depth: 0,
+        // Pinned at construction — before any node — and never touched again.
+        ...(opts.portrayals ? { portrayals: opts.portrayals } : {}),
+        // Lineage likewise: a dispatched child names its parent and root
+        // here, before node 1; a root run has neither and stands at 0.
+        ...(opts.lineage
+            ? { parentRunId: opts.lineage.parentRunId, rootRunId: opts.lineage.rootRunId }
+            : {}),
+        depth: opts.lineage?.depth ?? 0,
         queuedMs: opts.queuedMs,
         startedAt: now(),
         endedAt: 0,
@@ -236,18 +250,34 @@ export async function run(doc, opts) {
         receipt.notes = [...(receipt.notes ?? []), tokenizer.degraded];
     /** Set the moment any node with declared effects is invoked — gates compaction. */
     let effectfulNodeRan = false;
+    /**
+     * The status the run is showing right now (R-19): the last one any node
+     * set. Ephemeral — it reaches the host through `onStatus` and lands on
+     * the receipt only as `lastStatus`, and only when the run did not end
+     * `ok` (R-21). Never on a node row (F34).
+     */
+    let lastStatus;
     const previewAt = opts.preview
         ? previewTarget(doc.nodes, typeof opts.preview === 'object' ? opts.preview.atNode : undefined)
         : undefined;
+    // A preview performs no writes (R-21 (1)); an explicit `dry` says so for a
+    // run that goes to the end.
+    const dry = opts.dry ?? !!opts.preview;
+    /**
+     * The run's live row — see `RunFacts.liveRow`. Set by the most recent
+     * live-row outlet that committed, read by every oracle call after it, and
+     * reported once more at the end so the host can finalise it.
+     */
+    let liveRow;
     /**
      * Hoist what the panel needs into one place. Almost all of it is already recorded —
-     * Assemble's allocation record and the Provider's resolved input. The only figure
+     * Assemble's allocation record and the oracle's resolved input. The only figure
      * that exists nowhere else is the count of the formed payload.
      */
-    const buildPreview = (node, input, typeId, targetedBy, wire, wireCtx) => {
+    const buildPreview = (node, input, definitionId, targetedBy, wire, wireCtx) => {
         const ctxValue = input.context ?? input.main ?? input;
         const conn = input.connection;
-        const budgetNode = doc.nodes.find((n) => n.typeId === 'core:task/context-budget');
+        const budgetNode = doc.nodes.find((n) => n.definitionId === 'core:task/context-budget');
         const budgetValue = budgetNode ? values.get(budgetNode.key) : undefined;
         // Prefer the allocated blocks, which carry the trail. Fall back to sniffing an
         // allocation array only for specs core has not migrated yet.
@@ -286,7 +316,7 @@ export async function run(doc, opts) {
             allocatedSource?.allocation.budget;
         return {
             atNode: node.key,
-            typeId,
+            definitionId,
             targetedBy,
             connection: conn
                 ? {
@@ -340,8 +370,6 @@ export async function run(doc, opts) {
         if (receipt.consumption.tokens > budget.tokens)
             throw new BudgetExceeded('token budget exceeded');
     };
-    // Blocks are executed as units when their first member is reached.
-    const emittedBlocks = new Set();
     const ordered = doc.nodes.slice().sort((a, b) => a.position - b.position);
     const resolveInput = (node, scope) => {
         const cfg = { ...node.config };
@@ -367,9 +395,9 @@ export async function run(doc, opts) {
             node.key;
         const slotName = ref.slot;
         if (slotName === 'connection') {
-            const d = getType(`${node.typeId}@${node.typeVersion}`);
+            const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`);
             const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node;
-            const td = getType(`${targetNode.typeId}@${targetNode.typeVersion}`);
+            const td = getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`);
             const kind = td?.shape ?? d?.shape;
             const stored = config[targetKey]?.['connection']?.[SLOT_VALUE];
             /**
@@ -399,9 +427,11 @@ export async function run(doc, opts) {
             // the miss used to fall through to `activeConnection` — which on most
             // installs holds the very connection that was picked, so the bug
             // looked fixed.
-            const conn = chosenId == null
+            const conn = chosenId == null ? undefined : world.connections.find((c) => sameId(c.id, chosenId));
+            const modelId = slotConnectionModelId(stored);
+            const model = modelId == null
                 ? undefined
-                : world.connections.find((c) => sameId(c.id, chosenId));
+                : world.models?.find((m) => sameId(m.id, modelId) && sameId(m.connectionId, conn?.id));
             // metadata only — material is injected by the executor at call time (01 §10)
             return conn
                 ? {
@@ -413,7 +443,8 @@ export async function run(doc, opts) {
                     // how a model chosen in a panel reached no request. Null
                     // when the slot named no model, the fallback included:
                     // `activeConnection` holds endpoint ids alone.
-                    modelId: slotConnectionModelId(stored),
+                    modelId,
+                    contextWindow: model?.contextWindow ?? null,
                 }
                 : null;
         }
@@ -427,7 +458,7 @@ export async function run(doc, opts) {
              * ⚠ The fallback was missing, and its absence was invisible because
              * dispatch has one: a slot with no pick resolved to `{}` here while
              * the call still went out against the instance default's window. A
-             * node that only forwards this (every Provider — the host reduces it
+             * node that only forwards this (every oracle — the host reduces it
              * back to a row id) could not tell. A node that READS it could: the
              * summarize batch cutter has to fit a prompt into that window, and
              * with `{}` it clamped against nothing on every install that had not
@@ -438,8 +469,8 @@ export async function run(doc, opts) {
              * unaffected, because there is no modality to look a default up by.
              */
             const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node;
-            const kind = getType(`${targetNode.typeId}@${targetNode.typeVersion}`)?.shape ??
-                getType(`${node.typeId}@${node.typeVersion}`)?.shape;
+            const kind = getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)?.shape ??
+                getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.shape;
             // Split from the fallback below, because only this half is a PICK.
             // The reference handed to the host is the pipeline config speaking
             // (`pipelineConfig`, tier 2); the instance default is a tier the host
@@ -486,20 +517,48 @@ export async function run(doc, opts) {
             // a spec that did not override `budget` got `undefined` — which reads
             // downstream as a budget of zero, excludes every block, and renders a
             // context with its lore silently missing.
-            //
-            // Read from the *target*, both the schema and the values: a shared
-            // params slot is the owner's policy, so its defaults are the
-            // owner's too. Reading the schema here and the values there would
-            // fill a query's gaps with the query's own defaults and call the
-            // result the ranker's.
+            const paramsSchemaOf = (n) => (getDefinition(`${n.definitionId}@${n.definitionVersion}`)?.slots?.[slotName]?.schema ?? {});
+            const resolveAt = (n, schema, keep) => {
+                const out = {};
+                for (const [k, v] of Object.entries(schema))
+                    if (keep(k) && v?.default !== undefined)
+                        out[k] = v.default;
+                for (const [k, v] of Object.entries(config[n.key]?.[slotName] ?? {}))
+                    if (keep(k))
+                        out[k] = v;
+                return out;
+            };
+            const ownSchema = paramsSchemaOf(node);
+            if (targetKey === node.key)
+                return resolveAt(node, ownSchema, () => true);
+            /**
+             * A reference, and two addresses (R-7 P2, refined 2026-09-16 — see
+             * `FieldDecl.shared`). The referencing node's OWN declaration says
+             * which of its fields it holds in common with the owner: those
+             * resolve at the owner — the owner's declared default under the
+             * owner's stored value, because a shared setting is the owner's
+             * policy and filling a lane's gaps from the lane's own defaults
+             * would call the result the owner's. Every other field is the
+             * node's own — its share of the window, its ceiling — and resolves
+             * at its own address exactly as an unreferenced slot would, so one
+             * `slot.params({ node })` carries both halves and the spec names
+             * the owner once.
+             *
+             * The owner's schema is read for the shared half so a shared field
+             * the owner declares under a different default takes the owner's;
+             * a shared field the owner does not declare at all keeps the
+             * referencing node's default, so a reference to an owner of a
+             * different definition degrades to "own everywhere" rather than to
+             * `undefined`.
+             */
             const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node;
-            const d = getType(`${targetNode.typeId}@${targetNode.typeVersion}`);
-            const schema = d?.slots?.[slotName]?.schema;
-            const defaults = {};
-            for (const [k, v] of Object.entries(schema ?? {}))
-                if (v?.default !== undefined)
-                    defaults[k] = v.default;
-            return { ...defaults, ...(config[targetKey]?.[slotName] ?? {}) };
+            const ownerSchema = paramsSchemaOf(targetNode);
+            const shared = new Set(Object.entries(ownSchema)
+                .filter(([, v]) => v?.shared === true)
+                .map(([k]) => k));
+            const own = resolveAt(node, ownSchema, (k) => !shared.has(k));
+            const fromOwner = resolveAt(targetNode, { ...Object.fromEntries([...shared].map((k) => [k, ownSchema[k]])), ...ownerSchema }, (k) => shared.has(k));
+            return { ...own, ...fromOwner };
         }
         // The generic slots (prompts, template, settings) honour the reference
         // target too: a shared prompts slot reads the *owner's* configured
@@ -508,17 +567,17 @@ export async function run(doc, opts) {
         // itself, which is the behaviour every existing spec compiled against.
         return config[targetKey]?.[slotName] ?? {};
     };
-    const invokeInner = async (node, scope, blockMode, iteration) => {
-        const d = getType(`${node.typeId}@${node.typeVersion}`);
+    const invokeInner = async (node, scope, blockMode, iteration, iterationCount) => {
+        const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`);
         if (!d)
-            return err(`unknown type ${node.typeId}@${node.typeVersion}`);
-        const hook = opts.bindings[`${node.typeId}@${node.typeVersion}`];
+            return err(`unknown type ${node.definitionId}@${node.definitionVersion}`);
+        const hook = opts.bindings[`${node.definitionId}@${node.definitionVersion}`];
         const started = now();
         const nr = {
             nodeKey: node.key,
             seq: seq++,
             kind: node.kind,
-            typeId: `${node.typeId}@${node.typeVersion}`,
+            definitionId: `${node.definitionId}@${node.definitionVersion}`,
             result: 'ok',
             startedAt: started,
             endedAt: started,
@@ -561,7 +620,7 @@ export async function run(doc, opts) {
                 try {
                     const outcome = await opts.applyScripts({
                         nodeKey: node.key,
-                        typeId: nr.typeId,
+                        definitionId: nr.definitionId,
                         slot: slotName,
                         phase,
                         port,
@@ -570,6 +629,8 @@ export async function run(doc, opts) {
                     }, chain, before);
                     if (outcome.applications.length)
                         nr.scripts = [...(nr.scripts ?? []), ...outcome.applications];
+                    if (outcome.notes?.length)
+                        nr.notes.push(...outcome.notes);
                     // Alias-preserving: a task publishing {main, messages} as one
                     // value keeps agreeing with itself after the rewrite — a
                     // downstream edge may pull either name.
@@ -588,7 +649,9 @@ export async function run(doc, opts) {
                         {
                             scriptId: -1,
                             name: '(engine)',
-                            typeId: nr.typeId,
+                            // The engine itself failed, before any link ran: there is
+                            // no script kind to name, so the record says so.
+                            scriptKind: '',
                             phase,
                             appliedBy: 'substrate',
                             result: 'err',
@@ -599,7 +662,7 @@ export async function run(doc, opts) {
             }
             return out;
         };
-        if (node.kind === 'input') {
+        if (node.kind === 'inlet') {
             // An input has no invocation to wrap, but it can still declare a
             // hook: phase `after`, over the value it publishes — which is what
             // retrieval and the prompt see. The stored user message, written
@@ -617,7 +680,7 @@ export async function run(doc, opts) {
             return ok(published);
         }
         if (!hook)
-            return err(`no binding registered for ${node.typeId}@${node.typeVersion}`);
+            return err(`no binding registered for ${node.definitionId}@${node.definitionVersion}`);
         let input = resolveInput(node, scope);
         // ── Switched off ──────────────────────────────────────────────────────
         //
@@ -634,6 +697,10 @@ export async function run(doc, opts) {
         // Skipped before the binding runs, so a disabled source costs no query
         // at all. That is the point: `share: 0` starves a source, this one does
         // not ask for it.
+        //
+        // The address is the substrate's `settings` slot (R-9,
+        // `settingsSlot.ts`): declared on the registry row for every optional
+        // definition, read here as it always was.
         if (d.optional === true && config[node.key]?.['settings']?.['enabled'] === false) {
             nr.endedAt = now();
             nr.elapsedMs = nr.endedAt - nr.startedAt;
@@ -646,7 +713,8 @@ export async function run(doc, opts) {
             input = await applyChainsAt('before', input);
         // ── The review gate (01 §7) ───────────────────────────────────────────
         // Substrate placement: after the input resolves, before the binding is invoked.
-        // Keys on declared effects, not on kind, so an effectful Provider gates too.
+        // Keys on declared effects, not on kind, so an effectful oracle gates too.
+        // `settings.review` is the substrate slot's second field (`settingsSlot.ts`).
         if (isGated(d.effects)) {
             const position = resolvePosition(d.reviewDefault, config[node.key]?.['settings']?.['review']);
             if (position !== 'off') {
@@ -660,7 +728,7 @@ export async function run(doc, opts) {
                 }
                 const decision = await opts.reviewer({
                     nodeKey: node.key,
-                    typeId: nr.typeId,
+                    definitionId: nr.definitionId,
                     payload: input,
                     position,
                 });
@@ -751,7 +819,7 @@ export async function run(doc, opts) {
         // counted here, so the panel shows the real figure rather than a parallel
         // estimate that drifts from what actually goes out.
         if (previewAt && node.key === previewAt.key) {
-            receipt.preview = buildPreview(node, input, nr.typeId, previewAt.targetedBy, wire, wireCtx);
+            receipt.preview = buildPreview(node, input, nr.definitionId, previewAt.targetedBy, wire, wireCtx);
             nr.input = redact(input);
             nr.endedAt = now();
             nr.elapsedMs = nr.endedAt - nr.startedAt;
@@ -771,11 +839,37 @@ export async function run(doc, opts) {
         const base = {
             signal: controller.signal,
             progress: () => { }, // ephemeral, never recorded (F34)
+            // The status seam (R-19), on the same ephemeral footing: the host
+            // hears it, the receipt keeps only the last one on a run that
+            // did not end `ok`. A malformed text is a note, never a failure.
+            status: (text) => {
+                if (!isStatusText(text)) {
+                    nr.notes.push('status ignored: a status is { i18n: { en, … }, vars? }');
+                    return;
+                }
+                const changed = !sameStatus(lastStatus?.text, text);
+                lastStatus = { nodeKey: node.key, text };
+                if (!changed)
+                    return;
+                try {
+                    opts.onStatus?.(node.key, text);
+                }
+                catch {
+                    // A status display must never take a run down.
+                }
+            },
             log: (lvl, m) => nr.notes.push(`${lvl}: ${m}`),
             countTokens,
         };
         if (d.declaresRandomness)
             base.random = rng;
+        // Inside an `each` or a `loop`: which body this is, for a status that
+        // wants to count. `count` only where the clause knows its total.
+        if (iteration !== undefined)
+            base.iteration = {
+                index: iteration,
+                ...(iterationCount !== undefined ? { count: iterationCount } : {}),
+            };
         // The interior-point broker (18 §4e): granted only when the descriptor
         // declares points and the host supplied an engine — `ctx.scripts`
         // simply does not exist otherwise, the `declaresRandomness` posture.
@@ -785,34 +879,38 @@ export async function run(doc, opts) {
         // so an interior letting user policy in stays visible from outside.
         if (opts.applyScripts && d.scriptPoints?.length) {
             const applyScripts = opts.applyScripts;
-            const declared = d.scriptPoints;
+            // The full shape, deprecated spellings folded — so `accepts` is
+            // always the point's own (R-11), never a literal written here.
+            const declared = scriptPointsOf(d);
             base.scripts = {
                 applyText: async (point, text) => {
                     const known = declared.find((sp) => sp.key === point);
                     if (!known)
-                        throw new Error(`'${point}' is not a script point '${nr.typeId}' declares. ` +
+                        throw new Error(`'${point}' is not a script point '${nr.definitionId}' declares. ` +
                             `Declared: ${declared.map((sp) => sp.key).join(', ')}. ` +
                             `Points are part of the hashed contract — declare it on the descriptor.`);
                     const outcome = await applyScripts({
                         nodeKey: node.key,
-                        typeId: nr.typeId,
+                        definitionId: nr.definitionId,
                         slot: 'scripts',
                         phase: 'before',
                         port: point,
-                        accepts: ['core:script:text/transform@1'],
+                        accepts: [...known.accepts],
                         extras: [],
                         origin: 'binding',
                     }, config[node.key]?.['scripts']?.[point], text);
                     if (outcome.applications.length)
                         nr.scripts = [...(nr.scripts ?? []), ...outcome.applications];
+                    if (outcome.notes?.length)
+                        nr.notes.push(...outcome.notes);
                     return typeof outcome.value === 'string' ? outcome.value : text;
                 },
             };
         }
         const nodeRef = {
             key: node.key,
-            typeId: node.typeId,
-            typeVersion: node.typeVersion,
+            definitionId: node.definitionId,
+            definitionVersion: node.definitionVersion,
             kind: node.kind,
         };
         const host = opts.host;
@@ -822,7 +920,7 @@ export async function run(doc, opts) {
                 ...base,
                 read: (table, q) => host?.read ? host.read(table, q, nodeRef) : [],
             };
-        if (node.kind === 'provider') {
+        if (node.kind === 'oracle') {
             const conn = host?.connection?.(nodeRef);
             /**
              * What the bound connection can actually do.
@@ -834,7 +932,7 @@ export async function run(doc, opts) {
              * prevent — and the picker filters on those declarations, so a
              * dependency outside them was never checked at bind time either.
              */
-            const d = getType(`${node.typeId}@${node.typeVersion}`);
+            const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`);
             const declared = new Set();
             for (const slot of Object.values(d?.slots ?? {}))
                 for (const id of slot.optional ?? [])
@@ -854,10 +952,10 @@ export async function run(doc, opts) {
                     return typeof grade === 'number' && grade > 0 ? grade : false;
                 },
                 call: async (p) => {
-                    // Recorded before dispatch, so a Provider that throws still leaves the
+                    // Recorded before dispatch, so an oracle that throws still leaves the
                     // request in the receipt — the failing call is the one worth reading.
                     nr.request = p;
-                    return host?.call ? await host.call(p, nodeRef) : p;
+                    return host?.call ? await host.call(p, nodeRef, { liveRow, dry }) : p;
                 },
                 reportUsage: (t) => {
                     nr.tokens = (nr.tokens ?? 0) + t;
@@ -880,15 +978,37 @@ export async function run(doc, opts) {
                 },
             };
         }
-        if (node.kind === 'consumer') {
+        /**
+         * The row this outlet committed, if it committed one — read off the
+         * COMMIT rather than off what the binding chose to publish, because
+         * the publish is the binding's business and the row is the host's.
+         */
+        let committedRow;
+        if (node.kind === 'outlet') {
             ctx = {
                 ...base,
-                commit: async (p) => host?.commit
-                    ? await host.commit(p, nodeRef)
-                    : { id: `row:${node.key}`, ...p },
+                commit: async (p) => {
+                    // A dry run's outlet reaches no host (R-21 (1)). The id is
+                    // synthetic and says so, so a downstream node — and a reader
+                    // of the receipt — can tell it from a row.
+                    const ids = dry
+                        ? (() => {
+                            nr.dry = true;
+                            nr.notes.push('dry: nothing committed');
+                            return { id: `dry:${node.key}` };
+                        })()
+                        : host?.commit
+                            ? await host.commit(p, nodeRef)
+                            : { id: `row:${node.key}`, ...p };
+                    const id = ids.id;
+                    if (typeof id === 'string' || typeof id === 'number')
+                        committedRow = id;
+                    return ids;
+                },
                 emit: (handle, payload) => {
-                    nr.notes.push(`emit → ${handle}`);
-                    host?.emit?.(handle, payload, nodeRef);
+                    nr.notes.push(dry ? `emit → ${handle} (dry)` : `emit → ${handle}`);
+                    if (!dry)
+                        host?.emit?.(handle, payload, nodeRef);
                 },
             };
         }
@@ -920,7 +1040,7 @@ export async function run(doc, opts) {
             res = ok({});
         }
         if (res.kind === 'ok') {
-            // A gate-eligible Consumer publishes the discriminated write result, so the
+            // A gate-eligible outlet publishes the discriminated write result, so the
             // committed and pending cases are the same shape and a downstream type has
             // to handle both (13 §7j-b). There is no branch node to check `status` with
             // (F25), so the obligation belongs to the port shape, not to the spec.
@@ -932,7 +1052,7 @@ export async function run(doc, opts) {
                 typeof published === 'object' &&
                 !Array.isArray(published))
                 published = await applyChainsAt('after', published);
-            if (node.kind === 'consumer' && isGated(d.effects)) {
+            if (node.kind === 'outlet' && isGated(d.effects)) {
                 // Wrap only if it is not already discriminated — but publish
                 // either way. This used to skip publishing entirely when a
                 // binding returned a `WriteResult` itself, so the binding doing
@@ -950,6 +1070,13 @@ export async function run(doc, opts) {
                     };
                 published = publishWriteResult(w, d.ports.out);
             }
+            // The run's live row (R-21 (2)): the row this outlet committed,
+            // when the declaration says its row is the one a stream goes to.
+            // A dry run's synthetic id counts — a downstream oracle in a dry
+            // run still streams to nothing, and the host is told so by `dry`
+            // rather than by the row's absence.
+            if (d.liveRow && committedRow !== undefined)
+                liveRow = committedRow;
             scope.set(node.key, published);
             res = ok(published);
             nr.output = redact(published);
@@ -959,13 +1086,17 @@ export async function run(doc, opts) {
         }
         // Core emits, not the node (01 §8 / F8).
         if (res.kind === 'ok' &&
-            node.kind === 'consumer' &&
+            node.kind === 'outlet' &&
             d.effects === 'write' &&
             d.causesEvent) {
             receipt.emitted.push({
                 event: d.causesEvent,
                 cause: node.key,
                 subscribers: opts.subscribers?.[d.causesEvent] ?? 0,
+                // Recorded, never dispatched: a dry run caused nothing, and a
+                // reader of the receipt has to be able to tell that from a
+                // write whose subscribers happened to be zero.
+                ...(dry ? { dry: true } : {}),
             });
         }
         receipt.nodes.push(nr);
@@ -976,13 +1107,13 @@ export async function run(doc, opts) {
      * identity and never a payload (F34) — an observer that throws is the
      * observer's problem, not the run's.
      */
-    const invoke = async (node, scope, blockMode, iteration) => {
+    const invoke = async (node, scope, blockMode, iteration, iterationCount) => {
         const ev = (phase, result) => {
             try {
                 opts.onNode?.({
                     phase,
                     nodeKey: node.key,
-                    typeId: `${node.typeId}@${node.typeVersion}`,
+                    definitionId: `${node.definitionId}@${node.definitionVersion}`,
                     kind: node.kind,
                     seq,
                     declared: doc.nodes.length,
@@ -995,7 +1126,7 @@ export async function run(doc, opts) {
             }
         };
         ev('start');
-        const res = await invokeInner(node, scope, blockMode, iteration);
+        const res = await invokeInner(node, scope, blockMode, iteration, iterationCount);
         ev('end', res.kind);
         return res;
     };
@@ -1011,45 +1142,50 @@ export async function run(doc, opts) {
     };
     const itemsAt = (level) => {
         const nodes = ordered
-            .filter((n) => n.blockId === level.blockId && n.blockChain === level.chain)
+            .filter((n) => n.clauseId === level.clauseId && n.clauseChain === level.chain)
             .map((node) => ({
             sort: node.position,
             run: node,
-            isBlock: false,
+            isClause: false,
         }));
-        const blocks = doc.blocks
-            .filter((b) => b.blockId === level.blockId && b.blockChain === level.chain)
-            .map((block) => ({
-            sort: block.position,
-            run: block,
-            isBlock: true,
+        const clauses = doc.clauses
+            .filter((b) => b.clauseId === level.clauseId && b.clauseChain === level.chain)
+            .map((clause) => ({
+            sort: clause.position,
+            run: clause,
+            isClause: true,
         }));
-        return [...nodes, ...blocks].sort((a, b) => a.sort - b.sort);
+        return [...nodes, ...clauses].sort((a, b) => a.sort - b.sort);
     };
-    const runLevel = async (level, scope, blockMode, iteration) => {
+    const runLevel = async (level, scope, clauseMode, iteration, iterationCount) => {
         let last = ok(null);
         for (const item of itemsAt(level)) {
             if (checkCancel())
                 return cancelled('cancelled');
-            last = item.isBlock
-                ? await runBlock(item.run, scope)
-                : await invoke(item.run, scope, blockMode, iteration);
+            last = item.isClause
+                ? await runClause(item.run, scope)
+                : await invoke(item.run, scope, clauseMode, iteration, iterationCount);
+            // A node that settled badly while the stop was pending settled
+            // badly BECAUSE of the stop: an oracle whose call was aborted
+            // returns `halt`, and reading that as the node's own decision would
+            // file a person's Stop as the pipeline giving up. The stop is the
+            // fact; the node's row keeps its own reason (13 §3).
             if (last.kind !== 'ok')
-                return last;
+                return checkCancel() ? cancelled('cancelled') : last;
         }
         return last;
     };
     const truthy = (v) => !!v && !(Array.isArray(v) && v.length === 0);
-    const runBlock = async (block, scope) => {
+    const runClause = async (clause, scope) => {
         // `forceSequential` still wins over both: it is how a preview replays a
         // run deterministically, and a user setting must not be able to make a
         // preview nondeterministic.
         const mode = opts.forceSequential
             ? 'sequential'
-            : resolveBlockMode(block.mode, config[block.id]?.['settings']?.['mode']);
+            : resolveClauseMode(clause.mode, config[clause.id]?.['settings']?.['mode']);
         const collected = [];
         /**
-         * The block's own output, addressable by its id.
+         * The clause's own output, addressable by its id.
          *
          * `into` is the parent scope for every construct but the loop, which
          * publishes into its own scope first so the body can read it — see the
@@ -1071,16 +1207,16 @@ export async function run(doc, opts) {
                     return collected.every((b) => b.result.kind === 'ok');
                 },
             };
-            into.set(block.id, union);
+            into.set(clause.id, union);
         };
-        if (block.kind === 'async') {
+        if (clause.kind === 'gather') {
             // Chains share the scope: a sibling is addressable by its qualified key, and
             // keys are unique, so there is nothing to collide.
-            const run = (chain) => runLevel({ blockId: block.id, chain }, scope, mode);
+            const run = (chain) => runLevel({ clauseId: clause.id, chain }, scope, mode);
             const results = mode === 'parallel'
-                ? await Promise.all(block.chains.map(run))
-                : await sequential(block.chains, run);
-            block.chains.forEach((chain, i) => collected.push({
+                ? await Promise.all(clause.chains.map(run))
+                : await sequential(clause.chains, run);
+            clause.chains.forEach((chain, i) => collected.push({
                 branchKey: chain,
                 index: i,
                 result: results[i],
@@ -1088,36 +1224,36 @@ export async function run(doc, opts) {
             publish();
             return collected.find((b) => b.result.kind !== 'ok')?.result ?? ok(null);
         }
-        if (block.kind === 'map') {
-            const items = resolveMapItems(block.over, scope);
-            if (block.max !== undefined && items.length > block.max) {
-                return err(`map '${block.id}' received ${items.length} items but declares max ${block.max}`);
+        if (clause.kind === 'each') {
+            const items = resolveEachItems(clause.over, scope);
+            if (clause.max !== undefined && items.length > clause.max) {
+                return err(`each '${clause.id}' received ${items.length} items but declares max ${clause.max}`);
             }
             // Each iteration gets its own scope, so genuinely parallel maps are correct
             // rather than merely equivalent-if-you-squint.
             const run = async (item, i) => {
                 const child = scope.child();
-                child.set(`${block.id}.${ITEM_KEY}`, item);
-                return runLevel({ blockId: block.id, chain: 'item' }, child, mode, i);
+                child.set(`${clause.id}.${ITEM_KEY}`, item);
+                return runLevel({ clauseId: clause.id, chain: 'item' }, child, mode, i, items.length);
             };
             const results = mode === 'parallel'
                 ? await Promise.all(items.map(run))
                 : await sequential(items.map((item, i) => ({ item, i })), ({ item, i }) => run(item, i));
             items.forEach((_, i) => collected.push({
-                branchKey: `${block.id}[${i}]`,
+                branchKey: `${clause.id}[${i}]`,
                 index: i,
                 result: results[i],
             }));
             publish();
             return collected.find((b) => b.result.kind !== 'ok')?.result ?? ok(null);
         }
-        if (block.kind === 'route') {
+        if (clause.kind === 'junction') {
             // ── route (20 §10) ───────────────────────────────────────────────
             // The decision is data a task computed; the routing is declaration.
             // Every predicate's evaluation is recorded — fired and skipped
             // alike — so "why did the lore branch not run" answers from rows.
-            const value = resolvePredicate(block.on, scope);
-            const routes = block.routes ?? {};
+            const value = resolvePredicate(clause.on, scope);
+            const branches = clause.branches ?? {};
             const read = (path) => {
                 if (!path)
                     return value;
@@ -1145,18 +1281,18 @@ export async function run(doc, opts) {
                 return false;
             };
             const fired = new Map();
-            for (const chain of block.chains)
-                fired.set(chain, fires(routes[chain] ?? {}));
+            for (const chain of clause.chains)
+                fired.set(chain, fires(branches[chain] ?? {}));
             const anyFired = [...fired.values()].some(Boolean);
-            for (const chain of block.chains)
-                if (routes[chain]?.default)
+            for (const chain of clause.chains)
+                if (branches[chain]?.default)
                     fired.set(chain, !anyFired);
             receipt.notes = [
                 ...(receipt.notes ?? []),
-                ...block.chains.map((chain) => `route '${block.id}': '${chain}' ${fired.get(chain) ? 'fired' : 'skipped'} (${describe(routes[chain] ?? {})})`),
+                ...clause.chains.map((chain) => `junction '${clause.id}': '${chain}' ${fired.get(chain) ? 'fired' : 'skipped'} (${describe(branches[chain] ?? {})})`),
             ];
-            const firedChains = block.chains.filter((c) => fired.get(c));
-            const run = (chain) => runLevel({ blockId: block.id, chain }, scope, mode);
+            const firedChains = clause.chains.filter((c) => fired.get(c));
+            const run = (chain) => runLevel({ clauseId: clause.id, chain }, scope, mode);
             const results = new Map();
             if (mode === 'parallel') {
                 const rs = await Promise.all(firedChains.map(run));
@@ -1169,7 +1305,7 @@ export async function run(doc, opts) {
                     results.set(c, await run(c));
                 }
             }
-            block.chains.forEach((chain, i) => collected.push({
+            clause.chains.forEach((chain, i) => collected.push({
                 branchKey: chain,
                 index: i,
                 result: results.get(chain) ?? halt('not selected by route'),
@@ -1189,21 +1325,21 @@ export async function run(doc, opts) {
                 },
                 ok: collected.every((b) => !b.fired || b.result.kind === 'ok'),
             };
-            scope.set(block.id, union);
-            return (collected.find((b) => b.fired && b.result.kind !== 'ok')?.result ?? ok(null));
+            scope.set(clause.id, union);
+            return collected.find((b) => b.fired && b.result.kind !== 'ok')?.result ?? ok(null);
         }
         // ── loop (01 §4a) ────────────────────────────────────────────────────
         // Do-while: run the body, then re-read the declared predicate. A tool loop
         // always wants one generate before it can know whether to stop.
-        const max = block.max ?? 0;
+        const max = clause.max ?? 0;
         /**
-         * The carry: one scope for the whole loop, holding the block's
+         * The carry: one scope for the whole loop, holding the clause's
          * accumulating output.
          *
          * A tool loop is only a loop if the next prompt can see the last
          * result, and the body cannot reference a node declared after it —
          * `makeScope` makes a back-edge unwritable (F9). What *is* declared
-         * before the body is the block itself, so `$.agent.values` reads the
+         * before the body is the clause itself, so `$.tools.values` reads the
          * iterations that have already finished. Each iteration still runs in
          * a child of this, so an iteration's node values stay private to it
          * and a loop remains the same construct as a parallel map (F26).
@@ -1214,7 +1350,7 @@ export async function run(doc, opts) {
         const stoppedOn = (stopped) => {
             receipt.loops = [
                 ...(receipt.loops ?? []),
-                { blockId: block.id, iterations: ran, stopped },
+                { clauseId: clause.id, iterations: ran, stopped },
             ];
             publish();
         };
@@ -1224,10 +1360,10 @@ export async function run(doc, opts) {
                 return cancelled('cancelled');
             }
             const child = carry.child();
-            const r = await runLevel({ blockId: block.id, chain: 'item' }, child, 'sequential', i);
+            const r = await runLevel({ clauseId: clause.id, chain: 'item' }, child, 'sequential', i);
             ran++;
             collected.push({
-                branchKey: `${block.id}[${i}]`,
+                branchKey: `${clause.id}[${i}]`,
                 index: i,
                 result: r,
             });
@@ -1235,7 +1371,7 @@ export async function run(doc, opts) {
                 stoppedOn('interrupted');
                 return r;
             }
-            const again = block.repeatWhile ? resolvePredicate(block.repeatWhile, child) : false;
+            const again = clause.repeatWhile ? resolvePredicate(clause.repeatWhile, child) : false;
             if (!truthy(again)) {
                 stoppedOn('predicate');
                 return ok(null);
@@ -1246,12 +1382,14 @@ export async function run(doc, opts) {
         // receipt says so rather than leaving a truncated loop looking successful.
         receipt.notes = [
             ...(receipt.notes ?? []),
-            `loop '${block.id}' reached its declared max of ${max}`,
+            `loop '${clause.id}' reached its declared max of ${max}`,
         ];
         return ok(null);
     };
+    /** Set when the run ended by throwing; rethrown after the run-end hook. */
+    let thrown;
     try {
-        const outcome = await runLevel({ blockId: undefined, chain: undefined }, values);
+        const outcome = await runLevel({ clauseId: undefined, chain: undefined }, values);
         if (outcome.kind === 'halt') {
             receipt.outcome = 'halt';
             receipt.haltReason = outcome.reason;
@@ -1263,20 +1401,35 @@ export async function run(doc, opts) {
                 receipt.haltReason ??= outcome.reason;
                 receipt.haltNodeKey ??= receipt.nodes.find((n) => n.result === 'err')?.nodeKey;
             }
+            // Where a Stop landed (13 §3): the node whose settle the stop
+            // converted — an oracle that halted on its abort — so the inspector
+            // can say *Stopped at generate on request*. A stop that landed
+            // between nodes names none: nothing was interrupted.
+            if (outcome.kind === 'cancelled')
+                receipt.haltNodeKey ??= [...receipt.nodes]
+                    .reverse()
+                    .find((n) => n.result !== 'ok' && !n.recoveredAsEmpty)?.nodeKey;
         }
     }
     catch (e) {
-        if (e instanceof BudgetExceeded) {
-            receipt.outcome = 'err';
-            receipt.haltReason = e.message;
-        }
-        else
-            throw e;
+        receipt.outcome = 'err';
+        receipt.haltReason = e?.message ?? String(e);
+        // Anything but the budget is the host's failure and still propagates —
+        // after the run-end hook below has had its say, which is the R-17
+        // guarantee: a throw is one more way a run ends, not a way out of it.
+        if (!(e instanceof BudgetExceeded))
+            thrown = { error: e };
     }
     receipt.endedAt = now();
     receipt.reviews = reviews;
     // Receipts sort by execution order for rendering.
     receipt.nodes.sort((a, b) => a.seq - b.seq);
+    // What it was doing when it died (R-21, "optional, taken"): the last
+    // status, on a run that ended `halt`, `err` or `cancelled` — never on
+    // `ok`, and never on a preview's halt, which is the pipeline stopping
+    // where it was asked to rather than dying.
+    if (lastStatus && receipt.outcome !== 'ok' && !receipt.preview)
+        receipt.lastStatus = lastStatus;
     // ── Compact receipt (13 §2) ───────────────────────────────────────────────
     // The per-message multiplier is a hot event × every subscribed pipeline, where
     // most subscribers halt on the first node and that is success (01 §5). Those
@@ -1293,10 +1446,33 @@ export async function run(doc, opts) {
         receipt.nodes = [];
         receipt.reviews = [];
     }
+    // The run-level guarantee (R-17): whatever ended the run — a verdict, the
+    // budget, or a throw on its way out — the host hears about it once, with
+    // the row it may have to finish. Absorbed if it throws — see
+    // `RunOptions.onRunEnd`.
+    if (opts.onRunEnd) {
+        try {
+            await opts.onRunEnd({
+                kind: receipt.outcome,
+                liveRow,
+                dry,
+                receipt,
+                ...(thrown ? { error: thrown.error } : {}),
+            });
+        }
+        catch (e) {
+            receipt.notes = [
+                ...(receipt.notes ?? []),
+                `the host's run-end hook failed: ${e.message}`,
+            ];
+        }
+    }
+    if (thrown)
+        throw thrown.error;
     return receipt;
 }
 /**
- * Every out port a gate-eligible Consumer declares as `write-result@1` resolves to the
+ * Every out port a gate-eligible outlet declares as `write-result@1` resolves to the
  * *same* discriminated value. A port named `messageId` therefore hands downstream the
  * result, not an id — which is the point: there may not be an id yet (13 §7j-b).
  */
@@ -1339,7 +1515,7 @@ function readPort(upstream, port) {
     return upstream[port];
 }
 /** `over` is either a literal list or a data ref into an upstream value. */
-function resolveMapItems(over, values) {
+function resolveEachItems(over, values) {
     if (Array.isArray(over))
         return over;
     if (over && typeof over === 'object' && over.__ref === 'data') {
@@ -1411,9 +1587,9 @@ export async function replay(doc, receipt, bindings) {
     const recorded = new Map(receipt.nodes.map((n) => [n.nodeKey, n.output]));
     const replayBindings = { ...bindings };
     for (const n of receipt.nodes) {
-        if (n.kind !== 'provider')
+        if (n.kind !== 'oracle')
             continue;
-        replayBindings[n.typeId] = async () => ok(recorded.get(n.nodeKey));
+        replayBindings[n.definitionId] = async () => ok(recorded.get(n.nodeKey));
     }
     return run(doc, {
         input: receipt.nodes[0]?.output,

@@ -5,8 +5,8 @@
  * standing rule), and the app's native-surface registry maps a widget's
  * `surface.component` key to a real Svelte component separately.
  *
- * A "widget" is a session-surface component — the messages log, the composer, a
- * portrait panel, a plugin frame. Native and frame widgets share ONE declaration
+ * A "widget" is a session-surface component — the conversation, a portrait
+ * panel, a plugin frame. Native and frame widgets share ONE declaration
  * (this) and ONE data contract; the only difference is the iframe. `WidgetDecl`
  * is the superset of the SDK's `PanelDecl`: `id`/`title` already satisfy the
  * stable-slug + display-title a widget must announce, so this adds only the
@@ -111,19 +111,97 @@ const DEFAULT_PRESET: WidgetStylePreset = {
  * bundle; the client maps each `surface.component` key to a Svelte component.
  */
 export const CORE_WIDGETS: WidgetDecl[] = [
+	/**
+	 * The conversation: the log and the field you write into, as ONE widget.
+	 *
+	 * They are one because they are one thing to arrange — a transcript with
+	 * nowhere to reply is not a session surface, and every layout that ever
+	 * placed them placed them touching. Keeping them apart bought a second
+	 * anchor guarantee, a second style target and a second row in every grid,
+	 * and paid for none of it: the pair moved together or not at all.
+	 *
+	 * So the composer is a SETTING here rather than a widget beside this one.
+	 * `composer` picks how the field is drawn, `composerPosition` which end it
+	 * sits at, and `showComposer` whether it is drawn at all — which is what a
+	 * read-only view of a session is, rather than a widget somebody removed.
+	 */
 	{
 		id: 'messages',
 		title: 'Messages',
 		role: 'primary',
 		surface: { kind: 'native', component: 'messages' },
 		presets: [DEFAULT_PRESET],
-	},
-	{
-		id: 'composer',
-		title: 'Composer',
-		role: 'primary',
-		surface: { kind: 'native', component: 'composer' },
-		presets: [DEFAULT_PRESET],
+		settings: {
+			composer: {
+				type: 'enum',
+				label: 'Composer',
+				description:
+					'How the message field is drawn: the classic card, a ' +
+					'single-line pill, or a tall editor for long turns.',
+				of: ['classic', 'minimal', 'writer'],
+				default: 'classic',
+			},
+			composerPosition: {
+				type: 'enum',
+				label: 'Composer position',
+				description: 'Which end of the log you write at.',
+				of: ['bottom', 'top'],
+				default: 'bottom',
+			},
+			order: {
+				type: 'enum',
+				label: 'Message order',
+				description: 'Newest messages at the bottom, or at the top.',
+				of: ['oldest-first', 'newest-first'],
+				default: 'oldest-first',
+			},
+			showMessages: {
+				type: 'boolean',
+				label: 'Show messages',
+				default: true,
+			},
+			showComposer: {
+				type: 'boolean',
+				label: 'Show composer',
+				default: true,
+			},
+			/**
+			 * The furniture around a turn, all of it on by default and all of
+			 * it behind the advanced fold: a person who wants a barer log says
+			 * so one piece at a time, and a person who never opens the fold
+			 * sees the whole of it, which is what a session looks like.
+			 */
+			showAvatars: {
+				type: 'boolean',
+				label: 'Show avatars',
+				default: true,
+				group: 'behaviour',
+			},
+			showTimestamps: {
+				type: 'boolean',
+				label: 'Show times',
+				default: true,
+				group: 'behaviour',
+			},
+			showSceneMarkers: {
+				type: 'boolean',
+				label: 'Show scenes and dates',
+				default: true,
+				group: 'behaviour',
+			},
+			showNudge: {
+				type: 'boolean',
+				label: 'Show who is due next',
+				default: true,
+				group: 'behaviour',
+			},
+			showActions: {
+				type: 'boolean',
+				label: 'Show the Actions label',
+				default: true,
+				group: 'behaviour',
+			},
+		},
 	},
 	{
 		id: 'scene-portraits',

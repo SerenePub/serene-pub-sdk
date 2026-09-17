@@ -2,7 +2,7 @@
  * `/contracts` generation (04 §2, §4b).
  *
  * Every SP release publishes frozen, generated type declarations. This is the generator:
- * descriptors in, a TypeScript module out. In core the input is `type_registry` rows; here
+ * descriptors in, a TypeScript module out. In core the input is `pipeline_definition_registry` rows; here
  * it is the in-memory registry, which is the same data.
  *
  * **The binding name is derived, never chosen.** It is the camelCase of the id's name
@@ -22,12 +22,12 @@
  *   what a user tuning "how much should lore matter" is looking at: `session-history`,
  *   `persona-card`, `lorebook-triggers`.
  *
- * Renaming `core:provider/text-gen@1` to `core:provider/generate-text@1` also removed a
+ * Renaming `core:oracle/text-gen@1` to `core:oracle/generate-text@1` also removed a
  * collision worth naming: it was the same string as `core:shape/text-gen@1`, the operation
  * and the category spelled identically in different namespaces.
  */
 /** `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
-export function parseTypeId(id) {
+export function parseDefinitionId(id) {
     const at = /@(\d+)$/.exec(id);
     const version = at ? Number(at[1]) : 1;
     const body = id.replace(/@\d+$/, "");
@@ -44,7 +44,7 @@ export function parseTypeId(id) {
 }
 export const camel = (s) => s.replace(/-(\w)/g, (_, c) => c.toUpperCase());
 /** The one and only rule. */
-export const bindingNameFor = (id) => camel(parseTypeId(id).name);
+export const bindingNameFor = (id) => camel(parseDefinitionId(id).name);
 /**
  * Check a hand-written contracts module against the rule. Run in CI: the moment a name
  * stops being derivable, generation would need an alias table, and that is the failure.
@@ -85,11 +85,11 @@ export function checkUnique(entries) {
 const banner = (o, count) => `/**
  * GENERATED — do not edit.
  *
- * ${count} type declarations${o.release ? `, Serene Pub ${o.release}` : ""}.
+ * ${count} node definitions${o.release ? `, Serene Pub ${o.release}` : ""}.
  * Frozen at release: a pin resolved against this file resolves the same way forever,
  * which is what makes a spec's pins statically checkable (01 §3, 04 §2).
  *
- * Names are derived from type ids, never chosen — see src/codegen.ts for the rule.
+ * Names are derived from definition ids, never chosen — see src/codegen.ts for the rule.
  */`;
 const lit = (v) => JSON.stringify(v);
 /**
@@ -103,11 +103,11 @@ export function generateContracts(types, opts = {}) {
     for (const d of types)
         (byKind[d.kind] ??= []).push(d);
     const describeFor = {
-        input: "describeInput",
-        query: "describeQueryType",
-        task: "describeTaskType",
-        provider: "describeProvider",
-        consumer: "describeConsumerTarget"
+        inlet: "describeInletDefinition",
+        query: "describeQueryDefinition",
+        task: "describeTaskDefinition",
+        oracle: "describeOracleDefinition",
+        outlet: "describeOutletDefinition"
     };
     const out = [
         banner(opts, types.length),
@@ -115,7 +115,7 @@ export function generateContracts(types, opts = {}) {
         `import { pin, ${[...new Set(Object.values(describeFor))].sort().join(", ")} } from '${sdk}'`,
         ""
     ];
-    for (const kind of ["input", "query", "task", "provider", "consumer"]) {
+    for (const kind of ["inlet", "query", "task", "oracle", "outlet"]) {
         const group = byKind[kind];
         if (!group?.length)
             continue;
@@ -124,7 +124,7 @@ export function generateContracts(types, opts = {}) {
             .slice()
             .sort((a, b) => a.id.localeCompare(b.id))) {
             const name = bindingNameFor(d.id);
-            const { version } = parseTypeId(d.id);
+            const { version } = parseDefinitionId(d.id);
             const body = Object.entries(d)
                 .filter(([k]) => k !== "kind")
                 .map(([k, v]) => `\t\t${k}: ${lit(v)},`)
@@ -137,11 +137,11 @@ export function generateContracts(types, opts = {}) {
     }
     return out.join("\n");
 }
-export const summarizeType = (d) => ({
+export const summarizeDefinition = (d) => ({
     id: d.id,
     binding: bindingNameFor(d.id),
     kind: d.kind,
-    version: parseTypeId(d.id).version,
+    version: parseDefinitionId(d.id).version,
     ports: {
         in: Object.keys(d.ports.in ?? {}),
         out: Object.keys(d.ports.out ?? {})

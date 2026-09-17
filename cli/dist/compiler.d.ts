@@ -20,7 +20,7 @@
  */
 import type { Extension } from '@serene-pub/sdk';
 import type { SpecDocument } from '@serene-pub/sdk';
-import { type TypeSummary } from './codegen.js';
+import { type DefinitionSummary } from './codegen.js';
 export interface CompileFinding {
     severity: 'error' | 'warning';
     file: string;
@@ -37,19 +37,20 @@ export interface Manifest {
     version: string;
     description?: string;
     engines?: Record<string, string>;
-    /** Node types this plugin registers, summarized for the audit screen (10 §10.2). */
-    types: TypeSummary[];
+    /** Node definitions this plugin registers, summarized for the audit screen (10 §10.2). */
+    nodeDefinitions: DefinitionSummary[];
+    /** The three extension callables (R-1): handlers, lifecycle callbacks, event listeners. */
     hooks: {
-        pipeline: Array<{
-            typeId: string;
+        handlers: Array<{
+            definitionId: string;
             visibility: 'private' | 'public';
             runtime: 'process';
         }>;
-        lifecycle: Array<{
+        lifecycleCallbacks: Array<{
             moment: string;
             cadence?: string;
         }>;
-        event: Array<{
+        eventListeners: Array<{
             event: string;
         }>;
     };
@@ -86,9 +87,9 @@ export interface StaticScan {
     /** Declaration call sites found, for cross-checking against the evaluated module. */
     declared: {
         extensions: number;
-        pipelineHooks: number;
-        lifecycleHooks: number;
-        eventHooks: number;
+        handlers: number;
+        lifecycleCallbacks: number;
+        eventListeners: number;
         components: number;
     };
 }

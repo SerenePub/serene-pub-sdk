@@ -66,10 +66,9 @@ export const graphBuildSpec = () =>
 		spec(GRAPH_BUILD_SPEC_ID, {
 			version: GRAPH_BUILD_VERSION,
 			/** Catalogue claims (23 §2): off the critical path, any mode. */
-			taxonomy: { zone: "session", role: "maintenance" }
+			taxonomy: { role: "maintenance" }
 		})
-			.on("core:event/ui-action@1")
-			.input("input", C.userMessage.v1())
+			.inlet("input", C.userMessage.v1())
 			.query("scenes", ($) =>
 				C.graphScenes.v1({ scope: $.input.sessionScope })
 			)
@@ -81,7 +80,7 @@ export const graphBuildSpec = () =>
 			// already introduced. Running them in parallel would make that
 			// question unanswerable and duplicate every character discovered
 			// twice.
-			.map(
+			.each(
 				"building",
 				{
 					over: ($: any) => $.scenes.scenes,
@@ -90,23 +89,23 @@ export const graphBuildSpec = () =>
 				},
 				(m) =>
 					m
-						.provider("prefilter", ($: any) =>
+						.oracle("prefilter", ($: any) =>
 							C.graphPreFilter.v1(step($))
 						)
-						.provider("resolution", ($: any) =>
+						.oracle("resolution", ($: any) =>
 							C.graphNodeResolution.v1(step($))
 						)
-						.provider("perspective", ($: any) =>
+						.oracle("perspective", ($: any) =>
 							C.graphPerspective.v1(step($))
 						)
-						.provider("describe", ($: any) =>
+						.oracle("describe", ($: any) =>
 							C.graphNodeDescription.v1(step($))
 						)
-						.provider("state", ($: any) =>
+						.oracle("state", ($: any) =>
 							C.graphStateDetection.v1(step($))
 						)
 			)
-			.consume("propose", ($: any) =>
+			.outlet("propose", ($: any) =>
 				C.graphProposal.v1({ proposal: $.building.main })
 			)
 			.build()

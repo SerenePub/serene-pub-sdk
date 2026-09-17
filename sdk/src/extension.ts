@@ -2,8 +2,9 @@
  * `defineExtension` — the one entry point a plugin author starts from (03, 09).
  *
  * Before this existed, the SDK could express a pipeline and nothing else. An author could
- * build a spec but had nowhere to say *"this is my plugin, here are its lifecycle hooks,
- * its settings, its node types, its components, and the pipelines it ships."* That is the
+ * build a spec but had nowhere to say *"this is my plugin, here are its lifecycle
+ * callbacks, its settings, its node definitions, its components, and the pipelines it
+ * ships."* That is the
  * difference between authoring a pipeline and writing a plugin, and it is most of what
  * "download the SDK" has to mean.
  *
@@ -16,19 +17,20 @@
 import type { BuiltSpec } from './builder.js'
 import type { Descriptor } from './descriptors.js'
 import type { PluginSettings, SettingsSchema } from './settings.js'
-import type { EventHook, LifecycleHook, LifecycleMoment } from './hooks.js'
+import type { EventListener, LifecycleCallback, LifecycleMoment } from './hooks.js'
 import type { Result } from './executor.js'
 
-// ── Hook declarations ───────────────────────────────────────────────────────
+// ── Callable declarations ───────────────────────────────────────────────────
 
 /**
- * The callable implementing a node type. Data in, expected shape out; the executor is the
- * only caller (01 §9). **Private** means only this extension's specs may pin it; **public**
- * means any spec may, which is how peer composition happens — as a node on the spine,
- * never a peer call mid-run (F10).
+ * The **handler** implementing a node definition (was `PipelineHookDecl` /
+ * `pipelineHook()`, R-1). Data in, expected shape out; the executor is the only caller
+ * (01 §9). **Private** means only this extension's specs may pin it; **public** means any
+ * spec may, which is how peer composition happens — as a node on the spine, never a
+ * peer call mid-run (F10).
  */
-export interface PipelineHookDecl<D extends Descriptor<any, any, any> = Descriptor> {
-	readonly __decl: 'pipeline-hook'
+export interface HandlerDecl<D extends Descriptor<any, any, any> = Descriptor> {
+	readonly __decl: 'handler'
 	type: D
 	visibility: 'private' | 'public'
 	handler: (input: any, ctx: any) => Result | Promise<Result>
@@ -49,36 +51,36 @@ export interface PipelineHookDecl<D extends Descriptor<any, any, any> = Descript
 	runtime?: 'process'
 }
 
-export function pipelineHook<D extends Descriptor<any, any, any>>(
-	type: D | { descriptor: D },
-	handler: PipelineHookDecl<D>['handler'],
+export function handler<D extends Descriptor<any, any, any>>(
+	definition: D | { descriptor: D },
+	fn: HandlerDecl<D>['handler'],
 	opts: { visibility?: 'private' | 'public' } = {},
-): PipelineHookDecl<D> {
-	const descriptor = ('descriptor' in type ? type.descriptor : type) as D
+): HandlerDecl<D> {
+	const descriptor = ('descriptor' in definition ? definition.descriptor : definition) as D
 	return {
-		__decl: 'pipeline-hook',
+		__decl: 'handler',
 		type: descriptor,
 		visibility: opts.visibility ?? (descriptor.public ? 'public' : 'private'),
-		handler,
+		handler: fn,
 		// Not configurable. See the note on the field.
 		runtime: 'process',
 	}
 }
 
-export interface LifecycleHookDecl {
-	readonly __decl: 'lifecycle-hook'
+export interface LifecycleCallbackDecl {
+	readonly __decl: 'lifecycle-callback'
 	moment: LifecycleMoment
 	/** For `scheduled`: how often. Model work belongs in a pipeline, not here (F32). */
 	cadence?: string
-	handler: LifecycleHook
+	handler: LifecycleCallback
 	timeoutMs?: number
 }
 
-export const lifecycleHook = (
+export const lifecycleCallback = (
 	moment: LifecycleMoment,
-	handler: LifecycleHook,
+	handler: LifecycleCallback,
 	opts: { cadence?: string; timeoutMs?: number } = {},
-): LifecycleHookDecl => ({ __decl: 'lifecycle-hook', moment, handler, ...opts })
+): LifecycleCallbackDecl => ({ __decl: 'lifecycle-callback', moment, handler, ...opts })
 
 /**
  * One subscription. **Many may register against one event** — several
@@ -95,11 +97,11 @@ export const lifecycleHook = (
  * extension rewrite what the next one is told. Neither is a thing you can ask
  * for, which is why neither is a thing you have to defend against.
  */
-export interface EventHookDecl {
-	readonly __decl: 'event-hook'
+export interface EventListenerDecl {
+	readonly __decl: 'event-listener'
 	/** A core event slug. Plugins cannot define events in SDK 1.0 (F8, 13 §7g). */
 	event: string
-	handler: EventHook
+	handler: EventListener
 	/**
 	 * This subscription's own budget. Defaults to a small one, and is clamped by
 	 * the host: an event's subscribers **share one budget** rather than each
@@ -109,12 +111,12 @@ export interface EventHookDecl {
 	timeoutMs?: number
 }
 
-export const eventHook = (
+export const eventListener = (
 	event: string,
-	handler: EventHook,
+	handler: EventListener,
 	opts: { timeoutMs?: number } = {},
-): EventHookDecl => ({
-	__decl: 'event-hook',
+): EventListenerDecl => ({
+	__decl: 'event-listener',
 	event,
 	handler,
 	...opts,
@@ -152,13 +154,18 @@ export interface ExtensionDecl {
 	/** Supported SP range, separate from the SDK range (09). */
 	engines?: { 'serene-pub'?: string }
 	settings?: PluginSettings<any>
-	/** Node types this plugin registers, and the hooks that implement them. */
-	hooks?: Array<PipelineHookDecl<any> | LifecycleHookDecl | EventHookDecl>
+	/**
+	 * Node definitions this plugin registers with the handlers that implement
+	 * them, plus its lifecycle callbacks and event listeners. Still keyed
+	 * `hooks` — the field names the plugin's declared points, which is what a
+	 * hook is (NOMENCLATURE §12).
+	 */
+	hooks?: Array<HandlerDecl<any> | LifecycleCallbackDecl | EventListenerDecl>
 	components?: ComponentDecl[]
 	/** Pipelines shipped with the plugin. Compiled to documents at build time (F6). */
 	pipelines?: BuiltSpec[]
 	/**
-	 * Dependencies on **public pipeline hooks** other plugins expose. Type-level pins
+	 * Dependencies on **public handlers** other plugins expose. Definition-level pins
 	 * only; runtime peer invocation is banned (F10, 01 §9b).
 	 */
 	peerTypes?: string[]
@@ -194,7 +201,7 @@ export function defineExtension(d: ExtensionDecl): Extension {
 	// and the registry rejects it, but a plugin claiming *another plugin's* namespace
 	// would be accepted and would break ownership-based updates (12 §3b).
 	for (const h of d.hooks ?? []) {
-		if (h.__decl !== 'pipeline-hook') continue
+		if (h.__decl !== 'handler') continue
 		const ns = h.type.id.split(':')[0]
 		if (ns !== d.slug) {
 			problems.push(
@@ -229,19 +236,19 @@ export function defineExtension(d: ExtensionDecl): Extension {
 
 // ── Derived views ───────────────────────────────────────────────────────────
 
-export const pipelineHooksOf = (e: Extension) =>
-	(e.hooks ?? []).filter((h): h is PipelineHookDecl<any> => h.__decl === 'pipeline-hook')
-export const lifecycleHooksOf = (e: Extension) =>
-	(e.hooks ?? []).filter((h): h is LifecycleHookDecl => h.__decl === 'lifecycle-hook')
-export const eventHooksOf = (e: Extension) =>
-	(e.hooks ?? []).filter((h): h is EventHookDecl => h.__decl === 'event-hook')
+export const handlersOf = (e: Extension) =>
+	(e.hooks ?? []).filter((h): h is HandlerDecl<any> => h.__decl === 'handler')
+export const lifecycleCallbacksOf = (e: Extension) =>
+	(e.hooks ?? []).filter((h): h is LifecycleCallbackDecl => h.__decl === 'lifecycle-callback')
+export const eventListenersOf = (e: Extension) =>
+	(e.hooks ?? []).filter((h): h is EventListenerDecl => h.__decl === 'event-listener')
 
 /**
  * The bindings map the executor wants, built from the declaration. So an author's tests
- * run their real hooks rather than a hand-maintained parallel map that drifts.
+ * run their real handlers rather than a hand-maintained parallel map that drifts.
  */
-export function bindingsOf(e: Extension): Record<string, PipelineHookDecl<any>['handler']> {
-	const out: Record<string, PipelineHookDecl<any>['handler']> = {}
-	for (const h of pipelineHooksOf(e)) out[h.type.id] = h.handler
+export function bindingsOf(e: Extension): Record<string, HandlerDecl<any>['handler']> {
+	const out: Record<string, HandlerDecl<any>['handler']> = {}
+	for (const h of handlersOf(e)) out[h.type.id] = h.handler
 	return out
 }

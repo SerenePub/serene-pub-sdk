@@ -5,10 +5,10 @@
  *
  * ## 2.0.0 — the honest input (24 §12)
  *
- * 1.x reused `core:input/user-message@1` as an "identity only" placeholder,
+ * 1.x reused `core:inlet/user-message@1` as an "identity only" placeholder,
  * which welded creation to the chat turn's shape and was wrong: a create run
  * has no triggering text and no speaker; it has a request. The input is
- * `core:input/session-created@1`, and the usage lock (24 §4) declares
+ * `core:inlet/session-created@1`, and the usage lock (24 §4) declares
  * exactly what this spec is: the pipeline answering `session-created` for
  * `core:genre/chat`.
  *
@@ -42,7 +42,7 @@ export const createChatSpec = () =>
 	compile(
 		spec(CREATE_CHAT_SPEC_ID, {
 			version: CREATE_CHAT_VERSION,
-			taxonomy: { zone: "session", role: "create", genre: chatGenre.id },
+			taxonomy: { role: "create", genre: chatGenre.id },
 			genre: {
 				name: chatGenre.name,
 				family: chatGenre.family,
@@ -56,14 +56,14 @@ export const createChatSpec = () =>
 				>
 			}
 		})
-			.input("input", C.sessionCreated.v1(), {
+			.inlet("input", C.sessionCreated.v1(), {
 				genre: chatGenre,
 				event: sessionEvents.sessionCreated
 			})
 			.query("collect", ($) =>
 				C.sessionGreetings.v1({ scope: $.input.sessionScope })
 			)
-			.consume("seed", ($) =>
+			.outlet("seed", ($) =>
 				C.seedGreetings.v1({
 					greetings: $.collect.greetings,
 					// The genre's declared greeting channel (19 §1) — stated

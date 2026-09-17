@@ -9,6 +9,16 @@ export function $ref(node, port = 'main') {
     return { __ref: 'data', node, port };
 }
 const addr = (n) => (typeof n === 'object' ? n.node : n);
+const isEnvoyAddress = (n) => typeof n === 'object' && n !== null && typeof n.envoy === 'string';
+/**
+ * The address an envoy's config lives at in the resolved config — the
+ * synthetic node key `envoy:<key>`. One spelling, shared by the compiler
+ * (`resolvedRefs`), the executor (`resolveConfig`'s key list) and the host's
+ * projection, so the three cannot disagree about where a mascot's prompt is.
+ */
+export const ENVOY_CONFIG_PREFIX = 'envoy:';
+export const envoyConfigKey = (key) => `${ENVOY_CONFIG_PREFIX}${key}`;
+export const isEnvoyConfigKey = (key) => key.startsWith(ENVOY_CONFIG_PREFIX);
 export const slot = {
     connection: (ofNode) => ({
         __ref: 'slot',
@@ -26,23 +36,31 @@ export const slot = {
      * place to edit it — three nodes that each demanded the same system prompt
      * is the defect this exists to close (13 §12 finding i).
      */
-    prompts: (ofNode) => ({
-        __ref: 'slot',
-        slot: 'prompts',
-        ofNode: addr(ofNode),
-    }),
+    prompts: (of) => isEnvoyAddress(of)
+        ? { __ref: 'slot', slot: 'prompts', ofEnvoy: of.envoy }
+        : {
+            __ref: 'slot',
+            slot: 'prompts',
+            ofNode: addr(of),
+        },
     template: () => ({ __ref: 'slot', slot: 'template' }),
     /**
-     * With a target, the slot is *shared* — the same reading as `prompts`.
+     * With a target, the slot's **shared** fields resolve at the target — and
+     * only those (R-7 P2, refined 2026-09-16; `FieldDecl.shared`).
      *
-     * This took no target until now, which was an oversight rather than a
-     * decision: cross-source policy has to live on one node and be read by the
-     * several that answer to it. Retrieval is the case — every query wants the
-     * ranker's floors and weights, and a copy per query is a set of numbers
-     * that agree until somebody edits one.
+     * A definition marks the `params` fields several nodes of one spec hold in
+     * common — the lore lanes' seven scan knobs, the embed pair's switch —
+     * `shared: true`; a spec then names ONE owner and the other nodes reference
+     * it here. A referencing node's *unmarked* fields stay its own and resolve
+     * at its own address through the same reference: each lore lane's share
+     * of the window is that lane's, while the scan depth they run on is one
+     * number. One reference, both halves, and the panel draws the same line.
      *
-     * The alternative was reordering the graph to put the policy node first,
-     * which puts a node named for ranking in front of everything it ranks.
+     * ⚠ It used to read the whole slot at the target, and its docblock argued
+     * for the ranker as the owner of "every query's minimums and weights". That
+     * is the per-source map on the ranker 16 §5a rejected; per-source intent
+     * lives on the source now (R-7 P5) and travels as candidate metadata, so
+     * nothing needs to read the ranker's params from a query any more.
      */
     params: (ofNode) => ({
         __ref: 'slot',
@@ -59,8 +77,8 @@ export const slot = {
         slot: 'variables',
         ofNode: addr(ofNode),
     }),
-    /** Explicit provider reference — always unambiguous. */
-    providerRef: (node) => ({
+    /** Explicit oracle reference — always unambiguous. */
+    oracleRef: (node) => ({
         __ref: 'slot',
         slot: 'connection',
         ofNode: addr(node),
@@ -76,13 +94,13 @@ export const slot = {
         ofNode: addr(node),
     }),
     /**
-     * Resolves at publish to the first Provider reachable forward. Compiles to the
+     * Resolves at publish to the first oracle reachable forward. Compiles to the
      * explicit form, so nothing implicit survives into rows (16 §5b-i).
      */
-    downstreamProvider: () => ({
+    downstreamOracle: () => ({
         __ref: 'slot',
         slot: 'connection',
-        resolveDownstreamProvider: true,
+        resolveDownstreamOracle: true,
     }),
 };
 export const isDataRef = (v) => typeof v === 'object' && v !== null && v.__ref === 'data';

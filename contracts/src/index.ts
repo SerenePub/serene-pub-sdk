@@ -6,14 +6,14 @@
  * nothing anywhere switches on modality (17 §1).
  */
 
-import { S, tf, IoKinds } from '@serene-pub/sdk'
+import { S, tf, IoKinds, BAND_PRIORITIES } from '@serene-pub/sdk'
 import { jinja2, handlebars, liquid } from '@serene-pub/sdk'
 import {
-	describeInput,
-	describeQueryType,
-	describeTaskType,
-	describeProvider,
-	describeConsumerTarget,
+	describeInletDefinition,
+	describeQueryDefinition,
+	describeTaskDefinition,
+	describeOracleDefinition,
+	describeOutletDefinition,
 	pin,
 } from '@serene-pub/sdk'
 import { PROMPT_BLOCKS_DECL } from '@serene-pub/sdk'
@@ -56,8 +56,8 @@ const streamingParam = (): FieldDecl => ({
  * take one thing, not reassemble it.
  */
 export const userMessage = pin(
-	describeInput({
-		id: 'core:input/user-message@1',
+	describeInletDefinition({
+		id: 'core:inlet/user-message@1',
 		// Display only, both keys: stripped from the content hash, refreshed on
 		// existing rows by the boot sync — so copyediting this is never a bump.
 		i18n: {
@@ -112,7 +112,23 @@ export const userMessage = pin(
 				text: S.text,
 				sessionScope: S.sessionScope,
 				sessionId: S.rowIds,
-				/** Null on a narrator turn — nobody in particular is speaking. */
+				/**
+				 * Whose turn it is, as a **participant reference** (R-18 (3)):
+				 * `character:<id>` for a library character, `envoy:<slug>` for
+				 * a speaker the genre brings with it. Null on a narrator turn —
+				 * nobody in particular is speaking. One port answers "who is
+				 * speaking" for both kinds, so nothing downstream branches on
+				 * which it received; who *portrays* them this turn is the
+				 * host's resolver's answer, pinned on the receipt (R-21 (4)).
+				 */
+				speaker: S.participantRef,
+				/**
+				 * @deprecated The same speaker as a bare character id (one
+				 * release, from 2026-09-16). Null on a narrator turn, and null
+				 * for an envoy — which is why it cannot stay the port: a
+				 * reader keyed on it sees a genre's speaker as nobody. Read
+				 * `speaker`; the turn strategies publish both meanwhile.
+				 */
 				characterId: S.rowIds,
 				/**
 				 * Values for the mode's declared `fields` (19 §1), filtered to
@@ -140,25 +156,107 @@ export const userMessage = pin(
 				 * body of the seed line the model continues from.
 				 */
 				continuationPrefill: S.text,
+				/**
+				 * The reply row this turn re-drives, when it is a regenerate, a
+				 * swipe or a continue of a message that already exists. Null on
+				 * a fresh turn, which is nearly all of them.
+				 *
+				 * The pipeline owns its reply row (R-17): a fresh turn's row is
+				 * created by the spec's own placeholder outlet, and a verb that
+				 * re-drives an existing message hands that message to the same
+				 * outlet through this port — so the outlet claims it as the
+				 * run's live row instead of inserting a second one. It is data,
+				 * recorded on the receipt, and never a scope read: "which row
+				 * did this turn write" is answerable from the run afterwards.
+				 */
+				messageId: S.rowIds,
+				/**
+				 * What the built-ins did to this session since the last reply
+				 * (R-15, 2026-09-16): a list of session changes — `[{ event:
+				 * 'core:event/message-deleted@1', messageId, at, lost }, …]`,
+				 * oldest first, capped at the newest fifty — so a pipeline
+				 * knows the history it is about to read has moved: a line
+				 * deleted with its content, a rewrite with the previous text,
+				 * an alternative swiped in, a reply stopped short. Read once:
+				 * the run that receives them consumes them — marked read
+				 * after the run, and only when it produced a reply, so a run
+				 * that fails leaves them for the next — and a preview sees
+				 * them without consuming. Empty when nothing changed, which
+				 * is nearly every turn. Past fifty, the newest fifty arrive
+				 * and a last entry `{ event:
+				 * 'core:event/session-changes-truncated@1', dropped }` says
+				 * how many older ones did not.
+				 *
+				 * Was `changes` until 2026-09-16 (U5b review S4): that word is
+				 * the state ledger's on `resolve-state-changes@1` and
+				 * `set-state@1` — a list of value changes — and a session
+				 * change is about a message, never a value (R1).
+				 */
+				sessionChanges: S.json,
+				/**
+				 * What an action's fire sent along (R-15 *Forms*; U5d,
+				 * 2026-09-17): a form's answer — `{ choice }` for a choices
+				 * block, the entered values for a form block — or a widget's
+				 * `invoke(key, args)` arguments. Absent on a turn and on a
+				 * bare press. A press on an **addressed** block arrives with
+				 * `form` beside it (`core:task/read-answer@1` takes both and
+				 * publishes the answer port by port). The host always
+				 * supplied this under `payload`; declared 2026-09-17 so a
+				 * spec can wire it.
+				 */
+				payload: S.json,
+				/**
+				 * The form a press answered, when it answered one — the block
+				 * itself as stored, its id, the message and the addressee,
+				 * read off the row by the host (never off the client):
+				 * `{ blockId, messageId, kind, question, addressee, characterId,
+				 * choice?, label? }`. Absent on every other fire.
+				 */
+				form: S.json,
 			},
 		},
 	}),
 )
 
 /**
- * A message that already exists — the trigger carries its id.
+ * A built-in write's request (R-15, 2026-09-16) — what a person asked core to
+ * do to a message or a session: delete, hide, edit, swipe, branch.
  *
- * `messageId` is `row-ids@1` rather than `json` because it *is* a row id, and typing it
- * as one is what makes `updateMessage` wireable at all: the id an update is allowed to
- * take is the id of a row that already exists, which is exactly what an event about an
- * existing message carries (13 §10b).
+ * Core implements every state-altering write and runs each as its own
+ * one-node spec (`core:spec/builtin-delete` …) through the executor, so the
+ * write is receipted, gate-eligible and always emits what changed. This is
+ * that spec's inlet: the person's request, as the venue's handler shaped it
+ * after the permission checks it alone can make. No lock — a built-in serves
+ * every genre — and no shape: a request is not a session mode.
  */
-export const messageCreated = pin(
-	describeInput({
-		id: 'core:input/message-created@1',
-		ports: { out: { main: S.json, messageId: S.rowIds } },
+export const builtInRequest = pin(
+	describeInletDefinition({
+		id: 'core:inlet/built-in-request@1',
+		ports: {
+			out: {
+				main: S.json,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				/** The message the write is about. Absent on a branch. */
+				target: S.rowIds,
+				/** An edit's new text; a swipe's alternative to record. */
+				text: S.text,
+				/** A hide's direction: hidden, or shown again. */
+				hidden: S.json,
+				/** A swipe's alternative to select, by index. */
+				index: S.json,
+				/** A branch's fork point — the last message the copy keeps. */
+				fromMessage: S.rowIds,
+				/** A branch's name. */
+				title: S.text,
+			},
+		},
 	}),
 )
+
+// `core:inlet/message-created@1` stood here — an inlet no spec used and no
+// event emitted (plans/29 §4c 4.1). Culled 2026-09-16 (R-4): an existing
+// message's id arrives on `core:inlet/user-message@1`'s `messageId` port.
 
 /**
  * A session was just created — the create pipeline's trigger (24 §5, §12).
@@ -174,8 +272,8 @@ export const messageCreated = pin(
  * text and no speaker; it has a request.
  */
 export const sessionCreated = pin(
-	describeInput({
-		id: 'core:input/session-created@1',
+	describeInletDefinition({
+		id: 'core:inlet/session-created@1',
 		i18n: {
 			name: { en: 'Session created' },
 			description: {
@@ -223,8 +321,8 @@ export const sessionCreated = pin(
  *
  * ## The new-name hook (the fact, and only the fact)
  *
- * `speaker` carries `known` — whether the chosen name matches anything in the
- * session's lorebook — and the scripts hook below declares it as an **extra**,
+ * `sideCharacter` carries `known` — whether the chosen name matches anything in
+ * the session's lorebook — and the scripts hook below declares it as an **extra**,
  * so a script attached there reads it through the one dispatch core scripts and
  * extension hooks already share. Core states the fact and offers the hook; what
  * a script *does* about an unknown name (suggest adding them, stay quiet, add a
@@ -232,8 +330,8 @@ export const sessionCreated = pin(
  * deliberately no second path: nothing here notifies, writes, or prompts.
  */
 export const sideCharacterTurn = pin(
-	describeInput({
-		id: 'core:input/side-character-turn@1',
+	describeInletDefinition({
+		id: 'core:inlet/side-character-turn@1',
 		// Display only, both keys: stripped from the content hash, refreshed on
 		// existing rows by the boot sync — so copyediting this is never a bump.
 		i18n: {
@@ -272,7 +370,17 @@ export const sideCharacterTurn = pin(
 				sessionScope: S.sessionScope,
 				sessionId: S.rowIds,
 				/**
-				 * The chosen character, or null for a free-form name.
+				 * Who is speaking, as a **participant reference** (R-18 (3)):
+				 * `character:<id>` when the pick was a library character, null
+				 * for a free-form name — a name is not a participant reference,
+				 * and the fact below is where the name lives. On the same
+				 * terms as `user-message@1`'s port of this name.
+				 */
+				speaker: S.participantRef,
+				/**
+				 * @deprecated The chosen character as a bare id, or null for a
+				 * free-form name (one release, from 2026-09-16) — read
+				 * `speaker`.
 				 *
 				 * ⚠ It is **not** a turn slot. It reaches character lore's
 				 * visibility rule (an entry bound to this character becomes
@@ -282,16 +390,36 @@ export const sideCharacterTurn = pin(
 				 */
 				characterId: S.rowIds,
 				/**
-				 * The speaker as a whole fact: `{ name, characterId, known }`.
+				 * The side character as a whole fact: `{ name, characterId,
+				 * known, character }`.
 				 *
 				 * A port rather than only an extra, because it is what the
 				 * context builder is wired to and what the receipt records —
 				 * "why did this turn sound like Vell" is answerable from the
 				 * run afterwards rather than from the trigger that started it.
+				 *
+				 * Was `speaker` until 2026-09-16: that name is the participant
+				 * reference now (R-18 (3), one word one meaning), and a fact
+				 * carrying a free-form name is not a reference to anybody.
 				 */
-				speaker: S.json,
+				sideCharacter: S.json,
 				/** Values for the genre's declared fields, filtered to the schema. */
 				fields: S.json,
+				/**
+				 * The row this turn re-drives, on the same terms as
+				 * `user-message@1`'s port of the same name: a regenerate, swipe
+				 * or continue of a side character's line routes back to the
+				 * narrate-character spec, and its placeholder claims the verb's
+				 * row through this instead of inserting a second one. Null on
+				 * a fresh turn.
+				 */
+				messageId: S.rowIds,
+				/**
+				 * The built-ins' session changes since the last reply, on the
+				 * same terms as `user-message@1`'s port of this name (was
+				 * `changes` until 2026-09-16, U5b review S4).
+				 */
+				sessionChanges: S.json,
 			},
 		},
 	}),
@@ -300,7 +428,7 @@ export const sideCharacterTurn = pin(
 // ── Queries ─────────────────────────────────────────────────────────────────
 
 export const sessionHistory = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/session-history@1',
 		i18n: { name: { en: 'Session history' } },
 		timeoutMs: 2000,
@@ -361,29 +489,104 @@ export const sessionHistory = pin(
 							"Which of the session's channels this history reads. The chat log is 'main'.",
 					},
 					/**
-					 * ⚠ `weight: 0.4` and `minInclude: 6` were here and are
-					 * gone. Both were answers to "how does chat history fare
-					 * against everything else", which is a question about the
-					 * *ranking*, and a node that fetches rows cannot see
-					 * everything else to answer it: the weight sat beside
-					 * `rank`'s `share`, free to disagree with it, and the
-					 * floor was the only one of five sources that had one.
-					 * They are `share.messages` and `minEntries.messages` on
-					 * `core:task/rank-hybrid@1` now, beside their peers.
+					 * The transcript's intent, on the node that produces the
+					 * transcript (R-7 P5, built 2026-09-16 — see
+					 * `bandIntentFields`). `weight: 0.4` and `minInclude: 6`
+					 * were here once, moved to the ranker's per-source map as
+					 * `share.messages` and `minEntries.messages`, and are back
+					 * where 16 §5a always said they belonged, at the numbers
+					 * the map held: half the window is `MESSAGE_FILL_FRACTION`,
+					 * and six is the minimum the map carried for the one band
+					 * R6 allows one.
+					 *
+					 * ⚠ This node ranks **no candidates** in any shipped spec
+					 * — `main` carries the transcript rows for
+					 * `process-messages`, and `assemble` builds the transcript
+					 * from those, never from ranked candidates. Its intent
+					 * still reaches the ranker, on the `band` out-port a spec
+					 * concatenates in with the lore, and its `share` is what
+					 * halves the pool the lore sources divide: the
+					 * conversation's slice is reserved and whatever it does
+					 * not spend is swept to the others, exactly as the map's
+					 * `messages: 0.5` did. `maxEntries` and `minEntries` bind
+					 * only when a spec does rank message candidates (an
+					 * `entity-search` `messages` port, a compression region);
+					 * they are declared at the map's values so that spec
+					 * inherits what every install has stored, not so a person
+					 * moving them today sees a prompt change — they will not.
+					 */
+					share: {
+						type: 'number',
+						min: 0,
+						default: 0.5,
+						quick: true,
+						i18n: { en: 'Share — conversation' },
+						description: {
+							en: 'How much of the context window the conversation may take, relative to every other source. What it does not spend is handed to the lore. Set to zero to give the whole window to the other sources.',
+						},
+					},
+					maxEntries: {
+						type: 'integer',
+						min: 0,
+						default: 50,
+						i18n: { en: 'Most entries — conversation' },
+						description: {
+							en: 'A ceiling on how many retrieved messages may reach the prompt as ranked entries, whatever the share. The transcript itself is sized by the window, not by this.',
+						},
+					},
+					minEntries: {
+						type: 'integer',
+						min: 0,
+						default: 6,
+						i18n: { en: 'Always keep at least' },
+						description: {
+							en: 'Recent messages kept as ranked entries whatever the shares say, so a lore-heavy chat stays readable. Dropped when there is no room. Lore has no minimum — it competes on score (R6).',
+						},
+					},
+					/**
+					 * Read, at last (R-7 P5; it was declared and read by nothing
+					 * from the day it was written, allow-listed in the
+					 * declared-reads guard until this landed). `normal` is no
+					 * ordering at all; see `BAND_PRIORITIES` in the SDK for
+					 * what the other three do to the ranker's sweep.
 					 */
 					priority: {
 						type: 'enum',
-						of: ['low', 'normal', 'high', 'always'],
+						of: BAND_PRIORITIES,
 						default: 'normal',
-						description:
-							"How strongly history resists being trimmed — 'always' is never dropped.",
+						i18n: { en: 'Priority — conversation' },
+						description: {
+							en: "How strongly the conversation resists being trimmed once the shares are spent — 'always' keeps every message the window can hold.",
+						},
 					},
 				},
 			},
 		},
 		ports: {
-			in: { scope: S.sessionScope, budget: S.budget },
-			out: { main: S.candidates, messages: S.candidates },
+			/**
+			 * ⚠ No `budget` in-port, and there was one (culled 2026-09-16,
+			 * R-12). It was declared and read by nothing: the window this
+			 * node fetches is `params.limit`, a count of messages, and a
+			 * token budget arriving here had no reader and no spec wiring it.
+			 * Fitting history to a budget is `core:task/rank-hybrid@1`'s job,
+			 * on ITS `budget` port.
+			 */
+			in: { scope: S.sessionScope },
+			out: {
+				main: S.candidates,
+				messages: S.candidates,
+				/**
+				 * The conversation's **band intent**, alone — a candidates
+				 * list holding one element and no items (`BandIntent`), for a
+				 * spec to concatenate in with the lore so the ranker reserves
+				 * the transcript's slice. Its own port because `main` and
+				 * `messages` carry transcript rows for `process-messages`, and
+				 * an intent element ahead of them would be read as a message.
+				 * Opens with a band-intent element (and holds nothing else)
+				 * — readers call `splitCandidates()`.
+				 */
+				band: S.candidates,
+			},
 		},
 	}),
 )
@@ -570,8 +773,133 @@ const ADMIT_THRESHOLD = {
 	},
 } as const
 
+/**
+ * Where a source's intent lives: **on the source** (16 §5a; R-7 P5, ruled
+ * 2026-09-15, built 2026-09-16 — plans/30 U3b).
+ *
+ * `share`, `maxEntries`, `minEntries` and `priority` used to be five-band maps
+ * on `core:task/rank-hybrid@1`. That was the design 16 §5a rejected and said
+ * why: a per-source map on the ranker has to be kept in step by hand with
+ * whichever sources exist, goes silently stale when one is added, and a
+ * plugin's retrieval definition cannot take part at all without somebody
+ * editing the ranker. So each of the five retrieval definitions declares its
+ * own — the four fields below, labelled with the band they speak for — and
+ * publishes them as one **band intent** element at the head of its
+ * candidates (`BandIntent` in the SDK); `lorebook-triggers@1`, which produces
+ * three bands through one port, declares three (`bandIntentFieldsOf`) and
+ * publishes three. The ranker reads the intents off the list it is handed
+ * and keeps only what is cross-source.
+ *
+ * **Every default here is the number the ranker's map held**, so an install
+ * that tuned nothing selects exactly what it selected before: `messages` 0.5
+ * (which is `MESSAGE_FILL_FRACTION`), the three lore bands 0.1667 / 0.1667 /
+ * 0.1666, relationships 0; ceilings 50 / 20 / 15 / 10 and none; a minimum of 6
+ * on the conversation alone (R6). Migration 0135 moves every stored value to
+ * the node that owns it now.
+ *
+ * ⚠ **`minEntries` is declared on `session-history` alone.** R6 (retrieval
+ * plan §7): *per-source minimums are removed everywhere except recent
+ * conversation*. A minimum is a promise to spend budget on a source whether or
+ * not it scored, and the one way an entry the ranker turned down could come
+ * back in; declaring one on a lore lane would reopen exactly that door, so
+ * the field is not declared there rather than declared at zero.
+ *
+ * `share` is a plain relative number, not the `share` control type: that
+ * type divides ONE value over its members, and there is no one value any
+ * more — each source states its own and the ranker normalises across
+ * whatever arrived (its `shareNormalisation`). Zero is still the off switch.
+ */
+const bandIntentFields = (
+	band: { label: string; noun: string },
+	defaults: { share: number; maxEntries?: number },
+) => ({
+	share: {
+		type: 'number' as const,
+		min: 0,
+		default: defaults.share,
+		quick: true,
+		i18n: { en: `Share — ${band.label}` },
+		description: {
+			en: `How much of the context window ${band.noun} may take, relative to every other source. The ranker normalises the shares it is handed; set this to zero to leave ${band.noun} out.`,
+		},
+	},
+	maxEntries: {
+		type: 'integer' as const,
+		min: 0,
+		...(defaults.maxEntries === undefined ? {} : { default: defaults.maxEntries }),
+		i18n: { en: `Most entries — ${band.label}` },
+		description: {
+			en: `A ceiling on how many entries ${band.noun} may contribute, whatever its share.`,
+		},
+	},
+	priority: {
+		type: 'enum' as const,
+		of: BAND_PRIORITIES,
+		default: 'normal' as const,
+		i18n: { en: `Priority — ${band.label}` },
+		description: {
+			en: `How strongly ${band.noun} resists being trimmed once the shares are spent — 'high' and 'low' sort its entries ahead of or behind the others when leftover room is handed out; 'always' keeps every entry the window can hold.`,
+		},
+	},
+})
+
+/**
+ * The three lore bands, as ONE table: the label each band's controls wear and
+ * the numbers it ships at. Read by the three lanes (`worldLore`,
+ * `characterLore`, `historyEntries` — one band each) AND by
+ * `lorebook-triggers@1` (all three, namespaced — `bandIntentFieldsOf`), so
+ * the two shapes cannot ship a band at two numbers: a person moving from the
+ * narrator's one-node scan to `respond`'s three lanes finds the same defaults
+ * under the same labels, and migration 0135's `shipped` table has one set to
+ * agree with.
+ *
+ * 0.1666 on history, not 0.1667: the three lore shares summed to exactly 0.5
+ * on the ranker's map and still do — the migrated value is the declared one,
+ * so nobody's split moves by a ten-thousandth on upgrade.
+ */
+const LORE_BANDS = {
+	worldLore: {
+		band: { label: 'world lore', noun: 'world lore' },
+		defaults: { share: 0.1667, maxEntries: 20 },
+	},
+	characterLore: {
+		band: { label: 'character lore', noun: 'character lore' },
+		defaults: { share: 0.1667, maxEntries: 15 },
+	},
+	history: {
+		band: { label: 'history', noun: 'history entries' },
+		defaults: { share: 0.1666, maxEntries: 10 },
+	},
+} as const
+
+/**
+ * One band's intent, **namespaced by band** — `worldLoreShare`,
+ * `worldLoreMaxEntries`, `worldLorePriority` — for a definition that produces
+ * more than one band through one port and so has to declare more than one
+ * intent in ONE `params` slot (`lorebook-triggers@1`).
+ *
+ * Flat camel-case keys rather than a nested `object` field per band, and the
+ * reason is the storage contract: a config value is addressed by
+ * `(node, slot, path)` with `path` a single field name, the panel renders one
+ * control per top-level field, and migration 0135 moves the ranker's old
+ * `share.worldLore` member to exactly one row at `<band><Field>` — a nested
+ * shape would have needed a second addressing scheme on three definitions
+ * for the benefit of none. The label is the band's own ("Share — world
+ * lore"), so a person sees the same words on this node as on the lane.
+ */
+const bandIntentFieldsOf = <B extends keyof typeof LORE_BANDS>(band: B) => {
+	const f = bandIntentFields(LORE_BANDS[band].band, LORE_BANDS[band].defaults)
+	return {
+		[`${band}Share`]: f.share,
+		[`${band}MaxEntries`]: f.maxEntries,
+		[`${band}Priority`]: f.priority,
+	} as { [K in `${B}Share`]: typeof f.share } & { [K in `${B}MaxEntries`]: typeof f.maxEntries } & {
+		[K in `${B}Priority`]: typeof f.priority
+	}
+}
+
 export const lorebookTriggers = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/lorebook-triggers@1',
 		i18n: { name: { en: 'Lorebook triggers' } },
 		timeoutMs: 2000,
@@ -590,6 +918,23 @@ export const lorebookTriggers = pin(
 				kind: 'parameters',
 				facet: 'weights',
 				schema: {
+					/**
+					 * The three bands' intents, first, as on the lanes (R-7
+					 * P5; U3b review W1, 2026-09-16). This node produces world
+					 * lore, character lore AND history through one port, so it
+					 * declares all three — namespaced, `worldLoreShare` … —
+					 * and publishes three band intents at the head of its
+					 * candidates. Same defaults and labels as the three lanes,
+					 * from `LORE_BANDS`, so the narrator's split is the reply's
+					 * split until somebody moves one. Before this the node
+					 * declared no intent at all and the ranker fell back to its
+					 * own table for every lore band — the same numbers, but a
+					 * tuned share on `narrate`'s ranker had nowhere to move to
+					 * (0135 culled it) and nothing on this node could be tuned.
+					 */
+					...bandIntentFieldsOf('worldLore'),
+					...bandIntentFieldsOf('characterLore'),
+					...bandIntentFieldsOf('history'),
 					/**
 					 * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value the
 					 * scan actually ran on while this declaration said 3 and
@@ -703,7 +1048,16 @@ export const lorebookTriggers = pin(
 			},
 		},
 		ports: {
-			in: { text: S.text, scope: S.sessionScope },
+			/**
+			 * ⚠ No `text` in-port, and this and the three lore lanes had one
+			 * (culled 2026-09-16, R-12). It was filled by no spec and read by
+			 * no handler — the scan derives its window from `scope`, which is
+			 * where it actually comes from — and each of the four carried a
+			 * standing excuse in `wiring.test.ts` saying so.
+			 */
+			in: { scope: S.sessionScope },
+			// Both open with band-intent elements — three, one per lore band
+			// — ahead of the items; readers call `splitCandidates()`.
 			out: { main: S.candidates, hits: S.candidates },
 		},
 	}),
@@ -712,10 +1066,13 @@ export const lorebookTriggers = pin(
 /**
  * World lore and character lore, as two queries rather than one.
  *
- * `lorebook-triggers@1` returns both through a single port, so they share a
- * weight, a floor and a share of the window. They are not alike: character lore
- * is bound to whoever is speaking and world lore is not, and an install that
- * wants a lot of one and little of the other has no way to say so.
+ * `lorebook-triggers@1` returns both through a single port, and for a long
+ * time they shared a weight, a minimum and a share of the window there. They
+ * are not alike: character lore is bound to whoever is speaking and world
+ * lore is not, and an install that wants a lot of one and little of the
+ * other had no way to say so. (Since U3b's review it can on either shape:
+ * that node declares one intent per band it produces, namespaced —
+ * `bandIntentFieldsOf` — from the same `LORE_BANDS` table these read.)
  *
  * The retrieval itself is unchanged — candidates already carry
  * `source: 'worldLore' | 'characterLore'`, so each of these is the same scan
@@ -771,72 +1128,98 @@ export const lorebookTriggers = pin(
  * mechanism can still find it and the receipt can still explain it.
  */
 
-const loreSlots = (what: string) => ({
+/**
+ * The seven lore knobs, declared once and worn by all three lore lanes —
+ * every one of them **`shared`** (R-7 P2, ruled 2026-09-15; the marker
+ * 2026-09-16, see `FieldDecl.shared`): a spec wires the three lanes' `params`
+ * to ONE node — core's `respond` puts them on `gather.worldLore.read` and the
+ * other two lanes read that slot through `slot.params({ node })` — so a person
+ * tuning them tunes them once, for world lore, character lore and history
+ * together. The wording below says so: it is the owner's label a panel shows,
+ * and an owner labelled "world lore" while governing three sources was the
+ * lie the U3 review found.
+ *
+ * The lane's own intent (`bandIntentFields` above) sits beside them in the
+ * same slot, UNMARKED: through the same reference a lane's share is the
+ * lane's, resolved at its own address, and rendered on its own step.
+ */
+const loreScanFields = () => ({
+	/**
+	 * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value every scan
+	 * has actually run on. This said 3 for as long as the three lore
+	 * lanes shipped without a wired `params` slot, so the number was
+	 * never handed to anything and the two could not be seen to
+	 * disagree.
+	 *
+	 * Round-sized on purpose. A group session with five characters
+	 * takes five messages to come back round, so a depth of 3 cannot
+	 * see the turn it belongs to: the window has already slid past
+	 * where the round began. Scan depth has to be at least a round,
+	 * and a round grows with the cast.
+	 */
+	scanDepth: {
+		type: 'integer' as const,
+		default: 10,
+		quick: true,
+		shared: true,
+		i18n: { en: 'Messages scanned for lore triggers' },
+		description:
+			'How many recent messages are scanned for lore triggers in the conversation. One setting for the three lore lanes — it applies to world lore, character lore and history. An entry is not reached through its links to other entries.',
+	},
+	/**
+	 * Beside `scanDepth` because the pair is only legible together:
+	 * one is how far back a key may fire from, the other is how much
+	 * conversation counts as the present moment. See
+	 * `GUARANTEED_MESSAGES`.
+	 */
+	guaranteedMessages: { ...GUARANTEED_MESSAGES, shared: true },
+	maxRecursionDepth: {
+		type: 'integer' as const,
+		default: 0,
+		shared: true,
+		i18n: { en: 'Follow keyword chains this deep' },
+		description:
+			'A ceiling on how far entries may trigger further entries via keywords found in their text, however deep an individual entry asks to go. It never follows links between entries.',
+	},
+	/**
+	 * Declared on all three lanes, held by one: since R-7 P2 a spec
+	 * names ONE owner for the seven knobs and the other lanes read the
+	 * owner's slot, so this is one row governing world lore, character
+	 * lore and history alike — not one row per lane. World lore
+	 * without keys is the case it exists for; the other two sources
+	 * take the same answer. A per-source answer is a weight, and
+	 * weights live on the source (`bandIntentFields`), not here.
+	 */
+	admitThreshold: { ...ADMIT_THRESHOLD, shared: true },
+	/**
+	 * One row for the three lanes, like `admitThreshold`: the owner's
+	 * value reaches world lore, where entry lengths differ most,
+	 * character lore, already narrowed to whoever is speaking, and
+	 * dated history — which has no title at all, so the value reaches
+	 * it and moves nothing. That is the honest state rather than a
+	 * fourth declaration.
+	 */
+	lexicalScoring: { ...LEXICAL_SCORING, shared: true },
+	trigramFolding: { ...TRIGRAM_FOLDING, shared: true },
+	titleWeight: { ...TITLE_WEIGHT, shared: true },
+})
+
+const loreSlots = (band: { label: string; noun: string }, defaults: { share: number; maxEntries: number }) => ({
 	params: {
 		kind: 'parameters' as const,
 		facet: 'weights' as const,
 		schema: {
-			/**
-			 * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value every scan
-			 * has actually run on. This said 3 for as long as the three lore
-			 * lanes shipped without a wired `params` slot, so the number was
-			 * never handed to anything and the two could not be seen to
-			 * disagree.
-			 *
-			 * Round-sized on purpose. A group session with five characters
-			 * takes five messages to come back round, so a depth of 3 cannot
-			 * see the turn it belongs to: the window has already slid past
-			 * where the round began. Scan depth has to be at least a round,
-			 * and a round grows with the cast.
-			 */
-			scanDepth: {
-				type: 'integer' as const,
-				default: 10,
-				quick: true,
-				i18n: { en: `Messages scanned for ${what} triggers` },
-				description: `How many recent messages are scanned for ${what} triggers in the conversation. An entry is not reached through its links to other entries.`,
-			},
-			/**
-			 * Beside `scanDepth` because the pair is only legible together:
-			 * one is how far back a key may fire from, the other is how much
-			 * conversation counts as the present moment. See
-			 * `GUARANTEED_MESSAGES`.
-			 */
-			guaranteedMessages: GUARANTEED_MESSAGES,
-			maxRecursionDepth: {
-				type: 'integer' as const,
-				default: 0,
-				i18n: { en: 'Follow keyword chains this deep' },
-				description:
-					'A ceiling on how far entries may trigger further entries via keywords found in their text, however deep an individual entry asks to go. It never follows links between entries.',
-			},
-			/**
-			 * On all three lanes rather than on one, because the question it
-			 * answers is per-source: world lore without keys is the case this
-			 * exists for, character lore is already narrowed to whoever is
-			 * speaking, and dated history is the source most likely to want a
-			 * stricter setting than the other two. One shared declaration, one
-			 * row per lane — which is what `share`, `maxEntries` and the rest
-			 * of the retrieval surface already do.
-			 */
-			admitThreshold: ADMIT_THRESHOLD,
-			/**
-			 * On all three lanes for `admitThreshold`'s reason, and with a
-			 * per-source answer of its own in each case: world lore is where
-			 * entry lengths differ most, character lore is already narrowed to
-			 * whoever is speaking, and dated history has no title at all — so
-			 * `titleWeight` is a control history renders and cannot move,
-			 * which is the honest state rather than a fourth declaration.
-			 */
-			lexicalScoring: LEXICAL_SCORING,
-			trigramFolding: TRIGRAM_FOLDING,
-			titleWeight: TITLE_WEIGHT,
+			// The lane's own intent first: `share` is the knob a person
+			// reaches for, and on a lane that reads the scan knobs through
+			// the owner it is all the panel shows.
+			...bandIntentFields(band, defaults),
+			...loreScanFields(),
 		},
 	},
 })
 
 export const worldLore = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/world-lore@1',
 		i18n: { name: { en: 'World lore' } },
 		timeoutMs: 2000,
@@ -847,24 +1230,32 @@ export const worldLore = pin(
 		 * ranker simply has one fewer source.
 		 */
 		optional: true,
-		slots: loreSlots('world lore'),
+		slots: loreSlots(LORE_BANDS.worldLore.band, LORE_BANDS.worldLore.defaults),
 		ports: {
-			in: { text: S.text, scope: S.sessionScope },
+			// No `text` in-port — see `lorebookTriggers`: the scan reads its
+			// window through `scope` (culled 2026-09-16, R-12).
+			in: { scope: S.sessionScope },
+			// Both open with a band-intent element — this lane's own — ahead
+			// of the items; readers call `splitCandidates()`.
 			out: { main: S.candidates, hits: S.candidates },
 		},
 	}),
 )
 
 export const characterLore = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/character-lore@1',
 		i18n: { name: { en: 'Character lore' } },
 		timeoutMs: 2000,
 		/** As `worldLore`: absent is a normal state, so off is a safe state. */
 		optional: true,
-		slots: loreSlots('character lore'),
+		slots: loreSlots(LORE_BANDS.characterLore.band, LORE_BANDS.characterLore.defaults),
 		ports: {
-			in: { text: S.text, scope: S.sessionScope },
+			// No `text` in-port — see `lorebookTriggers`: the scan reads its
+			// window through `scope` (culled 2026-09-16, R-12).
+			in: { scope: S.sessionScope },
+			// Both open with a band-intent element — this lane's own — ahead
+			// of the items; readers call `splitCandidates()`.
 			out: { main: S.candidates, hits: S.candidates },
 		},
 	}),
@@ -890,15 +1281,20 @@ export const characterLore = pin(
  * Same retrieval as its two siblings: one scan, one filter.
  */
 export const historyEntries = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/history-entries@1',
 		i18n: { name: { en: 'History entries' } },
 		timeoutMs: 2000,
 		/** As the lore queries: a chat with no history is an ordinary chat. */
 		optional: true,
-		slots: loreSlots('history'),
+		// 0.1666, not 0.1667 — see `LORE_BANDS`.
+		slots: loreSlots(LORE_BANDS.history.band, LORE_BANDS.history.defaults),
 		ports: {
-			in: { text: S.text, scope: S.sessionScope },
+			// No `text` in-port — see `lorebookTriggers`: the scan reads its
+			// window through `scope` (culled 2026-09-16, R-12).
+			in: { scope: S.sessionScope },
+			// Both open with a band-intent element — this lane's own — ahead
+			// of the items; readers call `splitCandidates()`.
 			out: { main: S.candidates, hits: S.candidates },
 		},
 	}),
@@ -906,7 +1302,7 @@ export const historyEntries = pin(
 
 /** Probability rolls come from the run seed, so they replay (13 §7i). */
 export const lorebookProbabilistic = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/lorebook-probabilistic@1',
 		timeoutMs: 2000,
 		declaresRandomness: true,
@@ -918,7 +1314,7 @@ export const lorebookProbabilistic = pin(
 )
 
 export const vectorSearch = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/vector-search@1',
 		i18n: { name: { en: 'Semantic search' } },
 		timeoutMs: 3000,
@@ -988,7 +1384,7 @@ export const vectorSearch = pin(
 					},
 					/**
 					 * How sharply a weak resemblance is discounted — and
-					 * emphatically **not** a floor.
+					 * emphatically **not** a minimum.
 					 *
 					 * ⚠ **This replaced `minScore: 0.35`, and the replacement is
 					 * a ruling rather than a rename.** A minimum similarity
@@ -1085,7 +1481,7 @@ export const vectorSearch = pin(
  * when a turn is taken.
  */
 export const entitySearch = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/entity-search@1',
 		i18n: { name: { en: 'Entity search' } },
 		timeoutMs: 2000,
@@ -1164,14 +1560,12 @@ export const entitySearch = pin(
 		},
 		ports: {
 			/**
-			 * ⚠ **No `text` in-port, and the four lore queries have one.**
-			 *
-			 * Theirs is filled by nothing and read by nothing — `loreFor`
-			 * derives its window from `scope` — and `wiring.test.ts` carries
-			 * four standing excuses saying so. Those are legacy; this is a new
-			 * declaration, and shipping a fifth port with the same excuse
-			 * written for it would be adding the defect on purpose. The window
-			 * comes from `scope`, which is where it actually comes from.
+			 * ⚠ **No `text` in-port.** The four lore queries declared one that
+			 * nothing filled and nothing read — `loreFor` derives its window
+			 * from `scope` — and this declaration refused to ship a fifth with
+			 * the same standing excuse written for it. Theirs are culled now
+			 * (2026-09-16, R-12); the window comes from `scope`, which is where
+			 * it actually comes from.
 			 */
 			in: { scope: S.sessionScope },
 			out: {
@@ -1192,6 +1586,65 @@ export const entitySearch = pin(
 )
 
 /**
+ * Documentation search — the guide genre's one retrieval mechanism (plans/29
+ * R-18; built 2026-09-16 as U5g).
+ *
+ * The app compiles its docs into a section index at build time (title,
+ * anchor, preview per heading). This reads the most recent messages, scores
+ * every section by the words they share with them, and publishes the best as
+ * candidates in the **`worldLore` band** — so the ranker budgets them and
+ * `assemble` lays them out exactly as it would a lorebook's entries, under
+ * the section's title. Docs are the guide's lore; no second render path.
+ *
+ * `optional`, and it degrades to nothing: an install whose docs were never
+ * compiled (a fresh checkout, `npm test`) publishes an empty band with its
+ * intent, and the turn loses excerpts rather than failing.
+ */
+export const docsSearch = pin(
+	describeQueryDefinition({
+		id: 'core:query/docs-search@1',
+		i18n: {
+			name: { en: 'Docs search' },
+			description: {
+				en: "Finds the documentation sections that share the most words with the recent conversation, so the guide can ground its answer in them.",
+			},
+		},
+		timeoutMs: 2000,
+		optional: true,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					...bandIntentFields(
+						{ label: 'documentation', noun: 'documentation excerpts' },
+						{ share: 0.25, maxEntries: 6 },
+					),
+					scanDepth: {
+						type: 'integer',
+						min: 1,
+						default: 4,
+						quick: true,
+						i18n: { en: 'Messages searched' },
+						description: {
+							en: 'How many of the most recent messages the documentation is matched against. The newest message counts most.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			// The scope, like the lore lanes: the newest rows are read through
+			// the host's one message seam (hidden and generating rows excluded
+			// there), so this can sit beside `history` in a parallel gather
+			// rather than after it.
+			in: { scope: S.sessionScope },
+			out: { main: S.candidates, candidates: S.candidates },
+		},
+	}),
+)
+
+/**
  * The mention detector — the query half of the entity-vector space.
  *
  * What the current scene refers to by **describing** it rather than by naming
@@ -1205,7 +1658,7 @@ export const entitySearch = pin(
  * (*"the ashguard"*) is dropped here, since the exact matcher owns it.
  */
 export const mentionSpans = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/mention-spans@1',
 		i18n: { name: { en: 'Descriptive mentions' } },
 		timeoutMs: 1000,
@@ -1315,7 +1768,7 @@ export const mentionSpans = pin(
  * needs per-corpus calibration is a number nobody can set.
  */
 export const entityLink = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/entity-link@1',
 		i18n: { name: { en: 'Entries called by a description' } },
 		/**
@@ -1382,7 +1835,7 @@ export const entityLink = pin(
 )
 
 export const personaCard = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/persona-card@1',
 		timeoutMs: 1000,
 		ports: {
@@ -1393,7 +1846,7 @@ export const personaCard = pin(
 )
 
 export const messageText = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/message-text@1',
 		timeoutMs: 1000,
 		ports: {
@@ -1405,7 +1858,7 @@ export const messageText = pin(
 
 /** Illegal by construction elsewhere; used to prove the purity probe. */
 export const network = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'test:query/network@1',
 		timeoutMs: 1000,
 		ports: { out: { main: S.json } },
@@ -1415,7 +1868,7 @@ export const network = pin(
 // ── Tasks ───────────────────────────────────────────────────────────────────
 
 export const contextBudget = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/context-budget@1',
 		timeoutMs: 500,
 		slots: {
@@ -1432,6 +1885,18 @@ export const contextBudget = pin(
 			 * wrong in the direction that truncates, silently.
 			 */
 			sampling: { kind: 'sampling', quick: true },
+			/**
+			 * The connection the reply is sent on — for the model's own
+			 * context window (0114), which caps the sampling config's when
+			 * the model states one.
+			 *
+			 * Shared with the generating step in every shipped spec
+			 * (`slot.connectionOf('generate')`), on the same terms as
+			 * `sampling` above: the budget has to be sized to the window the
+			 * request is actually sent against, and the ONE computation of
+			 * that window (R-8) reads both halves off the same resolved pair.
+			 */
+			connection: { kind: 'connection' },
 			params: {
 				kind: 'parameters',
 				schema: {
@@ -1478,12 +1943,15 @@ export const contextBudget = pin(
  * behind either one to turn on.
  */
 export const mergeCandidates = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/merge-candidates@1',
 		timeoutMs: 500,
 		ports: {
 			in: { sources: S.candidates },
 			out: {
+				// Both open with the band-intent elements the sources carried
+				// (lifted out before the fusion, put back after — a fused rank
+				// is never stamped on one); readers call `splitCandidates()`.
 				main: S.candidates,
 				candidates: S.candidates,
 				/** What fused with what — and a complaint when nothing did. */
@@ -1516,13 +1984,16 @@ export const mergeCandidates = pin(
  * wired first.
  */
 export const concatCandidates = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/concat-candidates@1',
 		i18n: { name: { en: 'Combine candidates' } },
 		timeoutMs: 500,
 		ports: {
 			in: { sources: S.candidates },
 			out: {
+				// Both open with band-intent elements — the first per band
+				// across every source, hoisted ahead of the items; readers
+				// call `splitCandidates()`.
 				main: S.candidates,
 				candidates: S.candidates,
 				/** How many arrived per list, and how many repeats were dropped. */
@@ -1551,20 +2022,16 @@ const rankPorts = {
 }
 
 /**
- * Shared by every ranker: the ceiling it is ranking against.
+ * The five core bands a context is built from — the members of the ranker's
+ * **signal** matrix, which is cross-source and stays here.
  *
- * The default matters more than it looks. Until the executor applied declared
- * defaults, a spec that did not override this got `undefined` — a budget of
- * zero, every block excluded, and a prompt rendered with its lore silently
- * missing and no error anywhere.
- */
-/**
- * The five things a context is built from.
- *
- * Declared once and shared by every control that renders per source, so a
- * plugin adding a sixth gets a labelled, coloured band everywhere without
- * touching a screen. `weights.ts` calls this `RetrievalBand`, and the two must
- * agree — the binding maps straight onto it.
+ * ⚠ No longer the members of `share` / `maxEntries` / `minEntries`: those are
+ * per-source and live on the sources (R-7 P5, `bandIntentFields`), so a plugin
+ * adding a sixth band declares its own intent on its own definition and never
+ * touches this list. Its candidates score by `presetScore` or by the ranker's
+ * lore signal set — a per-band signal row for a plugin band is a follow-up,
+ * not something this list can grant. `weights.ts` calls this `RetrievalBand`,
+ * and the two must agree — the binding maps straight onto it.
  */
 const SOURCES = [
 	{
@@ -1600,111 +2067,38 @@ const SOURCES = [
 ] as const
 
 /**
- * What the ranker is configured with.
+ * How the shares the sources declared are turned into token budgets — the one
+ * thing about shares that is genuinely the ranker's (16 §5a: Assemble "keeps
+ * only what is genuinely global: total budget, truncation policy, and how
+ * weights normalize").
  *
- * ⚠ This replaced a single `budget: integer` defaulting to 4096, and the change
- * is the point rather than a tidy-up. An absolute token count was wrong twice:
- * it re-entered a number the sampling config already carries, free to disagree
- * with the model actually being called; and it answered a question nobody asks.
- * Nobody wants to say "trim to 4096". They want to say "lore matters more than
- * old history in this chat, and never drop the last few messages".
+ * `relative` is what ships and is arithmetically what has always run: every
+ * band with a share above zero gets `pool × share / Σ shares`, so only the
+ * ratios matter and a source added or removed re-divides the whole window.
+ * `fixed` reads each share as the fraction of the window it says — a source
+ * declaring 0.25 gets a quarter whether one other source exists or six — and
+ * scales them all down together only when they add up to more than one. In
+ * both, whatever a band cannot spend is swept to the others in score order.
  *
- * The available tokens now arrive on the `budget` in-port from
- * `core:task/context-budget@1`, which derives them from the window. What is
- * left here is the part that is genuinely a preference: how the context is
- * fought over once its size is known.
- *
- * `share` is normalised, so there is no invalid state — the total is always
- * 100%, dragging one band takes from the others and nowhere else, and zero is
- * a band's off switch. `DEFAULT_GROUPS` in `ranking/weights.ts` already
- * reproduces today's split exactly (0.5 to messages is `MESSAGE_FILL_FRACTION`),
- * so wiring this up is behaviour-preserving by construction.
+ * ⚠ **The per-source maps this file used to declare here are gone** (R-7 P5,
+ * 2026-09-16). `share`, `maxEntries` and `minEntries` — five-band maps keyed
+ * `{messages, worldLore, characterLore, history, relationships}` — were the
+ * per-source table 16 §5a rejected, kept on the ranker rather than on
+ * Assemble. Each source declares its own now (`bandIntentFields`) and the
+ * ranker reads them off the candidates it is handed (`BandIntent` in the SDK);
+ * migration 0135 moved every stored value to the node that owns it. What is
+ * left on this node is cross-source only: this, the mechanism and signal
+ * weights, and the allocation precedence.
  */
-const rankSlots = {
-	params: {
-		kind: 'parameters' as const,
-		facet: 'weights' as const,
-		schema: {
-			share: {
-				type: 'share' as const,
-				members: SOURCES,
-				default: {
-					messages: 0.5,
-					worldLore: 0.1667,
-					characterLore: 0.1667,
-					history: 0.1666,
-					relationships: 0,
-				},
-				i18n: { en: 'Context split' },
-				description: {
-					en: 'How the context is divided between sources. Set a band to zero to leave it out.',
-				},
-			},
-			maxEntries: {
-				type: 'perMember' as const,
-				members: SOURCES,
-				default: {
-					messages: 50,
-					worldLore: 20,
-					characterLore: 15,
-					history: 10,
-					relationships: 0,
-				},
-				i18n: { en: 'Most entries per source' },
-				description: {
-					en: 'A ceiling on how many entries one source may contribute, whatever its share.',
-				},
-			},
-			/**
-			 * ⚠ Replaced `minMessageTokens: 512`, and the unit is the point.
-			 *
-			 * "Guaranteed conversation" asked for a token count, which is not
-			 * a quantity anybody has an opinion about — 512 tokens is some
-			 * number of messages that changes with how long the last few were,
-			 * so the same setting produced a different amount of readable chat
-			 * every turn. What a user means is *keep the last six messages*.
-			 *
-			 * Floors lose to the window. `select` fills them in score order and
-			 * stops at the budget, because floors summing past the context is
-			 * the one way this could build a prompt too big to send.
-			 *
-			 * ## ⚠ Conversation only, from R6 (retrieval plan §7)
-			 *
-			 * It used to be a floor **per source**, over the same five bands as
-			 * `share` and `maxEntries`. R6 removes every floor except this one:
-			 * *"per-source floors are removed everywhere except recent
-			 * conversation, which keeps its guaranteed share. Lore competes on
-			 * score alone."*
-			 *
-			 * Two reasons, and the second is the one that could not be worked
-			 * around later. A floor is a promise to spend budget on a source
-			 * **whether or not it scored**, so a lore floor is a standing
-			 * instruction to include lore the ranker did not want — the exact
-			 * thing score-led allocation exists to stop. And a floor is a
-			 * *second way in*: R1's clairvoyance filter excludes an entry
-			 * because the speaker does not know it, and a floor sitting
-			 * underneath the ranker could quietly re-admit it. `select` already
-			 * takes `ineligible` candidates out ahead of the floors and there
-			 * is a test pinning that, but the durable answer is for the floor
-			 * not to exist for lore at all.
-			 *
-			 * The conversation keeps its floor because it is not competing for
-			 * relevance in the first place: the last few turns are what makes a
-			 * reply a reply, and a window too small to hold them is a broken
-			 * prompt rather than a differently-ranked one.
-			 */
-			minEntries: {
-				type: 'perMember' as const,
-				members: SOURCES.filter((s) => s.key === 'messages'),
-				default: { messages: 6 },
-				i18n: { en: 'Always keep at least' },
-				description: {
-					en: 'Recent messages kept whatever the split says, so a lore-heavy chat stays readable. Dropped when there is no room. Lore has no floor — it competes on score.',
-				},
-			},
-		},
+const SHARE_NORMALISATION = {
+	type: 'enum' as const,
+	of: ['relative', 'fixed'] as const,
+	default: 'relative' as const,
+	i18n: { en: 'How shares divide the window' },
+	description: {
+		en: "'relative' treats each source's share as a ratio against the others, so they always add up to the whole window. 'fixed' reads each share as the fraction of the window it states, scaling them down only when they exceed it.",
 	},
-}
+} as const
 
 /**
  * The signal weights, transposed for declaration.
@@ -2091,13 +2485,13 @@ const MECHANISM_WEIGHTS = {
  * larger than a sixth of the window cannot be kept however it scored — which is
  * the thing design §7 calls backwards.
  *
- * On, the precedence inverts to *score allocates, floors guarantee, shares
- * cap*: the floors are met first exactly as before, then one pool is spent
+ * On, the precedence inverts to *score allocates, minimums guarantee, shares
+ * cap*: the minimums are met first exactly as before, then one pool is spent
  * strictly best-first across every source with each band a ceiling on what one
  * source may take out of it, and the sweep still hands out whatever no source
  * could use. Everything a user can read a promise about is unchanged either
  * way — pins come first and do not consume the entry cap, a band set to zero
- * leaves that source out, floors are met before any share is worked out, and
+ * leaves that source out, minimums are met before any share is worked out, and
  * ties break on score then authored position.
  *
  * **A declared parameter rather than a call option, and that is the whole
@@ -2128,20 +2522,22 @@ const SCORE_LED_ALLOCATION = {
 } as const
 
 export const rankHybrid = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/rank-hybrid@1',
 		timeoutMs: 500,
 		slots: {
-			...rankSlots,
 			params: {
-				...rankSlots.params,
+				kind: 'parameters',
+				facet: 'weights',
 				schema: {
-					...rankSlots.params.schema,
-					// Ahead of the nine, because it is the altitude a reader
-					// starts at: the grouped mechanisms first, the individual
-					// signals under them for anyone who wants that far in.
+					// Cross-source only (R-7 P5). Ahead of the nine, because it
+					// is the altitude a reader starts at: the grouped mechanisms
+					// first, the individual signals under them for anyone who
+					// wants that far in, then how the sources' shares divide
+					// the window and in what precedence it is filled.
 					mechanismWeights: MECHANISM_WEIGHTS,
 					...SIGNAL_WEIGHT_FIELDS,
+					shareNormalisation: SHARE_NORMALISATION,
 					scoreLedAllocation: SCORE_LED_ALLOCATION,
 				},
 			},
@@ -2193,11 +2589,16 @@ export const rankHybrid = pin(
 		},
 	}),
 )
+/**
+ * No `params` slot (R-7 P5, 2026-09-16). It wore the per-source maps because
+ * `rankSlots` was spread onto every ranker; with those on the sources it has
+ * nothing cross-source of its own to declare — recency needs no weights — and
+ * an empty parameters slot would render a heading over nothing.
+ */
 export const rankByRecency = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/rank-by-recency@1',
 		timeoutMs: 500,
-		slots: rankSlots,
 		ports: rankPorts,
 	}),
 )
@@ -2211,7 +2612,7 @@ export const rankByRecency = pin(
  * first.
  */
 export const queryWindows = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/query-windows@1',
 		i18n: { name: { en: 'Retrieval queries' } },
 		timeoutMs: 500,
@@ -2260,7 +2661,7 @@ export const queryWindows = pin(
  * not the embeddings — derived, bounded, and not reversible into the vectors.
  */
 export const rankSemantic = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/rank-semantic@1',
 		i18n: { name: { en: 'Rank semantic results' } },
 		timeoutMs: 1000,
@@ -2269,18 +2670,15 @@ export const rankSemantic = pin(
 				kind: 'parameters',
 				facet: 'weights',
 				schema: {
-					currentWindow: {
-						type: 'integer',
-						default: 2,
-						description:
-							"How many of the latest messages form the 'current' retrieval query.",
-					},
-					recentWindow: {
-						type: 'integer',
-						default: 3,
-						description:
-							"How many messages before those form the wider 'recent' retrieval query.",
-					},
+					/**
+					 * ⚠ No `currentWindow` / `recentWindow` here, and there
+					 * were (culled 2026-09-16, R-12). They size the two query
+					 * windows — how many messages form the 'current' and the
+					 * 'recent' question — which `core:task/query-windows@1`
+					 * cuts and declares as its own params. Declared here too,
+					 * they were rendered twice and read once: the ranker
+					 * receives windows already cut and consults neither.
+					 */
 					rrfK: {
 						type: 'integer',
 						default: 60,
@@ -2405,7 +2803,7 @@ export const rankSemantic = pin(
  * naming its ranker after its own product is the better name anyway.
  */
 export const rankRecall = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'chariot.recall:rank-recall@1',
 		timeoutMs: 500,
 		public: true,
@@ -2414,7 +2812,7 @@ export const rankRecall = pin(
 )
 
 export const renderEntries = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/render-entries@1',
 		timeoutMs: 500,
 		slots: {
@@ -2454,7 +2852,7 @@ export const renderEntries = pin(
 )
 
 export const assemble = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/assemble@2',
 		timeoutMs: 1000,
 		slots: {
@@ -2550,12 +2948,19 @@ export const assemble = pin(
 						description:
 							'Only add the reminder once the chat is at least this many tokens long. 0 always adds it.',
 					},
-					truncation: {
-						type: 'enum',
-						of: ['oldest-first', 'lowest-weight'],
-						default: 'oldest-first',
-						description: 'What gets dropped first when the context is over budget.',
-					},
+					/**
+					 * ⚠ No `truncation` here, and there was one — an enum of
+					 * `oldest-first | lowest-weight`, "what gets dropped first
+					 * when the context is over budget" — declared, rendered,
+					 * and read by nothing (culled 2026-09-16, R-12). Assemble
+					 * drops nothing: what fits is decided upstream by the
+					 * ranker's `select`, per band, against `share`,
+					 * `maxEntries`, `minEntries` and `scoreLedAllocation` on
+					 * `core:task/rank-hybrid@1`, and this node renders the
+					 * decisions it is handed. A second drop rule here would be
+					 * a second owner of one decision. NOMENCLATURE §25 records
+					 * the cull.
+					 */
 					/**
 					 * Which sections the prompt is built from, and in what order —
 					 * SillyTavern's *prompt list*, as a param on the node that
@@ -2692,7 +3097,7 @@ export const assemble = pin(
  * cards should not have to reimplement token allocation to get them.
  */
 export const sessionCast = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/session-cast@1',
 		i18n: { name: { en: 'Session cast' } },
 		timeoutMs: 2000,
@@ -2796,7 +3201,7 @@ const RELATIONSHIP_TIMEOUT = 5000
 
 /** How the speaking character regards everyone else. */
 export const relationshipsPerspectives = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/relationships-perspectives@1',
 		i18n: {
 			name: { en: 'Relationships: their perspective' },
@@ -2833,7 +3238,7 @@ export const relationshipsPerspectives = pin(
  * every prompt on every install that has never marked a node legendary.
  */
 export const relationshipsKnown = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/relationships-known@1',
 		i18n: {
 			name: { en: 'Relationships: how others see them' },
@@ -2898,7 +3303,7 @@ export const relationshipsKnown = pin(
  * with an absent value uncapped and 0 leaving it out altogether.
  */
 export const relationshipSearch = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/relationship-search@1',
 		i18n: {
 			name: { en: 'Relationships: ranked' },
@@ -2908,18 +3313,51 @@ export const relationshipSearch = pin(
 		},
 		optional: true,
 		timeoutMs: RELATIONSHIP_TIMEOUT,
-		slots: relationshipSlots('graph relationships'),
+		slots: {
+			params: {
+				...relationshipSlots('graph relationships').params,
+				schema: {
+					/**
+					 * The band's intent (R-7 P5), on the one relationship read
+					 * that ranks. `share` is 0, which is what the ranker's map
+					 * held: the band ships inert and the share is its switch —
+					 * every candidate leaves as `excluded_group_disabled` with
+					 * that reason until somebody raises it, and the two dump
+					 * nodes render the graph whole meanwhile.
+					 *
+					 * `maxEntries` is `relationshipSlots`' own — the ceiling
+					 * this node already applies before it publishes — and it is
+					 * the band's ceiling too: one number, the query's, rather
+					 * than a second on the ranker free to disagree. Absent
+					 * means uncapped, as it always has here, where the map's
+					 * `relationships: 0` was a cap of nothing sitting behind a
+					 * share of nothing — raising the share alone used to
+					 * exclude every relationship as over its ceiling. It does
+					 * not now. Migration 0135 culls a stored 0 for that reason
+					 * and moves anything else.
+					 */
+					...bandIntentFields({ label: 'relationships', noun: 'the narrative graph' }, { share: 0 }),
+					// Declared second so the query's own wording and `min: 0`
+					// win over the generic ceiling above.
+					...relationshipSlots('graph relationships').params.schema,
+				},
+			},
+		},
 		ports: {
 			/**
 			 * ⚠ **No `text` in-port**, for `core:query/entity-search@1`'s
-			 * reason: the four lore queries declare one that nothing fills and
-			 * nothing reads, and shipping a fifth with the same standing excuse
-			 * written for it would be adding the defect on purpose. A
-			 * relationship is reached by walking edges from the speaker's node,
-			 * so the scope is the whole of the question.
+			 * reason: the four lore queries declared one that nothing filled
+			 * and nothing read (culled 2026-09-16), and shipping a fifth with
+			 * the same standing excuse written for it would have been adding
+			 * the defect on purpose. A relationship is reached by walking edges
+			 * from the speaker's node, so the scope is the whole of the
+			 * question.
 			 */
 			in: { scope: S.sessionScope },
 			out: {
+				// Both open with a band-intent element — the graph's own,
+				// published whether or not a tie was found — ahead of the
+				// items; readers call `splitCandidates()`.
 				main: S.candidates,
 				hits: S.candidates,
 				/**
@@ -3027,7 +3465,7 @@ const sharedRenders = {
  * so the halves that must not drift cannot.
  */
 export const buildTemplateContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-template-context@1',
 		i18n: { name: { en: 'Build template context' } },
 		timeoutMs: 2000,
@@ -3134,7 +3572,7 @@ export const buildTemplateContext = pin(
 				 * ⚠ **Neither is wired by any spec, and both are supplied on
 				 * every side-character turn.** `core:task/build-side-character-
 				 * context@1` is not a separate implementation — the host's
-				 * binding for it unwraps its `speaker` in-port and calls THIS
+				 * binding for it unwraps its `sideCharacter` in-port and calls THIS
 				 * type's handler with the name and the card spread onto the
 				 * input, because `resolveContextInput` owns the card rules and
 				 * a side character's card and a cast member's must compile
@@ -3153,6 +3591,18 @@ export const buildTemplateContext = pin(
 				 */
 				speakerName: S.text,
 				speakerCharacter: S.json,
+				/**
+				 * Who is speaking, as a participant reference (R-18 (3); U5g,
+				 * 2026-09-16) — the turn strategy's `speaker`. Read for one
+				 * thing: an **envoy** (`envoy:<slug>`) has no character row, so
+				 * its card — name and description, off the genre's declaration
+				 * the cast read carries — is compiled here where a cast
+				 * member's would be, through the same `speakerName` /
+				 * `speakerCharacter` seam a side character uses. A `character:`
+				 * reference changes nothing: `currentCharacterId` already says
+				 * it. Optional; unwired on the specs that seat no envoy.
+				 */
+				speaker: S.participantRef,
 				/**
 				 * The session's resolved stats and states, as
 				 * `core:query/session-state@1` publishes them:
@@ -3197,7 +3647,7 @@ export const buildTemplateContext = pin(
  * example dialogue to use, and it has none to choose from.
  */
 export const buildNarratorContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-narrator-context@1',
 		i18n: { name: { en: 'Build narrator context' } },
 		timeoutMs: 2000,
@@ -3237,8 +3687,8 @@ export const buildNarratorContext = pin(
  * The side-character pipeline's context builder (ruling 2026-09-07).
  *
  * Same implementation and the same ports as the other two, plus one in-port —
- * `speaker` — and that port is the whole reason it is a third type rather than
- * a flag.
+ * `sideCharacter` — and that port is the whole reason it is a third type rather
+ * than a flag.
  *
  * ## Why the name is a port and not a prompt field
  *
@@ -3269,11 +3719,11 @@ export const buildNarratorContext = pin(
  * could change whose voice the prompt is written in without changing whose lore
  * it was given — a prompt in one person's voice over another's private
  * knowledge. The port would be a control that half-works, which is the exact
- * class this whole split exists to remove. `speaker` carries the name and the
- * card; the id stays where the host can act on it.
+ * class this whole split exists to remove. `sideCharacter` carries the name and
+ * the card; the id stays where the host can act on it.
  */
 export const buildSideCharacterContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-side-character-context@1',
 		i18n: { name: { en: 'Build side character context' } },
 		timeoutMs: 2000,
@@ -3314,8 +3764,11 @@ export const buildSideCharacterContext = pin(
 				 * free-form name, which is a normal turn rather than a degraded
 				 * one — the builder falls back to the name it was given,
 				 * because a typed name is all there is.
+				 *
+				 * Was `speaker` until 2026-09-16 — see the inlet's port of
+				 * this name for why the fact moved off that word.
 				 */
-				speaker: S.json,
+				sideCharacter: S.json,
 				/**
 				 * Where this turn is happening, as the world state says it.
 				 *
@@ -3357,32 +3810,39 @@ export const buildSideCharacterContext = pin(
  * it writes anything. `core:task/build-template-context@1` declares the same
  * port and stays the type a spec uses when it wants the standard surface.
  */
-const agentContextSlots = (
-	promptFields: Record<string, { type: 'text' }>,
-): Record<string, SlotDecl> => ({
-	prompts: {
-		kind: 'prompts',
-		quick: true,
-		facet: 'prompts',
-		description: PROMPTS_DESCRIPTION,
-		fields: promptFields,
-	},
-	variables: {
-		kind: 'variables',
-		facet: 'variables',
-		description: VARIABLES_DESCRIPTION,
-		renders: { ...sharedRenders },
-	},
-	/** The same pre-assemble hook the other three builders carry. */
-	scripts: {
-		kind: 'scripts',
-		accepts: ['core:script:context/transform@1', 'core:script:messages/inject@1'],
-		port: 'main',
-		phase: 'after',
-		description:
-			'Scripts over what the prompt template renders — edit the instructions, roll an occasional event, or inject a reminder at a depth in the conversation.',
-	},
-})
+/**
+ * ⚠ Returns the literal slot keys, not `Record<string, SlotDecl>` — as
+ * `loreSlots` and `relationshipSlots` do. The erased form made
+ * `SlotNamesOf<typeof buildPlannerContext>` `never`, so a handler bound to the
+ * three surfaces could type-check reading NO slot and declare NO slot read,
+ * which is the "declares least, checked least" hole `nodeInput.ts` warns about.
+ * Found when the surfaces gained `reads` declarations (R-12, 2026-09-16).
+ */
+const agentContextSlots = (promptFields: Record<string, { type: 'text' }>) =>
+	({
+		prompts: {
+			kind: 'prompts',
+			quick: true,
+			facet: 'prompts',
+			description: PROMPTS_DESCRIPTION,
+			fields: promptFields,
+		},
+		variables: {
+			kind: 'variables',
+			facet: 'variables',
+			description: VARIABLES_DESCRIPTION,
+			renders: { ...sharedRenders },
+		},
+		/** The same pre-assemble hook the other three builders carry. */
+		scripts: {
+			kind: 'scripts',
+			accepts: ['core:script:context/transform@1', 'core:script:messages/inject@1'],
+			port: 'main',
+			phase: 'after',
+			description:
+				'Scripts over what the prompt template renders — edit the instructions, roll an occasional event, or inject a reminder at a depth in the conversation.',
+		},
+	}) satisfies Record<string, SlotDecl>
 
 /**
  * The planner's context: the cast, the state, and nothing about a speaker.
@@ -3393,7 +3853,7 @@ const agentContextSlots = (
  * planner's prompt is assembled by the same node as everyone else's.
  */
 export const buildPlannerContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-planner-context@1',
 		i18n: { name: { en: 'Build planner context' } },
 		timeoutMs: 2000,
@@ -3442,7 +3902,7 @@ export const buildPlannerContext = pin(
  * from, which is a setting somebody stored rather than data a trigger carried.
  */
 export const buildSceneContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-scene-context@1',
 		i18n: { name: { en: 'Build scene context' } },
 		timeoutMs: 2000,
@@ -3487,7 +3947,7 @@ export const buildSceneContext = pin(
  * instructions.
  */
 export const buildKeeperContext = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/build-keeper-context@1',
 		i18n: { name: { en: 'Build state keeper context' } },
 		timeoutMs: 2000,
@@ -3558,7 +4018,7 @@ export const buildKeeperContext = pin(
  * rows; this says who spoke.
  */
 export const processMessages = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/process-messages@1',
 		i18n: { name: { en: 'Process messages' } },
 		timeoutMs: 1000,
@@ -3645,7 +4105,7 @@ export const processMessages = pin(
  * participants who have since left.
  */
 export const proseTranscript = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/prose-transcript@1',
 		i18n: { name: { en: 'Transcript as prose' } },
 		timeoutMs: 1000,
@@ -3673,7 +4133,8 @@ export const proseTranscript = pin(
  * is a closed five-member set (01 §3) and a sixth kind would ripple the
  * grammar for a spelling.)
  *
- * Every strategy honors an explicit pick first: `characterId` in means the
+ * Every strategy honors an explicit pick first: `speaker` in (a participant
+ * reference — or, one release longer, the bare `characterId`) means the
  * trigger already decided (the "Trigger Character" picker, a swipe regen),
  * and the node's only job is to record that. The strategies differ in what
  * they do when the trigger did *not* decide:
@@ -3694,7 +4155,7 @@ export const proseTranscript = pin(
  * none of these halt.
  */
 const turnStrategy = <Id extends string>(id: Id, label: string, extras: object = {}) =>
-	describeTaskType({
+	describeTaskDefinition({
 		id,
 		i18n: { name: { en: label } },
 		timeoutMs: 1000,
@@ -3703,12 +4164,32 @@ const turnStrategy = <Id extends string>(id: Id, label: string, extras: object =
 			in: {
 				cast: S.sessionCast,
 				messages: S.messages,
-				/** The explicit pick, when the trigger made one. Always wins. */
+				/**
+				 * The explicit pick, when the trigger made one, as a
+				 * participant reference (R-18 (3)) — `character:<id>` or
+				 * `envoy:<slug>`. Always wins. Wired from the inlet's port of
+				 * the same name.
+				 */
+				speaker: S.participantRef,
+				/**
+				 * @deprecated The explicit pick as a bare character id (one
+				 * release, from 2026-09-16). Honoured when `speaker` is unwired
+				 * or null; read `speaker`.
+				 */
 				characterId: S.rowIds,
 			},
 			out: {
 				main: S.speakerSelection,
-				/** The bare id, for wiring into context and generation. */
+				/**
+				 * Who speaks, as a participant reference — the pick, or the
+				 * strategy's own `character:<id>`; null when nobody does.
+				 */
+				speaker: S.participantRef,
+				/**
+				 * The bare id, for wiring into context and generation. Null
+				 * for an envoy, which has no row — the context and generation
+				 * consumers keep reading this until they speak references.
+				 */
 				characterId: S.rowIds,
 				/** What decided — the receipt line §5 exists for. */
 				strategy: S.text,
@@ -3727,7 +4208,7 @@ export const turnNone = pin(turnStrategy('core:task/turn-none@1', 'No speaker'))
 
 /** Turns provider output back into candidate blocks — the map/reduce join. */
 export const toCandidates = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/to-candidates@1',
 		timeoutMs: 500,
 		ports: {
@@ -3739,9 +4220,11 @@ export const toCandidates = pin(
 
 /** An author defaulting review ON for their own consumer — and unable to forbid it (F14). */
 export const attachImage = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/attach-image@1',
+	describeOutletDefinition({
+		id: 'core:outlet/attach-image@1',
 		effects: 'write',
+		/** The image is a reference to an asset this run rendered; nothing to retype (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 5000,
 		reviewDefault: 'on',
 		causesEvent: 'core:event/message-updated@1',
@@ -3757,7 +4240,7 @@ export const attachImage = pin(
  * block, whose iterations are the receipted agentic turn.
  */
 export const advertiseTools = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/advertise-tools@1',
 		i18n: { name: { en: 'Advertise tools' } },
 		timeoutMs: 500,
@@ -3784,7 +4267,7 @@ export const advertiseTools = pin(
 )
 
 export const parseToolCall = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/parse-tool-call@1',
 		i18n: { name: { en: 'Parse tool call' } },
 		timeoutMs: 500,
@@ -3814,7 +4297,7 @@ export const parseToolCall = pin(
  * and refuses any name this list did not carry.
  */
 export const availableTools = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/available-tools@1',
 		i18n: { name: { en: 'Available tools' } },
 		timeoutMs: 2000,
@@ -3872,10 +4355,12 @@ export const availableTools = pin(
  * empty.
  */
 export const runTool = pin(
-	describeProvider({
-		id: 'core:provider/run-tool@1',
+	describeOracleDefinition({
+		id: 'core:oracle/run-tool@1',
 		i18n: { name: { en: 'Run tool' } },
 		effects: 'external',
+		/** The call was the model's and the tool list the install's: approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 30000,
 		ports: {
 			// `call` is parse-tool-call's `{ tool, args } | null`; `tools` is
@@ -3920,7 +4405,7 @@ export const runTool = pin(
  * the iteration that had one" a wiring rather than a filter node.
  */
 export const joinText = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/join-text@1',
 		i18n: { name: { en: 'Join text' } },
 		timeoutMs: 500,
@@ -3951,7 +4436,7 @@ export const joinText = pin(
  *
  * ## Why a Task and not a shape on the Provider
  *
- * `core:provider/generate-text@1` is published and frozen, and it publishes
+ * `core:oracle/generate-text@1` is published and frozen, and it publishes
  * prose. A pipeline that wants structure out of a model therefore needs one
  * more step, and that step is the honest place for every way the reading can
  * fail: a fenced block, a preamble the model could not resist, a reply cut off
@@ -3979,7 +4464,7 @@ export const joinText = pin(
  * a reader can see which one happened.
  */
 export const parseJson = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/parse-json@1',
 		i18n: { name: { en: 'Read JSON' } },
 		timeoutMs: 1000,
@@ -4023,7 +4508,7 @@ export const parseJson = pin(
 )
 
 export const chunkText = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/chunk-text@1',
 		timeoutMs: 1000,
 		ports: { in: { text: S.text }, out: { main: S.json, items: S.json } },
@@ -4031,7 +4516,7 @@ export const chunkText = pin(
 )
 
 export const roll = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'chariot.dice-tray:roll@1',
 		i18n: { name: { en: 'Roll dice' } },
 		timeoutMs: 200,
@@ -4045,7 +4530,7 @@ export const roll = pin(
 )
 
 export const gate = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'test:task/gate@1',
 		timeoutMs: 500,
 		ports: { in: { main: S.json }, out: { main: S.json } },
@@ -4053,7 +4538,7 @@ export const gate = pin(
 )
 
 export const slow = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'test:task/slow@1',
 		timeoutMs: 30,
 		ports: { in: { main: S.json }, out: { main: S.json } },
@@ -4061,7 +4546,7 @@ export const slow = pin(
 )
 
 export const passthrough = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'test:task/passthrough@1',
 		timeoutMs: 500,
 		toggleable: true,
@@ -4070,7 +4555,7 @@ export const passthrough = pin(
 )
 
 export const badToggleable = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'test:task/bad-toggleable@1',
 		timeoutMs: 500,
 		toggleable: true,
@@ -4081,10 +4566,12 @@ export const badToggleable = pin(
 // ── Providers — identical structure across three modalities (17 §2) ─────────
 
 export const embedText = pin(
-	describeProvider({
-		id: 'core:provider/embed-text@1',
+	describeOracleDefinition({
+		id: 'core:oracle/embed-text@1',
 		shape: S.embeddings,
 		effects: 'external',
+		/** Nothing to edit: an embedding of a text somebody else wrote (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 5000,
 		/**
 		 * ⚠ **Producing nothing is a legitimate outcome, and this is what makes
@@ -4125,10 +4612,19 @@ export const embedText = pin(
 			params: {
 				kind: 'parameters',
 				schema: {
+					/**
+					 * `shared`: one switch for every embed step of a spec (R-7
+					 * P2). `respond` puts it on the semantic mechanism's embed
+					 * and the entity-vector mechanism's embed reads it through
+					 * `slot.params({ node })` — an install with no embedding
+					 * model switches both off in one place, which is the only
+					 * reading of "embedding: off" a person means.
+					 */
 					enabled: {
 						type: 'enum',
 						of: ['auto', 'on', 'off'],
 						default: 'auto',
+						shared: true,
 					},
 				},
 			},
@@ -4161,8 +4657,8 @@ export const embedText = pin(
  * "what did this tool actually do, and did I approve it" from a row.
  */
 export const mcpTool = pin(
-	describeProvider({
-		id: 'core:provider/mcp-tool@1',
+	describeOracleDefinition({
+		id: 'core:oracle/mcp-tool@1',
 		i18n: {
 			name: { en: 'MCP tool' },
 			description: {
@@ -4171,6 +4667,8 @@ export const mcpTool = pin(
 		},
 		shape: S.mcp,
 		effects: 'external',
+		/** The arguments are the model's invocation: approve or refuse it, never rewrite it (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 60000,
 		slots: {
 			connection: {
@@ -4229,8 +4727,8 @@ export const mcpTool = pin(
  * modelling it as a Query would quietly break both rules.
  */
 export const mcpResource = pin(
-	describeProvider({
-		id: 'core:provider/mcp-resource@1',
+	describeOracleDefinition({
+		id: 'core:oracle/mcp-resource@1',
 		i18n: {
 			name: { en: 'MCP resource' },
 			description: {
@@ -4239,6 +4737,8 @@ export const mcpResource = pin(
 		},
 		shape: S.mcp,
 		effects: 'external',
+		/** The uri is the invocation: approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 60000,
 		slots: {
 			connection: {
@@ -4278,11 +4778,13 @@ export const mcpResource = pin(
 )
 
 export const generateText = pin(
-	describeProvider({
-		id: 'core:provider/generate-text@1',
+	describeOracleDefinition({
+		id: 'core:oracle/generate-text@1',
 		i18n: { name: { en: 'Generate reply' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** The payload is the compiled prompt; a prompt rewritten at the gate is one the receipt cannot explain — approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
@@ -4318,16 +4820,19 @@ export const generateText = pin(
 				description:
 					'The sampling settings — temperature and friends — used for this request.',
 			},
-			prompts: {
-				kind: 'prompts',
-				quick: true,
-				facet: 'prompts',
-				description: 'The written instructions sent with every request from this step.',
-				fields: {
-					system: { type: 'text' },
-					postHistory: { type: 'text' },
-				},
-			},
+			/**
+			 * ⚠ No `prompts` slot, and there was one — `system` and
+			 * `postHistory`, "the written instructions sent with every request
+			 * from this step" (culled 2026-09-16, R-12). No handler read it:
+			 * the instructions reach the model INSIDE the assembled context,
+			 * through `core:task/assemble@2`'s own `prompts` slot, and this
+			 * node sends what it is handed on `context`. Every shipped spec
+			 * wired it as `slot.prompts({ node: 'context' })` for one reason
+			 * only — so the panel would not render a second copy of the
+			 * context builder's text — which is a declaration existing to hide
+			 * itself. The same slot on `generate-with-tools@1` and
+			 * `generate-json@1` went with it.
+			 */
 			/**
 			 * ⚠ No `template` slot, and there was one — "how the assembled
 			 * context is wrapped for this model before sending".
@@ -4402,8 +4907,19 @@ export const generateText = pin(
 			 * `text` stay exactly as they were — `part-stream` is assignable
 			 * to `text-stream`, so every spec wired to them keeps working and
 			 * degrades by concatenating the prose.
+			 *
+			 * `thinking` is the reasoning trace the dispatch separated from
+			 * the text before the text reached the port — published by the
+			 * binding since it first stripped one, declared now that a
+			 * downstream write (`update-message`) takes it. Empty when the
+			 * model produced none.
 			 */
-			out: { main: S.partStream, text: S.textStream, parts: S.partStream },
+			out: {
+				main: S.partStream,
+				text: S.textStream,
+				parts: S.partStream,
+				thinking: S.text,
+			},
 		},
 	}),
 )
@@ -4413,7 +4929,7 @@ export const generateText = pin(
  *
  * ## Why this is a second type rather than two ports on `generate-text`
  *
- * `core:provider/generate-text@1` is published and frozen: a spec that pinned
+ * `core:oracle/generate-text@1` is published and frozen: a spec that pinned
  * it must keep meaning what it meant. Adding ports would move its content hash
  * and every install would need a re-projection to keep booting — for a
  * capability most connections do not have. A new pin costs a row and conflicts
@@ -4439,11 +4955,13 @@ export const generateText = pin(
  * declarations silently is indistinguishable from a model choosing not to call.
  */
 export const generateWithTools = pin(
-	describeProvider({
-		id: 'core:provider/generate-with-tools@1',
+	describeOracleDefinition({
+		id: 'core:oracle/generate-with-tools@1',
 		i18n: { name: { en: 'Generate with tools' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** The compiled prompt and the tool list: approve or refuse, as `generate-text` (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
@@ -4465,12 +4983,7 @@ export const generateWithTools = pin(
 				description: 'Which model server this step sends its request to.',
 			},
 			sampling: { kind: 'sampling', quick: true, shape: S.textGen },
-			prompts: {
-				kind: 'prompts',
-				quick: true,
-				facet: 'prompts',
-				fields: { system: { type: 'text' }, postHistory: { type: 'text' } },
-			},
+			// No `prompts` slot — see `generateText` (culled 2026-09-16, R-12).
 			params: {
 				kind: 'parameters',
 				facet: 'weights',
@@ -4555,11 +5068,13 @@ export const generateWithTools = pin(
  * specs pin it, and a reply from `generate-text` still needs it.
  */
 export const generateJson = pin(
-	describeProvider({
-		id: 'core:provider/generate-json@1',
+	describeOracleDefinition({
+		id: 'core:oracle/generate-json@1',
 		i18n: { name: { en: 'Generate JSON' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** The compiled prompt and the schema: approve or refuse, as `generate-text` (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
@@ -4593,13 +5108,7 @@ export const generateJson = pin(
 				description: 'Which model server this step sends its request to.',
 			},
 			sampling: { kind: 'sampling', quick: true, shape: S.textGen },
-			prompts: {
-				kind: 'prompts',
-				quick: true,
-				facet: 'prompts',
-				description: 'The written instructions sent with every request from this step.',
-				fields: { system: { type: 'text' }, postHistory: { type: 'text' } },
-			},
+			// No `prompts` slot — see `generateText` (culled 2026-09-16, R-12).
 			params: {
 				kind: 'parameters',
 				facet: 'weights',
@@ -4666,11 +5175,13 @@ export const generateJson = pin(
 )
 
 export const speak = pin(
-	describeProvider({
-		id: 'core:provider/speak@1',
+	describeOracleDefinition({
+		id: 'core:oracle/speak@1',
 		i18n: { name: { en: 'Speak' } },
 		shape: S.tts,
 		effects: 'external',
+		/** The words to be spoken may be corrected before the call (R-15 review fields). */
+		review: { fields: ['text'] },
 		timeoutMs: 60000,
 		slots: {
 			connection: {
@@ -4731,11 +5242,13 @@ export const speak = pin(
  * version bump for every spec pinning it.
  */
 export const generateImage = pin(
-	describeProvider({
-		id: 'core:provider/generate-image@1',
+	describeOracleDefinition({
+		id: 'core:oracle/generate-image@1',
 		i18n: { name: { en: 'Generate image' } },
 		shape: S.imageGen,
 		effects: 'external',
+		/** The prompt and the negative may be edited; `init` names an asset and may not (R-15 review fields). */
+		review: { fields: ['prompt', 'negative'] },
 		// Idle rather than wall: a render is minutes on modest hardware, and a
 		// backend still reporting progress is working, not hung.
 		timeoutMs: 600000,
@@ -4806,10 +5319,12 @@ export const generateImage = pin(
  * same slots, a `params` schema of its own. Nothing in core dispatches it.
  */
 export const renderImage = pin(
-	describeProvider({
+	describeOracleDefinition({
 		id: 'chariot.comfy:render-image@1',
 		shape: S.imageGen,
 		effects: 'external',
+		/** A sample plugin oracle: its payload is a compiled prompt — approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		public: true,
 		timeoutMs: 300000,
 		slots: {
@@ -4844,7 +5359,7 @@ export const renderImage = pin(
 
 /** Consumes a stream and may finish before it ends (01 §11). */
 export const firstJson = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/first-json@1',
 		timeoutMs: 5000,
 		earlyExit: true,
@@ -4854,7 +5369,7 @@ export const firstJson = pin(
 
 /** Same in-port, but no earlyExit declared — used to prove stream-abandoned. */
 export const sloppyStream = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'test:task/sloppy-stream@1',
 		timeoutMs: 5000,
 		ports: { in: { main: S.textStream }, out: { main: S.json } },
@@ -4885,7 +5400,7 @@ export const sloppyStream = pin(
  * custom genre should be able to replace without reimplementing the write.
  */
 export const sessionGreetings = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/session-greetings@1',
 		i18n: { name: { en: 'Session greetings' } },
 		timeoutMs: 2000,
@@ -4903,22 +5418,56 @@ export const sessionGreetings = pin(
  * channel when that is not `main`.
  */
 export const seedGreetings = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/seed-greetings@1',
+	describeOutletDefinition({
+		id: 'core:outlet/seed-greetings@1',
 		effects: 'write',
+		/** The greetings are the cards' own text and the channel the genre's: approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-created@1',
 		ports: {
-			in: { greetings: S.json },
+			in: {
+				greetings: S.json,
+				/**
+				 * The channel the greetings land on (20 §7) — the genre's
+				 * declared greeting channel, written by the create specs as a
+				 * literal (`createChat.ts`, `adventure.ts`). Absent is `main`.
+				 * Declared 2026-09-16 (U2 residual): the host read it off the
+				 * payload while no declaration supplied it.
+				 */
+				channel: S.text,
+			},
 			out: { main: S.writeResult, messageIds: S.writeResult },
 		},
 	}),
 )
 
+/**
+ * Write a message — complete, or as the run's **placeholder** (R-17).
+ *
+ * A pipeline that wants a message creates it itself. The reply specs put this
+ * node straight after the inlet with `generating: true`: the row it inserts is
+ * empty and generating, it is the run's live row (`liveRow` — an oracle's
+ * stream lands in it, and Stop finalises it), and the spec's last node is an
+ * `update-message` that fills it. That create → update pair on one row inside
+ * one run is **one primary row**, which is how 01 §7's "one primary write" is
+ * restated. `message-created` fires on the create, which is now genuinely the
+ * moment the row exists.
+ *
+ * `reviewDefault: 'off'` — review of a reply, when an admin enables it, lands
+ * on the *update* of the primary row and never on this create by default
+ * (R-21 (3)): a placeholder is a write, and an admin who gates this node gets
+ * a run that shows nothing until approved, which is honest and rarely wanted.
+ * Turning it on is still the admin's to do.
+ */
 export const createMessage = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/create-message@1',
+	describeOutletDefinition({
+		id: 'core:outlet/create-message@1',
 		effects: 'write',
+		/** The text may be reviewed; who speaks, which row and which channel are the run's identity (R-15 review fields). */
+		review: { fields: ['text'] },
+		reviewDefault: 'off',
+		liveRow: true,
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-created@1',
 		slots: {
@@ -4946,18 +5495,105 @@ export const createMessage = pin(
 				/**
 				 * Media to post WITH the message, as references.
 				 *
-				 * `attach-image` exists and cannot do this: it needs a messageId
-				 * from outside the run, because `write-result@1` is not assignable
-				 * to `row-ids@1` — so a message created by one node could never be
-				 * attached to by a second. That rule is right (under async review
-				 * the created row may never exist), which left no way at all to
-				 * post a generated image as a NEW message.
-				 *
-				 * The answer is the same one streaming got: one node with a settled
-				 * output, not two nodes and a hope. The write that creates the
-				 * message is the write that attaches its images.
+				 * Posting an image as a NEW message is one write, not a create
+				 * followed by an `attach-image`: the answer is the same one
+				 * streaming got — one node with a settled output, not two nodes
+				 * and a hope. The write that creates the message is the write
+				 * that attaches its images.
 				 */
 				media: S.mediaList,
+				/**
+				 * Who is speaking, as a cast row — the inlet's `characterId`.
+				 * Null or absent means nobody in particular: narration, or a
+				 * message no character voices.
+				 */
+				characterId: S.rowIds,
+				/**
+				 * The participant voicing this message when they are **not** a
+				 * cast row — the side-character fact `{ name, characterId, known }`
+				 * off `side-character-turn@1`'s `sideCharacter` port. Stored
+				 * beside the message under `metadata.sideCharacter` (was
+				 * `metadata.speaker` until U5g, 2026-09-16 — that key is the
+				 * participant reference now, on the row as on the inlet, R1),
+				 * where the run and the receipt read it from; it never writes a
+				 * cast row and never enters the rotation.
+				 *
+				 * Was `speaker` until 2026-09-16 — the inlet's port of that
+				 * name is a participant reference now (R-18 (3)).
+				 */
+				sideCharacter: S.json,
+				/**
+				 * Who is speaking, as a **participant reference** (R-18 (3);
+				 * U5g, 2026-09-16) — `character:<id>` or `envoy:<slug>`, the
+				 * inlet's `speaker`. Stored beside the message as
+				 * `metadata.speaker`; it is the only identity an envoy's turn
+				 * carries, since an envoy has no row for `characterId` to name.
+				 * Optional: a spec that wires only `characterId` writes the row
+				 * it always wrote.
+				 */
+				speaker: S.participantRef,
+				/**
+				 * Create the row as a **placeholder**: empty, generating, and the
+				 * run's live row — filled by a later `update-message`, or
+				 * finalised by core if the run stops first.
+				 *
+				 * A port, not a parameter, and the call site is what decides:
+				 * the reply specs write `generating: true` as a literal into the
+				 * node's config, in the same map as `text`, and `resolveInput`
+				 * passes it through untouched — so the binding reads it exactly
+				 * the way it reads a port (see `summarize-batch`'s `loreType`
+				 * for the same reasoning at length). A `params` field would put
+				 * a structural fact of the document in the panel as a knob.
+				 */
+				generating: S.json,
+				/**
+				 * The message is **narration** — not a character's turn. Shown
+				 * under the narrator's name, never counted by the rotation. A
+				 * literal, on the same terms as `generating`. The name is the
+				 * session's narrator name, or the `speaker`'s where one was
+				 * named; the host resolves it at the write, which is where the
+				 * row is.
+				 */
+				narration: S.json,
+				/**
+				 * Instructions this message was asked for — a narrator's focus
+				 * note. Stored beside the message and shown with it; never its
+				 * text. Wired from the inlet's `text` on the narrate specs, which
+				 * is what a narrator turn's triggering text is.
+				 */
+				instructions: S.text,
+				/**
+				 * The channel the row lands on (20 §7). Absent is `main`, so a
+				 * pipeline that has never heard of channels writes where it
+				 * always did; a channel the session's genre never declared is
+				 * refused at the write. Declared 2026-09-16 (U2 residual) for
+				 * the same reason `seed-greetings` declares its own.
+				 */
+				channel: S.text,
+				/**
+				 * An existing message row to take as the placeholder instead of
+				 * inserting one — the inlet's `messageId` on a regenerate, swipe
+				 * or continue. The row is reset to generating and becomes the
+				 * run's live row; its text and swipe history stay as the verb
+				 * left them. Absent on a fresh turn, which inserts.
+				 */
+				row: S.rowIds,
+				/**
+				 * Message **blocks** to post with the row (20 §6; R-15
+				 * *Forms*; U5d, 2026-09-17): a list of `MessageBlock` — text,
+				 * tables, meters, and the two interactive kinds, `choices` and
+				 * `form`, which are **forms** when they carry an `addressee`.
+				 * The host validates the tree (`checkMessageBlocks`), refuses
+				 * a block naming a function this spec declares no action for
+				 * or one whose action is `world` (the effects line), stamps
+				 * each form with the writing spec's action identity and an
+				 * id, stores them as a `core:blocks` part, and — for a form
+				 * whose addressee the run's pinned portrayals say the AI
+				 * portrays — records `core:event/form-addressed@1` for the
+				 * genre's answer pipeline once this run's receipt is saved.
+				 * Absent on nearly every message.
+				 */
+				blocks: S.json,
 			},
 			out: { main: S.writeResult, messageId: S.writeResult },
 		},
@@ -4965,22 +5601,33 @@ export const createMessage = pin(
 )
 
 /**
- * Update an existing message — a regenerate, a swipe, an edit.
+ * Update an existing message — finish a placeholder, or edit a settled row.
  *
- * `target` takes `row-ids@1`, which means **a message created earlier in the same run
- * cannot be updated by a second node**, because `write-result@1` is not assignable to it.
- * That is the ruling, not an oversight: under async review the created row may never
- * exist, so a create → update pair in one spec is a dangling write waiting for a rejection.
+ * `target` takes `row-ids@1`, and a `write-result@1` from earlier in the same
+ * run is assignable to it (09-B B4): the reply specs wire `$.placeholder.messageId`
+ * here, which is the create → update pair that makes the pipeline own its row.
+ * The other case is unchanged — the id comes from outside the run because the
+ * user clicked a message, so it is on the inlet.
  *
- * The case people reach for this with — write a placeholder, fill it as tokens arrive — is
- * streaming, and streaming is one node with a settled output (01 §11), not two nodes and a
- * hope. The case this *is* for is the one where the id comes from outside the run: the user
- * clicked a message, so the id is on the Input.
+ * Which of the two this is, the row decides: a target still **generating** — a
+ * placeholder this run created — is finished (the text lands, the generating
+ * state ends, the reasoning trace and the swipe slot are written); a settled
+ * target is edited and marked so. That is the row's own state, not a flag a
+ * spec could get wrong.
+ *
+ * Where review lands on a reply (R-21 (3)): when an admin turns review on
+ * for a reply's message writes, it is THIS node that parks — the placeholder
+ * ships `reviewDefault: 'off'` and declares no default here either, so nothing
+ * gates by default and a reviewer who asks for one sees the content, not an
+ * empty row. The executor's own rule (`resolvePosition`) is "the setting, else
+ * the author's default, else off", and this node leaves the default unset.
  */
 export const updateMessage = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/update-message@1',
+	describeOutletDefinition({
+		id: 'core:outlet/update-message@1',
 		effects: 'write',
+		/** The text may be reviewed; the row may not, nor the reasoning trace (R-15 review fields). */
+		review: { fields: ['text'] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-updated@1',
 		slots: {
@@ -4996,16 +5643,379 @@ export const updateMessage = pin(
 			},
 		},
 		ports: {
-			in: { target: S.rowIds, text: S.text },
+			in: {
+				target: S.rowIds,
+				text: S.text,
+				/**
+				 * The reasoning trace the oracle separated from its text, when
+				 * the model produced one. Stored beside the message as the
+				 * thinking pane reads it; absent means none.
+				 */
+				thinking: S.text,
+				/**
+				 * Blocks to append to the row — the same list, the same
+				 * checks and the same stamping as `create-message`'s
+				 * `blocks`; appended as a `core:blocks` part after the text
+				 * lands, so a reply can end with a question put to the cast.
+				 */
+				blocks: S.json,
+			},
 			out: { main: S.writeResult, messageId: S.writeResult },
 		},
 	}),
 )
 
-export const attachAudio = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/attach-audio@1',
+// ── The built-in writes (R-15, ruled 2026-09-15, built 2026-09-16) ──────────
+//
+// *Anything that alters message state is a built-in*: core implements the
+// write and it always emits an event carrying what changed and what was lost.
+// Each of the five below is the write half of one message verb, run as its
+// own one-node spec (`core:spec/builtin-*`) so it is receipted, gate-eligible
+// (`reviewDefault: 'off'` — an admin may turn review on for a delete) and
+// recorded in the session's changes for the next reply's inlet. The venue's
+// handler makes the permission checks — that is the `item` audience rule,
+// evaluated where the person is — and hands the request to the spec; the
+// host's commit re-runs the same rule against the run's actor before it
+// writes (U5b review C1), so a payload re-aimed between the two — at a review
+// gate, by a spec that is not the built-in's own — is refused where the write
+// happens. Each declares `review.fields`: what a reviewer may edit, and the
+// row's identity is never among them.
+//
+// **Stop, branch and edit are floors**; delete, hide and swipe are built-ins a
+// genre may switch off (`SessionShape.messageVerbs`). Stop has no outlet: it is
+// the run-level guarantee (R-17) and emits `message-stopped` from the
+// finalisation. Regenerate, continue and a swipe's fresh alternative are
+// `update-message` with a `verb` — content the genre's pipeline produced,
+// written by the outlet the reply already ends in.
+
+/**
+ * Delete a message. Publishes `lost` — the content, role, speaker, channel
+ * and metadata the row held — beside the write result, so a listener (a
+ * plugin cleaning its rows, the next reply's inlet) knows what went.
+ */
+export const deleteMessage = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/delete-message@1',
 		effects: 'write',
+		reviewDefault: 'off',
+		// Nothing to edit at the gate: approve the delete or refuse it. The
+		// row it is about was judged by the handler (the item rule) before
+		// the run began, and a reviewer retyping `target` would re-aim the
+		// write at a row nobody judged (U5b review C1).
+		review: { fields: [] },
+		timeoutMs: 5000,
+		causesEvent: 'core:event/message-deleted@1',
+		ports: {
+			in: { target: S.rowIds },
+			out: { main: S.writeResult, messageId: S.writeResult, lost: S.json },
+		},
+	}),
+)
+
+/**
+ * Hide a message from the prompt, or show it again — a **ghost**. The row
+ * stays; `hidden` says which way it went.
+ */
+export const hideMessage = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/hide-message@1',
+		effects: 'write',
+		reviewDefault: 'off',
+		/** The direction may be reviewed; the row may not (see `delete-message`). */
+		review: { fields: ['hidden'] },
+		timeoutMs: 5000,
+		causesEvent: 'core:event/message-hidden@1',
+		ports: {
+			in: { target: S.rowIds, hidden: S.json },
+			out: { main: S.writeResult, messageId: S.writeResult, hidden: S.json },
+		},
+	}),
+)
+
+/**
+ * A person's rewrite of a **settled** row: the text replaces, the selected
+ * alternative follows it, the embedding is cleared for re-indexing, and the
+ * row is marked edited. Publishes `previous` — the content it replaced.
+ *
+ * Distinct from `update-message@1`, which finishes a *generating* row with
+ * what a pipeline produced. A floor: every genre has it.
+ */
+export const editMessage = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/edit-message@1',
+		effects: 'write',
+		reviewDefault: 'off',
+		/** The text may be reviewed; the row may not (see `delete-message`). */
+		review: { fields: ['text'] },
+		timeoutMs: 5000,
+		causesEvent: 'core:event/message-edited@1',
+		ports: {
+			in: { target: S.rowIds, text: S.text },
+			out: { main: S.writeResult, messageId: S.writeResult, previous: S.json },
+		},
+	}),
+)
+
+/**
+ * Move between a message's alternatives, or record a new one. `index`
+ * selects an alternative the row already holds; `text` records a new one and
+ * selects it — the reply road then fills an empty one it opened this way.
+ * Publishes `swipeIndex`, the alternative now showing, and `previous` — the
+ * content and index that were.
+ */
+export const swipeMessage = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/swipe-message@1',
+		effects: 'write',
+		reviewDefault: 'off',
+		/**
+		 * A recorded alternative's text may be reviewed; neither the row nor
+		 * the `index` — which alternative a navigation selects is as much the
+		 * request's identity as the row is (see `delete-message`).
+		 */
+		review: { fields: ['text'] },
+		timeoutMs: 5000,
+		causesEvent: 'core:event/message-swiped@1',
+		ports: {
+			in: { target: S.rowIds, index: S.json, text: S.text },
+			out: {
+				main: S.writeResult,
+				messageId: S.writeResult,
+				swipeIndex: S.json,
+				previous: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * Branch a session at a message: a new session with the same cast, guests
+ * and tags and a copy of the history up to and including `fromMessage`, each
+ * copy keeping its channel. Publishes the new `sessionId`. A floor.
+ */
+export const branchSession = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/branch-session@1',
+		effects: 'write',
+		reviewDefault: 'off',
+		/** The title may be reviewed; the fork point may not (see `delete-message`). */
+		review: { fields: ['title'] },
+		timeoutMs: 30000,
+		causesEvent: 'core:event/session-branched@1',
+		ports: {
+			in: { fromMessage: S.rowIds, title: S.text },
+			out: { main: S.writeResult, sessionId: S.writeResult },
+		},
+	}),
+)
+
+// ── Forms (plans/29 R-15 *Forms* · *The line*; R-21 (5); 30 §U5d, 2026-09-17) ──
+//
+// A **form** is an action still awaiting its answer: a `choices` or `form`
+// block a message carries, addressed to a participant. A person portraying
+// the addressee answers by clicking; when the host's resolver says the AI
+// portrays them this turn, core records `core:event/form-addressed@1` and the
+// genre's answer pipeline runs — the four definitions below are its parts:
+// the inlet the event lands on, the task that turns the form into a prompt
+// context and a JSON Schema, the oracle (`generate-json@1`, already declared)
+// that answers against the schema, and the outlet that commits the answer
+// **exactly as a click would**. `make-choices@1` is the other direction: how
+// a spec turns an oracle's JSON into a question with options; `read-answer@1`
+// is how the action a form fires reads the answer port by port.
+
+/**
+ * A form was addressed to a participant the AI portrays — the answer
+ * pipeline's trigger. The payload is `core:shape/form-addressed@1`; the
+ * ports below are it taken apart, with the block itself (`form`) and the
+ * addressee's character id (`characterId`, null for an envoy) beside them so
+ * the context builder can compile the addressee's card the way it compiles a
+ * speaker's. No shape — an event's inlet is never a session mode — and no
+ * lock here: the genre's answer spec declares its own `(genre, event)`.
+ */
+export const formAddressed = pin(
+	describeInletDefinition({
+		id: 'core:inlet/form-addressed@1',
+		i18n: {
+			name: { en: 'Form addressed' },
+			description: {
+				en: 'A question or form in a message was put to a participant the AI portrays this turn — the pipeline that answers it reads the addressee\'s card and the conversation, and answers against the form\'s schema.',
+			},
+		},
+		ports: {
+			out: {
+				main: S.formAddressed,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				/** The message carrying the block. */
+				messageId: S.rowIds,
+				/** The block's id within the message. */
+				blockId: S.text,
+				/** The block itself — a `choices` or `form` `MessageBlock`, as stored. */
+				form: S.json,
+				/** The identity of the action the form answers with — `<spec slug>#<key>`. */
+				action: S.text,
+				/** Who the form is put to, as a participant reference the resolver answered `ai` for. */
+				addressee: S.participantRef,
+				/** The addressee's character row, for the context builder; null for an envoy. */
+				characterId: S.rowIds,
+				/** Values for the genre's declared fields, as on a turn. */
+				fields: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * The form as a prompt and as a schema. Takes the block and the context the
+ * builder compiled for the addressee, and publishes the context with the
+ * question and the options laid in (`formQuestion`, `formOptions` — what the
+ * assembly template renders under the transcript), the JSON Schema the
+ * oracle answers against (`formAnswerSchema`: an enum of the option keys, or
+ * the field schema), and the question as text. Pure; no model, no rows.
+ */
+export const formContext = pin(
+	describeTaskDefinition({
+		id: 'core:task/form-context@1',
+		i18n: { name: { en: 'Form as prompt and schema' } },
+		timeoutMs: 1000,
+		ports: {
+			in: { form: S.json, templateContext: S.templateContext },
+			out: {
+				main: S.templateContext,
+				templateContext: S.templateContext,
+				schema: S.json,
+				question: S.text,
+			},
+		},
+	}),
+)
+
+/**
+ * An oracle's question, as blocks. Takes the document a `generate-json@1`
+ * produced — `{ question, options: [{ key, label }], addressee? }` — and the
+ * function the options fire, and publishes a block list holding one
+ * `choices` block: the question on it, its options carrying the keys,
+ * addressed to whom the document names. The document's `addressee` is a
+ * **name** the model read off the transcript or a participant reference; a
+ * name is resolved against `cast` into `character:<id>` (or `envoy:<slug>`),
+ * and the `addressee` in-port, when wired, wins over both. A name nobody in
+ * the cast bears leaves the block unaddressed — buttons, not a form. The
+ * host stamps the action identity and the block id at the write; this task
+ * only shapes. `text` is the question as prose, for the row's own content,
+ * so a transcript that reads content alone still carries what was asked. A
+ * document with no options publishes an empty list and an empty text.
+ */
+export const makeChoices = pin(
+	describeTaskDefinition({
+		id: 'core:task/make-choices@1',
+		i18n: { name: { en: 'Question as choices' } },
+		timeoutMs: 1000,
+		ports: {
+			in: {
+				/** The oracle's document: `{ question, options, addressee? }`. */
+				json: S.json,
+				/** The function every option fires — the block's `fn`. */
+				fn: S.text,
+				/** Who the question is put to. Wired, it wins over the document's. */
+				addressee: S.participantRef,
+				/** The cast, to resolve a name the document used into a reference. */
+				cast: S.sessionCast,
+			},
+			out: {
+				main: S.json,
+				blocks: S.json,
+				/** The question as prose — the row's content. */
+				text: S.text,
+				/** Who the block was addressed to, resolved; null when nobody. */
+				addressee: S.participantRef,
+			},
+		},
+	}),
+)
+
+/**
+ * A form's answer, port by port — for the action a form fires. Takes the
+ * inlet's `payload` (what the press sent) and `form` (the block facts the
+ * host read off the row) and publishes the parts a spec wires: the chosen
+ * option's key and label, the addressee and their character row, the
+ * question, and the answered values. Pure.
+ */
+export const readAnswer = pin(
+	describeTaskDefinition({
+		id: 'core:task/read-answer@1',
+		i18n: { name: { en: 'Read the answer' } },
+		timeoutMs: 1000,
+		ports: {
+			in: { payload: S.json, form: S.json },
+			out: {
+				main: S.json,
+				/** The chosen option's key (`choices`), else null. */
+				choice: S.text,
+				/** The chosen option's label, else null. */
+				label: S.text,
+				/** Who answered, as a participant reference — the form's addressee. */
+				addressee: S.participantRef,
+				/** The addressee's character row, null for an envoy or a person. */
+				characterId: S.rowIds,
+				question: S.text,
+				/** The whole answer: `{ choice }` or the entered values. */
+				values: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * Commit an oracle's answer to a form **exactly as a click would**.
+ *
+ * The host checks the answer against the form's schema, then fires the
+ * block's action through the same server path a press takes
+ * (`fireAction`): the run owner is the acting user, the actor portrays the
+ * addressee, the block's addressee is the audience, and the action's spec
+ * runs as a child of this run. It records `form-answered` in the session's
+ * changes with the answer and `answeredBy: 'oracle'`, so the next reply's
+ * inlet sees it. Refused outside a document on `core:inlet/form-addressed@1`
+ * (`validate()` and the host), refused when the addressee is not the AI's,
+ * and refused for a `world` action (the effects line — belt to the
+ * validator's braces). `reviewDefault: 'off'`; an admin may gate it, and the
+ * reviewer edits the `answer` alone.
+ */
+export const answerForm = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/answer-form@1',
+		i18n: { name: { en: 'Answer the form' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		/** The answer may be corrected at the gate; which form, and who answers, may not (R-15 review fields). */
+		review: { fields: ['answer'] },
+		timeoutMs: 600000,
+		causesEvent: 'core:event/form-answered@1',
+		ports: {
+			in: {
+				/** The block, as the inlet published it. */
+				form: S.json,
+				/** The oracle's document — checked against `formAnswerSchema(form)`. */
+				answer: S.json,
+				messageId: S.rowIds,
+				blockId: S.text,
+				addressee: S.participantRef,
+			},
+			out: {
+				main: S.writeResult,
+				messageId: S.writeResult,
+				/** The answer as committed: `{ choice }` or the values. */
+				answer: S.json,
+			},
+		},
+	}),
+)
+
+export const attachAudio = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/attach-audio@1',
+		effects: 'write',
+		/** A reference to rendered audio; nothing to retype (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-updated@1',
 		ports: { in: { audio: S.audio }, out: { main: S.writeResult } },
@@ -5013,17 +6023,19 @@ export const attachAudio = pin(
 )
 
 export const savePluginData = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/save-plugin-data@1',
+	describeOutletDefinition({
+		id: 'core:outlet/save-plugin-data@1',
 		effects: 'write',
+		/** The value is the whole payload and may be corrected (R-15 review fields). */
+		review: { fields: ['value'] },
 		timeoutMs: 5000,
 		ports: { in: { value: S.json }, out: { main: S.writeResult } },
 	}),
 )
 
 export const emitSocket = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/emit-socket@1',
+	describeOutletDefinition({
+		id: 'core:outlet/emit-socket@1',
 		effects: 'emit',
 		timeoutMs: 1000,
 		ports: { in: { from: S.json }, out: { main: S.json } },
@@ -5046,8 +6058,8 @@ export const emitSocket = pin(
 // than as nodes.
 
 export const summarizeRequest = pin(
-	describeInput({
-		id: 'core:input/summarize-request@1',
+	describeInletDefinition({
+		id: 'core:inlet/summarize-request@1',
 		ports: {
 			out: {
 				main: S.summarizeRequest,
@@ -5060,7 +6072,7 @@ export const summarizeRequest = pin(
 
 /** The messages a summary is drawn from, already scoped and ordered. */
 export const summarizeSource = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/summarize-source@1',
 		i18n: { name: { en: 'Messages to summarize' } },
 		timeoutMs: 5000,
@@ -5079,7 +6091,7 @@ export const summarizeSource = pin(
  * first parameter a user with long posts reaches for.
  */
 export const batchMessages = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/batch-messages@1',
 		i18n: { name: { en: 'Batch messages' } },
 		timeoutMs: 2000,
@@ -5147,11 +6159,13 @@ export const batchMessages = pin(
 
 /** Phase 1 — one batch, drafted without sight of any other. */
 export const summarizeBatch = pin(
-	describeProvider({
-		id: 'core:provider/summarize-batch@1',
+	describeOracleDefinition({
+		id: 'core:oracle/summarize-batch@1',
 		i18n: { name: { en: 'Draft a batch' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** A drafting call over a batch: approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
@@ -5161,12 +6175,16 @@ export const summarizeBatch = pin(
 		 * reads it — slop killed in the material summaries are built *from*,
 		 * not only in final replies. Invoked by the binding via
 		 * `ctx.scripts.applyText('each-draft', …)`; recorded per application
-		 * as `appliedBy: 'binding'`.
+		 * as `appliedBy: 'binding'`. Declares what it accepts (R-11): a draft
+		 * is text, so text transforms — said here rather than assumed by the
+		 * broker, which is the difference between a point a plugin can shape
+		 * and a literal in the executor.
 		 */
 		scriptPoints: [
 			{
 				key: 'each-draft',
-				i18n: { en: 'Each draft' },
+				accepts: ['core:script:text/transform@1'],
+				label: { en: 'Each draft' },
 				description: {
 					en: 'Runs over every intermediate draft this step produces, before synthesis reads them.',
 				},
@@ -5244,11 +6262,13 @@ export const summarizeBatch = pin(
 
 /** Phase 2 — the ordered drafts merged into one past-tense narrative. */
 export const summarizeSynth = pin(
-	describeProvider({
-		id: 'core:provider/summarize-synth@1',
+	describeOracleDefinition({
+		id: 'core:oracle/summarize-synth@1',
 		i18n: { name: { en: 'Synthesize the drafts' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** The merge call: approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
@@ -5284,11 +6304,13 @@ export const summarizeSynth = pin(
 
 /** What the entry gets called. Its own step because it has its own prompt. */
 export const nameEntry = pin(
-	describeProvider({
-		id: 'core:provider/name-entry@1',
+	describeOracleDefinition({
+		id: 'core:oracle/name-entry@1',
 		i18n: { name: { en: 'Name the entry' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** Approve or refuse; the name it produces is reviewed at the entry's write (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 60000,
 		usage: 'response.usage',
 		slots: {
@@ -5325,11 +6347,13 @@ export const nameEntry = pin(
  * difference in a condition somebody has to find; four specs put it in the shape.
  */
 export const extractCast = pin(
-	describeProvider({
-		id: 'core:provider/extract-cast@1',
+	describeOracleDefinition({
+		id: 'core:oracle/extract-cast@1',
 		i18n: { name: { en: 'Extract the cast' } },
 		shape: S.textGen,
 		effects: 'external',
+		/** Approve or refuse (R-15 review fields). */
+		review: { fields: [] },
 		timeoutMs: 60000,
 		usage: 'response.usage',
 		slots: {
@@ -5374,9 +6398,15 @@ export const extractCast = pin(
 			// `request` carries the known cast list ([id: N] entries) so the
 			// extraction prompt can reference real ids — without it the model
 			// invents castIds and the resolve step silently drops every one.
+			//
+			// ⚠ No `messages` in-port, and there was one (culled 2026-09-16,
+			// R-12). `summarize` wired the transcript into it and the handler
+			// never read it: the extractor works from `content` — the synthesised
+			// summary — which is what the prompt builder takes. A port a spec
+			// fills and nothing reads costs the run a copy of the transcript
+			// and tells a reader the extractor sees it.
 			in: {
 				content: S.text,
-				messages: S.messages,
 				request: S.summarizeRequest,
 			},
 			out: { main: S.json, cast: S.json },
@@ -5432,7 +6462,7 @@ export const extractCast = pin(
  * other entries it already matches — and `rejected` carries every candidate
  * turned away with the rule that turned it away. Both exist because this node
  * **proposes and never writes**: what it emits is meant to reach a person who
- * can edit it before `core:consumer/create-lore-entry@1` stores anything, and a
+ * can edit it before `core:outlet/create-lore-entry@1` stores anything, and a
  * reviewer who has to hunt for the reason will approve without reading.
  *
  * ⚠ It never proposes **secondary** keys. Those carry a user's `selectiveLogic`
@@ -5440,7 +6470,7 @@ export const extractCast = pin(
  * author saying *not here*, and nothing that guesses is entitled to say it.
  */
 export const entryKeys = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/entry-keys@1',
 		i18n: {
 			name: { en: 'Suggest keywords' },
@@ -5545,10 +6575,12 @@ export const entryKeys = pin(
 
 /** Write the finished entry. Gate-eligible, so it publishes a write result. */
 export const createLoreEntry = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/create-lore-entry@1',
+	describeOutletDefinition({
+		id: 'core:outlet/create-lore-entry@1',
 		i18n: { name: { en: 'Save the lore entry' } },
 		effects: 'write',
+		/** Both the name and the content may be edited before the entry lands (R-15 review fields). */
+		review: { fields: ['name', 'content'] },
 		timeoutMs: 10000,
 		causesEvent: 'core:event/lore-entry-created@1',
 		ports: {
@@ -5566,7 +6598,7 @@ export const createLoreEntry = pin(
 // the enumeration removed.
 
 export const graphScenes = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/graph-scenes@1',
 		i18n: { name: { en: 'Scenes to build from' } },
 		timeoutMs: 5000,
@@ -5579,11 +6611,13 @@ export const graphScenes = pin(
 
 const graphStep = (id: string, label: string, field: string, extra: { timeoutMs?: number } = {}) =>
 	pin(
-		describeProvider({
+		describeOracleDefinition({
 			id,
 			i18n: { name: { en: label } },
 			shape: S.textGen,
 			effects: 'external',
+			/** Each graph step sends a compiled prompt: approve or refuse (R-15 review fields). */
+			review: { fields: [] },
 			timeoutMs: extra.timeoutMs ?? 120000,
 			timeoutKind: 'idle',
 			usage: 'response.usage',
@@ -5611,35 +6645,35 @@ const graphStep = (id: string, label: string, field: string, extra: { timeoutMs?
 
 /** Which existing node a mentioned name refers to, or whether it is new. */
 export const graphNodeResolution = graphStep(
-	'core:provider/graph-node-resolution@1',
+	'core:oracle/graph-node-resolution@1',
 	'Resolve nodes',
 	'nodeResolution',
 )
 
 /** Drop what is not worth graphing before the expensive steps run. */
 export const graphPreFilter = graphStep(
-	'core:provider/graph-pre-filter@1',
+	'core:oracle/graph-pre-filter@1',
 	'Pre-filter',
 	'preFilter',
 )
 
 /** Whose account of the scene this is. */
 export const graphPerspective = graphStep(
-	'core:provider/graph-perspective@1',
+	'core:oracle/graph-perspective@1',
 	'Perspective',
 	'perspective',
 )
 
 /** The two-sentence introduction written for a newly discovered character. */
 export const graphNodeDescription = graphStep(
-	'core:provider/graph-node-description@1',
+	'core:oracle/graph-node-description@1',
 	'Describe new nodes',
 	'nodeDescription',
 )
 
 /** Did any present character reach a new lifecycle state this scene? */
 export const graphStateDetection = graphStep(
-	'core:provider/graph-state-detection@1',
+	'core:oracle/graph-state-detection@1',
 	'Detect state changes',
 	'stateDetection',
 )
@@ -5653,10 +6687,12 @@ export const graphStateDetection = graphStep(
  * `write-result@1` is the shape that refuses to be mistaken for row ids.
  */
 export const graphProposal = pin(
-	describeConsumerTarget({
-		id: 'core:consumer/graph-proposal@1',
+	describeOutletDefinition({
+		id: 'core:outlet/graph-proposal@1',
 		i18n: { name: { en: 'Propose graph changes' } },
 		effects: 'write',
+		/** The proposal is what the review screen exists to edit (R-15 review fields). */
+		review: { fields: ['proposal'] },
 		timeoutMs: 10000,
 		causesEvent: 'core:event/graph-proposal-created@1',
 		ports: {
@@ -5688,7 +6724,7 @@ export const graphProposal = pin(
  * other one is not built (see docs/stats-and-states.md).
  */
 export const sessionState = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/session-state@1',
 		i18n: { name: { en: 'Session state' } },
 		timeoutMs: 2000,
@@ -5765,7 +6801,7 @@ export const sessionState = pin(
  * same argument `set-state`'s own per-change refusal makes.
  */
 export const resolveStateChanges = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'core:query/resolve-state-changes@1',
 		i18n: { name: { en: 'Resolve state changes' } },
 		timeoutMs: 5000,
@@ -5807,7 +6843,7 @@ export const resolveStateChanges = pin(
 )
 
 export const setState = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'core:task/set-state@1',
 		i18n: { name: { en: 'Set state' } },
 		timeoutMs: 5000,

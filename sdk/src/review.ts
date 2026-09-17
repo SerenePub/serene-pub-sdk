@@ -11,6 +11,8 @@
  *   · an author may default it **on** for their own node; forbidding it is not expressible
  */
 
+import { inferSchema, type SettingsSchema } from './settings.js'
+
 /**
  * On or off, and nothing between.
  *
@@ -30,7 +32,7 @@ export type ReviewPosition = 'off' | 'on'
 
 export interface ReviewRequest {
 	nodeKey: string
-	typeId: string
+	definitionId: string
 	payload: unknown
 	position: Extract<ReviewPosition, 'on'>
 }
@@ -55,6 +57,48 @@ export interface ReviewRecord {
 
 /** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). */
 export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
+
+/**
+ * The form a reviewer is shown for this node's payload.
+ *
+ * Inferred from the payload (`inferSchema`) — the one field language settings,
+ * plugin forms and review pauses share — and then, when the definition
+ * declares `review.fields`, narrowed to those names (U5b review C1). A
+ * declared field the payload does not carry infers nothing and is simply
+ * absent; an undeclared one is never offered. Absent declaration, the whole
+ * payload is the form, as it always was.
+ *
+ * The host builds the form through this and applies an edit through the SAME
+ * schema (`applyFormValues` iterates the schema, never the submission), so a
+ * field the form did not offer cannot be written by construction. The refusal
+ * in `undeclaredReviewFields` is the second, independent guard: a submission
+ * naming one is refused outright rather than dropped in silence.
+ */
+export function reviewSchemaFor(
+	definition: { review?: { fields: readonly string[] } } | undefined,
+	payload: unknown,
+): SettingsSchema {
+	const inferred = inferSchema(payload)
+	const declared = definition?.review?.fields
+	if (!declared) return inferred
+	const allowed = new Set(declared)
+	return Object.fromEntries(Object.entries(inferred).filter(([key]) => allowed.has(key)))
+}
+
+/**
+ * The keys of a decision's values that the definition's `review.fields` does
+ * not allow — empty when nothing is declared (every key is then a form
+ * field) or when every submitted key is declared. Non-empty means refuse.
+ */
+export function undeclaredReviewFields(
+	definition: { review?: { fields: readonly string[] } } | undefined,
+	values: Record<string, unknown> | undefined,
+): string[] {
+	const declared = definition?.review?.fields
+	if (!declared || !values) return []
+	const allowed = new Set(declared)
+	return Object.keys(values).filter((key) => !allowed.has(key))
+}
 
 /**
  * There is deliberately no `'never'` position and no descriptor field that could produce

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<!--
+			Never indexed and never followed: this document is the inside of an
+			iframe, and a search result landing a reader on a bare editor with no
+			code in it is a worse page than the one that embeds it.
+		-->
+		<meta name="robots" content="noindex, nofollow" />
+		<title>Serene Pub playground</title>
+		<link rel="stylesheet" href="./assets/{{styles}}" />
+		<!--
+			A CLASSIC script, with no `type="module"` and no `crossorigin`, and no
+			inline script anywhere on the page. This document is embedded in a
+			`sandbox="allow-scripts"` frame — an opaque origin — where a module
+			script is CORS-fetched and dies, and `script-src 'self'` forbids
+			inline. Same two rules as `ui-preview/README.md`.
+
+			`build.mjs` writes the hashed names in; this file is its template.
+		-->
+		<script src="./assets/{{entry}}" defer></script>
+	</head>
+	<body>
+		<div id="playground"></div>
+	</body>
+</html>

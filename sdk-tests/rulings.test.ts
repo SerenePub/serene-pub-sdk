@@ -14,7 +14,7 @@ import { run, ok, halt } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
-import { pin, describeTaskType } from '@serene-pub/sdk'
+import { pin, describeTaskDefinition } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
 	defineEvent,
@@ -40,8 +40,8 @@ import { publish, bindings, world, fakeClock } from './helpers.js'
 describe('42 · async blocks publish branch-results, and joined effects are gone', () => {
 	const build = (mode: 'parallel' | 'sequential' = 'parallel') =>
 		spec('demo:union@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.async('gather', { mode }, (b) =>
+			.inlet('input', C.userMessage.v1())
+			.gather('gather', { mode }, (b) =>
 				b
 					.chain('history', (c) =>
 						c.query('history', ($) =>
@@ -104,10 +104,10 @@ describe('42 · async blocks publish branch-results, and joined effects are gone
 describe('43 · map', () => {
 	const build = (max = 8) =>
 		spec('demo:mapunion@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-			.map('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
-				m.provider('sum', C.generateText.v1({ connection: slot.connection() })),
+			.each('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
+				m.oracle('sum', C.generateText.v1({ connection: slot.connection() })),
 			)
 
 	test('the chain runs once per item, and each iteration is identified in the receipt', async () => {
@@ -146,10 +146,10 @@ describe('43 · map', () => {
 describe('44 · compact halt receipts', () => {
 	const haltEarly = () =>
 		spec('demo:halts@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 	const halting = bindings({
 		'core:query/session-history@1': async () => halt('this chat type is not applicable'),
@@ -189,14 +189,14 @@ describe('44 · compact halt receipts', () => {
 		const r = await run(publish(haltEarly()), {
 			input: {},
 			bindings: bindings({
-				'core:consumer/create-message@1': async () => halt('rejected downstream'),
+				'core:outlet/create-message@1': async () => halt('rejected downstream'),
 			}),
 			world,
 			triggerSource: 'event',
 		})
 		assert.equal(r.outcome, 'halt')
 		assert.notEqual(r.compact, true, 'a Provider already ran — this run is worth keeping')
-		assert.ok(r.nodes.some((n) => n.kind === 'provider'))
+		assert.ok(r.nodes.some((n) => n.kind === 'oracle'))
 	})
 
 	test('the rendered receipt says it was compacted rather than looking empty', async () => {
@@ -214,9 +214,9 @@ describe('44 · compact halt receipts', () => {
 describe('45 · admin kill', () => {
 	const s = () =>
 		spec('demo:kill@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 
 	test('the run ends cancelled, with the actor recorded', async () => {
 		let calls = 0
@@ -263,7 +263,7 @@ describe('46 · queued time', () => {
 		const r = await run(
 			publish(
 				spec('demo:queued@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
 			),
 			{
@@ -284,7 +284,7 @@ describe('46 · queued time', () => {
 
 	test('the receipt says the wait was uncharged, so nobody has to infer it', async () => {
 		const r = await run(
-			publish(spec('demo:q2@1', { version: '1.0.0' }).input('input', C.userMessage.v1())),
+			publish(spec('demo:q2@1', { version: '1.0.0' }).inlet('input', C.userMessage.v1())),
 			{ input: {}, bindings: bindings(), world, queuedMs: 90_000 },
 		)
 		assert.match(renderReceipt(r), /90000 ms queued, uncharged/)
@@ -317,7 +317,7 @@ describe('47 · secret settings', () => {
 
 	test('a receipt redacts it BY TYPE — which is the whole argument for typing it', async () => {
 		const echo = pin(
-			describeTaskType({
+			describeTaskDefinition({
 				id: 'demo:task/echo-settings@1',
 				timeoutMs: 1000,
 				ports: { in: { main: S.json }, out: { main: S.json } },
@@ -326,7 +326,7 @@ describe('47 · secret settings', () => {
 		const r = await run(
 			publish(
 				spec('demo:secret@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.task('echo', echo.v1({ creds: secret('cipher:abc123') })),
 			),
 			{
@@ -407,7 +407,7 @@ describe('48 · events registry', () => {
 					version: 1,
 					family: 'action',
 					affectsUser: false,
-					causedBy: ['core:consumer/save-message'],
+					causedBy: ['core:outlet/save-message'],
 					description: 'x',
 				}),
 			/keeps them out of the cycle graph/,
@@ -429,8 +429,8 @@ describe('49 · ui-action carries both users', () => {
 		const r = await run(
 			publish(
 				spec('demo:reroll@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
-					.provider('generate', C.generateText.v1({ connection: slot.connection() })),
+					.inlet('input', C.userMessage.v1())
+					.oracle('generate', C.generateText.v1({ connection: slot.connection() })),
 			),
 			{
 				input: payload.input,

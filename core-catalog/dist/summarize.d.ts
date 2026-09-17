@@ -36,7 +36,7 @@ export declare const summarizeCharacterSpec: () => import("@serene-pub/sdk").Spe
  * ⚠ **The cast extraction is ON ICE, not deleted** (plan §2, ruled 2026-09-08).
  *
  * `extractsCast` is deliberately absent rather than removed: the branch above,
- * `core:provider/extract-cast@1` and its shipped prompt all stay exactly where
+ * `core:oracle/extract-cast@1` and its shipped prompt all stay exactly where
  * they are, so reviving the step is restoring this one property.
  *
  * Why it is off. The measured replacement for the *participant* half — the

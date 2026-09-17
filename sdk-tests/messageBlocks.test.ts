@@ -1,6 +1,11 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import { checkMessageBlocks, MESSAGE_BLOCK_LIMITS } from '@serene-pub/sdk'
+import {
+	checkMessageBlocks,
+	stampBlockActions,
+	MESSAGE_BLOCK_LIMITS,
+	type MessageBlock,
+} from '@serene-pub/sdk'
 
 /**
  * 20 §6 — the block validator: the write-time gate that makes "render whatever
@@ -87,5 +92,64 @@ describe('20 §6 · message blocks validate as data', () => {
 	test('not-an-array is one finding, not a crash', () => {
 		assert.equal(checkMessageBlocks({ kind: 'md' } as any).length, 1)
 		assert.equal(checkMessageBlocks(null as any).length, 1)
+	})
+})
+
+/**
+ * W-E (U5c review, 2026-09-16): a block's button carries the identity of the
+ * declaration it fires, stamped by the outlet from the run's spec — never by
+ * the client — so the server holds the press to THAT action's audience. A
+ * block carrying none is the legacy shape and gets the owner floor.
+ */
+describe('W-E · a block action carries the identity of the declaration it fires', () => {
+	const spec = {
+		id: 'acme:spec/lock',
+		contributes: {
+			actions: [
+				{ key: 'pick', function: 'pick-lock', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Pick' } },
+				{ key: 'force-a', function: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force' } },
+				{ key: 'force-b', function: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force harder' } },
+			],
+		},
+	}
+	const tree: MessageBlock[] = [
+		{
+			kind: 'choices',
+			actions: [
+				{ fn: 'pick-lock', label: 'Pick it' },
+				{ fn: 'force', label: 'Force it' },
+				{ fn: 'walk-away', label: 'Leave' },
+				{ fn: 'pick-lock', label: 'Pick, as core', action: 'core:spec/lock#pick' },
+			],
+		},
+		{ kind: 'group', blocks: [{ kind: 'form', fn: 'pick-lock', fields: {} }] },
+	]
+
+	test('the outlet stamps the one action of the spec for each fn; ambiguous or undeclared stays legacy; a stated one is kept', () => {
+		const stamped = stampBlockActions(tree, spec)
+		const choices = stamped[0] as Extract<MessageBlock, { kind: 'choices' }>
+		assert.deepEqual(
+			choices.actions.map((a) => a.action),
+			['acme:spec/lock#pick', undefined, undefined, 'core:spec/lock#pick'],
+		)
+		const group = stamped[1] as Extract<MessageBlock, { kind: 'group' }>
+		assert.equal((group.blocks[0] as Extract<MessageBlock, { kind: 'form' }>).action, 'acme:spec/lock#pick')
+		// A copy: the input tree is what it was.
+		assert.equal((tree[0] as any).actions[0].action, undefined)
+		// …and what it stamped validates.
+		assert.deepEqual(checkMessageBlocks(stamped), [])
+	})
+
+	test('a present action is held to the identity grammar; absent is fine', () => {
+		const f = checkMessageBlocks([
+			{ kind: 'choices', actions: [{ fn: 'x', label: 'x', action: 'not an identity' }] },
+			{ kind: 'form', fn: 'y', fields: {}, action: 'acme:spec/lock@1#pick' },
+			{ kind: 'form', fn: 'z', fields: {} },
+		])
+		assert.deepEqual(
+			f.map((x) => x.path),
+			['blocks[0].actions[0].action', 'blocks[1].action'],
+		)
+		assert.match(f[0]!.fix, /<spec slug>#<key>/)
 	})
 })

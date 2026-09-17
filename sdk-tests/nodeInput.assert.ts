@@ -18,9 +18,11 @@
  */
 
 import {
-	describeQueryType,
+	describeQueryDefinition,
 	pin,
+	reads,
 	S,
+	ok,
 	type InputOf,
 	type InPortsOf,
 	type ParamNamesOf,
@@ -66,11 +68,16 @@ history.channel
 // ── Parameter values come from the field language ───────────────────────────
 
 declare const assemble: InputOf<typeof C.assemble>
+declare const embed: InputOf<typeof C.embedText>
 
 // An `enum` narrows to its declared choices, not to `string`.
-const _trunc: 'oldest-first' | 'lowest-weight' | undefined = assemble.params?.truncation
-// @ts-expect-error — not one of the two choices `of` declares
-const _badTrunc: 'oldest-first' | 'lowest-weight' | undefined = 'newest-first'
+const _enabled: 'auto' | 'on' | 'off' | undefined = embed.params?.enabled
+// @ts-expect-error — not one of the three choices `of` declares
+const _badEnabled: 'auto' | 'on' | 'off' | undefined = 'maybe'
+
+// @ts-expect-error — `truncation` was declared on assemble, rendered, and read
+// by nothing; culled 2026-09-16 (R-12). A read of it must not compile it back.
+assemble.params?.truncation
 
 // @ts-expect-error — an integer parameter is a number, not a string
 const _wrongType: string | undefined = assemble.params?.postHistoryDepth
@@ -114,17 +121,19 @@ const _params3: ParamsOf<typeof C.sessionHistory> = { limt: 25 }
 declare const lore: SharedInput<
 	[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]
 >
-const _loreText: unknown = lore.text
 const _loreScope: unknown = lore.scope
 const _loreScan: number | undefined = lore.params?.scanDepth
 // @ts-expect-error — still not a port on any of the three
 lore.limit
+// @ts-expect-error — `text` was declared on all three, filled by nothing and
+// read by nothing; culled 2026-09-16 (R-12)
+lore.text
 
 // Two contracts that agree on one name and disagree on the rest. Written as
 // local declarations rather than borrowed from the catalog, so the assertion
 // says what it means even if the catalog's shapes move.
 const alpha = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'test:query/alpha@1',
 		ports: { in: { shared: S.text, onlyAlpha: S.text }, out: { main: S.text } },
 		slots: {
@@ -139,7 +148,7 @@ const alpha = pin(
 	}),
 )
 const beta = pin(
-	describeQueryType({
+	describeQueryDefinition({
 		id: 'test:query/beta@1',
 		ports: { in: { shared: S.text, onlyBeta: S.text }, out: { main: S.text } },
 		slots: {
@@ -177,3 +186,66 @@ const _alphaPort: unknown = alphaOnly.onlyAlpha
 const _alphaParam: string | undefined = alphaOnly.params?.onlyAlpha
 
 export {}
+
+// ── `reads` — a declaration the contract checks ─────────────────────────────
+//
+// The runtime twin of the reads above: a handler SAYS what it reads, in the
+// two categories `InputOf` derives, and the contract refuses a name it does
+// not supply. So a typo in the declaration fails the build exactly as a typo
+// in the read does — which is what stops the two lists naming different
+// things.
+
+const historyHook = async (_input: InputOf<typeof C.sessionHistory>) => ok({ main: [] })
+
+// ✅ every name is one the contract declares. `params` itself is not a port
+// here: what a handler reads off it is declared field by field, one line down.
+reads<typeof C.sessionHistory>(historyHook, {
+	ports: ['scope'],
+	params: ['limit', 'channel', 'priority'],
+})
+reads<typeof C.sessionHistory>(historyHook, {
+	// @ts-expect-error — the `params` slot is declared through its fields, never
+	// as a port
+	ports: ['params'],
+})
+
+reads<typeof C.sessionHistory>(historyHook, {
+	// @ts-expect-error — `limt` is nobody's parameter
+	params: ['limt'],
+	ports: [],
+})
+
+reads<typeof C.sessionHistory>(historyHook, {
+	// @ts-expect-error — `budget` was this node's in-port until it was culled
+	// (2026-09-16); declaring a read of it must not compile it back
+	ports: ['budget'],
+})
+
+reads<typeof C.sessionHistory>(historyHook, {
+	// @ts-expect-error — `topK` is another node's parameter
+	params: ['topK'],
+	ports: [],
+})
+
+// A shared handler declares against the INTERSECTION, in the tuple spelling
+// `SharedInput` takes.
+const loreHook = async (
+	_input: SharedInput<[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]>,
+) => ok({ main: [] })
+reads<[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]>(loreHook, {
+	ports: ['scope'],
+	params: ['scanDepth', 'guaranteedMessages', 'admitThreshold'],
+})
+reads<[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]>(loreHook, {
+	// @ts-expect-error — no lane declares a `limit` port
+	ports: ['limit'],
+})
+
+// A node with no parameters accepts only an empty `params`.
+const inletHook = async (input: InputOf<typeof C.userMessage>) => ok(input)
+reads<typeof C.userMessage>(inletHook, { ports: [], params: [] })
+reads<typeof C.userMessage>(inletHook, {
+	ports: [],
+	// @ts-expect-error — this node declares no parameters, so no name fits
+	params: ['anything'],
+})

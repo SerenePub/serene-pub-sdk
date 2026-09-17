@@ -20,11 +20,19 @@ function specPage(doc, announcement, typeOf) {
     if (tax?.zone || tax?.role)
         lines.push(`Catalogue: ${[tax?.zone, tax?.role].filter(Boolean).map(code).join(' · ')}.`);
     lines.push('');
+    // The map, drawn from the same document the tables below are read off. It
+    // is a fence rather than a picture because rendering it needs a layout
+    // engine this package does not carry: `@serene-pub/docs` answers it with
+    // `pipelineResolver(announcement)`, and a renderer that has no resolver
+    // for it says so instead of quietly dropping the graph.
+    lines.push('```pipeline ' + doc.id);
+    lines.push('```');
+    lines.push('');
     lines.push(`## Steps`);
     lines.push('');
     for (const node of doc.nodes) {
-        const surface = typeOf(node.typeId, node.typeVersion);
-        lines.push(`### ${code(node.key)} — ${node.kind} (${code(`${node.typeId}@${node.typeVersion}`)})`);
+        const surface = typeOf(node.definitionId, node.definitionVersion);
+        lines.push(`### ${code(node.key)} — ${node.kind} (${code(`${node.definitionId}@${node.definitionVersion}`)})`);
         lines.push('');
         const slots = surface?.slots ?? {};
         let wroteAny = false;
@@ -64,10 +72,10 @@ function specPage(doc, announcement, typeOf) {
     // prompts are the ones written for the nodes it actually runs — which is
     // also how a page ends up listing prose this spec did not author. That is
     // the point rather than a leak: the prompt is genuinely offered here,
-    // because the node is the same node. `typeId` is already unversioned
-    // (`builder.ts` splits the `@n` off into `typeVersion`), so it is the pool
+    // because the node is the same node. `definitionId` is already unversioned
+    // (`builder.ts` splits the `@n` off into `definitionVersion`), so it is the pool
     // key as-is.
-    const poolTypes = new Set(doc.nodes.map((n) => n.typeId));
+    const poolTypes = new Set(doc.nodes.map((n) => n.definitionId));
     const prompts = announcement.prompts.filter((p) => poolTypes.has(p.nodeType));
     if (prompts.length) {
         lines.push(`## Shipped prompts`);

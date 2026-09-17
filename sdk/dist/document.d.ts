@@ -22,12 +22,12 @@ export interface DocEdge {
 export interface DocNode {
     key: string;
     kind: string;
-    typeId: string;
-    typeVersion: number;
+    definitionId: string;
+    definitionVersion: number;
     config: Record<string, unknown>;
-    blockId?: string;
-    blockKind?: string;
-    blockChain?: string;
+    clauseId?: string;
+    clauseKind?: string;
+    clauseChain?: string;
     position: number;
     /** Config references resolved at publish and stored explicitly (16 §5b-i). */
     resolvedRefs?: Record<string, string>;
@@ -44,12 +44,15 @@ export interface SpecDocument {
     contributes?: unknown;
     /** Catalogue claims (ruled 2026-08-27) — content like the two above, hashed with the document. */
     taxonomy?: unknown;
-    /** The usage lock (24 §4): { genre, event } the input declared. Hashed with the document. */
+    /**
+     * The usage lock (24 §4): { genre, event } the inlet declared. Hashed with
+     * the document. **The only subscription** (R-4) — `subscribes` was deleted
+     * 2026-09-16 with `.on()`.
+     */
     input?: {
         genre?: string;
         event?: string;
     };
-    subscribes: string[];
     includes: Array<{
         key: string;
         fragmentId: string;
@@ -58,15 +61,15 @@ export interface SpecDocument {
     presets: BuiltSpec['presets'];
     nodes: DocNode[];
     edges: DocEdge[];
-    blocks: BuiltSpec['blocks'];
+    clauses: BuiltSpec['clauses'];
 }
 export declare function compile(built: BuiltSpec): SpecDocument;
 /**
- * Follow the spine forward from `fromKey` to the first Provider. Linearity is what
+ * Follow the spine forward from `fromKey` to the first oracle. Linearity is what
  * makes this well-defined (F25). Ambiguity or absence is a publish error that names
  * the candidates — the teaching-error pattern (15 §1.3).
  */
-export declare function resolveDownstreamProvider(built: BuiltSpec, fromKey: string): string;
+export declare function resolveDownstreamOracle(built: BuiltSpec, fromKey: string): string;
 /**
  * Canonical form — stable key order, for hashing and round-trip identity (F3).
  *
@@ -122,4 +125,15 @@ export interface ExportResult {
  * exactly.
  */
 export declare function exportDocument(doc: SpecDocument, opts?: ExportOptions): ExportResult;
+/**
+ * The envoy config addresses a document references — every `resolvedRefs`
+ * target spelled `envoy:<key>`, once each. The executor resolves config for
+ * these beside the nodes and clauses; the host projects the genre's
+ * declaration at exactly these keys.
+ */
+export declare function envoyConfigKeysOf(doc: {
+    nodes: ReadonlyArray<{
+        resolvedRefs?: Record<string, string>;
+    }>;
+}): string[];
 //# sourceMappingURL=document.d.ts.map

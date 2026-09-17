@@ -41,6 +41,7 @@
  * @see src/descriptors.ts — why every `describe*` is generic over its slots
  */
 import type { Descriptor, PortDecl } from './descriptors.js';
+import type { Hook } from './executor.js';
 import type { FieldType, MemberDecl } from './settings.js';
 /**
  * A type's own declared keys, with index signatures stripped.
@@ -85,7 +86,7 @@ type DeclaredNames<T> = [T] extends [never] ? never : Extract<keyof DeclaredOnly
  *
  * Accepts the pinned form (`typeof C.vectorSearch` — a `Pinned<D>`, which is
  * what `@serene-pub/contracts` exports and what a spec author already holds)
- * and a bare descriptor, so a plugin that has only its own `describeQueryType`
+ * and a bare descriptor, so a plugin that has only its own `describeQueryDefinition`
  * return value can use these helpers without wrapping it in a `pin` first.
  */
 export type DescriptorOf<P> = P extends {
@@ -293,6 +294,72 @@ export type DeclaredHook<H extends (...args: any[]) => any> = H & {
  * keyed by identity is how a shared handler is recognised as shared.
  */
 export declare function declaresReads<H extends (...args: any[]) => any>(hook: H, requires: HandlerRequires): DeclaredHook<H>;
+/**
+ * The names a handler bound to `P` may declare it reads off `input` — its
+ * in-ports and slot names, or, for a tuple of contracts, the intersection.
+ *
+ * `P` is one pinned contract (`typeof C.sessionHistory`) or a readonly tuple of
+ * them (`[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]`),
+ * the same two spellings `InputOf` and `SharedInput` take. A pinned contract is
+ * an object and never an array, so the tuple branch cannot be entered by
+ * accident.
+ */
+export type ReadablePorts<P> = P extends readonly unknown[] ? SharedNames<P> : PlainKeys<P>;
+/** The parameter names a handler bound to `P` may declare it reads. */
+export type ReadableParams<P> = P extends readonly unknown[] ? SharedParamNames<P> : ParamNamesOf<P>;
+/**
+ * A read declaration whose every name the contract has to supply.
+ *
+ * `HandlerRequires` with the two arrays narrowed from `string` to the
+ * contract's own literals — so `params: ['limt']` fails to compile where the
+ * untyped form would let the typo through to `structuralCompat` at boot, or,
+ * on a name the guard never reaches, through to nothing at all.
+ */
+export interface TypedReads<P> {
+    /** In-port and slot names read off `input` directly. */
+    ports: readonly ReadablePorts<P>[];
+    /** Names read off `input.params`. Optional: most nodes declare none. */
+    params?: readonly ReadableParams<P>[];
+    /** A field type a param is required to have, where the read cares. */
+    paramTypes?: Partial<Record<ReadableParams<P>, FieldType>>;
+}
+/**
+ * Attach a read declaration a contract has checked (ruling R-12, 2026-09-15).
+ *
+ * ```ts
+ * reads<typeof C.sessionHistory>(
+ *   async (input: InputOf<typeof C.sessionHistory>, ctx) => …,
+ *   { ports: ['scope'], params: ['limit', 'channel'] },
+ * )
+ * ```
+ *
+ * The compile-time half of what `declaresReads` records at run time. `InputOf`
+ * makes a read of an **undeclared** name a type error; this makes the
+ * declaration name nothing `P` lacks — `params: ['limt']` does not compile.
+ * The reverse direction (a declared name **no** handler reads) is the guard's
+ * job, in the host, and it is what this declaration exists to feed.
+ *
+ * ⚠ **What this cannot check.** `P` is the contract the *declaration* is
+ * narrowed against; the handler is a plain `Hook`, so nothing here proves the
+ * handler's own `input` was typed against the same `P`. Pairing
+ * `reads<typeof C.X>` with a handler whose input is `NodeInput<typeof C.X>` is
+ * a **convention**, and the host keeps it by a test over the source of its
+ * bindings files (`boot/readsPairing.test.ts`) rather than by the type system.
+ *
+ * `P` is written explicitly and the hook is a plain `Hook`, rather than both
+ * inferred, because TypeScript infers all of a call's type arguments or none
+ * — and the contract cannot be inferred from a handler whose `input` is an
+ * intersection, an alias, or `any`.
+ *
+ * ⚠ **One declaration per function object.** Like `declaresReads` this attaches
+ * to the hook itself rather than wrapping it, so a handler two pins share
+ * carries ONE `requires` — and a second, different declaration on the same
+ * function would silently replace the first. That is refused here: bind a
+ * shared handler through a per-pin arrow (`(input, ctx) => shared(input, ctx)`)
+ * when the two pins read differently, and declare the intersection when they
+ * do not. An identical redeclaration is a no-op, on the registry's own terms.
+ */
+export declare function reads<P>(hook: Hook, requires: TypedReads<P>): DeclaredHook<Hook>;
 /** Does this hook carry a read declaration? */
 export declare function readsOf(hook: unknown): HandlerRequires | undefined;
 /**

@@ -34,6 +34,13 @@ export declare const chatDefaultPreset: PresetDecl;
  * was written on.
  */
 export declare const adventureDefaultPreset: PresetDecl;
+/**
+ * The guide genre's shipped preset (R-18; U5g). Enabled: the create path
+ * runs end to end with no model call, and the genre's one envoy is seated
+ * by its own `default: true` — the preset names nothing a session must
+ * choose. No actions come along: a guide session is questions and answers.
+ */
+export declare const guideDefaultPreset: PresetDecl;
 export declare const CORE_PRESETS: PresetDecl[];
 /** The seed-pass shape: idempotence key + the row fields SP writes. */
 export interface CorePresetSeed {

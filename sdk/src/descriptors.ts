@@ -1,9 +1,10 @@
 /**
- * Descriptors — the shared-scope declaration of a type (01 §1, 04 §3).
+ * Descriptors — the shared-scope declaration of a **node definition** (01 §1, 04 §3;
+ * NOMENCLATURE §5 — *node type* is retired, ruled 2026-09-14).
  *
  * A descriptor is data: it can be listed, rendered and validated without loading
- * the hook that implements it. That is what lets the plugin manager and the editor
- * work from rows (10 §10.2).
+ * the handler that implements it. That is what lets the plugin manager and the
+ * editor work from rows (10 §10.2).
  */
 
 import type { ShapeId } from './shapes.js'
@@ -15,21 +16,40 @@ import type { MediaCapability } from './media.js'
 import { refuseUnlessIdentical, type DisplayKeys } from './hash.js'
 
 /**
+ * The node kinds (R-13, ruled 2026-09-14): **inlet** (where the run enters) ·
+ * **query** (reads) · **task** (pure transform) · **oracle** (calls out to an
+ * external nondeterministic source — a model, TTS, image gen, embeddings, a human)
+ * · **outlet** (the only effect-capable kind: writes, attaches, emits — the run
+ * leaves into the world here). Was `input · query · task · provider · consumer`
+ * until 2026-09-16; the kind is part of the id grammar (`core:inlet/…`), so every
+ * definition id moved with it.
+ *
  * `entry` is the odd one out and deliberately so: the first five are **nodes**
  * — things a spec wires — and an entry type is a **row shape**, the declared
  * answer to "what kind of thing is this lorebook row". It is a Kind rather than
  * a registry of its own because everything downstream of a declaration is the
  * same machinery: one `snapshotRegistry`, one content hash, one boot sync, one
- * freeze rule (the argument 18 §2 makes for script types, one construct over).
+ * freeze rule (the argument 18 §2 makes for script kinds, one construct over).
  */
-export type Kind = 'input' | 'query' | 'task' | 'provider' | 'consumer' | 'entry'
+export type Kind = 'inlet' | 'query' | 'task' | 'oracle' | 'outlet' | 'entry'
 
 export type LocaleMap = { en: string } & Record<string, string>
 /** One i18n type across the SDK — settings.ts owns it; this is the alias the
  *  descriptor surface has always exported. */
 export type I18n = I18nText
 
-/** Slot kinds (12 §2). Siblings; only two are ever cross-referenced. */
+/**
+ * Slot kinds (12 §2). Siblings; only two are ever cross-referenced.
+ *
+ * `settings` (R-9, ruled 2026-09-15) is the one kind **no author declares**:
+ * the substrate declares it, on every definition that is `optional`
+ * (`enabled`), every one whose `effects` gate (`review`), and every gather
+ * clause (`mode`). The slot name `settings` is reserved for it — `register`
+ * refuses a descriptor that authors one — and it is projected into the
+ * registry row by `snapshotRegistry` rather than written on the descriptor,
+ * so the executor keeps reading `config[key].settings.*` exactly as before
+ * and the panel renders it from the row like any slot (`settingsSlot.ts`).
+ */
 export type SlotKind =
 	| 'connection'
 	| 'sampling'
@@ -39,6 +59,7 @@ export type SlotKind =
 	| 'wire'
 	| 'variables'
 	| 'scripts'
+	| 'settings'
 
 export interface SlotDecl {
 	kind: SlotKind
@@ -127,7 +148,7 @@ export interface SlotDecl {
 	 */
 	engines?: readonly string[]
 	/**
-	 * For `wire` slots: the format id this Provider defaults to. Overridable through the
+	 * For `wire` slots: the format id this oracle defaults to. Overridable through the
 	 * normal scope chain, and in core sourced from the connection's adapter metadata so
 	 * picking Ollama gets the right instruct format without configuring anything
 	 * (src/wire.ts).
@@ -148,7 +169,7 @@ export interface SlotDecl {
 	 * Pinned ids — `core:script:text/transform@1` — and **part of the content
 	 * hash** (S3): widening or narrowing what a hook accepts changes what an
 	 * untouched spec does, which is the `optional` lesson applied before it is
-	 * re-learned. Plain strings rather than the `ScriptTypeId` alias, because
+	 * re-learned. Plain strings rather than the `ScriptKindId` alias, because
 	 * scripts.ts already imports from this module and a type-only cycle is
 	 * still a cycle.
 	 *
@@ -220,6 +241,211 @@ export interface SlotDecl {
 export type { MemberDecl, ParamDecl, FieldDecl, FieldType } from './settings.js'
 export { fieldLabel, fieldAccepts } from './settings.js'
 
+/**
+ * One interior script point (18 §4e): a named moment inside a binding's work
+ * where a user chain may run, and which script kinds may be attached there.
+ *
+ * `accepts` is the attachment rule, on the same terms as `SlotDecl.accepts`
+ * for a port hook — pinned ids, part of the content hash. Plain strings rather
+ * than the `ScriptKindId` alias for the reason that field gives: scripts.ts
+ * imports from this module. `label` is the canonical display key (settings.ts
+ * calls `i18n` its deprecated alias for a field, and a point is on the same
+ * footing); both are stripped from the hash.
+ */
+export interface ScriptPointDecl {
+	key: string
+	accepts: string[]
+	label?: I18n
+	description?: I18n
+	/** @deprecated alias of `label`. */
+	i18n?: I18n
+}
+
+/**
+ * @deprecated A bare point key, read as a text-transform point — the only
+ * kind a point could accept before R-11 (2026-09-16). One release; declare
+ * `{ key, accepts, label }` instead.
+ */
+export type ScriptPointShorthand = string
+
+/**
+ * The text-transform kind, spelled here rather than imported: scripts.ts
+ * imports from this module, and it is the one kind every point accepted
+ * before points could say otherwise.
+ */
+const TEXT_TRANSFORM_KIND = 'core:script:text/transform@1'
+
+/**
+ * A definition's interior points, every one in the full shape.
+ *
+ * The one reader of `scriptPoints` — the executor's broker and the registry
+ * projection both go through it — so the deprecated spellings are folded in
+ * one place: a bare string is a text-transform point, an object declared
+ * before points carried `accepts` (a plugin built against the previous
+ * release) is read the same way, and `i18n` becomes `label`. Returns copies;
+ * a caller may not edit the declaration through it.
+ */
+export function scriptPointsOf(d: {
+	scriptPoints?: ReadonlyArray<ScriptPointDecl | ScriptPointShorthand | Record<string, unknown>>
+}): ScriptPointDecl[] {
+	return (d.scriptPoints ?? []).map((p) => {
+		if (typeof p === 'string') return { key: p, accepts: [TEXT_TRANSFORM_KIND] }
+		const { i18n, ...point } = p as Partial<ScriptPointDecl>
+		// Folded only when `accepts` is ABSENT — the pre-R-11 spelling. An
+		// explicit `[]` is authored and reaches the reader as written; `register`
+		// refuses it (`checkScriptPointsAccept`), because a point accepting
+		// nothing is a hook nothing can attach to.
+		const accepts = Array.isArray(point.accepts) ? [...point.accepts] : [TEXT_TRANSFORM_KIND]
+		const label = point.label ?? i18n
+		return {
+			...point,
+			key: String(point.key),
+			accepts,
+			...(label ? { label } : {}),
+		} as ScriptPointDecl
+	})
+}
+
+/**
+ * The message verbs no genre may remove (R-15, ruled 2026-09-15): a person
+ * can always stop a reply, branch a session and rewrite a line. Not keys of
+ * `SessionShape.messageVerbs`; a declaration naming one `false` is refused
+ * at registration (`assertMessageVerbFloors`).
+ */
+export const MESSAGE_VERB_FLOORS = ['stop', 'branch', 'edit'] as const
+export type MessageVerbFloor = (typeof MESSAGE_VERB_FLOORS)[number]
+
+/**
+ * The opt-in built-ins: core's writes a genre may switch off and never
+ * re-implement. Default on.
+ */
+export const MESSAGE_VERB_BUILT_INS = ['delete', 'hide', 'swipe'] as const
+export type MessageVerbBuiltIn = (typeof MESSAGE_VERB_BUILT_INS)[number]
+
+/** The genre-declared content actions — built-in write + declared content. */
+export const MESSAGE_VERB_CONTENT = ['retry', 'continue', 'stepBack'] as const
+export type MessageVerbContent = (typeof MESSAGE_VERB_CONTENT)[number]
+
+/** Every forbiddable verb, in the order the availability map reads them. */
+export const MESSAGE_VERBS = [...MESSAGE_VERB_CONTENT, ...MESSAGE_VERB_BUILT_INS] as const
+export type MessageVerb = (typeof MESSAGE_VERBS)[number]
+
+/**
+ * The five built-in writes (R-15), by the verb a person knows them as: the
+ * one-node spec core runs for each, and the outlet that spec ends in.
+ *
+ * Here rather than only in the core catalog because the **validator** needs
+ * them (U5b review W8): a built-in outlet performs the item rule's write —
+ * the handler judged who may act on which row before the run began — so a
+ * spec that is not the built-in's own placing one would perform that write
+ * with nobody having judged anything. `validate()` refuses the placement
+ * unless the document's id is one of `BUILTIN_SPEC_IDS`, and the host
+ * refuses the commit on the same test (defence in depth). A manifest
+ * permission letting a plugin spec place one is the future this leaves room
+ * for; it is not granted today.
+ */
+export const BUILTIN_SPEC_IDS = Object.freeze({
+	delete: 'core:spec/builtin-delete',
+	hide: 'core:spec/builtin-hide',
+	edit: 'core:spec/builtin-edit',
+	swipe: 'core:spec/builtin-swipe',
+	branch: 'core:spec/builtin-branch',
+} as const)
+export type BuiltInKind = keyof typeof BUILTIN_SPEC_IDS
+
+/** The outlet each built-in's spec ends in — `effects: 'write'`, every one. */
+export const BUILTIN_OUTLET_IDS = Object.freeze({
+	delete: 'core:outlet/delete-message@1',
+	hide: 'core:outlet/hide-message@1',
+	edit: 'core:outlet/edit-message@1',
+	swipe: 'core:outlet/swipe-message@1',
+	branch: 'core:outlet/branch-session@1',
+} as const)
+
+/** Is this definition id one of the five built-in write outlets? */
+export const isBuiltInOutlet = (definitionId: string): boolean =>
+	(Object.values(BUILTIN_OUTLET_IDS) as string[]).includes(definitionId)
+
+/** Is this spec id one of the five built-in specs — the only documents that may place a built-in outlet? */
+export const isBuiltInSpec = (specId: string): boolean =>
+	(Object.values(BUILTIN_SPEC_IDS) as string[]).includes(specId)
+
+/**
+ * The form-answer pair (plans/29 R-15 *Forms*; 30 §U5d, built 2026-09-17):
+ * the inlet `core:event/form-addressed@1` lands on, and the outlet that
+ * commits an oracle's answer exactly as a click would. The outlet may be
+ * placed only in a document whose inlet is the form-addressed one
+ * (`validate()`; the host checks the same at the commit): it answers THE
+ * form the event carried, and a document reached by any other event has no
+ * form to answer — a spec placing it elsewhere would fire an action as
+ * somebody nobody asked.
+ */
+export const FORM_ADDRESSED_INLET_ID = 'core:inlet/form-addressed@1'
+export const ANSWER_FORM_OUTLET_ID = 'core:outlet/answer-form@1'
+
+/**
+ * The review-fields rule (R-15 *The review gate*; 30 §U5d): a definition
+ * with `effects: 'write' | 'external'` declares `review: { fields }` — what a
+ * reviewer may edit at the gate, `[]` when nothing (approve or refuse). A
+ * definition that declares none still registers and still gates — the form
+ * is then **inferred** from the whole payload, every field editable, which is
+ * the documented fallback a plugin definition gets — but `register()` records
+ * the omission as a finding and `validate()` reports it on every node bound
+ * to such a definition, so a shipped effectful definition without one is
+ * visible rather than silent. Every core definition declares one.
+ */
+export function reviewFieldsFinding(d: {
+	id: string
+	effects?: string
+	review?: { fields: readonly string[] }
+}): string | null {
+	if (d.effects !== 'write' && d.effects !== 'external') return null
+	if (d.review && Array.isArray(d.review.fields)) return null
+	return (
+		`${d.id} declares effects: '${d.effects}' and no review.fields. An effectful definition ` +
+		`says which of its in-ports a reviewer may edit at the gate — review: { fields: ['text'] }, ` +
+		`or review: { fields: [] } when the gate is approve-or-refuse. Until it does, the form is ` +
+		`inferred from the whole payload and every field is editable, including any row id.`
+	)
+}
+
+const registrationFindings = new Map<string, string[]>()
+
+/**
+ * What `register()` noted about a definition without refusing it — today
+ * the review-fields rule alone. Keyed by definition id; empty for a clean
+ * one. Read by a host at boot to say so once, and by tests asserting that
+ * every shipped effectful definition declares its fields.
+ */
+export function definitionFindings(id?: string): string[] {
+	if (id !== undefined) return [...(registrationFindings.get(id) ?? [])]
+	return [...registrationFindings.values()].flat()
+}
+
+/**
+ * A `messageVerbs` declaration that names a floor `false` is refused — with a
+ * sentence, at the declaration, where the author is. Shared by `register`
+ * (an inlet's `sessionShape`) and `genre()` (a genre's `shape`), so the two
+ * places a shape can be declared cannot disagree about what a floor is.
+ * Unknown keys are ignored, as the app's reader ignores them: a key this
+ * release does not know is not a floor.
+ */
+export function assertMessageVerbFloors(
+	shape: SessionShape | undefined,
+	who: string,
+): void {
+	const verbs = shape?.messageVerbs as Record<string, unknown> | undefined
+	if (!verbs || typeof verbs !== 'object') return
+	const forbidden = MESSAGE_VERB_FLOORS.filter((floor) => verbs[floor] === false)
+	if (!forbidden.length) return
+	throw new Error(
+		`${who} declares messageVerbs { ${forbidden.map((f) => `${f}: false`).join(', ')} }. ` +
+			`Stop, branch and edit are floors — present in every genre, never switched off ` +
+			`(R-15). A genre may switch off delete, hide or swipe, and may forbid retry, ` +
+			`continue or stepBack; drop the floor from the declaration.`,
+	)
+}
+
 export interface PortDecl {
 	[port: string]: ShapeId
 }
@@ -272,22 +498,35 @@ export interface SessionShape {
 		channel?: string
 	}
 	/**
-	 * Which message verbs sessions of this mode offer (20 §4). Absent means
-	 * all on — the standard chat's posture. Core owns the mechanics and
-	 * integrity rules; this only declares *availability*, checked server-side
-	 * at the verb (presence is presentation, refusal is the law).
+	 * Which message verbs sessions of this genre offer (20 §4; R-15, ruled
+	 * 2026-09-15). Absent means all on — the standard chat's posture. Core
+	 * owns the mechanics and integrity rules; this only declares
+	 * *availability*, checked server-side at the verb (presence is
+	 * presentation, refusal is the law).
 	 *
-	 * **Delete and hide are deliberately unrepresentable here.** They are
-	 * floors: the session owner can always delete and always hide their own
-	 * data, and a mode that could forbid deletion would own the user. Retry
-	 * and edit are legitimately forbiddable — a dice-are-final mode is a real
-	 * design.
+	 * Three groups, and the type is the enforcement:
+	 *
+	 *  · **Floors** — `stop` · `branch` · `edit` — are **unrepresentable
+	 *    here**, and `register`/`genre()` refuse a declaration that names one
+	 *    `false` (`assertMessageVerbFloors`). They are present in every genre:
+	 *    a person can always stop a reply, always branch a session and always
+	 *    rewrite a line, and a genre that could take those away would own the
+	 *    user.
+	 *  · **Opt-in built-ins** — `delete` · `hide` · `swipe` — are core's
+	 *    writes (`core:outlet/delete-message@1` …), always emitting what
+	 *    changed; a genre may switch one off, never re-implement it.
+	 *  · **Genre-declared content actions** — `retry` (regenerate) ·
+	 *    `continue` · `stepBack` — are the genre's pipeline producing text
+	 *    plus core's rewrite of the row. A dice-are-final genre forbidding
+	 *    `retry` is a real design.
 	 */
 	messageVerbs?: {
 		retry?: boolean
 		continue?: boolean
-		edit?: boolean
 		stepBack?: boolean
+		delete?: boolean
+		hide?: boolean
+		swipe?: boolean
 	}
 	/**
 	 * Which surface renders sessions of this mode (20 §12). Absent means
@@ -366,8 +605,7 @@ export interface PanelDecl {
 	role?: 'primary' | 'secondary'
 	/** What renders inside. A native component key, or a plugin frame surface. */
 	surface:
-		| { kind: 'native'; component: string }
-		| { kind: 'frame'; pluginId: string; entry: string }
+		{ kind: 'native'; component: string } | { kind: 'frame'; pluginId: string; entry: string }
 	/** Which channels feed it (20 §4/§7). A panel is a view onto its channels. */
 	channels?: string[]
 	/** Layout hints the packer honours; all optional, all have sane floors. */
@@ -405,13 +643,39 @@ export interface Descriptor<
 	slots?: Record<string, SlotDecl>
 	ports: { in?: In; out?: Out }
 
-	/** Provider/consumer only — the review gate keys on this, not on kind (01 §7). */
+	/** Oracle/outlet only — the review gate keys on this, not on kind (01 §7). */
 	effects?: 'none' | 'external' | 'write' | 'emit'
 	/**
 	 * An author may default review **on** for their own node. There is no value here
 	 * that forbids it — that is the enforcement, not a rule someone checks (F14).
 	 */
 	reviewDefault?: ReviewPosition
+	/**
+	 * Which of this node's in-ports a reviewer may **edit** at the gate (R-15,
+	 * U5b review C1, 2026-09-16): an allow-list of port names. Absent, the
+	 * form is inferred from the whole payload the node received, as it always
+	 * was — every field editable. Declared, the form shows these fields and
+	 * no other, and a decision that submits any other key is refused with a
+	 * sentence rather than folded in silently.
+	 *
+	 * The case it exists for is an **identity** field: the `target` of a
+	 * delete, the `fromMessage` of a branch, the `index` of a swipe. The
+	 * handler judged whether THIS person may act on THIS row before the run
+	 * started; a form that let the reviewer retype the id re-aimed a write
+	 * that had already passed that check, at a row it never saw. So an
+	 * effectful definition whose payload names a row declares what may
+	 * change — the text, the direction, the title — and the id is never
+	 * among them. `fields: []` is a legitimate declaration: approve or
+	 * reject, nothing to edit (a delete).
+	 *
+	 * Not part of the content hash: it narrows what a reviewer's form offers
+	 * and moves no port, no shape and no behaviour of the node itself.
+	 *
+	 * Read from the in-process definition; a `transport: process` plugin
+	 * outlet falls back to inferring every payload field (⏳ registry
+	 * projection when process plugins ship).
+	 */
+	review?: { fields: readonly string[] }
 	/** Connection kind for providers (== produced shape). */
 	shape?: ShapeId
 	/** May this node be switched off? Requires shape transparency (01 §14 F-toggleable). */
@@ -447,11 +711,18 @@ export interface Descriptor<
 	 * where" is answerable from the document; the binding invokes one with
 	 * `ctx.scripts.applyText(key, text)` and gets no `ctx.scripts` at all
 	 * without a declaration. **Part of the hashed contract** — a point
-	 * appearing or vanishing changes what an untouched spec's configuration
-	 * can reach (S3's argument, one construct over). `i18n`/`description` are
-	 * display text and stripped from the hash as everywhere.
+	 * appearing or vanishing, or what it `accepts`, changes what an untouched
+	 * spec's configuration can reach (S3's argument, one construct over).
+	 * `label`/`description` are display text and stripped from the hash as
+	 * everywhere.
+	 *
+	 * A point declares what it **accepts** (R-11, ruled 2026-09-15; 18 §4e):
+	 * the executor hands that list to the applier, which refuses a link of any
+	 * other kind — it hardcoded `text/transform` until 2026-09-16. Read the
+	 * list through `scriptPointsOf`, which also folds the deprecated
+	 * bare-string spelling.
 	 */
-	scriptPoints?: Array<{ key: string; i18n?: I18n; description?: I18n }>
+	scriptPoints?: Array<ScriptPointDecl | ScriptPointShorthand>
 	/**
 	 * The chat-shape contract (19 §0–§1) — present **only on input types**,
 	 * and its presence is what makes the input type a **chat mode**. The mode
@@ -489,6 +760,17 @@ export interface Descriptor<
 	timeoutKind?: 'wall' | 'idle'
 	/** Which core event a write causes. Declared here, never per spec (01 §8). */
 	causesEvent?: string
+	/**
+	 * Outlet only: the row this outlet commits becomes the run's **live row**
+	 * (R-21 (2)) — where core routes an oracle's stream, and what Stop
+	 * finalises when a run is cancelled with nothing left to run.
+	 *
+	 * Declared rather than inferred from the event the write causes, because
+	 * two outlets can cause `message-created` and only one of them makes a
+	 * row a stream should land in: a greeting seed writes several messages
+	 * and none of them is anybody's placeholder. Part of the hashed contract.
+	 */
+	liveRow?: boolean
 	usage?: string
 	/**
 	 * Which media kinds this type can take in and give out.
@@ -542,7 +824,7 @@ const types = new Map<string, Descriptor>()
  *
  * The re-declaration guard below is not the only thing that asks whether two
  * descriptors are the same content. Core projects every descriptor into a
- * `pipeline_type_registry` row and hashes it again there, and that hash decides
+ * `pipeline_definition_registry` row and hashes it again there, and that hash decides
  * whether an upgrading install may republish a frozen type version. The two
  * disagreed: core stripped `i18n` and `description` and hashed `label`, so
  * renaming a parameter was free here and a boot-time `TypeRegistryConflictError`
@@ -561,15 +843,18 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 	// to compare against, so the ordinary path costs nothing.
 	const existing = types.get(d.id)
 	if (existing)
-		refuseUnlessIdentical(
-			existing,
-			d,
-			`duplicate type id: ${d.id}`,
-			DESCRIPTOR_DISPLAY_KEYS,
-		)
+		refuseUnlessIdentical(existing, d, `duplicate type id: ${d.id}`, DESCRIPTOR_DISPLAY_KEYS)
 	checkWritePublishes(d as Descriptor)
+	checkNoAuthoredSettings(d as Descriptor)
+	checkScriptPointsAccept(d as Descriptor)
 	// Before the id is claimed, so a refused declaration can be fixed and retried.
 	checkModeTitled(d as Descriptor)
+	assertMessageVerbFloors((d as Descriptor).sessionShape, d.id)
+	// A finding, not a refusal: the fallback is documented (inference), the
+	// omission is recorded, and `validate()` says it on every placement.
+	const reviewFinding = reviewFieldsFinding(d as Descriptor)
+	if (reviewFinding) registrationFindings.set(d.id, [reviewFinding])
+	else registrationFindings.delete(d.id)
 	types.set(d.id, d as Descriptor)
 	return d
 }
@@ -599,6 +884,61 @@ function checkWritePublishes(d: Descriptor): void {
 	)
 }
 
+/**
+ * `settings` is the substrate's slot, never an author's (R-9).
+ *
+ * Refused at registration rather than merged, because the two would collide
+ * at one address: the executor reads `config[key].settings.enabled` to skip
+ * an optional node and `.review` to gate a write, and an authored field of
+ * the same name would be read as that switch. It is also what lets the
+ * registry hash leave the projected slot out — a slot that is never authored
+ * is never a change to what an author declared.
+ */
+function checkNoAuthoredSettings(d: Descriptor): void {
+	if (!d.slots) return
+	if ('settings' in d.slots)
+		throw new Error(
+			`${d.id} declares a slot named 'settings'. That name is reserved for the substrate's ` +
+				`own slot — \`enabled\` on an optional node, \`review\` on a gated one — which the ` +
+				`registry projection declares and the executor reads. Name the slot for what it ` +
+				`holds ('parameters' for tunables).`,
+		)
+	// By kind as well as by name (U4 residual, 2026-09-16): a slot called
+	// anything else but declared `kind: 'settings'` would render through the
+	// substrate's branch of the panel and hash as authored material, which is
+	// the same collision one address over.
+	const byKind = Object.entries(d.slots).find(([, decl]) => decl?.kind === 'settings')
+	if (byKind)
+		throw new Error(
+			`${d.id} declares slot '${byKind[0]}' with kind 'settings'. That kind is the ` +
+				`substrate's — derived from \`optional\` and \`effects\`, never authored. Declare ` +
+				`'parameters' for tunables.`,
+		)
+}
+
+/**
+ * A script point that accepts nothing is refused (R-11; U4 residual 2026-09-16).
+ *
+ * `scriptPointsOf` folds an ABSENT `accepts` to text/transform for the
+ * pre-R-11 spelling, and reads an explicit `[]` as written — so the empty
+ * list has to be caught where the author is. A point nothing can attach to
+ * is a control with no effect wearing a contract: the panel would offer the
+ * hook and every kind would be refused at it.
+ */
+function checkScriptPointsAccept(d: Descriptor): void {
+	for (const p of d.scriptPoints ?? []) {
+		if (typeof p === 'string') continue
+		const accepts = (p as Partial<ScriptPointDecl>).accepts
+		if (Array.isArray(accepts) && accepts.length === 0)
+			throw new Error(
+				`${d.id} declares script point '${String((p as Partial<ScriptPointDecl>).key)}' with ` +
+					`accepts: []. A point that accepts no script kind is a hook nothing can attach to — ` +
+					`list the kinds it takes (e.g. ['${TEXT_TRANSFORM_KIND}']), or omit \`accepts\` ` +
+					`for the text-transform default.`,
+			)
+	}
+}
+
 const shapeIdOf = (s: unknown): string | undefined =>
 	typeof s === 'string' ? s : ((s as { id?: string } | undefined)?.id ?? undefined)
 
@@ -619,7 +959,7 @@ const hasDisplayText = (v: I18n | undefined): boolean =>
  * that instead of this throwing (cli/src/compiler.ts, W_MODE_NO_DESCRIPTION).
  */
 function checkModeTitled(d: Descriptor): void {
-	if (d.kind !== 'input' || !d.sessionShape) return
+	if (d.kind !== 'inlet' || !d.sessionShape) return
 	if (hasDisplayText(d.i18n?.name)) return
 	throw new Error(
 		`${d.id} declares a sessionShape but no i18n.name. A shape-bearing input type is a ` +
@@ -629,17 +969,24 @@ function checkModeTitled(d: Descriptor): void {
 	)
 }
 
-export function getType(id: string): Descriptor | undefined {
+export function getDefinition(id: string): Descriptor | undefined {
 	return types.get(id)
 }
-export function allTypes(): Descriptor[] {
+export function allDefinitions(): Descriptor[] {
 	return [...types.values()]
 }
-export function _clearTypes(): void {
+export function _clearDefinitions(): void {
 	types.clear()
+	registrationFindings.clear()
 }
 
-// ── describe* — one per kind, same shape, no modality anywhere ───────────────
+// ── describe*Definition — one per kind, same shape, no modality anywhere ─────
+//
+// `describeInletDefinition · describeQueryDefinition · describeTaskDefinition ·
+// describeOracleDefinition · describeOutletDefinition` (was `describeInput`,
+// `describeQueryType`, `describeTaskType`, `describeProvider`,
+// `describeConsumerTarget`; 2026-09-16). `describeEntryType` keeps *type*: the
+// entry-type word is not yet ruled (NOMENCLATURE §5).
 
 /**
  * ## Why every `describe*` is generic over its slots
@@ -660,7 +1007,7 @@ export function _clearTypes(): void {
  * declaration or re-hashes a type.
  *
  * ⚠ **`S` is constrained rather than `const`, and the difference is
- * deliberate.** `describeProvider` below needs the literal *values* — the
+ * deliberate.** `describeOracleDefinition` below needs the literal *values* — the
  * `optional: ['json_schema']` tuple `ctx.can()` narrows against — so it pays
  * for `const` with a validation done by intersection in the parameter. Names
  * are all `InputOf` needs, and an object literal keeps its own keys with or
@@ -668,7 +1015,7 @@ export function _clearTypes(): void {
  * and `extras: [...]` into readonly tuples, which `SlotDecl` declares as
  * mutable `string[]` and which several core input and task types use.
  */
-export const describeInput = <
+export const describeInletDefinition = <
 	O extends PortDecl,
 	I extends PortDecl,
 	const Id extends string,
@@ -676,12 +1023,11 @@ export const describeInput = <
 >(
 	d: Omit<Descriptor<O, I, Id>, 'kind' | 'slots'> & { slots?: S },
 ) =>
-	register({ ...d, kind: 'input' as const } as Descriptor<O, I, Id>) as Descriptor<
-		O,
-		I,
-		Id
-	> & { kind: 'input'; slots?: S }
-export const describeQueryType = <
+	register({ ...d, kind: 'inlet' as const } as Descriptor<O, I, Id>) as Descriptor<O, I, Id> & {
+		kind: 'inlet'
+		slots?: S
+	}
+export const describeQueryDefinition = <
 	O extends PortDecl,
 	I extends PortDecl,
 	const Id extends string,
@@ -689,12 +1035,11 @@ export const describeQueryType = <
 >(
 	d: Omit<Descriptor<O, I, Id>, 'kind' | 'slots'> & { slots?: S },
 ) =>
-	register({ ...d, kind: 'query' as const } as Descriptor<O, I, Id>) as Descriptor<
-		O,
-		I,
-		Id
-	> & { kind: 'query'; slots?: S }
-export const describeTaskType = <
+	register({ ...d, kind: 'query' as const } as Descriptor<O, I, Id>) as Descriptor<O, I, Id> & {
+		kind: 'query'
+		slots?: S
+	}
+export const describeTaskDefinition = <
 	O extends PortDecl,
 	I extends PortDecl,
 	const Id extends string,
@@ -702,13 +1047,12 @@ export const describeTaskType = <
 >(
 	d: Omit<Descriptor<O, I, Id>, 'kind' | 'slots'> & { slots?: S },
 ) =>
-	register({ ...d, kind: 'task' as const } as Descriptor<O, I, Id>) as Descriptor<
-		O,
-		I,
-		Id
-	> & { kind: 'task'; slots?: S }
+	register({ ...d, kind: 'task' as const } as Descriptor<O, I, Id>) as Descriptor<O, I, Id> & {
+		kind: 'task'
+		slots?: S
+	}
 /**
- * A Provider type.
+ * An oracle definition.
  *
  * `const S` on the slots is what makes `ctx.can()` safe: without it,
  * `optional: ['json_schema']` widens to `CapabilityId[]` at the declaration and
@@ -716,7 +1060,7 @@ export const describeTaskType = <
  * With it the literal tuple survives into `Pinned<D>` and out the other side, so
  * a binding asking about a capability its node never declared does not compile.
  */
-export const describeProvider = <
+export const describeOracleDefinition = <
 	O extends PortDecl,
 	I extends PortDecl,
 	const Id extends string,
@@ -732,12 +1076,12 @@ export const describeProvider = <
 		slots?: S & Record<string, SlotDecl>
 	},
 ) =>
-	register({ ...d, kind: 'provider' as const } as Descriptor<O, I, Id>) as Descriptor<
+	register({ ...d, kind: 'oracle' as const } as Descriptor<O, I, Id>) as Descriptor<
 		O,
 		I,
 		Id
-	> & { kind: 'provider'; slots?: S }
-export const describeConsumerTarget = <
+	> & { kind: 'oracle'; slots?: S }
+export const describeOutletDefinition = <
 	O extends PortDecl,
 	I extends PortDecl,
 	const Id extends string,
@@ -745,11 +1089,11 @@ export const describeConsumerTarget = <
 >(
 	d: Omit<Descriptor<O, I, Id>, 'kind' | 'slots'> & { slots?: S },
 ) =>
-	register({ ...d, kind: 'consumer' as const } as Descriptor<O, I, Id>) as Descriptor<
+	register({ ...d, kind: 'outlet' as const } as Descriptor<O, I, Id>) as Descriptor<
 		O,
 		I,
 		Id
-	> & { kind: 'consumer'; slots?: S }
+	> & { kind: 'outlet'; slots?: S }
 
 // ── Entry types (Part 1) ────────────────────────────────────────────────────
 //
@@ -948,17 +1292,16 @@ export interface EntryShape {
 
 /** What an author writes. Flat, because nesting the facets buys nothing here. */
 export interface EntryTypeDecl<Id extends string = string> extends EntryShape {
-	/** `core:entry/<name>@N`. The version is the pin, exactly as for node types. */
+	/** `core:entry/<name>@N`. The version is the pin, exactly as for node definitions. */
 	id: Id
 	i18n?: { name?: I18n; description?: I18n }
 }
 
 /** An entry type as it comes back out of the registry — the kind, narrowed. */
-export type EntryDescriptor<Id extends string = string> = Descriptor<
-	PortDecl,
-	PortDecl,
-	Id
-> & { kind: 'entry'; entryShape: EntryShape }
+export type EntryDescriptor<Id extends string = string> = Descriptor<PortDecl, PortDecl, Id> & {
+	kind: 'entry'
+	entryShape: EntryShape
+}
 
 const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$/
 
@@ -966,7 +1309,7 @@ const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$
  * Declare an entry type.
  *
  * The version lives in the id and therefore at every call site that names one,
- * which is the same convention `pin()` keeps for node types. What is
+ * which is the same convention `pin()` keeps for node definitions. What is
  * deliberately *not* here is a pinned constructor: `pin()` mints `v1()`, and
  * `v1()` builds a node a spec wires. An entry type is a row shape — there is
  * nothing to construct — so minting one would offer a call that can only ever
@@ -993,7 +1336,7 @@ export const describeEntryType = <const Id extends string>(
 
 /** Every entry type this build declares. */
 export const allEntryTypes = (): EntryDescriptor[] =>
-	allTypes().filter((t): t is EntryDescriptor => t.kind === 'entry')
+	allDefinitions().filter((t): t is EntryDescriptor => t.kind === 'entry')
 
 /**
  * Refusals at the author's line — an id, a namespace, and four closed
@@ -1008,7 +1351,7 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 		throw new Error(
 			`'${id}' is not a valid entry type id. The grammar is ` +
 				`'<namespace>:entry/<name>@<major>' — 'core:entry/world-lore@1'. The version ` +
-				`is the pin, exactly as for node types.`,
+				`is the pin, exactly as for node definitions.`,
 		)
 	/**
 	 * Core is the sole author of entry types, and this line is the switch.
@@ -1075,9 +1418,7 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 }
 
 const unknownRoles = (shape: { roles?: EntryRoles }): string[] =>
-	Object.keys(shape.roles ?? {}).filter(
-		(r) => !(ENTRY_ROLES as readonly string[]).includes(r),
-	)
+	Object.keys(shape.roles ?? {}).filter((r) => !(ENTRY_ROLES as readonly string[]).includes(r))
 
 /** A conformance finding. Every one names what to do, as everywhere here (15 §1.3). */
 export interface EntryFinding {

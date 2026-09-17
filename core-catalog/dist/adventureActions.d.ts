@@ -49,4 +49,81 @@ export declare const ADVENTURE_ADVANCE_TIME_SPEC_ID = "core:spec/adventure-advan
 export declare const ADVENTURE_ADVANCE_TIME_VERSION = "1.0.0";
 /** Let time pass: the world clock steps on, and the weather may turn with it. */
 export declare const adventureAdvanceTimeSpec: () => import("@serene-pub/sdk").SpecDocument;
+export declare const ADVENTURE_ASK_SPEC_ID = "core:spec/adventure-ask";
+export declare const ADVENTURE_ASK_VERSION = "1.0.0";
+export declare const ADVENTURE_ANSWER_SPEC_ID = "core:spec/adventure-answer";
+export declare const ADVENTURE_ANSWER_VERSION = "1.0.0";
+/**
+ * What the narrator's question comes back as, from `generate-json@1`.
+ *
+ * The addressee is a **name** rather than a participant reference: the
+ * model reads names off the transcript, and `make-choices@1` resolves the
+ * name against the cast into `character:<id>` at the write. A name that
+ * resolves to nobody leaves the block unaddressed — buttons the owner may
+ * press — rather than a broken form.
+ */
+export declare const ADVENTURE_ASK_SCHEMA: {
+    readonly type: 'object';
+    readonly properties: {
+        readonly addressee: {
+            readonly type: 'string';
+        };
+        readonly question: {
+            readonly type: 'string';
+        };
+        readonly options: {
+            readonly type: 'array';
+            readonly minItems: 2;
+            readonly maxItems: 4;
+            readonly items: {
+                readonly type: 'object';
+                readonly properties: {
+                    readonly key: {
+                        readonly type: 'string';
+                    };
+                    readonly label: {
+                        readonly type: 'string';
+                    };
+                };
+                readonly required: readonly ['key', 'label'];
+                readonly additionalProperties: false;
+            };
+        };
+    };
+    readonly required: readonly ['addressee', 'question', 'options'];
+    readonly additionalProperties: false;
+};
+/**
+ * **Ask**: the narrator puts a question with options to one of the cast.
+ *
+ * The worked form of R-15: the oracle writes `{ addressee, question, options }`,
+ * `make-choices` turns it into a `choices` block addressed to that cast
+ * member (`character:<id>`) whose options fire `answer`, and the narration
+ * row carries it. The host stamps the block with this spec's `answer` action
+ * and an id at the write; if the run's pinned portrayals say the AI portrays
+ * the addressee, it records `form-addressed` and the genre's answer pipeline
+ * (`core:spec/answer-form-adventure`) answers as them — else the block waits
+ * for the person portraying them to click. Either way the click, real or
+ * committed, runs `adventure-answer` below.
+ *
+ * Two actions on one spec, each its own thing to the venue model: `ask` is
+ * the composer's chip and `/ask`; `answer` is what the block's options fire,
+ * declared here so the block has an identity to be stamped with. `answer`
+ * is offered to any participant — the form's **addressee** is who may
+ * actually press it, decided per block at the fire.
+ */
+export declare const adventureAskSpec: () => import("@serene-pub/sdk").SpecDocument;
+/**
+ * **Answer**: what a form's option fires — the addressee's line, as the
+ * addressee. `read-answer` takes the press apart (the chosen option's label,
+ * who answered and their character row) and `create-message` posts the
+ * label as that participant's message. A person portraying the addressee
+ * clicks and the row is theirs; the answer pipeline commits an oracle's
+ * choice and the row is the AI's — same spec, same row, either way, which
+ * is the whole of "exactly as a click would".
+ *
+ * Declared on its own spec rather than folded into `ask`: a spec has one
+ * inlet and one graph, and asking and answering are two graphs.
+ */
+export declare const adventureAnswerSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=adventureActions.d.ts.map

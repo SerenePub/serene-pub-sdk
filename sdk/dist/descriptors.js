@@ -1,12 +1,162 @@
 /**
- * Descriptors — the shared-scope declaration of a type (01 §1, 04 §3).
+ * Descriptors — the shared-scope declaration of a **node definition** (01 §1, 04 §3;
+ * NOMENCLATURE §5 — *node type* is retired, ruled 2026-09-14).
  *
  * A descriptor is data: it can be listed, rendered and validated without loading
- * the hook that implements it. That is what lets the plugin manager and the editor
- * work from rows (10 §10.2).
+ * the handler that implements it. That is what lets the plugin manager and the
+ * editor work from rows (10 §10.2).
  */
 import { refuseUnlessIdentical } from './hash.js';
 export { fieldLabel, fieldAccepts } from './settings.js';
+/**
+ * The text-transform kind, spelled here rather than imported: scripts.ts
+ * imports from this module, and it is the one kind every point accepted
+ * before points could say otherwise.
+ */
+const TEXT_TRANSFORM_KIND = 'core:script:text/transform@1';
+/**
+ * A definition's interior points, every one in the full shape.
+ *
+ * The one reader of `scriptPoints` — the executor's broker and the registry
+ * projection both go through it — so the deprecated spellings are folded in
+ * one place: a bare string is a text-transform point, an object declared
+ * before points carried `accepts` (a plugin built against the previous
+ * release) is read the same way, and `i18n` becomes `label`. Returns copies;
+ * a caller may not edit the declaration through it.
+ */
+export function scriptPointsOf(d) {
+    return (d.scriptPoints ?? []).map((p) => {
+        if (typeof p === 'string')
+            return { key: p, accepts: [TEXT_TRANSFORM_KIND] };
+        const { i18n, ...point } = p;
+        // Folded only when `accepts` is ABSENT — the pre-R-11 spelling. An
+        // explicit `[]` is authored and reaches the reader as written; `register`
+        // refuses it (`checkScriptPointsAccept`), because a point accepting
+        // nothing is a hook nothing can attach to.
+        const accepts = Array.isArray(point.accepts) ? [...point.accepts] : [TEXT_TRANSFORM_KIND];
+        const label = point.label ?? i18n;
+        return {
+            ...point,
+            key: String(point.key),
+            accepts,
+            ...(label ? { label } : {}),
+        };
+    });
+}
+/**
+ * The message verbs no genre may remove (R-15, ruled 2026-09-15): a person
+ * can always stop a reply, branch a session and rewrite a line. Not keys of
+ * `SessionShape.messageVerbs`; a declaration naming one `false` is refused
+ * at registration (`assertMessageVerbFloors`).
+ */
+export const MESSAGE_VERB_FLOORS = ['stop', 'branch', 'edit'];
+/**
+ * The opt-in built-ins: core's writes a genre may switch off and never
+ * re-implement. Default on.
+ */
+export const MESSAGE_VERB_BUILT_INS = ['delete', 'hide', 'swipe'];
+/** The genre-declared content actions — built-in write + declared content. */
+export const MESSAGE_VERB_CONTENT = ['retry', 'continue', 'stepBack'];
+/** Every forbiddable verb, in the order the availability map reads them. */
+export const MESSAGE_VERBS = [...MESSAGE_VERB_CONTENT, ...MESSAGE_VERB_BUILT_INS];
+/**
+ * The five built-in writes (R-15), by the verb a person knows them as: the
+ * one-node spec core runs for each, and the outlet that spec ends in.
+ *
+ * Here rather than only in the core catalog because the **validator** needs
+ * them (U5b review W8): a built-in outlet performs the item rule's write —
+ * the handler judged who may act on which row before the run began — so a
+ * spec that is not the built-in's own placing one would perform that write
+ * with nobody having judged anything. `validate()` refuses the placement
+ * unless the document's id is one of `BUILTIN_SPEC_IDS`, and the host
+ * refuses the commit on the same test (defence in depth). A manifest
+ * permission letting a plugin spec place one is the future this leaves room
+ * for; it is not granted today.
+ */
+export const BUILTIN_SPEC_IDS = Object.freeze({
+    delete: 'core:spec/builtin-delete',
+    hide: 'core:spec/builtin-hide',
+    edit: 'core:spec/builtin-edit',
+    swipe: 'core:spec/builtin-swipe',
+    branch: 'core:spec/builtin-branch',
+});
+/** The outlet each built-in's spec ends in — `effects: 'write'`, every one. */
+export const BUILTIN_OUTLET_IDS = Object.freeze({
+    delete: 'core:outlet/delete-message@1',
+    hide: 'core:outlet/hide-message@1',
+    edit: 'core:outlet/edit-message@1',
+    swipe: 'core:outlet/swipe-message@1',
+    branch: 'core:outlet/branch-session@1',
+});
+/** Is this definition id one of the five built-in write outlets? */
+export const isBuiltInOutlet = (definitionId) => Object.values(BUILTIN_OUTLET_IDS).includes(definitionId);
+/** Is this spec id one of the five built-in specs — the only documents that may place a built-in outlet? */
+export const isBuiltInSpec = (specId) => Object.values(BUILTIN_SPEC_IDS).includes(specId);
+/**
+ * The form-answer pair (plans/29 R-15 *Forms*; 30 §U5d, built 2026-09-17):
+ * the inlet `core:event/form-addressed@1` lands on, and the outlet that
+ * commits an oracle's answer exactly as a click would. The outlet may be
+ * placed only in a document whose inlet is the form-addressed one
+ * (`validate()`; the host checks the same at the commit): it answers THE
+ * form the event carried, and a document reached by any other event has no
+ * form to answer — a spec placing it elsewhere would fire an action as
+ * somebody nobody asked.
+ */
+export const FORM_ADDRESSED_INLET_ID = 'core:inlet/form-addressed@1';
+export const ANSWER_FORM_OUTLET_ID = 'core:outlet/answer-form@1';
+/**
+ * The review-fields rule (R-15 *The review gate*; 30 §U5d): a definition
+ * with `effects: 'write' | 'external'` declares `review: { fields }` — what a
+ * reviewer may edit at the gate, `[]` when nothing (approve or refuse). A
+ * definition that declares none still registers and still gates — the form
+ * is then **inferred** from the whole payload, every field editable, which is
+ * the documented fallback a plugin definition gets — but `register()` records
+ * the omission as a finding and `validate()` reports it on every node bound
+ * to such a definition, so a shipped effectful definition without one is
+ * visible rather than silent. Every core definition declares one.
+ */
+export function reviewFieldsFinding(d) {
+    if (d.effects !== 'write' && d.effects !== 'external')
+        return null;
+    if (d.review && Array.isArray(d.review.fields))
+        return null;
+    return (`${d.id} declares effects: '${d.effects}' and no review.fields. An effectful definition ` +
+        `says which of its in-ports a reviewer may edit at the gate — review: { fields: ['text'] }, ` +
+        `or review: { fields: [] } when the gate is approve-or-refuse. Until it does, the form is ` +
+        `inferred from the whole payload and every field is editable, including any row id.`);
+}
+const registrationFindings = new Map();
+/**
+ * What `register()` noted about a definition without refusing it — today
+ * the review-fields rule alone. Keyed by definition id; empty for a clean
+ * one. Read by a host at boot to say so once, and by tests asserting that
+ * every shipped effectful definition declares its fields.
+ */
+export function definitionFindings(id) {
+    if (id !== undefined)
+        return [...(registrationFindings.get(id) ?? [])];
+    return [...registrationFindings.values()].flat();
+}
+/**
+ * A `messageVerbs` declaration that names a floor `false` is refused — with a
+ * sentence, at the declaration, where the author is. Shared by `register`
+ * (an inlet's `sessionShape`) and `genre()` (a genre's `shape`), so the two
+ * places a shape can be declared cannot disagree about what a floor is.
+ * Unknown keys are ignored, as the app's reader ignores them: a key this
+ * release does not know is not a floor.
+ */
+export function assertMessageVerbFloors(shape, who) {
+    const verbs = shape?.messageVerbs;
+    if (!verbs || typeof verbs !== 'object')
+        return;
+    const forbidden = MESSAGE_VERB_FLOORS.filter((floor) => verbs[floor] === false);
+    if (!forbidden.length)
+        return;
+    throw new Error(`${who} declares messageVerbs { ${forbidden.map((f) => `${f}: false`).join(', ')} }. ` +
+        `Stop, branch and edit are floors — present in every genre, never switched off ` +
+        `(R-15). A genre may switch off delete, hide or swipe, and may forbid retry, ` +
+        `continue or stepBack; drop the floor from the declaration.`);
+}
 const types = new Map();
 /**
  * A descriptor's display text, beyond the `i18n`/`description` pair every
@@ -28,7 +178,7 @@ const types = new Map();
  *
  * The re-declaration guard below is not the only thing that asks whether two
  * descriptors are the same content. Core projects every descriptor into a
- * `pipeline_type_registry` row and hashes it again there, and that hash decides
+ * `pipeline_definition_registry` row and hashes it again there, and that hash decides
  * whether an upgrading install may republish a frozen type version. The two
  * disagreed: core stripped `i18n` and `description` and hashed `label`, so
  * renaming a parameter was free here and a boot-time `TypeRegistryConflictError`
@@ -48,8 +198,18 @@ function register(d) {
     if (existing)
         refuseUnlessIdentical(existing, d, `duplicate type id: ${d.id}`, DESCRIPTOR_DISPLAY_KEYS);
     checkWritePublishes(d);
+    checkNoAuthoredSettings(d);
+    checkScriptPointsAccept(d);
     // Before the id is claimed, so a refused declaration can be fixed and retried.
     checkModeTitled(d);
+    assertMessageVerbFloors(d.sessionShape, d.id);
+    // A finding, not a refusal: the fallback is documented (inference), the
+    // omission is recorded, and `validate()` says it on every placement.
+    const reviewFinding = reviewFieldsFinding(d);
+    if (reviewFinding)
+        registrationFindings.set(d.id, [reviewFinding]);
+    else
+        registrationFindings.delete(d.id);
     types.set(d.id, d);
     return d;
 }
@@ -75,6 +235,55 @@ function checkWritePublishes(d) {
         `downstream port wanting raw ids fails at publish instead of writing a foreign key ` +
         `that dangles when the reviewer rejects (13 §7j-b).`);
 }
+/**
+ * `settings` is the substrate's slot, never an author's (R-9).
+ *
+ * Refused at registration rather than merged, because the two would collide
+ * at one address: the executor reads `config[key].settings.enabled` to skip
+ * an optional node and `.review` to gate a write, and an authored field of
+ * the same name would be read as that switch. It is also what lets the
+ * registry hash leave the projected slot out — a slot that is never authored
+ * is never a change to what an author declared.
+ */
+function checkNoAuthoredSettings(d) {
+    if (!d.slots)
+        return;
+    if ('settings' in d.slots)
+        throw new Error(`${d.id} declares a slot named 'settings'. That name is reserved for the substrate's ` +
+            `own slot — \`enabled\` on an optional node, \`review\` on a gated one — which the ` +
+            `registry projection declares and the executor reads. Name the slot for what it ` +
+            `holds ('parameters' for tunables).`);
+    // By kind as well as by name (U4 residual, 2026-09-16): a slot called
+    // anything else but declared `kind: 'settings'` would render through the
+    // substrate's branch of the panel and hash as authored material, which is
+    // the same collision one address over.
+    const byKind = Object.entries(d.slots).find(([, decl]) => decl?.kind === 'settings');
+    if (byKind)
+        throw new Error(`${d.id} declares slot '${byKind[0]}' with kind 'settings'. That kind is the ` +
+            `substrate's — derived from \`optional\` and \`effects\`, never authored. Declare ` +
+            `'parameters' for tunables.`);
+}
+/**
+ * A script point that accepts nothing is refused (R-11; U4 residual 2026-09-16).
+ *
+ * `scriptPointsOf` folds an ABSENT `accepts` to text/transform for the
+ * pre-R-11 spelling, and reads an explicit `[]` as written — so the empty
+ * list has to be caught where the author is. A point nothing can attach to
+ * is a control with no effect wearing a contract: the panel would offer the
+ * hook and every kind would be refused at it.
+ */
+function checkScriptPointsAccept(d) {
+    for (const p of d.scriptPoints ?? []) {
+        if (typeof p === 'string')
+            continue;
+        const accepts = p.accepts;
+        if (Array.isArray(accepts) && accepts.length === 0)
+            throw new Error(`${d.id} declares script point '${String(p.key)}' with ` +
+                `accepts: []. A point that accepts no script kind is a hook nothing can attach to — ` +
+                `list the kinds it takes (e.g. ['${TEXT_TRANSFORM_KIND}']), or omit \`accepts\` ` +
+                `for the text-transform default.`);
+    }
+}
 const shapeIdOf = (s) => typeof s === 'string' ? s : (s?.id ?? undefined);
 /** Is there any locale with actual text in it? */
 const hasDisplayText = (v) => typeof v === 'string'
@@ -91,7 +300,7 @@ const hasDisplayText = (v) => typeof v === 'string'
  * that instead of this throwing (cli/src/compiler.ts, W_MODE_NO_DESCRIPTION).
  */
 function checkModeTitled(d) {
-    if (d.kind !== 'input' || !d.sessionShape)
+    if (d.kind !== 'inlet' || !d.sessionShape)
         return;
     if (hasDisplayText(d.i18n?.name))
         return;
@@ -100,16 +309,23 @@ function checkModeTitled(d) {
         `title: i18n: { name: { en: '…' } }. Add a description there too; the packager ` +
         `warns when a mode ships without one.`);
 }
-export function getType(id) {
+export function getDefinition(id) {
     return types.get(id);
 }
-export function allTypes() {
+export function allDefinitions() {
     return [...types.values()];
 }
-export function _clearTypes() {
+export function _clearDefinitions() {
     types.clear();
+    registrationFindings.clear();
 }
-// ── describe* — one per kind, same shape, no modality anywhere ───────────────
+// ── describe*Definition — one per kind, same shape, no modality anywhere ─────
+//
+// `describeInletDefinition · describeQueryDefinition · describeTaskDefinition ·
+// describeOracleDefinition · describeOutletDefinition` (was `describeInput`,
+// `describeQueryType`, `describeTaskType`, `describeProvider`,
+// `describeConsumerTarget`; 2026-09-16). `describeEntryType` keeps *type*: the
+// entry-type word is not yet ruled (NOMENCLATURE §5).
 /**
  * ## Why every `describe*` is generic over its slots
  *
@@ -129,7 +345,7 @@ export function _clearTypes() {
  * declaration or re-hashes a type.
  *
  * ⚠ **`S` is constrained rather than `const`, and the difference is
- * deliberate.** `describeProvider` below needs the literal *values* — the
+ * deliberate.** `describeOracleDefinition` below needs the literal *values* — the
  * `optional: ['json_schema']` tuple `ctx.can()` narrows against — so it pays
  * for `const` with a validation done by intersection in the parameter. Names
  * are all `InputOf` needs, and an object literal keeps its own keys with or
@@ -137,11 +353,11 @@ export function _clearTypes() {
  * and `extras: [...]` into readonly tuples, which `SlotDecl` declares as
  * mutable `string[]` and which several core input and task types use.
  */
-export const describeInput = (d) => register({ ...d, kind: 'input' });
-export const describeQueryType = (d) => register({ ...d, kind: 'query' });
-export const describeTaskType = (d) => register({ ...d, kind: 'task' });
+export const describeInletDefinition = (d) => register({ ...d, kind: 'inlet' });
+export const describeQueryDefinition = (d) => register({ ...d, kind: 'query' });
+export const describeTaskDefinition = (d) => register({ ...d, kind: 'task' });
 /**
- * A Provider type.
+ * An oracle definition.
  *
  * `const S` on the slots is what makes `ctx.can()` safe: without it,
  * `optional: ['json_schema']` widens to `CapabilityId[]` at the declaration and
@@ -149,15 +365,15 @@ export const describeTaskType = (d) => register({ ...d, kind: 'task' });
  * With it the literal tuple survives into `Pinned<D>` and out the other side, so
  * a binding asking about a capability its node never declared does not compile.
  */
-export const describeProvider = (
+export const describeOracleDefinition = (
 // The slot validation lives in the PARAMETER, not in `S`'s constraint. A
 // constraint of `Record<string, SlotDecl>` widens each slot to SlotDecl's own
 // declared types, so `optional: ['json_schema']` arrives as
 // `readonly CapabilityId[]` and `ctx.can()` narrows to nothing. Intersecting
 // here validates just as strictly while leaving `S` the literal it was written
 // as — which is the whole basis of the typed probe.
-d) => register({ ...d, kind: 'provider' });
-export const describeConsumerTarget = (d) => register({ ...d, kind: 'consumer' });
+d) => register({ ...d, kind: 'oracle' });
+export const describeOutletDefinition = (d) => register({ ...d, kind: 'outlet' });
 // ── Entry types (Part 1) ────────────────────────────────────────────────────
 //
 // A lorebook row's *kind* is a declared, versioned type rather than the table
@@ -254,7 +470,7 @@ const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$
  * Declare an entry type.
  *
  * The version lives in the id and therefore at every call site that names one,
- * which is the same convention `pin()` keeps for node types. What is
+ * which is the same convention `pin()` keeps for node definitions. What is
  * deliberately *not* here is a pinned constructor: `pin()` mints `v1()`, and
  * `v1()` builds a node a spec wires. An entry type is a row shape — there is
  * nothing to construct — so minting one would offer a call that can only ever
@@ -277,7 +493,7 @@ export const describeEntryType = (d) => {
     });
 };
 /** Every entry type this build declares. */
-export const allEntryTypes = () => allTypes().filter((t) => t.kind === 'entry');
+export const allEntryTypes = () => allDefinitions().filter((t) => t.kind === 'entry');
 /**
  * Refusals at the author's line — an id, a namespace, and four closed
  * vocabularies.
@@ -290,7 +506,7 @@ function assertEntryShape(id, shape) {
     if (!ENTRY_TYPE_ID.test(id))
         throw new Error(`'${id}' is not a valid entry type id. The grammar is ` +
             `'<namespace>:entry/<name>@<major>' — 'core:entry/world-lore@1'. The version ` +
-            `is the pin, exactly as for node types.`);
+            `is the pin, exactly as for node definitions.`);
     /**
      * Core is the sole author of entry types, and this line is the switch.
      *

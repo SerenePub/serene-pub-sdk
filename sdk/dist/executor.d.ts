@@ -5,8 +5,9 @@
  * discriminated results including halt, per-run seed, timeouts that bound execution
  * but never waiting, consumption budgets, per-kind injection, and core-emitted events.
  */
-import type { SpecDocument } from './document.js';
-import type { Receipt, ScriptApplicationRecord } from './receipt.js';
+import { type SpecDocument } from './document.js';
+import { type Kind } from './descriptors.js';
+import type { Receipt, Outcome, ScriptApplicationRecord } from './receipt.js';
 import { type ConfigWorld } from './config.js';
 import type { CapabilityId, CapabilitySet, Grade, OptionalCapsOf } from './capabilities.js';
 import { type Reviewer } from './review.js';
@@ -87,14 +88,14 @@ export interface BranchResult {
     index: number;
     result: Result;
     /**
-     * route blocks only (20 §10): whether this branch's predicate selected it.
+     * junction clauses only (20 §10): whether this branch's predicate selected it.
      * A skipped branch publishes `halt('not selected')` with `fired: false`;
      * the union's `ok`/`values` read the fired branches. Absent on
      * async/map/loop, whose branches all ran by construction.
      */
     fired?: boolean;
 }
-/** What a block publishes. `main` aliases `branches` so `$ref(blockId)` works bare. */
+/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. */
 export interface BranchResults {
     branches: BranchResult[];
     main: BranchResult[];
@@ -113,11 +114,55 @@ export declare const isCommitted: (w: WriteResult) => w is Extract<WriteResult, 
     status: 'committed';
 }>;
 import type { LogLevel } from './hooks.js';
+import { type StatusText } from './status.js';
 export interface TaskCtx {
     /** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
     random?: () => number;
     signal: AbortSignal;
     progress(message: string): void;
+    /**
+     * What this node is doing, for the person watching (R-19).
+     *
+     * Callable at any point, by any kind: a query says *{speaker} is
+     * thinking*, the oracle five nodes later says *{speaker} is typing*. The
+     * text is a locale map with `{vars}`; the client resolves the locale, and
+     * `{speaker}` is the one variable the host fills (a handler is blind to
+     * who is speaking, and stays so). A status persists until the next one
+     * or the run's end; the host hears each change through
+     * `RunOptions.onStatus`.
+     *
+     * **Ephemeral** (F34): never a parameter, never declared on the
+     * definition, never a node row on the receipt. The one record the
+     * receipt keeps is the *last* status, and only when the run ended
+     * `halt`, `err` or `cancelled` — `Receipt.lastStatus`. A malformed text
+     * (no `en`) is dropped with a note on the node row rather than failing
+     * the node: a typo in a status must never cost somebody their reply.
+     *
+     * Always supplied by the executor; optional on the type for the same
+     * reason `reportCacheUsage` is — an older host, and every hand-built
+     * ctx in a test, is still a `TaskCtx` — so a handler calls it as
+     * `ctx.status?.(…)`. A status is progress, and progress must never be
+     * the reason a handler throws.
+     *
+     * ⏳ A process-transport plugin hook's ctx carries `{ input }` only
+     * today; `ctx.status` is core-handler only until the sandbox ctx is
+     * projected (U6). A plugin node calling it sees nothing throw — the
+     * optional-chain above is what makes that quiet rather than a crash —
+     * it just has no status to set.
+     */
+    status?(text: StatusText): void;
+    /**
+     * Which iteration of an `each` or `loop` body this invocation is —
+     * present only inside one, the `random` posture. `index` is 0-based;
+     * `count` is how many the `each` has and is absent inside a `loop`,
+     * whose `max` is a ceiling rather than a total. Identity for a status
+     * (*summarising part 2 of 5*), never a value: the item itself arrives on
+     * the port the spec wired.
+     */
+    iteration?: {
+        index: number;
+        count?: number;
+    };
     log(level: LogLevel, message: string, detail?: unknown): void;
     /**
      * This run's tokenizer, already loaded and therefore **synchronous**.
@@ -153,7 +198,7 @@ export interface TaskCtx {
 export interface QueryCtx extends TaskCtx {
     read(table: string, q?: unknown): unknown;
 }
-export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
+export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
     /** Material is injected here per call and never readable from config. */
     call(payload: unknown): Promise<unknown>;
     connectionMetadata: Record<string, unknown>;
@@ -174,7 +219,7 @@ export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends T
      * are opposite findings and a zero collapses them.
      *
      * Optional so that an older host, and every hand-built ctx in a test, is
-     * still a `ProviderCtx` — the binding calls it as `ctx.reportCacheUsage?.()`.
+     * still a `OracleCtx` — the binding calls it as `ctx.reportCacheUsage?.()`.
      */
     reportCacheUsage?(usage: {
         prompt?: number;
@@ -204,13 +249,13 @@ export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends T
      */
     can(id: Caps): Grade | false;
 }
-export interface ConsumerCtx extends TaskCtx {
+export interface OutletCtx extends TaskCtx {
     commit(payload: unknown): Promise<Record<string, unknown>>;
     emit(handle: string, payload: unknown): void;
 }
 export type Hook = (input: any, ctx: any) => Result | Promise<Result>;
 /**
- * A Provider binding, with `ctx.can()` narrowed to what its own type declared.
+ * An oracle handler, with `ctx.can()` narrowed to what its own definition declared.
  *
  * The one hop that matters. `pin` already carries the descriptor's literal type
  * through, so reading `optional` off it here is enough — there is no need to
@@ -231,9 +276,9 @@ export declare function providerBinding<D extends {
     }>;
 }>(_type: {
     descriptor: D;
-}): (fn: (input: any, ctx: ProviderCtx<OptionalCapsOf<D['slots']>>) => Result | Promise<Result>) => Hook;
+}): (fn: (input: any, ctx: OracleCtx<OptionalCapsOf<D['slots']>>) => Result | Promise<Result>) => Hook;
 export interface Bindings {
-    [typeIdAtVersion: string]: Hook;
+    [definitionIdAtVersion: string]: Hook;
 }
 export declare function seededRandom(seed: string): () => number;
 /**
@@ -244,8 +289,13 @@ export declare function seededRandom(seed: string): () => number;
 export interface NodeEvent {
     phase: 'start' | 'end';
     nodeKey: string;
-    typeId: string;
-    kind: string;
+    definitionId: string;
+    /**
+     * The node's kind, typed so a consumer that compares it against a
+     * spelling the vocabulary has since retired fails to compile rather than
+     * silently never matching (the U3 rename left one progress card dead).
+     */
+    kind: Kind;
     /** Invocations begun so far — a done-count, monotonic within the run. */
     seq: number;
     /**
@@ -264,7 +314,7 @@ export interface NodeEvent {
  */
 export interface ScriptHookSite {
     nodeKey: string;
-    typeId: string;
+    definitionId: string;
     slot: string;
     phase: 'before' | 'after';
     port: string;
@@ -281,6 +331,13 @@ export interface ScriptHookSite {
 export interface ScriptChainOutcome {
     value: unknown;
     applications: ScriptApplicationRecord[];
+    /**
+     * What the applier had to say about the chain AS A WHOLE, beside the
+     * per-link records — a value it declined to hand on, say. Folded into the
+     * node's `notes` on the receipt, so a reader finds it where the node's
+     * other asides are rather than under a link that did nothing wrong.
+     */
+    notes?: string[];
 }
 /**
  * The host's script engine, behind a seam (18 §4a, §7).
@@ -300,6 +357,13 @@ export type ScriptChainApplier = (site: ScriptHookSite,
 chain: unknown, 
 /** The current value at the site's port. */
 value: unknown) => Promise<ScriptChainOutcome>;
+/** A run's place in a tree of runs — see `RunOptions.lineage`. */
+export interface RunLineage {
+    parentRunId: string;
+    rootRunId: string;
+    /** 0 for a root; a child is its parent's depth plus one. */
+    depth: number;
+}
 export interface RunOptions {
     input: unknown;
     bindings: Bindings;
@@ -309,9 +373,26 @@ export interface RunOptions {
     triggerSource?: Receipt['triggerSource'];
     triggerRef?: string;
     actorUserId?: string;
+    /**
+     * Who portrays each participant this run concerns — the host's answer,
+     * resolved before `run` is called and stamped on the receipt at
+     * construction, so it is pinned before the first node (R-21 (4)). The
+     * executor never reads it and no node can: a definition that needs the
+     * answer declares an in-port and the host wires it.
+     */
+    portrayals?: Receipt['portrayals'];
+    /**
+     * Where this run stands in a tree of runs (01 §8 *lineage*): the run
+     * that dispatched it, the root of the tree, and how deep. Stamped on the
+     * receipt at construction as `parentRunId`, `rootRunId` and `depth`; a
+     * run nothing dispatched is its own root at depth 0. The host enforces
+     * the per-root caps at dispatch (`form-addressed`, U5d) and reads these
+     * back off the receipt; the executor only records them.
+     */
+    lineage?: RunLineage;
     /** Instance ceiling — config may not exceed it (F36). */
     timeoutCeilingMs?: number;
-    /** Force every block sequential, as an admin may (01 §4). */
+    /** Force every clause sequential, as an admin may (01 §4). */
     forceSequential?: boolean;
     budget?: {
         tokens?: number;
@@ -341,6 +422,20 @@ export interface RunOptions {
      */
     onNode?: (event: NodeEvent) => void;
     /**
+     * A node set its status (R-19) — `ctx.status` on any kind's ctx.
+     *
+     * Fired with the node's key and the text as the handler wrote it: the
+     * host fills `{speaker}` (`HOST_FILLED_STATUS_VARS`), routes the text to
+     * the run's live row, its progress card and the session list, and
+     * resolves nothing — the locale is the client's. Fired only when the
+     * text CHANGES: a second node repeating the status the first set is not
+     * a new status, and six parallel retrieval reads all saying *thinking*
+     * are one status, not six. Ephemeral like `onNode` (F34): not recorded,
+     * except as `Receipt.lastStatus` on a run that did not end `ok`. An
+     * observer that throws is its own problem.
+     */
+    onStatus?: (nodeKey: string, text: StatusText) => void;
+    /**
      * Time this run sat in the admin-visible queue before being dequeued (13 §3).
      * Recorded, and deliberately **not** added to any elapsed figure: queue wait
      * consumes no budget (F13) and trips no timeout (F36) — a run's clock starts
@@ -368,16 +463,70 @@ export interface RunOptions {
     compactHaltReceipts?: boolean;
     /**
      * Debug mode in chat: run normally, then **halt at the pre-call substrate** instead of
-     * invoking the Provider — after the input resolves and the payload is formed, so the
+     * invoking the oracle — after the input resolves and the payload is formed, so the
      * numbers shown are the numbers that would have been sent (src/preview.ts).
      *
-     * `true` stops at the first Provider **on the spine**; pass `atNode` to override. The
+     * `true` stops at the first oracle **on the spine**; pass `atNode` to override. The
      * preview costs whatever ran before it, including the embedding call inside the gather
      * block — a preview that skipped retrieval would show a context nobody would get.
+     *
+     * A preview is a **dry run** unless `dry` says otherwise — see there. The
+     * pipeline creates its own reply row now (R-17), as an outlet placed before
+     * the oracle; a preview that committed it would leave a row behind for
+     * every token estimate.
      */
     preview?: boolean | {
         atNode?: string;
     };
+    /**
+     * Perform no writes (R-21 (1), F36).
+     *
+     * Every outlet still runs — its binding is invoked, its payload is formed,
+     * the review gate still sees it — but `ctx.commit` returns a **synthetic
+     * id** (`dry:<nodeKey>`) instead of reaching the host, `ctx.emit` reaches
+     * nothing, the node row is marked `dry: true`, and the event the write
+     * would have caused is recorded flagged `dry` rather than as emitted.
+     * Downstream nodes read the synthetic id exactly as they would a real one,
+     * so the run's shape is the shape a real run has.
+     *
+     * Defaults to `true` when `preview` is set and `false` otherwise. Pass it
+     * explicitly to run a document to completion without leaving anything
+     * behind — the oracle is still called, because nothing here is a stand-in
+     * for the model.
+     *
+     * ⚠ **For a plugin author:** a preview of your spec performs none of its
+     * writes, including any outlet you placed *before* the node the preview
+     * halts at — that outlet runs, its binding is invoked, and its commit is
+     * a synthetic id. If a downstream node in your spec needs a real row to
+     * exist during a preview, that is a design to reconsider rather than a
+     * flag to flip: there is no per-outlet exemption, and `dry: false` on a
+     * preview is the host's call, not the document's.
+     */
+    dry?: boolean;
+    /**
+     * The run has ended, whatever way it ended.
+     *
+     * Called exactly once, after the receipt is final and before it is
+     * returned, with the outcome and the run's **live row** — the row the most
+     * recent live-row outlet committed (see `Descriptor.liveRow`). This is the
+     * one seam a host has for the guarantee no node can give: a run stopped
+     * mid-stream has nothing left to run, so the row its placeholder created
+     * would stay generating forever unless the host finalises it here. The
+     * partial text is the host's — it owns the stream — which is why the
+     * summary carries the row and not the text.
+     *
+     * Awaited, so a host can finish its row before the receipt is stored. A
+     * throwing hook is absorbed: finalising a row is the host's promise to its
+     * users, and a broken promise must not also cost the receipt.
+     *
+     * **Whatever way it ended** includes the run throwing. A host seam that
+     * fails outside a binding — a reviewer, a slot resolution — propagates
+     * out of `run`, and before this was a `finally` it propagated past the
+     * hook, so the placeholder a fresh turn had made stayed generating with
+     * nobody left to finish it. Now the hook fires first with `kind: 'err'`
+     * and `error` set to the thrown object, and the throw continues after it.
+     */
+    onRunEnd?: (end: RunEnd) => void | Promise<void>;
     /**
      * Which tokenizer this run budgets with — an **id**, not a function.
      *
@@ -412,7 +561,7 @@ export interface RunOptions {
      *
      * Absent, every service is the in-memory stand-in this draft has always used —
      * which is what keeps the SDK's own suite hermetic. Present, a Query's `read`
-     * reaches a real database and a Consumer's `commit` writes a real row.
+     * reaches a real database and an outlet's `commit` writes a real row.
      */
     host?: HostServices;
 }
@@ -426,23 +575,31 @@ export interface RunOptions {
  * substrate that the review gate, the budget and the receipt all sit in.
  *
  * So the shape here is deliberate: **a binding describes the effect and the host
- * performs it.** A Consumer returns what it wants written, and `commit` writes it. That
- * is already how a sidecar Consumer has to work (F19 — no DB channel across a process
- * boundary), and having in-process and out-of-process Consumers obey the same rule
+ * performs it.** An outlet returns what it wants written, and `commit` writes it. That
+ * is already how a sidecar outlet has to work (F19 — no DB channel across a process
+ * boundary), and having in-process and out-of-process outlets obey the same rule
  * means the review gate sees the same thing in both cases: a payload, before anything
  * happened.
  */
 export interface HostServices {
     /** Scoped read for a Query. The node is passed so the host can enforce scope (F30). */
     read?(table: string, query: unknown, node: NodeRef): unknown | Promise<unknown>;
-    /** Perform a Consumer's described write and return the row identity. */
+    /** Perform an outlet's described write and return the row identity. */
     commit?(payload: unknown, node: NodeRef): Promise<Record<string, unknown>>;
-    /** Dispatch a Provider call. Credentials are injected here and never readable (F18). */
-    call?(payload: unknown, node: NodeRef): Promise<unknown>;
+    /**
+     * Dispatch an oracle call. Credentials are injected here and never readable (F18).
+     *
+     * `run` carries the run-level facts a call may need and a node may not
+     * see — today the **live row** (R-21 (2)). Streaming is run-level: the
+     * oracle publishes its stream and stays blind to messages; the host routes
+     * it to the row this run's placeholder created, if there is one. Passed on
+     * every call rather than kept anywhere a binding could read.
+     */
+    call?(payload: unknown, node: NodeRef, run: RunFacts): Promise<unknown>;
     /** Core emits; a node only names the handle (F8). */
     emit?(handle: string, payload: unknown, node: NodeRef): void;
     /**
-     * Connection **metadata** for a Provider — readable. Material is never returned
+     * Connection **metadata** for an oracle — readable. Material is never returned
      * here; it is applied inside `call` and never crosses into a binding (F18).
      */
     connection?(node: NodeRef): {
@@ -459,9 +616,41 @@ export interface HostServices {
 }
 export interface NodeRef {
     key: string;
-    typeId: string;
-    typeVersion: number;
+    definitionId: string;
+    definitionVersion: number;
     kind: string;
+}
+/**
+ * What the executor knows about the run as a whole, handed to the host.
+ *
+ * **Not** a value: nothing here lands on a port or in a node's input, which
+ * is what keeps the oracle blind to messages. A binding asks for text and gets
+ * text; the host, which is the one party that can write a row, is told which
+ * row this run is currently filling.
+ */
+export interface RunFacts {
+    /**
+     * The row the most recent live-row outlet committed in this run
+     * (`Descriptor.liveRow`), or undefined when none has. A create → update
+     * pair on one row inside one run is one primary row (01 §7 restated, R-17);
+     * this is that row while the run is between the two.
+     */
+    liveRow?: string | number;
+    /** Whether this run performs writes — see `RunOptions.dry`. */
+    dry: boolean;
+}
+/** What `RunOptions.onRunEnd` is told. */
+export interface RunEnd extends RunFacts {
+    kind: Outcome;
+    receipt: Receipt;
+    /**
+     * What the run THREW, when it ended by throwing rather than by a node's
+     * verdict — a host seam that failed outside any binding's try (a reviewer
+     * that could not push its form, a slot that would not resolve). `kind` is
+     * `err` and the receipt carries the message; this is the object, for a
+     * host whose redaction rule needs the class. Absent on every other end.
+     */
+    error?: unknown;
 }
 export declare function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>;
 /** replay(receipt) — deterministic, never re-infers (F16). */

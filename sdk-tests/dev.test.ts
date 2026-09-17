@@ -14,7 +14,7 @@ import {
 	slot,
 	ok,
 	pin,
-	describeTaskType,
+	describeTaskDefinition,
 	S,
 	defineExtension,
 	pipelineHook,
@@ -28,14 +28,14 @@ import * as C from '@serene-pub/contracts'
 import { publish as publishDoc } from './helpers.js'
 
 const rollA = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'dev.demo:roll@1',
 		timeoutMs: 200,
 		ports: { in: { n: S.json }, out: { main: S.json } },
 	}),
 )
 const rollB = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'dev.demo:roll-two@1',
 		timeoutMs: 200,
 		ports: { in: { n: S.json }, out: { main: S.json, total: S.json } },
@@ -44,10 +44,10 @@ const rollB = pin(
 
 const pipeline = (id: string) =>
 	spec(id, { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-		.provider('generate', ($) =>
+		.oracle('generate', ($) =>
 			C.generateText.v1({
 				context: $.prompt.context,
 				connection: slot.connection(),
@@ -198,9 +198,9 @@ describe('109 · dev overlay and hot reload', () => {
 describe('110 · host services', () => {
 	const chain = () =>
 		spec('host:demo', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.consume('save', ($) => C.createMessage.v1({ text: $.input.text }))
+			.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
 
 	test("a Query's read reaches the host, and the host sees which node asked", async () => {
 		const seen: any[] = []
@@ -208,13 +208,13 @@ describe('110 · host services', () => {
 			input: { text: 'hi', sessionScope: { sessionId: 7 } },
 			seed: 'seed:h',
 			bindings: {
-				'core:input/user-message@1': async (i: any) => ok(i),
+				'core:inlet/user-message@1': async (i: any) => ok(i),
 				'core:query/session-history@1': async (i: any, ctx: any) =>
 					ok({
 						main: ctx.read('chat_messages', i.scope),
 						messages: ctx.read('chat_messages', i.scope),
 					}),
-				'core:consumer/create-message@1': async (i: any, ctx: any) =>
+				'core:outlet/create-message@1': async (i: any, ctx: any) =>
 					ok(await ctx.commit(i)),
 			},
 			host: {
@@ -240,9 +240,9 @@ describe('110 · host services', () => {
 			input: { text: 'hi', sessionScope: { sessionId: 7 } },
 			seed: 'seed:h',
 			bindings: {
-				'core:input/user-message@1': async (i: any) => ok(i),
+				'core:inlet/user-message@1': async (i: any) => ok(i),
 				'core:query/session-history@1': async () => ok({ main: [], messages: [] }),
-				'core:consumer/create-message@1': async (i: any, ctx: any) =>
+				'core:outlet/create-message@1': async (i: any, ctx: any) =>
 					ok(await ctx.commit(i)),
 			},
 			host: {
@@ -268,10 +268,10 @@ describe('110 · host services', () => {
 			input: { text: 'hi', sessionScope: {} },
 			seed: 'seed:h',
 			bindings: {
-				'core:input/user-message@1': async (i: any) => ok(i),
+				'core:inlet/user-message@1': async (i: any) => ok(i),
 				'core:query/session-history@1': async (i: any, ctx: any) =>
 					ok({ main: ctx.read('x'), messages: [] }),
-				'core:consumer/create-message@1': async (i: any, ctx: any) =>
+				'core:outlet/create-message@1': async (i: any, ctx: any) =>
 					ok(await ctx.commit(i)),
 			},
 		})

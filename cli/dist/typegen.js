@@ -31,7 +31,7 @@ const ident = (id) => {
 function specOptionsType(doc, typeOf) {
     const nodes = [];
     for (const node of doc.nodes) {
-        const surface = typeOf(node.typeId, node.typeVersion);
+        const surface = typeOf(node.definitionId, node.definitionVersion);
         const slots = surface?.slots ?? {};
         const slotLines = [];
         for (const [slotName, slot] of Object.entries(slots)) {

@@ -40,9 +40,9 @@ export interface CoreLayoutPreset {
  * **Middle.** `world-state` is a strip above the messages — where you are, what
  * time it is, what the sky is doing — because it is the one piece of state that
  * is about the scene rather than about a person, and it belongs where the scene
- * is. Messages grow into whatever is left; the composer stays pinned to the
- * bottom. Both of those are `required`, which is the chat's anchor guarantee:
- * they can be moved and never removed.
+ * is. `messages` — the log and the field you write into, one widget — fills
+ * everything under it, anchored to all four edges. It is `required`, which is
+ * the conversation's anchor guarantee: it can be moved and never removed.
  *
  * **Right, docked and pinned.** Scene Portraits sourced from the SCENE rather
  * than from pinned images, with `bars: true` so each face carries its own health
@@ -86,15 +86,12 @@ export const ADVENTURE_LAYOUT: Record<string, unknown> = {
 				zone: "middle",
 				order: 1,
 				size: { w: "grow", h: "grow" },
-				anchor: { top: true, left: true, right: true },
-				required: true
-			},
-			{
-				id: "composer",
-				zone: "middle",
-				order: 2,
-				size: { w: "grow", h: "fixed" },
-				anchor: { bottom: true, left: true, right: true },
+				anchor: {
+					top: true,
+					bottom: true,
+					left: true,
+					right: true
+				},
 				required: true
 			}
 		]

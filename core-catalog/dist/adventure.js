@@ -14,7 +14,7 @@
  *
  * The planner and the keeper produce documents, and the shape of the REQUEST is
  * what makes that true rather than the wording of the instructions. They pin
- * `core:provider/generate-json@1`: no speaker, no trailing line to continue, and
+ * `core:oracle/generate-json@1`: no speaker, no trailing line to continue, and
  * the answer's schema on the wire wherever the connection can carry one. Their
  * transcript is `core:task/prose-transcript@1` for the same reason, in the one
  * place a rendered prompt cannot be repaired afterwards.
@@ -60,12 +60,12 @@
  *    Interleaving beat by beat would need a node that takes an order and a set
  *    of texts, which is a new declaration this lane did not need to make.
  */
-import { compile, slot, spec, sessionEvents } from "@serene-pub/sdk";
-import * as C from "@serene-pub/contracts";
-import { adventureGenre } from "./genres.js";
+import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk';
+import * as C from '@serene-pub/contracts';
+import { adventureGenre } from './genres.js';
 /* ── create ─────────────────────────────────────────────────────────────── */
-export const ADVENTURE_CREATE_SPEC_ID = "core:spec/adventure-create";
-export const ADVENTURE_CREATE_VERSION = "1.0.0";
+export const ADVENTURE_CREATE_SPEC_ID = 'core:spec/adventure-create';
+export const ADVENTURE_CREATE_VERSION = '1.0.0';
 /**
  * The genre's one required member: what happens when an Adventure session is
  * created.
@@ -94,31 +94,30 @@ export const ADVENTURE_CREATE_VERSION = "1.0.0";
 export const adventureCreateSpec = () => compile(spec(ADVENTURE_CREATE_SPEC_ID, {
     version: ADVENTURE_CREATE_VERSION,
     taxonomy: {
-        zone: "session",
-        role: "create",
-        genre: adventureGenre.id
+        role: 'create',
+        genre: adventureGenre.id,
     },
     genre: {
         name: adventureGenre.name,
         family: adventureGenre.family,
         description: adventureGenre.description,
         shape: adventureGenre.shape,
-        events: adventureGenre.events
-    }
+        events: adventureGenre.events,
+    },
 })
-    .input("input", C.sessionCreated.v1(), {
+    .inlet('input', C.sessionCreated.v1(), {
     genre: adventureGenre,
-    event: sessionEvents.sessionCreated
+    event: sessionEvents.sessionCreated,
 })
-    .query("collect", ($) => C.sessionGreetings.v1({ scope: $.input.sessionScope }))
-    .consume("seed", ($) => C.seedGreetings.v1({
+    .query('collect', ($) => C.sessionGreetings.v1({ scope: $.input.sessionScope }))
+    .outlet('seed', ($) => C.seedGreetings.v1({
     greetings: $.collect.greetings,
-    channel: adventureGenre.shape?.greeting?.channel ?? "main"
+    channel: adventureGenre.shape?.greeting?.channel ?? 'main',
 }))
     .build());
 /* ── respond ────────────────────────────────────────────────────────────── */
-export const ADVENTURE_RESPOND_SPEC_ID = "core:spec/adventure-respond";
-export const ADVENTURE_RESPOND_VERSION = "1.0.0";
+export const ADVENTURE_RESPOND_SPEC_ID = 'core:spec/adventure-respond';
+export const ADVENTURE_RESPOND_VERSION = '1.0.0';
 /* ── Why the narrator uses the shipped story string like everybody else ─────
  *
  * This genre shipped an ASSEMBLY template of its own for the narrator, opening
@@ -144,7 +143,7 @@ const MAX_SPEAKERS = 4;
 /* ── The two schemas ────────────────────────────────────────────────────────
  *
  * What the planner and the keeper must answer with, as JSON Schema, travelling
- * on `core:provider/generate-json@1`'s `schema` port.
+ * on `core:oracle/generate-json@1`'s `schema` port.
  *
  * ⚠ **Contract, not decoration, in both directions.** The key names here are the
  * key names the `path` parameters select and the shapes
@@ -168,68 +167,60 @@ const MAX_SPEAKERS = 4;
  * becomes the slot's own type, which is the step that knows which slot it is.
  */
 /** The four world values the keeper may set, by the names the prompts use. */
-const TRACKED_SLOTS = [
-    "hp",
-    "stamina",
-    "mood",
-    "trust",
-    "location",
-    "time-of-day",
-    "weather"
-];
+const TRACKED_SLOTS = ['hp', 'stamina', 'mood', 'trust', 'location', 'time-of-day', 'weather'];
 export const ADVENTURE_PLAN_SCHEMA = {
-    type: "object",
+    type: 'object',
     properties: {
-        beats: { type: "array", items: { type: "string" } },
+        beats: { type: 'array', items: { type: 'string' } },
         speakers: {
-            type: "array",
+            type: 'array',
             items: {
-                type: "object",
+                type: 'object',
                 properties: {
-                    name: { type: "string" },
-                    intent: { type: "string" }
+                    name: { type: 'string' },
+                    intent: { type: 'string' },
                 },
-                required: ["name", "intent"],
-                additionalProperties: false
-            }
+                required: ['name', 'intent'],
+                additionalProperties: false,
+            },
         },
         worldHints: {
-            type: "object",
+            type: 'object',
             properties: {
-                location: { type: "string" },
+                location: { type: 'string' },
                 timeOfDay: {
-                    type: "string",
-                    enum: ["morning", "day", "dusk", "night"]
+                    type: 'string',
+                    enum: ['morning', 'day', 'dusk', 'night'],
                 },
                 weather: {
-                    type: "string",
-                    enum: ["clear", "fog", "rain", "storm", "snow"]
-                }
+                    type: 'string',
+                    enum: ['clear', 'fog', 'rain', 'storm', 'snow'],
+                },
             },
-            required: ["location", "timeOfDay", "weather"],
-            additionalProperties: false
+            required: ['location', 'timeOfDay', 'weather'],
+            additionalProperties: false,
         },
-        needsLookup: { type: "boolean" }
+        needsLookup: { type: 'boolean' },
     },
-    required: ["beats", "speakers", "worldHints", "needsLookup"],
-    additionalProperties: false
+    required: ['beats', 'speakers', 'worldHints', 'needsLookup'],
+    additionalProperties: false,
 };
 export const ADVENTURE_KEEPER_SCHEMA = {
-    type: "object",
+    type: 'object',
     properties: {
         /** A tracked value the scene changed. Empty is the ordinary turn. */
         values: {
-            type: "array",
+            type: 'array',
             items: {
-                type: "object",
+                type: 'object',
                 properties: {
-                    owner: { type: "string" },
-                    slot: { type: "string", enum: TRACKED_SLOTS },
-                    value: { type: "string" }
+                    owner: { type: 'string' },
+                    slot: { type: 'string', enum: TRACKED_SLOTS },
+                    value: { type: 'string' },
                 },
-                required: ["owner", "slot", "value"],
-                additionalProperties: false
-            }
+                required: ['owner', 'slot', 'value'],
+                additionalProperties: false,
+            },
         },
         /**
          * Something changing hands, by the entry id the lore gave it.
@@ -239,35 +230,46 @@ export const ADVENTURE_KEEPER_SCHEMA = {
          * The two are joined again by the `path` parameter naming both.
          */
         possessions: {
-            type: "array",
+            type: 'array',
             items: {
-                type: "object",
+                type: 'object',
                 properties: {
-                    owner: { type: "string" },
-                    entryId: { type: "integer" },
-                    delta: { type: "integer" }
+                    owner: { type: 'string' },
+                    entryId: { type: 'integer' },
+                    delta: { type: 'integer' },
                 },
-                required: ["owner", "entryId", "delta"],
-                additionalProperties: false
-            }
-        }
+                required: ['owner', 'entryId', 'delta'],
+                additionalProperties: false,
+            },
+        },
     },
-    required: ["values", "possessions"],
-    additionalProperties: false
+    required: ['values', 'possessions'],
+    additionalProperties: false,
 };
 export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID, {
     version: ADVENTURE_RESPOND_VERSION,
     taxonomy: {
-        zone: "session",
-        role: "primary",
-        genre: adventureGenre.id
-    }
+        role: 'primary',
+        genre: adventureGenre.id,
+    },
 })
-    .on("core:event/message-created@1")
-    .input("input", C.userMessage.v1(), {
+    .inlet('input', C.userMessage.v1(), {
     genre: adventureGenre,
-    event: sessionEvents.messageRespond
+    event: sessionEvents.messageRespond,
 })
+    /**
+     * The reply row, created by the pipeline that fills it (R-17) —
+     * see `respond`'s `placeholder`. Four agents run before `save`
+     * has anything to write, and this is what a player watches
+     * meanwhile: the narrator's prose streams into it, the planner's
+     * and keeper's JSON do not (core routes one oracle's stream to the
+     * live row — the one nearest the write).
+     */
+    .outlet('placeholder', ($) => C.createMessage.v1({
+    generating: true,
+    characterId: $.input.characterId,
+    row: $.input.messageId,
+}))
     /**
      * One retrieval pass, shared by all four agents.
      *
@@ -277,31 +279,35 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * and every agent below is handed the same answer rather than each
      * asking again and getting three slightly different worlds.
      */
-    .async("gather", { mode: "parallel" }, (b) => b
-    .chain("history", (c) => c.query("read", ($) => C.sessionHistory.v1({
+    .gather('gather', { mode: 'parallel' }, (b) => b
+    .chain('history', (c) => c.query('read', ($) => C.sessionHistory.v1({
     scope: $.input.sessionScope,
-    params: slot.params()
+    params: slot.params(),
 })))
-    .chain("worldLore", (c) => c.query("read", ($) => C.worldLore.v1({
+    .chain('worldLore', (c) => c.query('read', ($) => C.worldLore.v1({
     scope: $.input.sessionScope,
-    params: slot.params()
+    params: slot.params(),
 })))
-    .chain("characterLore", (c) => c.query("read", ($) => C.characterLore.v1({
+    .chain('characterLore', (c) => c.query('read', ($) => C.characterLore.v1({
     scope: $.input.sessionScope,
-    params: slot.params()
+    // Settings live on the world-lore lane (R-7 P2, one owner per
+    // setting per spec) — the three lanes declare the same seven knobs.
+    params: slot.params({ node: 'gather.worldLore.read' }),
 })))
-    .chain("historyEntries", (c) => c.query("read", ($) => C.historyEntries.v1({
+    .chain('historyEntries', (c) => c.query('read', ($) => C.historyEntries.v1({
     scope: $.input.sessionScope,
-    params: slot.params()
+    // Settings live on the world-lore lane (R-7 P2, one owner per
+    // setting per spec) — the three lanes declare the same seven knobs.
+    params: slot.params({ node: 'gather.worldLore.read' }),
 })))
-    .chain("cast", (c) => c.query("read", ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
+    .chain('cast', (c) => c.query('read', ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
     /**
      * The bars, the chips and the inventory, already resolved
      * down session → lorebook → card → declaration default.
      * This is the port the whole genre turns on: three of the
      * four agents read it, and the fourth writes to it.
      */
-    .chain("state", (c) => c.query("read", ($) => C.sessionState.v1({ scope: $.input.sessionScope }))))
+    .chain('state', (c) => c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))))
     /**
      * The window, taken from the step whose prose actually fills it.
      *
@@ -312,29 +318,36 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * allocation; if an admin points them at a smaller model, the only
      * cost is a prompt smaller than it had to be.
      */
-    .task("contextBudget", ($) => C.contextBudget.v1({
-    sampling: slot.samplingOf("scene"),
-    params: slot.params()
+    .task('contextBudget', ($) => C.contextBudget.v1({
+    sampling: slot.samplingOf('scene'),
+    // The other half of the same pair, for the model's own
+    // window (0114) — see `respond`.
+    connection: slot.connectionOf('scene'),
+    params: slot.params(),
 }))
-    .task("lore", ($) => C.concatCandidates.v1({
+    .task('lore', ($) => C.concatCandidates.v1({
     sources: [
+        // The conversation's band intent alone — see `respond`'s
+        // `lore` node (R-7 P5): it reserves the transcript's slice
+        // of the window; the lanes' own intents ride in `main`.
+        $.gather.history.read.band,
         $.gather.worldLore.read.main,
         $.gather.characterLore.read.main,
-        $.gather.historyEntries.read.main
-    ]
+        $.gather.historyEntries.read.main,
+    ],
 }))
-    .task("rank", ($) => C.rankHybrid.v1({
+    .task('rank', ($) => C.rankHybrid.v1({
     candidates: $.lore.candidates,
     budget: $.contextBudget.available,
-    params: slot.params()
+    params: slot.params(),
 }))
     /* ── plan ───────────────────────────────────────────────────── */
-    .task("planContext", ($) => C.buildPlannerContext.v1({
+    .task('planContext', ($) => C.buildPlannerContext.v1({
     cast: $.gather.cast.read.cast,
     state: $.gather.state.read.state,
     fields: $.input.fields,
     prompts: slot.prompts(),
-    variables: slot.variables()
+    variables: slot.variables(),
 }))
     /**
      * The conversation the two JSON stages read: prose, and no turn to
@@ -354,12 +367,12 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * an open block inside one string and nothing downstream can take it
      * back out.
      */
-    .task("lines", ($) => C.proseTranscript.v1({
+    .task('lines', ($) => C.proseTranscript.v1({
     messages: $.gather.history.read.messages,
     cast: $.gather.cast.read.cast,
-    templateContext: $.planContext.templateContext
+    templateContext: $.planContext.templateContext,
 }))
-    .task("planPrompt", ($) => C.assemble.v2({
+    .task('planPrompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
@@ -369,10 +382,10 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     template: slot.template(),
     // The planner's authored text, by reference: one prompt,
     // written once, on the node that owns the surface.
-    prompts: slot.prompts({ node: "planContext" }),
+    prompts: slot.prompts({ node: 'planContext' }),
     variables: slot.variables(),
     params: slot.params(),
-    connection: slot.connectionOf("planWrite")
+    connection: slot.connectionOf('planWrite'),
 }))
     /**
      * `{ beats, speakers, worldHints, needsLookup }`, asked for as a
@@ -393,22 +406,23 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * nothing else — it is optional, so the turn narrates without one
      * rather than failing, and `parseError` says which way it failed.
      */
-    .provider("planWrite", ($) => C.generateJson.v1({
+    .oracle('planWrite', ($) => C.generateJson.v1({
     context: $.planPrompt.context,
     schema: ADVENTURE_PLAN_SCHEMA,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-    prompts: slot.prompts({ node: "planContext" })
+    // No `prompts` on the generating steps — see `respond.ts`
+    // (culled 2026-09-16, R-12).
 }))
     /* ── narrate ────────────────────────────────────────────────── */
-    .task("sceneContext", ($) => C.buildSceneContext.v1({
+    .task('sceneContext', ($) => C.buildSceneContext.v1({
     cast: $.gather.cast.read.cast,
     state: $.gather.state.read.state,
     plan: $.planWrite.json,
     fields: $.input.fields,
     prompts: slot.prompts(),
-    variables: slot.variables()
+    variables: slot.variables(),
 }))
     /**
      * The narrator's own transcript, ending on the NARRATOR's line.
@@ -420,13 +434,13 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * instructions said to narrate. `build-scene-context@1` resolves
      * this stage as nobody, so `seedName` is the narrator's.
      */
-    .task("sceneLines", ($) => C.processMessages.v1({
+    .task('sceneLines', ($) => C.processMessages.v1({
     messages: $.gather.history.read.messages,
     cast: $.gather.cast.read.cast,
     templateContext: $.sceneContext.templateContext,
-    seedName: $.sceneContext.seedName
+    seedName: $.sceneContext.seedName,
 }))
-    .task("scenePrompt", ($) => C.assemble.v2({
+    .task('scenePrompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
@@ -434,17 +448,16 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     messages: $.sceneLines.messages,
     templateContext: $.sceneContext.templateContext,
     template: slot.template(),
-    prompts: slot.prompts({ node: "sceneContext" }),
+    prompts: slot.prompts({ node: 'sceneContext' }),
     variables: slot.variables(),
     params: slot.params(),
-    connection: slot.connectionOf("scene")
+    connection: slot.connectionOf('scene'),
 }))
-    .provider("scene", ($) => C.generateText.v1({
+    .oracle('scene', ($) => C.generateText.v1({
     context: $.scenePrompt.context,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-    prompts: slot.prompts({ node: "sceneContext" })
 }))
     /* ── voices ─────────────────────────────────────────────────── */
     /**
@@ -460,14 +473,18 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * `max` is mandatory (F9) and is the only thing between a planner
      * that names the whole tavern and a turn that costs twenty calls.
      */
-    .map("voices", {
+    .each('voices', {
     over: ($) => $.planWrite.items,
     max: MAX_SPEAKERS,
-    mode: "parallel"
+    mode: 'parallel',
 }, (m) => m
-    .task("context", ($) => C.buildSideCharacterContext.v1({
+    .task('context', ($) => C.buildSideCharacterContext.v1({
     cast: $.gather.cast.read.cast,
-    speaker: $.voices.item,
+    // The planner's voice `{ name, character }`, on
+    // the side-character fact port: a name the cast
+    // holds resolves to that member, one it does
+    // not is a genuine side character.
+    sideCharacter: $.voices.item,
     // The same anchor the narrator gets: where this
     // is, who is here, and nobody else. A voice
     // built without it answered from whatever the
@@ -475,15 +492,15 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     state: $.gather.state.read.state,
     plan: $.planWrite.json,
     prompts: slot.prompts(),
-    variables: slot.variables()
+    variables: slot.variables(),
 }))
-    .task("lines", ($) => C.processMessages.v1({
+    .task('lines', ($) => C.processMessages.v1({
     messages: $.gather.history.read.messages,
     cast: $.gather.cast.read.cast,
     templateContext: $.voices.item.context.templateContext,
-    seedName: $.voices.item.context.seedName
+    seedName: $.voices.item.context.seedName,
 }))
-    .task("prompt", ($) => C.assemble.v2({
+    .task('prompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
@@ -492,25 +509,22 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     templateContext: $.voices.item.context.templateContext,
     template: slot.template(),
     prompts: slot.prompts({
-        node: "voices.item.context"
+        node: 'voices.item.context',
     }),
     variables: slot.variables(),
     params: slot.params(),
-    connection: slot.connectionOf("voices.item.say")
+    connection: slot.connectionOf('voices.item.say'),
 }))
-    .provider("say", ($) => C.generateText.v1({
+    .oracle('say', ($) => C.generateText.v1({
     context: $.voices.item.prompt.context,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-    prompts: slot.prompts({
-        node: "voices.item.context"
-    })
 })))
     /* ── assemble ───────────────────────────────────────────────── */
-    .task("voiceLines", ($) => C.joinText.v1({
+    .task('voiceLines', ($) => C.joinText.v1({
     items: $.voices.values,
-    params: slot.params()
+    params: slot.params(),
 }))
     /**
      * The reply: the scene, then the voices.
@@ -520,14 +534,15 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * drops what is empty, so a turn the planner gave nobody a voice in
      * is exactly the narrator's prose with no trailing separator.
      */
-    .task("reply", ($) => C.joinText.v1({
-    items: [
-        { text: $.scene.text },
-        { text: $.voiceLines.text }
-    ],
-    params: slot.params()
+    .task('reply', ($) => C.joinText.v1({
+    items: [{ text: $.scene.text }, { text: $.voiceLines.text }],
+    params: slot.params(),
 }))
-    .consume("save", ($) => C.createMessage.v1({ text: $.reply.text }))
+    /** The reply row, filled — see `placeholder`. */
+    .outlet('save', ($) => C.updateMessage.v1({
+    target: $.placeholder.messageId,
+    text: $.reply.text,
+}))
     /* ── keep state ─────────────────────────────────────────────── */
     /**
      * The state-keeper, and it runs LAST for a reason that is not taste.
@@ -539,16 +554,16 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * reply would leave its stat changes behind. `afterWrite` is the
      * edge that says so: the keeper reads a reply that EXISTS.
      */
-    .task("keeperContext", ($) => C.buildKeeperContext.v1({
+    .task('keeperContext', ($) => C.buildKeeperContext.v1({
     cast: $.gather.cast.read.cast,
     state: $.gather.state.read.state,
     reply: $.reply.text,
     afterWrite: $.save.messageId,
     fields: $.input.fields,
     prompts: slot.prompts(),
-    variables: slot.variables()
+    variables: slot.variables(),
 }))
-    .task("keeperPrompt", ($) => C.assemble.v2({
+    .task('keeperPrompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
@@ -556,10 +571,10 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     messages: $.lines.messages,
     templateContext: $.keeperContext.templateContext,
     template: slot.template(),
-    prompts: slot.prompts({ node: "keeperContext" }),
+    prompts: slot.prompts({ node: 'keeperContext' }),
     variables: slot.variables(),
     params: slot.params(),
-    connection: slot.connectionOf("keeperWrite")
+    connection: slot.connectionOf('keeperWrite'),
 }))
     /**
      * `{ values, possessions }`, asked for as a shape.
@@ -576,13 +591,12 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * preset's `path` names both, so what reaches the resolver is still
      * one list.
      */
-    .provider("keeperWrite", ($) => C.generateJson.v1({
+    .oracle('keeperWrite', ($) => C.generateJson.v1({
     context: $.keeperPrompt.context,
     schema: ADVENTURE_KEEPER_SCHEMA,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-    prompts: slot.prompts({ node: "keeperContext" })
 }))
     /**
      * Names into rows. A model has the names the transcript gave it and
@@ -590,7 +604,7 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * becomes `core:slot/hp@1`, and where a name that is not in the
      * scene becomes a sentence on the receipt instead of a refusal.
      */
-    .query("keeperResolve", ($) => C.resolveStateChanges.v1({
+    .query('keeperResolve', ($) => C.resolveStateChanges.v1({
     changes: $.keeperWrite.items,
     /**
      * The planner's `worldHints`, resolved beside the keeper's
@@ -605,7 +619,7 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * an unchanged state costs a turn nothing.
      */
     plan: $.planWrite.json,
-    scope: $.input.sessionScope
+    scope: $.input.sessionScope,
 }))
     /**
      * Propose, or apply — the session's own decision, read from the
@@ -618,16 +632,16 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * run can see that this turn applied because this session trusts the
      * narrator.
      */
-    .route("commit", { on: ($) => $.input.fields }, (r) => r
-    .when("trusted", { path: "trustNarrator", truthy: true }, (c) => c.task("apply", ($) => C.setState.v1({
+    .junction('commit', { on: ($) => $.input.fields }, (r) => r
+    .when('trusted', { path: 'trustNarrator', truthy: true }, (c) => c.task('apply', ($) => C.setState.v1({
     changes: $.keeperResolve.changes,
     scope: $.input.sessionScope,
-    params: slot.params()
+    params: slot.params(),
 })))
-    .otherwise("reviewed", (c) => c.task("propose", ($) => C.setState.v1({
+    .otherwise('reviewed', (c) => c.task('propose', ($) => C.setState.v1({
     changes: $.keeperResolve.changes,
     scope: $.input.sessionScope,
-    params: slot.params()
+    params: slot.params(),
 }))))
     /**
      * What the pipeline ships with, and the only place its authored
@@ -665,21 +679,21 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * structurally as well: a schema on the wire leaves a model nothing
      * to ramble in.
      */
-    .preset("adventure", { label: "Adventure", default: true }, (p) => p
+    .preset('adventure', { label: 'Adventure', default: true }, (p) => p
     // Which list the voices map iterates, and which lists the
     // keeper's changes come from. Both differ from the
     // declared default (the whole document), so both have to
     // be a choice something made — and the keeper's names two
     // paths, which is how an answer split into arms reaches
     // one resolver as one list.
-    .params("planWrite", { path: "speakers" })
-    .params("keeperWrite", { path: "values,possessions" })
+    .params('planWrite', { path: 'speakers' })
+    .params('keeperWrite', { path: 'values,possessions' })
     // The one branch that writes rather than asks. The other
     // keeps the declared default, which is `propose`.
-    .params("commit.trusted.apply", { mode: "apply" })
+    .params('commit.trusted.apply', { mode: 'apply' })
     // Narrator first, then the voices, separated by a blank
     // line — the reply layout, as the one parameter it is.
-    .params("reply", { separator: "\n\n" })
+    .params('reply', { separator: '\n\n' })
     // The two stages nobody reads run on Background, which
     // is the row that exists to say "this output is read by
     // the next node and by nobody else": low temperature, a
@@ -687,9 +701,9 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     // voices are deliberately absent: those are the prose a
     // person is waiting for, and they keep whatever the
     // session is set to.
-    .sampling("planWrite", { seedKey: "sampling-background" })
-    .sampling("keeperWrite", {
-    seedKey: "sampling-background"
+    .sampling('planWrite', { seedKey: 'sampling-background' })
+    .sampling('keeperWrite', {
+    seedKey: 'sampling-background',
 }))
     .build());
 //# sourceMappingURL=adventure.js.map

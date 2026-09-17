@@ -57,7 +57,7 @@ export const REQUIREMENTS = [
             const r = await host.run(fx.haltsEarly(), { input: {}, world: fx.world, bindings: fx.bindings() });
             must(r.outcome === 'halt', `outcome was '${r.outcome}', not 'halt'`);
             must(!!r.haltReason, 'no halt reason recorded — "why did nothing happen" is unanswerable');
-            must(!r.nodes.some((n) => n.kind === 'provider'), 'a node downstream of the halt still ran');
+            must(!r.nodes.some((n) => n.kind === 'oracle'), 'a node downstream of the halt still ran');
         },
     },
     {
@@ -84,7 +84,7 @@ export const REQUIREMENTS = [
             const first = await host.run(doc, { input: {}, world: fx.world, bindings: fx.bindings() });
             let called = 0;
             const replayed = await host.replay(doc, first, fx.bindings({
-                'core:provider/generate-text@1': async () => {
+                'core:oracle/generate-text@1': async () => {
                     called++;
                     return { kind: 'ok', value: { main: 'DIFFERENT', text: 'DIFFERENT' } };
                 },
@@ -223,7 +223,7 @@ export const REQUIREMENTS = [
                 input: {},
                 world: fx.world,
                 bindings: fx.bindings({
-                    'core:provider/generate-text@1': async (i) => {
+                    'core:oracle/generate-text@1': async (i) => {
                         sent = i.context;
                         return { kind: 'ok', value: { main: 'x', text: 'x' } };
                     },

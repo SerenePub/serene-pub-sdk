@@ -16,7 +16,7 @@ import {
 	checkInstall,
 	installable,
 	renderInstall,
-	allTypes,
+	allDefinitions,
 	pipelineHook,
 	ok,
 } from '@serene-pub/sdk'
@@ -24,15 +24,15 @@ import type { RegistryEntry, SpecDocument } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { publish } from './helpers.js'
 
-const coreRegistry = (): RegistryEntry[] => snapshotRegistry(allTypes(), { release: '0.6.0' })
+const coreRegistry = (): RegistryEntry[] => snapshotRegistry(allDefinitions(), { release: '0.6.0' })
 
 const doc = (): SpecDocument =>
 	publish(
 		spec('chariot.dice-tray:turn', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-			.provider('generate', ($) =>
+			.oracle('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 			),
 	)
@@ -98,8 +98,8 @@ describe('108 · checkInstall decides from data alone', () => {
 		d.nodes.push({
 			key: 'borrowed',
 			kind: 'task',
-			typeId: 'other.plugin:secret-sauce',
-			typeVersion: 1,
+			definitionId: 'other.plugin:secret-sauce',
+			definitionVersion: 1,
 			config: {},
 			position: 9,
 		})
@@ -165,11 +165,14 @@ describe('108 · checkInstall decides from data alone', () => {
 		// with nothing authored twice — and without core executing the plugin to
 		// find out what they are (F6). A list of slot names could not do that, which
 		// is what this pins.
-		const [row] = snapshotRegistry([C.generateText.descriptor], { release: '0.6.0' })
+		// `assemble@2` is the fixture because it is the node that OWNS the
+		// prompts pool; `generate-text@1` carried a copy of the slot that
+		// nothing read until it was culled (2026-09-16, R-12).
+		const [row] = snapshotRegistry([C.assemble.descriptor], { release: '0.6.0' })
 		assert.equal(row!.slots.prompts?.kind, 'prompts')
 		assert.equal(row!.slots.prompts?.facet, 'prompts')
 		assert.deepEqual(Object.keys(row!.slots.prompts?.fields ?? {}), ['system', 'postHistory'])
-		assert.equal(row!.slots.params?.schema?.stopSequences?.type, 'string[]')
+		assert.equal(row!.slots.params?.schema?.postHistoryDepth?.type, 'integer')
 		assert.equal(row!.slots.connection?.shape, 'core:shape/text-gen@1')
 	})
 

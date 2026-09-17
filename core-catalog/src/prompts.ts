@@ -243,165 +243,217 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-batch",
+		nodeType: "core:oracle/summarize-batch",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-world",
 		defaultForSpecs: ["core:spec/summarize-world"],
-		seedKey: "pipeline-prompt:core:provider/summarize-batch:prompts:summarize-world-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-world-default",
 		name: "Default World Summarization",
 		fields: {
 			batch: "You are an archivist recording world-building facts from a roleplay exchange. Your records are concise bullet points that capture facts, changes, and discoveries about the setting. You write only what is directly shown — no invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-synth",
+		nodeType: "core:oracle/summarize-synth",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-world",
 		defaultForSpecs: ["core:spec/summarize-world"],
-		seedKey: "pipeline-prompt:core:provider/summarize-synth:prompts:summarize-world-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-synth:prompts:summarize-world-default",
 		name: "Default World Summarization",
 		fields: {
 			synth: "You are a master archivist. Given draft bullet points covering a roleplay exchange, you merge them into a single clean world lore entry. You write only what the drafts contain — no invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/name-entry",
+		nodeType: "core:oracle/name-entry",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-world",
 		defaultForSpecs: ["core:spec/summarize-world"],
-		seedKey: "pipeline-prompt:core:provider/name-entry:prompts:summarize-world-default",
+		seedKey: "pipeline-prompt:core:oracle/name-entry:prompts:summarize-world-default",
 		name: "Default World Summarization",
 		fields: {
 			name: "You generate short titles for world lore entries. The title should describe the subject of the entry."
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-batch",
+		nodeType: "core:oracle/summarize-batch",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-character",
 		defaultForSpecs: ["core:spec/summarize-character"],
-		seedKey: "pipeline-prompt:core:provider/summarize-batch:prompts:summarize-character-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-character-default",
 		name: "Default Character Summarization",
 		fields: {
 			batch: "You are a character archivist recording facts about a specific character from a roleplay exchange. Your records are concise bullet points that capture who the character is, what they did, and how they relate to others. You write only what is directly shown — no invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-synth",
+		nodeType: "core:oracle/summarize-synth",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-character",
 		defaultForSpecs: ["core:spec/summarize-character"],
-		seedKey: "pipeline-prompt:core:provider/summarize-synth:prompts:summarize-character-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-synth:prompts:summarize-character-default",
 		name: "Default Character Summarization",
 		fields: {
 			synth: "You are a master character archivist. Given draft bullet points about a character from a roleplay exchange, you merge them into a single clean character lore entry. You write only what the drafts contain — no invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/name-entry",
+		nodeType: "core:oracle/name-entry",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-character",
 		defaultForSpecs: ["core:spec/summarize-character"],
-		seedKey: "pipeline-prompt:core:provider/name-entry:prompts:summarize-character-default",
+		seedKey: "pipeline-prompt:core:oracle/name-entry:prompts:summarize-character-default",
 		name: "Default Character Summarization",
 		fields: {
 			name: "You generate short titles for character lore entries. The title should describe the subject matter of the entry (e.g. an ability, relationship, or past event)."
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-batch",
+		nodeType: "core:oracle/summarize-batch",
 		slot: "prompts",
 		defaultForSpecs: ["core:spec/summarize-scene", "core:spec/summarize-history"],
-		seedKey: "pipeline-prompt:core:provider/summarize-batch:prompts:summarize-scene-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
 			batch: "You are a scene archivist capturing what happened in a discrete story moment from a roleplay exchange. You write a tight narrative summary — past tense, plain prose — that captures the key beats, actions, and emotional turning points. No invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/summarize-synth",
+		nodeType: "core:oracle/summarize-synth",
 		slot: "prompts",
 		defaultForSpecs: ["core:spec/summarize-scene", "core:spec/summarize-history"],
-		seedKey: "pipeline-prompt:core:provider/summarize-synth:prompts:summarize-scene-default",
+		seedKey: "pipeline-prompt:core:oracle/summarize-synth:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
 			synth: "You are a master scene editor. Given draft scene summaries covering a roleplay exchange in chronological order, you merge them into a single coherent scene narrative. You write only what the drafts contain — no invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/name-entry",
+		nodeType: "core:oracle/name-entry",
 		slot: "prompts",
 		defaultForSpecs: ["core:spec/summarize-scene", "core:spec/summarize-history"],
-		seedKey: "pipeline-prompt:core:provider/name-entry:prompts:summarize-scene-default",
+		seedKey: "pipeline-prompt:core:oracle/name-entry:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
 			name: "You generate short titles for scene summaries. The title should capture the key moment or action of the scene."
 		}
 	},
 	{
-		nodeType: "core:provider/extract-cast",
+		nodeType: "core:oracle/extract-cast",
 		slot: "prompts",
 		createdForSpec: "core:spec/summarize-scene",
 		defaultForSpecs: ["core:spec/summarize-scene"],
-		seedKey: "pipeline-prompt:core:provider/extract-cast:prompts:summarize-scene-default",
+		seedKey: "pipeline-prompt:core:oracle/extract-cast:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
 			characterExtraction: "You extract characters from a scene summary into two groups.\n\nPARTICIPANTS — characters who are physically present in this scene — speaking, fighting, moving, reacting, waiting, or simply there. If the scene places them in the setting, they belong here.\n\nMENTIONED — characters who are brought up in conversation or thought but are not present and not acting in the scene. They are talked about, remembered, referenced, or discussed by others — but they themselves do nothing in this scene.\n\nRules:\n- A character who acts in the scene is always a participant, even if they are also talked about.\n- A character who only appears in someone's dialogue, memory, or backstory — and never acts — is mentioned only.\n- If only one character is named or described as present, they are a participant. Do not also add them to mentioned.\n- Include named characters and named creatures only. No unnamed extras, no places, no objects.\n- Either array may be empty. Do not invent entries to fill an empty slot.\n- For each character, check the \"Known characters\" list below first — including their aliases, nicknames, and titles. If this character is one of them, output {\"castId\": <their id>} using that exact id, even if the scene calls them by a nickname or title rather than their listed name. Only output {\"name\": \"...\"} when the character is genuinely not in that list.\n- Output ONLY a raw JSON object. No explanation, no markdown, no code fences."
 		}
 	},
 	{
-		nodeType: "core:provider/graph-node-resolution",
+		nodeType: "core:oracle/graph-node-resolution",
 		slot: "prompts",
 		createdForSpec: "core:spec/graph-build",
 		defaultForSpecs: ["core:spec/graph-build"],
-		seedKey: "pipeline-prompt:core:provider/graph-node-resolution:prompts:graph-build-default",
+		seedKey: "pipeline-prompt:core:oracle/graph-node-resolution:prompts:graph-build-default",
 		name: "Default Graph Build",
 		fields: {
 			nodeResolution: "Output one JSON object and nothing else. No prose, no narration, no markdown fences.\n\n{\"match\": \"<existing name>\"}  or  {\"match\": null}\n\n# Task\nYou are a data extractor. You are NOT any of the characters. Decide whether the incoming\nname refers to someone already in the known list, or to a new character.\n\nTreat as the same person: a nickname, a surname alone, a title plus surname, an obvious\nmisspelling, or a name that differs only in honorific (\"Commander Thorne\" and \"Maren\nThorne\").\n\nTreat as different people: two characters who merely share one name element, unless the\ncontext makes the identity explicit.\n\nReturn {\"match\": null} unless you are confident. A duplicate can be merged afterwards; a\nwrong merge silently destroys a character's identity."
 		}
 	},
 	{
-		nodeType: "core:provider/graph-pre-filter",
+		nodeType: "core:oracle/graph-pre-filter",
 		slot: "prompts",
 		createdForSpec: "core:spec/graph-build",
 		defaultForSpecs: ["core:spec/graph-build"],
-		seedKey: "pipeline-prompt:core:provider/graph-pre-filter:prompts:graph-build-default",
+		seedKey: "pipeline-prompt:core:oracle/graph-pre-filter:prompts:graph-build-default",
 		name: "Default Graph Build",
 		fields: {
 			preFilter: "Output one JSON object and nothing else. No prose, no narration, no markdown fences.\n\n{\"keep\":[\"<name>\"],\"drop\":[\"<name>\"]}\n\n# Task\nYou are a data extractor. You are NOT any of the characters. Given a scene summary and a\nlist of names found in it, decide which name recurring characters worth tracking in a\nnarrative graph, and which are incidental.\n\nKeep a name when the summary shows it acting, speaking, deciding, or being reacted to.\nDrop a name that is scenery: a place, a vessel, an organisation, an object, a crowd, or a\nperson mentioned only in passing with no bearing on anyone's relationships.\n\nWhen uncertain, keep — a spurious character can be merged later, a dropped one is lost."
 		}
 	},
 	{
-		nodeType: "core:provider/graph-perspective",
+		nodeType: "core:oracle/graph-perspective",
 		slot: "prompts",
 		createdForSpec: "core:spec/graph-build",
 		defaultForSpecs: ["core:spec/graph-build"],
-		seedKey: "pipeline-prompt:core:provider/graph-perspective:prompts:graph-build-default",
+		seedKey: "pipeline-prompt:core:oracle/graph-perspective:prompts:graph-build-default",
 		name: "Default Graph Build",
 		fields: {
 			perspective: "Output one JSON object and nothing else. No prose, no narration, no markdown fences.\n\n{\"relationships\":[{\"from\":\"…\",\"to\":\"…\",\"type\":\"…\",\"reason\":\"…\",\"description\":\"…\",\"status\":\"…\",\"visibility\":\"…\"}]}\n\nReturn {\"relationships\": []} if nothing qualifies.\n\n# Task\nYou are a data extractor. You are NOT any of the characters and must never write in their\nvoice, in first person, or as a scene. Read `scene.summary` and list the relational\ndynamics that the subject — the character named in `subject.name` — holds toward other\ncharacters, which this scene establishes or changes.\n\n# Fields\n- `from` — the subject's name, copied exactly from `subject.name`. Always this one character, on every entry.\n- `to` — the other character's name, copied exactly as it appears in `otherCharacters`. Never the subject.\n- `type` — a short noun phrase: ally, rival, mentor, family, romantic, grudge, fear, debt, ward, contract, or a more precise one of your own.\n- `reason` — the specific action, line, or narrated thought in the summary that proves it. If you cannot point to one, omit the entry.\n- `description` — one sentence, third person, describing the subject's stance toward that character.\n- `status` — active | resolved | broken | evolved\n- `visibility` — secret (the subject has told no one) | acknowledged (both characters know) | public (widely known).\n  Decide from the text, not from what seems likely: a private thought, feeling or recollection is `secret`; a dynamic\n  that arose from a direct interaction between the two is `acknowledged`; `public` requires the summary to show that\n  others already know. If the summary settles none of these, use `secret` for an internal state and `acknowledged`\n  otherwise — do not reach for `public`.\n\n# Include an entry when the summary shows\n- a direct interaction that establishes or changes a dynamic\n- a thought, recollection, or feeling the subject has about someone\n- a change to a dynamic already listed in that character's `existingRelationships`\n\n# Do not include\n- two characters merely sharing a scene with no interaction between them\n- anything you inferred rather than read\n- a dynamic already in `existingRelationships` that this scene did not change\n- the subject's relationship with themselves\n\nOne entry per distinct dynamic: a pair can hold several at once, each with its own entry.\n\n# Example\n{\"relationships\":[{\"from\":\"Mira\",\"to\":\"Caen\",\"type\":\"grudge\",\"reason\":\"Caen publicly denied any involvement with Mira at the council table.\",\"description\":\"Mira will not forgive being humiliated in front of the people whose trust she needs most.\",\"status\":\"active\",\"visibility\":\"secret\"}]}"
 		}
 	},
 	{
-		nodeType: "core:provider/graph-node-description",
+		nodeType: "core:oracle/graph-node-description",
 		slot: "prompts",
 		createdForSpec: "core:spec/graph-build",
 		defaultForSpecs: ["core:spec/graph-build"],
-		seedKey: "pipeline-prompt:core:provider/graph-node-description:prompts:graph-build-default",
+		seedKey: "pipeline-prompt:core:oracle/graph-node-description:prompts:graph-build-default",
 		name: "Default Graph Build",
 		fields: {
 			nodeDescription: "You write brief character introductions from roleplay excerpts. Given a character name and messages from the scene where they first appear, write exactly two sentences in present tense describing who this character is — their role, nature, or defining traits — based only on what the provided text shows. No invention, no embellishment."
 		}
 	},
 	{
-		nodeType: "core:provider/graph-state-detection",
+		nodeType: "core:oracle/graph-state-detection",
 		slot: "prompts",
 		createdForSpec: "core:spec/graph-build",
 		defaultForSpecs: ["core:spec/graph-build"],
-		seedKey: "pipeline-prompt:core:provider/graph-state-detection:prompts:graph-build-default",
+		seedKey: "pipeline-prompt:core:oracle/graph-state-detection:prompts:graph-build-default",
 		name: "Default Graph Build",
 		fields: {
 			stateDetection: "You detect when characters reach a new lifecycle state during a story scene.\n\nThe four states and when to apply them:\n\nACTIVE — the character is alive and present in the ongoing story. Only output this if their current state is deceased, missing, or departed and the scene shows them returning or being confirmed alive.\n\nDECEASED — the character died during this scene. Apply when the scene directly depicts or confirms their death:\n  • Killed in combat or by another character's action\n  • Died from wounds, poison, illness, or other explicitly shown causes\n  • Executed, sacrificed, or destroyed\n  • Death confirmed by witnesses in the scene\n  Do NOT apply for: deaths mentioned in passing that happened before this scene (those would already be reflected in their current state), near-death experiences that end in survival, or ambiguous fates.\n\nMISSING — the character's whereabouts became unknown during this scene. Apply when:\n  • They disappeared without explanation\n  • They were kidnapped, taken, or seized and their fate is unclear\n  • They vanished and no one in the scene can account for them\n  Do NOT apply if their death is clearly confirmed, or if they voluntarily left.\n\nDEPARTED — the character voluntarily left the story during this scene. Apply when:\n  • They chose to leave the group or location, implying permanence\n  • They were exiled or banished (even involuntarily — the key is they are now gone)\n  • They retired, withdrew, or set off on a separate path apart from the main narrative\n  Do NOT apply for temporary absences where the character is expected to return.\n\nRules:\n- Only output an entry when the state change is clear and definitive — not implied, not ambiguous.\n- Only flag a change if the new state differs from the character's current state listed in the prompt.\n- When in doubt, omit. A missed change can be caught later; a wrong change corrupts the record.\n- Output ONLY a raw JSON object. No prose, no markdown fences."
+		}
+	},
+	/**
+	 * The **answer pipeline's** instructions (plans/29 R-15 *Forms*; U5d,
+	 * 2026-09-17) — what the addressee is told when a question is put to
+	 * them and the AI portrays them tonight. On the context builder's pool,
+	 * because the addressee's card compiles through the same builder a
+	 * speaker's does, and one row serves the three shipped answer pipelines
+	 * (chat, adventure, guide) the way the scene row serves two summarizers.
+	 * The question and its options are laid out by the assembly template
+	 * (`ANSWER_FORM_TEMPLATE`), never authored here.
+	 *
+	 * ⚠ New prose with no legacy counterpart — 0.5 had no forms — so it is
+	 * outside the drift canary's subject rather than a hole in it.
+	 */
+	{
+		nodeType: "core:task/build-template-context",
+		slot: "prompts",
+		createdForSpec: "core:spec/answer-form-chat",
+		defaultForSpecs: [
+			"core:spec/answer-form-chat",
+			"core:spec/answer-form-adventure",
+			"core:spec/answer-form-guide"
+		],
+		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:answer-form-default",
+		name: "Answer a question",
+		fields: {
+			systemPrompt:
+				"You are {{char}}. A question has been put to you in this story, and you answer it as {{char}} would — from what {{char}} knows, wants and feels right now, in the light of the conversation so far.\n\nReply with one JSON object and nothing else: no prose, no explanation, no markdown fences. Where the question offers options, pick exactly one by its key.",
+			postHistoryInstructions:
+				"Remember: answer as {{char}}, with one JSON object and nothing around it."
+		}
+	},
+	/**
+	 * The Adventure genre's **Ask** action (U5d): the narrator puts a
+	 * question with options to one of the cast. On the narrator builder's
+	 * pool, its own row — the world narrator's wording says "do not advance
+	 * the plot", and a question is a plot device.
+	 */
+	{
+		nodeType: "core:task/build-narrator-context",
+		slot: "prompts",
+		createdForSpec: "core:spec/adventure-ask",
+		defaultForSpecs: ["core:spec/adventure-ask"],
+		seedKey: "pipeline-prompt:core:task/build-narrator-context:prompts:adventure-ask",
+		name: "Adventure ask",
+		fields: {
+			systemPrompt:
+				"You are {{narratorName}}, running an adventure. Everyone in the scene: {{characterNames}}, and {{personaNames}}, who play. Read the scene so far and put ONE question to ONE member of the cast — a decision that is theirs to make right now, with two to four clear options.\n\nAnswer with one JSON object and nothing else:\n\n- addressee: the name of the cast member the question is for, exactly as the conversation spells it. Never a player.\n- question: the question, in your narrator's voice, addressed to them.\n- options: two to four choices, each { \"key\": a short lowercase token, \"label\": the choice as they would read it }.\n\nNo prose, no narration, no markdown fences.",
+			postHistoryInstructions:
+				"Remember: one JSON object with addressee, question and options, and nothing around it.",
+			narratorName: "Narrator"
 		}
 	},
 	/**
@@ -434,11 +486,11 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		}
 	},
 	{
-		nodeType: "core:provider/generate-image",
+		nodeType: "core:oracle/generate-image",
 		slot: "prompts",
 		createdForSpec: "core:spec/generate-image",
 		defaultForSpecs: ["core:spec/generate-image"],
-		seedKey: "pipeline-prompt:core:provider/generate-image:prompts:image-prompt-passthrough",
+		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:image-prompt-passthrough",
 		name: "Prompt as written",
 		fields: {
 			positive: "{{prompt}}",
@@ -446,11 +498,11 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		}
 	},
 	{
-		nodeType: "core:provider/generate-image",
+		nodeType: "core:oracle/generate-image",
 		slot: "prompts",
 		createdForSpec: "core:spec/generate-image",
 		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:provider/generate-image:prompts:image-prompt-quality",
+		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:image-prompt-quality",
 		name: "Prompt with quality tags",
 		fields: {
 			positive: "{{prompt}}, highly detailed, sharp focus, professional lighting",
@@ -469,7 +521,7 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 	 * on the same footing as the side-character and tool-loop rows above.
 	 *
 	 * ⚠ The schema paragraphs are **contract, not decoration**. Every one of these
-	 * four documents travels on `core:provider/generate-json@1`, so the key names
+	 * four documents travels on `core:oracle/generate-json@1`, so the key names
 	 * here are the key names the pipeline's `path` parameters select and the
 	 * shapes `core:query/resolve-state-changes@1` resolves. Editing a key name in
 	 * one of these without editing the matching `path` produces a turn that

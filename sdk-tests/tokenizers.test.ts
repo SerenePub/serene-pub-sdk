@@ -33,20 +33,20 @@ const world = withEmbeddings()
 
 const chat = () =>
 	spec('demo:tokenizer@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.task(
 			'budget',
-			C.contextBudget.v1({ connection: slot.downstreamProvider(), params: slot.params() }),
+			C.contextBudget.v1({ connection: slot.downstreamOracle(), params: slot.params() }),
 		)
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.history.messages] }))
 		.task('prompt', ($) =>
 			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
 		)
-		.provider('generate', ($) =>
+		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
-		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+		.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 const input = { text: 'where is my sister', sessionScope: { sessionId: 'c1' } }
 

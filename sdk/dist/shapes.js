@@ -101,17 +101,24 @@ export const S = {
     branchResults: defineShape({ id: 'core:shape/branch-results@1' }),
     /**
      * What a **gate-eligible** Consumer publishes (13 §7j-b). Discriminated, because
-     * under `async` review the write is a proposal a reviewer may still reject — and
-     * a proposal id in a shared id space is indistinguishable from a real row id
+     * a write may in principle land as a proposal rather than a row — and a
+     * proposal id in a shared id space is indistinguishable from a real row id
      * right up until the foreign key dangles.
      *
-     * Deliberately **not** assignable to `row-ids@1`. That is the whole enforcement:
-     * a downstream node that wants ids must declare this port shape and handle both
-     * cases in its hook, or the existing port-mismatch error fires at publish. There
-     * is no branch node to check `status` with (F25), so the obligation belongs to
-     * the type, not to the spec.
+     * **Assignable to `row-ids@1`** since the 2026-09-15 rulings (09-B B4, R-17).
+     * It was deliberately not, and the reason was the `async` review position:
+     * a row proposed under it might never exist. That position is gone
+     * (`review.ts` — on or off, nothing between): `on` parks the run until the
+     * decision and a rejection halts it, so by the time any downstream node
+     * runs, the ids a committed result carries ARE row ids. That is what makes
+     * a create → update pair on one row inside one run legal, and it is how a
+     * pipeline owns its reply: a placeholder outlet straight after the inlet,
+     * and an `update-message` at the end that fills it.
      */
-    writeResult: defineShape({ id: 'core:shape/write-result@1' }),
+    writeResult: defineShape({
+        id: 'core:shape/write-result@1',
+        assignableTo: ['core:shape/row-ids@1'],
+    }),
     /**
      * A request to summarize something into a lore entry.
      *
@@ -146,10 +153,44 @@ export const S = {
      * membership test: a task whose `main` publishes this shape *is* a
      * next-speaker strategy, and the dropdown is a SELECT over such rows — an
      * extension's strategy appears beside core's by existing, the same way a
-     * chat mode does. The bundle carries `{characterId, strategy, via}`; the
-     * bare id rides a separate `characterId` port for wiring.
+     * chat mode does. The bundle carries `{speaker, characterId, strategy, via}`
+     * — the speaker as a participant reference beside the bare id (R-18 (3)) —
+     * and each rides its own port for wiring.
      */
     speakerSelection: defineShape({ id: 'core:shape/speaker-selection@1' }),
+    /**
+     * A participant reference (R-15, R-18 (3)): `character:<id>`,
+     * `envoy:<slug>`, `user:<id>`, or a role — see `participants.ts`.
+     *
+     * The inlet's `speaker` port and a turn strategy's carry this, so one
+     * port answers "who is speaking" for a library character and a genre's
+     * envoy alike. Not assignable to `row-ids@1` on purpose: a reference is a
+     * name, and a node that wants the bare character id keeps reading
+     * `characterId` until every reader speaks references.
+     */
+    participantRef: defineShape({ id: 'core:shape/participant-ref@1' }),
+    /**
+     * One **session change** (R-15, built 2026-09-16): the payload every
+     * built-in write's event carries — `{ event, sessionId, messageId, at,
+     * … }` plus what was lost or replaced (`lost` on a delete, `previous` on
+     * an edit or a swipe). The next reply's inlet publishes the changes since
+     * the last one as a list on its `sessionChanges` port, so a pipeline knows the
+     * history it sees has moved. See `SessionChangePayload` in events.ts.
+     *
+     * Its own id rather than `json@1`, for the reason `summarize-request@1`
+     * gives: `pipeline_event_registry.payload_shape` names it, and an event
+     * whose payload was bare json would match every inlet.
+     */
+    sessionChange: defineShape({ id: 'core:shape/session-change@1' }),
+    /**
+     * A **form addressed** to a participant the AI portrays (R-15 *Forms*;
+     * 30 §U5d): the payload of `core:event/form-addressed@1` — `{ sessionId,
+     * messageId, blockId, action, addressee }` (`FormAddressedPayload`,
+     * events.ts) — and what `core:inlet/form-addressed@1` publishes, port by
+     * port, with the block itself beside them. Its own id for the reason
+     * `session-change@1` has: the registry's `payload_shape` names it.
+     */
+    formAddressed: defineShape({ id: 'core:shape/form-addressed@1' }),
     /**
      * A reference to stored media of any kind — the general port type.
      *

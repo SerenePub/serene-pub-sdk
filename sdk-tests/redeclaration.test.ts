@@ -19,17 +19,17 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-	describeTaskType,
+	describeTaskDefinition,
 	describeEntryType,
-	getType,
-	allTypes,
+	getDefinition,
+	allDefinitions,
 	defineFacet,
 	getFacet,
 	allFacets,
 	defineVariable,
 	getVariable,
-	defineScriptType,
-	getScriptType,
+	defineScriptKind,
+	getScriptKind,
 	defineEvent,
 	getEvent,
 	allEvents,
@@ -54,26 +54,26 @@ const namesBothHashes = (message: string): boolean => {
 describe('re-declaration is idempotent when the declaration is identical', () => {
 	test('a descriptor declared twice does not throw, and the registry holds one entry', () => {
 		const declare = () =>
-			describeTaskType({
+			describeTaskDefinition({
 				id: 'test:task/same@1',
 				i18n: { name: { en: 'Same' } },
 				ports: { in: { text: TEXT }, out: { text: TEXT } },
 			})
 		const first = declare()
 		const second = declare()
-		assert.equal(allTypes().filter((t) => t.id === 'test:task/same@1').length, 1)
+		assert.equal(allDefinitions().filter((t) => t.id === 'test:task/same@1').length, 1)
 		// The *second* object is what the registry keeps. Returning the first
 		// would hand a re-evaluated module a descriptor from the module it
 		// replaced — see the display-text case below for what that costs.
-		assert.equal(getType('test:task/same@1'), second)
+		assert.equal(getDefinition('test:task/same@1'), second)
 		assert.notEqual(first, second)
 	})
 
 	test('a different descriptor under an existing id still throws, naming both hashes', () => {
-		describeTaskType({ id: 'test:task/drift@1', ports: { out: { text: TEXT } } })
+		describeTaskDefinition({ id: 'test:task/drift@1', ports: { out: { text: TEXT } } })
 		assert.throws(
 			() =>
-				describeTaskType({
+				describeTaskDefinition({
 					id: 'test:task/drift@1',
 					ports: { out: { text: JSON_SHAPE } },
 				}),
@@ -82,13 +82,13 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 				namesBothHashes(e.message),
 		)
 		// Refused, so the first declaration is still what the registry holds.
-		assert.equal(getType('test:task/drift@1')!.ports.out!.text, TEXT)
+		assert.equal(getDefinition('test:task/drift@1')!.ports.out!.text, TEXT)
 	})
 
 	test('display text is not content — a relabelled re-declaration is accepted, and its label wins', () => {
-		describeTaskType({ id: 'test:task/label@1', i18n: { name: { en: 'Before' } }, ports: {} })
-		describeTaskType({ id: 'test:task/label@1', i18n: { name: { en: 'After' } }, ports: {} })
-		assert.deepEqual(getType('test:task/label@1')!.i18n!.name, { en: 'After' })
+		describeTaskDefinition({ id: 'test:task/label@1', i18n: { name: { en: 'Before' } }, ports: {} })
+		describeTaskDefinition({ id: 'test:task/label@1', i18n: { name: { en: 'After' } }, ports: {} })
+		assert.deepEqual(getDefinition('test:task/label@1')!.i18n!.name, { en: 'After' })
 	})
 
 	/**
@@ -118,7 +118,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 				/duplicate type id: core:entry\/redeclaration-probe@1/.test(e.message) &&
 				namesBothHashes(e.message),
 		)
-		assert.equal(getType('core:entry/redeclaration-probe@1')!.entryShape!.roles.title, 'name')
+		assert.equal(getDefinition('core:entry/redeclaration-probe@1')!.entryShape!.roles.title, 'name')
 	})
 
 	test('a facet', () => {
@@ -159,7 +159,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 
 	test('a script type', () => {
 		const declare = () =>
-			defineScriptType({
+			defineScriptKind({
 				id: 'test:script:text/twice@1',
 				blastRadius: { en: 'none' },
 				semantics: 'transform',
@@ -167,10 +167,10 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 			})
 		declare()
 		declare()
-		assert.equal(getScriptType('test:script:text/twice@1')!.semantics, 'transform')
+		assert.equal(getScriptKind('test:script:text/twice@1')!.semantics, 'transform')
 		assert.throws(
 			() =>
-				defineScriptType({
+				defineScriptKind({
 					id: 'test:script:text/twice@1',
 					blastRadius: { en: 'none' },
 					semantics: 'verdict',
@@ -184,31 +184,31 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 
 	/**
 	 * `blastRadius` is the badge the script panel shows — display text, and
-	 * `ScriptTypeDecl` says so in as many words. It sits beside `i18n` rather
+	 * `ScriptKindDecl` says so in as many words. It sits beside `i18n` rather
 	 * than inside it because it is required on every type and `i18n` is not, so
 	 * the generic strip never saw it: re-badging a script threw `duplicate
 	 * script type id` and put the reload loop straight back.
 	 */
 	test('a script type re-badged — blastRadius is display text, and the fresher wording wins', () => {
-		defineScriptType({
+		defineScriptKind({
 			id: 'test:script:text/badge@1',
 			blastRadius: { en: 'Rewrites content' },
 			semantics: 'transform',
 			ports: { in: { text: TEXT }, out: { text: TEXT } },
 		})
-		defineScriptType({
+		defineScriptKind({
 			id: 'test:script:text/badge@1',
 			blastRadius: { en: 'Rewrites the reply before you see it' },
 			semantics: 'transform',
 			ports: { in: { text: TEXT }, out: { text: TEXT } },
 		})
-		assert.deepEqual(getScriptType('test:script:text/badge@1')!.blastRadius, {
+		assert.deepEqual(getScriptKind('test:script:text/badge@1')!.blastRadius, {
 			en: 'Rewrites the reply before you see it',
 		})
 	})
 
 	test('a script type whose ports moved still throws, however it is badged', () => {
-		defineScriptType({
+		defineScriptKind({
 			id: 'test:script:text/drift@1',
 			blastRadius: { en: 'Rewrites content' },
 			semantics: 'transform',
@@ -216,7 +216,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 		})
 		assert.throws(
 			() =>
-				defineScriptType({
+				defineScriptKind({
 					id: 'test:script:text/drift@1',
 					blastRadius: { en: 'Rewrites content, but differently worded' },
 					semantics: 'transform',
@@ -227,7 +227,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 				namesBothHashes(e.message),
 		)
 		// Refused, so the first declaration is still what the registry holds.
-		assert.equal(getScriptType('test:script:text/drift@1')!.ports.out.text, TEXT)
+		assert.equal(getScriptKind('test:script:text/drift@1')!.ports.out.text, TEXT)
 	})
 
 	/**
@@ -237,7 +237,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 	 * loop back.
 	 */
 	test('a descriptor whose slot field was relabelled — display text, however deep it sits', () => {
-		describeTaskType({
+		describeTaskDefinition({
 			id: 'test:task/deep-label@1',
 			ports: {},
 			slots: {
@@ -247,7 +247,7 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 				},
 			},
 		})
-		describeTaskType({
+		describeTaskDefinition({
 			id: 'test:task/deep-label@1',
 			ports: {},
 			slots: {
@@ -258,13 +258,13 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 			},
 		})
 		assert.equal(
-			getType('test:task/deep-label@1')!.slots!.params!.schema!.topK!.label,
+			getDefinition('test:task/deep-label@1')!.slots!.params!.schema!.topK!.label,
 			'How many to keep',
 		)
 		// The schema itself is still contract.
 		assert.throws(
 			() =>
-				describeTaskType({
+				describeTaskDefinition({
 					id: 'test:task/deep-label@1',
 					ports: {},
 					slots: {

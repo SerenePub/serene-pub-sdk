@@ -9,14 +9,15 @@
  * "which sections are in the prompt, in what order" is the same kind of fact as
  * "which prompt does this step use", and it is an administrator's.
  *
- * ## ⚠ A fourth sense of the word `block`
+ * ## ⚠ A third sense of the word `block`
  *
  * NOMENCLATURE §15 says a **block** is one message — `system`, `user`,
- * `assistant` — and §24 already records `pipeline_blocks` as a third live
- * sense. This is a fourth: one **section within** a prompt, named by the
- * template variable that renders it. The word is the ruling's, so it is used
- * here and recorded there rather than quietly replaced with a fifth invention.
- * Say **prompt block** in prose; the bare word still means a message.
+ * `assistant`. The pipeline container that used to share the word is a
+ * **clause** since 2026-09-15 (R-14), which took one sense off the pile. This
+ * is another: one **section within** a prompt, named by the template variable
+ * that renders it. The word is the ruling's, so it is used here and recorded
+ * there rather than quietly replaced with a fresh invention. Say **prompt
+ * block** in prose; the bare word still means a message.
  *
  * ## What this module is, and is not
  *

@@ -17,7 +17,7 @@
  * before it ever runs the plugin's code — F6 means core imports documents, never
  * authoring JS — so install-time validation reads two things that are both plain data:
  * the plugin's **manifest** (types summarized, permissions compiled from usage) and its
- * **documents** (nodes pinned by `typeId@version`, edges carrying the shapes they were
+ * **documents** (nodes pinned by `definitionId@version`, edges carrying the shapes they were
  * compiled against).
  *
  * ## What that makes checkable
@@ -29,12 +29,13 @@
  * catches exactly that, and catches it at install rather than mid-run.
  */
 
-import type { Descriptor, EntryShape, SlotDecl } from './descriptors.js'
-import { isScriptTypeId, type ScriptTypeDecl } from './scripts.js'
+import { scriptPointsOf, type Descriptor, type EntryShape, type ScriptPointDecl, type SlotDecl } from './descriptors.js'
+import { isScriptKindId, type ScriptKindDecl } from './scripts.js'
+import { settingsSlotFor } from './settingsSlot.js'
 import type { SettingsSchema } from './settings.js'
 import type { SpecDocument } from './document.js'
 
-/** A `type_registry` row (02 §3), as data. */
+/** A `pipeline_definition_registry` row (02 §3), as data. */
 export interface RegistryEntry {
 	id: string
 	version: number
@@ -49,10 +50,13 @@ export interface RegistryEntry {
 	/**
 	 * Interior script points (18 §4e) — carried into the row for the same
 	 * reason `slots` is: the panel offers one chain option per point and must
-	 * render it without loading the plugin (F6). Keys are contract and hash;
-	 * labels are display text, stripped like `i18n` everywhere else.
+	 * render it without loading the plugin (F6). Keys and `accepts` are
+	 * contract and hash; labels are display text, stripped like `i18n`
+	 * everywhere else. Always the full shape — the projection folds the
+	 * deprecated spellings through `scriptPointsOf`, so a row never carries a
+	 * bare string or a point without `accepts`.
 	 */
-	scriptPoints?: Array<{ key: string; i18n?: unknown; description?: unknown }>
+	scriptPoints?: ScriptPointDecl[]
 	/**
 	 * The chat-shape contract (19 §1) — present only on mode-bearing input
 	 * types. Carried for the reason `slots` is: the mode picker and the chat
@@ -78,6 +82,11 @@ export interface RegistryEntry {
 	 * Storing the declaration makes the pipeline view (05 §0a) and the lens view
 	 * (05 §3) generated from rows, which is what lets a plugin's sliders appear beside
 	 * core's with nothing authored twice.
+	 *
+	 * One of them the author did not write: `settings` (R-9), which the
+	 * projection derives from `optional` / `effects` / `reviewDefault` so the
+	 * panel finds the switch and the gate here like any slot. It is left out
+	 * of the content hash — `authoredSlots` — for the reason that file gives.
 	 */
 	slots: Record<string, SlotDecl>
 	/**
@@ -142,11 +151,11 @@ const shapeId = (s: unknown): string | undefined =>
 
 /** Project descriptors into registry rows — how core seeds and refreshes the table. */
 export function snapshotRegistry(
-	types: Array<Descriptor | ScriptTypeDecl>,
+	types: Array<Descriptor | ScriptKindDecl>,
 	meta: { owner?: string; release?: string } = {},
 ): RegistryEntry[] {
 	return types.map((t) =>
-		isScriptTypeId(t.id) ? scriptEntry(t as ScriptTypeDecl, meta) : nodeEntry(t as Descriptor, meta),
+		isScriptKindId(t.id) ? scriptEntry(t as ScriptKindDecl, meta) : nodeEntry(t as Descriptor, meta),
 	)
 }
 
@@ -163,7 +172,7 @@ export function snapshotRegistry(
  * panel that must not load the plugin to render a badge (F6). `semantics` does
  * earn one — it is contract.
  */
-function scriptEntry(d: ScriptTypeDecl, meta: { owner?: string; release?: string }): RegistryEntry {
+function scriptEntry(d: ScriptKindDecl, meta: { owner?: string; release?: string }): RegistryEntry {
 	return {
 		id: bare(d.id),
 		version: versionOf(d.id),
@@ -181,6 +190,10 @@ function scriptEntry(d: ScriptTypeDecl, meta: { owner?: string; release?: string
 }
 
 function nodeEntry(d: Descriptor, meta: { owner?: string; release?: string }): RegistryEntry {
+	// The substrate's slot, after the author's so an author's own key order
+	// is what the panel walks. `register` has already refused an authored
+	// `settings`, so the spread cannot be shadowing one.
+	const settings = settingsSlotFor(d)
 	return {
 		id: bare(d.id),
 		version: versionOf(d.id),
@@ -193,7 +206,7 @@ function nodeEntry(d: Descriptor, meta: { owner?: string; release?: string }): R
 				Object.entries(d.ports?.out ?? {}).map(([k, v]) => [k, shapeId(v)]),
 			),
 		},
-		slots: { ...(d.slots ?? {}) },
+		slots: { ...(d.slots ?? {}), ...(settings ? { settings } : {}) },
 		/**
 		 * What the type calls itself.
 		 *
@@ -222,7 +235,9 @@ function nodeEntry(d: Descriptor, meta: { owner?: string; release?: string }): R
 		causesEvent: d.causesEvent,
 		public: d.public,
 		optional: d.optional,
-		scriptPoints: d.scriptPoints,
+		// Normalised on the way in, so a row is always the full shape and the
+		// panel never has to know a bare-string point ever existed.
+		scriptPoints: d.scriptPoints ? scriptPointsOf(d) : undefined,
 		sessionShape: d.sessionShape,
 		owner: meta.owner,
 		release: meta.release,
@@ -302,20 +317,20 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 
 	for (const doc of input.documents) {
 		for (const n of doc.nodes) {
-			const pin = `${n.typeId}@${n.typeVersion}`
+			const pin = `${n.definitionId}@${n.definitionVersion}`
 			const entry = byId.get(pin)
 
 			// 2. A pin that resolves to nothing.
 			if (!entry && !declared.has(pin)) {
-				const known = latest.get(n.typeId)
+				const known = latest.get(n.definitionId)
 				findings.push({
 					severity: 'error',
 					code: 'E_UNKNOWN_TYPE',
 					where: `${doc.id} · ${n.key}`,
 					message: `pins ${pin}, which this instance does not have`,
 					fix: known
-						? `this instance has ${n.typeId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
-						: `no version of ${n.typeId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
+						? `this instance has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
+						: `no version of ${n.definitionId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
 				})
 				continue
 			}
@@ -332,8 +347,8 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 
 			// 4. Informational: a newer version exists. The pin still runs — that is what
 			//    pinning is for — but an author reading the install log should know.
-			const newest = latest.get(n.typeId)
-			if (entry && newest && newest > n.typeVersion)
+			const newest = latest.get(n.definitionId)
+			if (entry && newest && newest > n.definitionVersion)
 				findings.push({
 					severity: 'warning',
 					code: 'W_NEWER_VERSION',
@@ -349,7 +364,7 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 			if (!e.shape) continue
 			const from = doc.nodes.find((n) => n.key === e.from)
 			if (!from) continue
-			const entry = byId.get(`${from.typeId}@${from.typeVersion}`)
+			const entry = byId.get(`${from.definitionId}@${from.definitionVersion}`)
 			const now = entry?.ports.out[e.fromPort]
 			if (entry && now && now !== e.shape)
 				findings.push({
@@ -396,7 +411,7 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 					code: 'E_MISSING_BINDING',
 					where: d.id,
 					message: `declared as a type but no hook implements it`,
-					fix: `add a pipelineHook for ${d.id}, or drop the declaration. A type with no binding is a node a user can add to a pipeline that then fails at run time.`,
+					fix: `add a handler() for ${d.id}, or drop the declaration. A definition with no handler is a node a user can add to a pipeline that then fails at run time.`,
 				})
 	}
 

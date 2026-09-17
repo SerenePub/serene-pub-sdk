@@ -1,0 +1,31 @@
+{
+	"name": "@serene-pub/playground",
+	"version": "0.6.0-preview.0",
+	"type": "module",
+	"private": true,
+	"description": "The docs playground: one static document, served under /docs/playground/, that transpiles and runs SDK pipeline code inside a sandboxed iframe. It runs in a sandbox; it is not one.",
+	"license": "Apache-2.0",
+	"scripts": {
+		"dev": "node build.mjs --watch --serve",
+		"build": "tsc --noEmit && node build.mjs",
+		"typecheck": "tsc --noEmit"
+	},
+	"dependencies": {
+		"@codemirror/commands": "^6.8.0",
+		"@codemirror/lang-javascript": "^6.2.0",
+		"@codemirror/language": "^6.11.0",
+		"@codemirror/state": "^6.5.0",
+		"@codemirror/theme-one-dark": "^6.1.0",
+		"@codemirror/view": "^6.36.0",
+		"@serene-pub/contracts": "0.6.0-preview.0",
+		"@serene-pub/core-catalog": "0.6.0-preview.0",
+		"@serene-pub/docs": "0.6.0-preview.0",
+		"@serene-pub/sdk": "0.6.0-preview.0",
+		"sucrase": "^3.35.0"
+	},
+	"devDependencies": {
+		"@serene-pub/cli": "0.6.0-preview.0",
+		"esbuild": "^0.28.0",
+		"typescript": "~5.9.0"
+	}
+}

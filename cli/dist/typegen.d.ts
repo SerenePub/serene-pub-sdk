@@ -12,5 +12,5 @@
 import type { AnnouncementDocument } from '@serene-pub/sdk';
 import type { TypeSurface } from './scaffold.js';
 /** The generated module: one typed handle per pipeline, one per genre id. */
-export declare function generateTypedHandles(announcement: AnnouncementDocument, typeOf: (typeId: string, version: number) => TypeSurface | undefined): string;
+export declare function generateTypedHandles(announcement: AnnouncementDocument, typeOf: (definitionId: string, version: number) => TypeSurface | undefined): string;
 //# sourceMappingURL=typegen.d.ts.map

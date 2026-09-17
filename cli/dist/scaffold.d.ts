@@ -23,7 +23,7 @@ export interface TypeSurface {
  * The config skeleton for one spec: every node with declarations, every
  * slot, every field — commented, defaults shown, ready to delete down.
  */
-export declare function scaffoldConfig(doc: SpecDocument, typeOf: (typeId: string, version: number) => TypeSurface | undefined): string;
+export declare function scaffoldConfig(doc: SpecDocument, typeOf: (definitionId: string, version: number) => TypeSurface | undefined): string;
 /**
  * The preset skeleton for one genre: its event surface with requiredness,
  * and for each slot the announced pipelines able to fill it.

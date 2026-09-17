@@ -16,17 +16,17 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
-	allScriptTypes,
-	defineScriptType,
-	definePluginScriptType,
-	getScriptType,
-	isScriptTypeId,
-	parseScriptTypeId,
+	allScriptKinds,
+	defineScriptKind,
+	definePluginScriptKind,
+	getScriptKind,
+	isScriptKindId,
+	parseScriptKindId,
 	scriptContentScopes,
 	scriptSpace,
 	snapshotRegistry,
-	allTypes,
-	type ScriptTypeDecl,
+	allDefinitions,
+	type ScriptKindDecl,
 } from '@serene-pub/sdk'
 
 /**
@@ -37,7 +37,7 @@ import {
  * time is what lets both be true without a teardown that clears declarations
  * this process cannot re-run.
  */
-const AT_LOAD = allScriptTypes()
+const AT_LOAD = allScriptKinds()
 	.map((t) => t.id)
 	.sort()
 
@@ -57,7 +57,7 @@ const CORE_V1 = [
 
 describe('18-S1 · the id grammar', () => {
 	test('parses the three segments a script id carries', () => {
-		assert.deepEqual(parseScriptTypeId('core:script:text/stop@1'), {
+		assert.deepEqual(parseScriptKindId('core:script:text/stop@1'), {
 			namespace: 'core',
 			content: 'text',
 			operation: 'stop',
@@ -72,11 +72,11 @@ describe('18-S1 · the id grammar', () => {
 		// matched by equality, and a dot in one is a second delimiter nobody
 		// declared.
 		assert.equal(
-			parseScriptTypeId('chariot.rp:script:text/transform@1').namespace,
+			parseScriptKindId('chariot.rp:script:text/transform@1').namespace,
 			'chariot.rp',
 		)
 		assert.throws(
-			() => parseScriptTypeId('core:script:te.xt/transform@1'),
+			() => parseScriptKindId('core:script:te.xt/transform@1'),
 			/not a valid script/,
 		)
 	})
@@ -100,16 +100,16 @@ describe('18-S1 · the id grammar', () => {
 			'',
 		])
 			assert.throws(
-				() => parseScriptTypeId(bad),
+				() => parseScriptKindId(bad),
 				/not a valid script type id/,
 				`'${bad}' parsed when it should not have`,
 			)
 	})
 
-	test('`isScriptTypeId` agrees with the parser, and does not throw', () => {
-		assert.equal(isScriptTypeId('core:script:text/stop@1'), true)
-		assert.equal(isScriptTypeId('core:task/assemble@2'), false)
-		assert.equal(isScriptTypeId('nonsense'), false)
+	test('`isScriptKindId` agrees with the parser, and does not throw', () => {
+		assert.equal(isScriptKindId('core:script:text/stop@1'), true)
+		assert.equal(isScriptKindId('core:task/assemble@2'), false)
+		assert.equal(isScriptKindId('nonsense'), false)
 	})
 
 	test('the chain-homogeneity key is readable off the id alone', () => {
@@ -131,7 +131,7 @@ describe('18-S1 · core ships eight contracts', () => {
 
 	test('every one is reachable by id and states its blast radius', () => {
 		for (const id of CORE_V1) {
-			const t = getScriptType(id)
+			const t = getScriptKind(id)
 			assert.ok(t, `${id} is not registered`)
 			// Not decoration: operations within a content scope *are* the
 			// permission granularity (18 §3), so the panel needs a sentence to
@@ -144,9 +144,9 @@ describe('18-S1 · core ships eight contracts', () => {
 		// The distinction that makes cross-source merging well-defined: a
 		// verdict is reduced (earliest index wins) rather than folded, so
 		// connection ∪ pipeline ∪ chat needs no precedence rule.
-		assert.equal(getScriptType('core:script:text/stop@1')!.semantics, 'verdict')
+		assert.equal(getScriptKind('core:script:text/stop@1')!.semantics, 'verdict')
 		for (const id of CORE_V1.filter((i) => i !== 'core:script:text/stop@1'))
-			assert.equal(getScriptType(id)!.semantics, 'transform', id)
+			assert.equal(getScriptKind(id)!.semantics, 'transform', id)
 	})
 
 	test('the content scopes are derived, not restated', () => {
@@ -161,7 +161,7 @@ describe('18-S1 · core ships eight contracts', () => {
 })
 
 describe('18-S1 · registration refuses what it must', () => {
-	const decl = (id: string): ScriptTypeDecl => ({
+	const decl = (id: string): ScriptKindDecl => ({
 		id,
 		blastRadius: { en: 'test' },
 		semantics: 'transform',
@@ -172,26 +172,26 @@ describe('18-S1 · registration refuses what it must', () => {
 		// It matters more here than in the other registries: these ids are
 		// matched by *segment*, so a malformed one does not fail loudly — it
 		// quietly belongs to no chain and no hook.
-		assert.throws(() => defineScriptType(decl('core:script:text-stop@9')), /not a valid script/)
-		assert.equal(getScriptType('core:script:text-stop@9'), undefined)
+		assert.throws(() => defineScriptKind(decl('core:script:text-stop@9')), /not a valid script/)
+		assert.equal(getScriptKind('core:script:text-stop@9'), undefined)
 	})
 
 	test('an id has exactly one owner', () => {
-		assert.throws(() => defineScriptType(decl('core:script:text/stop@1')), /duplicate/)
+		assert.throws(() => defineScriptKind(decl('core:script:text/stop@1')), /duplicate/)
 	})
 
 	test("a plugin may not claim core's namespace", () => {
 		assert.throws(
-			() => definePluginScriptType('stats', decl('core:script:data/check@1')),
+			() => definePluginScriptKind('stats', decl('core:script:data/check@1')),
 			/may not declare/,
 		)
 		// …and its own is fine, which is the half that matters: an extension
 		// registering its own types under its own namespace is tier 2 of §4a,
 		// and it must work without core coordinating.
-		const own = definePluginScriptType('stats', decl('stats:script:data/check@1'))
-		assert.equal(getScriptType(own.id)!.id, 'stats:script:data/check@1')
-		assert.equal(parseScriptTypeId(own.id).content, 'data')
-		// Left registered on purpose. `_clearScriptTypes` would take core's
+		const own = definePluginScriptKind('stats', decl('stats:script:data/check@1'))
+		assert.equal(getScriptKind(own.id)!.id, 'stats:script:data/check@1')
+		assert.equal(parseScriptKindId(own.id).content, 'data')
+		// Left registered on purpose. `_clearScriptKinds` would take core's
 		// declarations with it, and this process cannot re-run the module's
 		// side effects — a teardown that breaks every later assertion is worse
 		// than a registry with one extra row in it.
@@ -200,7 +200,7 @@ describe('18-S1 · registration refuses what it must', () => {
 
 describe('18-S1 · one registry, one projection', () => {
 	test('a script type projects with kind "script" and its semantics', () => {
-		const [entry] = snapshotRegistry([getScriptType('core:script:text/transform@1')!], {
+		const [entry] = snapshotRegistry([getScriptKind('core:script:text/transform@1')!], {
 			release: 'test',
 		})
 		assert.equal(entry!.id, 'core:script:text/transform')
@@ -214,7 +214,7 @@ describe('18-S1 · one registry, one projection', () => {
 	})
 
 	test('the blast radius rides in i18n, where display text is stripped from the hash', () => {
-		const [entry] = snapshotRegistry([getScriptType('core:script:text/stop@1')!], {
+		const [entry] = snapshotRegistry([getScriptKind('core:script:text/stop@1')!], {
 			release: 'test',
 		})
 		assert.equal((entry!.i18n as { blastRadius?: unknown }).blastRadius !== undefined, true)
@@ -223,7 +223,7 @@ describe('18-S1 · one registry, one projection', () => {
 	test('node types keep their kind and carry no semantics', () => {
 		// The other half of "one projection": widening it must not have moved
 		// anything about node types, whose hashes are frozen.
-		const nodes = snapshotRegistry(allTypes().slice(0, 5), { release: 'test' })
+		const nodes = snapshotRegistry(allDefinitions().slice(0, 5), { release: 'test' })
 		for (const e of nodes) {
 			assert.notEqual(e.kind, 'script')
 			assert.equal(e.semantics, undefined)

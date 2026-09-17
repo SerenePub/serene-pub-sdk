@@ -1,0 +1,74 @@
+/**
+ * The built-in writes as specs (R-15, ruled 2026-09-15, built 2026-09-16).
+ *
+ * *Anything that alters message state is a built-in*: core implements the
+ * write and it always emits an event carrying what changed and what was
+ * lost. Each spec here is one such write — the request on
+ * `core:inlet/built-in-request@1`, the write on its outlet, nothing between —
+ * so that a delete is a **run**: receipted, gate-eligible (an admin may turn
+ * review on for `delete-message`), and recorded in the session's changes for
+ * the next reply's inlet. The venue's handler makes the permission checks
+ * it alone can make and hands the request to `runBuiltIn` in core, which runs
+ * the spec named here with a run kind of `action`; the host's commit re-runs
+ * the item rule against the actor before it writes, and only these five
+ * documents may place a built-in outlet at all (`validate()`, U5b review C1
+ * and W8).
+ *
+ * ## Floors and opt-ins
+ *
+ * Stop, branch and edit are **floors** — present in every genre, never
+ * switched off. Delete, hide (ghost) and swipe are built-ins a genre may
+ * switch off through `SessionShape.messageVerbs`, never re-implement. Stop
+ * has no spec: it is the run-level guarantee (R-17) and emits
+ * `message-stopped` from the finalisation. Regenerate, continue and a
+ * swipe's fresh alternative are the reply road's own `update-message` with a
+ * `verb` on its event — content the genre's pipeline produced, written by the
+ * outlet the reply already ends in.
+ *
+ * ## No lock, no genre
+ *
+ * A built-in serves every genre, so no inlet lock is declared and no
+ * `taxonomy.genre` names one; `role: 'action'` because a person invokes it.
+ * No `contributes.actions` either — core's message verbs are described once,
+ * in the SDK's `CORE_ACTIONS` (30 §U5c): venue `message` (and `extra` for
+ * retry/continue), audience `item`, the floors marked. A host merges that
+ * table with the genre's `messageVerbs` availability; a spec here declaring
+ * a second copy would be a second place for the same fact to drift.
+ */
+import { compile, spec, BUILTIN_SPEC_IDS } from '@serene-pub/sdk';
+import * as C from '@serene-pub/contracts';
+export const BUILTIN_VERSION = '1.0.0';
+// The ids live in the SDK since 2026-09-16 (U5b review W8): `validate()`
+// refuses a built-in outlet in any document but these five, and the SDK
+// cannot import the catalog. Re-exported here so the catalog stays the place
+// a host reads them from.
+export { BUILTIN_SPEC_IDS };
+export const BUILTIN_DELETE_SPEC_ID = BUILTIN_SPEC_IDS.delete;
+export const BUILTIN_HIDE_SPEC_ID = BUILTIN_SPEC_IDS.hide;
+export const BUILTIN_EDIT_SPEC_ID = BUILTIN_SPEC_IDS.edit;
+export const BUILTIN_SWIPE_SPEC_ID = BUILTIN_SPEC_IDS.swipe;
+export const BUILTIN_BRANCH_SPEC_ID = BUILTIN_SPEC_IDS.branch;
+const builtIn = (id) => spec(id, {
+    version: BUILTIN_VERSION,
+    taxonomy: { role: 'action' },
+}).inlet('input', C.builtInRequest.v1());
+export const builtinDeleteSpec = () => compile(builtIn(BUILTIN_DELETE_SPEC_ID)
+    .outlet('write', ($) => C.deleteMessage.v1({ target: $.input.target }))
+    .build());
+export const builtinHideSpec = () => compile(builtIn(BUILTIN_HIDE_SPEC_ID)
+    .outlet('write', ($) => C.hideMessage.v1({ target: $.input.target, hidden: $.input.hidden }))
+    .build());
+export const builtinEditSpec = () => compile(builtIn(BUILTIN_EDIT_SPEC_ID)
+    .outlet('write', ($) => C.editMessage.v1({ target: $.input.target, text: $.input.text }))
+    .build());
+export const builtinSwipeSpec = () => compile(builtIn(BUILTIN_SWIPE_SPEC_ID)
+    .outlet('write', ($) => C.swipeMessage.v1({
+    target: $.input.target,
+    index: $.input.index,
+    text: $.input.text,
+}))
+    .build());
+export const builtinBranchSpec = () => compile(builtIn(BUILTIN_BRANCH_SPEC_ID)
+    .outlet('write', ($) => C.branchSession.v1({ fromMessage: $.input.fromMessage, title: $.input.title }))
+    .build());
+//# sourceMappingURL=builtins.js.map

@@ -42,6 +42,7 @@
  */
 
 import type { Descriptor, PortDecl, SlotDecl } from './descriptors.js'
+import type { Hook } from './executor.js'
 import type { FieldDecl, FieldType, MemberDecl } from './settings.js'
 
 // ── Key extraction ──────────────────────────────────────────────────────────
@@ -93,7 +94,7 @@ type DeclaredNames<T> = [T] extends [never] ? never : Extract<keyof DeclaredOnly
  *
  * Accepts the pinned form (`typeof C.vectorSearch` — a `Pinned<D>`, which is
  * what `@serene-pub/contracts` exports and what a spec author already holds)
- * and a bare descriptor, so a plugin that has only its own `describeQueryType`
+ * and a bare descriptor, so a plugin that has only its own `describeQueryDefinition`
  * return value can use these helpers without wrapping it in a `pin` first.
  */
 export type DescriptorOf<P> = P extends { descriptor: infer D }
@@ -356,6 +357,109 @@ export function declaresReads<H extends (...args: any[]) => any>(
 	requires: HandlerRequires,
 ): DeclaredHook<H> {
 	return Object.assign(hook, { requires }) as DeclaredHook<H>
+}
+
+// ── The typed form: a declaration the contract checks ────────────────────────
+
+/**
+ * The names a handler bound to `P` may declare it reads off `input` — its
+ * in-ports and slot names, or, for a tuple of contracts, the intersection.
+ *
+ * `P` is one pinned contract (`typeof C.sessionHistory`) or a readonly tuple of
+ * them (`[typeof C.worldLore, typeof C.characterLore, typeof C.historyEntries]`),
+ * the same two spellings `InputOf` and `SharedInput` take. A pinned contract is
+ * an object and never an array, so the tuple branch cannot be entered by
+ * accident.
+ */
+export type ReadablePorts<P> = P extends readonly unknown[] ? SharedNames<P> : PlainKeys<P>
+
+/** The parameter names a handler bound to `P` may declare it reads. */
+export type ReadableParams<P> = P extends readonly unknown[] ? SharedParamNames<P> : ParamNamesOf<P>
+
+/**
+ * A read declaration whose every name the contract has to supply.
+ *
+ * `HandlerRequires` with the two arrays narrowed from `string` to the
+ * contract's own literals — so `params: ['limt']` fails to compile where the
+ * untyped form would let the typo through to `structuralCompat` at boot, or,
+ * on a name the guard never reaches, through to nothing at all.
+ */
+export interface TypedReads<P> {
+	/** In-port and slot names read off `input` directly. */
+	ports: readonly ReadablePorts<P>[]
+	/** Names read off `input.params`. Optional: most nodes declare none. */
+	params?: readonly ReadableParams<P>[]
+	/** A field type a param is required to have, where the read cares. */
+	paramTypes?: Partial<Record<ReadableParams<P>, FieldType>>
+}
+
+/**
+ * Attach a read declaration a contract has checked (ruling R-12, 2026-09-15).
+ *
+ * ```ts
+ * reads<typeof C.sessionHistory>(
+ *   async (input: InputOf<typeof C.sessionHistory>, ctx) => …,
+ *   { ports: ['scope'], params: ['limit', 'channel'] },
+ * )
+ * ```
+ *
+ * The compile-time half of what `declaresReads` records at run time. `InputOf`
+ * makes a read of an **undeclared** name a type error; this makes the
+ * declaration name nothing `P` lacks — `params: ['limt']` does not compile.
+ * The reverse direction (a declared name **no** handler reads) is the guard's
+ * job, in the host, and it is what this declaration exists to feed.
+ *
+ * ⚠ **What this cannot check.** `P` is the contract the *declaration* is
+ * narrowed against; the handler is a plain `Hook`, so nothing here proves the
+ * handler's own `input` was typed against the same `P`. Pairing
+ * `reads<typeof C.X>` with a handler whose input is `NodeInput<typeof C.X>` is
+ * a **convention**, and the host keeps it by a test over the source of its
+ * bindings files (`boot/readsPairing.test.ts`) rather than by the type system.
+ *
+ * `P` is written explicitly and the hook is a plain `Hook`, rather than both
+ * inferred, because TypeScript infers all of a call's type arguments or none
+ * — and the contract cannot be inferred from a handler whose `input` is an
+ * intersection, an alias, or `any`.
+ *
+ * ⚠ **One declaration per function object.** Like `declaresReads` this attaches
+ * to the hook itself rather than wrapping it, so a handler two pins share
+ * carries ONE `requires` — and a second, different declaration on the same
+ * function would silently replace the first. That is refused here: bind a
+ * shared handler through a per-pin arrow (`(input, ctx) => shared(input, ctx)`)
+ * when the two pins read differently, and declare the intersection when they
+ * do not. An identical redeclaration is a no-op, on the registry's own terms.
+ */
+export function reads<P>(hook: Hook, requires: TypedReads<P>): DeclaredHook<Hook> {
+	const plain: HandlerRequires = {
+		ports: [...requires.ports] as string[],
+		params: [...(requires.params ?? [])] as string[],
+		...(requires.paramTypes
+			? { paramTypes: requires.paramTypes as Readonly<Record<string, FieldType>> }
+			: {}),
+	}
+	const existing = readsOf(hook)
+	if (existing && !sameRequires(existing, plain))
+		throw new Error(
+			`reads(): this handler already declares what it reads (ports ${JSON.stringify(
+				existing.ports,
+			)}, params ${JSON.stringify(existing.params)}) and the new declaration differs ` +
+				`(ports ${JSON.stringify(plain.ports)}, params ${JSON.stringify(plain.params)}). ` +
+				`A declaration attaches to the function object, so a handler two pins share ` +
+				`can carry only one — bind each pin through its own arrow and declare there.`,
+		)
+	return declaresReads(hook, plain)
+}
+
+function sameRequires(a: HandlerRequires, b: HandlerRequires): boolean {
+	const sorted = (xs: readonly string[]) => [...new Set(xs)].sort()
+	const eq = (xs: readonly string[], ys: readonly string[]) => {
+		const [p, q] = [sorted(xs), sorted(ys)]
+		return p.length === q.length && p.every((x, i) => x === q[i])
+	}
+	if (!eq(a.ports, b.ports) || !eq(a.params, b.params)) return false
+	const [ta, tb] = [a.paramTypes ?? {}, b.paramTypes ?? {}]
+	const keys = sorted([...Object.keys(ta), ...Object.keys(tb)])
+	return keys.every((k) => ta[k] === tb[k])
 }
 
 /** Does this hook carry a read declaration? */

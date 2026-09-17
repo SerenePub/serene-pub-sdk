@@ -1,0 +1,178 @@
+{
+	"name": "echo-reply",
+	"specId": "example:echo-reply",
+	"specVersion": "1.0.0",
+	"seed": "seed:example",
+	"outcome": "ok",
+	"nodes": [
+		{
+			"nodeKey": "input",
+			"kind": "inlet",
+			"result": "ok",
+			"output": {
+				"text": "where is my sister",
+				"sessionScope": "session:991"
+			}
+		},
+		{
+			"nodeKey": "history",
+			"kind": "query",
+			"result": "ok",
+			"input": {
+				"scope": "session:991"
+			},
+			"output": {
+				"main": "history",
+				"messages": {
+					"sourceKey": "history",
+					"items": [
+						"msg0",
+						"msg1",
+						"msg2",
+						"msg3",
+						"msg4",
+						"msg5",
+						"msg6",
+						"msg7",
+						"msg8",
+						"msg9",
+						"msg10",
+						"msg11"
+					],
+					"weight": 0.4,
+					"minInclude": 6,
+					"priority": "normal"
+				}
+			}
+		},
+		{
+			"nodeKey": "prompt",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"candidates": {
+					"sourceKey": "history",
+					"items": [
+						"msg0",
+						"msg1",
+						"msg2",
+						"msg3",
+						"msg4",
+						"msg5",
+						"msg6",
+						"msg7",
+						"msg8",
+						"msg9",
+						"msg10",
+						"msg11"
+					],
+					"weight": 0.4,
+					"minInclude": 6,
+					"priority": "normal"
+				}
+			},
+			"output": {
+				"main": {
+					"budget": 4096,
+					"alloc": [
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				},
+				"context": {
+					"budget": 4096,
+					"alloc": [
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				}
+			}
+		},
+		{
+			"nodeKey": "generate",
+			"kind": "oracle",
+			"result": "ok",
+			"input": {
+				"context": {
+					"budget": 4096,
+					"alloc": [
+						{
+							"sourceKey": "history",
+							"weight": 0.4,
+							"minInclude": 6,
+							"included": 6,
+							"available": 12
+						}
+					],
+					"dropped": 6
+				},
+				"connection": {
+					"id": "ollama-local",
+					"kind": "core:shape/text-gen@1",
+					"metadata": {
+						"contextLength": 4096,
+						"tokenizer": "llama-bpe",
+						"model": "llama3",
+						"supportedSamplers": [
+							"temperature",
+							"top_p"
+						]
+					},
+					"modelId": null,
+					"contextWindow": null
+				}
+			},
+			"output": {
+				"main": "the reply text",
+				"text": "the reply text"
+			}
+		},
+		{
+			"nodeKey": "save",
+			"kind": "outlet",
+			"result": "ok",
+			"input": {
+				"text": "the reply text"
+			},
+			"output": {
+				"status": "committed",
+				"ids": {
+					"main": "row:save",
+					"messageId": "row:save"
+				},
+				"main": {
+					"status": "committed",
+					"ids": {
+						"main": "row:save",
+						"messageId": "row:save"
+					}
+				},
+				"messageId": {
+					"status": "committed",
+					"ids": {
+						"main": "row:save",
+						"messageId": "row:save"
+					}
+				}
+			}
+		}
+	],
+	"emitted": [
+		{
+			"event": "core:event/message-created@1",
+			"cause": "save"
+		}
+	]
+}

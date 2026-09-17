@@ -91,6 +91,55 @@ export declare function probeBinding(hook: (input: any, ctx: any) => any, descri
 /** A context shaped like the executor's, per kind — so a probe tests the real surface. */
 export declare const probeCtxFor: (kind: Descriptor['kind'], sampleInput?: unknown) => ProbeCtx;
 /**
+ * The seed and the clock an executed example runs on.
+ *
+ * Fixed, and fixed *here* rather than per example: two runs of the same page
+ * have to produce the same bytes or the golden is noise, and a seed chosen by
+ * each example is a seed one of them forgets to choose. Everything a receipt
+ * records that moves on its own — run id, timestamps, durations — is either
+ * excluded by `toGolden` or never rendered by `renderRunSummary`.
+ *
+ * They live in the SDK rather than in the docs generator because the generator
+ * is not the only thing that runs an example any more: the browser playground
+ * runs the same module against the same seed, and a reader who compares what
+ * they just ran against the page has to be comparing the same run.
+ */
+export declare const EXAMPLE_SEED = "seed:example";
+export declare const EXAMPLE_CLOCK = 1700000000000;
+/** Everything `run` takes except the two things the harness decides. */
+export type ExampleRunOptions = Omit<RunOptions, 'seed' | 'now'>;
+/**
+ * What an example's `run()` is handed: its own compiled document, and the way
+ * to execute it deterministically. Deliberately small — the fixture host itself
+ * (bindings, scope data) is the example's own import, because a reader of the
+ * page has to be able to see which hooks answered.
+ */
+export interface ExampleRunCtx {
+    /** This example's document — already compiled from `build()` and validated. */
+    doc: SpecDocument;
+    /** The run seed. Passed for the example to show; `run` applies it regardless. */
+    seed: string;
+    /** The run clock, for the same reason. */
+    now: () => number;
+    /** Execute `doc` under this seed and clock. Everything else is the example's. */
+    run(opts: ExampleRunOptions): Promise<Receipt>;
+}
+/** The context an executed example runs against. Seed and clock default to the fixed pair. */
+export declare function makeExampleRunCtx(doc: SpecDocument, opts?: {
+    seed?: string;
+    now?: () => number;
+}): ExampleRunCtx;
+/**
+ * A receipt as a page shows it: what ran, in order, and how each step ended.
+ *
+ * Not `renderReceipt`, which is the run inspector's rendering and carries the
+ * run id, the elapsed times and the wall clock. Every one of those moves
+ * between two identical runs, and a page that changed on every build would
+ * teach a reader to ignore it. What is left is what the run DECIDED — which is
+ * the only part worth pinning.
+ */
+export declare function renderRunSummary(r: Receipt): string;
+/**
  * F26 as a one-liner an author can run: parallel and forced-sequential must produce the
  * same result. If your hook has a hidden ordering dependency, this is where it shows up
  * — not in a user's chat at 2am under load.

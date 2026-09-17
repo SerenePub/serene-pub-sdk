@@ -17,20 +17,18 @@ import * as C from '@serene-pub/contracts'
 
 const built = (taxonomy?: any) =>
 	spec('demo:spec/taxed', { version: '1.0.0', ...(taxonomy ? { taxonomy } : {}) })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.build()
 
 describe('spec taxonomy', () => {
 	test('rides the document and round-trips (F3)', () => {
 		const doc = compile(
 			built({
-				zone: 'session',
 				role: 'action',
 				genre: 'core:genre/chat',
 			}),
 		)
 		assert.deepEqual(doc.taxonomy, {
-			zone: 'session',
 			role: 'action',
 			genre: 'core:genre/chat',
 		})
@@ -40,21 +38,21 @@ describe('spec taxonomy', () => {
 	})
 
 	test('a changed claim is a content change — the hash moves', () => {
-		const a = compile(built({ zone: 'session', role: 'primary' }))
-		const b = compile(built({ zone: 'session', role: 'action' }))
+		const a = compile(built({ role: 'primary' }))
+		const b = compile(built({ role: 'action' }))
 		assert.notEqual(canonicalHash(a), canonicalHash(b))
 	})
 
 	test('the deprecated `mode` spelling normalizes to `genre` (24 §2)', () => {
-		const doc = compile(built({ zone: 'session', mode: 'core:genre/chat' }))
-		assert.deepEqual(doc.taxonomy, { zone: 'session', genre: 'core:genre/chat' })
+		const doc = compile(built({ mode: 'core:genre/chat' }))
+		assert.deepEqual(doc.taxonomy, { genre: 'core:genre/chat' })
 		// meta.mode likewise: the document carries `genre`, never `mode`.
 		const metaAliased = compile(
 			spec('demo:spec/aliased', {
 				version: '1.0.0',
 				mode: { name: { en: 'Chat' }, family: 'chat' },
 			})
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.build(),
 		)
 		assert.equal(metaAliased.mode, undefined)
@@ -65,7 +63,7 @@ describe('spec taxonomy', () => {
 		const doc = compile(
 			spec('demo:spec/create-crawl', {
 				version: '1.0.0',
-				taxonomy: { zone: 'session', role: 'create' },
+				taxonomy: { role: 'create' },
 				genre: {
 					name: { en: 'Dungeon Crawl' },
 					family: 'adventure',
@@ -76,7 +74,7 @@ describe('spec taxonomy', () => {
 					},
 				},
 			})
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.build(),
 		)
 		assert.equal((doc.taxonomy as any).role, 'create')
@@ -85,14 +83,14 @@ describe('spec taxonomy', () => {
 		const reshaped = compile(
 			spec('demo:spec/create-crawl', {
 				version: '1.0.0',
-				taxonomy: { zone: 'session', role: 'create' },
+				taxonomy: { role: 'create' },
 				genre: {
 					name: { en: 'Dungeon Crawl' },
 					family: 'adventure',
 					shape: { composer: 'none' },
 				},
 			})
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.build(),
 		)
 		assert.notEqual(canonicalHash(reshaped), canonicalHash(doc))

@@ -17,7 +17,7 @@ import { roughTokens } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
 import { assignable } from '@serene-pub/sdk'
-import { pin, describeProvider, describeTaskType } from '@serene-pub/sdk'
+import { pin, describeOracleDefinition, describeTaskDefinition } from '@serene-pub/sdk'
 import {
 	messages,
 	chatml,
@@ -154,15 +154,15 @@ describe('90 · overhead', () => {
 // ── 91 · End to end through the executor ───────────────────────────────────
 describe('91 · the Provider formats at the pre-call substrate', () => {
 	const allocate = pin(
-		describeTaskType({
+		describeTaskDefinition({
 			id: 'demo:task/allocate@1',
 			timeoutMs: 500,
 			ports: { out: { main: S.allocated, context: S.allocated } },
 		}),
 	)
 	const wired = pin(
-		describeProvider({
-			id: 'demo:provider/wired@1',
+		describeOracleDefinition({
+			id: 'demo:oracle/wired@1',
 			shape: S.textGen,
 			effects: 'external',
 			timeoutMs: 5000,
@@ -176,17 +176,17 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 
 	const s = () =>
 		spec('demo:wire', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('alloc', allocate.v1({}))
-			.provider('send', ($: any) =>
+			.oracle('send', ($: any) =>
 				wired.v1({ context: $.alloc.context, connection: slot.connection() }),
 			)
 
 	const binds = (over: any = {}) =>
 		bindings({
 			'demo:task/allocate@1': async () => ok({ main: ctx(), context: ctx() }),
-			'demo:provider/wired@1': async () => ok({ main: 'ok', text: 'ok' }),
-			'demo:provider/tiny@1': async () => ok({ main: 'ok' }),
+			'demo:oracle/wired@1': async () => ok({ main: 'ok', text: 'ok' }),
+			'demo:oracle/tiny@1': async () => ok({ main: 'ok' }),
 			...over,
 		})
 
@@ -196,7 +196,7 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 			input: {},
 			world,
 			bindings: binds({
-				'demo:provider/wired@1': async (i: any) => {
+				'demo:oracle/wired@1': async (i: any) => {
 					seen = i.context
 					return ok({ main: 'ok', text: 'ok' })
 				},
@@ -215,8 +215,8 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 		// A retry would re-invoke Assemble, which is a back-edge the graph cannot show
 		// (F9, F25). Over budget means declared overhead is wrong, and that is loud.
 		const tiny = pin(
-			describeProvider({
-				id: 'demo:provider/tiny@1',
+			describeOracleDefinition({
+				id: 'demo:oracle/tiny@1',
 				shape: S.textGen,
 				effects: 'external',
 				timeoutMs: 5000,
@@ -229,9 +229,9 @@ describe('91 · the Provider formats at the pre-call substrate', () => {
 		)
 		const doc = publish(
 			spec('demo:overbudget', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.task('alloc', allocate.v1({}))
-				.provider('send', ($: any) =>
+				.oracle('send', ($: any) =>
 					tiny.v1({
 						context: $.alloc.context,
 						budget: { available: 3 },

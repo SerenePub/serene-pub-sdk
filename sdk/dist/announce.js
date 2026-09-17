@@ -13,6 +13,8 @@ const refId = (v) => typeof v === 'string'
         : v.id;
 import { genre as makeGenre, genreIdOf, sessionEvents, } from './genres.js';
 import { makeValueToolkit, isTodo } from './values.js';
+import { isEventId } from './events.js';
+import { ACTION_IDENTITY, actionDocumentFindings, actionsOf, slashCollisions } from './actions.js';
 import { isServableEntry, isServablePanelId } from './surfaces.js';
 /**
  * Author a config against a spec handle (announced or external). With a
@@ -48,7 +50,20 @@ export function preset(slug, props) {
         ...(props.actions
             ? {
                 actions: {
-                    include: props.actions.include.map(refId),
+                    include: props.actions.include.flatMap((entry) => {
+                        if (typeof entry === 'string') {
+                            if (ACTION_IDENTITY.test(entry))
+                                return [entry];
+                            throw new Error(`preset '${slug}' includes '${entry}', which is not an action identity — ` +
+                                `name the declaration as '<spec slug>#<key>' ('core:spec/narrate#narrate'), ` +
+                                `or pass the built spec to include every action it contributes`);
+                        }
+                        const found = actionsOf({ id: entry.id, contributes: entry.meta.contributes });
+                        if (!found.length)
+                            throw new Error(`preset '${slug}' includes '${entry.id}', which contributes no actions — ` +
+                                `nothing to bring along`);
+                        return found.map((a) => `${entry.id}#${a.key}`);
+                    }),
                 },
             }
             : {}),
@@ -176,6 +191,22 @@ export class AnnouncementBuilder {
                 errors.push(`genre '${g.id}' has ${creates.length} create pipelines ` +
                     `(${creates.map((s) => s.id).join(', ')}) — exactly one (24 §3)`);
         }
+        // Contributed actions (R-15, U5c): each declaration sound, and one
+        // slash name meaning one function across the whole package — the
+        // per-document check cannot see two specs of one package claiming
+        // `/acme.roll` for two different things, so the package is the first
+        // place the collision rule runs across documents; the install is the
+        // second.
+        const packageActions = [];
+        for (const s of this._pipelines) {
+            // A built spec keeps its contributions on `meta`; a document carries
+            // them at the top — one reader for both.
+            const contributed = { id: s.id, contributes: 'meta' in s ? s.meta.contributes : s.contributes };
+            for (const finding of actionDocumentFindings(contributed))
+                errors.push(`pipeline '${s.id}': ${finding}`);
+            packageActions.push(...actionsOf(contributed));
+        }
+        errors.push(...slashCollisions(packageActions));
         // Prompts: slugs unique per POOL, which is `(node type, slot)`.
         //
         // Uniqueness is per pool and not global: `summarize-scene-default` names
@@ -231,6 +262,16 @@ export class AnnouncementBuilder {
             for (const event of events) {
                 const declared = surface[event];
                 const binding = p.bindings[event];
+                // A binding is keyed by event ID, whoever owns the genre (R-4).
+                // A bare name (`message-respond`) is the pre-fold spelling; a
+                // package carrying one would have its keys reverted by every
+                // boot's preset sync and bind nothing, silently.
+                if (binding && !isEventId(event)) {
+                    errors.push(`preset '${p.slug}' binds '${event}', which is not an event id — bindings ` +
+                        `are keyed 'owner:event/name@N' (sessionEvents.messageRespond is ` +
+                        `'${sessionEvents.messageRespond}'), never by bare name (R-4)`);
+                    continue;
+                }
                 if (g && !declared && binding) {
                     errors.push(`preset '${p.slug}' binds '${event}', which genre '${p.genre}' does not declare`);
                     continue;
@@ -275,9 +316,14 @@ export class AnnouncementBuilder {
                     });
                 }
             }
-            for (const a of p.actions?.include ?? [])
-                if (!announcedSpecs.has(a))
-                    requires.add(a);
+            // An included action names a spec by its identity's first half; a spec
+            // this package does not announce is a requirement on the install.
+            for (const a of p.actions?.include ?? []) {
+                const hash = a.lastIndexOf('#');
+                const specId = hash === -1 ? a : a.slice(0, hash);
+                if (!announcedSpecs.has(specId))
+                    requires.add(specId);
+            }
             coverage.presets.push({ preset: p.slug, genre: p.genre, slots });
         }
         // Surfaces and components: an entry that does not exist at install is a

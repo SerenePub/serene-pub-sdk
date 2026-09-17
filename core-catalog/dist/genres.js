@@ -40,7 +40,9 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
         [sessionEvents.messageRespond]: { required: true },
         [sessionEvents.sessionAction]: { open: true },
         [sessionEvents.memberAdded]: {},
-        [sessionEvents.memberRemoved]: {}
+        [sessionEvents.memberRemoved]: {},
+        /** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
+        [sessionEvents.formAddressed]: {}
     }
 });
 /* ── Adventure ──────────────────────────────────────────────────────────── */
@@ -135,7 +137,83 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
         [sessionEvents.messageRespond]: { required: true },
         [sessionEvents.sessionAction]: { open: true },
         [sessionEvents.memberAdded]: {},
-        [sessionEvents.memberRemoved]: {}
+        [sessionEvents.memberRemoved]: {},
+        /** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
+        [sessionEvents.formAddressed]: {}
+    }
+});
+/* ── Guide ──────────────────────────────────────────────────────────────── */
+/**
+ * The **pure user/assistant session type** (plans/29 R-18; 09-B B10; built
+ * 2026-09-16 as U5g): one envoy, no characters, at most one persona. A
+ * person talks; Serene Pub's guide answers about the app and its docs. It
+ * is the structural successor of the deprecated *Assistant Chat*, whose code
+ * is not reused — an envoy is a cast member, so the reply road, the turn
+ * strategies, the resolver and the inspector all work unchanged.
+ *
+ * ⏳ The mascot is named plainly "Guide" and wears a placeholder glyph: its
+ * name and art are the project owner's to set. Neither is load-bearing —
+ * the key `mascot` is the address, and the name and image are display text.
+ */
+export const GUIDE_GENRE_ID = "core:genre/guide";
+/** The guide's key — the slug `envoy:mascot` and the config address `envoy:mascot`. */
+export const GUIDE_MASCOT_KEY = "mascot";
+/**
+ * A placeholder glyph, inline. No package ships binary assets today
+ * (`EnvoyDecl.image`), so the placeholder is a data: URI the client renders
+ * as an `<img>` — a compass rose on a plain disc, deliberately generic.
+ */
+const GUIDE_MASCOT_IMAGE = "data:image/svg+xml;utf8," +
+    encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+        '<circle cx="32" cy="32" r="30" fill="#e8e4f3" stroke="#6b5cb8" stroke-width="2"/>' +
+        '<polygon points="32,8 37,27 56,32 37,37 32,56 27,37 8,32 27,27" fill="#6b5cb8"/>' +
+        '<circle cx="32" cy="32" r="5" fill="#e8e4f3"/>' +
+        "</svg>");
+export const GUIDE_MASCOT_SYSTEM_PROMPT = [
+    "You are the Guide, Serene Pub's built-in helper. You help the person you are talking to use Serene Pub: setting up connections to AI services, creating characters and personas, writing lorebooks, starting and tuning sessions, and understanding what the app is doing.",
+    "You know Serene Pub's documentation. When documentation excerpts are provided with the conversation, ground your answer in them and name the page they came from; when they are not, say what you know and suggest where in the app to look.",
+    "Answer plainly and briefly. Ask one clarifying question when the request is ambiguous. You are not a character in a story: do not roleplay, do not narrate, and do not invent features the app does not have."
+].join("\n\n");
+export const guideGenre = genre(GUIDE_GENRE_ID, {
+    name: { en: "Guide" },
+    family: "assistant",
+    description: {
+        en: "Talk to Serene Pub's guide about the app itself — no characters, no story; just questions and answers grounded in the docs."
+    },
+    shape: {
+        /**
+         * The whole definition of a pure user/assistant session: no library
+         * character can join, and the one speaker is the genre's envoy.
+         */
+        characters: { min: 0, max: 0 },
+        /** Optional, and at most one: the person may speak as themselves or as a persona. */
+        personas: { min: 0, max: 1 },
+        lorebook: "optional",
+        composer: "text",
+        voice: "character",
+        /** Nothing to greet with — no character carries a greeting here. */
+        greeting: { enabled: false }
+    },
+    envoys: [
+        {
+            key: GUIDE_MASCOT_KEY,
+            name: { en: "Guide" },
+            description: {
+                en: "Serene Pub's built-in helper. Knows the app and its documentation; answers questions about using it."
+            },
+            image: GUIDE_MASCOT_IMAGE,
+            prompts: { systemPrompt: GUIDE_MASCOT_SYSTEM_PROMPT },
+            default: true,
+            speaks: "in-turn"
+        }
+    ],
+    events: {
+        [sessionEvents.messageRespond]: { required: true },
+        [sessionEvents.sessionAction]: { open: true },
+        [sessionEvents.memberAdded]: {},
+        [sessionEvents.memberRemoved]: {},
+        /** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
+        [sessionEvents.formAddressed]: {}
     }
 });
 //# sourceMappingURL=genres.js.map

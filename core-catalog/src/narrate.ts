@@ -41,11 +41,11 @@
  * character, which is precisely what neither wants.
  */
 
-import { compile, spec, slot, sessionEvents } from "@serene-pub/sdk"
-import * as C from "@serene-pub/contracts"
-import { chatGenre } from "./genres.js"
+import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+import { chatGenre } from './genres.js'
 
-export const NARRATE_SPEC_ID = "core:spec/narrate"
+export const NARRATE_SPEC_ID = 'core:spec/narrate'
 // 1.1.0: shared prompts slot, exactly as the respond spec (13 §12 finding i).
 // 1.2.0: the `variables` slot, also exactly as the respond spec — and the
 // layouts it selects are the *same rows*, since a layout is keyed by the
@@ -158,7 +158,7 @@ export const NARRATE_SPEC_ID = "core:spec/narrate"
 // `drizzle/0111_reply_slots_and_relationship_cap.sql` deletes this pin so boot
 // republishes it, and `specHashes.test.ts` records the moved hash in the same
 // change; neither half is optional.
-export const NARRATE_VERSION = "1.11.0"
+export const NARRATE_VERSION = '1.11.0'
 
 export const narrateSpec = () =>
 	compile(
@@ -166,61 +166,78 @@ export const narrateSpec = () =>
 			version: NARRATE_VERSION,
 			/** Catalogue claims (23 §2): a person-invoked action on chats. */
 			taxonomy: {
-				zone: "session",
-				role: "action",
-				genre: chatGenre.id
+				role: 'action',
+				genre: chatGenre.id,
 			},
 			/**
-			 * The canonical contributed trigger (19 §4): this spec offers the
-			 * `narrate` function on standard-mode sessions. Same namespace as the
-			 * mode owner, so it lands as a companion — present by default —
-			 * and the standard input type never has to know it exists.
+			 * The canonical contributed action (19 §4; R-15, U5c): this spec
+			 * offers the `narrate` function on standard-mode sessions — on the
+			 * composer's primary row (`quick`) and as `/narrate`. Same namespace
+			 * as the mode owner, so it lands as a companion — present by
+			 * default — and the standard input type never has to know it exists.
 			 */
 			contributes: {
-				triggers: [
+				actions: [
 					{
+						key: 'narrate',
 						genre: chatGenre.id,
-						function: "narrate",
-						kind: "button",
-						icon: "book-open-text",
-						i18n: { en: "Narrate" }
-					}
-				]
-			}
+						function: 'narrate',
+						venue: { kind: 'composer' },
+						quick: true,
+						icon: 'book-open-text',
+						label: { en: 'Narrate' },
+					},
+				],
+			},
 		})
 			// Manually triggered — a person asks the narrator to speak. Unlike the
 			// reply pipeline, nothing about a new message should start one.
-			.on("core:event/ui-action@1")
 			/** The usage lock (24 §4): a person-invoked action on Chat sessions. */
-			.input("input", C.userMessage.v1(), {
+			.inlet('input', C.userMessage.v1(), {
 				genre: chatGenre,
-				event: sessionEvents.sessionAction
+				event: sessionEvents.sessionAction,
 			})
+			/**
+			 * The narration row, created by the pipeline that fills it (R-17)
+			 * — see `respond`'s `placeholder`. Narration: no character, the
+			 * narrator's name on it, and the instructions the person typed
+			 * stored beside it, which is what a narrator turn's triggering
+			 * text is. `row` is the verb's row: a regenerate, swipe or
+			 * continue of a narration routes back here, and without it this
+			 * node inserted a second narration while the verb's row stayed
+			 * generating forever.
+			 */
+			.outlet('placeholder', ($) =>
+				C.createMessage.v1({
+					generating: true,
+					narration: true,
+					instructions: $.input.text,
+					row: $.input.messageId,
+				}),
+			)
 			// ⚠ `params` is wired for the same reason it is on `lore` below,
 			// and it was missing here too: an unnamed slot is never resolved, so
 			// `limit` arrived as `undefined` and the binding fell through to a
 			// literal 100. The declared default is 100 for that reason, so the
 			// narrator's window does not move as this becomes live.
-			.query("history", ($) =>
+			.query('history', ($) =>
 				C.sessionHistory.v1({
 					scope: $.input.sessionScope,
-					params: slot.params()
-				})
+					params: slot.params(),
+				}),
 			)
 			// ⚠ `params` is wired for the same reason it is on `rank` below: a
 			// slot the node's config does not name is never resolved, so the
 			// declared parameters arrive as `undefined` and the scan silently
 			// runs on its engine defaults. Scan Depth and Max Recursion Depth
 			// rendered, validated and saved here without ever being read.
-			.query("lore", ($) =>
+			.query('lore', ($) =>
 				C.lorebookTriggers.v1({
 					scope: $.input.sessionScope,
-					params: slot.params()
-				})
+					params: slot.params(),
+				}),
 			)
-			.query("cast", ($) =>
-				C.sessionCast.v1({ scope: $.input.sessionScope })
-			)
+			.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
 			/**
 			 * The entity mechanism (design §13.5) — rows found because the scene
 			 * is *naming* what they name. No keys, no embedding model.
@@ -232,11 +249,11 @@ export const narrateSpec = () =>
 			 * all — the same shape of failure the reply pipeline's history lane
 			 * had between its 1.8.0 and 1.10.0.
 			 */
-			.query("entities", ($) =>
+			.query('entities', ($) =>
 				C.entitySearch.v1({
 					scope: $.input.sessionScope,
-					params: slot.params()
-				})
+					params: slot.params(),
+				}),
 			)
 			/**
 			 * Retrieval by **meaning**.
@@ -255,30 +272,30 @@ export const narrateSpec = () =>
 			 * returns empty with the reason on the receipt, and the turn loses
 			 * a signal rather than failing.
 			 */
-			.async("semantic", { mode: "parallel" }, (b) =>
-				b.chain("arm", (c) =>
+			.gather('semantic', { mode: 'parallel' }, (b) =>
+				b.chain('arm', (c) =>
 					c
-						.task("queries", ($) =>
+						.task('queries', ($) =>
 							C.queryWindows.v1({
 								messages: $.history.messages,
 								cast: $.cast.cast,
-								params: slot.params()
-							})
+								params: slot.params(),
+							}),
 						)
-						.provider("embed", ($) =>
+						.oracle('embed', ($) =>
 							C.embedText.v1({
 								texts: $.semantic.arm.queries.current,
-								params: slot.params()
-							})
+								params: slot.params(),
+							}),
 						)
-						.query("search", ($) =>
+						.query('search', ($) =>
 							C.vectorSearch.v1({
 								scope: $.input.sessionScope,
 								vectors: $.semantic.arm.embed.vectors,
-								params: slot.params()
-							})
-						)
-				)
+								params: slot.params(),
+							}),
+						),
+				),
 			)
 			/**
 			 * Every mechanism's candidates, end to end.
@@ -298,14 +315,21 @@ export const narrateSpec = () =>
 			 * whatever the later mechanisms contribute; the entity mechanism
 			 * only ever adds rows no key reached.
 			 */
-			.task("pool", ($) =>
+			.task('pool', ($) =>
 				C.concatCandidates.v1({
 					sources: [
+						// The conversation's band intent alone — see `respond`'s
+						// `lore` node (R-7 P5): it reserves the transcript's slice
+						// of the window. `lore` carries its own three at the head
+						// of `main` — `lorebook-triggers` declares an intent per
+						// band it produces (`worldLoreShare` …), so a share tuned
+						// on that node reaches the ranker declared, not defaulted.
+						$.history.band,
 						$.lore.main,
 						$.entities.main,
-						$.semantic.arm.search.main
-					] as any
-				})
+						$.semantic.arm.search.main,
+					] as any,
+				}),
 			)
 			/**
 			 * Retrieval by **description** — *"the captain"* reaching Captain
@@ -324,31 +348,33 @@ export const narrateSpec = () =>
 			 * `maxMentions` is 0 — so nothing is read and nothing is embedded
 			 * until somebody raises it.
 			 */
-			.async("names", { mode: "parallel" }, (b) =>
-				b.chain("arm", (c) =>
+			.gather('names', { mode: 'parallel' }, (b) =>
+				b.chain('arm', (c) =>
 					c
-						.query("mentions", ($) =>
+						.query('mentions', ($) =>
 							C.mentionSpans.v1({
 								scope: $.input.sessionScope,
-								params: slot.params()
-							})
+								params: slot.params(),
+							}),
 						)
-						.provider("embed", ($) =>
+						.oracle('embed', ($) =>
 							C.embedText.v1({
 								texts: $.names.arm.mentions.texts,
-								params: slot.params()
-							})
+								// One `enabled` switch for both embed nodes (R-7 P2): the
+								// semantic mechanism's embed owns it, this one reads it.
+								params: slot.params({ node: 'semantic.arm.embed' }),
+							}),
 						)
-						.query("link", ($) =>
+						.query('link', ($) =>
 							C.entityLink.v1({
 								scope: $.input.sessionScope,
 								candidates: $.pool.candidates,
 								mentions: $.names.arm.mentions.mentions,
 								vectors: $.names.arm.embed.vectors,
-								params: slot.params()
-							})
-						)
-				)
+								params: slot.params(),
+							}),
+						),
+				),
 			)
 			/**
 			 * ⚠ **The enriched list first, the raw list behind it.**
@@ -362,17 +388,17 @@ export const narrateSpec = () =>
 			 * subtracts a signal and never removes a candidate" a property of
 			 * the wiring rather than of a binding's error handling.
 			 */
-			.task("poolLinked", ($) =>
+			.task('poolLinked', ($) =>
 				C.concatCandidates.v1({
-					sources: [$.names.arm.link.main, $.pool.candidates] as any
-				})
+					sources: [$.names.arm.link.main, $.pool.candidates] as any,
+				}),
 			)
-			.task("context", ($) =>
+			.task('context', ($) =>
 				C.buildNarratorContext.v1({
 					cast: $.cast.cast,
 					prompts: slot.prompts(),
-					variables: slot.variables()
-				})
+					variables: slot.variables(),
+				}),
 			)
 			/**
 			 * How much room the context has, from the window itself.
@@ -390,33 +416,36 @@ export const narrateSpec = () =>
 			 * silently, and sharing the reference makes the two impossible to
 			 * point apart.
 			 */
-			.task("contextBudget", ($) =>
+			.task('contextBudget', ($) =>
 				C.contextBudget.v1({
-					sampling: slot.samplingOf("generate"),
-					params: slot.params()
-				})
+					sampling: slot.samplingOf('generate'),
+					// The other half of the same pair, for the model's own
+					// window (0114) — see `respond`.
+					connection: slot.connectionOf('generate'),
+					params: slot.params(),
+				}),
 			)
 			// Every mechanism's output, not just the keyword scan's. Wiring
 			// `rank` to a subset drops the rest silently — the prompt simply
 			// has no lore from that mechanism in it and nothing anywhere says
 			// so, which is how this pipeline came to render four retrieval
 			// controls that reached nothing.
-			.task("rank", ($) =>
+			.task('rank', ($) =>
 				C.rankHybrid.v1({
 					candidates: $.poolLinked.candidates,
 					budget: $.contextBudget.available,
-					params: slot.params()
-				})
+					params: slot.params(),
+				}),
 			)
-			.task("lines", ($) =>
+			.task('lines', ($) =>
 				C.processMessages.v1({
 					messages: $.history.messages,
 					cast: $.cast.cast,
 					templateContext: $.context.templateContext,
-					seedName: $.context.seedName
-				})
+					seedName: $.context.seedName,
+				}),
 			)
-			.task("prompt", ($) =>
+			.task('prompt', ($) =>
 				C.assemble.v2({
 					candidates: $.rank.candidates,
 					decisions: $.rank.decisions,
@@ -434,7 +463,7 @@ export const narrateSpec = () =>
 					// The context builder's authored text, by reference — one
 					// prompt, written once, read where the template asks for
 					// `{{systemPrompt}}` (13 §12 finding i).
-					prompts: slot.prompts({ node: "context" }),
+					prompts: slot.prompts({ node: 'context' }),
 					// Assemble's own layouts — the lore and history *it*
 					// produced, laid out after the budget decided what fit.
 					// Its own slot, not the context builder's: no earlier node
@@ -452,10 +481,10 @@ export const narrateSpec = () =>
 					// back to Vicuna on every run, so every ChatML, Llama-2,
 					// Alpaca and Claude connection was sent Vicuna markers and
 					// the receipt reported the format that was NOT used.
-					connection: slot.connectionOf("generate")
-				})
+					connection: slot.connectionOf('generate'),
+				}),
 			)
-			.provider("generate", ($) =>
+			.oracle('generate', ($) =>
 				C.generateText.v1({
 					context: $.prompt.context,
 					// ⚠ The two slots this node OWNS and never named. Both are
@@ -475,13 +504,18 @@ export const narrateSpec = () =>
 					// typed one still resolves `undefined`. See the note in
 					// `respond.ts`, which closed for the same reason.
 					params: slot.params(),
-					// Shared too, so the panel does not offer a third copy of
-					// the same authored text on the sending node.
-					prompts: slot.prompts({ node: "context" })
-				})
+					// No `prompts` here: `core:oracle/generate-text@1` declares
+					// no such slot any more (culled 2026-09-16, R-12) — the
+					// instructions travel inside `context`, from `prompt`.
+				}),
 			)
-			.consume("save", ($) =>
-				C.createMessage.v1({ text: $.generate.text })
+			/** The narration row, filled — see `placeholder`. */
+			.outlet('save', ($) =>
+				C.updateMessage.v1({
+					target: $.placeholder.messageId,
+					text: $.generate.text,
+					thinking: $.generate.thinking,
+				}),
 			)
-			.build()
+			.build(),
 	)

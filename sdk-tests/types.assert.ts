@@ -13,7 +13,7 @@ import * as C from '@serene-pub/contracts'
 
 // ── A port the node does not declare ────────────────────────────────────────
 spec('types:ports@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.query('history', ($) =>
 		C.sessionHistory.v1({
 			// @ts-expect-error — `chatScopes` is not a port on the Input; the real one is `sessionScope`
@@ -24,12 +24,12 @@ spec('types:ports@1', { version: '1.0.0' })
 // The correct spelling type-checks, so the assertion above is about the typo and not
 // about the whole expression being rejected.
 spec('types:ports-ok@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 
 // ── A node that does not exist ──────────────────────────────────────────────
 spec('types:unknown@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.query('history', ($) =>
 		C.sessionHistory.v1({
 			// @ts-expect-error — no node named `histry` has been declared
@@ -39,7 +39,7 @@ spec('types:unknown@1', { version: '1.0.0' })
 
 // ── A forward reference: F9 as a compile error ──────────────────────────────
 spec('types:forward@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.query('history', ($) =>
 		C.sessionHistory.v1({
 			// @ts-expect-error — `generate` is declared *below*; the scope contains only
@@ -47,21 +47,21 @@ spec('types:forward@1', { version: '1.0.0' })
 			scope: $.generate.text,
 		}),
 	)
-	.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
+	.oracle('generate', () => C.generateText.v1({ connection: slot.connection() }))
 
 // ── The kind is still named, and still checked ──────────────────────────────
 spec('types:kind@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	// @ts-expect-error — a Provider constructor handed to .query()
 	.query('generate', () => C.generateText.v1({ connection: slot.connection() }))
 
 // ── Scope inside a block sees the spine, and its own siblings ───────────────
 spec('types:block@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
-	.async('gather', { mode: 'parallel' }, (b) =>
+	.inlet('input', C.userMessage.v1())
+	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
 			c
-				.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
+				.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
 				// A sibling by its qualified key. Block members accumulate into the type
 				// under the key they actually get in the rows.
 				.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
@@ -71,10 +71,10 @@ spec('types:block@1', { version: '1.0.0' })
 	.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.gather.semantic.vsearch.hits] }))
 
 spec('types:block-bad@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
-	.async('gather', { mode: 'parallel' }, (b) =>
+	.inlet('input', C.userMessage.v1())
+	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
-			c.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
+			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
 		),
 	)
 	.task('merge', ($) =>
@@ -86,10 +86,10 @@ spec('types:block-bad@1', { version: '1.0.0' })
 
 // A block name alone is a path, not a ref — only the leaf is a node.
 spec('types:block-leaf@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
-	.async('gather', { mode: 'parallel' }, (b) =>
+	.inlet('input', C.userMessage.v1())
+	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
-			c.provider('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
+			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
 		),
 	)
 	.task('merge', ($) =>
@@ -101,10 +101,10 @@ spec('types:block-leaf@1', { version: '1.0.0' })
 
 // ── A map's members, and the current item ──────────────────────────────────
 spec('types:map@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-	.map('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
-		m.provider('sum', ($) => C.generateText.v1({ text: $.$item, connection: slot.connection() })),
+	.each('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
+		m.oracle('sum', ($) => C.generateText.v1({ text: $.$item, connection: slot.connection() })),
 	)
 	.task('collect', ($) => C.toCandidates.v1({ items: $.summarize.item.sum.text }))
 
@@ -116,12 +116,12 @@ const ctx = fragment('demo:frag/ctx@1', (c) =>
 )
 
 spec('types:include@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.include('ctx', ctx)
 	.task('prompt', ($) => C.assemble.v2({ candidates: $.ctx.merge.candidates }))
 
 spec('types:include-bad@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
+	.inlet('input', C.userMessage.v1())
 	.include('ctx', ctx)
 	.task('prompt', ($) =>
 		C.assemble.v2({
@@ -132,8 +132,8 @@ spec('types:include-bad@1', { version: '1.0.0' })
 
 // ── A config reference takes the accessor, not a second spelling of the key ─
 spec('types:slotref@1', { version: '1.0.0' })
-	.input('input', C.userMessage.v1())
-	.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
+	.inlet('input', C.userMessage.v1())
+	.oracle('generate', () => C.generateText.v1({ connection: slot.connection() }))
 	.task('budget', ($) => C.contextBudget.v1({ connection: slot.connectionOf($.generate) }))
 
 export {}

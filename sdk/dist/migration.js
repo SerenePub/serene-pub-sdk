@@ -27,18 +27,18 @@
 export function migratedSlug(sourceTable, sourceId) {
     const clean = String(sourceId)
         .toLowerCase()
-        .replace(/[^a-z0-9]+/g, "-")
-        .replace(/^-+|-+$/g, "");
-    return `migrated-${sourceTable.replace(/_/g, "-")}-${clean}`;
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-+|-+$/g, '');
+    return `migrated-${sourceTable.replace(/_/g, '-')}-${clean}`;
 }
 export function summarize(r) {
     const by = (o) => r.entries.filter((e) => e.outcome === o).length;
     return {
-        migrated: by("migrated"),
-        unmapped: by("unmapped"),
-        skipped: by("skipped"),
+        migrated: by('migrated'),
+        unmapped: by('unmapped'),
+        skipped: by('skipped'),
         parityChecked: r.parity.length,
-        parityFailed: r.parity.filter((p) => !p.identical).length
+        parityFailed: r.parity.filter((p) => !p.identical).length,
     };
 }
 /**
@@ -47,16 +47,16 @@ export function summarize(r) {
  * (12 §5). Same principle as export (12 §7a): nothing is dropped silently.
  */
 export function unmappedEntries(r) {
-    return r.entries.filter((e) => e.outcome !== "migrated");
+    return r.entries.filter((e) => e.outcome !== 'migrated');
 }
 export class MigrationError extends Error {
 }
 /** A report with an entry that gives no reason is a bug in the migration, not in the data. */
 export function assertReportComplete(r) {
-    const silent = r.entries.filter((e) => e.outcome !== "migrated" && !e.reason);
+    const silent = r.entries.filter((e) => e.outcome !== 'migrated' && !e.reason);
     if (silent.length) {
-        throw new MigrationError(`${silent.length} entr${silent.length === 1 ? "y" : "ies"} did not migrate and gave no reason ` +
-            `(${silent.map((s) => `${s.source.table}#${s.source.id}`).join(", ")}). ` +
+        throw new MigrationError(`${silent.length} entr${silent.length === 1 ? 'y' : 'ies'} did not migrate and gave no reason ` +
+            `(${silent.map((s) => `${s.source.table}#${s.source.id}`).join(', ')}). ` +
             `Every non-migrated row states why, or the user finds out by noticing their config is gone.`);
     }
 }
@@ -82,16 +82,16 @@ const EXCERPT = 60;
  * to tell them apart.
  */
 function renderedText(value) {
-    if (typeof value === "string")
+    if (typeof value === 'string')
         return value;
     const v = value;
-    if (v && typeof v.rendered === "string")
+    if (v && typeof v.rendered === 'string')
         return v.rendered;
     if (v && Array.isArray(v.messages))
         return v.messages
-            .map((m) => `${m.role ?? ""}: ${m.content ?? ""}`)
-            .join("\n");
-    if (v && typeof v.prompt === "string")
+            .map((m) => `${m.role ?? ''}: ${m.content ?? ''}`)
+            .join('\n');
+    if (v && typeof v.prompt === 'string')
         return v.prompt;
     return JSON.stringify(value);
 }
@@ -107,7 +107,7 @@ export function checkParity(fixture, legacyPrompt, preview, count) {
             fixture,
             identical: true,
             tokensLegacy: count?.(legacyPrompt),
-            tokensPipeline: p.context.tokens
+            tokensPipeline: p.context.tokens,
         };
     }
     let i = 0;
@@ -122,7 +122,7 @@ export function checkParity(fixture, legacyPrompt, preview, count) {
         legacyExcerpt: legacyPrompt.slice(Math.max(0, i - EXCERPT / 2), i + EXCERPT),
         pipelineExcerpt: pipelinePrompt.slice(Math.max(0, i - EXCERPT / 2), i + EXCERPT),
         tokensLegacy: count?.(legacyPrompt),
-        tokensPipeline: p.context.tokens
+        tokensPipeline: p.context.tokens,
     };
 }
 /**
@@ -134,26 +134,26 @@ export function parityGate(results, minimumCorpus = 1) {
     if (results.length < minimumCorpus) {
         return {
             pass: false,
-            reason: `corpus has ${results.length} fixtures; ${minimumCorpus} required. An unchecked corpus is not a green one`
+            reason: `corpus has ${results.length} fixtures; ${minimumCorpus} required. An unchecked corpus is not a green one`,
         };
     }
     const failed = results.filter((r) => !r.identical);
     if (failed.length) {
         return {
             pass: false,
-            reason: `${failed.length}/${results.length} fixtures diverge, first at ${failed[0].fixture}`
+            reason: `${failed.length}/${results.length} fixtures diverge, first at ${failed[0].fixture}`,
         };
     }
     return { pass: true };
 }
 export function renderParity(r) {
     if (r.identical)
-        return `✓ ${r.fixture}  identical (${r.tokensPipeline ?? "?"} tokens)`;
+        return `✓ ${r.fixture}  identical (${r.tokensPipeline ?? '?'} tokens)`;
     return [
         `✗ ${r.fixture}  diverges at character ${r.firstDifferenceAt}`,
         `    legacy:   …${r.legacyExcerpt}…`,
-        `    pipeline: …${r.pipelineExcerpt}…`
-    ].join("\n");
+        `    pipeline: …${r.pipelineExcerpt}…`,
+    ].join('\n');
 }
 // ── The commitMessage split (13 §10b) ───────────────────────────────────────
 /**
@@ -171,84 +171,75 @@ export function renderParity(r) {
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
  * is already the shape 08 §5b uses for "a human has to look at this."
  */
-export const LEGACY_COMMIT_MESSAGE = "core:consumer/commit-message";
+export const LEGACY_COMMIT_MESSAGE = 'core:outlet/commit-message';
 export function splitCommitMessage(doc) {
     const entries = [];
     const nodes = doc.nodes.map((n) => {
-        if (n.typeId !== LEGACY_COMMIT_MESSAGE)
+        if (n.definitionId !== LEGACY_COMMIT_MESSAGE)
             return n;
         const wiredByEdge = doc.edges.filter((e) => e.to === n.key && ID_PORTS.has(e.toPort));
         const wiredByConfig = ID_KEYS.filter((k) => n.config[k] !== undefined && n.config[k] !== null);
         const wired = wiredByEdge.length + wiredByConfig.length;
         if (wired === 0) {
             entries.push({
-                source: { table: "spec_nodes", id: n.key },
-                outcome: "migrated",
+                source: { table: 'spec_nodes', id: n.key },
+                outcome: 'migrated',
                 target: {
-                    slug: "core:consumer/create-message@1",
-                    scopeKind: "instance",
-                    nodeKey: n.key
+                    slug: 'core:outlet/create-message@1',
+                    scopeKind: 'preset',
+                    nodeKey: n.key,
                 },
-                reason: "nothing supplies an id, so this node only ever created"
+                reason: 'nothing supplies an id, so this node only ever created',
             });
             return {
                 ...n,
-                typeId: "core:consumer/create-message",
-                typeVersion: 1
+                definitionId: 'core:outlet/create-message',
+                definitionVersion: 1,
             };
         }
-        // An id arriving from a write in the same run is the case the new types make
-        // unwritable on purpose: under async review that row may never exist.
-        const fromWrite = wiredByEdge.find((e) => e.shape === "core:shape/write-result@1");
-        if (fromWrite) {
-            entries.push({
-                source: { table: "spec_nodes", id: n.key },
-                outcome: "unmapped",
-                reason: `its id comes from '${fromWrite.from}', which is itself a write. update-message@1 ` +
-                    `takes row-ids@1, because a row proposed under async review may never exist — this ` +
-                    `spec needs a person to decide whether it wanted streaming (one node) or two runs`
-            });
-            return n;
-        }
+        // An id arriving from a write in the same run used to be reported rather
+        // than decided, because under async review that row might never have
+        // existed. That position is gone and a create → update pair on one row
+        // inside one run is one primary row (09-B B4, R-17) — so it is what it
+        // looks like: an update of the row an earlier node made.
         if (wiredByEdge.length + wiredByConfig.length > 1) {
             entries.push({
-                source: { table: "spec_nodes", id: n.key },
-                outcome: "unmapped",
-                reason: `two sources supply an id (${[...wiredByEdge.map((e) => e.toPort), ...wiredByConfig].join(", ")}) — which one won was a runtime detail`
+                source: { table: 'spec_nodes', id: n.key },
+                outcome: 'unmapped',
+                reason: `two sources supply an id (${[...wiredByEdge.map((e) => e.toPort), ...wiredByConfig].join(', ')}) — which one won was a runtime detail`,
             });
             return n;
         }
         entries.push({
-            source: { table: "spec_nodes", id: n.key },
-            outcome: "migrated",
+            source: { table: 'spec_nodes', id: n.key },
+            outcome: 'migrated',
             target: {
-                slug: "core:consumer/update-message@1",
-                scopeKind: "instance",
-                nodeKey: n.key
+                slug: 'core:outlet/update-message@1',
+                scopeKind: 'preset',
+                nodeKey: n.key,
             },
-            reason: "an id is wired in, so this node updated"
+            reason: 'an id is wired in, so this node updated',
         });
         const port = wiredByEdge[0]?.toPort;
         return {
             ...n,
-            typeId: "core:consumer/update-message",
-            typeVersion: 1,
-            config: port ? n.config : renameIdKey(n.config)
+            definitionId: 'core:outlet/update-message',
+            definitionVersion: 1,
+            config: port ? n.config : renameIdKey(n.config),
         };
     });
     const edges = doc.edges.map((e) => ID_PORTS.has(e.toPort) &&
-        nodes.find((n) => n.key === e.to)?.typeId ===
-            "core:consumer/update-message"
-        ? { ...e, toPort: "target" }
+        nodes.find((n) => n.key === e.to)?.definitionId === 'core:outlet/update-message'
+        ? { ...e, toPort: 'target' }
         : e);
     return {
         document: { ...doc, nodes, edges },
-        report: { unit: "commit-message split (13 §10b)", entries, parity: [] }
+        report: { unit: 'commit-message split (13 §10b)', entries, parity: [] },
     };
 }
 /** The port and config names the legacy type accepted an id under. */
-const ID_PORTS = new Set(["messageId", "id", "target"]);
-const ID_KEYS = ["messageId", "id"];
+const ID_PORTS = new Set(['messageId', 'id', 'target']);
+const ID_KEYS = ['messageId', 'id'];
 const renameIdKey = (config) => {
     const out = { ...config };
     for (const k of ID_KEYS)

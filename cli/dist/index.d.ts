@@ -8,4 +8,11 @@
  */
 export * from './compiler.js';
 export * from './codegen.js';
+export { typeSurfaces } from './typeSurfaces.js';
+export { renderAnnouncementDocs } from './docs.js';
+export type { DocPage } from './docs.js';
+export { pipelineResolver, specGraphOf } from './docsGraph.js';
+export { renderLawsDocs } from './docsLaws.js';
+export { renderExampleDocs } from './docsExamples.js';
+export type { Example, ExampleDocsOptions, ExampleGoldenReport, ExampleRunCtx, ExampleRunOptions, } from './docsExamples.js';
 //# sourceMappingURL=index.d.ts.map

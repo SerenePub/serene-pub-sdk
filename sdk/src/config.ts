@@ -1,29 +1,28 @@
 /**
- * Configuration resolution (12 §2). Five layers, first hit wins, evaluated
+ * Configuration resolution (12 §2). Four layers, first hit wins, evaluated
  * independently per path — which is what makes an admin's connection change reach a
  * user who has customized their prompts (F20).
  *
- * ## Why `instance` sits above `preset` (0.6 revision)
+ * ## The chain (R-10, ruled 2026-09-15; 09-B B8)
  *
- * The original order put the selected config above the instance layer, reading
- * `instance` as "the defaults a config sits on". That made an administrator's
- * live edit the one write in the system that could store cleanly and do
- * nothing: the shipped default config covers most paths, so an instance
- * override under it was permanently shadowed — found the day an admin changed
- * a budget on screen and the run kept using the config's number.
+ * **`session · preset · defaults · author`.**
  *
- * The revised reading: a *named config* is a value source you select; an
- * *override* is a decision someone made on top of it. Overrides therefore
- * always beat the selected config, and among overrides the more specific
- * scope wins — chat, then user, then instance.
+ *  - `session` — a session's own override of a value (the *chat override* of
+ *    12 §2's "pipeline → config → chat override").
+ *  - `preset` — the rows of the **selected config**: the config IS the
+ *    instance's tuning. An administrator's edit lands in the config (ruled
+ *    2026-08-24), so there is no separate `instance` layer for it to be shadowed
+ *    by, and no `user` layer — a preference that differs per user is a session's
+ *    to hold.
+ *  - `defaults` — values a host *projects* rather than values anyone decided:
+ *    system settings, connection defaults, a legacy layer. Nothing interactive
+ *    writes here (it appears in no write matrix row).
+ *  - `author` — the definition's declared parameter defaults; the floor.
  *
- * `defaults` is the sixth scope the split forced into the open: values a host
- * *projects* — system settings, a legacy layer — rather than values anyone
- * decided. They sit under the selected config, which is where "defaults" have
- * always belonged; the old chain filed them under `instance` and the two
- * meanings of that word are exactly what shadowed the admin's edits. Nothing
- * interactive ever writes at `defaults` (it appears in no write matrix row);
- * `author` — the type's declared parameter defaults — stays the floor.
+ * `user` and `instance` stood in this list until 2026-09-16 and were pushed by
+ * nothing: `world.ts` never projected a row at either (plans/29a §3). Their
+ * semantics fold into `preset` — the config an admin edits is the instance's
+ * configuration — which is the 2026-08-24 ruling stated as a constant.
  *
  * Resolved run-wide *before* execution, which is why referencing another node's
  * config is not a data edge (F35).
@@ -31,9 +30,9 @@
 
 import type { CapabilitySet } from './capabilities.js'
 
-export type ScopeKind = 'session' | 'user' | 'preset' | 'instance' | 'defaults' | 'author'
+export type ScopeKind = 'session' | 'preset' | 'defaults' | 'author'
 
-export const SCOPE_ORDER: ScopeKind[] = ['session', 'user', 'instance', 'preset', 'defaults', 'author']
+export const SCOPE_ORDER: ScopeKind[] = ['session', 'preset', 'defaults', 'author']
 
 export interface OverrideRow {
 	nodeKey: string
@@ -92,7 +91,7 @@ function normalizeSlotPath(slot: string, path: string): string {
 		console.warn(
 			`[config] a ${slot} slot value is stored at the legacy path '${path}'; ` +
 				`reading it as '${SLOT_VALUE}'. Migration 0175 normalises these — ` +
-				`if this appears after it has run, something is still writing the old address.`
+				`if this appears after it has run, something is still writing the old address.`,
 		)
 	}
 	return SLOT_VALUE
@@ -242,12 +241,30 @@ export interface ResolvedConnection {
 	kind: string
 	metadata: ConnectionRecord['metadata']
 	modelId: string | number | null
+	/**
+	 * The named model's own context window, when the host records one
+	 * (`ConfigWorld.models`); null when the slot named no model or the model
+	 * states none, in which case the sampling config's window decides.
+	 *
+	 * Carried here so the ONE window computation (R-8) can read it off the
+	 * same resolved slot the request is sent with — a budget sized to the
+	 * sampling config's window while the request went to a model with a
+	 * smaller one was wrong in the direction that truncates.
+	 */
+	contextWindow: number | null
 }
 
 export interface ConfigWorld {
 	overrides: OverrideRow[]
 	samplingConfigs: SamplingConfig[]
 	connections: ConnectionRecord[]
+	/**
+	 * The models the host knows per connection, for the facts a resolved pair
+	 * carries beyond the endpoint's metadata — today only the context window.
+	 * Optional: a host that publishes none resolves every pair with
+	 * `contextWindow: null`, exactly as before this existed.
+	 */
+	models?: Array<{ id: string; connectionId: string; contextWindow?: number | null }>
 	/** Singleton kinds, e.g. embeddings (01 §10). */
 	activeConnection: Record<string, string | null>
 	/**
@@ -339,7 +356,7 @@ export function resolveConfigSources(
 
 		for (const [slot, path] of addresses.values()) {
 			const candidates = rows.filter(
-				(r) => r.slot === slot && normalizeSlotPath(r.slot, r.path) === path
+				(r) => r.slot === slot && normalizeSlotPath(r.slot, r.path) === path,
 			)
 			for (const scope of SCOPE_ORDER) {
 				const hit = candidates.find((c) => c.scopeKind === scope)
@@ -374,34 +391,38 @@ export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedC
 
 /**
  * Which scopes may write which slot (12 §4). The admin cascade needs no mechanism:
- * connection has no writable scope at chat/user, so an admin's choice reaches
- * everyone automatically.
+ * connection has no writable scope below the config for a non-admin, so an
+ * admin's choice reaches everyone automatically.
+ *
+ * `preset` here is the selected config — the one place an administrator's
+ * edit lands (R-10 folded `instance` into it, 2026-09-16). A slot a session may
+ * not write is a slot only the config carries.
  */
 export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
-	// `session` added 2026-08-26 so a chat may point at its own connection —
+	// `session` added 2026-08-26 so a session may point at its own connection —
 	// the per-session connection 0.5 had. Still admin-only in practice:
 	// `visibleTo` shows the slot to admins alone and `resolveWriteScope`
 	// refuses a non-admin every non-prompt write, so "credentials and compute
 	// stay under admin control" holds by a different gate than the matrix.
-	// This narrows F20's instance-only reading rather than dropping it: a
-	// *preset* still may not carry a connection (it does not export), which is
-	// the ruling's actual concern.
-	connection: ['session', 'instance', 'preset'],
-	sampling: ['session', 'user', 'preset', 'instance'],
-	template: ['preset', 'instance'],
+	// ⚠ An AUTHOR preset (12 §3a, `PresetBuilder`) still may not carry a
+	// connection — it does not export — which is F20's actual concern; that
+	// refusal is `PresetBuilder`'s deliberate absence of `.connection()`.
+	connection: ['session', 'preset'],
+	sampling: ['session', 'preset'],
+	template: ['preset'],
 	// How a context variable is presented is a property of the instance's
 	// configuration, not a personal preference: two users whose characters render
 	// differently are two users whose bug reports cannot be compared. Same
 	// scopes as `template`, which is the same decision one level up.
-	variables: ['preset', 'instance'],
-	prompts: ['session', 'user', 'preset', 'instance'],
-	params: ['session', 'user', 'preset', 'instance'],
-	settings: ['session', 'user', 'preset', 'instance'],
+	variables: ['preset'],
+	prompts: ['session', 'preset'],
+	params: ['session', 'preset'],
+	settings: ['session', 'preset'],
 	// A chain changes what every run of the pipeline sends — the `variables`
 	// argument one tier up: two users whose chains differ are two users whose
 	// reports cannot be compared. Same scopes as `template`; widening to
-	// chat/user later is one entry here, additively (18 §4a).
-	scripts: ['preset', 'instance'],
+	// session later is one entry here, additively (18 §4a).
+	scripts: ['preset'],
 }
 
 export function mayWrite(slot: string, scope: ScopeKind): boolean {

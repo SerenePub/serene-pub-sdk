@@ -22,7 +22,7 @@
  *
  * ## No projection table, deliberately
  *
- * Node types project into `pipeline_type_registry` rows because a *spec* has to
+ * Node types project into `pipeline_definition_registry` rows because a *spec* has to
  * be able to reference one that this build does not declare. A slot has no such
  * consumer: every read of one goes through this registry in-process, and every
  * write is validated against it at write time. Adding a `slot_definitions`

@@ -17,7 +17,7 @@
  * before it ever runs the plugin's code — F6 means core imports documents, never
  * authoring JS — so install-time validation reads two things that are both plain data:
  * the plugin's **manifest** (types summarized, permissions compiled from usage) and its
- * **documents** (nodes pinned by `typeId@version`, edges carrying the shapes they were
+ * **documents** (nodes pinned by `definitionId@version`, edges carrying the shapes they were
  * compiled against).
  *
  * ## What that makes checkable
@@ -28,13 +28,15 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
-import { isScriptTypeId } from './scripts.js';
+import { scriptPointsOf } from './descriptors.js';
+import { isScriptKindId } from './scripts.js';
+import { settingsSlotFor } from './settingsSlot.js';
 const versionOf = (id) => Number(/@(\d+)$/.exec(id)?.[1] ?? 1);
 const bare = (id) => id.replace(/@\d+$/, '');
 const shapeId = (s) => typeof s === 'string' ? s : (s?.id ?? undefined);
 /** Project descriptors into registry rows — how core seeds and refreshes the table. */
 export function snapshotRegistry(types, meta = {}) {
-    return types.map((t) => isScriptTypeId(t.id) ? scriptEntry(t, meta) : nodeEntry(t, meta));
+    return types.map((t) => isScriptKindId(t.id) ? scriptEntry(t, meta) : nodeEntry(t, meta));
 }
 /**
  * A script type as a registry row.
@@ -66,6 +68,10 @@ function scriptEntry(d, meta) {
     };
 }
 function nodeEntry(d, meta) {
+    // The substrate's slot, after the author's so an author's own key order
+    // is what the panel walks. `register` has already refused an authored
+    // `settings`, so the spread cannot be shadowing one.
+    const settings = settingsSlotFor(d);
     return {
         id: bare(d.id),
         version: versionOf(d.id),
@@ -74,7 +80,7 @@ function nodeEntry(d, meta) {
             in: Object.fromEntries(Object.entries(d.ports?.in ?? {}).map(([k, v]) => [k, shapeId(v)])),
             out: Object.fromEntries(Object.entries(d.ports?.out ?? {}).map(([k, v]) => [k, shapeId(v)])),
         },
-        slots: { ...(d.slots ?? {}) },
+        slots: { ...(d.slots ?? {}), ...(settings ? { settings } : {}) },
         /**
          * What the type calls itself.
          *
@@ -103,7 +109,9 @@ function nodeEntry(d, meta) {
         causesEvent: d.causesEvent,
         public: d.public,
         optional: d.optional,
-        scriptPoints: d.scriptPoints,
+        // Normalised on the way in, so a row is always the full shape and the
+        // panel never has to know a bare-string point ever existed.
+        scriptPoints: d.scriptPoints ? scriptPointsOf(d) : undefined,
         sessionShape: d.sessionShape,
         owner: meta.owner,
         release: meta.release,
@@ -143,19 +151,19 @@ export function checkInstall(input) {
     const declared = new Set(input.declares.map((d) => (d.id.includes('@') ? d.id : `${d.id}@1`)));
     for (const doc of input.documents) {
         for (const n of doc.nodes) {
-            const pin = `${n.typeId}@${n.typeVersion}`;
+            const pin = `${n.definitionId}@${n.definitionVersion}`;
             const entry = byId.get(pin);
             // 2. A pin that resolves to nothing.
             if (!entry && !declared.has(pin)) {
-                const known = latest.get(n.typeId);
+                const known = latest.get(n.definitionId);
                 findings.push({
                     severity: 'error',
                     code: 'E_UNKNOWN_TYPE',
                     where: `${doc.id} · ${n.key}`,
                     message: `pins ${pin}, which this instance does not have`,
                     fix: known
-                        ? `this instance has ${n.typeId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
-                        : `no version of ${n.typeId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
+                        ? `this instance has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
+                        : `no version of ${n.definitionId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
                 });
                 continue;
             }
@@ -170,8 +178,8 @@ export function checkInstall(input) {
                 });
             // 4. Informational: a newer version exists. The pin still runs — that is what
             //    pinning is for — but an author reading the install log should know.
-            const newest = latest.get(n.typeId);
-            if (entry && newest && newest > n.typeVersion)
+            const newest = latest.get(n.definitionId);
+            if (entry && newest && newest > n.definitionVersion)
                 findings.push({
                     severity: 'warning',
                     code: 'W_NEWER_VERSION',
@@ -188,7 +196,7 @@ export function checkInstall(input) {
             const from = doc.nodes.find((n) => n.key === e.from);
             if (!from)
                 continue;
-            const entry = byId.get(`${from.typeId}@${from.typeVersion}`);
+            const entry = byId.get(`${from.definitionId}@${from.definitionVersion}`);
             const now = entry?.ports.out[e.fromPort];
             if (entry && now && now !== e.shape)
                 findings.push({
@@ -231,7 +239,7 @@ export function checkInstall(input) {
                     code: 'E_MISSING_BINDING',
                     where: d.id,
                     message: `declared as a type but no hook implements it`,
-                    fix: `add a pipelineHook for ${d.id}, or drop the declaration. A type with no binding is a node a user can add to a pipeline that then fails at run time.`,
+                    fix: `add a handler() for ${d.id}, or drop the declaration. A definition with no handler is a node a user can add to a pipeline that then fails at run time.`,
                 });
     }
     return findings;

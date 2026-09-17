@@ -1,0 +1,50 @@
+{
+	"name": "@serene-pub/docs",
+	"version": "0.6.0-preview.0",
+	"type": "module",
+	"description": "The docs compiler: markdown sources plus rendered announcement pages in, a manifest, a search index and one HTML file per page out.",
+	"license": "Apache-2.0",
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./graph": {
+			"types": "./dist/graph.d.ts",
+			"import": "./dist/graph.js"
+		},
+		"./spec-graph": {
+			"types": "./dist/specGraph.d.ts",
+			"import": "./dist/specGraph.js"
+		},
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json"
+	},
+	"dependencies": {
+		"@jsquash/webp": "^1.5.0",
+		"elkjs": "^0.12.0",
+		"github-slugger": "^2.0.0",
+		"jimp": "^1.6.1",
+		"marked": "^15.0.12",
+		"shiki": "^4.4.3"
+	},
+	"peerDependencies": {
+		"@serene-pub/sdk": ">=0.6.0-preview.0"
+	},
+	"peerDependenciesMeta": {
+		"@serene-pub/sdk": {
+			"optional": true
+		}
+	},
+	"devDependencies": {
+		"@serene-pub/sdk": "0.6.0-preview.0"
+	}
+}

@@ -18,7 +18,7 @@
  */
 
 import type { DocNode, SpecDocument } from './document.js'
-import { getType } from './descriptors.js'
+import { getDefinition } from './descriptors.js'
 import {
 	capabilityLabel,
 	satisfies,
@@ -32,7 +32,7 @@ export interface ConnectionRequirement {
 	slot: string
 	/** Which connection kind satisfies it — the produced shape (F17). */
 	kind?: string
-	typeId: string
+	definitionId: string
 	/** What the connection must be able to do. Unmet is a hard failure at bind. */
 	requires?: readonly CapabilityId[]
 	/** What it would use if available. The binding handles absence either way. */
@@ -77,14 +77,14 @@ const sharedWithAnotherNode = (n: DocNode, slot: string): boolean => {
 export function requiredConnections(doc: SpecDocument): ConnectionRequirement[] {
 	const out: ConnectionRequirement[] = []
 	for (const n of doc.nodes) {
-		const d = getType(`${n.typeId}@${n.typeVersion}`)
+		const d = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
 		for (const [slot, decl] of Object.entries(d?.slots ?? {}))
 			if (decl.kind === 'connection' && !sharedWithAnotherNode(n, slot))
 				out.push({
 					nodeKey: n.key,
 					slot,
 					kind: decl.shape,
-					typeId: n.typeId,
+					definitionId: n.definitionId,
 					...(decl.requires ? { requires: decl.requires } : {}),
 					...(decl.optional ? { optional: decl.optional } : {}),
 				})
@@ -125,7 +125,7 @@ export const renderRequirement = (r: ConnectionRequirement): string => {
 	const what = caps.length
 		? `a connection that supports ${caps.join(' and ')}`
 		: `a ${r.kind ?? 'connection'} connection`
-	return `${r.nodeKey}.${r.slot} — needs ${what} (${r.typeId})`
+	return `${r.nodeKey}.${r.slot} — needs ${what} (${r.definitionId})`
 }
 
 /** One slot, checked against what the connection bound to it can actually do. */

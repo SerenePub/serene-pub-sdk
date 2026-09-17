@@ -54,7 +54,7 @@ export interface ValueCommon {
  * A value declaration in single-key form: exactly one key, which is the
  * versioned type id; the payload is that type's own schema.
  */
-export type ValueDecl = { readonly [typeId: string]: Record<string, unknown> }
+export type ValueDecl = { readonly [definitionId: string]: Record<string, unknown> }
 
 /** The one key of a declaration — its type id. Throws on malformed decls. */
 export function valueKind(decl: ValueDecl): string {
@@ -81,11 +81,11 @@ export function assertValueTypeId(id: string): void {
 const freeze = <T extends object>(o: T): T => Object.freeze(o)
 
 /** Builds the single-key object, dropping undefined fields for canonical JSON. */
-function decl(typeId: string, props: Record<string, unknown>): ValueDecl {
-	assertValueTypeId(typeId)
+function decl(definitionId: string, props: Record<string, unknown>): ValueDecl {
+	assertValueTypeId(definitionId)
 	const clean: Record<string, unknown> = {}
 	for (const [k, val] of Object.entries(props)) if (val !== undefined) clean[k] = val
-	return freeze({ [typeId]: freeze(clean) }) as ValueDecl
+	return freeze({ [definitionId]: freeze(clean) }) as ValueDecl
 }
 
 /* ── core kind schemas ──────────────────────────────────────────────────── */
@@ -403,10 +403,9 @@ export function valueDeclOf(entry: unknown): ValueDecl | null {
 		// text box that wants rows — so they bridge here rather than growing a
 		// second bridge beside this one.
 		//
-		// The node-slot vocabulary also has a `text` control, and it means a
-		// *single-line* string; its caller (the app's config panel read pass)
-		// already normalises `control: 'text'` to `'string'` before calling
-		// here, so the two never collide on this case.
+		// The node-slot vocabulary's `text` control is the same multi-line
+		// string (an envoy's instructions are the first parameter to declare
+		// one, U5g), so the app's config panel hands it through unchanged.
 		case 'text':
 			return decl('text@1', {
 				multiline: true,

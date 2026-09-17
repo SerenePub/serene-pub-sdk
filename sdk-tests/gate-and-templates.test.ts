@@ -13,11 +13,11 @@ import { spec } from '@serene-pub/sdk'
 import { run, ok } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { hashPayload, resolvePosition, isGated, POSITIONS } from '@serene-pub/sdk'
-import { resolveBlockMode } from '@serene-pub/sdk'
+import { resolveClauseMode } from '@serene-pub/sdk'
 import type { Reviewer } from '@serene-pub/sdk'
 import { extractRefs, render, checkTemplate } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
-import { pin, describeConsumerTarget } from '@serene-pub/sdk'
+import { pin, describeOutletDefinition, describeQueryDefinition, validate } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { publish, bindings, world, fakeClock, findings } from './helpers.js'
@@ -30,9 +30,9 @@ const editor =
 
 const gated = () =>
 	spec('demo:gate@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
-		.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+		.inlet('input', C.userMessage.v1())
+		.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+		.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 const reviewOff = {
 	...world,
@@ -42,7 +42,7 @@ const reviewOff = {
 			slot: 'settings',
 			path: 'review',
 			value: 'off',
-			scopeKind: 'user' as const,
+			scopeKind: 'session' as const,
 		},
 	],
 }
@@ -54,7 +54,7 @@ const reviewSync = {
 			slot: 'settings',
 			path: 'review',
 			value: 'sync',
-			scopeKind: 'user' as const,
+			scopeKind: 'session' as const,
 		},
 	],
 }
@@ -66,7 +66,7 @@ test('25 · review off invokes the binding directly', async () => {
 		input: {},
 		world: reviewOff,
 		bindings: bindings({
-			'core:consumer/create-message@1': async (_i, ctx: any) => {
+			'core:outlet/create-message@1': async (_i, ctx: any) => {
 				invoked++
 				return ok({ main: (await ctx.commit({})).id })
 			},
@@ -88,7 +88,7 @@ describe('26 · sync parks before the binding runs', () => {
 				return { action: 'approve', by: 'jody', at: 1 }
 			},
 			bindings: bindings({
-				'core:consumer/create-message@1': async (_i, ctx: any) => {
+				'core:outlet/create-message@1': async (_i, ctx: any) => {
 					order.push('binding')
 					return ok({ main: (await ctx.commit({})).id })
 				},
@@ -130,7 +130,7 @@ describe('26 · sync parks before the binding runs', () => {
 test('27 · an edited payload is indistinguishable to the binding', async () => {
 	const seen: unknown[] = []
 	const capture = bindings({
-		'core:consumer/create-message@1': async (i: any, ctx: any) => {
+		'core:outlet/create-message@1': async (i: any, ctx: any) => {
 			seen.push({ ...i })
 			return ok({ main: (await ctx.commit({})).id })
 		},
@@ -162,9 +162,9 @@ describe('28 · author defaults, user overrides', () => {
 	test("an author's sync default applies with no user setting", async () => {
 		const doc = publish(
 			spec('demo:authordefault@1', { version: '1.0.0' })
-				.input('input', C.messageCreated.v1())
-				.provider('render', C.renderImage.v1({ connection: slot.connection() }))
-				.consume('attach', ($) => C.attachImage.v1({ image: $.render.image })),
+				.inlet('input', C.userMessage.v1())
+				.oracle('render', C.renderImage.v1({ connection: slot.connection() }))
+				.outlet('attach', ($) => C.attachImage.v1({ image: $.render.image })),
 		)
 		let reviewed = false
 		await run(doc, {
@@ -240,10 +240,10 @@ describe('30 · pending and committed are one shape', () => {
 	 */
 	const downstreamSpec = () =>
 		spec('demo:asyncdownstream@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
-			.consume('done', ($) =>
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+			.outlet('done', ($) =>
 				C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
 			)
 
@@ -269,11 +269,11 @@ describe('30 · pending and committed are one shape', () => {
 							// port: `isWriteResult` inspects the binding's whole
 							// return value, and anything else is wrapped as
 							// committed with the return as its ids.
-							'core:consumer/create-message@1': async () =>
+							'core:outlet/create-message@1': async () =>
 								ok({ status: 'pending', proposalId: 'proposal:save' }),
 						}
 					: {}),
-				'core:consumer/emit-socket@1': async (i: any) => {
+				'core:outlet/emit-socket@1': async (i: any) => {
 					seen = i.from
 					return ok({ main: 'emitted' })
 				},
@@ -305,10 +305,15 @@ describe('30 · pending and committed are one shape', () => {
 		}
 	})
 
-	test('a downstream port typed row-ids@1 is a publish error that names the fix', () => {
-		const badConsumer = pin(
-			describeConsumerTarget({
-				id: 'demo:consumer/wants-raw-ids@1',
+	test('a downstream port typed row-ids@1 takes a write result (09-B B4)', () => {
+		// It used to be a publish error, and the reason was the `async` review
+		// position: a row proposed under it might never exist. That position
+		// is gone — `on` parks the run and a rejection halts it — so by the
+		// time a downstream node runs, a committed result's ids ARE row ids.
+		// This is what makes a create → update pair on one row legal.
+		const idsConsumer = pin(
+			describeOutletDefinition({
+				id: 'demo:outlet/wants-raw-ids@1',
 				effects: 'emit',
 				timeoutMs: 1000,
 				ports: { in: { from: S.rowIds }, out: { main: S.json } },
@@ -316,15 +321,38 @@ describe('30 · pending and committed are one shape', () => {
 		)
 		const findingList = findings(
 			spec('demo:rawids@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
-				.consume('done', ($) => badConsumer.v1({ from: $.save.messageId })),
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+				.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.outlet('done', ($) => idsConsumer.v1({ from: $.save.messageId })),
+		)
+		assert.equal(
+			findingList.find((x) => x.law === '13 §7j-b'),
+			undefined,
+			'write-result@1 is assignable to row-ids@1',
+		)
+	})
+
+	test('a downstream port that wants something else from a write still names the fix', () => {
+		const textConsumer = pin(
+			describeOutletDefinition({
+				id: 'demo:outlet/wants-text@1',
+				effects: 'emit',
+				timeoutMs: 1000,
+				ports: { in: { from: S.text }, out: { main: S.json } },
+			}),
+		)
+		const findingList = findings(
+			spec('demo:writetext@1', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+				.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.outlet('done', ($) => textConsumer.v1({ from: $.save.messageId })),
 		)
 		const e = findingList.find((x) => x.law === '13 §7j-b')
 		assert.ok(e, 'the write-result mismatch is caught at publish, not at runtime')
 		assert.match(e!.fix, /write-result@1/)
-		assert.match(e!.fix, /dangles/, 'the fix says why, not just what')
+		assert.match(e!.fix, /row-ids@1/)
 	})
 })
 
@@ -342,8 +370,8 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 	 */
 	const mcp = () =>
 		spec('demo:mcp-gate@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider(
+			.inlet('input', C.userMessage.v1())
+			.oracle(
 				'tool',
 				C.mcpTool.v1({
 					args: { to: 'someone@example.com' },
@@ -361,7 +389,7 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 			input: {},
 			world,
 			bindings: bindings({
-				'core:provider/mcp-tool@1': async (_i, ctx: any) => {
+				'core:oracle/mcp-tool@1': async (_i, ctx: any) => {
 					called++
 					ctx.reportUsage(1)
 					return ok({ main: {}, result: {} })
@@ -387,7 +415,7 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 						slot: 'settings',
 						path: 'review',
 						value: 'sync',
-						scopeKind: 'instance' as const,
+						scopeKind: 'preset' as const,
 					},
 				],
 			},
@@ -492,8 +520,8 @@ test('34 · template scope is declared on the slot — typed ports alone cannot 
 describe('33 · block mode is configurable', () => {
 	const twoReads = () =>
 		spec('demo:blockmode@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.async('reads', {}, (b) =>
+			.inlet('input', C.userMessage.v1())
+			.gather('reads', {}, (b) =>
 				b
 					.chain('slow', (c) =>
 						c.query('one', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope })),
@@ -509,13 +537,13 @@ describe('33 · block mode is configurable', () => {
 		// precedence `review` uses, and for the same reason — the person who
 		// knows the provider is rate-limited is not the person who wrote the
 		// spec.
-		assert.equal(resolveBlockMode('parallel', undefined), 'parallel')
-		assert.equal(resolveBlockMode('parallel', 'sequential'), 'sequential')
-		assert.equal(resolveBlockMode('sequential', 'parallel'), 'parallel')
+		assert.equal(resolveClauseMode('parallel', undefined), 'parallel')
+		assert.equal(resolveClauseMode('parallel', 'sequential'), 'sequential')
+		assert.equal(resolveClauseMode('sequential', 'parallel'), 'parallel')
 		// An unset or nonsense setting falls back rather than throwing: this is
 		// read on every block of every run.
-		assert.equal(resolveBlockMode('sequential', 'whenever'), 'sequential')
-		assert.equal(resolveBlockMode(undefined, undefined), 'parallel')
+		assert.equal(resolveClauseMode('sequential', 'whenever'), 'sequential')
+		assert.equal(resolveClauseMode(undefined, undefined), 'parallel')
 	})
 
 	test('the setting reaches the executor, addressed by block id', async () => {
@@ -535,7 +563,7 @@ describe('33 · block mode is configurable', () => {
 					slot: 'settings',
 					path: 'mode',
 					value: 'sequential',
-					scopeKind: 'user' as const,
+					scopeKind: 'session' as const,
 				},
 			],
 		}
@@ -554,72 +582,114 @@ describe('33 · block mode is configurable', () => {
 	})
 })
 
-// ── 34 · a params slot can be shared, like a prompts slot ───────────────────
+// ── 34 · a params slot can be shared, field by field ────────────────────────
 describe('34 · shared params', () => {
-	const policySpec = () =>
+	/**
+	 * A lane with one `shared` knob and one of its own (R-7 P2, refined
+	 * 2026-09-16 — `FieldDecl.shared`). Two of it in one spec, the second
+	 * referencing the first: `depth` is one setting for both, `share` is each
+	 * lane's own.
+	 */
+	const lane = pin(
+		describeQueryDefinition({
+			id: 'demo:query/shared-lane@1',
+			timeoutMs: 100,
+			ports: { in: { scope: S.json }, out: { main: S.json } },
+			slots: {
+				params: {
+					kind: 'parameters',
+					schema: {
+						depth: { type: 'integer', default: 3, shared: true },
+						share: { type: 'number', default: 0.25 },
+					},
+				},
+			},
+		}),
+	)
+	const twoLanes = () =>
 		spec('demo:sharedparams@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.task('rank', C.rankHybrid.v1({ params: slot.params() } as any))
-			.query('history', ($: any) =>
-				C.sessionHistory.v1({
+			.inlet('input', C.userMessage.v1())
+			.query('a', ($: any) => lane.v1({ scope: $.input.sessionScope, params: slot.params() }))
+			.query('b', ($: any) =>
+				lane.v1({
 					scope: $.input.sessionScope,
-					// The policy lives on the ranker; this reads it rather than
-					// keeping a second copy that agrees until somebody edits one.
-					params: slot.params('rank'),
-				} as any),
+					// The scan knob lives on `a`; `b`'s share stays `b`'s.
+					params: slot.params({ node: 'a' }),
+				}),
 			)
-
-	test("the reader gets the owner's values, not its own", async () => {
-		let seen: any
-		const world = {
-			overrides: [
-				{
-					nodeKey: 'rank',
-					slot: 'params',
-					path: 'budget',
-					value: 777,
-					scopeKind: 'user' as const,
-				},
-				// The reader's own params are deliberately different: if the
-				// resolution used `node.key` this is the number that would show
-				// up, and the test would pass while sharing did nothing.
-				{
-					nodeKey: 'history',
-					slot: 'params',
-					path: 'budget',
-					value: 111,
-					scopeKind: 'user' as const,
-				},
-			],
-		}
-		await run(publish(policySpec()), {
+	const over = (nodeKey: string, path: string, value: unknown) => ({
+		nodeKey,
+		slot: 'params',
+		path,
+		value,
+		scopeKind: 'session' as const,
+	})
+	const seenBy = async (world: unknown) => {
+		// Spine nodes run in position order, so the first call is `a`'s.
+		const calls: any[] = []
+		await run(publish(twoLanes()), {
 			input: {},
 			world: world as any,
 			bindings: bindings({
-				'core:query/session-history@1': async (i: any) => {
-					seen = i.params
-					return ok({ main: [], messages: [] })
+				'demo:query/shared-lane@1': async (i: any) => {
+					calls.push(i.params)
+					return ok({ main: [] })
 				},
 			}),
 		})
-		assert.equal(seen?.budget, 777)
+		assert.equal(calls.length, 2, 'both lanes ran')
+		return { a: calls[0], b: calls[1] }
+	}
+
+	test("the shared field is the owner's — stored value and default alike", async () => {
+		const seen = await seenBy({
+			overrides: [
+				over('a', 'depth', 7),
+				// The reader's own row at the shared path is deliberately
+				// different: if the shared half resolved at `node.key` this is
+				// the number that would show up, and the test would pass while
+				// sharing did nothing.
+				over('b', 'depth', 111),
+			],
+		})
+		assert.equal(seen.a?.depth, 7)
+		assert.equal(seen.b?.depth, 7)
 	})
 
-	test("defaults come from the owner's schema too", async () => {
-		// Filling the reader's gaps from the reader's schema and calling the
-		// result the owner's policy is the subtle half of the same bug.
-		let seen: any
-		await run(publish(policySpec()), {
-			input: {},
-			bindings: bindings({
-				'core:query/session-history@1': async (i: any) => {
-					seen = i.params
-					return ok({ main: [], messages: [] })
-				},
-			}),
+	test('an unmarked field is the node\'s own, through the same reference', async () => {
+		const seen = await seenBy({
+			overrides: [over('a', 'share', 0.6), over('b', 'share', 0.1)],
 		})
-		assert.ok(seen, 'the query never ran')
-		assert.equal('limit' in seen, false, "got the reader's own schema defaults")
+		assert.equal(seen.a?.share, 0.6)
+		assert.equal(seen.b?.share, 0.1)
+	})
+
+	test('defaults follow the same line', async () => {
+		const seen = await seenBy(undefined)
+		assert.deepEqual(seen.a, { depth: 3, share: 0.25 })
+		assert.deepEqual(seen.b, { depth: 3, share: 0.25 })
+	})
+
+	test('a reference to an owner that shares nothing is a diagnostic, not a silent no-op', () => {
+		const plain = pin(
+			describeQueryDefinition({
+				id: 'demo:query/plain-lane@1',
+				timeoutMs: 100,
+				ports: { in: { scope: S.json }, out: { main: S.json } },
+				slots: { params: { kind: 'parameters', schema: { n: { type: 'integer', default: 1 } } } },
+			}),
+		)
+		const doc = publish(
+			spec('demo:sharednothing@1', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1())
+				.query('a', ($: any) => plain.v1({ scope: $.input.sessionScope, params: slot.params() }))
+				.query('b', ($: any) =>
+					plain.v1({ scope: $.input.sessionScope, params: slot.params({ node: 'a' }) }),
+				),
+		)
+		const f = validate(doc).filter((x) => x.law === '12 §2 P2')
+		assert.equal(f.length, 1)
+		assert.match(f[0]!.message, /marks no field shared/)
 	})
 })
 
@@ -627,7 +697,7 @@ describe('34 · shared params', () => {
 describe('35 · switched off', () => {
 	const withLore = () =>
 		spec('demo:toggle@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('lore', ($: any) => C.worldLore.v1({ scope: $.input.sessionScope }))
 
 	const runWith = async (enabled: boolean | undefined) => {
@@ -642,7 +712,7 @@ describe('35 · switched off', () => {
 								slot: 'settings',
 								path: 'enabled',
 								value: enabled,
-								scopeKind: 'user' as const,
+								scopeKind: 'session' as const,
 							},
 						],
 					}
@@ -687,7 +757,7 @@ describe('35 · switched off', () => {
 		// instead of being refused where it was asked for.
 		let asked = 0
 		const s = spec('demo:notoggle@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($: any) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		await run(publish(s), {
 			input: {},
@@ -698,7 +768,7 @@ describe('35 · switched off', () => {
 						slot: 'settings',
 						path: 'enabled',
 						value: false,
-						scopeKind: 'user' as const,
+						scopeKind: 'session' as const,
 					},
 				],
 			} as any,

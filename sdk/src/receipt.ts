@@ -7,6 +7,7 @@
  */
 
 import { renderPreview } from './preview.js'
+import { renderStatusText } from './status.js'
 
 export type Outcome = 'ok' | 'err' | 'cancelled' | 'halt'
 
@@ -14,7 +15,7 @@ export interface NodeReceipt {
 	nodeKey: string
 	seq: number
 	kind: string
-	typeId: string
+	definitionId: string
 	result: Outcome
 	startedAt: number
 	endedAt: number
@@ -62,8 +63,14 @@ export interface NodeReceipt {
 	tokensCached?: number
 	/** Tokens WRITTEN to the cache, where a service bills the two halves apart. */
 	tokensCacheWrite?: number
-	/** Resolved config reference, e.g. providerRef → 'generate' (16 §5b-i). */
+	/** Resolved config reference, e.g. oracleRef → 'generate' (16 §5b-i). */
 	resolvedRefs?: Record<string, string>
+	/**
+	 * This outlet ran in a dry run and committed nothing (R-21 (1)). Its
+	 * output carries a synthetic id, and the event it would have caused is
+	 * flagged the same way in `emitted`.
+	 */
+	dry?: true
 	notes?: string[]
 	/**
 	 * Script chains applied around this invocation (18 S5), one record per
@@ -86,7 +93,8 @@ export interface NodeReceipt {
 export interface ScriptApplicationRecord {
 	scriptId: number
 	name: string
-	typeId: string
+	/** The script kind the link was checked against — `core:script:text/transform@1`. */
+	scriptKind: string
 	phase: 'before' | 'after'
 	appliedBy: 'substrate' | 'binding'
 	/**
@@ -149,6 +157,34 @@ export interface Receipt {
 	 * preview *is* the payload.
 	 */
 	preview?: import('./preview.js').PreviewReport
+	/**
+	 * Who portrays each participant this run asked about — resolved by the
+	 * host **once, at run start**, and pinned here like config (R-21 (4)).
+	 *
+	 * Keyed by participant reference (`character:12` → `{ by: 'ai' }`,
+	 * `character:7` → `{ by: 'person', userId: '3' }`, `owner` → …). The
+	 * host supplies it through `RunOptions.portrayals`, before the first
+	 * node; nothing in the run reads or rewrites it — a member joining
+	 * mid-run changes the next run's answer, never this one's.
+	 *
+	 * Present exactly when the host resolved it, which is when the answer
+	 * means something: a run **in a session** that is **not a pre-call
+	 * preview** — a reply, a summarize, an event subscriber. Absent on a run
+	 * with no session behind it and on a preview that halts before any
+	 * oracle (a token count, the inspector's debug preview): nobody speaks
+	 * on those, so there is nobody to portray.
+	 */
+	portrayals?: import('./participants.js').Portrayals
+	/**
+	 * What the run was doing when it ended badly (R-19, R-21 "optional,
+	 * taken"): the last status a node set — *{speaker} is typing* — and the
+	 * node that set it. Present only when the outcome is `halt`, `err` or
+	 * `cancelled`; never on `ok`, never on a preview's halt, and never as a
+	 * node row — statuses are ephemeral (F34) and this is the one exception.
+	 * The host fills `{speaker}` before the receipt is stored; the client
+	 * resolves the locale.
+	 */
+	lastStatus?: import('./status.js').LastStatus
 	nodes: NodeReceipt[]
 	/**
 	 * Run-level notes — facts about the whole run that no node row can carry.
@@ -171,7 +207,7 @@ export interface Receipt {
 	 * on wording. `iterations` counts the bodies that ran, whatever ended them.
 	 */
 	loops?: Array<{
-		blockId: string
+		clauseId: string
 		iterations: number
 		/**
 		 * `predicate` — the loop asked to stop. `ceiling` — the declared max
@@ -181,8 +217,11 @@ export interface Receipt {
 		 */
 		stopped: 'predicate' | 'ceiling' | 'interrupted'
 	}>
-	/** Events core emitted as a consequence of writes in this run (01 §8). */
-	emitted: Array<{ event: string; cause: string; subscribers: number }>
+	/**
+	 * Events core emitted as a consequence of writes in this run (01 §8).
+	 * `dry` marks one a dry run recorded and never dispatched.
+	 */
+	emitted: Array<{ event: string; cause: string; subscribers: number; dry?: true }>
 	/** Gate decisions enter provenance; replay honours them (F15). */
 	reviews?: Array<{
 		nodeKey: string
@@ -214,6 +253,12 @@ export function renderReceipt(r: Receipt): string {
 		)
 		if (r.haltReason) out.push(`     reason: ${r.haltReason}`)
 	}
+	// The one status the receipt keeps (R-21): what the run was doing when it
+	// ended badly. Rendered in `en` here; the inspector resolves the locale.
+	if (r.lastStatus)
+		out.push(
+			` ▸ while: ${renderStatusText(r.lastStatus.text)} (status set by ${r.lastStatus.nodeKey})`,
+		)
 	if (r.preview) out.push(renderPreview(r.preview))
 	for (const n of r.nodes) {
 		out.push(
@@ -222,7 +267,8 @@ export function renderReceipt(r: Receipt): string {
 		)
 		if (n.reason) out.push(`     reason: ${n.reason}`)
 		for (const note of n.notes ?? []) out.push(`     ${note}`)
-		if (n.samplingIgnored?.length) out.push(`     ignored samplers: ${n.samplingIgnored.join(', ')}`)
+		if (n.samplingIgnored?.length)
+			out.push(`     ignored samplers: ${n.samplingIgnored.join(', ')}`)
 	}
 	for (const rev of r.reviews ?? []) {
 		if (rev.position === 'off') continue
@@ -233,11 +279,17 @@ export function renderReceipt(r: Receipt): string {
 		)
 	}
 	for (const l of r.loops ?? [])
-		out.push(` ▸ loop ${l.blockId}: ${l.iterations} iteration(s), stopped on ${l.stopped}`)
+		out.push(` ▸ loop ${l.clauseId}: ${l.iterations} iteration(s), stopped on ${l.stopped}`)
 	for (const note of r.notes ?? []) out.push(` ▸ ${note}`)
 	for (const e of r.emitted) {
-		out.push(` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${e.subscribers} subscriber(s)`)
+		out.push(
+			e.dry
+				? ` ▸ core would emit ${e.event} (cause: ${e.cause}) — dry run, not dispatched`
+				: ` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${e.subscribers} subscriber(s)`,
+		)
 	}
-	out.push(` consumption: ${r.consumption.tokens} tokens, ${r.consumption.nodeExecutions} node executions`)
+	out.push(
+		` consumption: ${r.consumption.tokens} tokens, ${r.consumption.nodeExecutions} node executions`,
+	)
 	return out.join('\n')
 }

@@ -74,5 +74,12 @@ defineFacet({ id: 'variables', i18n: { en: 'Layout' }, order: 3 })
 defineFacet({ id: 'templates', i18n: { en: 'Template' }, order: 4 })
 defineFacet({ id: 'weights', i18n: { en: 'Tuning' }, order: 5 })
 defineFacet({ id: 'review', i18n: { en: 'Review' }, order: 6, simple: true })
+/**
+ * The substrate's own (`settingsSlot.ts`): an optional node's switch, a gather
+ * clause's mode. Declared since R-9 (2026-09-16) — it resolved through the
+ * undeclared-facet fallback before, which is the path meant for a plugin's
+ * word, not core's. Same heading; behind the tuning door as it always was.
+ */
+defineFacet({ id: 'settings', i18n: { en: 'Settings' }, order: 7 })
 /** `context-budget` and friends declare a bare `parameters` slot. */
 defineFacet({ id: 'params', i18n: { en: 'Tuning' }, order: 5 })

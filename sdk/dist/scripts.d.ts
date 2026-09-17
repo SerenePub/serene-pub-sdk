@@ -34,7 +34,7 @@
 import type { I18n } from './descriptors.js';
 import type { ShapeId } from './shapes.js';
 /** `core:script:text/stop@1` — namespaced, segmented by payload, pinned. */
-export type ScriptTypeId = string;
+export type ScriptKindId = string;
 /**
  * What a chain of this operation *does* with what its links return (18 §5).
  *
@@ -56,8 +56,8 @@ export type ChainSemantics =
  * fight.
  */
  | 'verdict';
-export interface ScriptTypeDecl {
-    id: ScriptTypeId;
+export interface ScriptKindDecl {
+    id: ScriptKindId;
     i18n?: {
         name?: I18n;
         description?: I18n;
@@ -93,7 +93,7 @@ export interface ScriptTypeDecl {
     };
 }
 /** A parsed script id. The segments callers actually branch on. */
-export interface ParsedScriptTypeId {
+export interface ParsedScriptKindId {
     namespace: string;
     /** e.g. `text`, `messages`, `candidates`, `context`. */
     content: string;
@@ -104,7 +104,7 @@ export interface ParsedScriptTypeId {
     space: string;
 }
 /** Is this a script id at all? Cheap enough to call in a filter. */
-export declare const isScriptTypeId: (id: string) => boolean;
+export declare const isScriptKindId: (id: string) => boolean;
 /**
  * Parse, or throw with the grammar spelled out.
  *
@@ -114,7 +114,7 @@ export declare const isScriptTypeId: (id: string) => boolean;
  * nobody meant. An id is either well-formed or it is a bug in the thing that
  * produced it.
  */
-export declare function parseScriptTypeId(id: string): ParsedScriptTypeId;
+export declare function parseScriptKindId(id: string): ParsedScriptKindId;
 /**
  * `content/operation` — what every link in one chain must share (18 §5).
  *
@@ -123,7 +123,7 @@ export declare function parseScriptTypeId(id: string): ParsedScriptTypeId;
  * rather than at run time, and neither the registry nor the script body has to
  * be consulted to know it.
  */
-export declare const scriptSpace: (id: ScriptTypeId) => string;
+export declare const scriptSpace: (id: ScriptKindId) => string;
 /**
  * Register a script type.
  *
@@ -133,17 +133,17 @@ export declare const scriptSpace: (id: ScriptTypeId) => string;
  * so a malformed one does not fail loudly, it quietly belongs to no chain and
  * no hook.
  */
-export declare function defineScriptType(decl: ScriptTypeDecl): ScriptTypeDecl;
+export declare function defineScriptKind(decl: ScriptKindDecl): ScriptKindDecl;
 /**
  * The plugin-facing door. Same registration, minus the ability to claim core's
- * namespace — checked here rather than in `defineScriptType` so core's own
+ * namespace — checked here rather than in `defineScriptKind` so core's own
  * declarations do not have to argue past their own guard.
  */
-export declare function definePluginScriptType(pluginId: string, decl: ScriptTypeDecl): ScriptTypeDecl;
-export declare const getScriptType: (id: ScriptTypeId) => ScriptTypeDecl | undefined;
-export declare const allScriptTypes: () => ScriptTypeDecl[];
-export declare function _clearScriptTypes(): void;
-export declare const textTransform: ScriptTypeDecl;
+export declare function definePluginScriptKind(pluginId: string, decl: ScriptKindDecl): ScriptKindDecl;
+export declare const getScriptKind: (id: ScriptKindId) => ScriptKindDecl | undefined;
+export declare const allScriptKinds: () => ScriptKindDecl[];
+export declare function _clearScriptKinds(): void;
+export declare const textTransform: ScriptKindDecl;
 /**
  * ⚠ A verdict, not a transform, and the difference is load-bearing.
  *
@@ -158,7 +158,7 @@ export declare const textTransform: ScriptTypeDecl;
  * a function of the accumulated text only, never of chunk boundaries, or a
  * reply replays differently than it streamed.
  */
-export declare const textStop: ScriptTypeDecl;
+export declare const textStop: ScriptKindDecl;
 /**
  * Additive only, and split from `messages/transform` on purpose.
  *
@@ -168,11 +168,11 @@ export declare const textStop: ScriptTypeDecl;
  * a single `messages/edit` would have made "add a reminder at depth 2" and
  * "delete half the history" the same permission.
  */
-export declare const messagesInject: ScriptTypeDecl;
-export declare const messagesTransform: ScriptTypeDecl;
-export declare const candidatesFilter: ScriptTypeDecl;
-export declare const candidatesRescore: ScriptTypeDecl;
-export declare const contextTransform: ScriptTypeDecl;
+export declare const messagesInject: ScriptKindDecl;
+export declare const messagesTransform: ScriptKindDecl;
+export declare const candidatesFilter: ScriptKindDecl;
+export declare const candidatesRescore: ScriptKindDecl;
+export declare const contextTransform: ScriptKindDecl;
 /**
  * The extracted cast, after the model has answered and the host has parsed.
  *
@@ -182,14 +182,14 @@ export declare const contextTransform: ScriptTypeDecl;
  * cast list by attachment mistake, silently. The scope is what makes the
  * mistake refusable at attach.
  *
- * The flowing value is what `core:provider/extract-cast@1` publishes on its
+ * The flowing value is what `core:oracle/extract-cast@1` publishes on its
  * `cast` port: `{ participants, mentioned }`. Scripts here rename, merge
  * aliases, drop a junk detection, or add someone the model missed — the
  * paste-rung half of replaceable cast extraction. The other half is the node
  * rebind: a whole different extractor is a same-shaped provider, never a
  * script, because scripts are pure compute and extraction calls a model.
  */
-export declare const castTransform: ScriptTypeDecl;
+export declare const castTransform: ScriptKindDecl;
 /**
  * Every content scope core ships, in panel order.
  *

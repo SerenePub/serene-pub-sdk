@@ -224,7 +224,7 @@ describe('previewManifest — what the harness renders', () => {
 			.genres({ crawl: g })
 			.pipelines(
 				spec('acme.dice:spec/create', { version: '1.0.0' })
-					.input('input', C.userMessage.v1(), {
+					.inlet('input', C.userMessage.v1(), {
 						genre: g,
 						event: sessionEvents.sessionCreated,
 					})

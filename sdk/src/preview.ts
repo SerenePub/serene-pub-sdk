@@ -39,7 +39,7 @@ export interface PreviewBlock {
 export interface PreviewReport {
 	/** Where the run stopped, and why that node. */
 	atNode: string
-	typeId: string
+	definitionId: string
 	targetedBy: 'first-provider-on-spine' | 'explicit'
 
 	/** Metadata only — material never leaves core (F18). */
@@ -95,7 +95,7 @@ export const roughTokens = (v: unknown): number => Math.ceil(countableText(v).le
 
 /** Choose where a preview stops. */
 export function previewTarget(
-	nodes: Array<{ key: string; kind: string; blockId?: string; position: number }>,
+	nodes: Array<{ key: string; kind: string; clauseId?: string; position: number }>,
 	explicit?: string,
 ): { key: string; targetedBy: PreviewReport['targetedBy'] } | undefined {
 	if (explicit) return { key: explicit, targetedBy: 'explicit' }
@@ -103,16 +103,16 @@ export function previewTarget(
 	// first Provider is `embed`, which lives inside the gather block — stopping there
 	// would preview a context that had not been retrieved yet. Spine-only is the rule
 	// that means what people intend, and it is the same rule
-	// `slot.downstreamProvider()` already resolves with (16 §5b-i).
+	// `slot.downstreamOracle()` already resolves with (16 §5b-i).
 	const spine = nodes
-		.filter((n) => !n.blockId && n.kind === 'provider')
+		.filter((n) => !n.clauseId && n.kind === 'oracle')
 		.sort((a, b) => a.position - b.position)
 	return spine[0] ? { key: spine[0].key, targetedBy: 'first-provider-on-spine' } : undefined
 }
 
 export function renderPreview(p: PreviewReport): string {
 	const out: string[] = []
-	out.push(`preview · stopped before ${p.atNode} (${p.typeId}) · ${p.targetedBy}`)
+	out.push(`preview · stopped before ${p.atNode} (${p.definitionId}) · ${p.targetedBy}`)
 	if (p.connection) {
 		out.push(
 			`  connection ${p.connection.kind ?? '?'}` +

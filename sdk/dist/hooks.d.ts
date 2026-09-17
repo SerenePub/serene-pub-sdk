@@ -1,10 +1,15 @@
 /**
- * The three hook kinds and their injected surfaces (01 §9, F10, F32).
+ * The three kinds of extension callable and their injected surfaces (01 §9, F10, F32).
  *
- * "Hook" is never used bare — the three kinds have different rules, and the rules are
- * enforced by *what is in the object*, not by a document someone reads. A capability
- * that isn't on the surface cannot be called, which is why these are types rather than
- * a checklist.
+ * A **hook** is a declared point where authored code may run (NOMENCLATURE §12); the
+ * three callables are named for what they are (R-1, ruled 2026-09-14): a **handler**
+ * implements a node definition, a **lifecycle callback** answers a core moment, an
+ * **event listener** answers a core event. 01's *pipeline hook* / *lifecycle hook* /
+ * *event hook* are the same three under the old word; the code moved 2026-09-16 (U3).
+ *
+ * The rules are enforced by *what is in the object*, not by a document someone reads.
+ * A capability that isn't on the surface cannot be called, which is why these are
+ * types rather than a checklist.
  */
 import type { Result } from './executor.js';
 import type { ExtensionStorage } from './storage.js';
@@ -48,9 +53,9 @@ export interface CorePage<T = unknown> {
  * manifest is already the audit surface, since permissions are compiled from SDK
  * usage (13 §7c).
  */
-export interface PipelineHookRules {
+export interface HandlerRules {
     kind: 'pipeline';
-    typeId: string;
+    definitionId: string;
     visibility: 'private' | 'public';
 }
 /**
@@ -115,14 +120,14 @@ export interface HookFetchResponse {
     body: string;
 }
 /**
- * What arrives as an event hook's **first argument**.
+ * What arrives as an event listener's **first argument**.
  *
  * An envelope rather than the bare payload, because one exported hook may be
  * subscribed to more than one event — the manifest's `eventHooks` is a list of
  * subscriptions, not a map — so a hook that could not tell which occurrence it
  * was answering would need one export per event to find out.
  */
-export interface EventHookInput<T = unknown> {
+export interface EventListenerInput<T = unknown> {
     /** The event that fired, exactly as the subscription pinned it. */
     event: string;
     /**
@@ -135,7 +140,7 @@ export interface EventHookInput<T = unknown> {
      */
     payload: T;
 }
-export interface EventHookSurface {
+export interface EventListenerSurface {
     /** The extension's own rows and files — query, write, delete, and ask how
      *  much room is left. See storage.ts for why all four are needed. */
     storage: ExtensionStorage;
@@ -146,11 +151,11 @@ export interface EventHookSurface {
      *  backend. See the section docblock above for the grant and its refusals. */
     fetch(url: string, init?: HookFetchInit): Promise<HookFetchResponse>;
     /** Deliberately absent: callProvider (F32), trigger (F10), readCore — an
-     *  event hook is told what happened; reading the rest of the instance is
+     *  event listener is told what happened; reading the rest of the instance is
      *  the lifecycle surface's privilege, and widening this one would make
      *  every event subscription a database grant. Also absent: any way to read
      *  the occurrence off this object. It arrives as argument 0 (see
-     *  `EventHookInput`), which is what both sandboxes have always passed. */
+     *  `EventListenerInput`), which is what both sandboxes have always passed. */
     /** @deprecated use `storage.get` / `storage.query`. */
     readOwnRows?(key?: string): unknown;
     /** @deprecated use `storage.put`, which reports quota instead of dropping. */
@@ -160,13 +165,13 @@ export interface EventHookSurface {
  * Scoped core reads, plus read/write on the extension's own namespaced rows. Nothing
  * else (13 §7c).
  *
- * Two absences, and they are the same absence for the same reason. A lifecycle hook
+ * Two absences, and they are the same absence for the same reason. A lifecycle callback
  * may not call a Provider and may not trigger a pipeline, so **scheduled model work
  * subscribes to `core:event/schedule-tick@1` instead** — which gets it a receipt, a
- * budget and the review gate, and puts it on the consent screen. A lifecycle hook
+ * budget and the review gate, and puts it on the consent screen. A lifecycle callback
  * doing that work would have had none of the four.
  */
-export interface LifecycleHookSurface {
+export interface LifecycleCallbackSurface {
     readCore<T = unknown>(table: string, q?: CoreQuery): Promise<CorePage<T>>;
     storage: ExtensionStorage;
     log(level: LogLevel, message: string, detail?: unknown): void;
@@ -229,15 +234,15 @@ export type LifecycleMoment = 'load' | 'startup' | 'shutdown' | 'enable' | 'disa
  * Returning `halt(reason)` is the normal way to say "not applicable to me", and
  * is a success rather than a failure (11 §3).
  */
-export type EventHook = (input: EventHookInput, ctx: EventHookSurface) => Result | Promise<Result>;
+export type EventListener = (input: EventListenerInput, ctx: EventListenerSurface) => Result | Promise<Result>;
 /**
- * A core-invoked lifecycle hook: **`(input, ctx)`**, like every other hook.
+ * A core-invoked lifecycle callback: **`(input, ctx)`**, like every other callable.
  *
  * `ctx` is the surface above — argument **1**, not argument 0. This was typed
  * for a while as taking the surface alone, while both sandboxes called it
  * `__fn(__input, ctx)` exactly as they call every other hook; an author who
  * followed the type read `storage` and `log` off the input envelope and found
- * neither. The same defect `EventHook` carried, fixed the same way and in the
+ * neither. The same defect `EventListener` carried, fixed the same way and in the
  * same direction — towards what the runtimes have always done.
  *
  * `input` is typed `unknown` because core sends no envelope worth reading: the
@@ -246,7 +251,7 @@ export type EventHook = (input: EventHookInput, ctx: EventHookSurface) => Result
  * knows which one it is. Deliberately not given a shape it does not have; that
  * is the mistake this signature exists to undo.
  */
-export type LifecycleHook = (input: unknown, ctx: LifecycleHookSurface) => Result | Promise<Result>;
+export type LifecycleCallback = (input: unknown, ctx: LifecycleCallbackSurface) => Result | Promise<Result>;
 /**
  * F32, checked rather than documented. The probe reads the surface an implementation
  * actually hands out — a regression that adds `callProvider` back fails here instead

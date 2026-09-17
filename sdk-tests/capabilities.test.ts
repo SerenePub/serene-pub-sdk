@@ -54,7 +54,7 @@ import {
 	type CapabilityId,
 	type CapabilitySet,
 	S,
-	describeProvider,
+	describeOracleDefinition,
 	pin,
 	spec,
 	validate,
@@ -614,7 +614,7 @@ describe('the publish-time check — what is knowable without a connection', () 
 	const declaring = (slot: Record<string, unknown>) => {
 		const suffix = `${n++}-${Date.now()}`
 		const T = pin(
-			describeProvider({
+			describeOracleDefinition({
 				id: `demo:cap-check-${suffix}@1`,
 				shape: S.textGen,
 				effects: 'external',
@@ -625,8 +625,8 @@ describe('the publish-time check — what is knowable without a connection', () 
 		// Returns the BUILDER, not a published document: `publish` asserts, and
 		// these tests are about what the assertion says.
 		return spec(`demo:cap-spec-${suffix}@1`, { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider('generate', (T as any).v1())
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', (T as any).v1())
 	}
 
 	test('an unknown feature id is an error naming the valid ones', () => {
@@ -683,7 +683,7 @@ describe('the publish-time check — what is knowable without a connection', () 
 
 	test('capabilities on a non-connection slot are refused', () => {
 		const T = pin(
-			describeProvider({
+			describeOracleDefinition({
 				id: `demo:cap-wrong-slot-${n++}-${Date.now()}@1`,
 				shape: S.textGen,
 				effects: 'external',
@@ -699,8 +699,8 @@ describe('the publish-time check — what is knowable without a connection', () 
 		)
 		const f = errorsFor(
 			spec(`demo:cap-wrong-spec-${n++}-${Date.now()}@1`, { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider('generate', (T as any).v1()),
+				.inlet('input', C.userMessage.v1())
+				.oracle('generate', (T as any).v1()),
 			'capabilities',
 		)
 		assert.equal(f.length, 1)

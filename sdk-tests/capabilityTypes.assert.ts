@@ -5,7 +5,7 @@
  * point: what it guards cannot be observed at runtime.
  *
  * `ctx.can()` is narrowed to exactly the capabilities a node declared `optional`.
- * If that inference ever widens — a `const` dropped from `describeProvider`, an
+ * If that inference ever widens — a `const` dropped from `describeOracleDefinition`, an
  * `optional?:` where `optional:` was meant in `OptionalCapsOf`, a stray `any`
  * somewhere in `pin` — then `can()` accepts `string`, every call keeps
  * compiling, every test keeps passing, and the guarantee is gone with no
@@ -18,7 +18,7 @@
  */
 
 import {
-	describeProvider,
+	describeOracleDefinition,
 	pin,
 	providerBinding,
 	ok,
@@ -30,8 +30,8 @@ import {
 
 // A node that declares exactly one optional capability and one required one.
 const probeType = pin(
-	describeProvider({
-		id: 'test:provider/typed-probe@1',
+	describeOracleDefinition({
+		id: 'test:oracle/typed-probe@1',
 		shape: S.textGen,
 		effects: 'external',
 		slots: {
@@ -72,8 +72,8 @@ providerBinding(probeType)(async (_input, ctx) => {
 
 // A node declaring NO optional capabilities can ask about nothing at all.
 const bareType = pin(
-	describeProvider({
-		id: 'test:provider/no-optional@1',
+	describeOracleDefinition({
+		id: 'test:oracle/no-optional@1',
 		shape: S.textGen,
 		effects: 'external',
 		slots: { connection: { kind: 'connection', requires: ['text->text'] } },

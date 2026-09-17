@@ -28,7 +28,7 @@ export * from './slots.js';
 /**
  * Core's entry types (Part 1). Declaring one **registers** it, which is the
  * fact-about-the-code route node types take — so this re-export is what puts
- * them in `allTypes()` for the boot sync.
+ * them in `allDefinitions()` for the boot sync.
  *
  * ⚠ That makes this module the one in the package with a load-bearing side
  * effect, and the package says `sideEffects: false`. `./dist/entries.js` is
@@ -40,12 +40,15 @@ export * from './entries.js';
 export * from './prompts.js';
 export * from './presets.js';
 export * from './createChat.js';
+export * from './guide.js';
 export * from './adventure.js';
 export * from './adventureActions.js';
+export * from './answerForm.js';
 export * from './respond.js';
 export * from './narrate.js';
 export * from './narrateCharacter.js';
 export * from './echo.js';
+export * from './builtins.js';
 export * from './toolLoop.js';
 export * from './generateImage.js';
 export * from './graphBuild.js';

@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import {
 	spec,
 	slot,
-	describeConsumerTarget,
+	describeOutletDefinition,
 	S,
 	splitCommitMessage,
 	unmappedEntries,
@@ -39,34 +39,41 @@ describe('104 · createMessage and updateMessage are different types', () => {
 	test('updateMessage takes an id from outside the run', () => {
 		const doc = publish(
 			spec('demo:edit', { version: '1.0.0' })
-				.input('input', C.messageCreated.v1())
-				.consume('save', ($) =>
+				.inlet('input', C.userMessage.v1())
+				.outlet('save', ($) =>
 					C.updateMessage.v1({ target: $.input.messageId, text: 'edited' }),
 				),
 		)
 		assert.equal(
-			doc.nodes.find((n) => n.key === 'save')!.typeId,
-			'core:consumer/update-message',
+			doc.nodes.find((n) => n.key === 'save')!.definitionId,
+			'core:outlet/update-message',
 		)
 	})
 
-	test('a message created in the same run cannot be updated by a second node', () => {
-		// Not an oversight: under async review the created row is a proposal, and a
-		// proposal a reviewer rejects is a row this update would have edited into
-		// existence. write-result@1 is not assignable to row-ids@1, so it fails at
-		// publish rather than at 2am.
-		assert.throws(
-			() =>
-				publish(
-					spec('demo:create-then-edit', { version: '1.0.0' })
-						.input('input', C.userMessage.v1())
-						.consume('first', ($) => C.createMessage.v1({ text: $.input.text }))
-						.consume('second', ($) =>
-							C.updateMessage.v1({ target: $.first.messageId, text: $.input.text }),
-						),
+	test('a message created in the same run is updated by a second node — one primary row', () => {
+		// The pipeline owns its row (09-B B4, R-17): a placeholder outlet after
+		// the inlet and an update at the end is the reply's shape. It used to
+		// fail at publish because under async review the created row might
+		// never exist; that position is gone, so the pair is legal and counts
+		// as one primary row.
+		const doc = publish(
+			spec('demo:create-then-edit', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1())
+				.outlet('first', ($) => C.createMessage.v1({ generating: true }))
+				.outlet('second', ($) =>
+					C.updateMessage.v1({ target: $.first.messageId, text: $.input.text }),
 				),
-			/write-result|row-ids/,
 		)
+		const edge = doc.edges.find((e) => e.from === 'first' && e.to === 'second')
+		assert.equal(edge?.toPort, 'target')
+		assert.equal(edge?.shape, 'core:shape/write-result@1')
+	})
+
+	test('the placeholder ships review off and is the live row; the update declares no default, so review lands there when enabled', () => {
+		assert.equal(C.createMessage.descriptor.reviewDefault, 'off')
+		assert.equal(C.createMessage.descriptor.liveRow, true)
+		assert.equal(C.updateMessage.descriptor.reviewDefault, undefined)
+		assert.equal(C.updateMessage.descriptor.liveRow, undefined)
 	})
 })
 
@@ -75,8 +82,8 @@ describe('105 · a gate-eligible write publishes write-result@1', () => {
 	test('declaring row-ids on a write is refused at registration, with the failure named', () => {
 		assert.throws(
 			() =>
-				describeConsumerTarget({
-					id: 'demo:consumer/bad-write@1',
+				describeOutletDefinition({
+					id: 'demo:outlet/bad-write@1',
 					effects: 'write',
 					ports: { in: { text: S.text }, out: { main: S.rowIds } },
 				}),
@@ -102,8 +109,8 @@ describe('105 · a gate-eligible write publishes write-result@1', () => {
 	})
 
 	test('a non-write may still publish row ids', () => {
-		const ok = describeConsumerTarget({
-			id: 'demo:consumer/emit-only@1',
+		const ok = describeOutletDefinition({
+			id: 'demo:outlet/emit-only@1',
 			effects: 'emit',
 			ports: { in: { from: S.json }, out: { main: S.rowIds } },
 		})
@@ -120,24 +127,23 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 		schemaVersion: 1,
 		id: 'legacy:chat-turn',
 		version: '1.0.0',
-		subscribes: [],
 		includes: [],
 		presets: [],
-		blocks: [],
+		clauses: [],
 		nodes: [
 			{
 				key: 'input',
-				kind: 'input',
-				typeId: 'core:input/user-message',
-				typeVersion: 1,
+				kind: 'inlet',
+				definitionId: 'core:inlet/user-message',
+				definitionVersion: 1,
 				config: {},
 				position: 0,
 			},
 			{
 				key: 'save',
-				kind: 'consumer',
-				typeId: 'core:consumer/commit-message',
-				typeVersion: 1,
+				kind: 'outlet',
+				definitionId: 'core:outlet/commit-message',
+				definitionVersion: 1,
 				config: {},
 				position: 1,
 				...over,
@@ -149,8 +155,8 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 	test('nothing supplies an id → create', () => {
 		const { document, report } = splitCommitMessage(legacy())
 		assert.equal(
-			document.nodes.find((n) => n.key === 'save')!.typeId,
-			'core:consumer/create-message',
+			document.nodes.find((n) => n.key === 'save')!.definitionId,
+			'core:outlet/create-message',
 		)
 		assert.equal(report.entries[0]!.outcome, 'migrated')
 		assert.match(report.entries[0]!.reason!, /only ever created/)
@@ -169,15 +175,18 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 			]),
 		)
 		assert.equal(
-			document.nodes.find((n) => n.key === 'save')!.typeId,
-			'core:consumer/update-message',
+			document.nodes.find((n) => n.key === 'save')!.definitionId,
+			'core:outlet/update-message',
 		)
 		assert.equal(document.edges[0]!.toPort, 'target')
 		assert.equal(report.entries[0]!.outcome, 'migrated')
 	})
 
-	test('an id from a write in the same run is reported, never converted', () => {
-		// Converting this would produce a spec that is wrong in a way nobody can see.
+	test('an id from a write in the same run → update, since 09-B B4', () => {
+		// It used to be reported rather than decided, because under async
+		// review that row might never have existed. A create → update pair on
+		// one row inside one run is one primary row now, so it is what it
+		// looks like.
 		const { document, report } = splitCommitMessage(
 			legacy({}, [
 				{
@@ -190,12 +199,11 @@ describe('106 · splitCommitMessage recovers the decision or refuses to guess', 
 			]),
 		)
 		assert.equal(
-			document.nodes.find((n) => n.key === 'save')!.typeId,
-			'core:consumer/commit-message',
-			'left alone',
+			document.nodes.find((n) => n.key === 'save')!.definitionId,
+			'core:outlet/update-message',
 		)
-		assert.equal(unmappedEntries(report).length, 1)
-		assert.match(report.entries[0]!.reason!, /may never exist/)
+		assert.equal(document.edges[0]!.toPort, 'target')
+		assert.equal(unmappedEntries(report).length, 0)
 	})
 
 	test('two id sources is ambiguous, so it is unmapped rather than decided', () => {
@@ -224,9 +232,9 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 	const doc = () =>
 		publish(
 			spec('demo:needs-wiring', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-				.provider('embed', ($) =>
+				.oracle('embed', ($) =>
 					C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
 				)
 				// `assemble` declares a connection slot of its own — it renders the
@@ -239,7 +247,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 						connection: slot.connectionOf('generate'),
 					}),
 				)
-				.provider('generate', ($) =>
+				.oracle('generate', ($) =>
 					C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 				),
 		)
@@ -268,10 +276,13 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		// unshared slot is still a requirement.
 		const own = publish(
 			spec('demo:own-connection', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.task('prompt', ($) =>
-					C.assemble.v2({ candidates: $.history.messages, connection: slot.connection() }),
+					C.assemble.v2({
+						candidates: $.history.messages,
+						connection: slot.connection(),
+					}),
 				),
 		)
 		assert.deepEqual(
@@ -289,10 +300,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		// deciding which of their connections to point at this, and
 		// `core:shape/embeddings@1` helps them decide nothing — while `kind` above
 		// proves the shape is still carried for the machinery that filters on it.
-		assert.match(
-			renderRequirement(r[0]!),
-			/needs a connection that supports Embeddings/,
-		)
+		assert.match(renderRequirement(r[0]!), /needs a connection that supports Embeddings/)
 		assert.doesNotMatch(renderRequirement(r[0]!), /core:shape/)
 	})
 
@@ -307,7 +315,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		assert.equal(
 			unwiredConnections(
 				doc(),
-				missing.concat({ nodeKey: 'embed', slot: 'connection', typeId: '', kind: '' }),
+				missing.concat({ nodeKey: 'embed', slot: 'connection', definitionId: '', kind: '' }),
 			).length,
 			0,
 		)

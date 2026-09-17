@@ -12,11 +12,18 @@ export function markdownToHtml(md) {
     while (i < lines.length) {
         const line = lines[i];
         if (line.startsWith('```')) {
+            const info = line.slice(3).trim().split(/\s+/)[0];
             const buf = [];
             i++;
             while (i < lines.length && !lines[i].startsWith('```'))
                 buf.push(lines[i++]);
             i++;
+            // A `pipeline` fence is a drawing the docs compiler renders with a
+            // layout engine. This site is the no-dependency one, so it has no
+            // way to draw it — and an empty code box where a map should be is
+            // worse than no map at all.
+            if (info === 'pipeline')
+                continue;
             out.push(`<pre><code>${esc(buf.join('\n'))}</code></pre>`);
             continue;
         }

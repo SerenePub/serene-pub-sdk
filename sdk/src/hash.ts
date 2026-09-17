@@ -71,7 +71,7 @@ const UNIVERSAL_DISPLAY = ['i18n', 'description'] as const
 /**
  * What a registry knows about its own declarations that this file cannot.
  *
- * Display text is not always spelled `i18n`. `ScriptTypeDecl.blastRadius` is
+ * Display text is not always spelled `i18n`. `ScriptKindDecl.blastRadius` is
  * the badge the script panel shows and says so in its own docblock; a
  * `TemplateEngine`'s and a `WireFormat`'s `label` is the name in a picker; a
  * `FieldDecl`'s `label` is what settings.ts calls the canonical spelling, with
@@ -141,7 +141,7 @@ const displaySet = (opts?: DisplayKeys): ReadonlySet<string> =>
  * ## Exported, because core hashes the same declarations a second time
  *
  * A `Descriptor` is compared here when it is re-declared, and projected into a
- * `pipeline_type_registry` row whose `typeContentHash` decides whether an
+ * `pipeline_definition_registry` row whose `typeContentHash` decides whether an
  * upgrading install may republish it. Those are two answers to one question —
  * *is this the same content?* — and they were computed by two functions that
  * disagreed: core stripped `i18n` and `description`, this stripped `label` as

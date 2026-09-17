@@ -23,7 +23,23 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<import("@sere
     text: string;
     sessionScope: string;
     sessionId: string;
-    /** Null on a narrator turn — nobody in particular is speaking. */
+    /**
+     * Whose turn it is, as a **participant reference** (R-18 (3)):
+     * `character:<id>` for a library character, `envoy:<slug>` for
+     * a speaker the genre brings with it. Null on a narrator turn —
+     * nobody in particular is speaking. One port answers "who is
+     * speaking" for both kinds, so nothing downstream branches on
+     * which it received; who *portrays* them this turn is the
+     * host's resolver's answer, pinned on the receipt (R-21 (4)).
+     */
+    speaker: string;
+    /**
+     * @deprecated The same speaker as a bare character id (one
+     * release, from 2026-09-16). Null on a narrator turn, and null
+     * for an envoy — which is why it cannot stay the port: a
+     * reader keyed on it sees a genre's speaker as nobody. Read
+     * `speaker`; the turn strategies publish both meanwhile.
+     */
     characterId: string;
     /**
      * Values for the mode's declared `fields` (19 §1), filtered to
@@ -51,8 +67,65 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<import("@sere
      * body of the seed line the model continues from.
      */
     continuationPrefill: string;
-}, import("@serene-pub/sdk").PortDecl, "core:input/user-message@1"> & {
-    kind: 'input';
+    /**
+     * The reply row this turn re-drives, when it is a regenerate, a
+     * swipe or a continue of a message that already exists. Null on
+     * a fresh turn, which is nearly all of them.
+     *
+     * The pipeline owns its reply row (R-17): a fresh turn's row is
+     * created by the spec's own placeholder outlet, and a verb that
+     * re-drives an existing message hands that message to the same
+     * outlet through this port — so the outlet claims it as the
+     * run's live row instead of inserting a second one. It is data,
+     * recorded on the receipt, and never a scope read: "which row
+     * did this turn write" is answerable from the run afterwards.
+     */
+    messageId: string;
+    /**
+     * What the built-ins did to this session since the last reply
+     * (R-15, 2026-09-16): a list of session changes — `[{ event:
+     * 'core:event/message-deleted@1', messageId, at, lost }, …]`,
+     * oldest first, capped at the newest fifty — so a pipeline
+     * knows the history it is about to read has moved: a line
+     * deleted with its content, a rewrite with the previous text,
+     * an alternative swiped in, a reply stopped short. Read once:
+     * the run that receives them consumes them — marked read
+     * after the run, and only when it produced a reply, so a run
+     * that fails leaves them for the next — and a preview sees
+     * them without consuming. Empty when nothing changed, which
+     * is nearly every turn. Past fifty, the newest fifty arrive
+     * and a last entry `{ event:
+     * 'core:event/session-changes-truncated@1', dropped }` says
+     * how many older ones did not.
+     *
+     * Was `changes` until 2026-09-16 (U5b review S4): that word is
+     * the state ledger's on `resolve-state-changes@1` and
+     * `set-state@1` — a list of value changes — and a session
+     * change is about a message, never a value (R1).
+     */
+    sessionChanges: string;
+    /**
+     * What an action's fire sent along (R-15 *Forms*; U5d,
+     * 2026-09-17): a form's answer — `{ choice }` for a choices
+     * block, the entered values for a form block — or a widget's
+     * `invoke(key, args)` arguments. Absent on a turn and on a
+     * bare press. A press on an **addressed** block arrives with
+     * `form` beside it (`core:task/read-answer@1` takes both and
+     * publishes the answer port by port). The host always
+     * supplied this under `payload`; declared 2026-09-17 so a
+     * spec can wire it.
+     */
+    payload: string;
+    /**
+     * The form a press answered, when it answered one — the block
+     * itself as stored, its id, the message and the addressee,
+     * read off the row by the host (never off the client):
+     * `{ blockId, messageId, kind, question, addressee, characterId,
+     * choice?, label? }`. Absent on every other fire.
+     */
+    form: string;
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/user-message@1"> & {
+    kind: 'inlet';
     slots?: {
         /**
          * The input hook (18 §4a): user chains over the triggering text,
@@ -72,18 +145,34 @@ export declare const userMessage: import("@serene-pub/sdk").Pinned<import("@sere
     } | undefined;
 }>;
 /**
- * A message that already exists — the trigger carries its id.
+ * A built-in write's request (R-15, 2026-09-16) — what a person asked core to
+ * do to a message or a session: delete, hide, edit, swipe, branch.
  *
- * `messageId` is `row-ids@1` rather than `json` because it *is* a row id, and typing it
- * as one is what makes `updateMessage` wireable at all: the id an update is allowed to
- * take is the id of a row that already exists, which is exactly what an event about an
- * existing message carries (13 §10b).
+ * Core implements every state-altering write and runs each as its own
+ * one-node spec (`core:spec/builtin-delete` …) through the executor, so the
+ * write is receipted, gate-eligible and always emits what changed. This is
+ * that spec's inlet: the person's request, as the venue's handler shaped it
+ * after the permission checks it alone can make. No lock — a built-in serves
+ * every genre — and no shape: a request is not a session mode.
  */
-export declare const messageCreated: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+export declare const builtInRequest: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
-    messageId: string;
-}, import("@serene-pub/sdk").PortDecl, "core:input/message-created@1"> & {
-    kind: 'input';
+    sessionScope: string;
+    sessionId: string;
+    /** The message the write is about. Absent on a branch. */
+    target: string;
+    /** An edit's new text; a swipe's alternative to record. */
+    text: string;
+    /** A hide's direction: hidden, or shown again. */
+    hidden: string;
+    /** A swipe's alternative to select, by index. */
+    index: string;
+    /** A branch's fork point — the last message the copy keeps. */
+    fromMessage: string;
+    /** A branch's name. */
+    title: string;
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/built-in-request@1"> & {
+    kind: 'inlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 /**
@@ -111,8 +200,8 @@ export declare const sessionCreated: import("@serene-pub/sdk").Pinned<import("@s
     request: string;
     /** Values for the genre's declared fields, filtered to the schema. */
     fields: string;
-}, import("@serene-pub/sdk").PortDecl, "core:input/session-created@1"> & {
-    kind: 'input';
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/session-created@1"> & {
+    kind: 'inlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 /**
@@ -138,8 +227,8 @@ export declare const sessionCreated: import("@serene-pub/sdk").Pinned<import("@s
  *
  * ## The new-name hook (the fact, and only the fact)
  *
- * `speaker` carries `known` — whether the chosen name matches anything in the
- * session's lorebook — and the scripts hook below declares it as an **extra**,
+ * `sideCharacter` carries `known` — whether the chosen name matches anything in
+ * the session's lorebook — and the scripts hook below declares it as an **extra**,
  * so a script attached there reads it through the one dispatch core scripts and
  * extension hooks already share. Core states the fact and offers the hook; what
  * a script *does* about an unknown name (suggest adding them, stay quiet, add a
@@ -152,7 +241,17 @@ export declare const sideCharacterTurn: import("@serene-pub/sdk").Pinned<import(
     sessionScope: string;
     sessionId: string;
     /**
-     * The chosen character, or null for a free-form name.
+     * Who is speaking, as a **participant reference** (R-18 (3)):
+     * `character:<id>` when the pick was a library character, null
+     * for a free-form name — a name is not a participant reference,
+     * and the fact below is where the name lives. On the same
+     * terms as `user-message@1`'s port of this name.
+     */
+    speaker: string;
+    /**
+     * @deprecated The chosen character as a bare id, or null for a
+     * free-form name (one release, from 2026-09-16) — read
+     * `speaker`.
      *
      * ⚠ It is **not** a turn slot. It reaches character lore's
      * visibility rule (an entry bound to this character becomes
@@ -162,18 +261,38 @@ export declare const sideCharacterTurn: import("@serene-pub/sdk").Pinned<import(
      */
     characterId: string;
     /**
-     * The speaker as a whole fact: `{ name, characterId, known }`.
+     * The side character as a whole fact: `{ name, characterId,
+     * known, character }`.
      *
      * A port rather than only an extra, because it is what the
      * context builder is wired to and what the receipt records —
      * "why did this turn sound like Vell" is answerable from the
      * run afterwards rather than from the trigger that started it.
+     *
+     * Was `speaker` until 2026-09-16: that name is the participant
+     * reference now (R-18 (3), one word one meaning), and a fact
+     * carrying a free-form name is not a reference to anybody.
      */
-    speaker: string;
+    sideCharacter: string;
     /** Values for the genre's declared fields, filtered to the schema. */
     fields: string;
-}, import("@serene-pub/sdk").PortDecl, "core:input/side-character-turn@1"> & {
-    kind: 'input';
+    /**
+     * The row this turn re-drives, on the same terms as
+     * `user-message@1`'s port of the same name: a regenerate, swipe
+     * or continue of a side character's line routes back to the
+     * narrate-character spec, and its placeholder claims the verb's
+     * row through this instead of inserting a second one. Null on
+     * a fresh turn.
+     */
+    messageId: string;
+    /**
+     * The built-ins' session changes since the last reply, on the
+     * same terms as `user-message@1`'s port of this name (was
+     * `changes` until 2026-09-16, U5b review S4).
+     */
+    sessionChanges: string;
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/side-character-turn@1"> & {
+    kind: 'inlet';
     slots?: {
         /**
          * The input hook (18 §4a), on the same terms as `user-message@1`:
@@ -200,9 +319,19 @@ export declare const sideCharacterTurn: import("@serene-pub/sdk").Pinned<import(
 export declare const sessionHistory: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
     messages: string;
+    /**
+     * The conversation's **band intent**, alone — a candidates
+     * list holding one element and no items (`BandIntent`), for a
+     * spec to concatenate in with the lore so the ranker reserves
+     * the transcript's slice. Its own port because `main` and
+     * `messages` carry transcript rows for `process-messages`, and
+     * an intent element ahead of them would be read as a message.
+     * Opens with a band-intent element (and holds nothing else)
+     * — readers call `splitCandidates()`.
+     */
+    band: string;
 }, {
     scope: string;
-    budget: string;
 }, "core:query/session-history@1"> & {
     kind: 'query';
     slots?: {
@@ -261,21 +390,83 @@ export declare const sessionHistory: import("@serene-pub/sdk").Pinned<import("@s
                     readonly description: "Which of the session's channels this history reads. The chat log is 'main'.";
                 };
                 /**
-                 * ⚠ `weight: 0.4` and `minInclude: 6` were here and are
-                 * gone. Both were answers to "how does chat history fare
-                 * against everything else", which is a question about the
-                 * *ranking*, and a node that fetches rows cannot see
-                 * everything else to answer it: the weight sat beside
-                 * `rank`'s `share`, free to disagree with it, and the
-                 * floor was the only one of five sources that had one.
-                 * They are `share.messages` and `minEntries.messages` on
-                 * `core:task/rank-hybrid@1` now, beside their peers.
+                 * The transcript's intent, on the node that produces the
+                 * transcript (R-7 P5, built 2026-09-16 — see
+                 * `bandIntentFields`). `weight: 0.4` and `minInclude: 6`
+                 * were here once, moved to the ranker's per-source map as
+                 * `share.messages` and `minEntries.messages`, and are back
+                 * where 16 §5a always said they belonged, at the numbers
+                 * the map held: half the window is `MESSAGE_FILL_FRACTION`,
+                 * and six is the minimum the map carried for the one band
+                 * R6 allows one.
+                 *
+                 * ⚠ This node ranks **no candidates** in any shipped spec
+                 * — `main` carries the transcript rows for
+                 * `process-messages`, and `assemble` builds the transcript
+                 * from those, never from ranked candidates. Its intent
+                 * still reaches the ranker, on the `band` out-port a spec
+                 * concatenates in with the lore, and its `share` is what
+                 * halves the pool the lore sources divide: the
+                 * conversation's slice is reserved and whatever it does
+                 * not spend is swept to the others, exactly as the map's
+                 * `messages: 0.5` did. `maxEntries` and `minEntries` bind
+                 * only when a spec does rank message candidates (an
+                 * `entity-search` `messages` port, a compression region);
+                 * they are declared at the map's values so that spec
+                 * inherits what every install has stored, not so a person
+                 * moving them today sees a prompt change — they will not.
+                 */
+                readonly share: {
+                    readonly type: "number";
+                    readonly min: 0;
+                    readonly default: 0.5;
+                    readonly quick: true;
+                    readonly i18n: {
+                        readonly en: "Share — conversation";
+                    };
+                    readonly description: {
+                        readonly en: "How much of the context window the conversation may take, relative to every other source. What it does not spend is handed to the lore. Set to zero to give the whole window to the other sources.";
+                    };
+                };
+                readonly maxEntries: {
+                    readonly type: "integer";
+                    readonly min: 0;
+                    readonly default: 50;
+                    readonly i18n: {
+                        readonly en: "Most entries — conversation";
+                    };
+                    readonly description: {
+                        readonly en: "A ceiling on how many retrieved messages may reach the prompt as ranked entries, whatever the share. The transcript itself is sized by the window, not by this.";
+                    };
+                };
+                readonly minEntries: {
+                    readonly type: "integer";
+                    readonly min: 0;
+                    readonly default: 6;
+                    readonly i18n: {
+                        readonly en: "Always keep at least";
+                    };
+                    readonly description: {
+                        readonly en: "Recent messages kept as ranked entries whatever the shares say, so a lore-heavy chat stays readable. Dropped when there is no room. Lore has no minimum — it competes on score (R6).";
+                    };
+                };
+                /**
+                 * Read, at last (R-7 P5; it was declared and read by nothing
+                 * from the day it was written, allow-listed in the
+                 * declared-reads guard until this landed). `normal` is no
+                 * ordering at all; see `BAND_PRIORITIES` in the SDK for
+                 * what the other three do to the ranker's sweep.
                  */
                 readonly priority: {
                     readonly type: "enum";
                     readonly of: readonly ["low", "normal", "high", "always"];
                     readonly default: "normal";
-                    readonly description: "How strongly history resists being trimmed — 'always' is never dropped.";
+                    readonly i18n: {
+                        readonly en: "Priority — conversation";
+                    };
+                    readonly description: {
+                        readonly en: "How strongly the conversation resists being trimmed once the shares are spent — 'always' keeps every message the window can hold.";
+                    };
                 };
             };
         };
@@ -285,7 +476,6 @@ export declare const lorebookTriggers: import("@serene-pub/sdk").Pinned<import("
     main: string;
     hits: string;
 }, {
-    text: string;
     scope: string;
 }, "core:query/lorebook-triggers@1"> & {
     kind: 'query';
@@ -484,6 +674,108 @@ export declare const lorebookTriggers: import("@serene-pub/sdk").Pinned<import("
                         readonly en: "How much more a word in an entry's title counts than the same word among its keywords. 1 treats them alike.";
                     };
                 };
+                readonly characterLoreMaxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly characterLorePriority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly characterLoreShare: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly historyMaxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly historyPriority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly historyShare: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly worldLoreMaxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly worldLorePriority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly worldLoreShare: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
             };
         };
     } | undefined;
@@ -492,7 +784,6 @@ export declare const worldLore: import("@serene-pub/sdk").Pinned<import("@serene
     main: string;
     hits: string;
 }, {
-    text: string;
     scope: string;
 }, "core:query/world-lore@1"> & {
     kind: 'query';
@@ -501,6 +792,40 @@ export declare const worldLore: import("@serene-pub/sdk").Pinned<import("@serene
             kind: 'parameters';
             facet: 'weights';
             schema: {
+                share: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                maxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                priority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
                 /**
                  * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value every scan
                  * has actually run on. This said 3 for as long as the three lore
@@ -518,6 +843,7 @@ export declare const worldLore: import("@serene-pub/sdk").Pinned<import("@serene
                     type: 'integer';
                     default: number;
                     quick: boolean;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
@@ -530,59 +856,62 @@ export declare const worldLore: import("@serene-pub/sdk").Pinned<import("@serene
                  * `GUARANTEED_MESSAGES`.
                  */
                 guaranteedMessages: {
-                    readonly type: 'integer';
-                    readonly default: 10;
-                    readonly min: 1;
-                    readonly i18n: {
+                    type: 'integer';
+                    default: 10;
+                    min: 1;
+                    i18n: {
                         readonly en: 'Messages that count as "now"';
                     };
-                    readonly description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    shared: boolean;
                 };
                 maxRecursionDepth: {
                     type: 'integer';
                     default: number;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
                     description: string;
                 };
                 /**
-                 * On all three lanes rather than on one, because the question it
-                 * answers is per-source: world lore without keys is the case this
-                 * exists for, character lore is already narrowed to whoever is
-                 * speaking, and dated history is the source most likely to want a
-                 * stricter setting than the other two. One shared declaration, one
-                 * row per lane — which is what `share`, `maxEntries` and the rest
-                 * of the retrieval surface already do.
+                 * Declared on all three lanes, held by one: since R-7 P2 a spec
+                 * names ONE owner for the seven knobs and the other lanes read the
+                 * owner's slot, so this is one row governing world lore, character
+                 * lore and history alike — not one row per lane. World lore
+                 * without keys is the case it exists for; the other two sources
+                 * take the same answer. A per-source answer is a weight, and
+                 * weights live on the source (`bandIntentFields`), not here.
                  */
                 admitThreshold: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly quick: true;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    quick: true;
+                    i18n: {
                         readonly en: 'Find without keywords';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How readily an entry is brought in on relevance alone when none of its keywords matched — the names the conversation is using, and the distinctive words it shares with the entry. 0 keeps keywords the only way in; try 0.3 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 /**
-                 * On all three lanes for `admitThreshold`'s reason, and with a
-                 * per-source answer of its own in each case: world lore is where
-                 * entry lengths differ most, character lore is already narrowed to
-                 * whoever is speaking, and dated history has no title at all — so
-                 * `titleWeight` is a control history renders and cannot move,
-                 * which is the honest state rather than a fourth declaration.
+                 * One row for the three lanes, like `admitThreshold`: the owner's
+                 * value reaches world lore, where entry lengths differ most,
+                 * character lore, already narrowed to whoever is speaking, and
+                 * dated history — which has no title at all, so the value reaches
+                 * it and moves nothing. That is the honest state rather than a
+                 * fourth declaration.
                  */
                 lexicalScoring: {
-                    readonly type: 'enum';
-                    readonly default: 'overlap';
-                    readonly i18n: {
+                    type: 'enum';
+                    default: 'overlap';
+                    i18n: {
                         readonly en: 'Relevance balance';
                     };
-                    readonly members: readonly [{
+                    members: readonly [{
                         readonly key: 'overlap';
                         readonly i18n: {
                             readonly en: 'Raw overlap';
@@ -599,33 +928,36 @@ export declare const worldLore: import("@serene-pub/sdk").Pinned<import("@serene
                             readonly en: 'A repeated word stops adding as much, and an entry is judged against how long lorebook entries usually are. Better when entries differ a lot in length.';
                         };
                     }];
-                    readonly description: {
+                    description: {
                         readonly en: "How an entry's own wording is weighed when deciding how relevant it is to what is being said.";
                     };
+                    shared: boolean;
                 };
                 trigramFolding: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    i18n: {
                         readonly en: 'Match near-misses';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How much a keyword that is nearly present counts — a different ending, a typo, or a language that does not put spaces between words. 0 requires an exact match; try 0.5 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 titleWeight: {
-                    readonly type: 'number';
-                    readonly default: 1;
-                    readonly min: 0;
-                    readonly max: 5;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 1;
+                    min: 0;
+                    max: 5;
+                    i18n: {
                         readonly en: 'Title counts extra';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: "How much more a word in an entry's title counts than the same word among its keywords. 1 treats them alike.";
                     };
+                    shared: boolean;
                 };
             };
         };
@@ -635,7 +967,6 @@ export declare const characterLore: import("@serene-pub/sdk").Pinned<import("@se
     main: string;
     hits: string;
 }, {
-    text: string;
     scope: string;
 }, "core:query/character-lore@1"> & {
     kind: 'query';
@@ -644,6 +975,40 @@ export declare const characterLore: import("@serene-pub/sdk").Pinned<import("@se
             kind: 'parameters';
             facet: 'weights';
             schema: {
+                share: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                maxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                priority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
                 /**
                  * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value every scan
                  * has actually run on. This said 3 for as long as the three lore
@@ -661,6 +1026,7 @@ export declare const characterLore: import("@serene-pub/sdk").Pinned<import("@se
                     type: 'integer';
                     default: number;
                     quick: boolean;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
@@ -673,59 +1039,62 @@ export declare const characterLore: import("@serene-pub/sdk").Pinned<import("@se
                  * `GUARANTEED_MESSAGES`.
                  */
                 guaranteedMessages: {
-                    readonly type: 'integer';
-                    readonly default: 10;
-                    readonly min: 1;
-                    readonly i18n: {
+                    type: 'integer';
+                    default: 10;
+                    min: 1;
+                    i18n: {
                         readonly en: 'Messages that count as "now"';
                     };
-                    readonly description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    shared: boolean;
                 };
                 maxRecursionDepth: {
                     type: 'integer';
                     default: number;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
                     description: string;
                 };
                 /**
-                 * On all three lanes rather than on one, because the question it
-                 * answers is per-source: world lore without keys is the case this
-                 * exists for, character lore is already narrowed to whoever is
-                 * speaking, and dated history is the source most likely to want a
-                 * stricter setting than the other two. One shared declaration, one
-                 * row per lane — which is what `share`, `maxEntries` and the rest
-                 * of the retrieval surface already do.
+                 * Declared on all three lanes, held by one: since R-7 P2 a spec
+                 * names ONE owner for the seven knobs and the other lanes read the
+                 * owner's slot, so this is one row governing world lore, character
+                 * lore and history alike — not one row per lane. World lore
+                 * without keys is the case it exists for; the other two sources
+                 * take the same answer. A per-source answer is a weight, and
+                 * weights live on the source (`bandIntentFields`), not here.
                  */
                 admitThreshold: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly quick: true;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    quick: true;
+                    i18n: {
                         readonly en: 'Find without keywords';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How readily an entry is brought in on relevance alone when none of its keywords matched — the names the conversation is using, and the distinctive words it shares with the entry. 0 keeps keywords the only way in; try 0.3 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 /**
-                 * On all three lanes for `admitThreshold`'s reason, and with a
-                 * per-source answer of its own in each case: world lore is where
-                 * entry lengths differ most, character lore is already narrowed to
-                 * whoever is speaking, and dated history has no title at all — so
-                 * `titleWeight` is a control history renders and cannot move,
-                 * which is the honest state rather than a fourth declaration.
+                 * One row for the three lanes, like `admitThreshold`: the owner's
+                 * value reaches world lore, where entry lengths differ most,
+                 * character lore, already narrowed to whoever is speaking, and
+                 * dated history — which has no title at all, so the value reaches
+                 * it and moves nothing. That is the honest state rather than a
+                 * fourth declaration.
                  */
                 lexicalScoring: {
-                    readonly type: 'enum';
-                    readonly default: 'overlap';
-                    readonly i18n: {
+                    type: 'enum';
+                    default: 'overlap';
+                    i18n: {
                         readonly en: 'Relevance balance';
                     };
-                    readonly members: readonly [{
+                    members: readonly [{
                         readonly key: 'overlap';
                         readonly i18n: {
                             readonly en: 'Raw overlap';
@@ -742,33 +1111,36 @@ export declare const characterLore: import("@serene-pub/sdk").Pinned<import("@se
                             readonly en: 'A repeated word stops adding as much, and an entry is judged against how long lorebook entries usually are. Better when entries differ a lot in length.';
                         };
                     }];
-                    readonly description: {
+                    description: {
                         readonly en: "How an entry's own wording is weighed when deciding how relevant it is to what is being said.";
                     };
+                    shared: boolean;
                 };
                 trigramFolding: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    i18n: {
                         readonly en: 'Match near-misses';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How much a keyword that is nearly present counts — a different ending, a typo, or a language that does not put spaces between words. 0 requires an exact match; try 0.5 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 titleWeight: {
-                    readonly type: 'number';
-                    readonly default: 1;
-                    readonly min: 0;
-                    readonly max: 5;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 1;
+                    min: 0;
+                    max: 5;
+                    i18n: {
                         readonly en: 'Title counts extra';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: "How much more a word in an entry's title counts than the same word among its keywords. 1 treats them alike.";
                     };
+                    shared: boolean;
                 };
             };
         };
@@ -797,7 +1169,6 @@ export declare const historyEntries: import("@serene-pub/sdk").Pinned<import("@s
     main: string;
     hits: string;
 }, {
-    text: string;
     scope: string;
 }, "core:query/history-entries@1"> & {
     kind: 'query';
@@ -806,6 +1177,40 @@ export declare const historyEntries: import("@serene-pub/sdk").Pinned<import("@s
             kind: 'parameters';
             facet: 'weights';
             schema: {
+                share: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                maxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                priority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
                 /**
                  * 10, matching `DEFAULT_RETRIEVAL.scanDepth` — the value every scan
                  * has actually run on. This said 3 for as long as the three lore
@@ -823,6 +1228,7 @@ export declare const historyEntries: import("@serene-pub/sdk").Pinned<import("@s
                     type: 'integer';
                     default: number;
                     quick: boolean;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
@@ -835,59 +1241,62 @@ export declare const historyEntries: import("@serene-pub/sdk").Pinned<import("@s
                  * `GUARANTEED_MESSAGES`.
                  */
                 guaranteedMessages: {
-                    readonly type: 'integer';
-                    readonly default: 10;
-                    readonly min: 1;
-                    readonly i18n: {
+                    type: 'integer';
+                    default: 10;
+                    min: 1;
+                    i18n: {
                         readonly en: 'Messages that count as "now"';
                     };
-                    readonly description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    description: 'How much of the recent conversation counts as the current moment when judging relevance — which characters are present, and which words the scene is actually using. Separate from how far back a keyword may fire from.';
+                    shared: boolean;
                 };
                 maxRecursionDepth: {
                     type: 'integer';
                     default: number;
+                    shared: boolean;
                     i18n: {
                         en: string;
                     };
                     description: string;
                 };
                 /**
-                 * On all three lanes rather than on one, because the question it
-                 * answers is per-source: world lore without keys is the case this
-                 * exists for, character lore is already narrowed to whoever is
-                 * speaking, and dated history is the source most likely to want a
-                 * stricter setting than the other two. One shared declaration, one
-                 * row per lane — which is what `share`, `maxEntries` and the rest
-                 * of the retrieval surface already do.
+                 * Declared on all three lanes, held by one: since R-7 P2 a spec
+                 * names ONE owner for the seven knobs and the other lanes read the
+                 * owner's slot, so this is one row governing world lore, character
+                 * lore and history alike — not one row per lane. World lore
+                 * without keys is the case it exists for; the other two sources
+                 * take the same answer. A per-source answer is a weight, and
+                 * weights live on the source (`bandIntentFields`), not here.
                  */
                 admitThreshold: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly quick: true;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    quick: true;
+                    i18n: {
                         readonly en: 'Find without keywords';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How readily an entry is brought in on relevance alone when none of its keywords matched — the names the conversation is using, and the distinctive words it shares with the entry. 0 keeps keywords the only way in; try 0.3 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 /**
-                 * On all three lanes for `admitThreshold`'s reason, and with a
-                 * per-source answer of its own in each case: world lore is where
-                 * entry lengths differ most, character lore is already narrowed to
-                 * whoever is speaking, and dated history has no title at all — so
-                 * `titleWeight` is a control history renders and cannot move,
-                 * which is the honest state rather than a fourth declaration.
+                 * One row for the three lanes, like `admitThreshold`: the owner's
+                 * value reaches world lore, where entry lengths differ most,
+                 * character lore, already narrowed to whoever is speaking, and
+                 * dated history — which has no title at all, so the value reaches
+                 * it and moves nothing. That is the honest state rather than a
+                 * fourth declaration.
                  */
                 lexicalScoring: {
-                    readonly type: 'enum';
-                    readonly default: 'overlap';
-                    readonly i18n: {
+                    type: 'enum';
+                    default: 'overlap';
+                    i18n: {
                         readonly en: 'Relevance balance';
                     };
-                    readonly members: readonly [{
+                    members: readonly [{
                         readonly key: 'overlap';
                         readonly i18n: {
                             readonly en: 'Raw overlap';
@@ -904,33 +1313,36 @@ export declare const historyEntries: import("@serene-pub/sdk").Pinned<import("@s
                             readonly en: 'A repeated word stops adding as much, and an entry is judged against how long lorebook entries usually are. Better when entries differ a lot in length.';
                         };
                     }];
-                    readonly description: {
+                    description: {
                         readonly en: "How an entry's own wording is weighed when deciding how relevant it is to what is being said.";
                     };
+                    shared: boolean;
                 };
                 trigramFolding: {
-                    readonly type: 'number';
-                    readonly default: 0;
-                    readonly min: 0;
-                    readonly max: 1;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 0;
+                    min: 0;
+                    max: 1;
+                    i18n: {
                         readonly en: 'Match near-misses';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: 'How much a keyword that is nearly present counts — a different ending, a typo, or a language that does not put spaces between words. 0 requires an exact match; try 0.5 to turn it on.';
                     };
+                    shared: boolean;
                 };
                 titleWeight: {
-                    readonly type: 'number';
-                    readonly default: 1;
-                    readonly min: 0;
-                    readonly max: 5;
-                    readonly i18n: {
+                    type: 'number';
+                    default: 1;
+                    min: 0;
+                    max: 5;
+                    i18n: {
                         readonly en: 'Title counts extra';
                     };
-                    readonly description: {
+                    description: {
                         readonly en: "How much more a word in an entry's title counts than the same word among its keywords. 1 treats them alike.";
                     };
+                    shared: boolean;
                 };
             };
         };
@@ -1023,7 +1435,7 @@ export declare const vectorSearch: import("@serene-pub/sdk").Pinned<import("@ser
                 };
                 /**
                  * How sharply a weak resemblance is discounted — and
-                 * emphatically **not** a floor.
+                 * emphatically **not** a minimum.
                  *
                  * ⚠ **This replaced `minScore: 0.35`, and the replacement is
                  * a ruling rather than a rename.** A minimum similarity
@@ -1183,6 +1595,83 @@ export declare const entitySearch: import("@serene-pub/sdk").Pinned<import("@ser
                         readonly en: "Strength";
                     };
                     readonly description: "How much weight a shared name carries against the other ways an entry can be found. 0 leaves the arm finding things and ranking them last.";
+                };
+            };
+        };
+    } | undefined;
+}>;
+/**
+ * Documentation search — the guide genre's one retrieval mechanism (plans/29
+ * R-18; built 2026-09-16 as U5g).
+ *
+ * The app compiles its docs into a section index at build time (title,
+ * anchor, preview per heading). This reads the most recent messages, scores
+ * every section by the words they share with them, and publishes the best as
+ * candidates in the **`worldLore` band** — so the ranker budgets them and
+ * `assemble` lays them out exactly as it would a lorebook's entries, under
+ * the section's title. Docs are the guide's lore; no second render path.
+ *
+ * `optional`, and it degrades to nothing: an install whose docs were never
+ * compiled (a fresh checkout, `npm test`) publishes an empty band with its
+ * intent, and the turn loses excerpts rather than failing.
+ */
+export declare const docsSearch: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    candidates: string;
+}, {
+    scope: string;
+}, "core:query/docs-search@1"> & {
+    kind: 'query';
+    slots?: {
+        readonly params: {
+            readonly kind: "parameters";
+            readonly facet: "weights";
+            readonly schema: {
+                readonly share: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly maxEntries: {
+                    type: 'integer';
+                    min: number;
+                    default?: number | undefined;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly priority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly scanDepth: {
+                    readonly type: "integer";
+                    readonly min: 1;
+                    readonly default: 4;
+                    readonly quick: true;
+                    readonly i18n: {
+                        readonly en: "Messages searched";
+                    };
+                    readonly description: {
+                        readonly en: "How many of the most recent messages the documentation is matched against. The newest message counts most.";
+                    };
                 };
             };
         };
@@ -1389,6 +1878,20 @@ export declare const contextBudget: import("@serene-pub/sdk").Pinned<import("@se
             readonly kind: "sampling";
             readonly quick: true;
         };
+        /**
+         * The connection the reply is sent on — for the model's own
+         * context window (0114), which caps the sampling config's when
+         * the model states one.
+         *
+         * Shared with the generating step in every shipped spec
+         * (`slot.connectionOf('generate')`), on the same terms as
+         * `sampling` above: the budget has to be sized to the window the
+         * request is actually sent against, and the ONE computation of
+         * that window (R-8) reads both halves off the same resolved pair.
+         */
+        readonly connection: {
+            readonly kind: "connection";
+        };
         readonly params: {
             readonly kind: "parameters";
             readonly schema: {
@@ -1519,155 +2022,9 @@ export declare const rankHybrid: import("@serene-pub/sdk").Pinned<import("@seren
     kind: 'task';
     slots?: {
         readonly params: {
-            readonly kind: 'parameters';
-            readonly facet: 'weights';
+            readonly kind: "parameters";
+            readonly facet: "weights";
             readonly schema: {
-                readonly share: {
-                    type: 'share';
-                    members: readonly [{
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }, {
-                        readonly key: 'worldLore';
-                        readonly i18n: {
-                            readonly en: 'World lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries about the world.';
-                        };
-                        readonly tone: 1;
-                    }, {
-                        readonly key: 'characterLore';
-                        readonly i18n: {
-                            readonly en: 'Character lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries bound to a character.';
-                        };
-                        readonly tone: 2;
-                    }, {
-                        readonly key: 'history';
-                        readonly i18n: {
-                            readonly en: 'History entries';
-                        };
-                        readonly description: {
-                            readonly en: 'Dated entries recording earlier events.';
-                        };
-                        readonly tone: 3;
-                    }, {
-                        readonly key: 'relationships';
-                        readonly i18n: {
-                            readonly en: 'Relationships';
-                        };
-                        readonly description: {
-                            readonly en: 'The narrative graph. Off by default.';
-                        };
-                        readonly tone: 4;
-                    }];
-                    default: {
-                        messages: number;
-                        worldLore: number;
-                        characterLore: number;
-                        history: number;
-                        relationships: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
-                readonly maxEntries: {
-                    type: 'perMember';
-                    members: readonly [{
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }, {
-                        readonly key: 'worldLore';
-                        readonly i18n: {
-                            readonly en: 'World lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries about the world.';
-                        };
-                        readonly tone: 1;
-                    }, {
-                        readonly key: 'characterLore';
-                        readonly i18n: {
-                            readonly en: 'Character lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries bound to a character.';
-                        };
-                        readonly tone: 2;
-                    }, {
-                        readonly key: 'history';
-                        readonly i18n: {
-                            readonly en: 'History entries';
-                        };
-                        readonly description: {
-                            readonly en: 'Dated entries recording earlier events.';
-                        };
-                        readonly tone: 3;
-                    }, {
-                        readonly key: 'relationships';
-                        readonly i18n: {
-                            readonly en: 'Relationships';
-                        };
-                        readonly description: {
-                            readonly en: 'The narrative graph. Off by default.';
-                        };
-                        readonly tone: 4;
-                    }];
-                    default: {
-                        messages: number;
-                        worldLore: number;
-                        characterLore: number;
-                        history: number;
-                        relationships: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
-                readonly minEntries: {
-                    type: 'perMember';
-                    members: {
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }[];
-                    default: {
-                        messages: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
                 readonly signalKeyword: {
                     readonly type: 'perMember';
                     readonly members: readonly [{
@@ -2473,6 +2830,17 @@ export declare const rankHybrid: import("@serene-pub/sdk").Pinned<import("@seren
                         readonly en: 'How much each way of finding an entry counts toward its score. Turning one up takes nothing from the others — this is not the context split.';
                     };
                 };
+                readonly shareNormalisation: {
+                    readonly type: 'enum';
+                    readonly of: readonly ['relative', 'fixed'];
+                    readonly default: 'relative';
+                    readonly i18n: {
+                        readonly en: 'How shares divide the window';
+                    };
+                    readonly description: {
+                        readonly en: "'relative' treats each source's share as a ratio against the others, so they always add up to the whole window. 'fixed' reads each share as the fraction of the window it states, scaling them down only when they exceed it.";
+                    };
+                };
                 readonly scoreLedAllocation: {
                     readonly type: 'boolean';
                     readonly default: false;
@@ -2500,6 +2868,12 @@ export declare const rankHybrid: import("@serene-pub/sdk").Pinned<import("@seren
         };
     } | undefined;
 }>;
+/**
+ * No `params` slot (R-7 P5, 2026-09-16). It wore the per-source maps because
+ * `rankSlots` was spread onto every ranker; with those on the sources it has
+ * nothing cross-source of its own to declare — recency needs no weights — and
+ * an empty parameters slot would render a heading over nothing.
+ */
 export declare const rankByRecency: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
     candidates: string;
@@ -2518,198 +2892,7 @@ export declare const rankByRecency: import("@serene-pub/sdk").Pinned<import("@se
     budget: string;
 }, "core:task/rank-by-recency@1"> & {
     kind: 'task';
-    slots?: {
-        params: {
-            kind: 'parameters';
-            facet: 'weights';
-            schema: {
-                share: {
-                    type: 'share';
-                    members: readonly [{
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }, {
-                        readonly key: 'worldLore';
-                        readonly i18n: {
-                            readonly en: 'World lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries about the world.';
-                        };
-                        readonly tone: 1;
-                    }, {
-                        readonly key: 'characterLore';
-                        readonly i18n: {
-                            readonly en: 'Character lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries bound to a character.';
-                        };
-                        readonly tone: 2;
-                    }, {
-                        readonly key: 'history';
-                        readonly i18n: {
-                            readonly en: 'History entries';
-                        };
-                        readonly description: {
-                            readonly en: 'Dated entries recording earlier events.';
-                        };
-                        readonly tone: 3;
-                    }, {
-                        readonly key: 'relationships';
-                        readonly i18n: {
-                            readonly en: 'Relationships';
-                        };
-                        readonly description: {
-                            readonly en: 'The narrative graph. Off by default.';
-                        };
-                        readonly tone: 4;
-                    }];
-                    default: {
-                        messages: number;
-                        worldLore: number;
-                        characterLore: number;
-                        history: number;
-                        relationships: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
-                maxEntries: {
-                    type: 'perMember';
-                    members: readonly [{
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }, {
-                        readonly key: 'worldLore';
-                        readonly i18n: {
-                            readonly en: 'World lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries about the world.';
-                        };
-                        readonly tone: 1;
-                    }, {
-                        readonly key: 'characterLore';
-                        readonly i18n: {
-                            readonly en: 'Character lore';
-                        };
-                        readonly description: {
-                            readonly en: 'Lorebook entries bound to a character.';
-                        };
-                        readonly tone: 2;
-                    }, {
-                        readonly key: 'history';
-                        readonly i18n: {
-                            readonly en: 'History entries';
-                        };
-                        readonly description: {
-                            readonly en: 'Dated entries recording earlier events.';
-                        };
-                        readonly tone: 3;
-                    }, {
-                        readonly key: 'relationships';
-                        readonly i18n: {
-                            readonly en: 'Relationships';
-                        };
-                        readonly description: {
-                            readonly en: 'The narrative graph. Off by default.';
-                        };
-                        readonly tone: 4;
-                    }];
-                    default: {
-                        messages: number;
-                        worldLore: number;
-                        characterLore: number;
-                        history: number;
-                        relationships: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
-                /**
-                 * ⚠ Replaced `minMessageTokens: 512`, and the unit is the point.
-                 *
-                 * "Guaranteed conversation" asked for a token count, which is not
-                 * a quantity anybody has an opinion about — 512 tokens is some
-                 * number of messages that changes with how long the last few were,
-                 * so the same setting produced a different amount of readable chat
-                 * every turn. What a user means is *keep the last six messages*.
-                 *
-                 * Floors lose to the window. `select` fills them in score order and
-                 * stops at the budget, because floors summing past the context is
-                 * the one way this could build a prompt too big to send.
-                 *
-                 * ## ⚠ Conversation only, from R6 (retrieval plan §7)
-                 *
-                 * It used to be a floor **per source**, over the same five bands as
-                 * `share` and `maxEntries`. R6 removes every floor except this one:
-                 * *"per-source floors are removed everywhere except recent
-                 * conversation, which keeps its guaranteed share. Lore competes on
-                 * score alone."*
-                 *
-                 * Two reasons, and the second is the one that could not be worked
-                 * around later. A floor is a promise to spend budget on a source
-                 * **whether or not it scored**, so a lore floor is a standing
-                 * instruction to include lore the ranker did not want — the exact
-                 * thing score-led allocation exists to stop. And a floor is a
-                 * *second way in*: R1's clairvoyance filter excludes an entry
-                 * because the speaker does not know it, and a floor sitting
-                 * underneath the ranker could quietly re-admit it. `select` already
-                 * takes `ineligible` candidates out ahead of the floors and there
-                 * is a test pinning that, but the durable answer is for the floor
-                 * not to exist for lore at all.
-                 *
-                 * The conversation keeps its floor because it is not competing for
-                 * relevance in the first place: the last few turns are what makes a
-                 * reply a reply, and a window too small to hold them is a broken
-                 * prompt rather than a differently-ranked one.
-                 */
-                minEntries: {
-                    type: 'perMember';
-                    members: {
-                        readonly key: 'messages';
-                        readonly i18n: {
-                            readonly en: 'Conversation';
-                        };
-                        readonly description: {
-                            readonly en: 'The chat itself — what was actually said.';
-                        };
-                        readonly tone: 0;
-                    }[];
-                    default: {
-                        messages: number;
-                    };
-                    i18n: {
-                        en: string;
-                    };
-                    description: {
-                        en: string;
-                    };
-                };
-            };
-        };
-    } | undefined;
+    slots?: Record<string, SlotDecl> | undefined;
 }>;
 /**
  * The two retrieval query windows, as text.
@@ -2784,16 +2967,15 @@ export declare const rankSemantic: import("@serene-pub/sdk").Pinned<import("@ser
             readonly kind: "parameters";
             readonly facet: "weights";
             readonly schema: {
-                readonly currentWindow: {
-                    readonly type: "integer";
-                    readonly default: 2;
-                    readonly description: "How many of the latest messages form the 'current' retrieval query.";
-                };
-                readonly recentWindow: {
-                    readonly type: "integer";
-                    readonly default: 3;
-                    readonly description: "How many messages before those form the wider 'recent' retrieval query.";
-                };
+                /**
+                 * ⚠ No `currentWindow` / `recentWindow` here, and there
+                 * were (culled 2026-09-16, R-12). They size the two query
+                 * windows — how many messages form the 'current' and the
+                 * 'recent' question — which `core:task/query-windows@1`
+                 * cuts and declares as its own params. Declared here too,
+                 * they were rendered twice and read once: the ranker
+                 * receives windows already cut and consults neither.
+                 */
                 readonly rrfK: {
                     readonly type: "integer";
                     readonly default: 60;
@@ -3123,12 +3305,19 @@ export declare const assemble: import("@serene-pub/sdk").Pinned<import("@serene-
                     readonly default: 0;
                     readonly description: "Only add the reminder once the chat is at least this many tokens long. 0 always adds it.";
                 };
-                readonly truncation: {
-                    readonly type: "enum";
-                    readonly of: readonly ["oldest-first", "lowest-weight"];
-                    readonly default: "oldest-first";
-                    readonly description: "What gets dropped first when the context is over budget.";
-                };
+                /**
+                 * ⚠ No `truncation` here, and there was one — an enum of
+                 * `oldest-first | lowest-weight`, "what gets dropped first
+                 * when the context is over budget" — declared, rendered,
+                 * and read by nothing (culled 2026-09-16, R-12). Assemble
+                 * drops nothing: what fits is decided upstream by the
+                 * ranker's `select`, per band, against `share`,
+                 * `maxEntries`, `minEntries` and `scoreLedAllocation` on
+                 * `core:task/rank-hybrid@1`, and this node renders the
+                 * decisions it is handed. A second drop rule here would be
+                 * a second owner of one decision. NOMENCLATURE §25 records
+                 * the cull.
+                 */
                 /**
                  * Which sections the prompt is built from, and in what order —
                  * SillyTavern's *prompt list*, as a param on the node that
@@ -3413,11 +3602,34 @@ export declare const relationshipSearch: import("@serene-pub/sdk").Pinned<import
 }, "core:query/relationship-search@1"> & {
     kind: 'query';
     slots?: {
-        params: {
-            kind: 'parameters';
-            facet: 'weights';
-            schema: {
-                maxEntries: {
+        readonly params: {
+            readonly kind: 'parameters';
+            readonly facet: 'weights';
+            readonly schema: {
+                readonly share: {
+                    type: 'number';
+                    min: number;
+                    default: number;
+                    quick: boolean;
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly priority: {
+                    type: 'enum';
+                    of: readonly ["low", "normal", "high", "always"];
+                    default: 'normal';
+                    i18n: {
+                        en: string;
+                    };
+                    description: {
+                        en: string;
+                    };
+                };
+                readonly maxEntries: {
                     type: 'integer';
                     /**
                      * ⚠ **No `default:`, and its absence is the declaration.**
@@ -3541,7 +3753,7 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<impo
      * ⚠ **Neither is wired by any spec, and both are supplied on
      * every side-character turn.** `core:task/build-side-character-
      * context@1` is not a separate implementation — the host's
-     * binding for it unwraps its `speaker` in-port and calls THIS
+     * binding for it unwraps its `sideCharacter` in-port and calls THIS
      * type's handler with the name and the card spread onto the
      * input, because `resolveContextInput` owns the card rules and
      * a side character's card and a cast member's must compile
@@ -3560,6 +3772,18 @@ export declare const buildTemplateContext: import("@serene-pub/sdk").Pinned<impo
      */
     speakerName: string;
     speakerCharacter: string;
+    /**
+     * Who is speaking, as a participant reference (R-18 (3); U5g,
+     * 2026-09-16) — the turn strategy's `speaker`. Read for one
+     * thing: an **envoy** (`envoy:<slug>`) has no character row, so
+     * its card — name and description, off the genre's declaration
+     * the cast read carries — is compiled here where a cast
+     * member's would be, through the same `speakerName` /
+     * `speakerCharacter` seam a side character uses. A `character:`
+     * reference changes nothing: `currentCharacterId` already says
+     * it. Optional; unwired on the specs that seat no envoy.
+     */
+    speaker: string;
     /**
      * The session's resolved stats and states, as
      * `core:query/session-state@1` publishes them:
@@ -3738,8 +3962,8 @@ export declare const buildNarratorContext: import("@serene-pub/sdk").Pinned<impo
  * The side-character pipeline's context builder (ruling 2026-09-07).
  *
  * Same implementation and the same ports as the other two, plus one in-port —
- * `speaker` — and that port is the whole reason it is a third type rather than
- * a flag.
+ * `sideCharacter` — and that port is the whole reason it is a third type rather
+ * than a flag.
  *
  * ## Why the name is a port and not a prompt field
  *
@@ -3770,8 +3994,8 @@ export declare const buildNarratorContext: import("@serene-pub/sdk").Pinned<impo
  * could change whose voice the prompt is written in without changing whose lore
  * it was given — a prompt in one person's voice over another's private
  * knowledge. The port would be a control that half-works, which is the exact
- * class this whole split exists to remove. `speaker` carries the name and the
- * card; the id stays where the host can act on it.
+ * class this whole split exists to remove. `sideCharacter` carries the name and
+ * the card; the id stays where the host can act on it.
  */
 export declare const buildSideCharacterContext: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     readonly main: string;
@@ -3796,8 +4020,11 @@ export declare const buildSideCharacterContext: import("@serene-pub/sdk").Pinned
      * free-form name, which is a normal turn rather than a degraded
      * one — the builder falls back to the name it was given,
      * because a typed name is all there is.
+     *
+     * Was `speaker` until 2026-09-16 — see the inlet's port of
+     * this name for why the fact moved off that word.
      */
-    speaker: string;
+    sideCharacter: string;
     /**
      * Where this turn is happening, as the world state says it.
      *
@@ -3897,7 +4124,39 @@ export declare const buildPlannerContext: import("@serene-pub/sdk").Pinned<impor
     fields: string;
 }, "core:task/build-planner-context@1"> & {
     kind: 'task';
-    slots?: Record<string, SlotDecl> | undefined;
+    slots?: {
+        prompts: {
+            kind: "prompts";
+            quick: true;
+            facet: string;
+            description: string;
+            fields: Record<string, {
+                type: 'text';
+            }>;
+        };
+        variables: {
+            kind: "variables";
+            facet: string;
+            description: string;
+            renders: {
+                instructions: 'core:var/instructions@1';
+                characters: 'core:var/characters@1';
+                personas: 'core:var/personas@1';
+                scenario: 'core:var/scenario@1';
+                postHistoryInstructions: 'core:var/post-history-instructions@1';
+                characterNames: 'core:var/character-names@1';
+                personaNames: 'core:var/persona-names@1';
+            };
+        };
+        /** The same pre-assemble hook the other three builders carry. */
+        scripts: {
+            kind: "scripts";
+            accepts: string[];
+            port: string;
+            phase: "after";
+            description: string;
+        };
+    } | undefined;
 }>;
 /**
  * The narrator's context for a planned turn — the one builder that takes a
@@ -3950,7 +4209,39 @@ export declare const buildSceneContext: import("@serene-pub/sdk").Pinned<import(
     fields: string;
 }, "core:task/build-scene-context@1"> & {
     kind: 'task';
-    slots?: Record<string, SlotDecl> | undefined;
+    slots?: {
+        prompts: {
+            kind: "prompts";
+            quick: true;
+            facet: string;
+            description: string;
+            fields: Record<string, {
+                type: 'text';
+            }>;
+        };
+        variables: {
+            kind: "variables";
+            facet: string;
+            description: string;
+            renders: {
+                instructions: 'core:var/instructions@1';
+                characters: 'core:var/characters@1';
+                personas: 'core:var/personas@1';
+                scenario: 'core:var/scenario@1';
+                postHistoryInstructions: 'core:var/post-history-instructions@1';
+                characterNames: 'core:var/character-names@1';
+                personaNames: 'core:var/persona-names@1';
+            };
+        };
+        /** The same pre-assemble hook the other three builders carry. */
+        scripts: {
+            kind: "scripts";
+            accepts: string[];
+            port: string;
+            phase: "after";
+            description: string;
+        };
+    } | undefined;
 }>;
 /**
  * The state-keeper's context: the state as it stands, so the keeper can report
@@ -4024,7 +4315,39 @@ export declare const buildKeeperContext: import("@serene-pub/sdk").Pinned<import
     fields: string;
 }, "core:task/build-keeper-context@1"> & {
     kind: 'task';
-    slots?: Record<string, SlotDecl> | undefined;
+    slots?: {
+        prompts: {
+            kind: "prompts";
+            quick: true;
+            facet: string;
+            description: string;
+            fields: Record<string, {
+                type: 'text';
+            }>;
+        };
+        variables: {
+            kind: "variables";
+            facet: string;
+            description: string;
+            renders: {
+                instructions: 'core:var/instructions@1';
+                characters: 'core:var/characters@1';
+                personas: 'core:var/personas@1';
+                scenario: 'core:var/scenario@1';
+                postHistoryInstructions: 'core:var/post-history-instructions@1';
+                characterNames: 'core:var/character-names@1';
+                personaNames: 'core:var/persona-names@1';
+            };
+        };
+        /** The same pre-assemble hook the other three builders carry. */
+        scripts: {
+            kind: "scripts";
+            accepts: string[];
+            port: string;
+            phase: "after";
+            description: string;
+        };
+    } | undefined;
 }>;
 /**
  * Chat rows into the objects a template renders.
@@ -4127,14 +4450,34 @@ export declare const proseTranscript: import("@serene-pub/sdk").Pinned<import("@
 }>;
 export declare const turnRoundRobin: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
-    /** The bare id, for wiring into context and generation. */
+    /**
+     * Who speaks, as a participant reference — the pick, or the
+     * strategy's own `character:<id>`; null when nobody does.
+     */
+    speaker: string;
+    /**
+     * The bare id, for wiring into context and generation. Null
+     * for an envoy, which has no row — the context and generation
+     * consumers keep reading this until they speak references.
+     */
     characterId: string;
     /** What decided — the receipt line §5 exists for. */
     strategy: string;
 }, {
     cast: string;
     messages: string;
-    /** The explicit pick, when the trigger made one. Always wins. */
+    /**
+     * The explicit pick, when the trigger made one, as a
+     * participant reference (R-18 (3)) — `character:<id>` or
+     * `envoy:<slug>`. Always wins. Wired from the inlet's port of
+     * the same name.
+     */
+    speaker: string;
+    /**
+     * @deprecated The explicit pick as a bare character id (one
+     * release, from 2026-09-16). Honoured when `speaker` is unwired
+     * or null; read `speaker`.
+     */
     characterId: string;
 }, "core:task/turn-round-robin@1"> & {
     kind: 'task';
@@ -4142,14 +4485,34 @@ export declare const turnRoundRobin: import("@serene-pub/sdk").Pinned<import("@s
 }>;
 export declare const turnRandom: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
-    /** The bare id, for wiring into context and generation. */
+    /**
+     * Who speaks, as a participant reference — the pick, or the
+     * strategy's own `character:<id>`; null when nobody does.
+     */
+    speaker: string;
+    /**
+     * The bare id, for wiring into context and generation. Null
+     * for an envoy, which has no row — the context and generation
+     * consumers keep reading this until they speak references.
+     */
     characterId: string;
     /** What decided — the receipt line §5 exists for. */
     strategy: string;
 }, {
     cast: string;
     messages: string;
-    /** The explicit pick, when the trigger made one. Always wins. */
+    /**
+     * The explicit pick, when the trigger made one, as a
+     * participant reference (R-18 (3)) — `character:<id>` or
+     * `envoy:<slug>`. Always wins. Wired from the inlet's port of
+     * the same name.
+     */
+    speaker: string;
+    /**
+     * @deprecated The explicit pick as a bare character id (one
+     * release, from 2026-09-16). Honoured when `speaker` is unwired
+     * or null; read `speaker`.
+     */
     characterId: string;
 }, "core:task/turn-random@1"> & {
     kind: 'task';
@@ -4157,14 +4520,34 @@ export declare const turnRandom: import("@serene-pub/sdk").Pinned<import("@seren
 }>;
 export declare const turnManual: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
-    /** The bare id, for wiring into context and generation. */
+    /**
+     * Who speaks, as a participant reference — the pick, or the
+     * strategy's own `character:<id>`; null when nobody does.
+     */
+    speaker: string;
+    /**
+     * The bare id, for wiring into context and generation. Null
+     * for an envoy, which has no row — the context and generation
+     * consumers keep reading this until they speak references.
+     */
     characterId: string;
     /** What decided — the receipt line §5 exists for. */
     strategy: string;
 }, {
     cast: string;
     messages: string;
-    /** The explicit pick, when the trigger made one. Always wins. */
+    /**
+     * The explicit pick, when the trigger made one, as a
+     * participant reference (R-18 (3)) — `character:<id>` or
+     * `envoy:<slug>`. Always wins. Wired from the inlet's port of
+     * the same name.
+     */
+    speaker: string;
+    /**
+     * @deprecated The explicit pick as a bare character id (one
+     * release, from 2026-09-16). Honoured when `speaker` is unwired
+     * or null; read `speaker`.
+     */
     characterId: string;
 }, "core:task/turn-manual@1"> & {
     kind: 'task';
@@ -4172,14 +4555,34 @@ export declare const turnManual: import("@serene-pub/sdk").Pinned<import("@seren
 }>;
 export declare const turnNone: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
-    /** The bare id, for wiring into context and generation. */
+    /**
+     * Who speaks, as a participant reference — the pick, or the
+     * strategy's own `character:<id>`; null when nobody does.
+     */
+    speaker: string;
+    /**
+     * The bare id, for wiring into context and generation. Null
+     * for an envoy, which has no row — the context and generation
+     * consumers keep reading this until they speak references.
+     */
     characterId: string;
     /** What decided — the receipt line §5 exists for. */
     strategy: string;
 }, {
     cast: string;
     messages: string;
-    /** The explicit pick, when the trigger made one. Always wins. */
+    /**
+     * The explicit pick, when the trigger made one, as a
+     * participant reference (R-18 (3)) — `character:<id>` or
+     * `envoy:<slug>`. Always wins. Wired from the inlet's port of
+     * the same name.
+     */
+    speaker: string;
+    /**
+     * @deprecated The explicit pick as a bare character id (one
+     * release, from 2026-09-16). Honoured when `speaker` is unwired
+     * or null; read `speaker`.
+     */
     characterId: string;
 }, "core:task/turn-none@1"> & {
     kind: 'task';
@@ -4200,8 +4603,8 @@ export declare const attachImage: import("@serene-pub/sdk").Pinned<import("@sere
     main: string;
 }, {
     image: string;
-}, "core:consumer/attach-image@1"> & {
-    kind: 'consumer';
+}, "core:outlet/attach-image@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 /**
@@ -4321,8 +4724,8 @@ export declare const runTool: import("@serene-pub/sdk").Pinned<import("@serene-p
     call: string;
     tools: string;
     text: string;
-}, "core:provider/run-tool@1"> & {
-    kind: 'provider';
+}, "core:oracle/run-tool@1"> & {
+    kind: 'oracle';
     slots?: Record<string, never> | undefined;
 }>;
 /**
@@ -4371,7 +4774,7 @@ export declare const joinText: import("@serene-pub/sdk").Pinned<import("@serene-
  *
  * ## Why a Task and not a shape on the Provider
  *
- * `core:provider/generate-text@1` is published and frozen, and it publishes
+ * `core:oracle/generate-text@1` is published and frozen, and it publishes
  * prose. A pipeline that wants structure out of a model therefore needs one
  * more step, and that step is the honest place for every way the reading can
  * fail: a fenced block, a preamble the model could not resist, a reply cut off
@@ -4481,8 +4884,8 @@ export declare const embedText: import("@serene-pub/sdk").Pinned<import("@serene
     text: string;
     /** Batched: one call, one vector each, in order. */
     texts: string;
-}, "core:provider/embed-text@1"> & {
-    kind: 'provider';
+}, "core:oracle/embed-text@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4493,10 +4896,19 @@ export declare const embedText: import("@serene-pub/sdk").Pinned<import("@serene
         readonly params: {
             readonly kind: "parameters";
             readonly schema: {
+                /**
+                 * `shared`: one switch for every embed step of a spec (R-7
+                 * P2). `respond` puts it on the semantic mechanism's embed
+                 * and the entity-vector mechanism's embed reads it through
+                 * `slot.params({ node })` — an install with no embedding
+                 * model switches both off in one place, which is the only
+                 * reading of "embedding: off" a person means.
+                 */
                 readonly enabled: {
                     readonly type: "enum";
                     readonly of: readonly ["auto", "on", "off"];
                     readonly default: "auto";
+                    readonly shared: true;
                 };
             };
         };
@@ -4526,8 +4938,8 @@ export declare const mcpTool: import("@serene-pub/sdk").Pinned<import("@serene-p
 }, {
     /** Arguments for the tool, merged over any declared in params. */
     args: string;
-}, "core:provider/mcp-tool@1"> & {
-    kind: 'provider';
+}, "core:oracle/mcp-tool@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4579,8 +4991,8 @@ export declare const mcpResource: import("@serene-pub/sdk").Pinned<import("@sere
 }, {
     /** Overrides the declared URI when wired. */
     uri: string;
-}, "core:provider/mcp-resource@1"> & {
-    kind: 'provider';
+}, "core:oracle/mcp-resource@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4609,6 +5021,7 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<import("@ser
     main: string;
     text: string;
     parts: string;
+    thinking: string;
 }, {
     context: string;
     /**
@@ -4635,8 +5048,8 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<import("@ser
      * dropping a file is indistinguishable from a model ignoring it.
      */
     attachments: string;
-}, "core:provider/generate-text@1"> & {
-    kind: 'provider';
+}, "core:oracle/generate-text@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4668,20 +5081,19 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<import("@ser
             readonly shape: string;
             readonly description: "The sampling settings — temperature and friends — used for this request.";
         };
-        readonly prompts: {
-            readonly kind: "prompts";
-            readonly quick: true;
-            readonly facet: "prompts";
-            readonly description: "The written instructions sent with every request from this step.";
-            readonly fields: {
-                readonly system: {
-                    readonly type: "text";
-                };
-                readonly postHistory: {
-                    readonly type: "text";
-                };
-            };
-        };
+        /**
+         * ⚠ No `prompts` slot, and there was one — `system` and
+         * `postHistory`, "the written instructions sent with every request
+         * from this step" (culled 2026-09-16, R-12). No handler read it:
+         * the instructions reach the model INSIDE the assembled context,
+         * through `core:task/assemble@2`'s own `prompts` slot, and this
+         * node sends what it is handed on `context`. Every shipped spec
+         * wired it as `slot.prompts({ node: 'context' })` for one reason
+         * only — so the panel would not render a second copy of the
+         * context builder's text — which is a declaration existing to hide
+         * itself. The same slot on `generate-with-tools@1` and
+         * `generate-json@1` went with it.
+         */
         /**
          * ⚠ No `template` slot, and there was one — "how the assembled
          * context is wrapped for this model before sending".
@@ -4709,7 +5121,7 @@ export declare const generateText: import("@serene-pub/sdk").Pinned<import("@ser
  *
  * ## Why this is a second type rather than two ports on `generate-text`
  *
- * `core:provider/generate-text@1` is published and frozen: a spec that pinned
+ * `core:oracle/generate-text@1` is published and frozen: a spec that pinned
  * it must keep meaning what it meant. Adding ports would move its content hash
  * and every install would need a re-projection to keep booting — for a
  * capability most connections do not have. A new pin costs a row and conflicts
@@ -4751,8 +5163,8 @@ export declare const generateWithTools: import("@serene-pub/sdk").Pinned<import(
     tools: string;
     currentCharacterId: string;
     attachments: string;
-}, "core:provider/generate-with-tools@1"> & {
-    kind: 'provider';
+}, "core:oracle/generate-with-tools@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4774,19 +5186,6 @@ export declare const generateWithTools: import("@serene-pub/sdk").Pinned<import(
             readonly kind: "sampling";
             readonly quick: true;
             readonly shape: string;
-        };
-        readonly prompts: {
-            readonly kind: "prompts";
-            readonly quick: true;
-            readonly facet: "prompts";
-            readonly fields: {
-                readonly system: {
-                    readonly type: "text";
-                };
-                readonly postHistory: {
-                    readonly type: "text";
-                };
-            };
         };
         readonly params: {
             readonly kind: "parameters";
@@ -4870,8 +5269,8 @@ export declare const generateJson: import("@serene-pub/sdk").Pinned<import("@ser
      * already follow for `responseFormat`.
      */
     schema: string;
-}, "core:provider/generate-json@1"> & {
-    kind: 'provider';
+}, "core:oracle/generate-json@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -4894,20 +5293,6 @@ export declare const generateJson: import("@serene-pub/sdk").Pinned<import("@ser
             readonly kind: "sampling";
             readonly quick: true;
             readonly shape: string;
-        };
-        readonly prompts: {
-            readonly kind: "prompts";
-            readonly quick: true;
-            readonly facet: "prompts";
-            readonly description: "The written instructions sent with every request from this step.";
-            readonly fields: {
-                readonly system: {
-                    readonly type: "text";
-                };
-                readonly postHistory: {
-                    readonly type: "text";
-                };
-            };
         };
         readonly params: {
             readonly kind: "parameters";
@@ -4947,8 +5332,8 @@ export declare const speak: import("@serene-pub/sdk").Pinned<import("@serene-pub
     audio: string;
 }, {
     text: string;
-}, "core:provider/speak@1"> & {
-    kind: 'provider';
+}, "core:oracle/speak@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5023,8 +5408,8 @@ export declare const generateImage: import("@serene-pub/sdk").Pinned<import("@se
     negative: string;
     /** An input image, for backends that report `img2img`. */
     init: string;
-}, "core:provider/generate-image@1"> & {
-    kind: 'provider';
+}, "core:oracle/generate-image@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5085,7 +5470,7 @@ export declare const renderImage: import("@serene-pub/sdk").Pinned<import("@sere
 }, {
     context: string;
 }, "chariot.comfy:render-image@1"> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5182,10 +5567,36 @@ export declare const seedGreetings: import("@serene-pub/sdk").Pinned<import("@se
     messageIds: string;
 }, {
     greetings: string;
-}, "core:consumer/seed-greetings@1"> & {
-    kind: 'consumer';
+    /**
+     * The channel the greetings land on (20 §7) — the genre's
+     * declared greeting channel, written by the create specs as a
+     * literal (`createChat.ts`, `adventure.ts`). Absent is `main`.
+     * Declared 2026-09-16 (U2 residual): the host read it off the
+     * payload while no declaration supplied it.
+     */
+    channel: string;
+}, "core:outlet/seed-greetings@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
+/**
+ * Write a message — complete, or as the run's **placeholder** (R-17).
+ *
+ * A pipeline that wants a message creates it itself. The reply specs put this
+ * node straight after the inlet with `generating: true`: the row it inserts is
+ * empty and generating, it is the run's live row (`liveRow` — an oracle's
+ * stream lands in it, and Stop finalises it), and the spec's last node is an
+ * `update-message` that fills it. That create → update pair on one row inside
+ * one run is **one primary row**, which is how 01 §7's "one primary write" is
+ * restated. `message-created` fires on the create, which is now genuinely the
+ * moment the row exists.
+ *
+ * `reviewDefault: 'off'` — review of a reply, when an admin enables it, lands
+ * on the *update* of the primary row and never on this create by default
+ * (R-21 (3)): a placeholder is a write, and an admin who gates this node gets
+ * a run that shows nothing until approved, which is honest and rarely wanted.
+ * Turning it on is still the admin's to do.
+ */
 export declare const createMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
     messageId: string;
@@ -5194,20 +5605,107 @@ export declare const createMessage: import("@serene-pub/sdk").Pinned<import("@se
     /**
      * Media to post WITH the message, as references.
      *
-     * `attach-image` exists and cannot do this: it needs a messageId
-     * from outside the run, because `write-result@1` is not assignable
-     * to `row-ids@1` — so a message created by one node could never be
-     * attached to by a second. That rule is right (under async review
-     * the created row may never exist), which left no way at all to
-     * post a generated image as a NEW message.
-     *
-     * The answer is the same one streaming got: one node with a settled
-     * output, not two nodes and a hope. The write that creates the
-     * message is the write that attaches its images.
+     * Posting an image as a NEW message is one write, not a create
+     * followed by an `attach-image`: the answer is the same one
+     * streaming got — one node with a settled output, not two nodes
+     * and a hope. The write that creates the message is the write
+     * that attaches its images.
      */
     media: string;
-}, "core:consumer/create-message@1"> & {
-    kind: 'consumer';
+    /**
+     * Who is speaking, as a cast row — the inlet's `characterId`.
+     * Null or absent means nobody in particular: narration, or a
+     * message no character voices.
+     */
+    characterId: string;
+    /**
+     * The participant voicing this message when they are **not** a
+     * cast row — the side-character fact `{ name, characterId, known }`
+     * off `side-character-turn@1`'s `sideCharacter` port. Stored
+     * beside the message under `metadata.sideCharacter` (was
+     * `metadata.speaker` until U5g, 2026-09-16 — that key is the
+     * participant reference now, on the row as on the inlet, R1),
+     * where the run and the receipt read it from; it never writes a
+     * cast row and never enters the rotation.
+     *
+     * Was `speaker` until 2026-09-16 — the inlet's port of that
+     * name is a participant reference now (R-18 (3)).
+     */
+    sideCharacter: string;
+    /**
+     * Who is speaking, as a **participant reference** (R-18 (3);
+     * U5g, 2026-09-16) — `character:<id>` or `envoy:<slug>`, the
+     * inlet's `speaker`. Stored beside the message as
+     * `metadata.speaker`; it is the only identity an envoy's turn
+     * carries, since an envoy has no row for `characterId` to name.
+     * Optional: a spec that wires only `characterId` writes the row
+     * it always wrote.
+     */
+    speaker: string;
+    /**
+     * Create the row as a **placeholder**: empty, generating, and the
+     * run's live row — filled by a later `update-message`, or
+     * finalised by core if the run stops first.
+     *
+     * A port, not a parameter, and the call site is what decides:
+     * the reply specs write `generating: true` as a literal into the
+     * node's config, in the same map as `text`, and `resolveInput`
+     * passes it through untouched — so the binding reads it exactly
+     * the way it reads a port (see `summarize-batch`'s `loreType`
+     * for the same reasoning at length). A `params` field would put
+     * a structural fact of the document in the panel as a knob.
+     */
+    generating: string;
+    /**
+     * The message is **narration** — not a character's turn. Shown
+     * under the narrator's name, never counted by the rotation. A
+     * literal, on the same terms as `generating`. The name is the
+     * session's narrator name, or the `speaker`'s where one was
+     * named; the host resolves it at the write, which is where the
+     * row is.
+     */
+    narration: string;
+    /**
+     * Instructions this message was asked for — a narrator's focus
+     * note. Stored beside the message and shown with it; never its
+     * text. Wired from the inlet's `text` on the narrate specs, which
+     * is what a narrator turn's triggering text is.
+     */
+    instructions: string;
+    /**
+     * The channel the row lands on (20 §7). Absent is `main`, so a
+     * pipeline that has never heard of channels writes where it
+     * always did; a channel the session's genre never declared is
+     * refused at the write. Declared 2026-09-16 (U2 residual) for
+     * the same reason `seed-greetings` declares its own.
+     */
+    channel: string;
+    /**
+     * An existing message row to take as the placeholder instead of
+     * inserting one — the inlet's `messageId` on a regenerate, swipe
+     * or continue. The row is reset to generating and becomes the
+     * run's live row; its text and swipe history stay as the verb
+     * left them. Absent on a fresh turn, which inserts.
+     */
+    row: string;
+    /**
+     * Message **blocks** to post with the row (20 §6; R-15
+     * *Forms*; U5d, 2026-09-17): a list of `MessageBlock` — text,
+     * tables, meters, and the two interactive kinds, `choices` and
+     * `form`, which are **forms** when they carry an `addressee`.
+     * The host validates the tree (`checkMessageBlocks`), refuses
+     * a block naming a function this spec declares no action for
+     * or one whose action is `world` (the effects line), stamps
+     * each form with the writing spec's action identity and an
+     * id, stores them as a `core:blocks` part, and — for a form
+     * whose addressee the run's pinned portrayals say the AI
+     * portrays — records `core:event/form-addressed@1` for the
+     * genre's answer pipeline once this run's receipt is saved.
+     * Absent on nearly every message.
+     */
+    blocks: string;
+}, "core:outlet/create-message@1"> & {
+    kind: 'outlet';
     slots?: {
         /**
          * The write hook (18 §4a): one chain rewrites the final output, the
@@ -5228,17 +5726,26 @@ export declare const createMessage: import("@serene-pub/sdk").Pinned<import("@se
     } | undefined;
 }>;
 /**
- * Update an existing message — a regenerate, a swipe, an edit.
+ * Update an existing message — finish a placeholder, or edit a settled row.
  *
- * `target` takes `row-ids@1`, which means **a message created earlier in the same run
- * cannot be updated by a second node**, because `write-result@1` is not assignable to it.
- * That is the ruling, not an oversight: under async review the created row may never
- * exist, so a create → update pair in one spec is a dangling write waiting for a rejection.
+ * `target` takes `row-ids@1`, and a `write-result@1` from earlier in the same
+ * run is assignable to it (09-B B4): the reply specs wire `$.placeholder.messageId`
+ * here, which is the create → update pair that makes the pipeline own its row.
+ * The other case is unchanged — the id comes from outside the run because the
+ * user clicked a message, so it is on the inlet.
  *
- * The case people reach for this with — write a placeholder, fill it as tokens arrive — is
- * streaming, and streaming is one node with a settled output (01 §11), not two nodes and a
- * hope. The case this *is* for is the one where the id comes from outside the run: the user
- * clicked a message, so the id is on the Input.
+ * Which of the two this is, the row decides: a target still **generating** — a
+ * placeholder this run created — is finished (the text lands, the generating
+ * state ends, the reasoning trace and the swipe slot are written); a settled
+ * target is edited and marked so. That is the row's own state, not a flag a
+ * spec could get wrong.
+ *
+ * Where review lands on a reply (R-21 (3)): when an admin turns review on
+ * for a reply's message writes, it is THIS node that parks — the placeholder
+ * ships `reviewDefault: 'off'` and declares no default here either, so nothing
+ * gates by default and a reviewer who asks for one sees the content, not an
+ * empty row. The executor's own rule (`resolvePosition`) is "the setting, else
+ * the author's default, else off", and this node leaves the default unset.
  */
 export declare const updateMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
@@ -5246,8 +5753,21 @@ export declare const updateMessage: import("@serene-pub/sdk").Pinned<import("@se
 }, {
     target: string;
     text: string;
-}, "core:consumer/update-message@1"> & {
-    kind: 'consumer';
+    /**
+     * The reasoning trace the oracle separated from its text, when
+     * the model produced one. Stored beside the message as the
+     * thinking pane reads it; absent means none.
+     */
+    thinking: string;
+    /**
+     * Blocks to append to the row — the same list, the same
+     * checks and the same stamping as `create-message`'s
+     * `blocks`; appended as a `core:blocks` part after the text
+     * lands, so a reply can end with a question put to the cast.
+     */
+    blocks: string;
+}, "core:outlet/update-message@1"> & {
+    kind: 'outlet';
     slots?: {
         /** The same write hook as `create-message` — see it for the terms. */
         readonly scripts: {
@@ -5260,36 +5780,265 @@ export declare const updateMessage: import("@serene-pub/sdk").Pinned<import("@se
         };
     } | undefined;
 }>;
+/**
+ * Delete a message. Publishes `lost` — the content, role, speaker, channel
+ * and metadata the row held — beside the write result, so a listener (a
+ * plugin cleaning its rows, the next reply's inlet) knows what went.
+ */
+export declare const deleteMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    messageId: string;
+    lost: string;
+}, {
+    target: string;
+}, "core:outlet/delete-message@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * Hide a message from the prompt, or show it again — a **ghost**. The row
+ * stays; `hidden` says which way it went.
+ */
+export declare const hideMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    messageId: string;
+    hidden: string;
+}, {
+    target: string;
+    hidden: string;
+}, "core:outlet/hide-message@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * A person's rewrite of a **settled** row: the text replaces, the selected
+ * alternative follows it, the embedding is cleared for re-indexing, and the
+ * row is marked edited. Publishes `previous` — the content it replaced.
+ *
+ * Distinct from `update-message@1`, which finishes a *generating* row with
+ * what a pipeline produced. A floor: every genre has it.
+ */
+export declare const editMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    messageId: string;
+    previous: string;
+}, {
+    target: string;
+    text: string;
+}, "core:outlet/edit-message@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * Move between a message's alternatives, or record a new one. `index`
+ * selects an alternative the row already holds; `text` records a new one and
+ * selects it — the reply road then fills an empty one it opened this way.
+ * Publishes `swipeIndex`, the alternative now showing, and `previous` — the
+ * content and index that were.
+ */
+export declare const swipeMessage: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    messageId: string;
+    swipeIndex: string;
+    previous: string;
+}, {
+    target: string;
+    index: string;
+    text: string;
+}, "core:outlet/swipe-message@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * Branch a session at a message: a new session with the same cast, guests
+ * and tags and a copy of the history up to and including `fromMessage`, each
+ * copy keeping its channel. Publishes the new `sessionId`. A floor.
+ */
+export declare const branchSession: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    sessionId: string;
+}, {
+    fromMessage: string;
+    title: string;
+}, "core:outlet/branch-session@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * A form was addressed to a participant the AI portrays — the answer
+ * pipeline's trigger. The payload is `core:shape/form-addressed@1`; the
+ * ports below are it taken apart, with the block itself (`form`) and the
+ * addressee's character id (`characterId`, null for an envoy) beside them so
+ * the context builder can compile the addressee's card the way it compiles a
+ * speaker's. No shape — an event's inlet is never a session mode — and no
+ * lock here: the genre's answer spec declares its own `(genre, event)`.
+ */
+export declare const formAddressed: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    sessionScope: string;
+    sessionId: string;
+    /** The message carrying the block. */
+    messageId: string;
+    /** The block's id within the message. */
+    blockId: string;
+    /** The block itself — a `choices` or `form` `MessageBlock`, as stored. */
+    form: string;
+    /** The identity of the action the form answers with — `<spec slug>#<key>`. */
+    action: string;
+    /** Who the form is put to, as a participant reference the resolver answered `ai` for. */
+    addressee: string;
+    /** The addressee's character row, for the context builder; null for an envoy. */
+    characterId: string;
+    /** Values for the genre's declared fields, as on a turn. */
+    fields: string;
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/form-addressed@1"> & {
+    kind: 'inlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * The form as a prompt and as a schema. Takes the block and the context the
+ * builder compiled for the addressee, and publishes the context with the
+ * question and the options laid in (`formQuestion`, `formOptions` — what the
+ * assembly template renders under the transcript), the JSON Schema the
+ * oracle answers against (`formAnswerSchema`: an enum of the option keys, or
+ * the field schema), and the question as text. Pure; no model, no rows.
+ */
+export declare const formContext: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    templateContext: string;
+    schema: string;
+    question: string;
+}, {
+    form: string;
+    templateContext: string;
+}, "core:task/form-context@1"> & {
+    kind: 'task';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * An oracle's question, as blocks. Takes the document a `generate-json@1`
+ * produced — `{ question, options: [{ key, label }], addressee? }` — and the
+ * function the options fire, and publishes a block list holding one
+ * `choices` block: the question on it, its options carrying the keys,
+ * addressed to whom the document names. The document's `addressee` is a
+ * **name** the model read off the transcript or a participant reference; a
+ * name is resolved against `cast` into `character:<id>` (or `envoy:<slug>`),
+ * and the `addressee` in-port, when wired, wins over both. A name nobody in
+ * the cast bears leaves the block unaddressed — buttons, not a form. The
+ * host stamps the action identity and the block id at the write; this task
+ * only shapes. `text` is the question as prose, for the row's own content,
+ * so a transcript that reads content alone still carries what was asked. A
+ * document with no options publishes an empty list and an empty text.
+ */
+export declare const makeChoices: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    blocks: string;
+    /** The question as prose — the row's content. */
+    text: string;
+    /** Who the block was addressed to, resolved; null when nobody. */
+    addressee: string;
+}, {
+    /** The oracle's document: `{ question, options, addressee? }`. */
+    json: string;
+    /** The function every option fires — the block's `fn`. */
+    fn: string;
+    /** Who the question is put to. Wired, it wins over the document's. */
+    addressee: string;
+    /** The cast, to resolve a name the document used into a reference. */
+    cast: string;
+}, "core:task/make-choices@1"> & {
+    kind: 'task';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * A form's answer, port by port — for the action a form fires. Takes the
+ * inlet's `payload` (what the press sent) and `form` (the block facts the
+ * host read off the row) and publishes the parts a spec wires: the chosen
+ * option's key and label, the addressee and their character row, the
+ * question, and the answered values. Pure.
+ */
+export declare const readAnswer: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    /** The chosen option's key (`choices`), else null. */
+    choice: string;
+    /** The chosen option's label, else null. */
+    label: string;
+    /** Who answered, as a participant reference — the form's addressee. */
+    addressee: string;
+    /** The addressee's character row, null for an envoy or a person. */
+    characterId: string;
+    question: string;
+    /** The whole answer: `{ choice }` or the entered values. */
+    values: string;
+}, {
+    payload: string;
+    form: string;
+}, "core:task/read-answer@1"> & {
+    kind: 'task';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
+/**
+ * Commit an oracle's answer to a form **exactly as a click would**.
+ *
+ * The host checks the answer against the form's schema, then fires the
+ * block's action through the same server path a press takes
+ * (`fireAction`): the run owner is the acting user, the actor portrays the
+ * addressee, the block's addressee is the audience, and the action's spec
+ * runs as a child of this run. It records `form-answered` in the session's
+ * changes with the answer and `answeredBy: 'oracle'`, so the next reply's
+ * inlet sees it. Refused outside a document on `core:inlet/form-addressed@1`
+ * (`validate()` and the host), refused when the addressee is not the AI's,
+ * and refused for a `world` action (the effects line — belt to the
+ * validator's braces). `reviewDefault: 'off'`; an admin may gate it, and the
+ * reviewer edits the `answer` alone.
+ */
+export declare const answerForm: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
+    main: string;
+    messageId: string;
+    /** The answer as committed: `{ choice }` or the values. */
+    answer: string;
+}, {
+    /** The block, as the inlet published it. */
+    form: string;
+    /** The oracle's document — checked against `formAnswerSchema(form)`. */
+    answer: string;
+    messageId: string;
+    blockId: string;
+    addressee: string;
+}, "core:outlet/answer-form@1"> & {
+    kind: 'outlet';
+    slots?: Record<string, SlotDecl> | undefined;
+}>;
 export declare const attachAudio: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
 }, {
     audio: string;
-}, "core:consumer/attach-audio@1"> & {
-    kind: 'consumer';
+}, "core:outlet/attach-audio@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 export declare const savePluginData: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
 }, {
     value: string;
-}, "core:consumer/save-plugin-data@1"> & {
-    kind: 'consumer';
+}, "core:outlet/save-plugin-data@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 export declare const emitSocket: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
 }, {
     from: string;
-}, "core:consumer/emit-socket@1"> & {
-    kind: 'consumer';
+}, "core:outlet/emit-socket@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 export declare const summarizeRequest: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
     main: string;
     scope: string;
     request: string;
-}, import("@serene-pub/sdk").PortDecl, "core:input/summarize-request@1"> & {
-    kind: 'input';
+}, import("@serene-pub/sdk").PortDecl, "core:inlet/summarize-request@1"> & {
+    kind: 'inlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 /** The messages a summary is drawn from, already scoped and ordered. */
@@ -5425,8 +6174,8 @@ export declare const summarizeBatch: import("@serene-pub/sdk").Pinned<import("@s
      * which a plugin summarizer is free to extend.
      */
     loreType: string;
-}, "core:provider/summarize-batch@1"> & {
-    kind: 'provider';
+}, "core:oracle/summarize-batch@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5460,8 +6209,8 @@ export declare const summarizeSynth: import("@serene-pub/sdk").Pinned<import("@s
     request: string;
     /** Authored on the node, exactly as on the batch step — see it. */
     loreType: string;
-}, "core:provider/summarize-synth@1"> & {
-    kind: 'provider';
+}, "core:oracle/summarize-synth@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5494,8 +6243,8 @@ export declare const nameEntry: import("@serene-pub/sdk").Pinned<import("@serene
     content: string;
     /** Authored on the node, exactly as on the two steps above — see them. */
     loreType: string;
-}, "core:provider/name-entry@1"> & {
-    kind: 'provider';
+}, "core:oracle/name-entry@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5532,10 +6281,9 @@ export declare const extractCast: import("@serene-pub/sdk").Pinned<import("@sere
     cast: string;
 }, {
     content: string;
-    messages: string;
     request: string;
-}, "core:provider/extract-cast@1"> & {
-    kind: 'provider';
+}, "core:oracle/extract-cast@1"> & {
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5629,7 +6377,7 @@ export declare const extractCast: import("@serene-pub/sdk").Pinned<import("@sere
  * other entries it already matches — and `rejected` carries every candidate
  * turned away with the rule that turned it away. Both exist because this node
  * **proposes and never writes**: what it emits is meant to reach a person who
- * can edit it before `core:consumer/create-lore-entry@1` stores anything, and a
+ * can edit it before `core:outlet/create-lore-entry@1` stores anything, and a
  * reviewer who has to hunt for the reason will approve without reading.
  *
  * ⚠ It never proposes **secondary** keys. Those carry a user's `selectiveLogic`
@@ -5723,8 +6471,8 @@ export declare const createLoreEntry: import("@serene-pub/sdk").Pinned<import("@
 }, {
     name: string;
     content: string;
-}, "core:consumer/create-lore-entry@1"> & {
-    kind: 'consumer';
+}, "core:outlet/create-lore-entry@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 export declare const graphScenes: import("@serene-pub/sdk").Pinned<import("@serene-pub/sdk").Descriptor<{
@@ -5743,7 +6491,7 @@ export declare const graphNodeResolution: import("@serene-pub/sdk").Pinned<impor
 }, {
     scenes: string;
 }, string> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5775,7 +6523,7 @@ export declare const graphPreFilter: import("@serene-pub/sdk").Pinned<import("@s
 }, {
     scenes: string;
 }, string> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5807,7 +6555,7 @@ export declare const graphPerspective: import("@serene-pub/sdk").Pinned<import("
 }, {
     scenes: string;
 }, string> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5839,7 +6587,7 @@ export declare const graphNodeDescription: import("@serene-pub/sdk").Pinned<impo
 }, {
     scenes: string;
 }, string> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5871,7 +6619,7 @@ export declare const graphStateDetection: import("@serene-pub/sdk").Pinned<impor
 }, {
     scenes: string;
 }, string> & {
-    kind: 'provider';
+    kind: 'oracle';
     slots?: {
         readonly connection: {
             readonly kind: "connection";
@@ -5909,8 +6657,8 @@ export declare const graphProposal: import("@serene-pub/sdk").Pinned<import("@se
     proposalId: string;
 }, {
     proposal: string;
-}, "core:consumer/graph-proposal@1"> & {
-    kind: 'consumer';
+}, "core:outlet/graph-proposal@1"> & {
+    kind: 'outlet';
     slots?: Record<string, SlotDecl> | undefined;
 }>;
 /**

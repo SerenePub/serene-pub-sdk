@@ -42,13 +42,13 @@ export function assertValueTypeId(id) {
 }
 const freeze = (o) => Object.freeze(o);
 /** Builds the single-key object, dropping undefined fields for canonical JSON. */
-function decl(typeId, props) {
-    assertValueTypeId(typeId);
+function decl(definitionId, props) {
+    assertValueTypeId(definitionId);
     const clean = {};
     for (const [k, val] of Object.entries(props))
         if (val !== undefined)
             clean[k] = val;
-    return freeze({ [typeId]: freeze(clean) });
+    return freeze({ [definitionId]: freeze(clean) });
 }
 /**
  * Construct a toolkit. `ns` is the declaring package's namespace — the
@@ -269,10 +269,9 @@ export function valueDeclOf(entry) {
         // text box that wants rows — so they bridge here rather than growing a
         // second bridge beside this one.
         //
-        // The node-slot vocabulary also has a `text` control, and it means a
-        // *single-line* string; its caller (the app's config panel read pass)
-        // already normalises `control: 'text'` to `'string'` before calling
-        // here, so the two never collide on this case.
+        // The node-slot vocabulary's `text` control is the same multi-line
+        // string (an envoy's instructions are the first parameter to declare
+        // one, U5g), so the app's config panel hands it through unchanged.
         case 'text':
             return decl('text@1', {
                 multiline: true,

@@ -36,7 +36,7 @@ export interface PreviewBlock {
 export interface PreviewReport {
     /** Where the run stopped, and why that node. */
     atNode: string;
-    typeId: string;
+    definitionId: string;
     targetedBy: 'first-provider-on-spine' | 'explicit';
     /** Metadata only — material never leaves core (F18). */
     connection?: {
@@ -103,7 +103,7 @@ export declare const roughTokens: (v: unknown) => number;
 export declare function previewTarget(nodes: Array<{
     key: string;
     kind: string;
-    blockId?: string;
+    clauseId?: string;
     position: number;
 }>, explicit?: string): {
     key: string;

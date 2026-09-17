@@ -116,9 +116,9 @@ export function parseTransform(id: TransformId): Transform {
  * whoever installed the plugin, as a capability nothing can ever satisfy.
  *
  * ⚠ Named `IoKinds`, NOT `Kind`. `descriptors.ts` has exported `Kind` — the node
- * kind, `'input' | 'query' | 'task' | 'provider' | 'consumer'` — since long
+ * kind, `'inlet' | 'query' | 'task' | 'oracle' | 'outlet'` — since long
  * before this existed, and both names would meet inside a single descriptor
- * literal that already says `kind: 'provider'`. `IoKinds` also matches the two
+ * literal that already says `kind: 'oracle'`. `IoKinds` also matches the two
  * spellings already here, `IoKind` and `IO_KINDS`.
  *
  * `satisfies Record<IoKind, IoKind>` is load-bearing in both directions: adding

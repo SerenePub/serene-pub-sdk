@@ -25,7 +25,7 @@
  *
  * Three constraints follow, and they are not negotiable if the loader is to stay honest:
  *
- * 1. **Memory only.** A dev overlay never writes `type_registry`, spec or preset rows. A dev
+ * 1. **Memory only.** A dev overlay never writes `pipeline_definition_registry`, spec or preset rows. A dev
  *    plugin whose rows outlived the session would leave a user's chats pinning types that no
  *    longer exist — a broken install with no install to uninstall.
  * 2. **Permissions are compiled and enforced identically.** Dev mode changes the source of
@@ -45,7 +45,7 @@
  * silence.
  */
 import { compile } from './document.js';
-import { bindingsOf, pipelineHooksOf } from './extension.js';
+import { bindingsOf, handlersOf } from './extension.js';
 import { snapshotRegistry } from './registry.js';
 /**
  * Build the in-memory overlay for a loaded extension.
@@ -60,7 +60,7 @@ export function devOverlay(extension, entry, now) {
         slug: extension.slug,
         version: extension.version,
         entry,
-        types: snapshotRegistry(pipelineHooksOf(extension).map((h) => h.type), { owner: extension.slug, release: 'dev' }),
+        types: snapshotRegistry(handlersOf(extension).map((h) => h.type), { owner: extension.slug, release: 'dev' }),
         documents: (extension.pipelines ?? []).map(compile),
         bindings: bindingsOf(extension),
         components: extension.components ?? [],

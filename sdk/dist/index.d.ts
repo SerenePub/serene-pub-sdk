@@ -1,4 +1,5 @@
 export * from './shapes.js';
+export * from './candidates.js';
 export * from './descriptors.js';
 export * from './nodeInput.js';
 export * from './refs.js';
@@ -15,7 +16,8 @@ export * from './config.js';
 export * from './executor.js';
 export * from './receipt.js';
 export * from './review.js';
-export * from './blocks.js';
+export * from './clauses.js';
+export * from './settingsSlot.js';
 export * from './messageBlocks.js';
 export * from './promptBlocks.js';
 export * from './facets.js';
@@ -40,5 +42,9 @@ export * from './capabilities.js';
 export * from './worldinfo.js';
 export * from './surfaces.js';
 export * from './channels.js';
+export * from './participants.js';
+export * from './actions.js';
+export * from './status.js';
 export * from './hash.js';
+export * from './deprecated.js';
 //# sourceMappingURL=index.d.ts.map

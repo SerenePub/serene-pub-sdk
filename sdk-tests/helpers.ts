@@ -87,8 +87,8 @@ export function withEmbeddings(): ConfigWorld {
 /** Default bindings — deterministic, so goldens are stable. */
 export function bindings(over: Bindings = {}): Bindings {
 	const base: Bindings = {
-		'core:input/user-message@1': async (i) => ok(i),
-		'core:input/message-created@1': async (i) => ok(i),
+		'core:inlet/user-message@1': async (i) => ok(i),
+		'core:inlet/message-created@1': async (i) => ok(i),
 
 		'core:query/session-history@1': async (i: any) =>
 			ok({
@@ -122,7 +122,7 @@ export function bindings(over: Bindings = {}): Bindings {
 		'core:query/persona-card@1': async () => ok({ main: 'persona', card: { sourceKey: 'persona', items: ['Mira'], weight: 0.25, minInclude: 0 } }),
 		'core:query/message-text@1': async () => ok({ main: 'text', plain: 'the raw message text' }),
 
-		'core:provider/embed-text@1': async (i: any, ctx: any) => {
+		'core:oracle/embed-text@1': async (i: any, ctx: any) => {
 			const enabled = i.params?.enabled ?? 'auto'
 			if (enabled === 'off') return ok({ main: null, vector: null })
 			if (!i.connection) {
@@ -158,7 +158,7 @@ export function bindings(over: Bindings = {}): Bindings {
 			const block = { sourceKey: 'summaries', items, weight: 0.5, minInclude: 0, priority: 'normal' }
 			return ok({ main: block, candidates: block })
 		},
-		'core:consumer/attach-image@1': async (i: any, ctx: any) => {
+		'core:outlet/attach-image@1': async (i: any, ctx: any) => {
 			const row = await ctx.commit({ image: i.image })
 			return ok({ main: row.id })
 		},
@@ -189,7 +189,7 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: total, total })
 		},
 
-		'core:provider/generate-text@1': async (i: any, ctx: any) => {
+		'core:oracle/generate-text@1': async (i: any, ctx: any) => {
 			const supported = new Set(i.connection?.metadata?.supportedSamplers ?? [])
 			const applied: Record<string, unknown> = {}
 			const ignored: string[] = []
@@ -203,7 +203,7 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: 'the reply text', text: 'the reply text' })
 		},
 
-		'core:provider/speak@1': async (i: any, ctx: any) => {
+		'core:oracle/speak@1': async (i: any, ctx: any) => {
 			ctx.reportUsage(1)
 			return ok({ main: 'audio:blob', audio: 'audio:blob' })
 		},
@@ -213,7 +213,7 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: 'image:blob', image: 'image:blob' })
 		},
 
-		'core:provider/mcp-tool@1': async (i: any, ctx: any) => {
+		'core:oracle/mcp-tool@1': async (i: any, ctx: any) => {
 			ctx.reportUsage(1)
 			await ctx.call(i.args)
 			return ok({ main: { done: true }, result: { done: true } })
@@ -233,19 +233,19 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: 'too late' })
 		},
 
-		'core:consumer/create-message@1': async (i: any, ctx: any) => {
+		'core:outlet/create-message@1': async (i: any, ctx: any) => {
 			const row = await ctx.commit({ text: i.text })
 			return ok({ main: row.id, messageId: row.id })
 		},
-		'core:consumer/attach-audio@1': async (i: any, ctx: any) => {
+		'core:outlet/attach-audio@1': async (i: any, ctx: any) => {
 			const row = await ctx.commit({ audio: i.audio })
 			return ok({ main: row.id })
 		},
-		'core:consumer/save-plugin-data@1': async (i: any, ctx: any) => {
+		'core:outlet/save-plugin-data@1': async (i: any, ctx: any) => {
 			const row = await ctx.commit({ value: i.value })
 			return ok({ main: row.id })
 		},
-		'core:consumer/emit-socket@1': async (i: any, ctx: any) => {
+		'core:outlet/emit-socket@1': async (i: any, ctx: any) => {
 			ctx.emit(String(i.handle ?? 'unnamed'), i.from)
 			return ok({ main: 'emitted' })
 		},

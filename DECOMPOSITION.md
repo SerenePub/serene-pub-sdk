@@ -89,7 +89,7 @@ sets differently for "Lore-heavy" than for "Fast".
 
 ```
 query    candidates    core:query/vector-search@1      the candidate pool, embedded
-provider embed         core:provider/embed-text@1      the query embeddings
+provider embed         core:oracle/embed-text@1      the query embeddings
 task     merge         core:task/merge-candidates@1    RRF across the two query passes
 task     rank          core:task/rank-semantic@1       MMR rerank, per-source caps
 task     assemble      core:task/assemble@2            as above
@@ -370,7 +370,7 @@ its input, seeded if it is stochastic) or a Provider (a model call over the netw
 lookup it feeds is a Query. The five kinds absorb it:
 
 ```
-provider ner        core:provider/extract-entities@1   or a Task, if local and pure
+provider ner        core:oracle/extract-entities@1   or a Task, if local and pure
 query    byEntity   core:query/lore-by-entity@1        entries matching the extracted names
 task     rank       combined ranker                    a third arm
 ```
@@ -580,14 +580,14 @@ corpus cannot see — both paths would be internally consistent, and different.
 ### Still open
 
 The prompt path is decoupled; it is not yet at parity. What remains is
-`core:provider/generate-text@1` (dispatch through the existing adapters) and the corpus
+`core:oracle/generate-text@1` (dispatch through the existing adapters) and the corpus
 itself. Rendering is no longer the gap.
 
 ---
 
 ## 14. Dispatch, and the spine end to end
 
-The last unbound node. `core:provider/generate-text@1` now sends through the **same seven
+The last unbound node. `core:oracle/generate-text@1` now sends through the **same seven
 adapters** the legacy path uses, via the `withCompiledPrompt` seam: set a payload and
 `compilePrompt()` returns it instead of building one, so everything downstream is untouched
 legacy code. There is no second HTTP client and no second request shape — which is what makes
@@ -1929,7 +1929,7 @@ current character to avoid premature stops" — because the prompt seeds
 `<Name>: ` and stopping on `<Name>:` would end the reply before it began. On the
 legacy path that worked: `generateResponse` set `adapter.currentCharacterId`.
 
-On the pipeline path nothing carried it. `core:provider/generate-text@1` has one
+On the pipeline path nothing carried it. `core:oracle/generate-text@1` has one
 in-port, `context`; the binding reads `input?.currentCharacterId`, which no spec
 wires because there is nowhere to wire it. So the adapter was constructed with
 `currentCharacterId: null`, the exclusion never fired, `Ash:` went into the stop

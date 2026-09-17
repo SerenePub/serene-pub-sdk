@@ -13,7 +13,9 @@
 		"@serene-pub/contracts": "0.6.0-preview.0",
 		"@serene-pub/conformance": "0.6.0-preview.0",
 		"@serene-pub/cli": "0.6.0-preview.0",
+		"@serene-pub/docs": "0.6.0-preview.0",
 		"tsx": "^4.0.0",
+		"jimp": "^1.6.1",
 		"@serene-pub/core-catalog": "0.6.0-preview.0",
 		"@serene-pub/controls": "0.6.0-preview.0"
 	}

@@ -21,19 +21,19 @@ import { publish, bindings, world } from './helpers.js'
 describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 	const withStrings = () =>
 		spec('demo:chat@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', C.sessionHistory.v1({ scope: $ref('input', 'sessionScope') }))
 			.task('prompt', C.assemble.v2({ candidates: $ref('history', 'messages') }))
-			.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', C.createMessage.v1({ text: $ref('generate', 'text') }))
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+			.outlet('save', C.createMessage.v1({ text: $ref('generate', 'text') }))
 
 	const withScope = () =>
 		spec('demo:chat@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-			.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
-			.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+			.oracle('generate', () => C.generateText.v1({ connection: slot.connection() }))
+			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 	test('identical canonical hash — the rows are the same rows', () => {
 		assert.equal(
@@ -73,7 +73,7 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 // ── 53 · The node accessor is itself a ref to `main` ────────────────────────
 test('53 · `$.history` means main; `$.history.messages` refines the port', () => {
 	const b = spec('demo:bare@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input }))
 		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
 	const doc = compile(b.build())
@@ -89,11 +89,11 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 		assert.throws(
 			() =>
 				spec('demo:forward@1', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					// `generate` is declared *below* — under the old string form this was a
 					// publish-time finding; here the scope simply does not contain it.
 					.query('history', ($: any) => C.sessionHistory.v1({ scope: $.generate.text }))
-					.provider('generate', () =>
+					.oracle('generate', () =>
 						C.generateText.v1({ connection: slot.connection() }),
 					),
 			/is not a node declared before this point/,
@@ -103,7 +103,7 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 	test('the message names the available nodes rather than only the missing one', () => {
 		try {
 			spec('demo:forward2@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($: any) => C.sessionHistory.v1({ scope: $.nope.thing }))
 			assert.fail('should have thrown')
 		} catch (e) {
@@ -114,7 +114,7 @@ describe('54 · no back-edges, enforced at the call site (F9)', () => {
 
 	test('an empty scope says the Input comes first', () => {
 		try {
-			spec('demo:empty@1', { version: '1.0.0' }).input('input', C.userMessage.v1())
+			spec('demo:empty@1', { version: '1.0.0' }).inlet('input', C.userMessage.v1())
 			// A ref inside the Input itself has nothing to point at.
 			spec('demo:empty2@1', { version: '1.0.0' }).query('q', ($: any) =>
 				C.sessionHistory.v1({ scope: $.x.y }),
@@ -131,7 +131,7 @@ test('55 · `$.a.b.c` is refused with the reason, not a confusing ref', () => {
 	assert.throws(
 		() =>
 			spec('demo:deep@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($: any) =>
 					C.sessionHistory.v1({ scope: $.input.sessionScope.deeper }),
 				),
@@ -143,8 +143,8 @@ test('55 · `$.a.b.c` is refused with the reason, not a confusing ref', () => {
 describe('56 · block chains', () => {
 	const built = () =>
 		spec('demo:blockscope@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.async('gather', { mode: 'parallel' }, (b) =>
+			.inlet('input', C.userMessage.v1())
+			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
 						c.query('history', ($) =>
@@ -153,7 +153,7 @@ describe('56 · block chains', () => {
 					)
 					.chain('semantic', (c) =>
 						c
-							.provider('embed', ($) =>
+							.oracle('embed', ($) =>
 								C.embedText.v1({
 									text: $.input.text,
 									connection: slot.connection(),
@@ -192,8 +192,8 @@ describe('56 · block chains', () => {
 
 	test('it matches what the string form produced, edge for edge', () => {
 		const strung = spec('demo:blockscope@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.async('gather', { mode: 'parallel' }, (b) =>
+			.inlet('input', C.userMessage.v1())
+			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
 						c.query(
@@ -203,7 +203,7 @@ describe('56 · block chains', () => {
 					)
 					.chain('semantic', (c) =>
 						c
-							.provider(
+							.oracle(
 								'embed',
 								C.embedText.v1({
 									text: $ref('input', 'text'),
@@ -238,10 +238,10 @@ describe('56 · block chains', () => {
 describe('57 · map', () => {
 	const built = () =>
 		spec('demo:mapscope@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-			.map('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
-				m.provider('sum', ($: any) =>
+			.each('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
+				m.oracle('sum', ($: any) =>
 					C.generateText.v1({ text: $.$item, connection: slot.connection() }),
 				),
 			)
@@ -249,7 +249,7 @@ describe('57 · map', () => {
 
 	test('`over` resolves through the scope', () => {
 		const b = built().build()
-		assert.deepEqual(b.blocks.find((x) => x.id === 'summarize')!.over, {
+		assert.deepEqual(b.clauses.find((x) => x.id === 'summarize')!.over, {
 			__ref: 'data',
 			node: 'chunks',
 			port: 'items',
@@ -276,8 +276,8 @@ describe('57 · map', () => {
 // ── 58 · Config references take a node accessor too ─────────────────────────
 test('58 · slot.connectionOf($.generate) — a node is never named twice, two ways', () => {
 	const b = spec('demo:slotref@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
-		.provider('generate', () => C.generateText.v1({ connection: slot.connection() }))
+		.inlet('input', C.userMessage.v1())
+		.oracle('generate', () => C.generateText.v1({ connection: slot.connection() }))
 		.task('budget', ($: any) =>
 			C.contextBudget.v1({ connection: slot.connectionOf($.generate) }),
 		)

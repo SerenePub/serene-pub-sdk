@@ -24,38 +24,38 @@ export const echoSpec = () => compile(spec(ECHO_SPEC_ID, {
     version: ECHO_VERSION,
     /** A person-invoked action on chats (23 §2), same as narrate. */
     taxonomy: {
-        zone: 'session',
         role: 'action',
         genre: chatGenre.id,
     },
     /**
-     * The contributed trigger (19 §4): offers the `echo` function on
-     * standard-mode sessions as a button. Same namespace as the genre
-     * owner, so it lands as a companion — present by default — and any
-     * `kind: 'button'` trigger renders itself in the composer's extra
-     * controls with no client code (the generic `fireTrigger` path).
+     * The contributed action (19 §4; R-15, U5c): offers the `echo`
+     * function on standard-mode sessions from the composer. Same
+     * namespace as the genre owner, so it lands as a companion — present
+     * by default — and a `composer` venue renders itself with no client
+     * code (the generic `fireTrigger` path). Not `quick`: a demo lives
+     * in the overflow and the `/echo` palette, never on the primary row.
      */
     contributes: {
-        triggers: [
+        actions: [
             {
+                key: 'echo',
                 genre: chatGenre.id,
                 function: 'echo',
-                kind: 'button',
+                venue: { kind: 'composer' },
                 icon: 'pencil',
-                i18n: { en: 'Echo' },
+                label: { en: 'Echo' },
             },
         ],
     },
 })
     // Manually triggered — a person presses the button; no message drives it.
-    .on('core:event/ui-action@1')
     /** The usage lock (24 §4): a person-invoked action on Chat sessions. */
-    .input('input', C.userMessage.v1(), {
+    .inlet('input', C.userMessage.v1(), {
     genre: chatGenre,
     event: sessionEvents.sessionAction,
 })
     // The one node: write the (reviewed) text as a session message.
-    .consume('save', ($) => C.createMessage.v1({ text: $.input.text }))
+    .outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
     // Ship review ON as the default, so the run always parks at `save`
     // and the person is asked to type the text (the whole demo).
     .preset('review-on', { label: 'Review on', default: true }, (p) => p.settings('save', { review: 'on' }))

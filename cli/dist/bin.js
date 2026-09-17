@@ -17,6 +17,7 @@ import { join, resolve, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { compilePlugin, scanSource, renderFindings, cannotDo } from './compiler.js';
 import { generateContracts } from './codegen.js';
+import { typeSurfaces } from './typeSurfaces.js';
 const USAGE = `serene-pub <command>
 
   build [dir]        package the plugin in [dir] (default: .) into dist/plugin/
@@ -29,6 +30,8 @@ const USAGE = `serene-pub <command>
   docs               render an announcement into markdown reference pages —
                      one per genre and pipeline, plus the package index
                      (--html: a self-contained static site instead)
+                     (--examples <dir>: run the examples in <dir> and render a
+                     page each, output checked against the goldens beside them)
   types              generate typed use() handles from an announcement, so
                      config() autocompletes the target's whole option space
   ui [dir]           run the surface harness: a dev server that renders the UI
@@ -45,6 +48,10 @@ Options
   --from <src>       scaffold declarations source: an announcement JSON file or
                      URL. Default: the installed @serene-pub/core-catalog.
   --release <ver>    stamped into the generated contracts banner
+  --goldens <dir>    where the examples' goldens live (docs --examples).
+                     Default: goldens/ beside the examples
+  --update-goldens   record missing goldens and rewrite moved ones instead of
+                     failing (docs --examples)
   --json             machine-readable output
 `;
 async function sourcesIn(dir) {
@@ -117,15 +124,6 @@ async function resolveAnnouncement(argv) {
         return null;
     }
     return catalog.coreAnnouncement().document;
-}
-/** The registered type surfaces, for schema-aware generators. */
-async function typeSurfaces() {
-    const { allTypes, allScriptTypes, snapshotRegistry } = await import('@serene-pub/sdk');
-    await import('@serene-pub/contracts');
-    const entries = snapshotRegistry([...allTypes(), ...allScriptTypes()], {
-        release: 'cli',
-    });
-    return (typeId, version) => entries.find((e) => e.id === typeId && e.version === version);
 }
 export async function main(argv = process.argv.slice(2)) {
     const [cmd, maybeDir] = argv;
@@ -245,6 +243,28 @@ export async function main(argv = process.argv.slice(2)) {
             process.stdout.write(text);
         return 0;
     }
+    // Executed examples are their own source: modules that are RUN, not an
+    // announcement that is read. Under plain node this needs `.js` examples or
+    // a registered TypeScript loader — nothing here compiles TypeScript.
+    if (cmd === 'docs' && flag(argv, 'examples')) {
+        const dir = resolve(flag(argv, 'examples'));
+        const { renderExampleDocs } = await import('./docsExamples.js');
+        const { pages, report } = await renderExampleDocs({
+            dir,
+            goldensDir: resolve(flag(argv, 'goldens') ?? join(dir, 'goldens')),
+            update: argv.includes('--update-goldens'),
+        });
+        const out = resolve(flag(argv, 'out') ?? 'dist/docs');
+        for (const page of pages) {
+            const full = join(out, page.path);
+            await mkdir(join(full, '..'), { recursive: true });
+            await writeFile(full, page.markdown);
+        }
+        process.stdout.write(`wrote ${pages.length} example pages to ${relative(process.cwd(), out)}\n`);
+        for (const r of report.filter((x) => x.recorded || x.changed))
+            process.stdout.write(`  golden ${r.slug}: ${r.recorded ? 'recorded' : 'rewritten'}\n`);
+        return 0;
+    }
     if (cmd === 'docs') {
         const announcement = await resolveAnnouncement(argv);
         if (!announcement)
@@ -318,9 +338,9 @@ export async function main(argv = process.argv.slice(2)) {
         await new Promise(() => { });
     }
     if (cmd === 'contracts') {
-        const { allTypes } = await import('@serene-pub/sdk');
+        const { allDefinitions } = await import('@serene-pub/sdk');
         await loadExtension(dir).catch(() => undefined);
-        const text = generateContracts(allTypes(), { release: flag(argv, 'release') });
+        const text = generateContracts(allDefinitions(), { release: flag(argv, 'release') });
         const out = flag(argv, 'out');
         if (out) {
             await writeFile(resolve(out), text);

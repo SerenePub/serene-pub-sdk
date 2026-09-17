@@ -5,8 +5,8 @@
  * standing rule), and the app's native-surface registry maps a widget's
  * `surface.component` key to a real Svelte component separately.
  *
- * A "widget" is a session-surface component — the messages log, the composer, a
- * portrait panel, a plugin frame. Native and frame widgets share ONE declaration
+ * A "widget" is a session-surface component — the conversation, a portrait
+ * panel, a plugin frame. Native and frame widgets share ONE declaration
  * (this) and ONE data contract; the only difference is the iframe. `WidgetDecl`
  * is the superset of the SDK's `PanelDecl`: `id`/`title` already satisfy the
  * stable-slug + display-title a widget must announce, so this adds only the

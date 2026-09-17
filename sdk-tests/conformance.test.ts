@@ -49,31 +49,31 @@ const fixtures: Fixtures = {
 	chatTurn: () =>
 		compile(
 			spec('conformance:chat-turn', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
-				.provider('generate', ($) =>
+				.oracle('generate', ($) =>
 					C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 				)
-				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 				.build(),
 		),
 
 	haltsEarly: () =>
 		compile(
 			spec('conformance:halts', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.task('gate', ($) => C.gate.v1({ main: $.input.main }))
-				.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-				.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+				.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 				.build(),
 		),
 
 	gather: () =>
 		compile(
 			spec('conformance:gather', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.async('gather', { mode: 'parallel' }, (b) =>
+				.inlet('input', C.userMessage.v1())
+				.gather('gather', { mode: 'parallel' }, (b) =>
 					b
 						.chain('history', (c) =>
 							c.query('history', ($) =>
@@ -95,10 +95,10 @@ const fixtures: Fixtures = {
 	mapped: () =>
 		compile(
 			spec('conformance:mapped', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-				.map('summarize', { over: ($) => $.chunks.items, max: 8 }, (m) =>
-					m.provider('sum', C.generateText.v1({ connection: slot.connection() })),
+				.each('summarize', { over: ($) => $.chunks.items, max: 8 }, (m) =>
+					m.oracle('sum', C.generateText.v1({ connection: slot.connection() })),
 				)
 				.build(),
 		),
@@ -106,7 +106,7 @@ const fixtures: Fixtures = {
 	looped: (max: number) =>
 		compile(
 			spec('conformance:looped', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
+				.inlet('input', C.userMessage.v1())
 				.loop('again', { repeatWhile: ($: any) => $.again.item.step.main, max }, (l) =>
 					l.task('step', C.passthrough.v1({})),
 				)
@@ -127,9 +127,9 @@ const fixtures: Fixtures = {
 			because: 'two write-class consumers',
 			doc: compile(
 				spec('conformance:twowrites', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
-					.consume('a', C.createMessage.v1({ text: 'x' }))
-					.consume('b', C.createMessage.v1({ text: 'y' }))
+					.inlet('input', C.userMessage.v1())
+					.outlet('a', C.createMessage.v1({ text: 'x' }))
+					.outlet('b', C.createMessage.v1({ text: 'y' }))
 					.build(),
 			),
 		},
@@ -138,9 +138,9 @@ const fixtures: Fixtures = {
 			because: 'an unbounded map',
 			doc: compile(
 				spec('conformance:unbounded', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
-					.map('m', { over: ($) => $.chunks.items, max: 0 }, (m) =>
+					.each('m', { over: ($) => $.chunks.items, max: 0 }, (m) =>
 						m.task('t', C.gate.v1({})),
 					)
 					.build(),
@@ -151,7 +151,7 @@ const fixtures: Fixtures = {
 			because: 'a loop predicate computed outside its body',
 			doc: compile(
 				spec('conformance:badloop', { version: '1.0.0' })
-					.input('input', C.userMessage.v1())
+					.inlet('input', C.userMessage.v1())
 					.task('outside', C.gate.v1({}))
 					.loop('l', { repeatWhile: ($: any) => $.outside.main, max: 4 }, (l) =>
 						l.task('t', C.passthrough.v1({})),
@@ -165,7 +165,7 @@ const fixtures: Fixtures = {
 			doc: (() => {
 				const d = compile(
 					spec('conformance:emits', { version: '1.0.0' })
-						.input('input', C.userMessage.v1())
+						.inlet('input', C.userMessage.v1())
 						.task('t', C.gate.v1({}))
 						.build(),
 				)

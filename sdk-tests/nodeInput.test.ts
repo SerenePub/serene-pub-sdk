@@ -16,7 +16,16 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { describeQueryType, declaresReads, pin, readsOf, suppliesOf, S, ok } from '@serene-pub/sdk'
+import {
+	describeQueryDefinition,
+	declaresReads,
+	pin,
+	reads,
+	readsOf,
+	suppliesOf,
+	S,
+	ok,
+} from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
 describe('suppliesOf — the runtime twin of InputOf', () => {
@@ -40,7 +49,12 @@ describe('suppliesOf — the runtime twin of InputOf', () => {
 
 	test('session-history supplies limit and channel as params, not as ports', () => {
 		const s = suppliesOf(C.sessionHistory)
-		assert.deepEqual([...s.params].sort(), ['channel', 'limit', 'priority'])
+		// `share`, `maxEntries`, `minEntries` joined `priority` 2026-09-16 (R-7
+		// P5): the conversation's band intent, declared on the source.
+		assert.deepEqual(
+			[...s.params].sort(),
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share'],
+		)
 		assert.equal(s.ports.includes('limit'), false)
 		assert.equal(s.ports.includes('channel'), false)
 	})
@@ -55,7 +69,7 @@ describe('suppliesOf — the runtime twin of InputOf', () => {
 	})
 
 	test('accepts the pinned form and a bare descriptor alike', () => {
-		const bare = describeQueryType({
+		const bare = describeQueryDefinition({
 			id: 'test:query/bare@1',
 			ports: { in: { a: S.text }, out: { main: S.text } },
 		})
@@ -103,6 +117,45 @@ describe('declaresReads — the additive half of a binding', () => {
 	})
 })
 
+describe('reads — the typed declaration', () => {
+	test('records exactly what was declared, in HandlerRequires shape', () => {
+		const hook = async () => ok({ main: [] })
+		const declared = reads<typeof C.sessionHistory>(hook, {
+			ports: ['scope'],
+			params: ['limit', 'channel'],
+		})
+		assert.equal(declared, hook, 'same function object, as declaresReads')
+		assert.deepEqual(readsOf(declared), { ports: ['scope'], params: ['limit', 'channel'] })
+	})
+
+	test('params is optional and records as an empty list', () => {
+		const declared = reads<typeof C.userMessage>(async (i) => ok(i), { ports: [] })
+		assert.deepEqual(readsOf(declared), { ports: [], params: [] })
+	})
+
+	test('an identical redeclaration is a no-op', () => {
+		const hook = async () => ok({ main: [] })
+		reads<typeof C.sessionHistory>(hook, { ports: ['scope'], params: ['limit'] })
+		assert.doesNotThrow(() =>
+			reads<typeof C.sessionHistory>(hook, { ports: ['scope'], params: ['limit'] }),
+		)
+	})
+
+	test('a DIFFERENT redeclaration on the same function object is refused', () => {
+		// A declaration attaches to the function, so a handler two pins share
+		// can carry only one. Silently replacing the first would leave one pin
+		// checked against the other's reads; refusing is what makes the
+		// per-pin arrow the only way to bind a shared handler that reads
+		// differently.
+		const hook = async () => ok({ main: [] })
+		reads<typeof C.sessionHistory>(hook, { ports: ['scope'], params: ['limit'] })
+		assert.throws(
+			() => reads<typeof C.sessionHistory>(hook, { ports: ['scope'], params: ['channel'] }),
+			/already declares what it reads/,
+		)
+	})
+})
+
 describe('the two derivations agree', () => {
 	// A handler typed `InputOf<typeof C.sessionHistory>` may read exactly these
 	// names; `suppliesOf` must answer with exactly these names. Written out
@@ -110,8 +163,13 @@ describe('the two derivations agree', () => {
 	// be made here too.
 	test('session-history', () => {
 		const s = suppliesOf(C.sessionHistory)
-		assert.deepEqual([...s.ports].sort(), ['budget', 'params', 'scope'])
-		assert.deepEqual([...s.params].sort(), ['channel', 'limit', 'priority'])
+		// `budget` was here until 2026-09-16: an in-port nothing filled and
+		// nothing read, culled under R-12.
+		assert.deepEqual([...s.ports].sort(), ['params', 'scope'])
+		assert.deepEqual(
+			[...s.params].sort(),
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share'],
+		)
 	})
 
 	test('the three lore lanes are interchangeable, which is why one handler serves them', () => {

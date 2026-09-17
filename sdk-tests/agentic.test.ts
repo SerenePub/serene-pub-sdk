@@ -23,14 +23,14 @@ import { run, ok, halt } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
-import { pin, describeProvider, describeTaskType } from '@serene-pub/sdk'
+import { pin, describeOracleDefinition, describeTaskDefinition } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { publish, bindings, errorsFor, world } from './helpers.js'
 
 // A Provider that may ask for tools, and a Task that folds results back into context.
 const agentTurn = pin(
-	describeProvider({
-		id: 'demo:provider/agent-turn@1',
+	describeOracleDefinition({
+		id: 'demo:oracle/agent-turn@1',
 		shape: S.textGen,
 		effects: 'external',
 		timeoutMs: 30000,
@@ -43,7 +43,7 @@ const agentTurn = pin(
 )
 
 const foldResults = pin(
-	describeTaskType({
+	describeTaskDefinition({
 		id: 'demo:task/fold-tool-results@1',
 		timeoutMs: 500,
 		ports: {
@@ -56,15 +56,15 @@ const foldResults = pin(
 /** The shape the whole exercise exists for. */
 const agentic = (max = 8) =>
 	spec('demo:agent', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
+		.inlet('input', C.userMessage.v1())
 		.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
 		.loop('agent', { repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max }, (l) =>
 			l
-				.provider('turn', ($: any) =>
+				.oracle('turn', ($: any) =>
 					agentTurn.v1({ context: $.prompt.context, connection: slot.connection() }),
 				)
-				.map('tools', { over: ($: any) => $.agent.item.turn.toolCalls, max: 16 }, (m) =>
-					m.provider('call', ($: any) =>
+				.each('tools', { over: ($: any) => $.agent.item.turn.toolCalls, max: 16 }, (m) =>
+					m.oracle('call', ($: any) =>
 						C.mcpTool.v1({ args: $.$item, connection: slot.connection() }),
 					),
 				)
@@ -75,13 +75,13 @@ const agentic = (max = 8) =>
 					}),
 				),
 		)
-		.consume('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
+		.outlet('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
 
 /** Two rounds of tools, then a plain answer. */
 const scripted = (rounds: number) => {
 	let turn = 0
 	return bindings({
-		'demo:provider/agent-turn@1': async () => {
+		'demo:oracle/agent-turn@1': async () => {
 			const more = turn++ < rounds
 			return ok({
 				main: 'x',
@@ -90,7 +90,7 @@ const scripted = (rounds: number) => {
 				hasToolCalls: more,
 			})
 		},
-		'core:provider/mcp-tool@1': async (i: any) =>
+		'core:oracle/mcp-tool@1': async (i: any) =>
 			ok({ main: `ran ${i.args?.tool}`, result: `ran ${i.args?.tool}` }),
 		'demo:task/fold-tool-results@1': async () => ok({ main: 'folded', context: 'folded' }),
 	})
@@ -147,7 +147,7 @@ test('84 · "which tool" is a value flowing through, never a branch', async () =
 		world,
 		bindings: {
 			...scripted(1),
-			'core:provider/mcp-tool@1': async (i: any) => {
+			'core:oracle/mcp-tool@1': async (i: any) => {
 				seen.push(i.args?.tool)
 				return ok({ main: 'done' })
 			},
@@ -160,11 +160,11 @@ test('84 · "which tool" is a value flowing through, never a branch', async () =
 describe('85 · nesting', () => {
 	test('a map nested inside a loop compiles to a block tree', () => {
 		const doc = compile(agentic().build())
-		const tools = doc.blocks.find((b) => b.id === 'agent.item.tools')!
-		assert.equal(tools.blockId, 'agent', 'the map knows which block it sits in')
-		assert.equal(tools.blockChain, 'item')
+		const tools = doc.clauses.find((b) => b.id === 'agent.item.tools')!
+		assert.equal(tools.clauseId, 'agent', 'the map knows which block it sits in')
+		assert.equal(tools.clauseChain, 'item')
 		assert.equal(
-			doc.blocks.find((b) => b.id === 'agent')!.blockId,
+			doc.clauses.find((b) => b.id === 'agent')!.clauseId,
 			undefined,
 			'the loop is on the spine',
 		)
@@ -191,7 +191,7 @@ test('86 · a loop publishes branch-results, exactly like a map', async () => {
 		world,
 		bindings: {
 			...scripted(1),
-			'core:consumer/create-message@1': async (i: any) => {
+			'core:outlet/create-message@1': async (i: any) => {
 				downstream = i.text
 				return ok({ main: 'saved' })
 			},
@@ -204,7 +204,7 @@ test('86 · a loop publishes branch-results, exactly like a map', async () => {
 describe('87 · the bounds are enforced, not advised', () => {
 	const base = () =>
 		spec('demo:badloop', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('prompt', C.assemble.v2({}))
 
 	test('an unbounded loop is refused, and the fix says why max is not optional', () => {
@@ -227,7 +227,7 @@ describe('87 · the bounds are enforced, not advised', () => {
 
 	test('a write inside a repeating block is refused — one write is one transaction', () => {
 		const b = base().loop('l', { repeatWhile: ($: any) => $.l.item.t.main, max: 4 }, (l) =>
-			l.task('t', C.gate.v1({})).consume('save', C.createMessage.v1({ text: 'x' })),
+			l.task('t', C.gate.v1({})).outlet('save', C.createMessage.v1({ text: 'x' })),
 		)
 		const e = errorsFor(b, 'F7')
 		assert.equal(e.length, 1)
@@ -279,7 +279,7 @@ describe('89 · the carry', () => {
 	 */
 	const carrying = (max = 8) =>
 		spec('demo:carry', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
+			.inlet('input', C.userMessage.v1())
 			.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
 			.loop(
 				'agent',
@@ -287,14 +287,14 @@ describe('89 · the carry', () => {
 				(l) =>
 					l
 						.task('sofar', ($: any) => C.gate.v1({ main: $.agent.values }))
-						.provider('turn', ($: any) =>
+						.oracle('turn', ($: any) =>
 							agentTurn.v1({
 								context: $.prompt.context,
 								connection: slot.connection(),
 							}),
 						),
 			)
-			.consume('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
+			.outlet('save', ($: any) => C.createMessage.v1({ text: $.agent.values }))
 
 	test('an iteration reads the results of the ones before it', async () => {
 		const seen: unknown[] = []
@@ -337,7 +337,7 @@ describe('90 · the stop reason', () => {
 	test('stopping on the predicate and stopping on the ceiling are told apart', async () => {
 		const finished = await run(publish(agentic(8)), { input: {}, world, bindings: scripted(1) })
 		assert.deepEqual(finished.loops, [
-			{ blockId: 'agent', iterations: 2, stopped: 'predicate' },
+			{ clauseId: 'agent', iterations: 2, stopped: 'predicate' },
 		])
 
 		const truncated = await run(publish(agentic(2)), {
@@ -346,7 +346,7 @@ describe('90 · the stop reason', () => {
 			bindings: scripted(99),
 		})
 		assert.deepEqual(truncated.loops, [
-			{ blockId: 'agent', iterations: 2, stopped: 'ceiling' },
+			{ clauseId: 'agent', iterations: 2, stopped: 'ceiling' },
 		])
 	})
 
@@ -359,6 +359,6 @@ describe('90 · the stop reason', () => {
 				'demo:task/fold-tool-results@1': async () => halt('nothing worth folding'),
 			},
 		})
-		assert.deepEqual(r.loops, [{ blockId: 'agent', iterations: 1, stopped: 'interrupted' }])
+		assert.deepEqual(r.loops, [{ clauseId: 'agent', iterations: 1, stopped: 'interrupted' }])
 	})
 })

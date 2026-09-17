@@ -19,9 +19,9 @@ import { publish, bindings, world } from './helpers.js'
 
 const simple = () =>
 	spec('demo:progress@1', { version: '1.0.0' })
-		.input('input', C.userMessage.v1())
-		.provider('generate', C.generateText.v1({ connection: slot.connection() }))
-		.consume('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+		.inlet('input', C.userMessage.v1())
+		.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+		.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 describe('110 · progress is inherent to the run', () => {
 	test('every invocation announces itself — start and settle, in order', async () => {
@@ -193,12 +193,12 @@ describe('112 · a shared prompts slot — authored once, read everywhere', () =
 	// the owner's authored text, and the panel has one box to render.
 	const shared = () =>
 		spec('demo:shared-prompt@1', { version: '1.0.0' })
-			.input('input', C.userMessage.v1())
-			.provider(
+			.inlet('input', C.userMessage.v1())
+			.oracle(
 				'author',
 				C.generateText.v1({ connection: slot.connection(), prompts: slot.prompts() }),
 			)
-			.provider(
+			.oracle(
 				'reader',
 				C.generateText.v1({
 					connection: slot.connection(),
@@ -216,7 +216,7 @@ describe('112 · a shared prompts slot — authored once, read everywhere', () =
 					slot: 'prompts',
 					path: 'system',
 					value: 'ONE AUTHORED TEXT',
-					scopeKind: 'user' as const,
+					scopeKind: 'session' as const,
 				},
 			],
 		}
@@ -224,7 +224,7 @@ describe('112 · a shared prompts slot — authored once, read everywhere', () =
 			input: {},
 			world: withPrompt,
 			bindings: bindings({
-				'core:provider/generate-text@1': async (i: any) => {
+				'core:oracle/generate-text@1': async (i: any) => {
 					seen.push(i.prompts)
 					return ok({ main: 'x', text: 'x' })
 				},
@@ -248,25 +248,25 @@ describe('112 · a shared prompts slot — authored once, read everywhere', () =
 					slot: 'prompts',
 					path: 'system',
 					value: 'A',
-					scopeKind: 'user' as const,
+					scopeKind: 'session' as const,
 				},
 				{
 					nodeKey: 'reader',
 					slot: 'prompts',
 					path: 'system',
 					value: 'B',
-					scopeKind: 'user' as const,
+					scopeKind: 'session' as const,
 				},
 			],
 		}
 		const own = () =>
 			spec('demo:own-prompt@1', { version: '1.0.0' })
-				.input('input', C.userMessage.v1())
-				.provider(
+				.inlet('input', C.userMessage.v1())
+				.oracle(
 					'author',
 					C.generateText.v1({ connection: slot.connection(), prompts: slot.prompts() }),
 				)
-				.provider(
+				.oracle(
 					'reader',
 					C.generateText.v1({
 						connection: slot.connection(),
@@ -277,7 +277,7 @@ describe('112 · a shared prompts slot — authored once, read everywhere', () =
 			input: {},
 			world: withBoth,
 			bindings: bindings({
-				'core:provider/generate-text@1': async (i: any) => {
+				'core:oracle/generate-text@1': async (i: any) => {
 					seen.push(i.prompts)
 					return ok({ main: 'x', text: 'x' })
 				},

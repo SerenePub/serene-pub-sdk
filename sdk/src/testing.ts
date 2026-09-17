@@ -275,20 +275,102 @@ export const probeCtxFor = (kind: Descriptor['kind'], sampleInput: unknown = {})
 			log: () => {},
 		}
 		if (kind === 'query') base.read = () => []
-		if (kind === 'provider') {
+		if (kind === 'oracle') {
 			base.call = async (p: unknown) => p
 			base.connectionMetadata = {}
 			base.sampling = {}
 			base.reportUsage = () => {}
 			base.reportSampling = () => {}
 		}
-		if (kind === 'consumer') {
+		if (kind === 'outlet') {
 			base.commit = async (p: any) => ({ id: 'row:probe', ...p })
 			base.emit = () => {}
 		}
 		return { ...base, ...over }
 	},
 })
+
+// ── Executed examples ───────────────────────────────────────────────────────
+
+/**
+ * The seed and the clock an executed example runs on.
+ *
+ * Fixed, and fixed *here* rather than per example: two runs of the same page
+ * have to produce the same bytes or the golden is noise, and a seed chosen by
+ * each example is a seed one of them forgets to choose. Everything a receipt
+ * records that moves on its own — run id, timestamps, durations — is either
+ * excluded by `toGolden` or never rendered by `renderRunSummary`.
+ *
+ * They live in the SDK rather than in the docs generator because the generator
+ * is not the only thing that runs an example any more: the browser playground
+ * runs the same module against the same seed, and a reader who compares what
+ * they just ran against the page has to be comparing the same run.
+ */
+export const EXAMPLE_SEED = 'seed:example'
+export const EXAMPLE_CLOCK = 1_700_000_000_000
+
+/** Everything `run` takes except the two things the harness decides. */
+export type ExampleRunOptions = Omit<RunOptions, 'seed' | 'now'>
+
+/**
+ * What an example's `run()` is handed: its own compiled document, and the way
+ * to execute it deterministically. Deliberately small — the fixture host itself
+ * (bindings, scope data) is the example's own import, because a reader of the
+ * page has to be able to see which hooks answered.
+ */
+export interface ExampleRunCtx {
+	/** This example's document — already compiled from `build()` and validated. */
+	doc: SpecDocument
+	/** The run seed. Passed for the example to show; `run` applies it regardless. */
+	seed: string
+	/** The run clock, for the same reason. */
+	now: () => number
+	/** Execute `doc` under this seed and clock. Everything else is the example's. */
+	run(opts: ExampleRunOptions): Promise<Receipt>
+}
+
+/** The context an executed example runs against. Seed and clock default to the fixed pair. */
+export function makeExampleRunCtx(
+	doc: SpecDocument,
+	opts: { seed?: string; now?: () => number } = {},
+): ExampleRunCtx {
+	const seed = opts.seed ?? EXAMPLE_SEED
+	const now = opts.now ?? (() => EXAMPLE_CLOCK)
+	return { doc, seed, now, run: (runOpts) => run(doc, { ...runOpts, seed, now }) }
+}
+
+const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
+
+/**
+ * A receipt as a page shows it: what ran, in order, and how each step ended.
+ *
+ * Not `renderReceipt`, which is the run inspector's rendering and carries the
+ * run id, the elapsed times and the wall clock. Every one of those moves
+ * between two identical runs, and a page that changed on every build would
+ * teach a reader to ignore it. What is left is what the run DECIDED — which is
+ * the only part worth pinning.
+ */
+export function renderRunSummary(r: Receipt): string {
+	const out: string[] = []
+	out.push(`outcome ${r.outcome}${r.haltNodeKey ? ` · halted at ${r.haltNodeKey}` : ''}`)
+	if (r.haltReason) out.push(`  reason: ${r.haltReason}`)
+	for (const n of r.nodes) {
+		out.push(` ▸ ${n.nodeKey.padEnd(22)} ${n.kind.padEnd(8)} ${n.result}`)
+		if (n.reason) out.push(`     reason: ${n.reason}`)
+		if (n.recoveredAsEmpty) out.push(`     recovered as empty — the run continued without it`)
+		if (n.samplingIgnored?.length)
+			out.push(`     ignored samplers: ${n.samplingIgnored.join(', ')}`)
+	}
+	for (const e of r.emitted)
+		out.push(
+			` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${plural(e.subscribers, 'subscriber')}`,
+		)
+	out.push(
+		` consumption: ${plural(r.consumption.tokens, 'token')}, ` +
+			`${plural(r.consumption.nodeExecutions, 'node execution')}`,
+	)
+	return out.join('\n')
+}
 
 // ── Equivalence ─────────────────────────────────────────────────────────────
 

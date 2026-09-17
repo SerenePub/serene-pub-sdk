@@ -22,7 +22,7 @@
 import type { Extension, Descriptor, I18n } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import { compile } from '@serene-pub/sdk'
-import { summarizeType, type TypeSummary } from './codegen.js'
+import { summarizeDefinition, type DefinitionSummary } from './codegen.js'
 
 // ── Findings ────────────────────────────────────────────────────────────────
 
@@ -45,12 +45,13 @@ export interface Manifest {
 	version: string
 	description?: string
 	engines?: Record<string, string>
-	/** Node types this plugin registers, summarized for the audit screen (10 §10.2). */
-	types: TypeSummary[]
+	/** Node definitions this plugin registers, summarized for the audit screen (10 §10.2). */
+	nodeDefinitions: DefinitionSummary[]
+	/** The three extension callables (R-1): handlers, lifecycle callbacks, event listeners. */
 	hooks: {
-		pipeline: Array<{ typeId: string; visibility: 'private' | 'public'; runtime: 'process' }>
-		lifecycle: Array<{ moment: string; cadence?: string }>
-		event: Array<{ event: string }>
+		handlers: Array<{ definitionId: string; visibility: 'private' | 'public'; runtime: 'process' }>
+		lifecycleCallbacks: Array<{ moment: string; cadence?: string }>
+		eventListeners: Array<{ event: string }>
 	}
 	components: Array<{ surface: string; slug: string; framework: string; entry: string }>
 	settings?: Record<string, unknown>
@@ -76,8 +77,15 @@ export interface CompileResult {
 /** Calls whose arguments must be written out, and why a computed one is refused. */
 const MUST_BE_STATIC: Record<string, string> = {
 	defineExtension: 'the manifest is built from this call without running it',
+	handler:
+		'a handler assembled at runtime cannot appear in the manifest, so it could never be permitted',
+	lifecycleCallback: 'lifecycle moments are fixed; a computed one cannot be audited',
+	eventListener: 'an event subscription nobody can see is a side effect nobody consented to',
+	// The pre-rename spellings (deprecated aliases, one release): counted with
+	// their replacements so a plugin written against the previous SDK still
+	// packages.
 	pipelineHook:
-		'a hook assembled at runtime cannot appear in the manifest, so it could never be permitted',
+		'a handler assembled at runtime cannot appear in the manifest, so it could never be permitted',
 	lifecycleHook: 'lifecycle moments are fixed; a computed one cannot be audited',
 	eventHook: 'an event subscription nobody can see is a side effect nobody consented to',
 	component: 'surfaces are declared so core can render them without loading your code',
@@ -208,7 +216,7 @@ function isWrittenOut(raw: string, blanked: string): boolean {
 	const r = raw.trim()
 	// The scanner blanks string bodies so that a call written inside a comment or a string
 	// cannot be mistaken for a real one — which means a *legitimate* quoted argument also
-	// blanks to nothing. `eventHook('core:event/session-created@1', h)` is the most written-out
+	// blanks to nothing. `eventListener('core:event/session-created@1', h)` is the most written-out
 	// form there is, so emptiness only means "computed" when the raw text was not a literal.
 	const quoted = /^['"`]/.test(r)
 	if (!t && !quoted) return false
@@ -238,9 +246,9 @@ export interface StaticScan {
 	/** Declaration call sites found, for cross-checking against the evaluated module. */
 	declared: {
 		extensions: number
-		pipelineHooks: number
-		lifecycleHooks: number
-		eventHooks: number
+		handlers: number
+		lifecycleCallbacks: number
+		eventListeners: number
 		components: number
 	}
 }
@@ -259,9 +267,9 @@ export function scanSource(files: Array<{ path: string; text: string }>): Static
 	const permissions = new Set<string>()
 	const declared = {
 		extensions: 0,
-		pipelineHooks: 0,
-		lifecycleHooks: 0,
-		eventHooks: 0,
+		handlers: 0,
+		lifecycleCallbacks: 0,
+		eventListeners: 0,
 		components: 0,
 	}
 
@@ -276,9 +284,10 @@ export function scanSource(files: Array<{ path: string; text: string }>): Static
 				const close = matchParen(code, open)
 				if (close === -1) continue
 				if (name === 'defineExtension') declared.extensions++
-				if (name === 'pipelineHook') declared.pipelineHooks++
-				if (name === 'lifecycleHook') declared.lifecycleHooks++
-				if (name === 'eventHook') declared.eventHooks++
+				if (name === 'handler' || name === 'pipelineHook') declared.handlers++
+				if (name === 'lifecycleCallback' || name === 'lifecycleHook')
+					declared.lifecycleCallbacks++
+				if (name === 'eventListener' || name === 'eventHook') declared.eventListeners++
 				if (name === 'component') declared.components++
 
 				for (const [i, part] of topLevelSplit(code, open + 1, close).entries()) {
@@ -364,9 +373,9 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		return { documents: [], findings, ok: false }
 	}
 
-	const pipelineHooks = (e.hooks ?? []).filter((h) => h.__decl === 'pipeline-hook') as any[]
-	const lifecycle = (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-hook') as any[]
-	const events = (e.hooks ?? []).filter((h) => h.__decl === 'event-hook') as any[]
+	const handlers = (e.hooks ?? []).filter((h) => h.__decl === 'handler') as any[]
+	const lifecycle = (e.hooks ?? []).filter((h) => h.__decl === 'lifecycle-callback') as any[]
+	const events = (e.hooks ?? []).filter((h) => h.__decl === 'event-listener') as any[]
 
 	const mismatch = (kind: string, statically: number, evaluated: number) => {
 		if (statically === evaluated || statically === 0) return
@@ -381,9 +390,9 @@ export function compilePlugin(input: CompileInput): CompileResult {
 				'the manifest on some machines and present on others, so the audit screen stops being true.',
 		})
 	}
-	mismatch('pipelineHook', scan.declared.pipelineHooks, pipelineHooks.length)
-	mismatch('lifecycleHook', scan.declared.lifecycleHooks, lifecycle.length)
-	mismatch('eventHook', scan.declared.eventHooks, events.length)
+	mismatch('handler', scan.declared.handlers, handlers.length)
+	mismatch('lifecycleCallback', scan.declared.lifecycleCallbacks, lifecycle.length)
+	mismatch('eventListener', scan.declared.eventListeners, events.length)
 	mismatch('component', scan.declared.components, (e.components ?? []).length)
 
 	// A shape-bearing input type *is* a chat mode (19 §2), and the New Chat picker
@@ -392,9 +401,9 @@ export function compilePlugin(input: CompileInput): CompileResult {
 	// repeats the check because the evaluated extension may have been built against an
 	// older SDK — and warns on a missing description, which is a poorer card rather
 	// than a broken one.
-	for (const h of pipelineHooks) {
+	for (const h of handlers) {
 		const t = h.type as Descriptor | undefined
-		if (t?.kind !== 'input' || !t.sessionShape) continue
+		if (t?.kind !== 'inlet' || !t.sessionShape) continue
 		const at = locate(input.sources, t.id)
 		if (!hasDisplayText(t.i18n?.name))
 			findings.push({
@@ -438,9 +447,10 @@ export function compilePlugin(input: CompileInput): CompileResult {
 	}
 
 	// Subscriptions are a permission surface: a pipeline that runs on every message is a
-	// side effect a user consents to (11 §4), so it belongs in the manifest.
+	// side effect a user consents to (11 §4), so it belongs in the manifest. Since R-4
+	// the inlet lock is the only subscription a pipeline has.
 	const permissions = new Set(scan.permissions)
-	for (const p of e.pipelines ?? []) for (const s of p.subscribes) permissions.add(`event:${s}`)
+	for (const p of e.pipelines ?? []) if (p.input?.event) permissions.add(`event:${p.input.event}`)
 	for (const h of events) permissions.add(`event:${h.event}`)
 
 	const manifest: Manifest = {
@@ -450,15 +460,15 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		version: e.version,
 		description: e.description,
 		engines: e.engines as Record<string, string> | undefined,
-		types: pipelineHooks.map((h) => summarizeType(h.type)),
+		nodeDefinitions: handlers.map((h) => summarizeDefinition(h.type)),
 		hooks: {
-			pipeline: pipelineHooks.map((h) => ({
-				typeId: h.type.id,
+			handlers: handlers.map((h) => ({
+				definitionId: h.type.id,
 				visibility: h.visibility,
 				runtime: h.runtime ?? 'node',
 			})),
-			lifecycle: lifecycle.map((h) => ({ moment: h.moment, cadence: h.cadence })),
-			event: events.map((h) => ({ event: h.event })),
+			lifecycleCallbacks: lifecycle.map((h) => ({ moment: h.moment, cadence: h.cadence })),
+			eventListeners: events.map((h) => ({ event: h.event })),
 		},
 		components: (e.components ?? []).map((c) => ({
 			surface: c.surface,
@@ -501,9 +511,9 @@ export function cannotDo(m: Manifest): string[] {
 	if (!has('core:write')) out.push('cannot write to any of your data')
 	if (!has('core:read')) out.push('cannot read your chats, characters or messages')
 	if (!has('provider:call')) out.push('cannot call a model or reach any external service')
-	if (!m.hooks.event.length && !m.permissions.some((p) => p.startsWith('event:')))
+	if (!m.hooks.eventListeners.length && !m.permissions.some((p) => p.startsWith('event:')))
 		out.push('cannot run in response to anything you do')
 	if (!m.components.length) out.push('cannot render anything in the interface')
-	if (!m.hooks.lifecycle.some((h) => h.cadence)) out.push('cannot run on a schedule')
+	if (!m.hooks.lifecycleCallbacks.some((h) => h.cadence)) out.push('cannot run on a schedule')
 	return out
 }

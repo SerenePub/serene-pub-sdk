@@ -16,7 +16,7 @@
  * deriving the requirement from descriptors is complete by construction — independent of
  * what the exporter did, and independent of whether the exporter was even configured.
  */
-import { getType } from './descriptors.js';
+import { getDefinition } from './descriptors.js';
 import { capabilityLabel, satisfies, } from './capabilities.js';
 /**
  * A slot this node reads from ANOTHER node's config (16 §5b-i).
@@ -54,14 +54,14 @@ const sharedWithAnotherNode = (n, slot) => {
 export function requiredConnections(doc) {
     const out = [];
     for (const n of doc.nodes) {
-        const d = getType(`${n.typeId}@${n.typeVersion}`);
+        const d = getDefinition(`${n.definitionId}@${n.definitionVersion}`);
         for (const [slot, decl] of Object.entries(d?.slots ?? {}))
             if (decl.kind === 'connection' && !sharedWithAnotherNode(n, slot))
                 out.push({
                     nodeKey: n.key,
                     slot,
                     kind: decl.shape,
-                    typeId: n.typeId,
+                    definitionId: n.definitionId,
                     ...(decl.requires ? { requires: decl.requires } : {}),
                     ...(decl.optional ? { optional: decl.optional } : {}),
                 });
@@ -97,7 +97,7 @@ export const renderRequirement = (r) => {
     const what = caps.length
         ? `a connection that supports ${caps.join(' and ')}`
         : `a ${r.kind ?? 'connection'} connection`;
-    return `${r.nodeKey}.${r.slot} — needs ${what} (${r.typeId})`;
+    return `${r.nodeKey}.${r.slot} — needs ${what} (${r.definitionId})`;
 };
 /**
  * Which bound connections cannot do what their slot asks.

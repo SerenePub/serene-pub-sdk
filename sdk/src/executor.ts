@@ -6,8 +6,8 @@
  * but never waiting, consumption budgets, per-kind injection, and core-emitted events.
  */
 
-import type { SpecDocument, DocNode } from './document.js'
-import { getType, type Kind } from './descriptors.js'
+import { envoyConfigKeysOf, type SpecDocument, type DocNode } from './document.js'
+import { getDefinition, scriptPointsOf, type Kind } from './descriptors.js'
 import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
 import type { Receipt, NodeReceipt, Outcome, ScriptApplicationRecord } from './receipt.js'
 import {
@@ -20,12 +20,7 @@ import {
 	type ResolvedConnection,
 } from './config.js'
 import { resolveSamplingValues } from './sampling.js'
-import type {
-	CapabilityId,
-	CapabilitySet,
-	Grade,
-	OptionalCapsOf,
-} from './capabilities.js'
+import type { CapabilityId, CapabilitySet, Grade, OptionalCapsOf } from './capabilities.js'
 import {
 	hashPayload,
 	isGated,
@@ -35,7 +30,7 @@ import {
 } from './review.js'
 import { isSecret } from './settings.js'
 import { previewTarget, roughTokens, type PreviewReport, type PreviewBlock } from './preview.js'
-import { resolveBlockMode } from './blocks.js'
+import { resolveClauseMode } from './clauses.js'
 import { ITEM as ITEM_KEY } from './scope.js'
 import { isAllocatedContext, measureWire, type AllocatedContext, type WireMeasure } from './wire.js'
 
@@ -116,7 +111,7 @@ export const cancelled = (reason: string): Result<never> => ({
 	reason,
 })
 
-// ── The union shape for async blocks and maps (13 §1) ───────────────────────
+// ── The union shape for gather, each, loop and junction clauses (13 §1) ─────
 
 /**
  * One entry per branch, in **declaration order** — never completion order, which is
@@ -128,7 +123,7 @@ export interface BranchResult {
 	index: number
 	result: Result
 	/**
-	 * route blocks only (20 §10): whether this branch's predicate selected it.
+	 * junction clauses only (20 §10): whether this branch's predicate selected it.
 	 * A skipped branch publishes `halt('not selected')` with `fired: false`;
 	 * the union's `ok`/`values` read the fired branches. Absent on
 	 * async/map/loop, whose branches all ran by construction.
@@ -136,7 +131,7 @@ export interface BranchResult {
 	fired?: boolean
 }
 
-/** What a block publishes. `main` aliases `branches` so `$ref(blockId)` works bare. */
+/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. */
 export interface BranchResults {
 	branches: BranchResult[]
 	main: BranchResult[]
@@ -150,7 +145,7 @@ export interface BranchResults {
  *
  * A single shared map cannot hold two iterations of a map at once, which is why the
  * earlier draft forced every map sequential. A scope chain fixes that and is also what
- * makes nested blocks correct: an iteration writes into its own scope and reads through
+ * makes nested clauses correct: an iteration writes into its own scope and reads through
  * to its parent, so two iterations never see each other's intermediate values.
  */
 class ValueScope {
@@ -180,6 +175,7 @@ export const isCommitted = (w: WriteResult): w is Extract<WriteResult, { status:
 	w.status === 'committed'
 
 import type { LogLevel } from './hooks.js'
+import { isStatusText, sameStatus, type LastStatus, type StatusText } from './status.js'
 
 // ── Injection surfaces, per kind (F11) ──────────────────────────────────────
 
@@ -188,6 +184,46 @@ export interface TaskCtx {
 	random?: () => number
 	signal: AbortSignal
 	progress(message: string): void
+	/**
+	 * What this node is doing, for the person watching (R-19).
+	 *
+	 * Callable at any point, by any kind: a query says *{speaker} is
+	 * thinking*, the oracle five nodes later says *{speaker} is typing*. The
+	 * text is a locale map with `{vars}`; the client resolves the locale, and
+	 * `{speaker}` is the one variable the host fills (a handler is blind to
+	 * who is speaking, and stays so). A status persists until the next one
+	 * or the run's end; the host hears each change through
+	 * `RunOptions.onStatus`.
+	 *
+	 * **Ephemeral** (F34): never a parameter, never declared on the
+	 * definition, never a node row on the receipt. The one record the
+	 * receipt keeps is the *last* status, and only when the run ended
+	 * `halt`, `err` or `cancelled` — `Receipt.lastStatus`. A malformed text
+	 * (no `en`) is dropped with a note on the node row rather than failing
+	 * the node: a typo in a status must never cost somebody their reply.
+	 *
+	 * Always supplied by the executor; optional on the type for the same
+	 * reason `reportCacheUsage` is — an older host, and every hand-built
+	 * ctx in a test, is still a `TaskCtx` — so a handler calls it as
+	 * `ctx.status?.(…)`. A status is progress, and progress must never be
+	 * the reason a handler throws.
+	 *
+	 * ⏳ A process-transport plugin hook's ctx carries `{ input }` only
+	 * today; `ctx.status` is core-handler only until the sandbox ctx is
+	 * projected (U6). A plugin node calling it sees nothing throw — the
+	 * optional-chain above is what makes that quiet rather than a crash —
+	 * it just has no status to set.
+	 */
+	status?(text: StatusText): void
+	/**
+	 * Which iteration of an `each` or `loop` body this invocation is —
+	 * present only inside one, the `random` posture. `index` is 0-based;
+	 * `count` is how many the `each` has and is absent inside a `loop`,
+	 * whose `max` is a ceiling rather than a total. Identity for a status
+	 * (*summarising part 2 of 5*), never a value: the item itself arrives on
+	 * the port the spec wired.
+	 */
+	iteration?: { index: number; count?: number }
 	log(level: LogLevel, message: string, detail?: unknown): void
 	/**
 	 * This run's tokenizer, already loaded and therefore **synchronous**.
@@ -224,7 +260,7 @@ export interface QueryCtx extends TaskCtx {
 	read(table: string, q?: unknown): unknown
 	/** Deliberately absent: fetch. A Query may not reach the network (16 §1). */
 }
-export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
+export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
 	/** Material is injected here per call and never readable from config. */
 	call(payload: unknown): Promise<unknown>
 	connectionMetadata: Record<string, unknown>
@@ -245,7 +281,7 @@ export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends T
 	 * are opposite findings and a zero collapses them.
 	 *
 	 * Optional so that an older host, and every hand-built ctx in a test, is
-	 * still a `ProviderCtx` — the binding calls it as `ctx.reportCacheUsage?.()`.
+	 * still a `OracleCtx` — the binding calls it as `ctx.reportCacheUsage?.()`.
 	 */
 	reportCacheUsage?(usage: { prompt?: number; cached?: number; cacheWrite?: number }): void
 	/**
@@ -271,7 +307,7 @@ export interface ProviderCtx<Caps extends CapabilityId = CapabilityId> extends T
 	 */
 	can(id: Caps): Grade | false
 }
-export interface ConsumerCtx extends TaskCtx {
+export interface OutletCtx extends TaskCtx {
 	commit(payload: unknown): Promise<Record<string, unknown>>
 	emit(handle: string, payload: unknown): void
 }
@@ -279,7 +315,7 @@ export interface ConsumerCtx extends TaskCtx {
 export type Hook = (input: any, ctx: any) => Result | Promise<Result>
 
 /**
- * A Provider binding, with `ctx.can()` narrowed to what its own type declared.
+ * An oracle handler, with `ctx.can()` narrowed to what its own definition declared.
  *
  * The one hop that matters. `pin` already carries the descriptor's literal type
  * through, so reading `optional` off it here is enough — there is no need to
@@ -308,15 +344,12 @@ export function providerBinding<
 	// collapses to `never` — compiling fine, narrowing nothing. Splitting the
 	// calls forces `D` to settle first.
 	return (
-		fn: (
-			input: any,
-			ctx: ProviderCtx<OptionalCapsOf<D['slots']>>,
-		) => Result | Promise<Result>,
+		fn: (input: any, ctx: OracleCtx<OptionalCapsOf<D['slots']>>) => Result | Promise<Result>,
 	): Hook => fn as Hook
 }
 
 export interface Bindings {
-	[typeIdAtVersion: string]: Hook
+	[definitionIdAtVersion: string]: Hook
 }
 
 // ── Deterministic RNG from the run seed (F11) ───────────────────────────────
@@ -341,8 +374,13 @@ export function seededRandom(seed: string): () => number {
 export interface NodeEvent {
 	phase: 'start' | 'end'
 	nodeKey: string
-	typeId: string
-	kind: string
+	definitionId: string
+	/**
+	 * The node's kind, typed so a consumer that compares it against a
+	 * spelling the vocabulary has since retired fails to compile rather than
+	 * silently never matching (the U3 rename left one progress card dead).
+	 */
+	kind: Kind
 	/** Invocations begun so far — a done-count, monotonic within the run. */
 	seq: number
 	/**
@@ -364,7 +402,7 @@ export interface NodeEvent {
  */
 export interface ScriptHookSite {
 	nodeKey: string
-	typeId: string
+	definitionId: string
 	slot: string
 	phase: 'before' | 'after'
 	port: string
@@ -382,6 +420,13 @@ export interface ScriptHookSite {
 export interface ScriptChainOutcome {
 	value: unknown
 	applications: ScriptApplicationRecord[]
+	/**
+	 * What the applier had to say about the chain AS A WHOLE, beside the
+	 * per-link records — a value it declined to hand on, say. Folded into the
+	 * node's `notes` on the receipt, so a reader finds it where the node's
+	 * other asides are rather than under a link that did nothing wrong.
+	 */
+	notes?: string[]
 }
 
 /**
@@ -407,6 +452,14 @@ export type ScriptChainApplier = (
 
 // ── Run options ─────────────────────────────────────────────────────────────
 
+/** A run's place in a tree of runs — see `RunOptions.lineage`. */
+export interface RunLineage {
+	parentRunId: string
+	rootRunId: string
+	/** 0 for a root; a child is its parent's depth plus one. */
+	depth: number
+}
+
 export interface RunOptions {
 	input: unknown
 	bindings: Bindings
@@ -416,9 +469,26 @@ export interface RunOptions {
 	triggerSource?: Receipt['triggerSource']
 	triggerRef?: string
 	actorUserId?: string
+	/**
+	 * Who portrays each participant this run concerns — the host's answer,
+	 * resolved before `run` is called and stamped on the receipt at
+	 * construction, so it is pinned before the first node (R-21 (4)). The
+	 * executor never reads it and no node can: a definition that needs the
+	 * answer declares an in-port and the host wires it.
+	 */
+	portrayals?: Receipt['portrayals']
+	/**
+	 * Where this run stands in a tree of runs (01 §8 *lineage*): the run
+	 * that dispatched it, the root of the tree, and how deep. Stamped on the
+	 * receipt at construction as `parentRunId`, `rootRunId` and `depth`; a
+	 * run nothing dispatched is its own root at depth 0. The host enforces
+	 * the per-root caps at dispatch (`form-addressed`, U5d) and reads these
+	 * back off the receipt; the executor only records them.
+	 */
+	lineage?: RunLineage
 	/** Instance ceiling — config may not exceed it (F36). */
 	timeoutCeilingMs?: number
-	/** Force every block sequential, as an admin may (01 §4). */
+	/** Force every clause sequential, as an admin may (01 §4). */
 	forceSequential?: boolean
 	budget?: { tokens?: number; nodeExecutions?: number }
 	/** Which subscribers core would dispatch to, for the emitted record. */
@@ -445,6 +515,20 @@ export interface RunOptions {
 	 */
 	onNode?: (event: NodeEvent) => void
 	/**
+	 * A node set its status (R-19) — `ctx.status` on any kind's ctx.
+	 *
+	 * Fired with the node's key and the text as the handler wrote it: the
+	 * host fills `{speaker}` (`HOST_FILLED_STATUS_VARS`), routes the text to
+	 * the run's live row, its progress card and the session list, and
+	 * resolves nothing — the locale is the client's. Fired only when the
+	 * text CHANGES: a second node repeating the status the first set is not
+	 * a new status, and six parallel retrieval reads all saying *thinking*
+	 * are one status, not six. Ephemeral like `onNode` (F34): not recorded,
+	 * except as `Receipt.lastStatus` on a run that did not end `ok`. An
+	 * observer that throws is its own problem.
+	 */
+	onStatus?: (nodeKey: string, text: StatusText) => void
+	/**
 	 * Time this run sat in the admin-visible queue before being dequeued (13 §3).
 	 * Recorded, and deliberately **not** added to any elapsed figure: queue wait
 	 * consumes no budget (F13) and trips no timeout (F36) — a run's clock starts
@@ -469,14 +553,68 @@ export interface RunOptions {
 	compactHaltReceipts?: boolean
 	/**
 	 * Debug mode in chat: run normally, then **halt at the pre-call substrate** instead of
-	 * invoking the Provider — after the input resolves and the payload is formed, so the
+	 * invoking the oracle — after the input resolves and the payload is formed, so the
 	 * numbers shown are the numbers that would have been sent (src/preview.ts).
 	 *
-	 * `true` stops at the first Provider **on the spine**; pass `atNode` to override. The
+	 * `true` stops at the first oracle **on the spine**; pass `atNode` to override. The
 	 * preview costs whatever ran before it, including the embedding call inside the gather
 	 * block — a preview that skipped retrieval would show a context nobody would get.
+	 *
+	 * A preview is a **dry run** unless `dry` says otherwise — see there. The
+	 * pipeline creates its own reply row now (R-17), as an outlet placed before
+	 * the oracle; a preview that committed it would leave a row behind for
+	 * every token estimate.
 	 */
 	preview?: boolean | { atNode?: string }
+	/**
+	 * Perform no writes (R-21 (1), F36).
+	 *
+	 * Every outlet still runs — its binding is invoked, its payload is formed,
+	 * the review gate still sees it — but `ctx.commit` returns a **synthetic
+	 * id** (`dry:<nodeKey>`) instead of reaching the host, `ctx.emit` reaches
+	 * nothing, the node row is marked `dry: true`, and the event the write
+	 * would have caused is recorded flagged `dry` rather than as emitted.
+	 * Downstream nodes read the synthetic id exactly as they would a real one,
+	 * so the run's shape is the shape a real run has.
+	 *
+	 * Defaults to `true` when `preview` is set and `false` otherwise. Pass it
+	 * explicitly to run a document to completion without leaving anything
+	 * behind — the oracle is still called, because nothing here is a stand-in
+	 * for the model.
+	 *
+	 * ⚠ **For a plugin author:** a preview of your spec performs none of its
+	 * writes, including any outlet you placed *before* the node the preview
+	 * halts at — that outlet runs, its binding is invoked, and its commit is
+	 * a synthetic id. If a downstream node in your spec needs a real row to
+	 * exist during a preview, that is a design to reconsider rather than a
+	 * flag to flip: there is no per-outlet exemption, and `dry: false` on a
+	 * preview is the host's call, not the document's.
+	 */
+	dry?: boolean
+	/**
+	 * The run has ended, whatever way it ended.
+	 *
+	 * Called exactly once, after the receipt is final and before it is
+	 * returned, with the outcome and the run's **live row** — the row the most
+	 * recent live-row outlet committed (see `Descriptor.liveRow`). This is the
+	 * one seam a host has for the guarantee no node can give: a run stopped
+	 * mid-stream has nothing left to run, so the row its placeholder created
+	 * would stay generating forever unless the host finalises it here. The
+	 * partial text is the host's — it owns the stream — which is why the
+	 * summary carries the row and not the text.
+	 *
+	 * Awaited, so a host can finish its row before the receipt is stored. A
+	 * throwing hook is absorbed: finalising a row is the host's promise to its
+	 * users, and a broken promise must not also cost the receipt.
+	 *
+	 * **Whatever way it ended** includes the run throwing. A host seam that
+	 * fails outside a binding — a reviewer, a slot resolution — propagates
+	 * out of `run`, and before this was a `finally` it propagated past the
+	 * hook, so the placeholder a fresh turn had made stayed generating with
+	 * nobody left to finish it. Now the hook fires first with `kind: 'err'`
+	 * and `error` set to the thrown object, and the throw continues after it.
+	 */
+	onRunEnd?: (end: RunEnd) => void | Promise<void>
 	/**
 	 * Which tokenizer this run budgets with — an **id**, not a function.
 	 *
@@ -511,7 +649,7 @@ export interface RunOptions {
 	 *
 	 * Absent, every service is the in-memory stand-in this draft has always used —
 	 * which is what keeps the SDK's own suite hermetic. Present, a Query's `read`
-	 * reaches a real database and a Consumer's `commit` writes a real row.
+	 * reaches a real database and an outlet's `commit` writes a real row.
 	 */
 	host?: HostServices
 }
@@ -526,23 +664,31 @@ export interface RunOptions {
  * substrate that the review gate, the budget and the receipt all sit in.
  *
  * So the shape here is deliberate: **a binding describes the effect and the host
- * performs it.** A Consumer returns what it wants written, and `commit` writes it. That
- * is already how a sidecar Consumer has to work (F19 — no DB channel across a process
- * boundary), and having in-process and out-of-process Consumers obey the same rule
+ * performs it.** An outlet returns what it wants written, and `commit` writes it. That
+ * is already how a sidecar outlet has to work (F19 — no DB channel across a process
+ * boundary), and having in-process and out-of-process outlets obey the same rule
  * means the review gate sees the same thing in both cases: a payload, before anything
  * happened.
  */
 export interface HostServices {
 	/** Scoped read for a Query. The node is passed so the host can enforce scope (F30). */
 	read?(table: string, query: unknown, node: NodeRef): unknown | Promise<unknown>
-	/** Perform a Consumer's described write and return the row identity. */
+	/** Perform an outlet's described write and return the row identity. */
 	commit?(payload: unknown, node: NodeRef): Promise<Record<string, unknown>>
-	/** Dispatch a Provider call. Credentials are injected here and never readable (F18). */
-	call?(payload: unknown, node: NodeRef): Promise<unknown>
+	/**
+	 * Dispatch an oracle call. Credentials are injected here and never readable (F18).
+	 *
+	 * `run` carries the run-level facts a call may need and a node may not
+	 * see — today the **live row** (R-21 (2)). Streaming is run-level: the
+	 * oracle publishes its stream and stays blind to messages; the host routes
+	 * it to the row this run's placeholder created, if there is one. Passed on
+	 * every call rather than kept anywhere a binding could read.
+	 */
+	call?(payload: unknown, node: NodeRef, run: RunFacts): Promise<unknown>
 	/** Core emits; a node only names the handle (F8). */
 	emit?(handle: string, payload: unknown, node: NodeRef): void
 	/**
-	 * Connection **metadata** for a Provider — readable. Material is never returned
+	 * Connection **metadata** for an oracle — readable. Material is never returned
 	 * here; it is applied inside `call` and never crosses into a binding (F18).
 	 */
 	connection?(node: NodeRef): {
@@ -560,9 +706,43 @@ export interface HostServices {
 
 export interface NodeRef {
 	key: string
-	typeId: string
-	typeVersion: number
+	definitionId: string
+	definitionVersion: number
 	kind: string
+}
+
+/**
+ * What the executor knows about the run as a whole, handed to the host.
+ *
+ * **Not** a value: nothing here lands on a port or in a node's input, which
+ * is what keeps the oracle blind to messages. A binding asks for text and gets
+ * text; the host, which is the one party that can write a row, is told which
+ * row this run is currently filling.
+ */
+export interface RunFacts {
+	/**
+	 * The row the most recent live-row outlet committed in this run
+	 * (`Descriptor.liveRow`), or undefined when none has. A create → update
+	 * pair on one row inside one run is one primary row (01 §7 restated, R-17);
+	 * this is that row while the run is between the two.
+	 */
+	liveRow?: string | number
+	/** Whether this run performs writes — see `RunOptions.dry`. */
+	dry: boolean
+}
+
+/** What `RunOptions.onRunEnd` is told. */
+export interface RunEnd extends RunFacts {
+	kind: Outcome
+	receipt: Receipt
+	/**
+	 * What the run THREW, when it ended by throwing rather than by a node's
+	 * verdict — a host seam that failed outside any binding's try (a reviewer
+	 * that could not push its form, a slot that would not resolve). `kind` is
+	 * `err` and the receipt carries the message; this is the object, for a
+	 * host whose redaction rule needs the class. Absent on every other end.
+	 */
+	error?: unknown
 }
 
 const EMPTY_WORLD: ConfigWorld = {
@@ -614,13 +794,18 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	const seed = opts.seed ?? 'seed:0'
 	const rng = seededRandom(seed)
 	const now = opts.now ?? (() => Date.now())
-	// Blocks are addressed alongside nodes so a block can carry a setting of
-	// its own — its execution mode. Keys cannot collide: a block id qualifies
+	// Clauses are addressed alongside nodes so a clause can carry a setting of
+	// its own — its execution mode. Keys cannot collide: a clause id qualifies
 	// the nodes inside it (`drafting` contains `drafting.item.draft`), so the
-	// block's own id is never also a node's.
+	// clause's own id is never also a node's.
 	const config: ResolvedConfig = resolveConfig(world, [
 		...doc.nodes.map((n) => n.key),
-		...doc.blocks.map((b) => b.id),
+		...doc.clauses.map((b) => b.id),
+		// An envoy's config (R-18 (2)) is addressed like a node's, at the
+		// synthetic key a `slot.prompts({ envoy })` compiled to; the host
+		// projects the genre's declaration there and the panel's deviations
+		// sit above it.
+		...envoyConfigKeysOf(doc),
 	])
 
 	// The one await a tokenizer costs, taken BEFORE `startedAt` is stamped: a
@@ -640,7 +825,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		triggerSource: opts.triggerSource ?? 'input',
 		triggerRef: opts.triggerRef,
 		actorUserId: opts.actorUserId,
-		depth: 0,
+		// Pinned at construction — before any node — and never touched again.
+		...(opts.portrayals ? { portrayals: opts.portrayals } : {}),
+		// Lineage likewise: a dispatched child names its parent and root
+		// here, before node 1; a root run has neither and stands at 0.
+		...(opts.lineage
+			? { parentRunId: opts.lineage.parentRunId, rootRunId: opts.lineage.rootRunId }
+			: {}),
+		depth: opts.lineage?.depth ?? 0,
 		queuedMs: opts.queuedMs,
 		startedAt: now(),
 		endedAt: 0,
@@ -658,6 +850,13 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 	/** Set the moment any node with declared effects is invoked — gates compaction. */
 	let effectfulNodeRan = false
+	/**
+	 * The status the run is showing right now (R-19): the last one any node
+	 * set. Ephemeral — it reaches the host through `onStatus` and lands on
+	 * the receipt only as `lastStatus`, and only when the run did not end
+	 * `ok` (R-21). Never on a node row (F34).
+	 */
+	let lastStatus: LastStatus | undefined
 
 	const previewAt = opts.preview
 		? previewTarget(
@@ -666,22 +865,32 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			)
 		: undefined
 
+	// A preview performs no writes (R-21 (1)); an explicit `dry` says so for a
+	// run that goes to the end.
+	const dry = opts.dry ?? !!opts.preview
+	/**
+	 * The run's live row — see `RunFacts.liveRow`. Set by the most recent
+	 * live-row outlet that committed, read by every oracle call after it, and
+	 * reported once more at the end so the host can finalise it.
+	 */
+	let liveRow: string | number | undefined
+
 	/**
 	 * Hoist what the panel needs into one place. Almost all of it is already recorded —
-	 * Assemble's allocation record and the Provider's resolved input. The only figure
+	 * Assemble's allocation record and the oracle's resolved input. The only figure
 	 * that exists nowhere else is the count of the formed payload.
 	 */
 	const buildPreview = (
 		node: DocNode,
 		input: Record<string, unknown>,
-		typeId: string,
+		definitionId: string,
 		targetedBy: PreviewReport['targetedBy'],
 		wire?: WireMeasure,
 		wireCtx?: AllocatedContext,
 	): PreviewReport => {
 		const ctxValue = (input as any).context ?? (input as any).main ?? input
 		const conn = (input as any).connection
-		const budgetNode = doc.nodes.find((n) => n.typeId === 'core:task/context-budget')
+		const budgetNode = doc.nodes.find((n) => n.definitionId === 'core:task/context-budget')
 		const budgetValue = budgetNode ? values.get(budgetNode.key) : undefined
 
 		// Prefer the allocated blocks, which carry the trail. Fall back to sniffing an
@@ -726,7 +935,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			allocatedSource?.allocation.budget
 		return {
 			atNode: node.key,
-			typeId,
+			definitionId,
 			targetedBy,
 			connection: conn
 				? {
@@ -785,8 +994,6 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			throw new BudgetExceeded('token budget exceeded')
 	}
 
-	// Blocks are executed as units when their first member is reached.
-	const emittedBlocks = new Set<string>()
 	const ordered = doc.nodes.slice().sort((a, b) => a.position - b.position)
 
 	const resolveInput = (node: DocNode, scope: ValueScope) => {
@@ -800,14 +1007,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		return cfg
 	}
 
-/**
- * Row-id equality across the string/number divide.
- *
- * The panel stores a pick as a number; `buildWorld` projects ids as strings.
- * Neither is wrong on its own, and `===` between them is quietly always false.
- */
-const sameId = (a: unknown, b: unknown): boolean =>
-	a != null && b != null && String(a) === String(b)
+	/**
+	 * Row-id equality across the string/number divide.
+	 *
+	 * The panel stores a pick as a number; `buildWorld` projects ids as strings.
+	 * Neither is wrong on its own, and `===` between them is quietly always false.
+	 */
+	const sameId = (a: unknown, b: unknown): boolean =>
+		a != null && b != null && String(a) === String(b)
 
 	const resolveSlot = (node: DocNode, ref: SlotRef) => {
 		const targetKey =
@@ -818,9 +1025,9 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			node.key
 		const slotName = ref.slot
 		if (slotName === 'connection') {
-			const d = getType(`${node.typeId}@${node.typeVersion}`)
+			const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
-			const td = getType(`${targetNode.typeId}@${targetNode.typeVersion}`)
+			const td = getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)
 			const kind = td?.shape ?? d?.shape
 			const stored = config[targetKey]?.['connection']?.[SLOT_VALUE]
 			/**
@@ -851,9 +1058,14 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			// installs holds the very connection that was picked, so the bug
 			// looked fixed.
 			const conn =
-				chosenId == null
+				chosenId == null ? undefined : world.connections.find((c) => sameId(c.id, chosenId))
+			const modelId = slotConnectionModelId(stored)
+			const model =
+				modelId == null
 					? undefined
-					: world.connections.find((c) => sameId(c.id, chosenId))
+					: world.models?.find(
+							(m) => sameId(m.id, modelId) && sameId(m.connectionId, conn?.id),
+						)
 			// metadata only — material is injected by the executor at call time (01 §10)
 			return conn
 				? ({
@@ -865,7 +1077,8 @@ const sameId = (a: unknown, b: unknown): boolean =>
 						// how a model chosen in a panel reached no request. Null
 						// when the slot named no model, the fallback included:
 						// `activeConnection` holds endpoint ids alone.
-						modelId: slotConnectionModelId(stored),
+						modelId,
+						contextWindow: model?.contextWindow ?? null,
 					} satisfies ResolvedConnection)
 				: null
 		}
@@ -879,7 +1092,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			 * ⚠ The fallback was missing, and its absence was invisible because
 			 * dispatch has one: a slot with no pick resolved to `{}` here while
 			 * the call still went out against the instance default's window. A
-			 * node that only forwards this (every Provider — the host reduces it
+			 * node that only forwards this (every oracle — the host reduces it
 			 * back to a row id) could not tell. A node that READS it could: the
 			 * summarize batch cutter has to fit a prompt into that window, and
 			 * with `{}` it clamped against nothing on every install that had not
@@ -891,8 +1104,8 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			 */
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
 			const kind =
-				getType(`${targetNode.typeId}@${targetNode.typeVersion}`)?.shape ??
-				getType(`${node.typeId}@${node.typeVersion}`)?.shape
+				getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)?.shape ??
+				getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.shape
 			// Split from the fallback below, because only this half is a PICK.
 			// The reference handed to the host is the pipeline config speaking
 			// (`pipelineConfig`, tier 2); the instance default is a tier the host
@@ -901,9 +1114,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			// pipeline had named it would relabel the tier a resolution reports
 			// while changing no value — a lie with no upside.
 			const picked = config[targetKey]?.['sampling']?.[SLOT_VALUE] as
-				| string
-				| number
-				| undefined
+				string | number | undefined
 			const refId = picked ?? (kind ? (world.activeSampling?.[kind] ?? undefined) : undefined)
 			const base = world.samplingConfigs.find((s) => sameId(s.id, refId))
 			const overrides = { ...(config[node.key]?.['sampling'] ?? {}) }
@@ -932,8 +1143,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			// row this world does not carry resolves to no values, and attaching
 			// its id anyway would hand the host a window the budget above never
 			// saw — the same divergence, pointed the other way.
-			if (picked != null && base)
-				(values as Record<symbol, unknown>)[SLOT_REF] = base.id
+			if (picked != null && base) (values as Record<symbol, unknown>)[SLOT_REF] = base.id
 			return values
 		}
 		if (slotName === 'params') {
@@ -942,20 +1152,59 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			// a spec that did not override `budget` got `undefined` — which reads
 			// downstream as a budget of zero, excludes every block, and renders a
 			// context with its lore silently missing.
-			//
-			// Read from the *target*, both the schema and the values: a shared
-			// params slot is the owner's policy, so its defaults are the
-			// owner's too. Reading the schema here and the values there would
-			// fill a query's gaps with the query's own defaults and call the
-			// result the ranker's.
+			const paramsSchemaOf = (n: DocNode) =>
+				((getDefinition(`${n.definitionId}@${n.definitionVersion}`)?.slots as any)?.[
+					slotName
+				]?.schema ?? {}) as Record<string, { default?: unknown; shared?: boolean }>
+			const resolveAt = (
+				n: DocNode,
+				schema: Record<string, { default?: unknown }>,
+				keep: (field: string) => boolean,
+			) => {
+				const out: Record<string, unknown> = {}
+				for (const [k, v] of Object.entries(schema))
+					if (keep(k) && v?.default !== undefined) out[k] = v.default
+				for (const [k, v] of Object.entries(config[n.key]?.[slotName] ?? {}))
+					if (keep(k)) out[k] = v
+				return out
+			}
+			const ownSchema = paramsSchemaOf(node)
+			if (targetKey === node.key) return resolveAt(node, ownSchema, () => true)
+
+			/**
+			 * A reference, and two addresses (R-7 P2, refined 2026-09-16 — see
+			 * `FieldDecl.shared`). The referencing node's OWN declaration says
+			 * which of its fields it holds in common with the owner: those
+			 * resolve at the owner — the owner's declared default under the
+			 * owner's stored value, because a shared setting is the owner's
+			 * policy and filling a lane's gaps from the lane's own defaults
+			 * would call the result the owner's. Every other field is the
+			 * node's own — its share of the window, its ceiling — and resolves
+			 * at its own address exactly as an unreferenced slot would, so one
+			 * `slot.params({ node })` carries both halves and the spec names
+			 * the owner once.
+			 *
+			 * The owner's schema is read for the shared half so a shared field
+			 * the owner declares under a different default takes the owner's;
+			 * a shared field the owner does not declare at all keeps the
+			 * referencing node's default, so a reference to an owner of a
+			 * different definition degrades to "own everywhere" rather than to
+			 * `undefined`.
+			 */
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
-			const d = getType(`${targetNode.typeId}@${targetNode.typeVersion}`)
-			const schema = (d?.slots as any)?.[slotName]?.schema as
-				Record<string, { default?: unknown }> | undefined
-			const defaults: Record<string, unknown> = {}
-			for (const [k, v] of Object.entries(schema ?? {}))
-				if (v?.default !== undefined) defaults[k] = v.default
-			return { ...defaults, ...(config[targetKey]?.[slotName] ?? {}) }
+			const ownerSchema = paramsSchemaOf(targetNode)
+			const shared = new Set(
+				Object.entries(ownSchema)
+					.filter(([, v]) => v?.shared === true)
+					.map(([k]) => k),
+			)
+			const own = resolveAt(node, ownSchema, (k) => !shared.has(k))
+			const fromOwner = resolveAt(
+				targetNode,
+				{ ...Object.fromEntries([...shared].map((k) => [k, ownSchema[k]!])), ...ownerSchema },
+				(k) => shared.has(k),
+			)
+			return { ...own, ...fromOwner }
 		}
 		// The generic slots (prompts, template, settings) honour the reference
 		// target too: a shared prompts slot reads the *owner's* configured
@@ -970,16 +1219,17 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		scope: ValueScope,
 		blockMode?: 'sequential' | 'parallel',
 		iteration?: number,
+		iterationCount?: number,
 	): Promise<Result> => {
-		const d = getType(`${node.typeId}@${node.typeVersion}`)
-		if (!d) return err(`unknown type ${node.typeId}@${node.typeVersion}`)
-		const hook = opts.bindings[`${node.typeId}@${node.typeVersion}`]
+		const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
+		if (!d) return err(`unknown type ${node.definitionId}@${node.definitionVersion}`)
+		const hook = opts.bindings[`${node.definitionId}@${node.definitionVersion}`]
 		const started = now()
 		const nr: NodeReceipt = {
 			nodeKey: node.key,
 			seq: seq++,
 			kind: node.kind,
-			typeId: `${node.typeId}@${node.typeVersion}`,
+			definitionId: `${node.definitionId}@${node.definitionVersion}`,
 			result: 'ok',
 			startedAt: started,
 			endedAt: started,
@@ -1032,7 +1282,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					const outcome = await opts.applyScripts(
 						{
 							nodeKey: node.key,
-							typeId: nr.typeId,
+							definitionId: nr.definitionId,
 							slot: slotName,
 							phase,
 							port,
@@ -1044,6 +1294,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					)
 					if (outcome.applications.length)
 						nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
+					if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
 					// Alias-preserving: a task publishing {main, messages} as one
 					// value keeps agreeing with itself after the rewrite — a
 					// downstream edge may pull either name.
@@ -1061,7 +1312,9 @@ const sameId = (a: unknown, b: unknown): boolean =>
 						{
 							scriptId: -1,
 							name: '(engine)',
-							typeId: nr.typeId,
+							// The engine itself failed, before any link ran: there is
+							// no script kind to name, so the record says so.
+							scriptKind: '',
 							phase,
 							appliedBy: 'substrate',
 							result: 'err',
@@ -1073,7 +1326,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			return out
 		}
 
-		if (node.kind === 'input') {
+		if (node.kind === 'inlet') {
 			// An input has no invocation to wrap, but it can still declare a
 			// hook: phase `after`, over the value it publishes — which is what
 			// retrieval and the prompt see. The stored user message, written
@@ -1085,17 +1338,14 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				typeof published === 'object' &&
 				!Array.isArray(published)
 			)
-				published = await applyChainsAt(
-					'after',
-					published as Record<string, unknown>,
-				)
+				published = await applyChainsAt('after', published as Record<string, unknown>)
 			scope.set(node.key, published)
 			nr.output = published
 			nr.endedAt = now()
 			receipt.nodes.push(nr)
 			return ok(published)
 		}
-		if (!hook) return err(`no binding registered for ${node.typeId}@${node.typeVersion}`)
+		if (!hook) return err(`no binding registered for ${node.definitionId}@${node.definitionVersion}`)
 
 		let input = resolveInput(node, scope)
 
@@ -1114,6 +1364,10 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		// Skipped before the binding runs, so a disabled source costs no query
 		// at all. That is the point: `share: 0` starves a source, this one does
 		// not ask for it.
+		//
+		// The address is the substrate's `settings` slot (R-9,
+		// `settingsSlot.ts`): declared on the registry row for every optional
+		// definition, read here as it always was.
 		if (d.optional === true && config[node.key]?.['settings']?.['enabled'] === false) {
 			nr.endedAt = now()
 			nr.elapsedMs = nr.endedAt - nr.startedAt
@@ -1127,7 +1381,8 @@ const sameId = (a: unknown, b: unknown): boolean =>
 
 		// ── The review gate (01 §7) ───────────────────────────────────────────
 		// Substrate placement: after the input resolves, before the binding is invoked.
-		// Keys on declared effects, not on kind, so an effectful Provider gates too.
+		// Keys on declared effects, not on kind, so an effectful oracle gates too.
+		// `settings.review` is the substrate slot's second field (`settingsSlot.ts`).
 		if (isGated(d.effects)) {
 			const position = resolvePosition(
 				d.reviewDefault,
@@ -1144,7 +1399,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				}
 				const decision = await opts.reviewer({
 					nodeKey: node.key,
-					typeId: nr.typeId,
+					definitionId: nr.definitionId,
 					payload: input,
 					position,
 				})
@@ -1241,7 +1496,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			receipt.preview = buildPreview(
 				node,
 				input,
-				nr.typeId,
+				nr.definitionId,
 				previewAt.targetedBy,
 				wire,
 				wireCtx,
@@ -1268,10 +1523,34 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		const base: TaskCtx = {
 			signal: controller.signal,
 			progress: () => {}, // ephemeral, never recorded (F34)
+			// The status seam (R-19), on the same ephemeral footing: the host
+			// hears it, the receipt keeps only the last one on a run that
+			// did not end `ok`. A malformed text is a note, never a failure.
+			status: (text) => {
+				if (!isStatusText(text)) {
+					nr.notes!.push('status ignored: a status is { i18n: { en, … }, vars? }')
+					return
+				}
+				const changed = !sameStatus(lastStatus?.text, text)
+				lastStatus = { nodeKey: node.key, text }
+				if (!changed) return
+				try {
+					opts.onStatus?.(node.key, text)
+				} catch {
+					// A status display must never take a run down.
+				}
+			},
 			log: (lvl, m) => nr.notes!.push(`${lvl}: ${m}`),
 			countTokens,
 		}
 		if (d.declaresRandomness) base.random = rng
+		// Inside an `each` or a `loop`: which body this is, for a status that
+		// wants to count. `count` only where the clause knows its total.
+		if (iteration !== undefined)
+			base.iteration = {
+				index: iteration,
+				...(iterationCount !== undefined ? { count: iterationCount } : {}),
+			}
 
 		// The interior-point broker (18 §4e): granted only when the descriptor
 		// declares points and the host supplied an engine — `ctx.scripts`
@@ -1282,24 +1561,26 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		// so an interior letting user policy in stays visible from outside.
 		if (opts.applyScripts && d.scriptPoints?.length) {
 			const applyScripts = opts.applyScripts
-			const declared = d.scriptPoints
+			// The full shape, deprecated spellings folded — so `accepts` is
+			// always the point's own (R-11), never a literal written here.
+			const declared = scriptPointsOf(d)
 			base.scripts = {
 				applyText: async (point: string, text: string) => {
 					const known = declared.find((sp) => sp.key === point)
 					if (!known)
 						throw new Error(
-							`'${point}' is not a script point '${nr.typeId}' declares. ` +
+							`'${point}' is not a script point '${nr.definitionId}' declares. ` +
 								`Declared: ${declared.map((sp) => sp.key).join(', ')}. ` +
 								`Points are part of the hashed contract — declare it on the descriptor.`,
 						)
 					const outcome = await applyScripts(
 						{
 							nodeKey: node.key,
-							typeId: nr.typeId,
+							definitionId: nr.definitionId,
 							slot: 'scripts',
 							phase: 'before',
 							port: point,
-							accepts: ['core:script:text/transform@1'],
+							accepts: [...known.accepts],
 							extras: [],
 							origin: 'binding',
 						},
@@ -1308,6 +1589,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					)
 					if (outcome.applications.length)
 						nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
+					if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
 					return typeof outcome.value === 'string' ? outcome.value : text
 				},
 			}
@@ -1315,8 +1597,8 @@ const sameId = (a: unknown, b: unknown): boolean =>
 
 		const nodeRef: NodeRef = {
 			key: node.key,
-			typeId: node.typeId,
-			typeVersion: node.typeVersion,
+			definitionId: node.definitionId,
+			definitionVersion: node.definitionVersion,
 			kind: node.kind,
 		}
 		const host = opts.host
@@ -1328,7 +1610,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				read: (table: string, q?: unknown) =>
 					host?.read ? host.read(table, q, nodeRef) : [],
 			} satisfies QueryCtx
-		if (node.kind === 'provider') {
+		if (node.kind === 'oracle') {
 			const conn = host?.connection?.(nodeRef)
 			/**
 			 * What the bound connection can actually do.
@@ -1340,12 +1622,11 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			 * prevent — and the picker filters on those declarations, so a
 			 * dependency outside them was never checked at bind time either.
 			 */
-			const d = getType(`${node.typeId}@${node.typeVersion}`)
+			const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
 			const declared = new Set<string>()
 			for (const slot of Object.values(d?.slots ?? {}))
 				for (const id of slot.optional ?? []) declared.add(id)
-			const have: Partial<Record<string, Grade>> =
-				conn?.capabilities ?? {}
+			const have: Partial<Record<string, Grade>> = conn?.capabilities ?? {}
 			ctx = {
 				...base,
 				connectionMetadata: conn?.metadata ?? (input as any).connection?.metadata ?? {},
@@ -1359,10 +1640,10 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					return typeof grade === 'number' && grade > 0 ? grade : false
 				},
 				call: async (p: unknown) => {
-					// Recorded before dispatch, so a Provider that throws still leaves the
+					// Recorded before dispatch, so an oracle that throws still leaves the
 					// request in the receipt — the failing call is the one worth reading.
 					nr.request = p
-					return host?.call ? await host.call(p, nodeRef) : p
+					return host?.call ? await host.call(p, nodeRef, { liveRow, dry }) : p
 				},
 				reportUsage: (t: number) => {
 					nr.tokens = (nr.tokens ?? 0) + t
@@ -1381,20 +1662,39 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					if (typeof usage?.cacheWrite === 'number')
 						nr.tokensCacheWrite = usage.cacheWrite
 				},
-			} satisfies ProviderCtx
+			} satisfies OracleCtx
 		}
-		if (node.kind === 'consumer') {
+		/**
+		 * The row this outlet committed, if it committed one — read off the
+		 * COMMIT rather than off what the binding chose to publish, because
+		 * the publish is the binding's business and the row is the host's.
+		 */
+		let committedRow: string | number | undefined
+		if (node.kind === 'outlet') {
 			ctx = {
 				...base,
-				commit: async (p: unknown) =>
-					host?.commit
-						? await host.commit(p, nodeRef)
-						: { id: `row:${node.key}`, ...(p as object) },
-				emit: (handle: string, payload?: unknown) => {
-					nr.notes!.push(`emit → ${handle}`)
-					host?.emit?.(handle, payload, nodeRef)
+				commit: async (p: unknown) => {
+					// A dry run's outlet reaches no host (R-21 (1)). The id is
+					// synthetic and says so, so a downstream node — and a reader
+					// of the receipt — can tell it from a row.
+					const ids = dry
+						? (() => {
+								nr.dry = true
+								nr.notes!.push('dry: nothing committed')
+								return { id: `dry:${node.key}` }
+							})()
+						: host?.commit
+							? await host.commit(p, nodeRef)
+							: { id: `row:${node.key}`, ...(p as object) }
+					const id = (ids as { id?: unknown }).id
+					if (typeof id === 'string' || typeof id === 'number') committedRow = id
+					return ids
 				},
-			} satisfies ConsumerCtx
+				emit: (handle: string, payload?: unknown) => {
+					nr.notes!.push(dry ? `emit → ${handle} (dry)` : `emit → ${handle}`)
+					if (!dry) host?.emit?.(handle, payload, nodeRef)
+				},
+			} satisfies OutletCtx
 		}
 
 		let res: Result
@@ -1425,7 +1725,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		}
 
 		if (res.kind === 'ok') {
-			// A gate-eligible Consumer publishes the discriminated write result, so the
+			// A gate-eligible outlet publishes the discriminated write result, so the
 			// committed and pending cases are the same shape and a downstream type has
 			// to handle both (13 §7j-b). There is no branch node to check `status` with
 			// (F25), so the obligation belongs to the port shape, not to the spec.
@@ -1438,11 +1738,8 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				typeof published === 'object' &&
 				!Array.isArray(published)
 			)
-				published = await applyChainsAt(
-					'after',
-					published as Record<string, unknown>,
-				)
-			if (node.kind === 'consumer' && isGated(d.effects)) {
+				published = await applyChainsAt('after', published as Record<string, unknown>)
+			if (node.kind === 'outlet' && isGated(d.effects)) {
 				// Wrap only if it is not already discriminated — but publish
 				// either way. This used to skip publishing entirely when a
 				// binding returned a `WriteResult` itself, so the binding doing
@@ -1460,6 +1757,12 @@ const sameId = (a: unknown, b: unknown): boolean =>
 						}
 				published = publishWriteResult(w, d.ports.out)
 			}
+			// The run's live row (R-21 (2)): the row this outlet committed,
+			// when the declaration says its row is the one a stream goes to.
+			// A dry run's synthetic id counts — a downstream oracle in a dry
+			// run still streams to nothing, and the host is told so by `dry`
+			// rather than by the row's absence.
+			if (d.liveRow && committedRow !== undefined) liveRow = committedRow
 			scope.set(node.key, published)
 			res = ok(published)
 			nr.output = redact(published)
@@ -1470,7 +1773,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		// Core emits, not the node (01 §8 / F8).
 		if (
 			res.kind === 'ok' &&
-			node.kind === 'consumer' &&
+			node.kind === 'outlet' &&
 			d.effects === 'write' &&
 			d.causesEvent
 		) {
@@ -1478,6 +1781,10 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				event: d.causesEvent,
 				cause: node.key,
 				subscribers: opts.subscribers?.[d.causesEvent] ?? 0,
+				// Recorded, never dispatched: a dry run caused nothing, and a
+				// reader of the receipt has to be able to tell that from a
+				// write whose subscribers happened to be zero.
+				...(dry ? { dry: true as const } : {}),
 			})
 		}
 
@@ -1495,14 +1802,15 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		scope: ValueScope,
 		blockMode?: 'sequential' | 'parallel',
 		iteration?: number,
+		iterationCount?: number,
 	): Promise<Result> => {
 		const ev = (phase: 'start' | 'end', result?: Result['kind']) => {
 			try {
 				opts.onNode?.({
 					phase,
 					nodeKey: node.key,
-					typeId: `${node.typeId}@${node.typeVersion}`,
-					kind: node.kind,
+					definitionId: `${node.definitionId}@${node.definitionVersion}`,
+					kind: node.kind as Kind,
 					seq,
 					declared: doc.nodes.length,
 					iteration,
@@ -1513,7 +1821,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			}
 		}
 		ev('start')
-		const res = await invokeInner(node, scope, blockMode, iteration)
+		const res = await invokeInner(node, scope, blockMode, iteration, iterationCount)
 		ev('end', res.kind)
 		return res
 	}
@@ -1529,51 +1837,57 @@ const sameId = (a: unknown, b: unknown): boolean =>
 	}
 
 	// ── Level execution ──────────────────────────────────────────────────────
-	// A "level" is the spine, or one chain of one block. Nodes and nested blocks are
+	// A "level" is the spine, or one chain of one clause. Nodes and nested clauses are
 	// interleaved by declaration position, so the structure the author wrote is the
-	// structure that runs — blocks nest exactly as nodes do.
+	// structure that runs — clauses nest exactly as nodes do.
 
-	type Level = { blockId?: string; chain?: string }
+	type Level = { clauseId?: string; chain?: string }
 
 	const itemsAt = (level: Level) => {
 		const nodes = ordered
-			.filter((n) => n.blockId === level.blockId && n.blockChain === level.chain)
+			.filter((n) => n.clauseId === level.clauseId && n.clauseChain === level.chain)
 			.map((node) => ({
 				sort: node.position,
 				run: node,
-				isBlock: false as const,
+				isClause: false as const,
 			}))
-		const blocks = doc.blocks
-			.filter((b) => b.blockId === level.blockId && b.blockChain === level.chain)
-			.map((block) => ({
-				sort: block.position,
-				run: block,
-				isBlock: true as const,
+		const clauses = doc.clauses
+			.filter((b) => b.clauseId === level.clauseId && b.clauseChain === level.chain)
+			.map((clause) => ({
+				sort: clause.position,
+				run: clause,
+				isClause: true as const,
 			}))
-		return [...nodes, ...blocks].sort((a, b) => a.sort - b.sort)
+		return [...nodes, ...clauses].sort((a, b) => a.sort - b.sort)
 	}
 
 	const runLevel = async (
 		level: Level,
 		scope: ValueScope,
-		blockMode?: 'sequential' | 'parallel',
+		clauseMode?: 'sequential' | 'parallel',
 		iteration?: number,
+		iterationCount?: number,
 	): Promise<Result> => {
 		let last: Result = ok(null)
 		for (const item of itemsAt(level)) {
 			if (checkCancel()) return cancelled('cancelled')
-			last = item.isBlock
-				? await runBlock(item.run as SpecDocument['blocks'][number], scope)
-				: await invoke(item.run as DocNode, scope, blockMode, iteration)
-			if (last.kind !== 'ok') return last
+			last = item.isClause
+				? await runClause(item.run as SpecDocument['clauses'][number], scope)
+				: await invoke(item.run as DocNode, scope, clauseMode, iteration, iterationCount)
+			// A node that settled badly while the stop was pending settled
+			// badly BECAUSE of the stop: an oracle whose call was aborted
+			// returns `halt`, and reading that as the node's own decision would
+			// file a person's Stop as the pipeline giving up. The stop is the
+			// fact; the node's row keeps its own reason (13 §3).
+			if (last.kind !== 'ok') return checkCancel() ? cancelled('cancelled') : last
 		}
 		return last
 	}
 
 	const truthy = (v: unknown) => !!v && !(Array.isArray(v) && v.length === 0)
 
-	const runBlock = async (
-		block: SpecDocument['blocks'][number],
+	const runClause = async (
+		clause: SpecDocument['clauses'][number],
 		scope: ValueScope,
 	): Promise<Result> => {
 		// `forceSequential` still wins over both: it is how a preview replays a
@@ -1581,11 +1895,11 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		// preview nondeterministic.
 		const mode = opts.forceSequential
 			? 'sequential'
-			: resolveBlockMode(block.mode, config[block.id]?.['settings']?.['mode'])
+			: resolveClauseMode(clause.mode, config[clause.id]?.['settings']?.['mode'])
 		const collected: BranchResult[] = []
 
 		/**
-		 * The block's own output, addressable by its id.
+		 * The clause's own output, addressable by its id.
 		 *
 		 * `into` is the parent scope for every construct but the loop, which
 		 * publishes into its own scope first so the body can read it — see the
@@ -1607,18 +1921,18 @@ const sameId = (a: unknown, b: unknown): boolean =>
 					return collected.every((b) => b.result.kind === 'ok')
 				},
 			}
-			into.set(block.id, union)
+			into.set(clause.id, union)
 		}
 
-		if (block.kind === 'async') {
+		if (clause.kind === 'gather') {
 			// Chains share the scope: a sibling is addressable by its qualified key, and
 			// keys are unique, so there is nothing to collide.
-			const run = (chain: string) => runLevel({ blockId: block.id, chain }, scope, mode)
+			const run = (chain: string) => runLevel({ clauseId: clause.id, chain }, scope, mode)
 			const results =
 				mode === 'parallel'
-					? await Promise.all(block.chains.map(run))
-					: await sequential(block.chains, run)
-			block.chains.forEach((chain, i) =>
+					? await Promise.all(clause.chains.map(run))
+					: await sequential(clause.chains, run)
+			clause.chains.forEach((chain, i) =>
 				collected.push({
 					branchKey: chain,
 					index: i,
@@ -1629,19 +1943,19 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			return collected.find((b) => b.result.kind !== 'ok')?.result ?? ok(null)
 		}
 
-		if (block.kind === 'map') {
-			const items = resolveMapItems(block.over, scope)
-			if (block.max !== undefined && items.length > block.max) {
+		if (clause.kind === 'each') {
+			const items = resolveEachItems(clause.over, scope)
+			if (clause.max !== undefined && items.length > clause.max) {
 				return err(
-					`map '${block.id}' received ${items.length} items but declares max ${block.max}`,
+					`each '${clause.id}' received ${items.length} items but declares max ${clause.max}`,
 				)
 			}
 			// Each iteration gets its own scope, so genuinely parallel maps are correct
 			// rather than merely equivalent-if-you-squint.
 			const run = async (item: unknown, i: number): Promise<Result> => {
 				const child = scope.child()
-				child.set(`${block.id}.${ITEM_KEY}`, item)
-				return runLevel({ blockId: block.id, chain: 'item' }, child, mode, i)
+				child.set(`${clause.id}.${ITEM_KEY}`, item)
+				return runLevel({ clauseId: clause.id, chain: 'item' }, child, mode, i, items.length)
 			}
 			const results =
 				mode === 'parallel'
@@ -1652,7 +1966,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 						)
 			items.forEach((_, i) =>
 				collected.push({
-					branchKey: `${block.id}[${i}]`,
+					branchKey: `${clause.id}[${i}]`,
 					index: i,
 					result: results[i]!,
 				}),
@@ -1661,13 +1975,13 @@ const sameId = (a: unknown, b: unknown): boolean =>
 			return collected.find((b) => b.result.kind !== 'ok')?.result ?? ok(null)
 		}
 
-		if (block.kind === 'route') {
+		if (clause.kind === 'junction') {
 			// ── route (20 §10) ───────────────────────────────────────────────
 			// The decision is data a task computed; the routing is declaration.
 			// Every predicate's evaluation is recorded — fired and skipped
 			// alike — so "why did the lore branch not run" answers from rows.
-			const value = resolvePredicate(block.on, scope)
-			const routes = block.routes ?? {}
+			const value = resolvePredicate(clause.on, scope)
+			const branches = clause.branches ?? {}
 			const read = (path?: string): unknown => {
 				if (!path) return value
 				let cur: any = value
@@ -1677,7 +1991,12 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				}
 				return cur
 			}
-			const describe = (p: { path?: string; equals?: unknown; truthy?: boolean; default?: boolean }): string =>
+			const describe = (p: {
+				path?: string
+				equals?: unknown
+				truthy?: boolean
+				default?: boolean
+			}): string =>
 				p.default
 					? 'default'
 					: p.equals !== undefined
@@ -1696,23 +2015,23 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				return false
 			}
 			const fired = new Map<string, boolean>()
-			for (const chain of block.chains) fired.set(chain, fires(routes[chain] ?? {}))
+			for (const chain of clause.chains) fired.set(chain, fires(branches[chain] ?? {}))
 			const anyFired = [...fired.values()].some(Boolean)
-			for (const chain of block.chains)
-				if (routes[chain]?.default) fired.set(chain, !anyFired)
+			for (const chain of clause.chains)
+				if (branches[chain]?.default) fired.set(chain, !anyFired)
 
 			receipt.notes = [
 				...(receipt.notes ?? []),
-				...block.chains.map(
+				...clause.chains.map(
 					(chain) =>
-						`route '${block.id}': '${chain}' ${
+						`junction '${clause.id}': '${chain}' ${
 							fired.get(chain) ? 'fired' : 'skipped'
-						} (${describe(routes[chain] ?? {})})`,
+						} (${describe(branches[chain] ?? {})})`,
 				),
 			]
 
-			const firedChains = block.chains.filter((c) => fired.get(c))
-			const run = (chain: string) => runLevel({ blockId: block.id, chain }, scope, mode)
+			const firedChains = clause.chains.filter((c) => fired.get(c))
+			const run = (chain: string) => runLevel({ clauseId: clause.id, chain }, scope, mode)
 			const results = new Map<string, Result>()
 			if (mode === 'parallel') {
 				const rs = await Promise.all(firedChains.map(run))
@@ -1724,7 +2043,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				}
 			}
 
-			block.chains.forEach((chain, i) =>
+			clause.chains.forEach((chain, i) =>
 				collected.push({
 					branchKey: chain,
 					index: i,
@@ -1746,24 +2065,22 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				},
 				ok: collected.every((b) => !b.fired || b.result.kind === 'ok'),
 			}
-			scope.set(block.id, union)
-			return (
-				collected.find((b) => b.fired && b.result.kind !== 'ok')?.result ?? ok(null)
-			)
+			scope.set(clause.id, union)
+			return collected.find((b) => b.fired && b.result.kind !== 'ok')?.result ?? ok(null)
 		}
 
 		// ── loop (01 §4a) ────────────────────────────────────────────────────
 		// Do-while: run the body, then re-read the declared predicate. A tool loop
 		// always wants one generate before it can know whether to stop.
-		const max = block.max ?? 0
+		const max = clause.max ?? 0
 		/**
-		 * The carry: one scope for the whole loop, holding the block's
+		 * The carry: one scope for the whole loop, holding the clause's
 		 * accumulating output.
 		 *
 		 * A tool loop is only a loop if the next prompt can see the last
 		 * result, and the body cannot reference a node declared after it —
 		 * `makeScope` makes a back-edge unwritable (F9). What *is* declared
-		 * before the body is the block itself, so `$.agent.values` reads the
+		 * before the body is the clause itself, so `$.tools.values` reads the
 		 * iterations that have already finished. Each iteration still runs in
 		 * a child of this, so an iteration's node values stay private to it
 		 * and a loop remains the same construct as a parallel map (F26).
@@ -1774,7 +2091,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		const stoppedOn = (stopped: 'predicate' | 'ceiling' | 'interrupted') => {
 			receipt.loops = [
 				...(receipt.loops ?? []),
-				{ blockId: block.id, iterations: ran, stopped },
+				{ clauseId: clause.id, iterations: ran, stopped },
 			]
 			publish()
 		}
@@ -1784,10 +2101,10 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				return cancelled('cancelled')
 			}
 			const child = carry.child()
-			const r = await runLevel({ blockId: block.id, chain: 'item' }, child, 'sequential', i)
+			const r = await runLevel({ clauseId: clause.id, chain: 'item' }, child, 'sequential', i)
 			ran++
 			collected.push({
-				branchKey: `${block.id}[${i}]`,
+				branchKey: `${clause.id}[${i}]`,
 				index: i,
 				result: r,
 			})
@@ -1795,7 +2112,7 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				stoppedOn('interrupted')
 				return r
 			}
-			const again = block.repeatWhile ? resolvePredicate(block.repeatWhile, child) : false
+			const again = clause.repeatWhile ? resolvePredicate(clause.repeatWhile, child) : false
 			if (!truthy(again)) {
 				stoppedOn('predicate')
 				return ok(null)
@@ -1806,13 +2123,15 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		// receipt says so rather than leaving a truncated loop looking successful.
 		receipt.notes = [
 			...(receipt.notes ?? []),
-			`loop '${block.id}' reached its declared max of ${max}`,
+			`loop '${clause.id}' reached its declared max of ${max}`,
 		]
 		return ok(null)
 	}
 
+	/** Set when the run ended by throwing; rethrown after the run-end hook. */
+	let thrown: { error: unknown } | undefined
 	try {
-		const outcome = await runLevel({ blockId: undefined, chain: undefined }, values)
+		const outcome = await runLevel({ clauseId: undefined, chain: undefined }, values)
 		if (outcome.kind === 'halt') {
 			receipt.outcome = 'halt'
 			receipt.haltReason = outcome.reason
@@ -1823,18 +2142,35 @@ const sameId = (a: unknown, b: unknown): boolean =>
 				receipt.haltReason ??= outcome.reason
 				receipt.haltNodeKey ??= receipt.nodes.find((n) => n.result === 'err')?.nodeKey
 			}
+			// Where a Stop landed (13 §3): the node whose settle the stop
+			// converted — an oracle that halted on its abort — so the inspector
+			// can say *Stopped at generate on request*. A stop that landed
+			// between nodes names none: nothing was interrupted.
+			if (outcome.kind === 'cancelled')
+				receipt.haltNodeKey ??= [...receipt.nodes]
+					.reverse()
+					.find((n) => n.result !== 'ok' && !n.recoveredAsEmpty)?.nodeKey
 		}
 	} catch (e) {
-		if (e instanceof BudgetExceeded) {
-			receipt.outcome = 'err'
-			receipt.haltReason = e.message
-		} else throw e
+		receipt.outcome = 'err'
+		receipt.haltReason = (e as Error)?.message ?? String(e)
+		// Anything but the budget is the host's failure and still propagates —
+		// after the run-end hook below has had its say, which is the R-17
+		// guarantee: a throw is one more way a run ends, not a way out of it.
+		if (!(e instanceof BudgetExceeded)) thrown = { error: e }
 	}
 
 	receipt.endedAt = now()
 	receipt.reviews = reviews
 	// Receipts sort by execution order for rendering.
 	receipt.nodes.sort((a, b) => a.seq - b.seq)
+
+	// What it was doing when it died (R-21, "optional, taken"): the last
+	// status, on a run that ended `halt`, `err` or `cancelled` — never on
+	// `ok`, and never on a preview's halt, which is the pipeline stopping
+	// where it was asked to rather than dying.
+	if (lastStatus && receipt.outcome !== 'ok' && !receipt.preview)
+		receipt.lastStatus = lastStatus
 
 	// ── Compact receipt (13 §2) ───────────────────────────────────────────────
 	// The per-message multiplier is a hot event × every subscribed pipeline, where
@@ -1855,11 +2191,33 @@ const sameId = (a: unknown, b: unknown): boolean =>
 		receipt.reviews = []
 	}
 
+	// The run-level guarantee (R-17): whatever ended the run — a verdict, the
+	// budget, or a throw on its way out — the host hears about it once, with
+	// the row it may have to finish. Absorbed if it throws — see
+	// `RunOptions.onRunEnd`.
+	if (opts.onRunEnd) {
+		try {
+			await opts.onRunEnd({
+				kind: receipt.outcome,
+				liveRow,
+				dry,
+				receipt,
+				...(thrown ? { error: thrown.error } : {}),
+			})
+		} catch (e) {
+			receipt.notes = [
+				...(receipt.notes ?? []),
+				`the host's run-end hook failed: ${(e as Error).message}`,
+			]
+		}
+	}
+
+	if (thrown) throw thrown.error
 	return receipt
 }
 
 /**
- * Every out port a gate-eligible Consumer declares as `write-result@1` resolves to the
+ * Every out port a gate-eligible outlet declares as `write-result@1` resolves to the
  * *same* discriminated value. A port named `messageId` therefore hands downstream the
  * result, not an id — which is the point: there may not be an id yet (13 §7j-b).
  */
@@ -1903,7 +2261,7 @@ function readPort(upstream: unknown, port: string): unknown {
 }
 
 /** `over` is either a literal list or a data ref into an upstream value. */
-function resolveMapItems(over: unknown, values: { get(k: string): any }): unknown[] {
+function resolveEachItems(over: unknown, values: { get(k: string): any }): unknown[] {
 	if (Array.isArray(over)) return over
 	if (over && typeof over === 'object' && (over as any).__ref === 'data') {
 		const r = over as { node: string; port: string }
@@ -1987,8 +2345,8 @@ export async function replay(
 	const recorded = new Map(receipt.nodes.map((n) => [n.nodeKey, n.output]))
 	const replayBindings: Bindings = { ...bindings }
 	for (const n of receipt.nodes) {
-		if (n.kind !== 'provider') continue
-		replayBindings[n.typeId] = async () => ok(recorded.get(n.nodeKey))
+		if (n.kind !== 'oracle') continue
+		replayBindings[n.definitionId] = async () => ok(recorded.get(n.nodeKey))
 	}
 	return run(doc, {
 		input: receipt.nodes[0]?.output,

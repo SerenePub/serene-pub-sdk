@@ -80,6 +80,8 @@ import {
 	type GenreProps,
 } from './genres.js'
 import { makeValueToolkit, isTodo, type ValueToolkit } from './values.js'
+import { isEventId } from './events.js'
+import { ACTION_IDENTITY, actionDocumentFindings, actionsOf, slashCollisions } from './actions.js'
 import type { ComponentDecl } from './extension.js'
 import { isServableEntry, isServablePanelId, type SurfacesDecl } from './surfaces.js'
 
@@ -190,6 +192,13 @@ export interface PresetDefaults {
 	tags?: string[]
 	/** The genre's declared fields, by key. */
 	genreFields?: Record<string, unknown>
+	/**
+	 * Envoys to seat on creation, by slug (R-18; U5g) — beside the genre's
+	 * `default: true` ones, which are seated with no choice. A slug the
+	 * genre (or an installed action) does not declare is ignored, on the
+	 * same advisory terms as every other key here.
+	 */
+	envoys?: string[]
 }
 
 /**
@@ -202,7 +211,14 @@ export interface PresetDecl {
 	label: string
 	description?: string
 	bindings: Record<string, PresetBinding>
-	/** For the open `session-action` slot: which actions come along. */
+	/**
+	 * For the open `session-action` slot: which actions come along, each by
+	 * its **identity** — `<spec slug>#<key>` (U5c review, W-A). A preset
+	 * curates declarations, never functions: two specs contributing one
+	 * function are two entries, and including one says nothing about the
+	 * other. Absent means the host's companion rule (every action from the
+	 * genre owner's own namespace).
+	 */
 	actions?: { include: string[] }
 	/** What starting from this preset pre-fills the creation form with. */
 	defaults?: PresetDefaults
@@ -233,7 +249,15 @@ export function preset(
 		label: string
 		description?: string
 		bindings: Record<string, BindingInput>
-		actions?: { include: Array<BuiltSpec | ExternalRef | string> }
+		/**
+		 * Which actions come along (24 §7; W-A): an identity string
+		 * (`'core:spec/narrate#narrate'`), or a spec handle — a `BuiltSpec`
+		 * expands to every action it contributes. A bare spec id, as a string
+		 * or an `ExternalRef`, is refused: the builder cannot know which keys
+		 * that spec declares, and a preset naming a spec where the host
+		 * expects a declaration would match nothing and say nothing.
+		 */
+		actions?: { include: Array<BuiltSpec | string> }
 		defaults?: PresetDefaults
 		/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
 		enabled?: boolean
@@ -258,7 +282,23 @@ export function preset(
 		...(props.actions
 			? {
 					actions: {
-						include: props.actions.include.map(refId),
+						include: props.actions.include.flatMap((entry) => {
+							if (typeof entry === 'string') {
+								if (ACTION_IDENTITY.test(entry)) return [entry]
+								throw new Error(
+									`preset '${slug}' includes '${entry}', which is not an action identity — ` +
+										`name the declaration as '<spec slug>#<key>' ('core:spec/narrate#narrate'), ` +
+										`or pass the built spec to include every action it contributes`,
+								)
+							}
+							const found = actionsOf({ id: entry.id, contributes: entry.meta.contributes })
+							if (!found.length)
+								throw new Error(
+									`preset '${slug}' includes '${entry.id}', which contributes no actions — ` +
+										`nothing to bring along`,
+								)
+							return found.map((a) => `${entry.id}#${a.key}`)
+						}),
 					},
 				}
 			: {}),
@@ -456,6 +496,23 @@ export class AnnouncementBuilder {
 				)
 		}
 
+		// Contributed actions (R-15, U5c): each declaration sound, and one
+		// slash name meaning one function across the whole package — the
+		// per-document check cannot see two specs of one package claiming
+		// `/acme.roll` for two different things, so the package is the first
+		// place the collision rule runs across documents; the install is the
+		// second.
+		const packageActions: ReturnType<typeof actionsOf> = []
+		for (const s of this._pipelines) {
+			// A built spec keeps its contributions on `meta`; a document carries
+			// them at the top — one reader for both.
+			const contributed = { id: s.id, contributes: 'meta' in s ? s.meta.contributes : s.contributes }
+			for (const finding of actionDocumentFindings(contributed))
+				errors.push(`pipeline '${s.id}': ${finding}`)
+			packageActions.push(...actionsOf(contributed))
+		}
+		errors.push(...slashCollisions(packageActions))
+
 		// Prompts: slugs unique per POOL, which is `(node type, slot)`.
 		//
 		// Uniqueness is per pool and not global: `summarize-scene-default` names
@@ -513,6 +570,18 @@ export class AnnouncementBuilder {
 			for (const event of events) {
 				const declared = surface[event]
 				const binding = p.bindings[event]
+				// A binding is keyed by event ID, whoever owns the genre (R-4).
+				// A bare name (`message-respond`) is the pre-fold spelling; a
+				// package carrying one would have its keys reverted by every
+				// boot's preset sync and bind nothing, silently.
+				if (binding && !isEventId(event)) {
+					errors.push(
+						`preset '${p.slug}' binds '${event}', which is not an event id — bindings ` +
+							`are keyed 'owner:event/name@N' (sessionEvents.messageRespond is ` +
+							`'${sessionEvents.messageRespond}'), never by bare name (R-4)`,
+					)
+					continue
+				}
 				if (g && !declared && binding) {
 					errors.push(
 						`preset '${p.slug}' binds '${event}', which genre '${p.genre}' does not declare`,
@@ -570,7 +639,13 @@ export class AnnouncementBuilder {
 					})
 				}
 			}
-			for (const a of p.actions?.include ?? []) if (!announcedSpecs.has(a)) requires.add(a)
+			// An included action names a spec by its identity's first half; a spec
+			// this package does not announce is a requirement on the install.
+			for (const a of p.actions?.include ?? []) {
+				const hash = a.lastIndexOf('#')
+				const specId = hash === -1 ? a : a.slice(0, hash)
+				if (!announcedSpecs.has(specId)) requires.add(specId)
+			}
 			coverage.presets.push({ preset: p.slug, genre: p.genre, slots })
 		}
 

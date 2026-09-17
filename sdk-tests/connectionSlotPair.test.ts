@@ -58,8 +58,8 @@ const spec = () => makeSpec('demo:connection-pair@1', { version: '1.0.0' })
 const doc = () =>
 	publish(
 		spec()
-			.input('input', C.userMessage.v1())
-			.provider('generate', C.generateText.v1({ connection: slot.connection() })),
+			.inlet('input', C.userMessage.v1())
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() })),
 	)
 
 /** Capture what the provider binding was handed as its connection. */
@@ -68,7 +68,7 @@ function capturing() {
 	return {
 		seen,
 		bindings: bindings({
-			'core:provider/generate-text@1': async (i: any, ctx: any) => {
+			'core:oracle/generate-text@1': async (i: any, ctx: any) => {
 				seen.connection = i.connection
 				ctx.reportSampling({}, [])
 				return ok({ main: 'x', text: 'x' })
@@ -91,7 +91,7 @@ async function resolveWith(value: unknown) {
 					slot: 'connection',
 					path: SLOT_VALUE,
 					value,
-					scopeKind: 'instance',
+					scopeKind: 'preset',
 				},
 			],
 		},
