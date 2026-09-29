@@ -26,6 +26,8 @@
  */
 /** Nothing here reaches outside the extension's own namespace, so there is no
  *  capability to grant and nothing to put on a consent screen: an extension
- *  managing its own rows is not a permission, it is housekeeping. */
+ *  managing its own rows is not a permission, it is housekeeping.
+ * @experimental
+ */
 export const STORAGE_IS_UNPRIVILEGED = true;
 //# sourceMappingURL=storage.js.map

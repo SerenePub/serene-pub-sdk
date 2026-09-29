@@ -39,6 +39,7 @@
  *
  * Order is the 0.5 prompt's order, unchanged. Do not tidy it: every entry's
  * position is a byte in every prompt on every install that has changed nothing.
+ * @internal
  */
 export const SHIPPED_PROMPT_BLOCK_IDS = [
     'currentDate',
@@ -75,6 +76,7 @@ const BLOCK_MEMBERS = SHIPPED_PROMPT_BLOCK_IDS.map((key) => ({
  * one off there is no row anywhere and the pack is whatever this says — which
  * is also what lets the shipped order be corrected in a release rather than
  * swept through every install's rows.
+ * @internal
  */
 export const SHIPPED_PROMPT_BLOCKS = SHIPPED_PROMPT_BLOCK_IDS.map((id) => ({ id, enabled: true }));
 /**
@@ -86,6 +88,7 @@ export const SHIPPED_PROMPT_BLOCKS = SHIPPED_PROMPT_BLOCK_IDS.map((id) => ({ id,
  * carry is honoured if the template produces it and reported on the receipt if
  * it does not (`resolvePromptBlocks`). A refusal there would turn "I switched
  * my pipeline's template" into a run that stops.
+ * @experimental
  */
 export const PROMPT_BLOCKS_DECL = {
     type: 'list',
@@ -120,6 +123,7 @@ export const PROMPT_BLOCKS_DECL = {
  * Serene Pub ships and are emphatically not the same thing for one somebody
  * wrote, whose sections may sit in an order they chose. Treating the default as
  * an instruction would silently rewrite every custom template on first run.
+ * @internal
  */
 export function isShippedPromptBlocks(value) {
     if (!Array.isArray(value))
@@ -147,6 +151,7 @@ export function isShippedPromptBlocks(value) {
  *
  * A duplicate id keeps its first position and is dropped thereafter: a block is
  * one section, and rendering it twice is not a thing the list can mean.
+ * @internal
  */
 export function resolvePromptBlocks(configured, produced) {
     if (!Array.isArray(configured))

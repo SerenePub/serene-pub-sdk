@@ -29,7 +29,7 @@
  * needs a chat; a preview that renders against a declared sample needs nothing,
  * which is what lets the template editor show output while you type.
  */
-import { checkScopeSample } from './template.js';
+import { checkScopeSample, } from './template.js';
 import { refuseUnlessIdentical } from './hash.js';
 const variables = new Map();
 /**
@@ -40,6 +40,7 @@ const variables = new Map();
  * could redefine `core:var/characters@1` would change how characters render in
  * every pipeline on the instance without appearing in a single spec — invisible
  * in exactly the way a prompt change is not.
+ * @experimental
  */
 export function defineVariable(decl) {
     const existing = variables.get(decl.id);
@@ -52,6 +53,7 @@ export function defineVariable(decl) {
  * The plugin-facing door. Same registration, minus the ability to claim core's
  * namespace — checked here rather than in `defineVariable` so core's own
  * declarations do not have to argue their way past their own guard.
+ * @experimental
  */
 export function definePluginVariable(pluginId, decl) {
     if (decl.id.startsWith('core:'))
@@ -60,10 +62,64 @@ export function definePluginVariable(pluginId, decl) {
             `define is one where every template renders differently depending on load order.`);
     return defineVariable(decl);
 }
+/** @internal */
 export const getVariable = (id) => variables.get(id);
+/** @internal */
 export const allVariables = () => [...variables.values()];
+/** @internal */
 export function _clearVariables() {
     variables.clear();
+}
+/**
+ * Take one variable back out of the registry — a HOST's door, for a plugin's
+ * variables it registered from a stored manifest and withdraws on uninstall
+ * (the way `_withdrawGenre` serves a plugin's genres). Refuses `core:` ids: core's
+ * variables are this build's, and nothing a plugin's lifecycle does removes them.
+ * @internal
+ */
+export function _withdrawVariable(id) {
+    if (id.startsWith('core:'))
+        throw new Error(`'${id}' is core's; it is never withdrawn`);
+    return variables.delete(id);
+}
+/**
+ * What is wrong with a package's variable list, one sentence each — the check
+ * `defineExtension`, the packager and a host's install share (typed templates,
+ * 2026-09-27). Every id sits under the package's own namespace: `core:` is
+ * reserved and another package's namespace is theirs (F2). A list naming one
+ * id twice with different content is refused — an id means one thing.
+ * @experimental
+ */
+export function pluginVariableFindings(slug, raw, at = 'variables') {
+    if (raw === undefined)
+        return [];
+    if (!Array.isArray(raw))
+        return [`'${at}' is not a list of variable declarations`];
+    const out = [];
+    const seen = new Map();
+    for (const [i, v] of raw.entries()) {
+        const d = v;
+        const id = typeof d?.id === 'string' ? d.id : '';
+        if (!id) {
+            out.push(`${at}[${i}] has no id — a variable is '<slug>:var/<name>@<major>'`);
+            continue;
+        }
+        const ns = id.includes(':') ? id.slice(0, id.indexOf(':')) : '';
+        if (ns === 'core')
+            out.push(`variable '${id}': the 'core:' namespace is reserved. Declare it as ` +
+                `'${slug}:${id.slice(id.indexOf(':') + 1)}'.`);
+        else if (ns !== slug)
+            out.push(`variable '${id}' is not in this package's namespace — declare it under ` +
+                `'${slug}:var/…'. A variable two packages can define renders differently by install order.`);
+        if (!d?.scope || typeof d.scope !== 'object' || Array.isArray(d.scope))
+            out.push(`variable '${id}' has no scope — what a template rendering it can name`);
+        const sig = JSON.stringify(d);
+        const prior = seen.get(id);
+        if (prior !== undefined && prior !== sig)
+            out.push(`variable '${id}' is declared twice with different content — an id means one thing`);
+        seen.set(id, sig);
+    }
+    return out;
 }
 // ── Core's variables ────────────────────────────────────────────────────────
 //
@@ -90,8 +146,9 @@ export function _clearVariables() {
  * Everything but `name` is optional because `compileCharacter` deletes any key
  * that came back null or undefined — deliberately, since these cards are
  * stringified into the prompt and a `"personality": null` is a line the model
- * reads. `personality` is also absent for any character shown at MINIMAL
- * visibility, which is the whole point of that visibility.
+ * reads. `personality` is also absent for every non-speaker when the
+ * session's `characterDetail` is `brief`, which is the whole point of that
+ * level; at `speaker-only` only the speaker's card is in the list at all.
  */
 const CHARACTER_CARD = {
     type: 'object',
@@ -110,7 +167,7 @@ const CHARACTER_CARD = {
         personality: {
             type: 'string',
             optional: true,
-            description: { en: 'How they behave. Absent for a character shown at minimal visibility.' },
+            description: { en: 'How they behave. Absent for a non-speaker when the session shows brief character detail.' },
         },
         'extra lore': {
             type: 'record',
@@ -137,6 +194,7 @@ const brannoc = {
     description: 'A caravan master who has crossed the wastes eleven times.',
     personality: 'Genial, and counting.',
 };
+/** @experimental */
 export const varInstructions = defineVariable({
     id: 'core:var/instructions@1',
     i18n: { name: { en: 'Instructions' } },
@@ -149,6 +207,7 @@ export const varInstructions = defineVariable({
     // showing that macros do not work.
     sample: 'You are Ash. Stay in character and never speak for Rell.',
 });
+/** @experimental */
 export const varCharacters = defineVariable({
     id: 'core:var/characters@1',
     i18n: { name: { en: 'Characters' } },
@@ -158,6 +217,7 @@ export const varCharacters = defineVariable({
     scope: { characters: { type: 'list', of: CHARACTER_CARD } },
     sample: [ash, brannoc],
 });
+/** @experimental */
 export const varPersonas = defineVariable({
     id: 'core:var/personas@1',
     i18n: { name: { en: 'Personas' } },
@@ -185,6 +245,7 @@ export const varPersonas = defineVariable({
     },
     sample: [{ name: 'Rell', description: 'A cartographer looking for a way north.' }],
 });
+/** @experimental */
 export const varScenario = defineVariable({
     id: 'core:var/scenario@1',
     i18n: { name: { en: 'Scenario' } },
@@ -192,6 +253,7 @@ export const varScenario = defineVariable({
     scope: { scenario: { type: 'string' } },
     sample: 'The caravan has stopped at the edge of the wastes.',
 });
+/** @experimental */
 export const varExampleDialogue = defineVariable({
     id: 'core:var/example-dialogue@1',
     i18n: { name: { en: 'Example dialogue' } },
@@ -201,6 +263,7 @@ export const varExampleDialogue = defineVariable({
     // substituted by the time a layout sees this.
     sample: 'Ash: "Ash in the water again."',
 });
+/** @experimental */
 export const varPostHistoryInstructions = defineVariable({
     id: 'core:var/post-history-instructions@1',
     i18n: { name: { en: 'Post-history instructions' } },
@@ -210,6 +273,7 @@ export const varPostHistoryInstructions = defineVariable({
     scope: { postHistoryInstructions: { type: 'string' } },
     sample: 'Stay in character and write one paragraph.',
 });
+/** @experimental */
 export const varCharacterNames = defineVariable({
     id: 'core:var/character-names@1',
     i18n: { name: { en: 'Character names' } },
@@ -223,6 +287,7 @@ export const varCharacterNames = defineVariable({
     scope: { characterNames: { type: 'string' } },
     sample: 'Ash and Brannoc',
 });
+/** @experimental */
 export const varPersonaNames = defineVariable({
     id: 'core:var/persona-names@1',
     i18n: { name: { en: 'Persona names' } },
@@ -237,12 +302,14 @@ export const varPersonaNames = defineVariable({
 // retrieval found. That is the reason they are declared at Assemble rather than
 // alongside the cast: no earlier node knows the answer.
 //
-// Note what is *not* here. `characterLore` is a top-level value on the assembly
-// context and no template renders it: qualifying entries are folded into their
-// bound character's own object under an `"extra lore"` key inside `characters`
-// (docs/context-configs.md is explicit about it). Declaring a layout for it
-// would offer a setting that changes nothing, which is worse than the vestigial
-// array it would be configuring.
+// `characterLore` is a top-level value on the assembly context and no shipped
+// template renders it: qualifying entries are folded into their bound
+// character's own object under an `"extra lore"` key inside `characters`
+// (docs/context-configs.md is explicit about it). It has a variable now
+// (`varCharacterLore`, below) only because it is a declared band like its two
+// siblings (typed templates P2) — Assemble exposes it raw, with no layout,
+// because a layout for it would be a setting that changes nothing.
+/** @experimental */
 export const varWorldLore = defineVariable({
     id: 'core:var/world-lore@1',
     i18n: { name: { en: 'World lore' } },
@@ -257,6 +324,7 @@ export const varWorldLore = defineVariable({
         'The Long Winter': 'Nine years without a thaw.',
     },
 });
+/** @experimental */
 export const varHistory = defineVariable({
     id: 'core:var/history@1',
     // "Story history" until 0.6. It is a *list of dated history entries*, and
@@ -271,6 +339,99 @@ export const varHistory = defineVariable({
         'Year 412, Month 3': 'The caravan reached the wastes.',
         'Year 412, Month 1': 'Ash left the Ashguard.',
     },
+});
+/**
+ * Documentation excerpts retrieved for the latest question — the band
+ * `core:query/docs-search@1` publishes (the guide genre's retrieval; declared
+ * 2026-09-27). Its own band, not `worldLore`: an excerpt is the app's manual,
+ * not a fact about a story's world, and a template has to be able to frame it
+ * as the one source of truth about the app — and to say so when it is empty.
+ *
+ * Keyed by "Page › Section"; each value begins with the page's path
+ * (`Path: /docs/<slug>#<anchor>`), so the address a reply cites is the one
+ * the compiled docs actually serve.
+ * @experimental
+ */
+export const varDocsExcerpts = defineVariable({
+    id: 'core:var/docs-excerpts@1',
+    i18n: { name: { en: 'Documentation excerpts' } },
+    description: {
+        en: 'Documentation sections that match the latest question and fit the budget, keyed by page and section; each starts with the page path.',
+    },
+    scope: { docsExcerpts: { type: 'record', of: { type: 'string' } } },
+    sample: {
+        'Connections › Adding and removing by hand': 'Path: /docs/connections#adding-and-removing-by-hand\nOpen Connections and choose Add…',
+    },
+});
+/**
+ * Recalled lines — older transcript lines found again because they name what
+ * the current context names: the band `core:query/entity-search@1` publishes
+ * on its `messages` out-port (declared 2026-09-27, owner ruling option b).
+ *
+ * Its own band, not `messages`: the transcript renders from the recent
+ * window (`sessionMessages`), so a recalled line in the transcript's band was
+ * budgeted and then rendered nowhere. As a declared band a template places it
+ * where it belongs — `{{{recalledLines}}}` — per genre; nothing places it
+ * automatically.
+ *
+ * One entry per line, oldest first. `turn` is the line's 1-based position in
+ * its channel's visible transcript, so "turn 12" is the twelfth message a
+ * reader of that channel would count; `speaker` is named by the same chain
+ * that names the transcript's own lines.
+ *
+ * Not *recall* the measurement (precision/recall): a **recalled line** is a
+ * line, and the qualifier is what keeps the two apart (R3).
+ * @experimental
+ */
+export const varRecalledLines = defineVariable({
+    id: 'core:var/recalled-lines@1',
+    i18n: { name: { en: 'Recalled lines' } },
+    description: {
+        en: 'Earlier lines of the conversation that name what the scene is naming now and fit the budget, oldest first — each with its speaker, turn and text.',
+    },
+    scope: {
+        recalledLines: {
+            type: 'list',
+            of: {
+                type: 'object',
+                fields: {
+                    speaker: { type: 'string', description: { en: 'Who said it.' } },
+                    turn: {
+                        type: 'number',
+                        description: {
+                            en: "The line's position in its channel's conversation, counting from 1.",
+                        },
+                    },
+                    text: { type: 'string', description: { en: 'What was said.' } },
+                },
+            },
+        },
+    },
+    sample: [
+        { speaker: 'Mira', turn: 12, text: 'I hid the brass key under the chapel floor.' },
+        { speaker: 'Ada', turn: 31, text: 'The chapel? Mira, the chapel burned.' },
+    ],
+});
+/**
+ * Lore bound to a character that fit the budget — the band Assemble exposes
+ * as `characterLore`, the list of each entry's text.
+ *
+ * Declared so the band has a variable like its two siblings (typed templates
+ * P2), and deliberately **not laid out**: Assemble's `variables` slot names it
+ * `raw` (`rendersBands.raw`), because it has always reached a template as the
+ * raw list — and no shipped template renders it at all, since qualifying
+ * entries are folded into their character's card under `"extra lore"`. A
+ * layout for it would be a setting that changes nothing.
+ * @experimental
+ */
+export const varCharacterLore = defineVariable({
+    id: 'core:var/character-lore@1',
+    i18n: { name: { en: 'Character lore' } },
+    description: {
+        en: 'The text of each lore entry bound to a character that fit the budget, as a list.',
+    },
+    scope: { characterLore: { type: 'list', of: { type: 'string' } } },
+    sample: ['Carries a brand from the Ashguard.'],
 });
 /** One relationship as the prompt sees it — `relEntry` in graphContextFormatter. */
 const RELATIONSHIP = {
@@ -324,6 +485,7 @@ const BY_OTHER = { type: 'record', of: { type: 'list', of: RELATIONSHIP } };
  * thinks of Brannoc and what Rell thinks of the speaker as one undifferentiated
  * list, and a user who wanted one and not the other had no setting for it. Two
  * variables means two layouts, two priorities and two switches.
+ * @experimental
  */
 export const varRelationshipsPerspectives = defineVariable({
     id: 'core:var/relationships-perspectives@1',
@@ -358,6 +520,7 @@ export const varRelationshipsPerspectives = defineVariable({
  * Both sections are conditional: an install with no legendary figures has no
  * `legendaryFigures` key at all rather than an empty object, and the shipped
  * layout's guards are written against exactly that.
+ * @experimental
  */
 export const varRelationshipsKnown = defineVariable({
     id: 'core:var/relationships-known@1',
@@ -403,11 +566,12 @@ export const varRelationshipsKnown = defineVariable({
         },
     },
 });
+/** @experimental */
 export const varCurrentDate = defineVariable({
     id: 'core:var/current-date@1',
     i18n: { name: { en: 'Current date' } },
     description: {
-        en: "The story's present date, taken from the most recent history entry.",
+        en: "The story's present date: the lorebook's clock when it is set, else the most recent history entry.",
     },
     /**
      * ⚠ Was `{ currentDate: { type: 'string' } }` with the sample
@@ -437,6 +601,23 @@ export const varCurrentDate = defineVariable({
                     optional: true,
                     description: { en: 'Absent when the entry is only dated to a month.' },
                 },
+                hour: {
+                    type: 'number',
+                    optional: true,
+                    description: { en: "The clock's hour (0–23), when the present has a time of day." },
+                },
+                minute: {
+                    type: 'number',
+                    optional: true,
+                    description: { en: "The clock's minute, when the present has a time of day." },
+                },
+                label: {
+                    type: 'string',
+                    optional: true,
+                    description: {
+                        en: "The date spelled through the lorebook's calendar; absent when the book is free-form.",
+                    },
+                },
             },
         },
     },
@@ -456,6 +637,7 @@ export const varCurrentDate = defineVariable({
  * check that the sample matches the schema. A convention implemented twice is
  * one that eventually holds in one place and not the other, and the failure
  * would be a preview quietly rendering against `undefined`.
+ * @internal
  */
 export function sampleValues(decl) {
     const keys = Object.keys(decl.scope);
@@ -471,6 +653,7 @@ export function sampleValues(decl) {
  * variable needs at publish time, and because "the sample is a lie" is a defect
  * an installed plugin can carry just as easily as core can — as core did, in
  * two fields of one declaration, for the entire life of this registry.
+ * @experimental
  */
 export function checkVariableSamples(decls = allVariables()) {
     return decls.flatMap((d) => checkScopeSample(sampleValues(d), d.scope, d.id));

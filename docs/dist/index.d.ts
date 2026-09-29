@@ -19,5 +19,5 @@ export { AssetConverter, type ConvertedAsset, type ImageConvertOptions } from '.
 export { navOrder, type SourcePage } from './manifest.js';
 export { loadMarkdownDir, type LoadMarkdownDirOptions } from './sources.js';
 export { docTitle, escapeHtml, renderMarkdown, resolveDocLink, rewriteDocHref, slugifyHeading, stripInlineMarkdown, type AdmonitionKind, type DocHeading, type DocHrefContext, type DocImageAsset, type DocLinkRef, type RenderedMarkdown, type RenderMarkdownOptions, type ResolvedDocLink, } from './dialect.js';
-export { DEFAULT_ASSET_BUDGET_BYTES, DEFAULT_DOC_LANGUAGES, DEFAULT_LINK_BASE, DEFAULT_MAX_WIDTH, DEFAULT_QUALITY, type CompileDocsOptions, type CompileDocsReport, type DocsManifest, type DocsGraph, type DocsGraphEdge, type DocsGraphNode, type DocsPageMeta, type DocsSearchEntry, type DocsSource, } from './types.js';
+export { DEFAULT_ASSET_BUDGET_BYTES, DEFAULT_DOC_LANGUAGES, DEFAULT_LINK_BASE, DEFAULT_MAX_WIDTH, DEFAULT_QUALITY, type CompileDocsOptions, type CompileDocsReport, type DocsManifest, type DocsOrderGroup, type DocsGraph, type DocsGraphEdge, type DocsGraphNode, type DocsPageMeta, type DocsSearchEntry, type DocsSource, } from './types.js';
 //# sourceMappingURL=index.d.ts.map

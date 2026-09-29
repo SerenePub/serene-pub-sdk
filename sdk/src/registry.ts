@@ -29,13 +29,33 @@
  * catches exactly that, and catches it at install rather than mid-run.
  */
 
-import { scriptPointsOf, type Descriptor, type EntryShape, type ScriptPointDecl, type SlotDecl } from './descriptors.js'
+import { pluginRuleRef } from './pluginRuleRef.js'
+import {
+	definitionPolicy,
+	scriptPointsOf,
+	type DefinitionPolicy,
+	type Descriptor,
+	type EntryShape,
+	type ScriptPointDecl,
+	type SlotDecl,
+} from './descriptors.js'
+import type { MediaCapability } from './media.js'
 import { isScriptKindId, type ScriptKindDecl } from './scripts.js'
 import { settingsSlotFor } from './settingsSlot.js'
 import type { SettingsSchema } from './settings.js'
 import type { SpecDocument } from './document.js'
 
-/** A `pipeline_definition_registry` row (02 §3), as data. */
+/**
+ * A `pipeline_definition_registry` row (02 §3), as data.
+ *
+ * Two halves, and the row carries both (plans/31 V6): every **contract**
+ * field of the `Descriptor` (`DESCRIPTOR_CONTRACT_KEYS`) — so a row read back
+ * hashes to the `content_hash` it was written under, and a plugin can be
+ * judged against rows without being executed (F6) — and the **policy** half,
+ * on `policy`, `i18n` and `public`, which the hash never sees and a sync
+ * refreshes in place.
+ * @internal
+ */
 export interface RegistryEntry {
 	id: string
 	version: number
@@ -48,13 +68,27 @@ export interface RegistryEntry {
 	 */
 	optional?: boolean
 	/**
+	 * The four other contract flags and the three contract declarations that
+	 * had no column until plans/31 V6 — carried for the same reason `optional`
+	 * is: each is in the hash, and a hashed field the row cannot carry is a
+	 * row that cannot reproduce its own pointer. `review.fields` is also what
+	 * a `transport: process` outlet's gate form is read from.
+	 */
+	declaresRandomness?: boolean
+	earlyExit?: boolean
+	liveRow?: boolean
+	review?: { fields: readonly string[] }
+	/** Connection kind for providers (== produced shape) — `Descriptor.shape`. */
+	shape?: string
+	media?: MediaCapability
+	/**
 	 * Interior script points (18 §4e) — carried into the row for the same
 	 * reason `slots` is: the panel offers one chain option per point and must
 	 * render it without loading the plugin (F6). Keys and `accepts` are
 	 * contract and hash; labels are display text, stripped like `i18n`
-	 * everywhere else. Always the full shape — the projection folds the
-	 * deprecated spellings through `scriptPointsOf`, so a row never carries a
-	 * bare string or a point without `accepts`.
+	 * everywhere else. Always the full shape — the projection copies through
+	 * `scriptPointsOf`, and `register()` refuses a bare string or a point
+	 * without `accepts`, so a row never carries one.
 	 */
 	scriptPoints?: ScriptPointDecl[]
 	/**
@@ -136,7 +170,20 @@ export interface RegistryEntry {
 	semantics?: string
 	effects?: string
 	causesEvent?: string
+	/** The in-port whose literal names the event a write causes. */
+	causesEventFrom?: string
+	/** Inlet only: the event payloads it reads (R33) — hashed with the contract. */
+	payloads?: string[]
 	public?: boolean
+	/**
+	 * The policy half (plans/31 V6): `provisional` (plans/29 R-2 — the row
+	 * also reads it as `status: 'provisional'`), `reviewDefault`,
+	 * `timeoutMs`, `timeoutKind`, `toggleable`. Never hashed; a sync writes
+	 * it on insert and refreshes it in place when it moves, so flipping a
+	 * flag reaches every install without a pointer move. Absent on a script
+	 * kind's row, which declares none of them.
+	 */
+	policy?: DefinitionPolicy
 	/** Null for core types; the plugin slug for plugin types (12 §3b). */
 	owner?: string
 	/** Which SP release seeded this row. */
@@ -149,7 +196,7 @@ const bare = (id: string) => id.replace(/@\d+$/, '')
 const shapeId = (s: unknown): string | undefined =>
 	typeof s === 'string' ? s : ((s as { id?: string } | undefined)?.id ?? undefined)
 
-/** Project descriptors into registry rows — how core seeds and refreshes the table. */
+/** Project descriptors into registry rows — how core seeds and refreshes the table. @experimental */
 export function snapshotRegistry(
 	types: Array<Descriptor | ScriptKindDecl>,
 	meta: { owner?: string; release?: string } = {},
@@ -233,10 +280,21 @@ function nodeEntry(d: Descriptor, meta: { owner?: string; release?: string }): R
 		configSchema: d.entryShape?.fields,
 		effects: d.effects,
 		causesEvent: d.causesEvent,
+		causesEventFrom: d.causesEventFrom,
+		payloads: d.payloads?.length ? [...d.payloads] : undefined,
 		public: d.public,
 		optional: d.optional,
-		// Normalised on the way in, so a row is always the full shape and the
-		// panel never has to know a bare-string point ever existed.
+		declaresRandomness: d.declaresRandomness,
+		earlyExit: d.earlyExit,
+		liveRow: d.liveRow,
+		review: d.review,
+		shape: d.shape,
+		media: d.media,
+		// The policy half, whole — what the row's `status` and the panel's
+		// defaults are read from, and what the hash never sees.
+		policy: definitionPolicy(d),
+		// Copied on the way in, so a row is always the full shape the panel
+		// renders (`register()` refused anything less).
 		scriptPoints: d.scriptPoints ? scriptPointsOf(d) : undefined,
 		sessionShape: d.sessionShape,
 		owner: meta.owner,
@@ -250,6 +308,7 @@ function entryFacets(shape: EntryShape): Omit<EntryShape, 'fields'> {
 	return facets
 }
 
+/** @experimental */
 export type InstallCode =
 	| 'E_UNKNOWN_TYPE'
 	| 'E_SHAPE_DRIFT'
@@ -259,6 +318,7 @@ export type InstallCode =
 	| 'E_IN_PROCESS_HOOK'
 	| 'W_NEWER_VERSION'
 
+/** @experimental */
 export interface InstallFinding {
 	severity: 'error' | 'warning'
 	code: InstallCode
@@ -268,6 +328,7 @@ export interface InstallFinding {
 	where?: string
 }
 
+/** @experimental */
 export interface InstallInput {
 	/** The plugin's own declared types, as summarized in its manifest. */
 	declares: Array<{
@@ -290,6 +351,7 @@ export interface InstallInput {
  *
  * Never loads the plugin. Every finding names what to do, because the reader is an admin
  * who did not write the plugin and cannot be expected to infer the fix from the symptom.
+ * @internal
  */
 export function checkInstall(input: InstallInput): InstallFinding[] {
 	const findings: InstallFinding[] = []
@@ -336,13 +398,17 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 			}
 
 			// 3. A private type belonging to someone else.
-			if (entry && entry.owner && entry.owner !== input.owner && entry.public === false)
+			if (entry && entry.owner && entry.owner !== input.owner && !entry.public)
 				findings.push({
 					severity: 'error',
 					code: 'E_PRIVATE_TYPE',
 					where: `${doc.id} · ${n.key}`,
 					message: `pins ${pin}, which is private to '${entry.owner}'`,
-					fix: `ask '${entry.owner}' to mark it public. A private type is one its owner may change without warning, so pinning it across a plugin boundary would break on their next release (01 §9).`,
+					fix:
+						`ask '${entry.owner}' to make its handler public — handler(definition, fn, { visibility: 'public' }). ` +
+						`A private node is one its owner may change without warning, so using it across a plugin boundary ` +
+						`would break on their next release.` +
+						pluginRuleRef('private-nodes'),
 				})
 
 			// 4. Informational: a newer version exists. The pin still runs — that is what
@@ -418,8 +484,10 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 	return findings
 }
 
+/** @internal */
 export const installable = (f: InstallFinding[]): boolean => !f.some((x) => x.severity === 'error')
 
+/** @internal */
 export function renderInstall(findings: InstallFinding[]): string {
 	if (!findings.length) return 'installable'
 	return findings

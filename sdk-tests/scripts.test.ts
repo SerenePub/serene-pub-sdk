@@ -53,6 +53,9 @@ const CORE_V1 = [
 	// paste-rung half of the ruling. A scope of its own so a context edit can
 	// never land on a cast list by attachment mistake.
 	'core:script:cast/transform@1',
+	// The turn scope, added 2026-09-21: who speaks next, as a script — the
+	// plugin's (and the admin's) seam for turn detection of its own.
+	'core:script:turn/select@1',
 ]
 
 describe('18-S1 · the id grammar', () => {
@@ -156,6 +159,7 @@ describe('18-S1 · core ships eight contracts', () => {
 			'context',
 			'messages',
 			'text',
+			'turn',
 		])
 	})
 })

@@ -1,0 +1,42 @@
+<!doctype html>
+<!--
+  {{displayName}} — a frame panel.
+
+  A frame panel is a VIEW ONTO A CHANNEL. This document has no cookies, no
+  socket, no DOM reach and no network: everything it knows arrives on the port
+  the host transfers with `init`, and what arrives is the messages of the
+  channels the panel declared. So anything this panel must not show is something
+  the server must never post.
+
+  ⚠ The script is a FILE, not an inline block. A frame is served under
+  `script-src 'self'`, so an inline <script> is refused — and from inside the
+  panel that failure is silent: the markup renders and nothing ever happens.
+  Inline <style> is allowed (`style-src 'self' 'unsafe-inline'`), which is why
+  the one below stays. `npx serene-pub ui .` serves frames under core's own CSP,
+  so this is the kind of thing the harness catches before an install does.
+
+  ⚠ There is no <form> here either, and there cannot be: a submit would navigate
+  a document that has nowhere to navigate to. A press posts a message on the
+  port; see panel.js.
+
+  ✎ CHANGE: the markup, the styling, and the two ids panel.js reads.
+-->
+<html lang="en">
+<meta charset="utf-8" />
+<title>{{displayName}}</title>
+<style>
+  :root { color-scheme: light dark; --ink: #1b1a22; --dim: #6c6a7a; --line: #d9d7e3; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #eceaf5; --dim: #9a97ab; --line: #35323f; }
+  }
+  body { margin: 0; padding: 12px; font: 13px/1.4 system-ui, sans-serif; color: var(--ink); }
+  h1 { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+  #count { color: var(--dim); font-weight: 400; }
+  button { width: 100%; padding: 7px; font: inherit; font-weight: 600; color: var(--ink);
+           background: none; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+  button:hover { border-color: var(--ink); }
+</style>
+<h1>{{displayName}} <span id="count">nothing yet</span></h1>
+<button id="act" type="button">Ask</button>
+<script src="{{panelId}}.js"></script>
+</html>

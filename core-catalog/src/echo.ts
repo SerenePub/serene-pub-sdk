@@ -19,9 +19,12 @@ import { compile, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { chatGenre } from './genres.js'
 
+/** @experimental */
 export const ECHO_SPEC_ID = 'core:spec/echo'
+/** @internal */
 export const ECHO_VERSION = '1.0.0'
 
+/** @experimental */
 export const echoSpec = () =>
 	compile(
 		spec(ECHO_SPEC_ID, {
@@ -29,25 +32,23 @@ export const echoSpec = () =>
 			/** A person-invoked action on chats (23 §2), same as narrate. */
 			taxonomy: {
 				role: 'action',
-				genre: chatGenre.id,
 			},
 			/**
 			 * The contributed action (19 §4; R-15, U5c): offers the `echo`
 			 * function on standard-mode sessions from the composer. Same
 			 * namespace as the genre owner, so it lands as a companion — present
 			 * by default — and a `composer` venue renders itself with no client
-			 * code (the generic `fireTrigger` path). Not `quick`: a demo lives
+			 * code (the generic `fireOfferedAction` path). Not `quick`: a demo lives
 			 * in the overflow and the `/echo` palette, never on the primary row.
 			 */
 			contributes: {
 				actions: [
 					{
 						key: 'echo',
-						genre: chatGenre.id,
-						function: 'echo',
 						venue: { kind: 'composer' },
 						icon: 'pencil',
 						label: { en: 'Echo' },
+						description: { en: 'Ask you for some text and post it as a message — a demo of the review step.' },
 					},
 				],
 			},

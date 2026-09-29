@@ -6,9 +6,10 @@
  * prompts, and a single module holding all of them would be a merge conflict
  * waiting for the first person to add a sixth.
  */
-/** The spec a session turn runs. */
+/** The spec a session turn runs. @experimental */
 export declare const RESPOND_SPEC_ID = "core:spec/respond";
-export declare const RESPOND_VERSION = "1.20.0";
+/** @internal */
+export declare const RESPOND_VERSION = "1.21.0";
 /**
  * Core's answer-a-message pipeline.
  *
@@ -17,6 +18,7 @@ export declare const RESPOND_VERSION = "1.20.0";
  * find. Three of the five need nothing installed; the two that read embeddings
  * need a model and both ship switched off, so a first boot runs exactly the
  * zero-cost path it always did.
+ * @experimental
  */
 export declare const respondSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=respond.d.ts.map

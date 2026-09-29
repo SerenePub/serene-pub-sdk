@@ -1,4 +1,17 @@
-const en = (v) => typeof v === 'string' ? v : (v?.en ?? '');
+/**
+ * Docs from declarations (24 T9, the generation half).
+ *
+ * A package's announcement already contains everything reference
+ * documentation says: identity, genres with their event surfaces and shapes,
+ * every pipeline's nodes and options with types, defaults and descriptions,
+ * shipped prompts, presets with their bindings. So the docs are *rendered*,
+ * never written — the same bytes that ship become the pages, and the pages
+ * cannot drift from the product. The docs site (T9 proper) consumes this
+ * markdown and adds live controls once @serene-pub/controls exists.
+ */
+import { i18nText } from '@serene-pub/sdk';
+/** Display text in the docs' one language — the SDK's resolver, `en`. */
+const en = (v) => i18nText(v) ?? '';
 const code = (s) => '`' + s + '`';
 const fileSafe = (id) => id.replace(/[:/]/g, '_');
 function fieldRow(name, decl) {
@@ -81,7 +94,7 @@ function specPage(doc, announcement, typeOf) {
         lines.push(`## Shipped prompts`);
         lines.push('');
         for (const p of prompts)
-            lines.push(`- **${p.label}** (${code(p.slug)}) — ${code(`${p.nodeType}#${p.slot}`)}`);
+            lines.push(`- **${en(p.label)}** (${code(p.slug)}) — ${code(`${p.nodeType}#${p.slot}`)}`);
         lines.push('');
     }
     return { path: `pipelines/${fileSafe(doc.id)}.md`, markdown: lines.join('\n') };
@@ -123,14 +136,15 @@ function genrePage(genre, announcement) {
     }
     return { path: `genres/${fileSafe(genre.id)}.md`, markdown: lines.join('\n') };
 }
+/** @internal */
 export function renderAnnouncementDocs(announcement, typeOf) {
     const pages = [];
     // The index: what this package is and ships.
     const index = [];
-    index.push(`# ${announcement.identity.title}`);
+    index.push(`# ${en(announcement.identity.title)}`);
     index.push('');
     if (announcement.identity.summary)
-        index.push(announcement.identity.summary);
+        index.push(en(announcement.identity.summary));
     index.push('');
     if (announcement.genres.length) {
         index.push(`## Genres`);
@@ -148,10 +162,10 @@ export function renderAnnouncementDocs(announcement, typeOf) {
         index.push(`## Presets`);
         index.push('');
         for (const p of announcement.presets) {
-            index.push(`### ${p.label} (${code(p.slug)})`);
+            index.push(`### ${en(p.label)} (${code(p.slug)})`);
             index.push('');
             if (p.description) {
-                index.push(p.description);
+                index.push(en(p.description));
                 index.push('');
             }
             index.push('| event | pipeline | config |');

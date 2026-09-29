@@ -13,20 +13,23 @@
  * `adventure-look` writes a message and changes nothing. The other two change
  * state and write no message at all, which is worth stating plainly because it
  * looks like a bug the first time you see a run with no reply: pressing Rest
- * produces a ledger under the last message, not a new one. A pipeline is
- * allowed exactly one write-class Consumer (F7) and is not obliged to have one.
+ * produces a ledger under the last message, not a new one. A pipeline may
+ * write as often as it likes and is not obliged to write at all (F7).
  *
  * ## Why `adventure-inventory` is not here
  *
  * The design lists a fourth action: a prose inventory check with no model call.
- * Two things say it should not be a pipeline. `core:query/session-state@1`
- * publishes possessions as a map keyed by owner, and no core node turns a map
- * into text — `join-text` reads a list. And the question it answers is the one
- * the **Inventory widget** answers continuously, in the session, with the item
+ * Two things say it should not be a pipeline. What somebody carries is their
+ * `inventory` stat (phase 3b), already in the state block every prompt reads,
+ * so a pipeline would only restate it. And the question it answers was the one
+ * the **Inventory widget** answered continuously, in the session, with the item
  * prose on hover. A button that writes a worse copy of a panel already on
- * screen is a feature competing with itself.
+ * screen is a feature competing with itself. (R79 removed that widget for now;
+ * the first reason still stands on its own, so the action stays out.)
  */
+/** @internal */
 export declare const ADVENTURE_LOOK_SPEC_ID = "core:spec/adventure-look";
+/** @internal */
 export declare const ADVENTURE_LOOK_VERSION = "1.0.0";
 /**
  * The narrator describes where you are, from the lore and the world state, and
@@ -39,28 +42,40 @@ export declare const ADVENTURE_LOOK_VERSION = "1.0.0";
  * `state` port.** That port has been declared and unfilled since the stats
  * substrate landed, because Chat must never grow a state block. This is a genre
  * that wants one, using the standard context surface to get it.
+ * @internal
  */
 export declare const adventureLookSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @internal */
 export declare const ADVENTURE_REST_SPEC_ID = "core:spec/adventure-rest";
+/** @internal */
 export declare const ADVENTURE_REST_VERSION = "1.0.0";
-/** Stop and recover: stamina and health back, and the clock moves on. */
+/** Stop and recover: stamina and health back, and the clock moves on. @internal */
 export declare const adventureRestSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @internal */
 export declare const ADVENTURE_ADVANCE_TIME_SPEC_ID = "core:spec/adventure-advance-time";
+/** @internal */
 export declare const ADVENTURE_ADVANCE_TIME_VERSION = "1.0.0";
-/** Let time pass: the world clock steps on, and the weather may turn with it. */
+/** Let time pass: the world clock steps on, and the weather may turn with it. @internal */
 export declare const adventureAdvanceTimeSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @internal */
 export declare const ADVENTURE_ASK_SPEC_ID = "core:spec/adventure-ask";
+/** @internal */
 export declare const ADVENTURE_ASK_VERSION = "1.0.0";
+/** @internal */
 export declare const ADVENTURE_ANSWER_SPEC_ID = "core:spec/adventure-answer";
+/** @internal */
 export declare const ADVENTURE_ANSWER_VERSION = "1.0.0";
 /**
  * What the narrator's question comes back as, from `generate-json@1`.
  *
  * The addressee is a **name** rather than a participant reference: the
- * model reads names off the transcript, and `make-choices@1` resolves the
- * name against the cast into `character:<id>` at the write. A name that
- * resolves to nobody leaves the block unaddressed — buttons the owner may
- * press — rather than a broken form.
+ * model reads names off the transcript, and `make-choices@1` resolves
+ * the name — against the cast first, then the members' presences, by
+ * name or nickname — into `character:<id>` at the write. A name that
+ * resolves to nobody leaves the block unaddressed; a press on an
+ * unaddressed block is answered as the presser (their presence when
+ * they hold one, else their own line).
+ * @internal
  */
 export declare const ADVENTURE_ASK_SCHEMA: {
     readonly type: 'object';
@@ -111,6 +126,7 @@ export declare const ADVENTURE_ASK_SCHEMA: {
  * declared here so the block has an identity to be stamped with. `answer`
  * is offered to any participant — the form's **addressee** is who may
  * actually press it, decided per block at the fire.
+ * @internal
  */
 export declare const adventureAskSpec: () => import("@serene-pub/sdk").SpecDocument;
 /**
@@ -124,6 +140,7 @@ export declare const adventureAskSpec: () => import("@serene-pub/sdk").SpecDocum
  *
  * Declared on its own spec rather than folded into `ask`: a spec has one
  * inlet and one graph, and asking and answering are two graphs.
+ * @internal
  */
 export declare const adventureAnswerSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=adventureActions.d.ts.map

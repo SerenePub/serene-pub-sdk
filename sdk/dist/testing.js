@@ -14,11 +14,19 @@
  */
 import { run } from './executor.js';
 /**
+ * The plugin sandbox's context, in this harness (plans 29 §14 D-3) — the half
+ * the executor cannot supply, because a plugin's node handlers never run
+ * against the executor's context at install. Re-exported here so an author's
+ * one import is `@serene-pub/sdk/testing`.
+ */
+export * from './pluginHarness.js';
+/**
  * Reduce a receipt to what a golden should hold.
  *
  * Timings, run ids and wall-clock are all excluded — a golden that fails because a run
  * took 3ms instead of 2ms is a golden nobody keeps. What is kept is every decision and
  * every payload, which is what actually changes when a plugin's behaviour changes.
+ * @experimental
  */
 export function toGolden(name, r) {
     return {
@@ -39,7 +47,7 @@ export function toGolden(name, r) {
         wire: r.preview?.context.rendered,
     };
 }
-/** A structural diff, deepest-path-first, so the first line names the actual change. */
+/** A structural diff, deepest-path-first, so the first line names the actual change. @experimental */
 export function diffGolden(before, after) {
     const out = [];
     const walk = (a, b, path) => {
@@ -62,6 +70,7 @@ export function diffGolden(before, after) {
     walk(before, after, '');
     return out;
 }
+/** @experimental */
 export function renderDiff(d) {
     if (!d.length)
         return 'identical';
@@ -69,6 +78,7 @@ export function renderDiff(d) {
         .map((x) => `  ${x.path}\n    before: ${JSON.stringify(x.before)}\n    after:  ${JSON.stringify(x.after)}`)
         .join('\n');
 }
+/** @experimental */
 export class GoldenMismatch extends Error {
     name;
     diff;
@@ -78,7 +88,7 @@ export class GoldenMismatch extends Error {
         this.diff = diff;
     }
 }
-/** Record if absent, compare if present. The whole workflow in one call. */
+/** Record if absent, compare if present. The whole workflow in one call. @experimental */
 export function checkGolden(name, r, stored) {
     const golden = toGolden(name, r);
     if (!stored)
@@ -96,6 +106,7 @@ const isResult = (v) => !!v && typeof v === 'object' && ['ok', 'err', 'cancelled
 /**
  * What a hook has to do to be a hook. Run these in your own tests — the executor assumes
  * all of it, and a hook that breaks one of them fails in a way that is hard to attribute.
+ * @experimental
  */
 export const BINDING_PROBES = [
     {
@@ -183,6 +194,7 @@ function bounded(p) {
         }),
     ]).finally(() => clearTimeout(timer));
 }
+/** @experimental */
 export async function probeBinding(hook, descriptor, ctx) {
     const out = [];
     for (const p of BINDING_PROBES) {
@@ -199,7 +211,7 @@ export async function probeBinding(hook, descriptor, ctx) {
     }
     return out;
 }
-/** A context shaped like the executor's, per kind — so a probe tests the real surface. */
+/** A context shaped like the executor's, per kind — so a probe tests the real surface. @experimental */
 export const probeCtxFor = (kind, sampleInput = {}) => ({
     sampleInput,
     makeCtx: (over = {}) => {
@@ -238,16 +250,57 @@ export const probeCtxFor = (kind, sampleInput = {}) => ({
  * is not the only thing that runs an example any more: the browser playground
  * runs the same module against the same seed, and a reader who compares what
  * they just ran against the page has to be comparing the same run.
+ * @experimental
  */
 export const EXAMPLE_SEED = 'seed:example';
+/** @experimental */
 export const EXAMPLE_CLOCK = 1_700_000_000_000;
-/** The context an executed example runs against. Seed and clock default to the fixed pair. */
+/** The context an executed example runs against. Seed and clock default to the fixed pair. @experimental */
 export function makeExampleRunCtx(doc, opts = {}) {
     const seed = opts.seed ?? EXAMPLE_SEED;
     const now = opts.now ?? (() => EXAMPLE_CLOCK);
     return { doc, seed, now, run: (runOpts) => run(doc, { ...runOpts, seed, now }) };
 }
 const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+/** How much of a written text a summary line shows before it stops. */
+const WROTE_LIMIT = 100;
+/**
+ * Whether this outlet's published result is a write the host took (13 §7j-b).
+ *
+ * The verb on the line below is `wrote`, so it has to be earned. A write-effect
+ * outlet publishes a discriminated `WriteResult` and the executor stamps
+ * `committed` on it; an emit-class outlet publishes whatever its binding
+ * returned, and `pending` is a write still sitting in review.
+ */
+const committed = (output) => !!output &&
+    typeof output === 'object' &&
+    output.status === 'committed';
+/**
+ * What an outlet was handed to write, if anything readable.
+ *
+ * `text` first, because that is the port the writing outlets in the core
+ * catalog name. Then the first string-valued port, because an outlet is free
+ * to name its own — `audio`, `value` — and a summary that understood one word
+ * only would go quiet on exactly the outlets a plugin author wrote. A receipt
+ * carries a node's input, not its port declarations, so the input object is
+ * all there is to read here.
+ */
+function wroteText(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input))
+        return undefined;
+    const ports = input;
+    const value = typeof ports.text === 'string'
+        ? ports.text
+        : Object.values(ports).find((v) => typeof v === 'string');
+    if (value === undefined)
+        return undefined;
+    // One line, whatever the text did: a summary is a block of plain text, and a
+    // reply with a paragraph break in it would otherwise break the column.
+    const flat = value.replace(/\s+/g, ' ').trim();
+    if (!flat)
+        return undefined;
+    return flat.length > WROTE_LIMIT ? `${flat.slice(0, WROTE_LIMIT)}…` : flat;
+}
 /**
  * A receipt as a page shows it: what ran, in order, and how each step ended.
  *
@@ -256,6 +309,7 @@ const plural = (n, noun) => `${n} ${noun}${n === 1 ? '' : 's'}`;
  * between two identical runs, and a page that changed on every build would
  * teach a reader to ignore it. What is left is what the run DECIDED — which is
  * the only part worth pinning.
+ * @experimental
  */
 export function renderRunSummary(r) {
     const out = [];
@@ -271,6 +325,20 @@ export function renderRunSummary(r) {
         if (n.samplingIgnored?.length)
             out.push(`     ignored samplers: ${n.samplingIgnored.join(', ')}`);
     }
+    // What actually reached the session. The node lines above say a write
+    // happened; these say what it was, which is the half a reader came for.
+    //
+    // Only outlets that committed. An emit-class outlet is not a write (F7 —
+    // there is exactly one of those), and a line for the streaming twin of the
+    // write beside it would print the same sentence twice; a dry run committed
+    // nothing at all and its line would name a row nobody has.
+    for (const n of r.nodes) {
+        if (n.kind !== 'outlet' || n.result !== 'ok' || n.dry || !committed(n.output))
+            continue;
+        const wrote = wroteText(n.input);
+        if (wrote !== undefined)
+            out.push(` ▸ ${n.nodeKey} wrote: “${wrote}”`);
+    }
     for (const e of r.emitted)
         out.push(` ▸ core emitted ${e.event} (cause: ${e.cause}) → ${plural(e.subscribers, 'subscriber')}`);
     out.push(` consumption: ${plural(r.consumption.tokens, 'token')}, ` +
@@ -282,6 +350,7 @@ export function renderRunSummary(r) {
  * F26 as a one-liner an author can run: parallel and forced-sequential must produce the
  * same result. If your hook has a hidden ordering dependency, this is where it shows up
  * — not in a user's chat at 2am under load.
+ * @experimental
  */
 export async function assertEquivalent(doc, opts) {
     const norm = (r) => r.nodes
@@ -295,7 +364,7 @@ export async function assertEquivalent(doc, opts) {
             'depends on completion order — usually a hook mutating shared state rather than returning it.');
     }
 }
-/** Run the same spec twice on one seed and assert nothing moved (F11). */
+/** Run the same spec twice on one seed and assert nothing moved (F11). @experimental */
 export async function assertDeterministic(doc, opts) {
     const a = await run(doc, opts);
     const b = await run(doc, opts);
@@ -303,6 +372,7 @@ export async function assertDeterministic(doc, opts) {
     if (diff.length)
         throw new GoldenMismatch('determinism', diff);
 }
+/** @experimental */
 export function renderProbes(results) {
     const lines = results.map((r) => `  ${r.pass ? '✓' : '✗'} ${r.id} ${r.title}`);
     for (const r of results.filter((x) => !x.pass)) {

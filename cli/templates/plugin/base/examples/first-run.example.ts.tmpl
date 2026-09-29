@@ -1,0 +1,62 @@
+/**
+ * The first run: one inlet, one read, this package's own Task, one model call,
+ * one write.
+ *
+ * An executed example is not a description of a run — it **is** one. The module
+ * is built into a document, validated against the same laws a published
+ * pipeline is, and executed against the fixture host beside it; the golden in
+ * `goldens/` holds the output still, so a change in what the executor does
+ * fails the suite naming this example instead of quietly rewriting a page.
+ *
+ * There is no golden yet. Record the first one deliberately:
+ *
+ *     UPDATE_GOLDENS=1 npm test
+ *
+ * and commit it — an example whose output nothing pins is a page that can
+ * drift.
+ *
+ * ✎ CHANGE: the spec below. It is built here rather than imported because the
+ *   base scaffold ships no pipeline of its own; once yours does, `build:` should
+ *   call it — `build: () => respondSpec()`.
+ */
+
+import { sessionEvents, slot, spec } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+import { chatGenre } from '@serene-pub/core-catalog'
+import type { Example } from '@serene-pub/cli'
+
+import { echoDefinition } from '../src/index.js'
+import { bindings, world } from './fixtures.js'
+
+const firstRun = spec('{{exampleSpecId}}', { version: '1.0.0' })
+	/** Exactly one inlet, positionally first, carrying the usage lock. */
+	.inlet('input', C.userMessage.v1(), {
+		genre: chatGenre,
+		event: sessionEvents.messageRespond,
+	})
+	/** A Query reads Serene Pub's own data, and cannot reach the network. */
+	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+	/** This package's own node. Everything else on this chain is core's. */
+	.task('echo', ($) => echoDefinition.v1({ text: $.input.text }))
+	.task('prompt', () => C.assemble.v2())
+	/** The one node that crosses the boundary. */
+	.oracle('speak', ($) =>
+		C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
+	)
+	/** The one write. */
+	.outlet('save', ($) => C.createMessage.v1({ text: $.speak.text }))
+
+export const example: Example = {
+	/** The slug IS the filename stem — it names this page and the golden beside it. */
+	slug: 'first-run',
+	title: 'The first run',
+	summary: 'One inlet, one read, this package’s own Task, one model call, one write.',
+	build: () => firstRun.build(),
+	run: (ctx) =>
+		ctx.run({
+			input: { text: 'are you there', sessionScope: 'session:1' },
+			bindings: bindings(),
+			world,
+			subscribers: { 'core:event/message-created@1': 1 },
+		}),
+}

@@ -50,6 +50,7 @@ interface RenderedPage extends SourcePage {
 	html: string
 	headings: DocHeading[]
 	previews: Record<string, string>
+	sectionTexts: Record<string, string>
 	links: { href: string; slug: string; anchor: string }[]
 	/** The first paragraph after the H1, as the renderer already computed it. */
 	description: string
@@ -92,11 +93,18 @@ export async function compileDocs(opts: CompileDocsOptions): Promise<CompileDocs
 			pagesBySlug.set(page.slug, page)
 			ordered.push(page)
 		}
-		navGroups.push({
-			group: source.group,
-			source: source.id,
-			pages: settled.ordered.map((page) => page.slug),
-		})
+		// One nav group per settled group — several for a grouped `order`.
+		// A page whose slug clashed was never rendered, so it stays out of
+		// the nav as it stays out of `ordered`.
+		for (const group of settled.groups) {
+			navGroups.push({
+				group: group.group,
+				source: source.id,
+				pages: group.pages
+					.filter((page) => pagesBySlug.get(page.slug) === page)
+					.map((page) => page.slug),
+			})
+		}
 	}
 
 	// ── 2. Render everything, converting images as they are met. ──
@@ -222,6 +230,7 @@ export async function compileDocs(opts: CompileDocsOptions): Promise<CompileDocs
 				title: heading.text,
 				depth: heading.depth,
 				preview: page.previews[heading.id] ?? '',
+				text: page.sectionTexts[heading.id] ?? '',
 			})
 		}
 	}

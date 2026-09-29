@@ -28,6 +28,7 @@ const SEMVER_RE = /^\d+\.\d+\.\d+(?:[-+].+)?$/
 // call time; this only pins the authoring vocabulary.
 const HOSTNAME_RE = /^(?:\*|(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*)(?::\d+)?$/i
 
+/** @internal */
 export interface ManifestInput {
 	/** "namespace/name" — lowercase, the stable address. */
 	id: string
@@ -49,6 +50,7 @@ export interface ManifestInput {
 	}
 }
 
+/** @internal */
 export interface CompiledManifest {
 	id: string
 	name: string
@@ -89,6 +91,7 @@ function uniqueIdents(list: unknown, field: string): string[] {
 	return out
 }
 
+/** @internal */
 export function compileManifest(input: ManifestInput): CompiledManifest {
 	if (!input || typeof input !== "object") fail("declaration is required")
 	if (typeof input.id !== "string" || !ID_RE.test(input.id))

@@ -1,3 +1,4 @@
+/** @internal */
 export async function typeSurfaces() {
     const { allDefinitions, allScriptKinds, snapshotRegistry } = await import('@serene-pub/sdk');
     await import('@serene-pub/contracts');

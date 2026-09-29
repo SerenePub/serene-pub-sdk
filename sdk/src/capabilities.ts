@@ -68,10 +68,13 @@ import type { I18nText } from './settings.js'
  * ⚠ **Append, never insert.** `side()` orders a transform's kinds by position
  * here, so moving an existing member rewrites ids that are stored as primary
  * keys (`connection_defaults`) and compared as strings everywhere else.
+ * @experimental
  */
 export const IO_KINDS = ['text', ...MEDIA_KINDS, 'embedding', 'entities'] as const
+/** @experimental */
 export type IoKind = (typeof IO_KINDS)[number]
 
+/** @experimental */
 export interface Transform {
 	in: readonly IoKind[]
 	out: readonly IoKind[]
@@ -85,6 +88,7 @@ export interface Transform {
  * string is, and it is stable because the sides are ordered by `IO_KINDS`
  * declaration order rather than alphabetically: text leads, so vision reads
  * `text+image->text` rather than `image+text->text`.
+ * @experimental
  */
 export type TransformId = `${string}->${string}`
 
@@ -95,7 +99,7 @@ const side = (kinds: readonly IoKind[]): string =>
 		.sort((a, b) => (KIND_ORDER.get(a) ?? 99) - (KIND_ORDER.get(b) ?? 99))
 		.join('+')
 
-/** Read an id back apart, for a UI that wants the kinds rather than the string. */
+/** Read an id back apart, for a UI that wants the kinds rather than the string. @internal */
 export function parseTransform(id: TransformId): Transform {
 	const [inS = '', outS = ''] = id.split('->')
 	return {
@@ -124,6 +128,7 @@ export function parseTransform(id: TransformId): Transform {
  * `satisfies Record<IoKind, IoKind>` is load-bearing in both directions: adding
  * a kind to `IO_KINDS` without adding it here stops compiling, and so does a
  * member here whose value is not its own name.
+ * @experimental
  */
 export const IoKinds = {
 	text: 'text',
@@ -144,7 +149,7 @@ export const IoKinds = {
  */
 type Kinds = readonly [IoKind, ...IoKind[]]
 
-/** What an author writes: `{ in: [IoKinds.text, IoKinds.image], out: [IoKinds.text] }`. */
+/** What an author writes: `{ in: [IoKinds.text, IoKinds.image], out: [IoKinds.text] }`. @experimental */
 export interface TransformShape {
 	in: Kinds
 	out: Kinds
@@ -189,7 +194,7 @@ type Join<T extends readonly string[]> = T extends readonly [
 
 type Side<Ks extends readonly IoKind[]> = Join<InOrder<typeof IO_KINDS, Ks>>
 
-/** The exact id a shape denotes, as a literal type. */
+/** The exact id a shape denotes, as a literal type. @experimental */
 export type IdOf<T extends TransformShape> =
 	`${Side<T['in']>}->${Side<T['out']>}`
 
@@ -212,6 +217,7 @@ export type IdOf<T extends TransformShape> =
  * out: [IoKinds.image] })` compiles and yields `'audio->image'`, which `TRANSFORMS`
  * does not name. Core's table names what core ships; a plugin may introduce a
  * transform, and closing that door is a separate ruling nobody has taken.
+ * @experimental
  */
 export function tf<const T extends TransformShape>(t: T): IdOf<T> {
 	return build(t) as IdOf<T>
@@ -232,12 +238,14 @@ const build = (t: Transform): string => `${side(t.in)}->${side(t.out)}`
  * reject: `tf({ in: [], out: [IoKinds.text] })` fails the non-empty `Kinds`
  * check, falls through to `readonly IoKind[]`, and compiles as `TransformId`.
  * Two faces over one body keeps `tf` strict and this one honest.
+ * @internal
  */
 export const transformId = (t: Transform): TransformId =>
 	build(t) as TransformId
 
 // ── The named transforms ────────────────────────────────────────────────────
 
+/** @experimental */
 export interface TransformMeta {
 	i18n: I18nText
 	/** One line under the name, in plain language. */
@@ -260,6 +268,7 @@ export interface TransformMeta {
  * does not name, and everything keeps working — it simply shows as its id until
  * somebody names it. Never render a raw `text->image` to a person; that is what
  * `transformLabel` is for.
+ * @internal
  */
 export const TRANSFORMS = {
 	'text->text': {
@@ -305,6 +314,7 @@ export const TRANSFORMS = {
 	},
 } as const satisfies Record<TransformId, TransformMeta>
 
+/** @internal */
 export type KnownTransformId = keyof typeof TRANSFORMS
 
 // ── Features ────────────────────────────────────────────────────────────────
@@ -330,6 +340,7 @@ export type KnownTransformId = keyof typeof TRANSFORMS
  * The axis they share, and the reason none of them is a transform, is that every
  * one qualifies a call whose in and out kinds are already settled. `text->text`
  * either way; these say HOW.
+ * @experimental
  */
 export const FEATURES = [
 	'json_object',
@@ -362,11 +373,13 @@ export const FEATURES = [
 	'wire_chat',
 	'wire_completion',
 ] as const
+/** @experimental */
 export type FeatureId = (typeof FEATURES)[number]
 
+/** @experimental */
 export type CapabilityId = TransformId | FeatureId
 
-/** Transforms contain `->`; features never do. The two spaces cannot collide. */
+/** Transforms contain `->`; features never do. The two spaces cannot collide. @internal */
 export const isTransformId = (id: string): id is TransformId => id.includes('->')
 
 /**
@@ -376,6 +389,7 @@ export const isTransformId = (id: string): id is TransformId => id.includes('->'
  * Declaring the implication once means an adapter states the strongest thing it
  * does and the rest follows, rather than seven adapters each remembering to list
  * the weaker forms.
+ * @internal
  */
 export const IMPLIES: Partial<Record<FeatureId, readonly FeatureId[]>> = {
 	strict_schema: ['json_schema'],
@@ -389,6 +403,7 @@ export const IMPLIES: Partial<Record<FeatureId, readonly FeatureId[]>> = {
  * becomes data instead of a comment. `jsonSchemaToGbnf` is literally
  * "provide `json_schema` by compiling it to a `grammar`" — declared here once,
  * rather than re-derived inside each adapter that happens to have a grammar.
+ * @internal
  */
 export const EMULATABLE_VIA: Partial<Record<FeatureId, readonly FeatureId[]>> = {
 	json_object: ['json_schema', 'grammar'],
@@ -417,6 +432,7 @@ export const EMULATABLE_VIA: Partial<Record<FeatureId, readonly FeatureId[]>> = 
  * lets a capability core never named have a shape core never named, and it makes
  * `Math.min` the entire comparator — see `composite`, which replaced three
  * separately hardcoded `{native: 2, emulated: 1, none: 0}` rank tables.
+ * @experimental
  */
 export type Grade = number
 
@@ -428,6 +444,7 @@ export type Grade = number
  * `"nativ"` a compile error at the place it was typed. The openness that matters
  * is `bandsFor`'s fallback — a plugin's own transform grades correctly without
  * anybody editing this file — and that needs no new band NAMES to work.
+ * @experimental
  */
 export const BAND = {
 	none: 'none',
@@ -435,6 +452,7 @@ export const BAND = {
 	native: 'native',
 } as const
 
+/** @experimental */
 export type Band = (typeof BAND)[keyof typeof BAND]
 
 /**
@@ -443,6 +461,7 @@ export type Band = (typeof BAND)[keyof typeof BAND]
  * Consulted when a band a capability does not HAVE is asked for: `emulated`
  * asked of `text->image` walks down to `none`, because a claim is never stronger
  * than what permits it and nothing supplies an emulated picture.
+ * @internal
  */
 export const BAND_ORDER = [BAND.none, BAND.emulated, BAND.native] as const
 
@@ -461,6 +480,7 @@ export const BAND_ORDER = [BAND.none, BAND.emulated, BAND.native] as const
  * table records. `closure` raises through `gradeOf(id, BAND.emulated)`, so a
  * capability with no such band cannot be emulated upward at all — the honest
  * answer, arrived at without a second list stating it.
+ * @experimental
  */
 export const BANDS: Partial<Record<CapabilityId, readonly Band[]>> = {
 	json_object: [BAND.none, BAND.emulated, BAND.native],
@@ -468,16 +488,17 @@ export const BANDS: Partial<Record<CapabilityId, readonly Band[]>> = {
 	tools: [BAND.none, BAND.emulated, BAND.native],
 }
 
-/** A capability nobody gave bands: it either works or it does not. */
+/** A capability nobody gave bands: it either works or it does not. @experimental */
 export const DEFAULT_BANDS: readonly Band[] = [BAND.none, BAND.native]
 
+/** @internal */
 export const bandsFor = (id: CapabilityId): readonly Band[] =>
 	BANDS[id] ?? DEFAULT_BANDS
 
-/** The best this capability can be — what `native` means FOR IT. */
+/** The best this capability can be — what `native` means FOR IT. @experimental */
 export const topGrade = (id: CapabilityId): Grade => bandsFor(id).length - 1
 
-/** Which band a grade lands in, or `undefined` for a grade off the scale. */
+/** Which band a grade lands in, or `undefined` for a grade off the scale. @internal */
 export const bandOf = (id: CapabilityId, grade: Grade): Band | undefined =>
 	bandsFor(id)[grade]
 
@@ -494,6 +515,7 @@ export const bandOf = (id: CapabilityId, grade: Grade): Band | undefined =>
  * `CapabilityOverrides` hold grades and nothing else — the same split by
  * position the old vocabulary had, where an adapter could declare `probed` and a
  * connection could only store a resolved answer.
+ * @experimental
  */
 export type GradeSpec = Band | Grade
 
@@ -504,6 +526,7 @@ export type GradeSpec = Band | Grade
  * range, and a band the capability does not have walks DOWN `BAND_ORDER`. Both
  * failures are authoring bugs rather than data, so this stays pure and the
  * manifest conformance test is what fails the build over one.
+ * @internal
  */
 export function gradeOf(id: CapabilityId, spec: GradeSpec): Grade {
 	if (typeof spec === 'number')
@@ -550,6 +573,7 @@ const rebase = (from: CapabilityId, to: CapabilityId, grade: Grade): Grade => {
  *
  * Neither can promise past the other, so the composite is the floor — and the
  * two need no second column, table or stored field to be graded independently.
+ * @experimental
  */
 export const composite = (api: Grade, model: Grade): Grade =>
 	Math.min(api, model)
@@ -568,10 +592,11 @@ export const composite = (api: Grade, model: Grade): Grade =>
  * format and parse it for a model that has never heard of tools. Image
  * generation degrades to `none`, because nothing can fake a picture. A single
  * hardcoded default would have to be wrong for one of them.
+ * @experimental
  */
 export type Declared = GradeSpec | { unproven: true; until: GradeSpec }
 
-/** What a connection STORES: grades, each on its own capability's scale. */
+/** What a connection STORES: grades, each on its own capability's scale. @experimental */
 export type CapabilitySet = Partial<Record<CapabilityId, Grade>>
 
 const isUnproven = (
@@ -610,6 +635,7 @@ const floor = (id: CapabilityId, d: Declared): Grade =>
  *
  * Grade 0 has no letter, because 0 is not a quality but an absence; the caller
  * says "Off". Anything past `Z` clamps rather than walking out of the alphabet.
+ * @internal
  */
 export function gradeLetter(
 	id: CapabilityId,
@@ -622,6 +648,7 @@ export function gradeLetter(
 
 // ── What an adapter declares ────────────────────────────────────────────────
 
+/** @experimental */
 export interface AdapterCapabilities {
 	/**
 	 * What this WIRE PROTOCOL can express.
@@ -643,6 +670,7 @@ export interface AdapterCapabilities {
  * Authored, so a band name is accepted alongside a grade. A band this capability
  * does not have resolves to 0 — an `emulated` picture is a claim nothing can
  * fulfil, and reading it as "off" is more honest than showing it as supplied.
+ * @experimental
  */
 export type PresetCapabilities = Partial<
 	Record<CapabilityId, GradeSpec | boolean>
@@ -654,6 +682,7 @@ export type PresetCapabilities = Partial<
  * STORED, so grades only — the wire carries the band name (see the socket
  * contract) and the handler that writes this column is where it becomes a
  * number.
+ * @experimental
  */
 export type CapabilityOverrides = Partial<Record<CapabilityId, Grade | false>>
 
@@ -666,6 +695,7 @@ export type CapabilityOverrides = Partial<Record<CapabilityId, Grade | false>>
  * stays a lookup. The fixpoint loop is bounded by the feature count; it exists
  * because the two relations chain — a native `grammar` gives `json_schema` at
  * `emulated`, which in turn implies `json_object`.
+ * @experimental
  */
 export function closure(set: CapabilitySet): CapabilitySet {
 	const out: CapabilitySet = { ...set }
@@ -707,6 +737,7 @@ export function closure(set: CapabilitySet): CapabilitySet {
 
 // ── Resolution ──────────────────────────────────────────────────────────────
 
+/** @experimental */
 export interface ResolveCapabilitiesArgs {
 	adapter: AdapterCapabilities
 	preset?: PresetCapabilities
@@ -720,6 +751,7 @@ export interface ResolveCapabilitiesArgs {
  *
  * Pure and total: no I/O, and every input optional, so a connection that has
  * never been tested still resolves to something coherent rather than to nothing.
+ * @internal
  */
 export function resolveCapabilities(args: ResolveCapabilitiesArgs): CapabilitySet {
 	const { adapter, preset, probe, overrides } = args
@@ -774,6 +806,7 @@ export function resolveCapabilities(args: ResolveCapabilitiesArgs): CapabilitySe
 
 // ── What a node needs ───────────────────────────────────────────────────────
 
+/** @experimental */
 export interface Need {
 	/** Unmet ⇒ the run fails at bind, with a sentence naming the capability. */
 	requires?: readonly CapabilityId[]
@@ -788,6 +821,7 @@ export interface Need {
  * A boolean would force each of them to walk the sets again to say anything
  * useful — and the picker in particular must be able to say *why* a connection
  * is not offered, or "why isn't mine in the list" has no answer anywhere.
+ * @experimental
  */
 export interface Verdict {
 	ok: boolean
@@ -809,6 +843,7 @@ export interface Verdict {
 	grades: Partial<Record<CapabilityId, Grade>>
 }
 
+/** @experimental */
 export function satisfies(need: Need, have: CapabilitySet): Verdict {
 	const missing: CapabilityId[] = []
 	const degraded: CapabilityId[] = []
@@ -860,6 +895,7 @@ export function satisfies(need: Need, have: CapabilitySet): Verdict {
  * mode from their own local flags while the pipeline rendered a prompt format
  * nothing carried, so a chat-shaped backend was handed a payload built for text
  * completion and sent a placeholder greeting instead of the assembled prompt.
+ * @internal
  */
 export type WireMode = (typeof WIRE_MODE_ORDER)[number]
 
@@ -874,6 +910,7 @@ export type WireMode = (typeof WIRE_MODE_ORDER)[number]
  * Two ids rather than one enum-valued key because a backend routinely offers
  * BOTH, and a single key could not say so — nor be graded, presetted, probed and
  * hand-overridden independently, which is the entire four-layer model.
+ * @internal
  */
 export const WIRE_CAPABILITY = {
 	chat: 'wire_chat',
@@ -900,6 +937,7 @@ export const WIRE_CAPABILITY = {
  *
  * A caller that genuinely requires one mode does not consult this at all — it
  * asks for that mode's capability by id, like any other.
+ * @internal
  */
 export const WIRE_MODE_ORDER = ['chat', 'completion'] as const
 
@@ -911,6 +949,7 @@ export const WIRE_MODE_ORDER = ['chat', 'completion'] as const
  * — a set that names neither wire capability has not been resolved against an
  * adapter that declares one — and is deliberately not defaulted here, because
  * the honest fallback depends on what the caller knows about the connection.
+ * @internal
  */
 export function wireModeOf(have: CapabilitySet): WireMode | undefined {
 	for (const mode of WIRE_MODE_ORDER) {
@@ -948,6 +987,7 @@ const FEATURE_LABELS: Record<FeatureId, string> = {
  * a capability screen full of arrows is the thing rulings about newcomers are
  * trying to prevent. An unknown id falls back to the id so a plugin's capability
  * is legible rather than blank.
+ * @internal
  */
 export function capabilityLabel(id: CapabilityId): string {
 	if (isTransformId(id)) {
@@ -959,14 +999,14 @@ export function capabilityLabel(id: CapabilityId): string {
 	return FEATURE_LABELS[id as FeatureId] ?? id
 }
 
-/** The one-liner under the name, when there is one. */
+/** The one-liner under the name, when there is one. @internal */
 export function capabilityTagline(id: CapabilityId): string | undefined {
 	if (!isTransformId(id)) return undefined
 	const t = (TRANSFORMS as Record<string, TransformMeta>)[id]?.tagline
 	return typeof t === 'string' ? t : t?.en
 }
 
-/** Whether a first-timer should see this without opening anything. */
+/** Whether a first-timer should see this without opening anything. @internal */
 export const isBasicCapability = (id: CapabilityId): boolean =>
 	isTransformId(id) &&
 	(TRANSFORMS as Record<string, TransformMeta>)[id]?.disclosure === 'basic'
@@ -1003,6 +1043,7 @@ type DeclaredKeysOnly<T> = {
 			: K]: T[K]
 }
 
+/** @experimental */
 export type OptionalCapsOf<S> = S extends object
 	? {
 			[K in keyof DeclaredKeysOnly<S>]: DeclaredKeysOnly<S>[K] extends {

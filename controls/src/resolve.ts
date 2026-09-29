@@ -33,6 +33,7 @@ const COMPONENTS: Record<string, any> = {
  * The `null` branch is a real branch, not a "shouldn't happen": rendering
  * `<Comp />` with a null component is a silent blank, so every caller has to
  * say what a host-integrated field looks like in *its* surface.
+ * @experimental
  */
 export function controlFor(kind: string): any | null {
 	const entry = CONTROL_REGISTRY[kind]

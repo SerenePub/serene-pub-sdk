@@ -180,8 +180,8 @@ const isExample = (v: unknown): v is Example =>
  * The trivial input a bare spec is fed.
  *
  * A superset rather than a guess: the three fields the core inlets read, all at
- * once, so `userMessage` and `messageText` both find what they need without the
- * playground having to work out which one this document opens with. It is only
+ * once, so whichever inlet a document opens with finds what it needs without the
+ * playground having to work out which one that is. It is only
  * ever handed to fixture hooks, which is the other half of why a superset is
  * safe — nothing downstream of here can be surprised by a field it ignores.
  */
@@ -190,6 +190,22 @@ const TRIVIAL_INPUT = {
 	sessionScope: 'session:playground',
 	messageId: 'msg:playground',
 }
+
+/**
+ * What the model says when a reader runs a spec of their own.
+ *
+ * A bare spec is run against the fixture host's default hooks, and the
+ * `generate-text` stand-in answers with a placeholder unless it is told
+ * otherwise. Somebody who presses Run on the guide's first block has written a
+ * pipeline that answers a turn; the receipt should end with an answer, not with
+ * the word "text". So the playground scripts one.
+ *
+ * One fixed sentence, because the run is seeded and clocked so that two presses
+ * of Run produce the same bytes — a line that varied would be the only thing on
+ * the page that did.
+ */
+export const PLAYGROUND_REPLY =
+	'Well met, traveller. The fire is lit and the kettle is on — what do you need?'
 
 // ── The run ─────────────────────────────────────────────────────────────────
 
@@ -277,7 +293,7 @@ async function fromSpec(
 	if (findings.length)
 		return { status: 'findings', result: renderFindings(findings), doc, findings }
 
-	const hooks = fixtures.bindings()
+	const hooks = fixtures.bindings({ reply: PLAYGROUND_REPLY })
 	const unbound = unboundDefinition(doc, hooks as unknown as Record<string, unknown>)
 	if (unbound)
 		return {

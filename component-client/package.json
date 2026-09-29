@@ -1,0 +1,35 @@
+{
+	"name": "@serene-pub/component-client",
+	"version": "0.6.0-preview.0",
+	"type": "module",
+	"description": "What a Serene Pub remote component imports: its typed context, and a mount helper for Svelte. Shipped as source; `serene-pub build` bundles it into the component.",
+	"license": "Apache-2.0",
+	"types": "./src/index.ts",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./svelte": {
+			"types": "./src/svelte.ts",
+			"default": "./src/svelte.ts"
+		},
+		"./worker-runtime": {
+			"types": "./src/workerRuntime.ts",
+			"default": "./src/workerRuntime.ts"
+		},
+		"./package.json": "./package.json"
+	},
+	"peerDependencies": {
+		"@serene-pub/sdk": ">=0.6.0-preview.0",
+		"svelte": ">=5"
+	},
+	"peerDependenciesMeta": {
+		"svelte": {
+			"optional": true
+		}
+	},
+	"dependencies": {
+		"@remote-dom/core": "^1.12.0"
+	}
+}

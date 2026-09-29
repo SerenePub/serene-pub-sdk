@@ -6,9 +6,9 @@
  *
  * Adventure is chat with a **narrator who plans, a cast who speak for
  * themselves, and a state-keeper who writes the numbers down.** Four agents,
- * one turn, one receipt. Everything the player sees on screen — bars, an
- * inventory, the world strip, the ledger under a reply — is a consequence of
- * the keeper's proposals, never of prose parsing.
+ * one turn, one receipt. Everything the player sees on screen — bars, the
+ * world strip, the ledger under a reply — is a consequence of the keeper's
+ * proposals, never of prose parsing.
  *
  * ## Two of the four are asked a question, not given a turn
  *
@@ -40,7 +40,7 @@
  * instructions. Four types is four pools is four shipped prompts, and a person
  * who wants the narrator wordier edits the narrator.
  *
- * Each stage owns its own `connection` and `sampling` slots too, so the whole
+ * Each step owns its own `connection` and `sampling` slots too, so the whole
  * turn runs on one model or splits across two — a small fast model for the
  * planner and the keeper, a large one for the prose, which is the split this
  * shape exists to make possible.
@@ -67,7 +67,9 @@ import { adventureGenre } from './genres.js'
 
 /* ── create ─────────────────────────────────────────────────────────────── */
 
+/** @internal */
 export const ADVENTURE_CREATE_SPEC_ID = 'core:spec/adventure-create'
+/** @internal */
 export const ADVENTURE_CREATE_VERSION = '1.0.0'
 
 /**
@@ -94,6 +96,7 @@ export const ADVENTURE_CREATE_VERSION = '1.0.0'
  * the slowest backend and fails the whole creation when no connection is set —
  * on the one screen where a new user is most likely to have set none. The
  * opening scene is `core:spec/adventure-look` instead, which is a button.
+ * @internal
  */
 export const adventureCreateSpec = () =>
 	compile(
@@ -101,7 +104,6 @@ export const adventureCreateSpec = () =>
 			version: ADVENTURE_CREATE_VERSION,
 			taxonomy: {
 				role: 'create',
-				genre: adventureGenre.id,
 			},
 			genre: {
 				name: adventureGenre.name,
@@ -130,7 +132,9 @@ export const adventureCreateSpec = () =>
 
 /* ── respond ────────────────────────────────────────────────────────────── */
 
+/** @internal */
 export const ADVENTURE_RESPOND_SPEC_ID = 'core:spec/adventure-respond'
+/** @internal */
 export const ADVENTURE_RESPOND_VERSION = '1.0.0'
 
 /* ── Why the narrator uses the shipped story string like everybody else ─────
@@ -147,7 +151,7 @@ export const ADVENTURE_RESPOND_VERSION = '1.0.0'
  *
  * The shipped story string is the one that carries the system block, the cards,
  * the allocated lore bands, the conversation and the response reminder, and it
- * is what the other three stages here already assemble with. So the narrator
+ * is what the other three steps here already assemble with. So the narrator
  * uses it too, and everything this template was reaching for — where the scene
  * is, who is in it, what the plan says happens, what the numbers are — is in
  * the narrator's INSTRUCTIONS instead, which is an editable prompt row rather
@@ -187,6 +191,7 @@ const MAX_SPEAKERS = 4
 /** The four world values the keeper may set, by the names the prompts use. */
 const TRACKED_SLOTS = ['hp', 'stamina', 'mood', 'trust', 'location', 'time-of-day', 'weather']
 
+/** @internal */
 export const ADVENTURE_PLAN_SCHEMA = {
 	type: 'object',
 	properties: {
@@ -225,6 +230,7 @@ export const ADVENTURE_PLAN_SCHEMA = {
 	additionalProperties: false,
 } as const
 
+/** @internal */
 export const ADVENTURE_KEEPER_SCHEMA = {
 	type: 'object',
 	properties: {
@@ -243,13 +249,16 @@ export const ADVENTURE_KEEPER_SCHEMA = {
 			},
 		},
 		/**
-		 * Something changing hands, by the entry id the lore gave it.
+		 * Something changing hands, by the entry id the lore gave it — an add
+		 * (+) or remove (−) on the owner's `inventory` stat once resolved.
+		 * Named for the stat it lands on (owner ruling 2026-09-27; was
+		 * `possessions`).
 		 *
 		 * Its own list rather than a second arm inside `values`, because a
 		 * schema can only be strict about a list whose items are all one shape.
 		 * The two are joined again by the `path` parameter naming both.
 		 */
-		possessions: {
+		inventory: {
 			type: 'array',
 			items: {
 				type: 'object',
@@ -263,17 +272,17 @@ export const ADVENTURE_KEEPER_SCHEMA = {
 			},
 		},
 	},
-	required: ['values', 'possessions'],
+	required: ['values', 'inventory'],
 	additionalProperties: false,
 } as const
 
+/** @internal */
 export const adventureRespondSpec = () =>
 	compile(
 		spec(ADVENTURE_RESPOND_SPEC_ID, {
 			version: ADVENTURE_RESPOND_VERSION,
 			taxonomy: {
 				role: 'primary',
-				genre: adventureGenre.id,
 			},
 		})
 			.inlet('input', C.userMessage.v1(), {
@@ -405,7 +414,7 @@ export const adventureRespondSpec = () =>
 				}),
 			)
 			/**
-			 * The conversation the two JSON stages read: prose, and no turn to
+			 * The conversation the two JSON steps read: prose, and no turn to
 			 * continue.
 			 *
 			 * One transcript for both of them, because they read the same
@@ -475,6 +484,7 @@ export const adventureRespondSpec = () =>
 					// No `prompts` on the generating steps — see `respond.ts`
 					// (culled 2026-09-16, R-12).
 				}),
+				{ expose: { status: 'Planning the turn' } },
 			)
 			/* ── narrate ────────────────────────────────────────────────── */
 			.task('sceneContext', ($) =>
@@ -491,11 +501,11 @@ export const adventureRespondSpec = () =>
 			 * The narrator's own transcript, ending on the NARRATOR's line.
 			 *
 			 * Its own node rather than the shared one, because the seed is a
-			 * name and this stage's name is not the session's speaker: built
+			 * name and this step's name is not the session's speaker: built
 			 * against the planner's context the prompt ended `Verity:`, and the
 			 * scene came back as Verity in the first person however plainly the
 			 * instructions said to narrate. `build-scene-context@1` resolves
-			 * this stage as nobody, so `seedName` is the narrator's.
+			 * this step as nobody, so `seedName` is the narrator's.
 			 */
 			.task('sceneLines', ($) =>
 				C.processMessages.v1({
@@ -527,6 +537,7 @@ export const adventureRespondSpec = () =>
 					sampling: slot.sampling(),
 					params: slot.params(),
 				}),
+				{ expose: { stream: true, status: 'Narrating the scene' } },
 			)
 			/* ── voices ─────────────────────────────────────────────────── */
 			/**
@@ -569,6 +580,77 @@ export const adventureRespondSpec = () =>
 								variables: slot.variables(),
 							}),
 						)
+						/**
+						 * **This voice's own private lore** (W1, 2026-09-17).
+						 *
+						 * The gather runs ONCE for the whole turn, and its
+						 * character-lore lane reads on the run's scope — which
+						 * for a planned turn is the narrator's, so every voice
+						 * used to be handed every character's private
+						 * self-knowledge through the shared rank. The lane is
+						 * *inside* the clause for exactly that reason: a scope
+						 * is a property of the run and a speaker is a property
+						 * of the iteration, so the only place the two can be
+						 * the same fact is here.
+						 *
+						 * `speaker` is the reference the context builder above
+						 * already resolved, never a second name match — the
+						 * voice the prompt is written in and the secrets it may
+						 * read are one answer. A planner-named shopkeeper the
+						 * cast does not hold publishes `null` and reads nobody's
+						 * private lore, which is the honest answer for somebody
+						 * who is nobody.
+						 *
+						 * Settings on the world-lore lane, as the gather's three
+						 * lanes have them (R-7 P2): one owner per setting per
+						 * spec, so tuning character lore once tunes it here too.
+						 */
+						.query('lore', ($: any) =>
+							C.characterLore.v1({
+								scope: $.input.sessionScope,
+								speaker: $.voices.item.context.speaker,
+								params: slot.params({ node: 'gather.worldLore.read' }),
+							}),
+						)
+						/**
+						 * The shared pool with this voice's character lore in
+						 * place of the turn's. World lore, history and the
+						 * conversation's band intent are the same values the
+						 * spine concatenates — they are not per-speaker and a
+						 * second read of them would be a second answer to one
+						 * question — and `$.gather.characterLore.read.main` is
+						 * deliberately NOT among them: that is the narrator's
+						 * band, and handing it to a voice is the leak.
+						 */
+						.task('pool', ($: any) =>
+							C.concatCandidates.v1({
+								sources: [
+									$.gather.history.read.band,
+									$.gather.worldLore.read.main,
+									$.gather.historyEntries.read.main,
+									$.voices.item.lore.main,
+								] as any,
+							}),
+						)
+						/**
+						 * Ranked per voice, because the pool is per voice.
+						 *
+						 * ⚠ Its **own** params, not a reference to the spine
+						 * ranker's (R-7 P2): `core:task/rank-hybrid@1` marks no
+						 * field `shared`, so a reference to another node of it
+						 * resolves nothing and reads as configuration that is
+						 * not there — `validate()` says so. Two rankers are two
+						 * settings here, at identical defaults; the day the
+						 * band fields are marked shared this becomes a
+						 * reference.
+						 */
+						.task('rank', ($: any) =>
+							C.rankHybrid.v1({
+								candidates: $.voices.item.pool.candidates,
+								budget: $.contextBudget.available,
+								params: slot.params(),
+							}),
+						)
 						.task('lines', ($: any) =>
 							C.processMessages.v1({
 								messages: $.gather.history.read.messages,
@@ -579,9 +661,9 @@ export const adventureRespondSpec = () =>
 						)
 						.task('prompt', ($: any) =>
 							C.assemble.v2({
-								candidates: $.rank.candidates,
-								decisions: $.rank.decisions,
-								groups: $.rank.groups,
+								candidates: $.voices.item.rank.candidates,
+								decisions: $.voices.item.rank.decisions,
+								groups: $.voices.item.rank.groups,
 								budget: $.contextBudget.available,
 								messages: $.voices.item.lines.messages,
 								templateContext: $.voices.item.context.templateContext,
@@ -601,6 +683,7 @@ export const adventureRespondSpec = () =>
 								sampling: slot.sampling(),
 								params: slot.params(),
 							}),
+							{ expose: { status: 'Voicing the party' } },
 						),
 			)
 			/* ── assemble ───────────────────────────────────────────────── */
@@ -635,7 +718,7 @@ export const adventureRespondSpec = () =>
 			/**
 			 * The state-keeper, and it runs LAST for a reason that is not taste.
 			 *
-			 * Every value and possession it produces is anchored to the newest
+			 * Every value it produces (an item moving is an inventory value) is anchored to the newest
 			 * message in the session, which is how a swipe takes a turn's
 			 * changes back with it. Anchored to the player's message instead —
 			 * which is what running before the write would do — a regenerated
@@ -669,9 +752,9 @@ export const adventureRespondSpec = () =>
 				}),
 			)
 			/**
-			 * `{ values, possessions }`, asked for as a shape.
+			 * `{ values, inventory }`, asked for as a shape.
 			 *
-			 * The stage this change exists for. Asked as an ordinary reply it
+			 * The step this change exists for. Asked as an ordinary reply it
 			 * was a roleplay continuation that had just read the PLANNER's
 			 * document in the transcript, so it answered in the planner's schema
 			 * — `{beats, speakers, worldHints}` — which parses perfectly and
@@ -691,6 +774,21 @@ export const adventureRespondSpec = () =>
 					sampling: slot.sampling(),
 					params: slot.params(),
 				}),
+				{ expose: { status: 'Keeping the record' } },
+			)
+			/**
+			 * 🚧 How many of each item are held and left (phase 3b), so a
+			 * unique item already in somebody's pack is not handed out again.
+			 * It reads the state as this turn found it — the same moment the
+			 * keeper's `base` names. Supply is this genre's to enforce
+			 * (owner ruling 2026-09-25) — core only answers — and wiring the
+			 * answer onto `keeperResolve.supply` is that enforcement: an item
+			 * line past what is left becomes a sentence on the receipt.
+			 */
+			.query('itemSupply', ($: any) =>
+				C.itemSupply.v1({
+					scope: $.input.sessionScope,
+				}),
 			)
 			/**
 			 * Names into rows. A model has the names the transcript gave it and
@@ -701,6 +799,15 @@ export const adventureRespondSpec = () =>
 			.query('keeperResolve', ($: any) =>
 				C.resolveStateChanges.v1({
 					changes: $.keeperWrite.items,
+					/**
+					 * The state version this turn READ (R-15 *Staleness and
+					 * order*, U5f): every change the keeper names is a delta
+					 * against it. `set-state` rebases a delta whose slot has
+					 * not moved since, and refuses one whose slot has — onto
+					 * its `refused` port, never back into this graph; the next
+					 * turn re-resolves against the state it reads then.
+					 */
+					base: $.gather.state.read.version,
 					/**
 					 * The planner's `worldHints`, resolved beside the keeper's
 					 * own list.
@@ -715,6 +822,7 @@ export const adventureRespondSpec = () =>
 					 */
 					plan: $.planWrite.json,
 					scope: $.input.sessionScope,
+					supply: $.itemSupply.supply,
 				}),
 			)
 			/**
@@ -735,6 +843,7 @@ export const adventureRespondSpec = () =>
 							C.setState.v1({
 								changes: $.keeperResolve.changes,
 								scope: $.input.sessionScope,
+								base: $.gather.state.read.version,
 								params: slot.params(),
 							}),
 						),
@@ -744,6 +853,7 @@ export const adventureRespondSpec = () =>
 							C.setState.v1({
 								changes: $.keeperResolve.changes,
 								scope: $.input.sessionScope,
+								base: $.gather.state.read.version,
 								params: slot.params(),
 							}),
 						),
@@ -773,15 +883,15 @@ export const adventureRespondSpec = () =>
 			 * it at projection time, the same way a prompts or template
 			 * reference resolves.
 			 *
-			 * ⚠ **Still no per-stage token ceiling, and an author preset still
+			 * ⚠ **Still no per-step token ceiling, and an author preset still
 			 * cannot ship one.** `.sampling('planWrite', { responseTokens: 300
 			 * })` writes an object where a row id is read: the executor finds
 			 * no config, the values resolve empty, and `context-budget` then
 			 * allocates against a window of zero. The executor's own
 			 * `resolveSlot` merges per-sampler overrides above a config and
 			 * would carry it; what is missing is a declared address for them to
-			 * live at. Until there is one, a stage is bounded by the sampling
-			 * config it points at, and the two JSON stages are bounded
+			 * live at. Until there is one, a step is bounded by the sampling
+			 * config it points at, and the two JSON steps are bounded
 			 * structurally as well: a schema on the wire leaves a model nothing
 			 * to ramble in.
 			 */
@@ -794,14 +904,14 @@ export const adventureRespondSpec = () =>
 					// paths, which is how an answer split into arms reaches
 					// one resolver as one list.
 					.params('planWrite', { path: 'speakers' })
-					.params('keeperWrite', { path: 'values,possessions' })
+					.params('keeperWrite', { path: 'values,inventory' })
 					// The one branch that writes rather than asks. The other
 					// keeps the declared default, which is `propose`.
 					.params('commit.trusted.apply', { mode: 'apply' })
 					// Narrator first, then the voices, separated by a blank
 					// line — the reply layout, as the one parameter it is.
 					.params('reply', { separator: '\n\n' })
-					// The two stages nobody reads run on Background, which
+					// The two steps nobody reads run on Background, which
 					// is the row that exists to say "this output is read by
 					// the next node and by nobody else": low temperature, a
 					// short window, no reasoning trace. The narrator and the

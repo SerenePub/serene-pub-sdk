@@ -5,7 +5,10 @@
  * Deliberately absent: progress messages (F34, ephemeral) and raw embedding
  * vectors (16 §1a, recorded by reference).
  */
+import type { ScopeKind } from './config.js';
+/** @experimental */
 export type Outcome = 'ok' | 'err' | 'cancelled' | 'halt';
+/** @experimental */
 export interface NodeReceipt {
     nodeKey: string;
     seq: number;
@@ -61,6 +64,29 @@ export interface NodeReceipt {
     /** Resolved config reference, e.g. oracleRef → 'generate' (16 §5b-i). */
     resolvedRefs?: Record<string, string>;
     /**
+     * Which layer each of this node's config values won at, per slot, per
+     * path: `configLayers.params.weight === 'session'`. The same answer the
+     * resolver computes (`ResolvedSource.scopeKind`) and the config panel shows,
+     * kept rather than discarded — *"I changed this and nothing happened"* is
+     * answered by the row that ran. Values only; the layer's owner
+     * (`scopeId`) is not recorded.
+     *
+     * Absent on a receipt written before 2026-09-26, and on a node with no
+     * resolved config at all. A path absent here was never resolved: the
+     * binding read its own fallback.
+     * @experimental 🚧
+     */
+    configLayers?: Record<string, Record<string, ScopeKind>>;
+    /**
+     * Whether `definitionId` is the spec's **pin** or a **swap**, and who
+     * seated the swap. `null` — the pin ran. A `NodeSwap` — the host seated
+     * another definition (`RunOptions.swaps`) and `pin` names the one it
+     * replaced. Absent when the host did not say (`RunOptions.swaps` left
+     * out), which includes every receipt written before 2026-09-26.
+     * @experimental 🚧
+     */
+    swap?: NodeSwap | null;
+    /**
      * This outlet ran in a dry run and committed nothing (R-21 (1)). Its
      * output carries a synthetic id, and the event it would have caused is
      * flagged the same way in `emitted`.
@@ -77,12 +103,52 @@ export interface NodeReceipt {
     scripts?: ScriptApplicationRecord[];
 }
 /**
+ * A swap a host seated on one node before the run (`RunOptions.swaps`): the
+ * definition that ran is the receipt row's `definitionId`, this names the pin
+ * it replaced and the scope whose choice it was.
+ * @experimental 🚧
+ */
+export interface NodeSwap {
+    /** The pin the spec names, `id@version`. */
+    pin: string;
+    /** Whose swap: a session's choice, or the instance's. */
+    by: 'session' | 'instance';
+}
+/**
+ * How the host reached the spec it ran, when that is worth saying — today,
+ * one fact: a session preset named a spec for this event that could not
+ * serve, so a lower layer chose it (`via: 'fallback'`). Stamped by the host
+ * (`RunOptions.meta`), never by the executor, which cannot know it.
+ * @experimental 🚧
+ */
+export interface ReceiptPresetRoute {
+    via: 'fallback';
+    presetId: number;
+    /** The session preset's name. */
+    preset: string;
+    event: string;
+    /** The spec the preset still names. */
+    bound: string;
+    /** Why it does not resolve, as a sentence. */
+    reason: string;
+}
+/**
+ * Host facts about how a run was reached (`Receipt.meta`). Open: a host may
+ * record a further fact under its own key; `preset` is the one typed here.
+ * @experimental 🚧
+ */
+export interface ReceiptMeta {
+    preset?: ReceiptPresetRoute;
+    [key: string]: unknown;
+}
+/**
  * One script link's application, as the receipt keeps it (18 S2/S4/S5).
  *
  * A failing link is tolerated, not hidden: `result: 'err'` with the reason,
  * and the chain continues — recorded exactly like an optional node's absorbed
  * failure. A stop script's `verdict` is its index; `won: true` marks the
  * earliest, which is the answer to "why did my reply cut off" (S4).
+ * @internal
  */
 export interface ScriptApplicationRecord {
     scriptId: number;
@@ -111,6 +177,7 @@ export interface ScriptApplicationRecord {
     /** Verdict operations only: this link's verdict was the earliest and applied. */
     won?: boolean;
 }
+/** @experimental */
 export interface Receipt {
     runId: string;
     specId: string;
@@ -234,7 +301,13 @@ export interface Receipt {
         tokens: number;
         nodeExecutions: number;
     };
+    /**
+     * How the host reached this run (`ReceiptMeta`) — which the executor
+     * cannot know, so it is recorded verbatim from `RunOptions.meta`.
+     * @experimental 🚧
+     */
+    meta?: ReceiptMeta;
 }
-/** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. */
+/** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. @experimental */
 export declare function renderReceipt(r: Receipt): string;
 //# sourceMappingURL=receipt.d.ts.map

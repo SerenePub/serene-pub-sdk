@@ -46,7 +46,10 @@
  * nothing installed; the two that read embeddings ship switched off, so a first
  * boot runs the zero-cost path.
  */
+/** @experimental */
 export declare const NARRATE_CHARACTER_SPEC_ID = "core:spec/narrate-character";
+/** @internal */
 export declare const NARRATE_CHARACTER_VERSION = "1.0.0";
+/** @experimental */
 export declare const narrateCharacterSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=narrateCharacter.d.ts.map

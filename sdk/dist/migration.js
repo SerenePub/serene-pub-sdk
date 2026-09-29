@@ -23,6 +23,7 @@
  * This is what makes a migration **idempotent**: re-running after a bug fix matches the
  * existing row by slug and replaces it, instead of creating a second copy beside it
  * (12 §3b). A migration that cannot be safely re-run is a migration nobody dares fix.
+ * @experimental
  */
 export function migratedSlug(sourceTable, sourceId) {
     const clean = String(sourceId)
@@ -31,6 +32,7 @@ export function migratedSlug(sourceTable, sourceId) {
         .replace(/^-+|-+$/g, '');
     return `migrated-${sourceTable.replace(/_/g, '-')}-${clean}`;
 }
+/** @experimental */
 export function summarize(r) {
     const by = (o) => r.entries.filter((e) => e.outcome === o).length;
     return {
@@ -45,13 +47,15 @@ export function summarize(r) {
  * Everything that did not migrate cleanly must say why, and must remain visible —
  * `spec_diagnostics` in core, the same place an orphaned slot lands after a node swap
  * (12 §5). Same principle as export (12 §7a): nothing is dropped silently.
+ * @experimental
  */
 export function unmappedEntries(r) {
     return r.entries.filter((e) => e.outcome !== 'migrated');
 }
+/** @experimental */
 export class MigrationError extends Error {
 }
-/** A report with an entry that gives no reason is a bug in the migration, not in the data. */
+/** A report with an entry that gives no reason is a bug in the migration, not in the data. @experimental */
 export function assertReportComplete(r) {
     const silent = r.entries.filter((e) => e.outcome !== 'migrated' && !e.reason);
     if (silent.length) {
@@ -95,6 +99,7 @@ function renderedText(value) {
         return v.prompt;
     return JSON.stringify(value);
 }
+/** @internal */
 export function checkParity(fixture, legacyPrompt, preview, count) {
     const p = preview.preview;
     if (!p) {
@@ -129,6 +134,7 @@ export function checkParity(fixture, legacyPrompt, preview, count) {
  * The gate on dropping an old code path (08 §5). Deliberately strict: an empty corpus
  * passes nothing, because "no failures" and "nothing was checked" look identical in a
  * summary and only one of them is safe.
+ * @internal
  */
 export function parityGate(results, minimumCorpus = 1) {
     if (results.length < minimumCorpus) {
@@ -146,6 +152,7 @@ export function parityGate(results, minimumCorpus = 1) {
     }
     return { pass: true };
 }
+/** @internal */
 export function renderParity(r) {
     if (r.identical)
         return `✓ ${r.fixture}  identical (${r.tokensPipeline ?? '?'} tokens)`;
@@ -170,8 +177,10 @@ export function renderParity(r) {
  * So the rule is: an id wired in (by edge or by config) means update; nothing wired
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
  * is already the shape 08 §5b uses for "a human has to look at this."
+ * @experimental
  */
 export const LEGACY_COMMIT_MESSAGE = 'core:outlet/commit-message';
+/** @experimental */
 export function splitCommitMessage(doc) {
     const entries = [];
     const nodes = doc.nodes.map((n) => {
@@ -186,7 +195,7 @@ export function splitCommitMessage(doc) {
                 outcome: 'migrated',
                 target: {
                     slug: 'core:outlet/create-message@1',
-                    scopeKind: 'preset',
+                    scopeKind: 'config',
                     nodeKey: n.key,
                 },
                 reason: 'nothing supplies an id, so this node only ever created',
@@ -215,7 +224,7 @@ export function splitCommitMessage(doc) {
             outcome: 'migrated',
             target: {
                 slug: 'core:outlet/update-message@1',
-                scopeKind: 'preset',
+                scopeKind: 'config',
                 nodeKey: n.key,
             },
             reason: 'an id is wired in, so this node updated',

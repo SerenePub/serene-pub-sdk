@@ -29,9 +29,11 @@
 	 *               dead code.
 	 */
 	import {
+		i18nText,
 		valueDeclOf,
 		valueKind,
 		validateValue,
+		type I18n,
 		type ValueDecl,
 	} from '@serene-pub/sdk'
 	import { controlFor } from './resolve.js'
@@ -52,8 +54,8 @@
 		$props()
 
 	const id = $derived(`${idPrefix}-${name}`)
-	const en = (v: unknown, fallback: string): string =>
-		typeof v === 'string' ? v : ((v as any)?.en ?? fallback)
+	// Display text through the SDK's one resolver (R-20); the key when a field declares none.
+	const en = (v: unknown, fallback: string): string => i18nText(v as I18n | undefined) ?? fallback
 
 	const vd = $derived<ValueDecl | null>(valueDeclOf(decl))
 	const kind = $derived(vd ? valueKind(vd) : null)

@@ -17,7 +17,7 @@ import {
 	describeTaskDefinition,
 	S,
 	defineExtension,
-	pipelineHook,
+	handler,
 	component,
 	devOverlay,
 	reloadPlan,
@@ -46,7 +46,7 @@ const pipeline = (id: string) =>
 	spec(id, { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+		.task('prompt', () => C.assemble.v2())
 		.oracle('generate', ($) =>
 			C.generateText.v1({
 				context: $.prompt.context,
@@ -60,10 +60,9 @@ const ext = (over: Partial<Parameters<typeof defineExtension>[0]> = {}) =>
 		slug: 'dev.demo',
 		name: 'Dev Demo',
 		version: '0.0.1',
-		hooks: [pipelineHook(rollA, async () => ok({ main: 1 }))],
+		handlers: [handler(rollA, async () => ok({ main: 1 }))],
 		components: [
 			component({
-				surface: 'core:surface/chat-message@1',
 				slug: 'dice',
 				label: 'Dice',
 				framework: 'svelte',
@@ -95,7 +94,7 @@ describe('109 · dev overlay and hot reload', () => {
 	test('changing a handler is hot — that is the loop a developer is in', () => {
 		const a = devOverlay(ext(), '/src/index.ts', 1)
 		const b = devOverlay(
-			ext({ hooks: [pipelineHook(rollA, async () => ok({ main: 2 }))] }),
+			ext({ handlers: [handler(rollA, async () => ok({ main: 2 }))] }),
 			'/src/index.ts',
 			2,
 		)
@@ -119,7 +118,6 @@ describe('109 · dev overlay and hot reload', () => {
 			ext({
 				components: [
 					component({
-						surface: 'core:surface/chat-message@1',
 						slug: 'dice',
 						label: 'Dice v2',
 						framework: 'svelte',
@@ -172,7 +170,7 @@ describe('109 · dev overlay and hot reload', () => {
 		const a = devOverlay(ext(), '/src/index.ts', 1)
 		const b = devOverlay(
 			ext({
-				hooks: [pipelineHook(rollB, async () => ok({ main: 1, total: 2 }))],
+				handlers: [handler(rollB, async () => ok({ main: 1, total: 2 }))],
 			}),
 			'/src/index.ts',
 			2,

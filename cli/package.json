@@ -6,6 +6,7 @@
 	"license": "Apache-2.0",
 	"files": [
 		"dist",
+		"templates",
 		"README.md"
 	],
 	"main": "./dist/index.js",
@@ -23,6 +24,14 @@
 			"types": "./dist/bin.d.ts",
 			"import": "./dist/bin.js"
 		},
+		"./component-compile": {
+			"types": "./dist/componentCompile.d.ts",
+			"import": "./dist/componentCompile.js"
+		},
+		"./component-source": {
+			"types": "./dist/componentSource.d.ts",
+			"import": "./dist/componentSource.js"
+		},
 		"./sandbox": {
 			"types": "./dist/sandbox.d.ts",
 			"import": "./dist/sandbox.js"
@@ -30,23 +39,29 @@
 		"./sandbox-bundle": {
 			"types": "./dist/sandbox-bundle.d.ts",
 			"import": "./dist/sandbox-bundle.js"
+		},
+		"./testing": {
+			"types": "./dist/testing.d.ts",
+			"import": "./dist/testing.js"
 		}
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0",
 		"@serene-pub/conformance": ">=0.6.0-preview.0",
+		"@serene-pub/sdk": ">=0.6.0-preview.0",
+		"@serene-pub/ui-preview": ">=0.6.0-preview.0",
 		"esbuild": "*",
-		"@serene-pub/ui-preview": ">=0.6.0-preview.0"
+		"svelte": ">=5",
+		"happy-dom": "*"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0",
-		"@serene-pub/contracts": "0.6.0-preview.0",
 		"@serene-pub/conformance": "0.6.0-preview.0",
+		"@serene-pub/contracts": "0.6.0-preview.0",
 		"@serene-pub/core-catalog": "0.6.0-preview.0",
 		"@serene-pub/docs": "0.6.0-preview.0",
+		"@serene-pub/sdk": "0.6.0-preview.0",
 		"@serene-pub/ui-preview": "0.6.0-preview.0"
 	},
 	"peerDependenciesMeta": {
@@ -55,6 +70,16 @@
 		},
 		"esbuild": {
 			"optional": true
+		},
+		"svelte": {
+			"optional": true
+		},
+		"happy-dom": {
+			"optional": true
 		}
+	},
+	"dependencies": {
+		"@remote-dom/core": "^1.12.0",
+		"@serene-pub/component-client": "0.6.0-preview.0"
 	}
 }

@@ -48,6 +48,7 @@ function uniqueIdents(list, field) {
     }
     return out;
 }
+/** @internal */
 export function compileManifest(input) {
     if (!input || typeof input !== "object")
         fail("declaration is required");

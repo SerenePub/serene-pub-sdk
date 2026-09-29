@@ -1,0 +1,213 @@
+/**
+ * The entry module: what this package **is**, and everything it declares.
+ *
+ * One `defineExtension`, one default export. It carries both halves of a
+ * plugin — the code it registers (node definitions, and the handlers behind
+ * them) and the things it only declares (genres, pipelines, presets, prompts,
+ * surfaces, permissions) — and `serene-pub build .` emits one manifest holding
+ * all of it.
+ *
+ * Everything here is a **literal declaration**: the packager reads this call
+ * without running it, so a hook behind an `if` is a refusal rather than a
+ * silent omission. Write your registrations out.
+ *
+ * ✎ CHANGE: `name`, `description` and the `engines` range. Then delete the
+ *   placeholder node below and register your own.
+ */
+
+import {
+	defineExtension,
+	describeTaskDefinition,
+	handler,
+	ok,
+	pin,
+	S,
+} from '@serene-pub/sdk'
+{{#genre}}
+
+import { {{genreVar}}{{#panel}}, PANEL_ENTRY, PANEL_ID{{/panel}} } from './genre.js'
+import { createSessionSpec } from './specs/create.js'
+import { respondSpec } from './specs/respond.js'
+{{/genre}}
+{{#action}}
+import { askSpec } from './specs/ask.js'
+import { answerSpec } from './specs/answer.js'
+{{/action}}
+{{#storage}}
+import {
+	readNoteDefinition,
+	readNoteHandler,
+	saveNoteDefinition,
+	saveNoteHandler,
+} from './storage.js'
+{{/storage}}
+
+/** The namespace every id this package registers sits under. */
+export const PLUGIN_SLUG = '{{slug}}'
+{{#panel}}
+{{^genre}}
+
+/** The panel's id — what a saved layout row and a `surface:open` intent key on. */
+export const PANEL_ID = '{{panelId}}'
+/** The document the panel mounts, relative to the package root. */
+export const PANEL_ENTRY = '{{panelEntry}}'
+{{/genre}}
+{{/panel}}
+
+/* ── One node definition, and the handler behind it ─────────────────────── */
+
+/**
+ * A **Task**: pure, and granted neither storage nor network.
+ *
+ * The **kind decides the grant** (plans/29 R-3). A plugin's handler runs in the
+ * plugin's sandbox, which endows `{ random, now, log, signal }` plus whatever
+ * the kind earns: a Task earns nothing, an emit-class outlet earns `storage`,
+ * an oracle earns `storage` and `fetch`. A **Query is the one kind a plugin may
+ * not declare at all** — nothing endows its `ctx.read` — so read Serene Pub's
+ * own data through a `core:query/…` node and take its output port.
+ * `serene-pub check` refuses each of these by name.
+ *
+ * ✎ CHANGE: the id, the ports, and what the handler does with them. `pin`
+ *   registers the definition on import, which is what makes `.v1({ … })`
+ *   compile in a spec.
+ */
+export const echoDefinition = pin(
+	describeTaskDefinition({
+		id: '{{echoDefinitionId}}',
+		i18n: { name: { en: 'Echo' } },
+		timeoutMs: 500,
+		ports: { in: { text: S.text }, out: { main: S.json, text: S.text } },
+	}),
+)
+
+/** ✎ CHANGE: this is the whole of the placeholder's behaviour. */
+export const echoHandler = async (input: { text?: string }) =>
+	ok({ main: { said: input.text ?? '' }, text: input.text ?? '' })
+{{#genre}}
+
+/* ── The prose this package ships ───────────────────────────────────────── */
+
+/**
+ * The reply's system prompt, shipped as a **prompt row** rather than typed into
+ * a panel after installing. The row seeds into the pool for
+ * `core:task/build-template-context@1`'s `prompts` slot — the slot the reply
+ * pipeline wires — so it is there to pick from the first time somebody
+ * configures this package.
+ *
+ * ✎ CHANGE: this is the one piece of writing in the scaffold. Say who the
+ *   character is and what they are doing.
+ */
+const SYSTEM_PROMPT = [
+	'You are talking to the person in front of you. Stay in character.',
+	'Answer in a sentence or two.',
+].join('\n\n')
+{{/genre}}
+
+/* ── The pipelines ──────────────────────────────────────────────────────── */
+
+// Built once and passed by value: the preset below binds these same specs.
+{{#genre}}
+const createSession = createSessionSpec()
+const respond = respondSpec()
+{{/genre}}
+{{#action}}
+const ask = askSpec()
+const answer = answerSpec()
+{{/action}}
+
+/* ── The package ────────────────────────────────────────────────────────── */
+
+export const extension = defineExtension({
+	slug: PLUGIN_SLUG,
+	name: '{{displayName}}',
+	version: '0.1.0',
+	description: '✎ CHANGE: one sentence. This is what reads under the name in the plugin list.',
+	engines: { 'serene-pub': '>=0.7 <0.8' },
+	handlers: [
+		handler(echoDefinition, echoHandler),
+{{#storage}}
+		handler(saveNoteDefinition, saveNoteHandler),
+		handler(readNoteDefinition, readNoteHandler),
+{{/storage}}
+	],
+{{#genre}}
+	genres: [{{genreVar}}],
+	pipelines: [
+		createSession,
+		respond,
+{{#action}}
+		ask,
+		answer,
+{{/action}}
+	],
+{{/genre}}
+{{^genre}}
+{{#action}}
+	pipelines: [ask, answer],
+{{/action}}
+{{/genre}}
+{{#genre}}
+	prompts: [
+		{
+			nodeType: 'core:task/build-template-context',
+			slot: 'prompts',
+			slug: '{{promptSlug}}',
+			label: '{{displayName}}',
+			fields: { systemPrompt: SYSTEM_PROMPT },
+		},
+	],
+	/**
+	 * Which pipelines a session of the genre runs. Each spec is bound on the
+	 * events its inlet lock answers; a required event left unbound refuses to
+	 * build, which is what makes a preset a statement about the genre rather
+	 * than a list of favourites.
+	 */
+	presets: [
+		{
+			slug: '{{presetSlug}}',
+			genre: {{genreVar}},
+			label: '{{displayName}}',
+			description: '✎ CHANGE: what a person is choosing when they pick this preset.',
+			bindings: [createSession, respond],
+{{#action}}
+			/**
+			 * The actions that come along. A spec brings every action it
+			 * contributes; `{ spec, key }` picks one.
+			 */
+			actions: { include: [ask, answer] },
+{{/action}}
+		},
+	],
+{{/genre}}
+{{#panel}}
+	/**
+	 * The frame surface: a document mounted in an opaque-origin iframe with no
+	 * cookies, no DOM reach and no socket. Everything it knows arrives on the
+	 * MessageChannel the host owns, and what it knows is one channel's
+	 * messages — which is the rule to design against. **A panel is a view onto
+	 * channels, so anything it must not show is something the server must never
+	 * post.**
+	 *
+	 * ✎ CHANGE: the id, the title and the channels. This list is what the
+	 *   packager, `serene-pub ui` and an instance's file server all read.
+	 */
+	surfaces: {
+		panels: [
+			{ id: PANEL_ID, entry: PANEL_ENTRY, title: '{{displayName}}', channels: ['main'] },
+		],
+	},
+{{/panel}}
+{{#storage}}
+	/**
+	 * A **request**, never a grant: an instance clamps this into its own band,
+	 * an administrator may deny it, and until somebody has looked at it the
+	 * plugin runs with the grant refused. Declared rather than compiled because
+	 * a quota is a number and no call site carries one.
+	 *
+	 * ✎ CHANGE: ask for what your rows actually need.
+	 */
+	permissions: { storage: { quotaBytes: {{quotaBytes}} } },
+{{/storage}}
+})
+
+export default extension

@@ -24,6 +24,7 @@ import {
 	type TemplateValue,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { parseSpecId, decideImport, compareVersions } from '@serene-pub/sdk'
 import { publish, findings, errorsFor } from './helpers.js'
 
@@ -72,7 +73,7 @@ describe('64 · author presets', () => {
 
 	test('values are flat override rows — the shape node_overrides already stores', () => {
 		// This is why author presets need no schema change: `config_presets` and
-		// `node_overrides` at scope_kind='preset' already exist (12 §3).
+		// `node_overrides` at scope_kind='config' already exist (12 §3).
 		const doc = compile(withPresets().build())
 		for (const v of doc.presets.flatMap((p) => p.values)) {
 			assert.deepEqual(Object.keys(v).sort(), ['nodeKey', 'slot', 'value'])
@@ -346,7 +347,7 @@ describe('66 · the template engine is a registry entry, not a hardcoded choice'
 		const b = spec('demo:mixed@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('lore', C.lorebookTriggers.v1({ text: 'x' }))
-			.task('render', ($) => C.renderEntries.v1({ entries: $.lore.hits }))
+			.task('render', ($) => T.renderEntries.v1({ entries: $.lore.hits }))
 			.task('prompt', C.assemble.v2({ candidates: [] }))
 			.preset('x', { label: 'X' }, (p) =>
 				p.template('prompt', jinja(ASSEMBLY)).template('render', text('a fixed preamble')),

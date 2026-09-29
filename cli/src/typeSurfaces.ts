@@ -9,6 +9,7 @@
  */
 import type { TypeSurface } from './scaffold.js'
 
+/** @internal */
 export async function typeSurfaces(): Promise<
 	(definitionId: string, version: number) => TypeSurface | undefined
 > {

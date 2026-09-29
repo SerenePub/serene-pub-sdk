@@ -17,6 +17,7 @@ const code = (s) => '`' + s + '`';
  * Returns an array because this sits beside `renderAnnouncementDocs()` in the
  * same source and may grow a second page; a caller appends it to that source's
  * pages.
+ * @internal
  */
 export function renderLawsDocs() {
     const lines = [];

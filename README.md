@@ -33,7 +33,7 @@ being an independent statement about the code.
 ```sh
 npm install
 npm run build      # every package, in dependency order
-npm test           # builds first, then runs the suite
+npm test -w @serene-pub/sdk-tests   # the suite alone — build first after an edit
 ```
 
 The build order matters and is encoded in the root script: `contracts`,

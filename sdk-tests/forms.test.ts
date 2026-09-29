@@ -28,6 +28,13 @@
  *  6. **The events exist.** `form-addressed` is a data event caused by the
  *     two message writes; `form-answered` is caused by `answer-form`; the
  *     genre surface offers `formAddressed` and every shipped preset binds it.
+ *  7. **Staleness and order (R-15; plans/30 U5f).** A block's `head` is a
+ *     positive integer when present and host-owned — a spec's value is
+ *     named by the validator and replaced by `assignBlockHead`; `isFormStale`
+ *     is the one rule (`!answered && head != null && headNow > head`);
+ *     `form-superseded` is a data event no outlet causes; the three state
+ *     definitions carry the `base` / `version` / `refused` ports the rebase
+ *     rides on.
  */
 
 import { describe, test } from 'node:test'
@@ -36,6 +43,7 @@ import {
 	allDefinitions,
 	announce,
 	AnnouncementError,
+	assignBlockHead,
 	assignBlockIds,
 	blockFunctionsOf,
 	checkMessageBlocks,
@@ -48,6 +56,9 @@ import {
 	formAnswerSchema,
 	formBlocksOf,
 	formFireOf,
+	isChannelHead,
+	isFormStale,
+	isOwnerAddressed,
 	pin,
 	reviewFieldsFinding,
 	S,
@@ -80,10 +91,9 @@ const asked = (over: Record<string, unknown> = {}): MessageBlock =>
 
 const action = (over: Record<string, unknown> = {}) => ({
 	key: 'answer',
-	function: 'answer',
-	genre: CHAT,
 	venue: { kind: 'message' },
 	label: { en: 'Answer' },
+	description: { en: 'What the answer action does.' },
 	...over,
 })
 
@@ -180,6 +190,43 @@ describe('R-15 · the host reads forms off a tree', () => {
 		assert.equal((out[1] as any).blocks[0].id, 'b1')
 	})
 
+	test('a head is a positive integer, host-owned: a malformed one is named, a given one is replaced', () => {
+		// Well-formed passes the validator, like a well-formed id.
+		assert.deepEqual(checkMessageBlocks([asked({ head: 47 })]), [])
+		for (const bad of [0, -1, 1.5, '47', NaN, Infinity, null]) {
+			const f = checkMessageBlocks([asked({ head: bad })])
+			assert.ok(
+				f.some((x) => x.path === 'blocks[0].head' && /host stamps the channel head/.test(x.fix)),
+				`head ${String(bad)} should be named as host-owned`,
+			)
+		}
+		assert.equal(isChannelHead(47), true)
+		assert.equal(isChannelHead(0), false)
+		assert.equal(isChannelHead('47'), false)
+		// The host's stamp replaces whatever the spec wrote — the head is a
+		// fact about the channel, and only the host holds the channel.
+		const out = assignBlockHead(
+			[asked({ head: 3 }), { kind: 'group', blocks: [asked()] }, { kind: 'md', text: 'x' }],
+			52,
+		)
+		assert.equal((out[0] as any).head, 52)
+		assert.equal((out[1] as any).blocks[0].head, 52)
+		assert.equal((out[2] as any).head, undefined)
+	})
+
+	test('stale is one rule: unanswered, a head, and the channel past it', () => {
+		const answered = { by: 'character:12', at: '2026-09-17T00:00:00.000Z' }
+		assert.equal(isFormStale({ head: 47 }, 48), true)
+		assert.equal(isFormStale({ head: 47 }, 47), false)
+		assert.equal(isFormStale({ head: 47 }, 46), false)
+		// Answered beats stale everywhere.
+		assert.equal(isFormStale({ head: 47, answered }, 99), false)
+		// No head (a pre-U5f row) is never stale; no channel to compare is not stale either.
+		assert.equal(isFormStale({}, 99), false)
+		assert.equal(isFormStale({ head: 47 }, null), false)
+		assert.equal(isFormStale({ head: 47 }, undefined), false)
+	})
+
 	test('the answer schema is an enum of the keys, or the field schema', () => {
 		assert.deepEqual(formAnswerSchema(asked() as any), {
 			type: 'object',
@@ -231,21 +278,40 @@ describe('R-15 · the host reads forms off a tree', () => {
 })
 
 describe('R-15 · the effects line', () => {
-	test("a 'world' action may not live in a message venue — at construction", () => {
+	test("a 'world' action may not live in a form, extra or widget venue — at construction", () => {
 		assert.throws(
-			() => actionSpec('core:spec/grant', [action({ key: 'grant', function: 'grant', effects: 'world' })]),
+			() => actionSpec('core:spec/grant', [action({ key: 'grant', effects: 'world', venue: { kind: 'widget' } })]),
 			(e: Error) =>
-				/'world' action may not appear in the 'message' venue/.test(e.message) &&
+				/'world' action may not appear in the 'widget' venue/.test(e.message) &&
 				WORLD_ACTION_VENUES.every((v) => e.message.includes(v)),
 		)
-		for (const kind of ['extra', 'widget'])
+		for (const kind of ['extra', 'form'])
 			assert.throws(
 				() =>
 					actionSpec('core:spec/grant', [
-						action({ key: 'grant', function: 'grant', effects: 'world', venue: { kind } }),
+						action({ key: 'grant', effects: 'world', venue: { kind } }),
 					]),
 				/'world' action may not appear/,
 			)
+	})
+
+	test("a message's own ⋮ is the owner's side of the line (lair re-plan R11, 2026-09-28)", () => {
+		// *File as a room*: the owner's press on a row, the row its subject —
+		// the composer's act, not a question put to anybody.
+		const doc = compile(
+			actionSpec('core:spec/grant', [
+				action({ key: 'grant', effects: 'world', audience: { see: ['participant'], act: ['owner'] } }),
+			]).build(),
+		)
+		assert.deepEqual(validate(doc).filter((f) => f.severity === 'error'), [])
+		// Still owner-only there: the item rule is not an owner.
+		assert.throws(
+			() =>
+				actionSpec('core:spec/grant', [
+					action({ key: 'grant', effects: 'world', audience: { see: ['participant'], act: ['item'] } }),
+				]),
+			/audience\.act names 'item'/,
+		)
 	})
 
 	test("a 'world' action's audience is the owner's or an admin's", () => {
@@ -254,7 +320,6 @@ describe('R-15 · the effects line', () => {
 				actionSpec('core:spec/grant', [
 					action({
 						key: 'grant',
-						function: 'grant',
 						effects: 'world',
 						venue: { kind: 'composer' },
 						audience: { see: ['participant'], act: ['participant'] },
@@ -267,7 +332,6 @@ describe('R-15 · the effects line', () => {
 			actionSpec('core:spec/grant', [
 				action({
 					key: 'grant',
-					function: 'grant',
 					effects: 'world',
 					venue: [{ kind: 'composer' }, { kind: 'review' }],
 					audience: { see: ['participant'], act: ['owner', 'admin'] },
@@ -278,14 +342,21 @@ describe('R-15 · the effects line', () => {
 	})
 
 	test('a document from any other source gets the same answer in validate() and announce.build()', () => {
-		const doc = compile(actionSpec('core:spec/grant', [action({ key: 'grant', function: 'grant' })]).build())
+		const doc = compile(
+			actionSpec('core:spec/grant', [action({ key: 'grant', venue: { kind: 'widget' } })]).build(),
+		)
 		// Patched after the builder saw it — an import, a hand-written JSON.
 		const patched: SpecDocument = {
 			...doc,
 			contributes: { actions: [{ ...(doc.contributes as any).actions[0], effects: 'world' }] } as any,
 		}
-		const findings = validate(patched).filter((f) => f.law === 'R-15' && f.severity === 'error')
-		assert.ok(findings.some((f) => /'world' action may not appear in the 'message' venue/.test(f.message)))
+		// Labelled with the line's own law (F41), not the declaration-shape
+		// law (R-15), so the conformance kit's C20 keys on the label (U7
+		// review, W3); the sentence still cites R-15, where the line is ruled.
+		const findings = validate(patched).filter((f) => f.law === 'F41' && f.severity === 'error')
+		assert.ok(findings.some((f) => /'world' action may not appear in the 'widget' venue/.test(f.message)))
+		assert.ok(findings.every((f) => /the effects line, R-15/.test(f.message) && /effects: 'fiction'/.test(f.fix)))
+		assert.equal(validate(patched).filter((f) => f.law === 'R-15' && f.severity === 'error').length, 0)
 		assert.throws(
 			() =>
 				announce({ ns: 'core', author: 'a', title: 't', repo: 'r', summary: 's' })
@@ -294,19 +365,56 @@ describe('R-15 · the effects line', () => {
 					.build(),
 			(e: Error) =>
 				e instanceof AnnouncementError &&
-				/'world' action may not appear in the 'message' venue/.test(e.message),
+				/'world' action may not appear in the 'widget' venue/.test(e.message),
 		)
 	})
 
 	test("a block naming a 'world' action is found; an unknown effects value is refused", () => {
 		const doc = compile(
 			actionSpec('core:spec/grant', [
-				action({ key: 'grant', function: 'grant', effects: 'world', venue: { kind: 'composer' } }),
+				action({ key: 'grant', effects: 'world', venue: { kind: 'composer' } }),
 				action(),
 			]).build(),
 		)
 		assert.deepEqual(worldBlockFunctions([asked(), { kind: 'form', fn: 'grant', fields: {} }], doc), ['grant'])
 		assert.deepEqual(worldBlockFunctions([asked()], doc), [])
+		// L1 (ruled 2026-09-17): a block addressed to the OWNER may name one.
+		// The owner is already the whole of a world action's `act` audience, so
+		// the button is the owner acting — and every other addressee, including
+		// none at all, keeps the refusal.
+		assert.deepEqual(
+			worldBlockFunctions(
+				[{ kind: 'form', fn: 'grant', fields: {}, addressee: 'owner' }],
+				doc,
+			),
+			[],
+		)
+		assert.deepEqual(
+			worldBlockFunctions(
+				[
+					{
+						kind: 'choices',
+						question: 'Build it?',
+						addressee: 'owner',
+						actions: [{ fn: 'grant', label: 'Yes', choice: 'yes' }],
+					} as MessageBlock,
+				],
+				doc,
+			),
+			[],
+		)
+		for (const addressee of ['character:7', 'user:3', 'participant', 'admin'])
+			assert.deepEqual(
+				worldBlockFunctions(
+					[{ kind: 'form', fn: 'grant', fields: {}, addressee } as MessageBlock],
+					doc,
+				),
+				['grant'],
+				addressee,
+			)
+		assert.equal(isOwnerAddressed('owner'), true)
+		assert.equal(isOwnerAddressed(undefined), false)
+		assert.equal(isOwnerAddressed('user:1'), false)
 		assert.equal(effectsOf({ effects: 'world' }), 'world')
 		assert.equal(effectsOf({}), 'fiction')
 		assert.throws(
@@ -402,6 +510,60 @@ describe('R-15 · answer-form@1 belongs on form-addressed@1', () => {
 					/only a pipeline on core:inlet\/form-addressed@1 has a form to answer/.test(f.message),
 			),
 		)
+	})
+})
+
+describe('R-15 · staleness and order — the event and the ports (U5f)', () => {
+	test('form-superseded is a data event no outlet causes, on the session-change shape', () => {
+		const e = CORE_EVENTS.formSuperseded
+		assert.equal(e.slug, 'form-superseded')
+		assert.equal(e.family, 'data')
+		assert.equal(e.affectsUser, false)
+		assert.equal(e.causedBy, undefined)
+		assert.equal(e.payload, S.sessionChange)
+	})
+
+	test('session-state publishes version; resolve-state-changes and set-state take base; set-state reports refused', () => {
+		const ports = (d: { ports: { in?: object; out?: object } }) => ({
+			in: Object.keys(d.ports.in ?? {}),
+			out: Object.keys(d.ports.out ?? {}),
+		})
+		assert.ok(ports(C.sessionState.descriptor).out.includes('version'))
+		assert.ok(ports(C.resolveStateChanges.descriptor).in.includes('base'))
+		const setState = ports(C.setState.descriptor)
+		assert.ok(setState.in.includes('base'))
+		assert.ok(setState.out.includes('refused'))
+		// Additive: the ports every shipped spec already wires are still there.
+		// `worldRow` (lair pass R8, 2026-09-28): where the world's changes
+		// are filed, declared by the spec — additive and optional.
+		assert.deepEqual(setState.in.sort(), ['base', 'changes', 'scope', 'worldRow'])
+		assert.deepEqual(setState.out.sort(), ['applied', 'main', 'proposed', 'refused'])
+	})
+
+	test('the adventure graphs hand the version they read back as base', () => {
+		for (const slug of [
+			'core:spec/adventure-respond',
+			'core:spec/adventure-rest',
+			'core:spec/adventure-advance-time',
+		]) {
+			const entry = CORE_SPECS.find((s) => s.slug === slug)
+			assert.ok(entry, slug)
+			const doc: SpecDocument = entry!.build()
+			const stateQuery = doc.nodes.find((n) => n.definitionId === 'core:query/session-state')
+			assert.ok(stateQuery, `${slug} reads the state`)
+			const baseEdges = doc.edges.filter(
+				(e) => e.toPort === 'base' && e.from === stateQuery!.key && e.fromPort === 'version',
+			)
+			const targets = baseEdges
+				.map((e) => doc.nodes.find((n) => n.key === e.to)?.definitionId)
+				.sort()
+			// Both set-state arms and the resolver, in every keeper graph.
+			assert.deepEqual(targets, [
+				'core:query/resolve-state-changes',
+				'core:task/set-state',
+				'core:task/set-state',
+			])
+		}
 	})
 })
 

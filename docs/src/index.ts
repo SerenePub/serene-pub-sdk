@@ -44,6 +44,7 @@ export {
 	type CompileDocsOptions,
 	type CompileDocsReport,
 	type DocsManifest,
+	type DocsOrderGroup,
 	type DocsGraph,
 	type DocsGraphEdge,
 	type DocsGraphNode,

@@ -1,0 +1,88 @@
+/**
+ * What this package declares — the statement an install would read.
+ *
+ * These are not tests of the SDK. Each one pins a claim the README makes about
+ * this plugin, in the place an install would read it.
+ *
+ * ✎ CHANGE: as the declaration grows, so does this file. A claim in the README
+ *   with no assertion under it is a claim that will quietly stop being true.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { compile, validate } from '@serene-pub/sdk'
+
+import { extension, PLUGIN_SLUG } from '../src/index.js'
+{{#genre}}
+import { GENRE_ID } from '../src/genre.js'
+{{/genre}}
+
+describe('the package', () => {
+	it('is the one this repository owns', () => {
+		expect(extension.slug).toBe(PLUGIN_SLUG)
+		expect(extension.version).toMatch(/^\d+\.\d+\.\d+/)
+	})
+
+	it('registers every node definition under its own namespace', () => {
+		for (const h of extension.handlers ?? []) {
+			if (h.__decl !== 'handler') continue
+			expect(h.type.id.startsWith(`${PLUGIN_SLUG}:`)).toBe(true)
+		}
+	})
+{{#storage}}
+
+	it('asks for the storage grant its handlers cannot work without', () => {
+		expect(extension.permissions?.storage?.quotaBytes).toBeGreaterThan(0)
+	})
+{{/storage}}
+{{#panel}}
+
+	it('declares the frame panel, a view onto one channel', () => {
+		expect(extension.surfaces?.panels).toEqual([
+			{ id: '{{panelId}}', entry: '{{panelEntry}}', title: '{{displayName}}', channels: ['main'] },
+		])
+	})
+{{/panel}}
+})
+{{#genre}}
+
+describe('the genre', () => {
+	it('is the one this package owns', () => {
+		expect(extension.genres).toHaveLength(1)
+		expect(extension.genres?.[0]?.id).toBe(GENRE_ID)
+		expect(GENRE_ID.startsWith(`${PLUGIN_SLUG}:`)).toBe(true)
+	})
+
+	it('has the create slot every genre has, stated or not', () => {
+		expect(extension.genres?.[0]?.events['core:event/session-created@1']).toMatchObject({
+			required: true,
+		})
+	})
+})
+
+describe('the preset', () => {
+	it('binds the genre’s required slots to this package’s own pipelines', () => {
+		const preset = extension.presets?.[0]
+		expect(preset?.genre).toBe(GENRE_ID)
+		const shipped = new Set((extension.pipelines ?? []).map((p) => p.id))
+		for (const binding of Object.values(preset?.bindings ?? {}))
+			expect(shipped.has(binding.spec)).toBe(true)
+	})
+})
+{{/genre}}
+
+describe('the pipelines', () => {
+	it('each one validates against the laws a published pipeline is held to', () => {
+		for (const built of extension.pipelines ?? []) {
+			const errors = validate(compile(built)).filter((f) => f.severity === 'error')
+			expect(errors, `${built.id}: ${errors.map((e) => e.message).join('; ')}`).toEqual([])
+		}
+	})
+
+	it('each one sits under this package’s namespace and answers one event', () => {
+		for (const built of extension.pipelines ?? []) {
+			expect(built.id.startsWith(`${PLUGIN_SLUG}:`)).toBe(true)
+			expect(built.input?.event).toBeTruthy()
+			expect(built.input?.genre).toBeTruthy()
+		}
+	})
+})

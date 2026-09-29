@@ -26,7 +26,7 @@
 import type { FieldDecl } from './settings.js';
 import type { SlotDecl } from './descriptors.js';
 import { type ReviewPosition } from './review.js';
-/** The reserved slot name. `register` refuses a descriptor that authors it. */
+/** The reserved slot name. `register` refuses a descriptor that authors it. @experimental */
 export declare const SETTINGS_SLOT: 'settings';
 /**
  * `enabled` — may this optional node be switched off (`Descriptor.optional`).
@@ -35,6 +35,7 @@ export declare const SETTINGS_SLOT: 'settings';
  * source is still queried; a switched-off one costs nothing. Only a node whose
  * contract says an empty result is fine may carry it — offering it anywhere
  * else would let somebody turn off a node whose output the next one requires.
+ * @experimental
  */
 export declare const ENABLED_FIELD: FieldDecl;
 /**
@@ -46,6 +47,7 @@ export declare const ENABLED_FIELD: FieldDecl;
  * The two retired spellings (`sync`, `async`) are folded to `on` here exactly
  * as `resolvePosition` folds them at run time, so the panel's default and the
  * gate's agree.
+ * @experimental
  */
 export declare function reviewField(reviewDefault: ReviewPosition | undefined): FieldDecl;
 /**
@@ -55,6 +57,7 @@ export declare function reviewField(reviewDefault: ReviewPosition | undefined): 
  * `enabled` when the node is `optional`; `review` when its `effects` gate. A
  * node that is both (`embed-text`, `generate-json`) carries both fields on
  * the one slot — one address prefix, as the executor has always read it.
+ * @experimental
  */
 export declare function settingsSlotFor(d: {
     optional?: boolean;
@@ -72,22 +75,24 @@ export declare function settingsSlotFor(d: {
  * is a property of what they iterate rather than a choice about concurrency,
  * and a junction's is the same story one construct over. The author's
  * declared mode is the default; the person's setting wins (`resolveClauseMode`).
+ * @internal
  */
 export declare function clauseSettingsSlotFor(clause: {
     kind: string;
     mode?: string | null;
 }): SlotDecl | undefined;
 /**
- * A row's slots minus the substrate's — what the content hash digests.
+ * A row's slots minus the substrate's — what the content hash digests
+ * (`definitionContract`).
  *
  * Not hashed, and deliberately: the slot is derived from `optional`,
- * `effects` and `reviewDefault`, the first two of which are hashed on their
- * own terms already, so digesting it again would move every optional and
- * every gated definition's pin for a projection change nobody authored.
- * `reviewDefault` was not hashed before either; whether an author's default
- * gate position is contract is a separate ruling, not a side effect of this
- * one. The name is reserved (`checkNoAuthoredSettings`), so stripping by name
- * can never strip something an author wrote.
+ * `effects` and `reviewDefault`. The first two are contract and hashed on
+ * their own terms, so digesting the slot again would move every optional and
+ * every gated definition's pin for a projection change nobody authored;
+ * `reviewDefault` is policy (plans/31 V6) and hashed nowhere. The name is
+ * reserved (`checkNoAuthoredSettings`), so stripping by name can never strip
+ * something an author wrote.
+ * @experimental
  */
 export declare function authoredSlots<T>(slots: Record<string, T> | undefined): Record<string, T>;
 //# sourceMappingURL=settingsSlot.d.ts.map

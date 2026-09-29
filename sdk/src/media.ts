@@ -33,10 +33,13 @@
  * Declared as a const array rather than a bare union so it is introspectable:
  * a settings control that offers "which kinds does this accept" enumerates
  * this instead of hardcoding a list that drifts.
+ * @experimental
  */
 export const MEDIA_KINDS = ['image', 'audio', 'video', 'document'] as const
+/** @experimental */
 export type MediaKind = (typeof MEDIA_KINDS)[number]
 
+/** @experimental */
 export const isMediaKind = (v: unknown): v is MediaKind =>
 	typeof v === 'string' && (MEDIA_KINDS as readonly string[]).includes(v)
 
@@ -61,6 +64,7 @@ export const isMediaKind = (v: unknown): v is MediaKind =>
  *    header, can legitimately be answered with different bytes and a different
  *    type. Do not treat them as a promise about what arrived; a receipt records
  *    what was actually sent.
+ * @experimental
  */
 export interface MediaRef {
 	/** The public address (`/media/{uuid}`). Stable for this FILE, shared by
@@ -91,6 +95,7 @@ export interface MediaRef {
  * multimodal model that reads and draws does both. A single `supports` list
  * could not tell those apart, and the difference is exactly what a picker needs
  * in order to grey out the wrong connection.
+ * @experimental
  */
 export interface MediaCapability {
 	/** Kinds this can take as input. Absent or empty: text only. */
@@ -104,7 +109,9 @@ export interface MediaCapability {
 }
 
 /** Does `cap` accept this reference? The check a picker and a wire adapter
- *  both need, written once so they cannot disagree. */
+ *  both need, written once so they cannot disagree. 
+ * @experimental
+ */
 export function accepts(cap: MediaCapability | undefined, ref: MediaRef): boolean {
 	if (!cap?.accepts?.length) return false
 	if (!cap.accepts.includes(ref.kind)) return false
@@ -127,6 +134,7 @@ export function accepts(cap: MediaCapability | undefined, ref: MediaRef): boolea
  * The app already stores messages this way (`messageParts`, with
  * `core:image` / `core:file`). This is the provider contract catching up to
  * the storage model, not a speculative addition.
+ * @experimental
  */
 export type OutputPart =
 	| { t: 'text'; text: string }
@@ -141,7 +149,9 @@ export type OutputPart =
 
 /** Everything in a part list that is prose, concatenated — the degrade path
  *  for a consumer that only understands text. Reasoning is deliberately
- *  excluded: it is not the answer. */
+ *  excluded: it is not the answer. 
+ * @experimental
+ */
 export function partsToText(parts: readonly OutputPart[]): string {
 	return parts
 		.filter((p): p is Extract<OutputPart, { t: 'text' }> => p.t === 'text')
@@ -149,7 +159,7 @@ export function partsToText(parts: readonly OutputPart[]): string {
 		.join('')
 }
 
-/** Every media reference in a part list, in order. */
+/** Every media reference in a part list, in order. @experimental */
 export function partsToMedia(parts: readonly OutputPart[]): MediaRef[] {
 	return parts
 		.filter((p): p is Extract<OutputPart, { t: 'media' }> => p.t === 'media')

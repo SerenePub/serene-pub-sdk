@@ -28,6 +28,7 @@
 import { render as renderJinja, extractRefs, checkTemplate } from "./template.js";
 import { refuseUnlessIdentical } from './hash.js';
 const engines = new Map();
+/** @experimental */
 export function defineEngine(e) {
     const existing = engines.get(e.id);
     // `label` is the name in the editor's language picker and nothing else reads
@@ -39,12 +40,15 @@ export function defineEngine(e) {
     engines.set(e.id, e);
     return e;
 }
+/** @experimental */
 export const getEngine = (id) => engines.get(id);
+/** @experimental */
 export const allEngines = () => [...engines.values()];
+/** @experimental */
 export function _clearEngines() {
     engines.clear();
 }
-/** Resolve and render, with an error that names the engine rather than failing obscurely. */
+/** Resolve and render, with an error that names the engine rather than failing obscurely. @experimental */
 export function renderWith(value, scope) {
     const e = engines.get(value.engine);
     if (!e) {
@@ -77,6 +81,7 @@ function jinjaCost(source, count) {
     const fixedLiteral = body.replace(/\{\{[\s\S]*?\}\}|\{%[\s\S]*?%\}/g, "");
     return { fixed: count(fixedLiteral), perIteration, exact: true };
 }
+/** @experimental */
 export const jinja2 = defineEngine({
     id: "core:template/jinja2@1",
     label: "Jinja2",
@@ -88,6 +93,7 @@ export const jinja2 = defineEngine({
 /**
  * No substitution at all. Useful on its own — a fixed system preamble is a template with
  * no variables — and useful as the reference implementation of an exact cost profile.
+ * @experimental
  */
 export const plain = defineEngine({
     id: "core:template/plain@1",
@@ -114,6 +120,7 @@ export const plain = defineEngine({
  * and every core template in SP is Handlebars with a registered helper set. The
  * template-engine registry is exactly the mechanism that makes that a one-line change
  * rather than a redesign, which is the argument for having built it.
+ * @experimental
  */
 export const handlebars = defineEngine({
     id: "core:template/handlebars@1",
@@ -154,6 +161,7 @@ export const handlebars = defineEngine({
  * registered tag and filter set (`systemBlock`/`assistantBlock`/`userBlock`, `json`,
  * `jsonValue`, `pad`) under a configuration a second implementation would not
  * reproduce, and a near-miss renderer fails as what reads like a template bug.
+ * @experimental
  */
 export const liquid = defineEngine({
     id: "core:template/liquid@1",
@@ -186,8 +194,10 @@ export const liquid = defineEngine({
         exact: false
     })
 });
-/** Sugar so a spec reads `template: jinja(SOURCE)` rather than repeating the id. */
+/** Sugar so a spec reads `template: jinja(SOURCE)` rather than repeating the id. @experimental */
 export const templateOf = (engine) => (source) => ({ engine: engine.id, source });
+/** @experimental */
 export const jinja = templateOf(jinja2);
+/** @experimental */
 export const text = templateOf(plain);
 //# sourceMappingURL=engines.js.map

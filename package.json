@@ -2,7 +2,7 @@
 	"name": "serene-pub-sdk",
 	"version": "0.6.0-preview.0",
 	"private": true,
-	"description": "The Serene Pub pipeline SDK \u2014 four packages a plugin author builds against.",
+	"description": "The Serene Pub pipeline SDK — four packages a plugin author builds against.",
 	"license": "Apache-2.0",
 	"repository": {
 		"type": "git",
@@ -17,6 +17,7 @@
 		"conformance",
 		"core-catalog",
 		"controls",
+		"component-client",
 		"ui-preview",
 		"playground",
 		"sdk-tests",
@@ -26,15 +27,16 @@
 		"build": "npm run build -w @serene-pub/sdk && npm run build -w @serene-pub/contracts -w @serene-pub/conformance && npm run build -w @serene-pub/docs && npm run build -w @serene-pub/cli && npm run build -w @serene-pub/core-catalog && npm run docs:api && npm run docs:examples && npm run build -w @serene-pub/playground",
 		"docs:api": "npm run docs:api -w @serene-pub/api-docs",
 		"docs:examples": "cd sdk-tests && tsx ../cli/src/bin.ts docs --examples examples --goldens examples/goldens --out ../docs/generated/examples",
-		"test": "npm run build && npm run test -w @serene-pub/sdk-tests",
 		"typecheck": "npm run typecheck -w @serene-pub/sdk-tests",
 		"format": "prettier --write .",
-		"lint": "prettier --check ."
+		"lint": "prettier --check .",
+		"gen:plugin-permissions": "tsx scripts/gen-plugin-permissions.ts"
 	},
 	"devDependencies": {
+		"@types/node": "^22.0.0",
+		"happy-dom": "^20.14.5",
 		"prettier": "^3.6.2",
 		"tsx": "^4.0.0",
-		"typescript": "~7.0.0",
-		"@types/node": "^22.0.0"
+		"typescript": "~7.0.0"
 	}
 }

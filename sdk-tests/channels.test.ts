@@ -18,9 +18,11 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+	channelDecls,
 	DEFAULT_CHANNEL,
 	DEFAULT_LANE,
 	formatChannel,
+	genre,
 	isSameChannel,
 	parseChannel,
 } from '@serene-pub/sdk'
@@ -167,5 +169,143 @@ describe('comparing channels', () => {
 		assert.ok(!isSameChannel('phone:2', 'map:2'))
 		// An absent channel is `main`, so it equals `main`.
 		assert.ok(isSameChannel(undefined, 'main'))
+	})
+})
+
+/**
+ * Per-channel shape (R-C, ruled 2026-09-17) — an element of
+ * `SessionShape.channels` may be the slug alone or the whole declaration.
+ *
+ * The claim is that the union is additive in the strong sense: a bare string
+ * still *means* what it always meant, and still *serializes* as what it always
+ * was, so no genre written before the union re-hashes. `channelDecls` is the
+ * one reader, so the short and long forms cannot be read differently anywhere.
+ */
+describe('declaring a channel', () => {
+	test('a bare string is a conversation, with the genre’s voice and verbs', () => {
+		assert.deepEqual(channelDecls({ channels: ['manuscript'], voice: 'narrator' }), [
+			{ slug: 'main', role: 'conversation', voice: 'narrator' },
+			{ slug: 'manuscript', role: 'conversation', voice: 'narrator' },
+		])
+	})
+
+	test('main is first and always exists, declared or not', () => {
+		assert.deepEqual(channelDecls({}), [{ slug: 'main', role: 'conversation' }])
+		assert.deepEqual(channelDecls(undefined), [{ slug: 'main', role: 'conversation' }])
+		// Declared late, it is still first — and it is its own declaration,
+		// not a second row beside an invented one.
+		const decls = channelDecls({
+			channels: ['manuscript', { slug: 'main', messageVerbs: { swipe: false } }],
+		})
+		assert.deepEqual(
+			decls.map((d) => d.slug),
+			['main', 'manuscript'],
+		)
+		assert.deepEqual(decls[0]!.messageVerbs, { swipe: false })
+	})
+
+	test('a declaration states role and voice, and none means no seed row', () => {
+		assert.deepEqual(
+			channelDecls({
+				voice: 'character',
+				channels: ['main', { slug: 'manuscript', role: 'folio', voice: 'none' }],
+			}),
+			[
+				{ slug: 'main', role: 'conversation', voice: 'character' },
+				{ slug: 'manuscript', role: 'folio', voice: 'none' },
+			],
+		)
+	})
+
+	test('a channel’s verbs are the genre’s with the channel’s over the top', () => {
+		const [, manuscript] = channelDecls({
+			messageVerbs: { swipe: false },
+			channels: [{ slug: 'manuscript', messageVerbs: { delete: false } }],
+		})
+		// Declared keys win; the rest keep the genre's answer — switching
+		// delete off on the manuscript does not switch swipe back on.
+		assert.deepEqual(manuscript!.messageVerbs, { swipe: false, delete: false })
+	})
+
+	test('an unreadable entry is skipped rather than guessed at', () => {
+		assert.deepEqual(
+			channelDecls({ channels: ['manuscript', '', '  ', null, 42, { role: 'folio' }] }),
+			[
+				{ slug: 'main', role: 'conversation' },
+				{ slug: 'manuscript', role: 'conversation' },
+			],
+		)
+	})
+
+	test('a string stays a string in the declaration, so nothing re-hashes', () => {
+		const g = genre('test.channels:genre/short', {
+			name: { en: 'Short' },
+			family: 'test',
+			shape: { channels: ['manuscript'] },
+		})
+		assert.deepEqual(g.shape?.channels, ['manuscript'])
+	})
+})
+
+describe('a channel declaration that cannot mean what it says is refused', () => {
+	const declare = (id: string, channels: any) =>
+		genre(id, { name: { en: 'X' }, family: 'test', shape: { channels } })
+
+	test('a slug naming a lane — lanes are runtime, never declared', () => {
+		assert.throws(
+			() => declare('test.channels:genre/laned', ['phone:3']),
+			/lanes under it are runtime and open-ended/,
+		)
+		assert.throws(
+			() => declare('test.channels:genre/laned2', [{ slug: 'phone:3' }]),
+			/lanes under it are runtime and open-ended/,
+		)
+	})
+
+	test('an unknown role or voice', () => {
+		assert.throws(
+			() => declare('test.channels:genre/role', [{ slug: 'manuscript', role: 'prose' }]),
+			/declares role 'prose'[\s\S]*'conversation' or 'folio'/,
+		)
+		assert.throws(
+			() => declare('test.channels:genre/voice', [{ slug: 'manuscript', voice: 'editor' }]),
+			/declares voice 'editor'/,
+		)
+	})
+
+	test('a floor switched off on a channel, on the genre’s own terms', () => {
+		assert.throws(
+			() =>
+				declare('test.channels:genre/floor', [
+					{ slug: 'manuscript', messageVerbs: { edit: false } },
+				]),
+			/channel 'manuscript' declares messageVerbs \{ edit: false \}/,
+		)
+	})
+
+	test('main declared as a folio — the one channel every session talks in', () => {
+		assert.throws(
+			() => declare('test.channels:genre/main-doc', [{ slug: 'main', role: 'folio' }]),
+			/'main' is the channel every session has/,
+		)
+		// …and main declared as the conversation it is, is fine.
+		assert.doesNotThrow(() =>
+			declare('test.channels:genre/main-ok', [{ slug: 'main', role: 'conversation' }]),
+		)
+	})
+
+	test('an entry that is neither a slug nor a declaration, and a slug-less one', () => {
+		assert.throws(
+			() => declare('test.channels:genre/junk', [42]),
+			/neither a slug nor a declaration/,
+		)
+		assert.throws(
+			() => declare('test.channels:genre/noslug', [{ role: 'folio' }]),
+			/declares a channel with no slug/,
+		)
+		assert.throws(
+			() => declare('test.channels:genre/notarray', 'manuscript'),
+			/declares a 'channels' that is not an array/,
+		)
 	})
 })

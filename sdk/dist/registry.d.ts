@@ -28,11 +28,22 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
-import { type Descriptor, type EntryShape, type ScriptPointDecl, type SlotDecl } from './descriptors.js';
+import { type DefinitionPolicy, type Descriptor, type EntryShape, type ScriptPointDecl, type SlotDecl } from './descriptors.js';
+import type { MediaCapability } from './media.js';
 import { type ScriptKindDecl } from './scripts.js';
 import type { SettingsSchema } from './settings.js';
 import type { SpecDocument } from './document.js';
-/** A `pipeline_definition_registry` row (02 §3), as data. */
+/**
+ * A `pipeline_definition_registry` row (02 §3), as data.
+ *
+ * Two halves, and the row carries both (plans/31 V6): every **contract**
+ * field of the `Descriptor` (`DESCRIPTOR_CONTRACT_KEYS`) — so a row read back
+ * hashes to the `content_hash` it was written under, and a plugin can be
+ * judged against rows without being executed (F6) — and the **policy** half,
+ * on `policy`, `i18n` and `public`, which the hash never sees and a sync
+ * refreshes in place.
+ * @internal
+ */
 export interface RegistryEntry {
     id: string;
     version: number;
@@ -45,13 +56,29 @@ export interface RegistryEntry {
      */
     optional?: boolean;
     /**
+     * The four other contract flags and the three contract declarations that
+     * had no column until plans/31 V6 — carried for the same reason `optional`
+     * is: each is in the hash, and a hashed field the row cannot carry is a
+     * row that cannot reproduce its own pointer. `review.fields` is also what
+     * a `transport: process` outlet's gate form is read from.
+     */
+    declaresRandomness?: boolean;
+    earlyExit?: boolean;
+    liveRow?: boolean;
+    review?: {
+        fields: readonly string[];
+    };
+    /** Connection kind for providers (== produced shape) — `Descriptor.shape`. */
+    shape?: string;
+    media?: MediaCapability;
+    /**
      * Interior script points (18 §4e) — carried into the row for the same
      * reason `slots` is: the panel offers one chain option per point and must
      * render it without loading the plugin (F6). Keys and `accepts` are
      * contract and hash; labels are display text, stripped like `i18n`
-     * everywhere else. Always the full shape — the projection folds the
-     * deprecated spellings through `scriptPointsOf`, so a row never carries a
-     * bare string or a point without `accepts`.
+     * everywhere else. Always the full shape — the projection copies through
+     * `scriptPointsOf`, and `register()` refuses a bare string or a point
+     * without `accepts`, so a row never carries one.
      */
     scriptPoints?: ScriptPointDecl[];
     /**
@@ -136,18 +163,33 @@ export interface RegistryEntry {
     semantics?: string;
     effects?: string;
     causesEvent?: string;
+    /** The in-port whose literal names the event a write causes. */
+    causesEventFrom?: string;
+    /** Inlet only: the event payloads it reads (R33) — hashed with the contract. */
+    payloads?: string[];
     public?: boolean;
+    /**
+     * The policy half (plans/31 V6): `provisional` (plans/29 R-2 — the row
+     * also reads it as `status: 'provisional'`), `reviewDefault`,
+     * `timeoutMs`, `timeoutKind`, `toggleable`. Never hashed; a sync writes
+     * it on insert and refreshes it in place when it moves, so flipping a
+     * flag reaches every install without a pointer move. Absent on a script
+     * kind's row, which declares none of them.
+     */
+    policy?: DefinitionPolicy;
     /** Null for core types; the plugin slug for plugin types (12 §3b). */
     owner?: string;
     /** Which SP release seeded this row. */
     release?: string;
 }
-/** Project descriptors into registry rows — how core seeds and refreshes the table. */
+/** Project descriptors into registry rows — how core seeds and refreshes the table. @experimental */
 export declare function snapshotRegistry(types: Array<Descriptor | ScriptKindDecl>, meta?: {
     owner?: string;
     release?: string;
 }): RegistryEntry[];
+/** @experimental */
 export type InstallCode = 'E_UNKNOWN_TYPE' | 'E_SHAPE_DRIFT' | 'E_REDECLARES_CORE' | 'E_PRIVATE_TYPE' | 'E_MISSING_BINDING' | 'E_IN_PROCESS_HOOK' | 'W_NEWER_VERSION';
+/** @experimental */
 export interface InstallFinding {
     severity: 'error' | 'warning';
     code: InstallCode;
@@ -156,6 +198,7 @@ export interface InstallFinding {
     fix: string;
     where?: string;
 }
+/** @experimental */
 export interface InstallInput {
     /** The plugin's own declared types, as summarized in its manifest. */
     declares: Array<{
@@ -177,8 +220,11 @@ export interface InstallInput {
  *
  * Never loads the plugin. Every finding names what to do, because the reader is an admin
  * who did not write the plugin and cannot be expected to infer the fix from the symptom.
+ * @internal
  */
 export declare function checkInstall(input: InstallInput): InstallFinding[];
+/** @internal */
 export declare const installable: (f: InstallFinding[]) => boolean;
+/** @internal */
 export declare function renderInstall(findings: InstallFinding[]): string;
 //# sourceMappingURL=registry.d.ts.map

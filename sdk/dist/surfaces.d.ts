@@ -7,12 +7,18 @@
  *   **frame** — a document (`ui/map.html`) mounted in an opaque-origin iframe
  *   (`sandbox="allow-scripts"`, never `allow-same-origin`). Zero ambient
  *   anything: no cookies, no DOM reach, no socket. Everything it knows arrives
- *   on the MessageChannel the host owns (§ protocol v1 below). This is the
+ *   on the MessageChannel the host owns (the frame protocol below). This is the
  *   shape the app ships today — session-view replacement, page, panel grid
  *   (20 §12, 21 §7).
  *
- *   **component** — code the host mounts *in its own document* (10 §2's
- *   virtual tier). Code trust at install; no boundary but the error boundary.
+ *   **component** — a module the page's UI worker runs (§3.5, R25): one
+ *   worker per owner per session page, no DOM, no network. It places
+ *   elements from the host vocabulary (`SP_HOST_ELEMENTS`, `hostElements.ts`)
+ *   and the host mirrors them into the widget box, dropping anything not
+ *   listed; its data arrives on the same widget wire a frame's does. A
+ *   widget names one by `component`; what needs a real document gets one
+ *   inside the component through `sp-frame`. A frame is a remote minus the
+ *   worker: the same envelope, a different boundary.
  *
  * The preview harness (`serene-pub preview`) renders both. It reads what the
  * package **announces**, never what a directory happens to contain — a surface
@@ -28,21 +34,32 @@
  * back in `problems[]` so the harness can show them beside the list instead of
  * replacing it.
  *
- * ## Frame protocol v1 (host ⇄ frame, over the transferred port)
+ * ## The frame protocol (host ⇄ frame, over the transferred port)
  *
  * The types below are the one declaration of the wire the app's `PluginFrame`
- * and the preview harness both speak. They are data, not behaviour: the SDK
- * ships no host and no client, because the host is core's (it owns the
- * scoping) and the client is the author's.
+ * and the preview harness both speak — both import these unions rather than
+ * restating them, so a message a host sends is a message this file declares.
+ * They are data, not behaviour: the SDK ships no host and no client, because
+ * the host is core's (it owns the scoping) and the client is the author's.
+ *
+ * What travels is the widget envelope (`widgets.ts`) with the boundary added:
+ * a frame receives the same sections a native widget reads off its context,
+ * one push per section. `FRAME_PROTOCOL` says which vintage of that wire the
+ * host speaks.
  */
+import type { TurnOrderV1 } from './turnOrder.js';
+import type { ComponentFramework } from './extension.js';
+import type { WidgetDecl } from './layout.js';
 import type { SettingsSchema } from './settings.js';
+import { type ActionsV1, type AnnexV1, type LayoutV1, type MessageV1, type SessionV1, type ViewerV1, type WidgetRequestKind, type WidgetEvent, type WidgetPayload, type WidgetProtocolVersion, type WidgetScopedSectionName, type WidgetSectionScope } from './widgets.js';
 /**
  * Where a package's entry module lives, in the order the toolchain looks.
  * One list, shared by `serene-pub build` and the preview harness, so "the
  * harness found my plugin but the packager didn't" cannot happen.
+ * @experimental
  */
 export declare const ENTRY_CANDIDATES: readonly ['dist/index.js', 'src/index.ts', 'index.ts', 'index.js'];
-/** One frame surface: the document to mount, and what to call it. */
+/** One frame surface: the document to mount, and what to call it. @experimental */
 export interface FrameSurfaceDecl {
     /** Path to the document, relative to the package root — `ui/map.html`. */
     entry: string;
@@ -54,30 +71,99 @@ export interface FrameSurfaceDecl {
      * editor — core renders forms from schemas, so a surface that declares its
      * props gets one for free and never ships one of its own.
      *
-     * The intended shape: values reach a frame as `{ t: 'props', props }` and
-     * a component as `ctx.settings`. One declaration, two deliveries — the
-     * difference is the boundary, not the vocabulary.
+     * The intended shape: declared values reach a frame as
+     * `{ t: 'settings', settings }` — the effective `settings.v1`, defaults
+     * filled in — and a component as `ctx.settings`. One declaration, two
+     * deliveries; the difference is the boundary, not the vocabulary.
      *
-     * ⚠ **Core does not deliver these yet.** `frameHost.surfacesOf` narrows a
-     * stored surface to `{entry, title}` and drops `settings`, and
-     * `Panel.svelte` posts a hardcoded `{panelId, title}`; there is also no
-     * persistence for values an admin might set. `serene-pub ui` generates the
-     * editor and posts the result so a surface can be built against it, but a
-     * frame must read these defensively and keep its own defaults until core's
-     * delivery path exists.
+     * A `surfaces.panels` declaration reaches that path too. Core projects the
+     * panel (see {@link panelToWidgetDecl}), namespaces its id
+     * ({@link pluginWidgetId}) and seats the result in every session as an
+     * ordinary widget, so its declared settings are resolved against the
+     * instance's stored deviations and posted as `{ t: 'settings' }` exactly as
+     * a {@link WidgetDecl}'s are. One declaration, two deliveries, no third
+     * behaviour for the deprecated spelling.
      */
     settings?: SettingsSchema;
 }
-/** A frame panel in the session surface grid (21 §7). `id` is what a
- * `surface:open` intent and a saved layout row key on. */
+/**
+ * ⏳ A frame panel in the session surface grid. `id` is what a `surface:open`
+ * intent and a saved layout row key on.
+ *
+ * @deprecated Declare a {@link WidgetDecl} with a `frame` surface. A panel was
+ * always a widget — one declaration wearing two names, and this is the name
+ * that lost: `WidgetDecl` carries everything here plus placement, cells, fold,
+ * scopes and styles, and it is the shape the host actually seats. Kept one
+ * release for the packages on disk that declare `surfaces.panels`;
+ * {@link panelToWidgetDecl} is the translation.
+ * @experimental
+ */
 export interface FramePanelDecl extends FrameSurfaceDecl {
     id: string;
     /** The lanes this panel views (20 §4/§7). A panel is a view onto channels. */
     channels?: string[];
 }
 /**
+ * A `surfaces.panels` entry read as the one widget declaration.
+ *
+ * Pure and total: every field a panel can declare has a home on
+ * {@link WidgetDecl}, so nothing is dropped and nothing is invented. The host
+ * calls this at the boundary where it reads a stored manifest, which is what
+ * makes "a panel IS a widget" true of the code rather than only of the prose.
+ *
+ * `id` is carried through **bare**, because this is the SDK's pure projection
+ * of what the package wrote and the package wrote its own id. It is therefore
+ * NOT unique across packages: two packages declaring a panel `map` declare the
+ * same id here.
+ *
+ * Reconciling that is the host's, and the host does it by **namespacing** —
+ * {@link pluginWidgetId} turns the pair into `<pluginId>:<panelId>`, which is
+ * the id a seated instance, a saved layout row, a `widget_settings` row and a
+ * `surface:open` intent all carry. A reader that needs the package's own
+ * spelling back takes it apart with {@link parsePluginWidgetId}.
+ * @internal
+ */
+export declare function panelToWidgetDecl(pluginId: string, panel: FramePanelDecl): WidgetDecl;
+/**
+ * The widget id a plugin's own panel is seated under: `<pluginId>:<panelId>`.
+ *
+ * A plugin's widgets are namespaced and core's and a genre's are not, because
+ * only a plugin's id is outside anyone's control: a package picks `map` in
+ * private and would otherwise collide with every other package that did, and
+ * with core's own widgets, in a layout row that outlives the install. The
+ * separator can only be `:` — neither grammar admits one — and it is the
+ * separator core already uses for an owned id (`core:genre/chat`).
+ *
+ * Pure: the two halves are NOT validated here. The host reads a stored
+ * manifest and knows what it accepted; a helper that refused a second time
+ * would have to say so in a second vocabulary, and a composer that can fail is
+ * a composer every caller has to branch on. Reading one back DOES validate,
+ * because a stored id arrives with no such provenance —
+ * {@link parsePluginWidgetId}. The asymmetry is deliberate: composing is the
+ * host's own string, parsing is anyone's.
+ * @experimental
+ */
+export declare const pluginWidgetId: (pluginId: string, panelId: string) => string;
+/**
+ * A namespaced widget id taken back apart, or `null` when the string is not
+ * one.
+ *
+ * `null` is the answer for every core and genre widget id, which is what makes
+ * this the test for "is this widget a plugin's": both halves must satisfy the
+ * grammars a host would have accepted them under, so exactly the ids
+ * {@link pluginWidgetId} can produce round-trip and nothing else does. A
+ * second colon lands in the panel half and fails there, so `a:b:c` is not a
+ * plugin widget id rather than being read as one with a surprising panel.
+ * @experimental
+ */
+export declare function parsePluginWidgetId(id: string): {
+    pluginId: string;
+    panelId: string;
+} | null;
+/**
  * What a package declares under `surfaces` — the exact shape the app's
  * `frameHost.surfacesOf` reads out of a stored manifest.
+ * @experimental
  */
 export interface SurfacesDecl {
     /**
@@ -93,12 +179,29 @@ export interface SurfacesDecl {
     'session-view'?: FrameSurfaceDecl;
     /** A standalone page under the app's plugin route shell. */
     page?: FrameSurfaceDecl;
-    /** Panels offered to the session surface grid. */
+    /**
+     * ⏳ Panels offered to the session surface grid.
+     *
+     * @deprecated Declare widgets instead — a genre's shape carries
+     * {@link WidgetDecl}s, and a `frame` surface on one is this same panel with
+     * placement, cells and scopes it can no longer say here. Read one release
+     * through {@link panelToWidgetDecl}.
+     */
     panels?: FramePanelDecl[];
 }
-/** The three frame points, spelled as the app spells them. */
+/** The three frame points, spelled as the app spells them. @experimental */
 export type FramePoint = 'session-view' | 'page' | 'panel';
-/** host → frame. `init` carries the port; everything after rides it. */
+/**
+ * 🚧 Why a request was declined, when a component may act on the reason
+ * rather than its sentence — the `code` of a declining `response`, and of
+ * the error a component's `request` rejects with ({@link RequestDeclined}).
+ * `unmounted`: the component was unmounted before its request was answered
+ * — nothing is wrong, nobody is left to tell. Additive: a host that sends
+ * none still declines with its sentence alone.
+ * @experimental
+ */
+export type RequestDeclineCode = 'unmounted';
+/** host → frame. `init` carries the port; everything after rides it. @experimental */
 export type HostFrameMessage = {
     t: 'init';
     protocol: FrameProtocolVersion;
@@ -106,20 +209,87 @@ export type HostFrameMessage = {
     payload?: unknown;
 } | {
     t: 'session';
-    session: unknown;
+    session: SessionV1;
 } | {
     t: 'messages';
-    messages: unknown[];
+    messages: MessageV1[];
 } | {
     t: 'message';
-    message: unknown;
+    message: MessageV1;
 } | {
     t: 'channel';
     channel: string;
-    messages: unknown[];
+    messages: MessageV1[];
 } | {
     t: 'props';
-    props: Record<string, unknown>;
+    props: WidgetPayload;
+}
+/**
+ * This instance's effective settings — the widget envelope's `settings.v1`,
+ * every declared field defaulted with the person's deviations over it. The
+ * in-document analog is `ctx.settings.v1`; a frame is a widget minus the
+ * iframe, so it receives the same section by push.
+ *
+ * Sent only for a surface that IS a widget. A page or session-view frame
+ * has no instance to resolve settings for and receives none.
+ */
+ | {
+    t: 'settings';
+    settings: WidgetPayload;
+}
+/**
+ * The widget skin this frame should wear, already resolved by the host.
+ *
+ * A frame widget is skinned identically to a native one; the only
+ * difference is that its CSS is injected into the frame's OWN document
+ * rather than a scoped `<style>` in the host's. The frame is expected to
+ * keep one `<style id="sp-widget-style">`, replaced in place, and to set
+ * `vars` on its `document.documentElement`.
+ *
+ * An EMPTY `css` is still sent: taking a style off has to reach the frame,
+ * and a host that simply stopped sending would leave the last one applied
+ * for ever. Widget surfaces only.
+ */
+ | {
+    t: 'style';
+    css: string;
+    vars: Record<string, string>;
+}
+/**
+ * This widget's placement — the envelope's `layout.v1`, projected by the
+ * host and detached, so a later host-side move cannot reach into a message
+ * already sent. Re-sent on every change, and re-sent on reload: a frame
+ * that replays `ready` gets everything it needs to draw itself without
+ * having to ask. Widget surfaces only.
+ */
+ | {
+    t: 'layout';
+    layout: LayoutV1;
+}
+/** The viewer's view of the session annex (R57), on open and on every change — `annex.v1`. */
+ | {
+    t: 'annex';
+    annex: AnnexV1;
+}
+/**
+ * One host event — the port's analog of the `on` verb, and the same union a
+ * native widget subscribes to. Scoped to the frame's declared channels
+ * host-side, exactly as the message posts are, so a frame is never told
+ * about a message it was not also sent. Widget surfaces only.
+ */
+ | {
+    t: 'event';
+    event: WidgetEvent;
+}
+/**
+ * The session's actions per venue — the envelope's `actions.v1`. A frame
+ * fires one with `{ t: 'invoke' }`, which the host resolves to the
+ * declaration exactly as the native `invoke` verb does. Widget surfaces
+ * only.
+ */
+ | {
+    t: 'actions';
+    actions: ActionsV1;
 }
 /**
  * The host's active theme, as data (10 §6: *"the active theme id is a
@@ -133,14 +303,24 @@ export type HostFrameMessage = {
  * token surface "whatever Skeleton version core currently ships" rather
  * than a list this union would have to maintain.
  *
- * ⚠ Declared here so the harness and core stay pinned to one union, but
- * **core does not send this yet** — today only `serene-pub ui` does. A
- * frame must therefore treat it as optional and keep a sane default.
+ * Sent once the frame is ready and again whenever the host's theme or mode
+ * changes. A frame is still free to ignore it and keep its own look: the
+ * host's CSP grants the frame its OWN files, so a stylesheet resolving
+ * these attributes is one the package ships, not one it inherits.
  */
  | {
     t: 'theme';
     theme: string;
     mode: 'light' | 'dark';
+}
+/**
+ * The viewer's language code — the envelope's `locale.v1` — sent once the
+ * frame is ready and again if it changes, so a frame renders locale maps
+ * (`i18nText`) in the page's language.
+ */
+ | {
+    t: 'locale';
+    locale: string;
 } | {
     t: 'suspend';
 } | {
@@ -163,24 +343,123 @@ export type HostFrameMessage = {
  | {
     t: 'state';
     state: Record<string, unknown>;
+}
+/**
+ * 🚧 The answer to any `request` but `messages` (C0b), echoing its
+ * `requestId`: `ok` with the kind's result, or declined with why — and,
+ * when the decline is one a component may tell apart, its
+ * {@link RequestDeclineCode} (`code`; absent from an older host).
+ */
+ | {
+    t: 'response';
+    requestId: string;
+    ok: boolean;
+    result?: unknown;
+    error?: string;
+    code?: RequestDeclineCode;
+}
+/** 🚧 Translations of strings the frame asked for with `translate` (C0b). */
+ | {
+    t: 'strings';
+    strings: Record<string, string>;
+}
+/** 🚧 Who is looking — the envelope's `viewer.v1` (C0b). */
+ | {
+    t: 'viewer';
+    viewer: ViewerV1;
+}
+/** The session's turn order — the envelope's `turnOrder.v1` (C5), on open and on every change. */
+ | {
+    t: 'turn-order';
+    turnOrder: TurnOrderV1;
+}
+/**
+ * 🚧 A scoped section the widget was granted (C0b) — named as the SDK's
+ * one table posts it (`WidgetScopedSections`: `session_full`,
+ * `session_state`, `persona`, `characters`, `lore`), the envelope's
+ * `<name>.v1` — posted when it changes; `value: null` withdraws it (the
+ * grant went away). Never posted to a widget not granted it.
+ */
+ | {
+    t: 'scoped';
+    section: WidgetScopedSectionName;
+    value: unknown;
+}
+/**
+ * 🚧 The scopes the widget holds, BARE (`session:state`, never the
+ * permission key `widget:session:state`) — sent before the first push
+ * of its sections and again whenever they change (an admin grants or
+ * revokes one while it is open). What lets a widget tell a scope that was
+ * NOT granted (its section will never come: say so) from one whose
+ * section has not been posted yet (wait): both are an absent `scoped`.
+ * A host that never sends it leaves the widget unable to tell, as before.
+ * Additive within protocol 2 — a frame ignores a host message it does
+ * not recognise.
+ */
+ | {
+    t: 'grants';
+    grants: WidgetSectionScope[];
 };
 /**
  * frame → host. Deliberately tiny: a frame proposes, the host decides.
  *
- * "Tiny" was doing too much work in v1, which had only `ready` and `action`.
- * A frame that failed to boot was indistinguishable from one that was merely
- * slow; a frame showing a long channel could not page; and a frame with any
- * view state lost it on every remount. None of those are the host giving up
- * control — they are the frame reporting and requesting, with the host still
- * deciding. Each addition below is one of those three.
+ * Tiny is not the same as mute. A frame that fails to boot has to be able to
+ * say so (`error`); a frame showing a long channel has to be able to page
+ * (`request`); a frame with view state has to be able to keep it across a
+ * remount (`save-state`); and a frame pressing one of the session's own
+ * actions has to be able to name it (`invoke`). None of those is the host
+ * giving up control — they are the frame reporting, requesting and naming,
+ * with the host still deciding.
+ * @experimental
  */
 export type FrameHostMessage = {
     t: 'ready';
-} | {
+}
+/**
+ * ⏳ Fire a function by name.
+ *
+ * @deprecated Send `invoke` instead. A press names a DECLARATION by its
+ * identity: a bare `fn` is a key, which several specs may declare, and it
+ * gets the server's narrowest reading — the one declarer it names, or a
+ * refusal — rather than the one the frame meant. Accepted for one release — the host still routes it — and it
+ * is the frame half of `WidgetVerbs.action`'s deprecation.
+ */
+ | {
     t: 'action';
     fn: string;
     messageId?: number;
-    payload?: Record<string, unknown>;
+    payload?: WidgetPayload;
+    /** The identity the outlet stamped a form block with (W-E) — carried, never chosen. */
+    action?: string;
+    /** The form the press answers: a block's id within `messageId`. */
+    blockId?: string;
+}
+/**
+ * Fire an action the host listed in `actions`, by its **identity**
+ * (`<spec slug>#<key>`) or, when only one action carries it, its bare
+ * **key**. The host resolves it against the very projection it sent and
+ * routes it — one of core's verbs to its real handler, a contributed one to
+ * the audited fire with its identity attached.
+ *
+ * A key no venue lists, and a bare key several actions share, is dropped
+ * with a warning: a frame cannot fire something the session does not offer,
+ * or something ambiguous, and believe it did. A state-changing verb also
+ * wants a person in the frame — the host judges that, and the server
+ * re-judges the write.
+ */
+ | {
+    t: 'invoke';
+    key: string;
+    messageId?: number;
+    payload?: WidgetPayload;
+    /**
+     * The form this press answers — a block's id within `messageId`
+     * (R-15 *Forms*). Absent on every other press; the frame half of
+     * `WidgetInvokeArgs.blockId`.
+     */
+    blockId?: string;
+    /** The text the press supplies (a slash argument) — the frame half of `WidgetInvokeArgs.text`. */
+    text?: string;
 }
 /**
  * Something went wrong inside the frame. The host logs it against the
@@ -207,6 +486,21 @@ export type FrameHostMessage = {
     cursor?: string;
     limit?: number;
 }
+/**
+ * 🚧 Ask the host for anything else in {@link WidgetRequests} (C0b) — a
+ * host view opened, a picker shown. Answered with `response`.
+ */
+ | {
+    t: 'request';
+    requestId: string;
+    what: Exclude<WidgetRequestKind, 'messages'>;
+    params: unknown;
+}
+/** 🚧 English UI strings the frame wants in the viewer's language (C0b); answered with `strings`. */
+ | {
+    t: 'translate';
+    sources: string[];
+}
 /** Persist small view state (a scroll offset, an open tab). Returned as
  *  `state` on the next mount. Not storage: the host may cap or drop it. */
  | {
@@ -214,31 +508,51 @@ export type FrameHostMessage = {
     state: Record<string, unknown>;
 };
 /**
- * Protocol 2 adds the three frame → host messages above and their two replies.
+ * The version the host announces in `init`, and the number a frame reads to
+ * know what it may send.
  *
- * A v1 frame keeps working unchanged: it never sends the new messages, and it
- * must already ignore host messages it does not recognise. A v2 host must
- * still accept `init` from a v1 frame — the version says what the frame *may*
- * send, not what it must.
+ * **2 comprises** everything declared in the two unions above: the widget
+ * envelope's sections as pushes (`settings`, `style`, `layout`, `event`,
+ * `actions`) alongside `session` / `messages` / `message` / `channel` /
+ * `props` / `theme` / `suspend` / `resume`, and, frame → host, `invoke`
+ * beside `ready` and `action`, plus `error`, `request` and `save-state` with
+ * their `page` and `state` replies.
+ *
+ * A host may DECLINE any of the last three and still be a v2 host: a `request`
+ * is not a grant, `save-state` may be capped or dropped, and an `error` may go
+ * no further than a log. What 2 promises is that the frame may send them
+ * without breaking the wire — never that the host will act on them. A frame
+ * that needs an answer must therefore tolerate not getting one, which is the
+ * same rule that lets a host push `style` at a frame that has never heard of
+ * it.
+ *
+ * A v1 frame keeps working unchanged: it never sends the frame → host
+ * additions, and it must already ignore host messages it does not recognise. A
+ * v2 host must still accept `init` from a v1 frame — the version says what the
+ * frame *may* send, not what it must.
+ *
+ * ONE number with the native lane (`WIDGET_PROTOCOL`): native is frame minus
+ * the iframe, so a second clock here would be a second contract by accident.
+ * @experimental
  */
 export declare const FRAME_PROTOCOL: 2;
-export type FrameProtocolVersion = 1 | 2;
-/** One thing the harness can put on screen. */
+/** @experimental */
+export type FrameProtocolVersion = WidgetProtocolVersion;
+/** One thing the harness can put on screen. @experimental */
 export interface PreviewTarget {
     /** URL-safe, unique within the manifest — the harness routes on it. */
     id: string;
     label: string;
     kind: 'frame' | 'component';
     /**
-     * For a frame, one of `FramePoint`. For a component, the surface point it
-     * declared (`core:surface/settings-section@1`) — the harness shows it, it
-     * does not interpret it.
+     * For a frame, one of `FramePoint`. For a component, the mount point it
+     * renders at — `widget` today (a page mount point comes later, R25).
      */
     point: string;
     /** Path to the entry, exactly as declared — relative to the package root. */
     entry: string;
     /** Components only: which adapter renders it (10 §7). */
-    framework?: 'svelte' | 'react' | 'vanilla';
+    framework?: ComponentFramework;
     /** Panels only: the declared panel id `surface:open` keys on. */
     panelId?: string;
     /** Panels only: the lanes this panel views. */
@@ -248,6 +562,7 @@ export interface PreviewTarget {
     /** Where the declaration came from, for the harness's "declared in" line. */
     source: 'surfaces' | 'genre-shape' | 'components';
 }
+/** @experimental */
 export interface PreviewManifest {
     /** The package's address — an announce ns (`acme.dice`) or a plugin slug. */
     id: string;
@@ -260,17 +575,17 @@ export interface PreviewManifest {
      */
     problems: string[];
 }
-/** Would an instance serve this entry path, or quietly drop the surface? */
+/** Would an instance serve this entry path, or quietly drop the surface? @internal */
 export declare const isServableEntry: (path: string) => boolean;
-/** Would an instance accept this panel id, or quietly drop the panel? */
+/** Would an instance accept this panel id, or quietly drop the panel? @internal */
 export declare const isServablePanelId: (id: string) => boolean;
 /**
  * Read a package's UI declarations into the harness's list.
  *
- * Takes whatever the entry module's default export is: an `AnnouncementBuilder`
- * (the announce() path, 24 §6), an already-compiled `AnnouncementDocument`, or
- * a `defineExtension` result. One shape lands, because the harness should not
- * care which authoring surface a modder is on.
+ * Takes the entry module's default export: a `defineExtension` result. An
+ * `AnnouncementBuilder` or a compiled `AnnouncementDocument` is still read, for
+ * packages built before `defineExtension` became the one entry.
+ * @experimental
  */
 export declare function previewManifest(entry: unknown): PreviewManifest;
 //# sourceMappingURL=surfaces.d.ts.map

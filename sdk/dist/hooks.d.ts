@@ -20,6 +20,7 @@ import type { ExtensionStorage } from './storage.js';
  * actually failed — so failures were logged as warnings and became invisible in
  * exactly the situation a log exists for. `debug` is the other half of the same
  * problem: without it, authors log at `info` and users get noise.
+ * @experimental
  */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 /**
@@ -29,6 +30,7 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
  * paginated because the previous signature had no answer at all for a table
  * with a hundred thousand rows — an extension either got everything or wrote
  * its own windowing on top of a call that could not window.
+ * @experimental
  */
 export interface CoreQuery {
     /** Column filters, ANDed. Values are compared for equality. */
@@ -40,6 +42,7 @@ export interface CoreQuery {
         direction?: 'asc' | 'desc';
     };
 }
+/** @experimental */
 export interface CorePage<T = unknown> {
     rows: T[];
     nextCursor?: string;
@@ -52,6 +55,7 @@ export interface CorePage<T = unknown> {
  * Both are enumerated in the manifest. Listing private ones costs nothing and the
  * manifest is already the audit surface, since permissions are compiled from SDK
  * usage (13 §7c).
+ * @experimental
  */
 export interface HandlerRules {
     kind: 'pipeline';
@@ -93,6 +97,7 @@ export interface HandlerRules {
  * stream or an `AbortSignal` cannot make the trip. A field not named here is
  * dropped in transit rather than honoured, which is why they are not typed as
  * accepted.
+ * @experimental
  */
 export interface HookFetchInit {
     /** HTTP method. Defaults to GET. */
@@ -109,6 +114,7 @@ export interface HookFetchInit {
  * **Not** a web `Response` — nothing live crosses the sandbox boundary, so there
  * is no `.json()`, no `.text()`, no body stream and no `Headers` instance. The
  * body has already been read for you.
+ * @experimental
  */
 export interface HookFetchResponse {
     status: number;
@@ -126,6 +132,7 @@ export interface HookFetchResponse {
  * subscribed to more than one event — the manifest's `eventHooks` is a list of
  * subscriptions, not a map — so a hook that could not tell which occurrence it
  * was answering would need one export per event to find out.
+ * @experimental
  */
 export interface EventListenerInput<T = unknown> {
     /** The event that fired, exactly as the subscription pinned it. */
@@ -140,6 +147,7 @@ export interface EventListenerInput<T = unknown> {
      */
     payload: T;
 }
+/** @experimental */
 export interface EventListenerSurface {
     /** The extension's own rows and files — query, write, delete, and ask how
      *  much room is left. See storage.ts for why all four are needed. */
@@ -150,16 +158,6 @@ export interface EventListenerSurface {
      *  hosts the manifest declared and an admin left granted, and only on the SES
      *  backend. See the section docblock above for the grant and its refusals. */
     fetch(url: string, init?: HookFetchInit): Promise<HookFetchResponse>;
-    /** Deliberately absent: callProvider (F32), trigger (F10), readCore — an
-     *  event listener is told what happened; reading the rest of the instance is
-     *  the lifecycle surface's privilege, and widening this one would make
-     *  every event subscription a database grant. Also absent: any way to read
-     *  the occurrence off this object. It arrives as argument 0 (see
-     *  `EventListenerInput`), which is what both sandboxes have always passed. */
-    /** @deprecated use `storage.get` / `storage.query`. */
-    readOwnRows?(key?: string): unknown;
-    /** @deprecated use `storage.put`, which reports quota instead of dropping. */
-    writeOwnRows?(key: string, value: unknown): void;
 }
 /**
  * Scoped core reads, plus read/write on the extension's own namespaced rows. Nothing
@@ -170,6 +168,7 @@ export interface EventListenerSurface {
  * subscribes to `core:event/schedule-tick@1` instead** — which gets it a receipt, a
  * budget and the review gate, and puts it on the consent screen. A lifecycle callback
  * doing that work would have had none of the four.
+ * @experimental
  */
 export interface LifecycleCallbackSurface {
     readCore<T = unknown>(table: string, q?: CoreQuery): Promise<CorePage<T>>;
@@ -179,13 +178,29 @@ export interface LifecycleCallbackSurface {
     /** Host-scoped network access — same grant, same refusals, same SES-only
      *  restriction as the event surface's. See the section docblock above. */
     fetch(url: string, init?: HookFetchInit): Promise<HookFetchResponse>;
-    /** Deliberately absent: callProvider (F32), trigger (F10), writeCore. */
-    /** @deprecated use `storage.get` / `storage.query`. */
-    readOwnRows?(key?: string): unknown;
-    /** @deprecated use `storage.put`, which reports quota instead of dropping. */
-    writeOwnRows?(key: string, value: unknown): void;
 }
-export type LifecycleMoment = 'load' | 'startup' | 'shutdown' | 'enable' | 'disable' | 'update' | 'sidecarSpawn' | 'scheduled'
+/**
+ * The moments a lifecycle callback may be registered against:
+ *
+ * - `startup` — at boot, before the ready-gate opens.
+ * - `load` — declared, and not called yet (guides/extending.md, Gaps).
+ * - `enable` — after the plugin is switched on.
+ * - `disable` — before it is switched off. Bounded; a failure never stops the switch.
+ * - `update` — once, after a reinstall replaced its bundle, on the new bundle's
+ *   first run. Its input is {@link LifecycleUpdateInput}.
+ * - `uninstall` — before its rows and files are removed. Bounded.
+ * - `shutdown` — during the app's graceful shutdown. Bounded; never holds up exit.
+ *
+ * Every moment runs with the lifecycle grants and the lifecycle timeout, and a
+ * callback that throws or overruns is logged and recorded, never fatal.
+ *
+ * `sidecarSpawn` and `scheduled` were declared here once and never called.
+ * They are gone until something needs them, and the plugin compiler refuses a
+ * callback that names either one (`E_LIFECYCLE_MOMENT_UNSUPPORTED`). Scheduled
+ * work subscribes to `core:event/schedule-tick@1` ({@link SCHEDULED_WORK_PATH}).
+ * @experimental
+ */
+export declare const LIFECYCLE_MOMENTS: readonly ['load', 'startup', 'shutdown', 'enable', 'disable', 'update', 
 /**
  * The extension is being removed. Its last chance to clean up.
  *
@@ -199,7 +214,18 @@ export type LifecycleMoment = 'load' | 'startup' | 'shutdown' | 'enable' | 'disa
  * extension's behalf — retiring a sidecar's external state, revoking a
  * token it issued — not for deleting its own rows.
  */
- | 'uninstall';
+'uninstall'];
+/** One of {@link LIFECYCLE_MOMENTS}. @experimental */
+export type LifecycleMoment = (typeof LIFECYCLE_MOMENTS)[number];
+/**
+ * What the `update` moment's callback is sent: the version its bundle replaced
+ * and the version now running. Every other moment is sent an empty object.
+ * @experimental
+ */
+export interface LifecycleUpdateInput {
+    previousVersion: string;
+    version: string;
+}
 /**
  * A subscriber to a core event: **`(input, ctx)`**, like every other hook.
  *
@@ -233,6 +259,7 @@ export type LifecycleMoment = 'load' | 'startup' | 'shutdown' | 'enable' | 'disa
  *
  * Returning `halt(reason)` is the normal way to say "not applicable to me", and
  * is a success rather than a failure (11 §3).
+ * @experimental
  */
 export type EventListener = (input: EventListenerInput, ctx: EventListenerSurface) => Result | Promise<Result>;
 /**
@@ -245,17 +272,19 @@ export type EventListener = (input: EventListenerInput, ctx: EventListenerSurfac
  * neither. The same defect `EventListener` carried, fixed the same way and in the
  * same direction — towards what the runtimes have always done.
  *
- * `input` is typed `unknown` because core sends no envelope worth reading: the
- * one moment it invokes today (`startup`) passes an empty object, and the
- * moment is not in it — a hook is registered *against* a moment, so it already
- * knows which one it is. Deliberately not given a shape it does not have; that
- * is the mistake this signature exists to undo.
+ * `input` is typed `unknown` because it depends on the moment: `update` is sent
+ * a {@link LifecycleUpdateInput}, and every other moment an empty object. The
+ * moment itself is not in it — a hook is registered *against* a moment, so it
+ * already knows which one it is. Deliberately not given a shape it does not
+ * have; that is the mistake this signature exists to undo.
+ * @experimental
  */
 export type LifecycleCallback = (input: unknown, ctx: LifecycleCallbackSurface) => Result | Promise<Result>;
 /**
  * F32, checked rather than documented. The probe reads the surface an implementation
  * actually hands out — a regression that adds `callProvider` back fails here instead
  * of shipping.
+ * @experimental
  */
 export declare function assertHookSurface(kind: 'event' | 'lifecycle', surface: object): {
     ok: true;
@@ -266,6 +295,7 @@ export declare function assertHookSurface(kind: 'event' | 'lifecycle', surface: 
 /**
  * The scheduled-work path, stated as code so it is discoverable from the SDK rather
  * than only from 13 §7c.
+ * @experimental
  */
 export declare const SCHEDULED_WORK_PATH: {
     readonly instead: 'core:event/schedule-tick@1';

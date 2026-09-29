@@ -64,7 +64,7 @@ function capabilityGuard(): esbuild.Plugin {
 	}
 }
 
-/** The base esbuild options for a plugin bundle. */
+/** @internal The base esbuild options for a plugin bundle. */
 export function pluginBundleOptions(): esbuild.BuildOptions {
 	return {
 		bundle: true,
@@ -76,6 +76,7 @@ export function pluginBundleOptions(): esbuild.BuildOptions {
 	}
 }
 
+/** @internal */
 export interface BundleInput {
 	/** Inline entry source (for programmatic/test use). */
 	source?: string
@@ -86,7 +87,9 @@ export interface BundleInput {
 }
 
 /** Bundle a plugin to a single self-contained CJS string. Throws on a build
- * error (including a forbidden capability import). */
+ * error (including a forbidden capability import).
+ * @internal
+ */
 export async function bundlePlugin(input: BundleInput): Promise<string> {
 	const result = await esbuild.build({
 		...pluginBundleOptions(),

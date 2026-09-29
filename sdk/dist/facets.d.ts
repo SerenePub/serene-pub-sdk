@@ -19,6 +19,7 @@
  * unknown is not the same as absent, and the panel should say so.
  */
 import type { I18n } from './descriptors.js';
+/** @experimental */
 export interface FacetDecl {
     id: string;
     /**
@@ -41,8 +42,12 @@ export interface FacetDecl {
      */
     simple?: boolean;
 }
+/** @experimental */
 export declare function defineFacet(decl: FacetDecl): FacetDecl;
+/** @internal */
 export declare const getFacet: (id: string) => FacetDecl | undefined;
+/** @experimental */
 export declare const allFacets: () => FacetDecl[];
+/** @experimental */
 export declare function _clearFacets(): void;
 //# sourceMappingURL=facets.d.ts.map

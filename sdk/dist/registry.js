@@ -28,13 +28,14 @@
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
  */
-import { scriptPointsOf } from './descriptors.js';
+import { pluginRuleRef } from './pluginRuleRef.js';
+import { definitionPolicy, scriptPointsOf, } from './descriptors.js';
 import { isScriptKindId } from './scripts.js';
 import { settingsSlotFor } from './settingsSlot.js';
 const versionOf = (id) => Number(/@(\d+)$/.exec(id)?.[1] ?? 1);
 const bare = (id) => id.replace(/@\d+$/, '');
 const shapeId = (s) => typeof s === 'string' ? s : (s?.id ?? undefined);
-/** Project descriptors into registry rows — how core seeds and refreshes the table. */
+/** Project descriptors into registry rows — how core seeds and refreshes the table. @experimental */
 export function snapshotRegistry(types, meta = {}) {
     return types.map((t) => isScriptKindId(t.id) ? scriptEntry(t, meta) : nodeEntry(t, meta));
 }
@@ -107,10 +108,21 @@ function nodeEntry(d, meta) {
         configSchema: d.entryShape?.fields,
         effects: d.effects,
         causesEvent: d.causesEvent,
+        causesEventFrom: d.causesEventFrom,
+        payloads: d.payloads?.length ? [...d.payloads] : undefined,
         public: d.public,
         optional: d.optional,
-        // Normalised on the way in, so a row is always the full shape and the
-        // panel never has to know a bare-string point ever existed.
+        declaresRandomness: d.declaresRandomness,
+        earlyExit: d.earlyExit,
+        liveRow: d.liveRow,
+        review: d.review,
+        shape: d.shape,
+        media: d.media,
+        // The policy half, whole — what the row's `status` and the panel's
+        // defaults are read from, and what the hash never sees.
+        policy: definitionPolicy(d),
+        // Copied on the way in, so a row is always the full shape the panel
+        // renders (`register()` refused anything less).
         scriptPoints: d.scriptPoints ? scriptPointsOf(d) : undefined,
         sessionShape: d.sessionShape,
         owner: meta.owner,
@@ -127,6 +139,7 @@ function entryFacets(shape) {
  *
  * Never loads the plugin. Every finding names what to do, because the reader is an admin
  * who did not write the plugin and cannot be expected to infer the fix from the symptom.
+ * @internal
  */
 export function checkInstall(input) {
     const findings = [];
@@ -168,13 +181,16 @@ export function checkInstall(input) {
                 continue;
             }
             // 3. A private type belonging to someone else.
-            if (entry && entry.owner && entry.owner !== input.owner && entry.public === false)
+            if (entry && entry.owner && entry.owner !== input.owner && !entry.public)
                 findings.push({
                     severity: 'error',
                     code: 'E_PRIVATE_TYPE',
                     where: `${doc.id} · ${n.key}`,
                     message: `pins ${pin}, which is private to '${entry.owner}'`,
-                    fix: `ask '${entry.owner}' to mark it public. A private type is one its owner may change without warning, so pinning it across a plugin boundary would break on their next release (01 §9).`,
+                    fix: `ask '${entry.owner}' to make its handler public — handler(definition, fn, { visibility: 'public' }). ` +
+                        `A private node is one its owner may change without warning, so using it across a plugin boundary ` +
+                        `would break on their next release.` +
+                        pluginRuleRef('private-nodes'),
                 });
             // 4. Informational: a newer version exists. The pin still runs — that is what
             //    pinning is for — but an author reading the install log should know.
@@ -244,7 +260,9 @@ export function checkInstall(input) {
     }
     return findings;
 }
+/** @internal */
 export const installable = (f) => !f.some((x) => x.severity === 'error');
+/** @internal */
 export function renderInstall(findings) {
     if (!findings.length)
         return 'installable';

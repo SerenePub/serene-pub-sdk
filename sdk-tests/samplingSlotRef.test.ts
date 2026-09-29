@@ -49,7 +49,7 @@ const pickOf = (value: string) => [
 		slot: 'sampling',
 		path: SLOT_VALUE,
 		value,
-		scopeKind: 'preset' as const,
+		scopeKind: 'config' as const,
 	},
 ]
 

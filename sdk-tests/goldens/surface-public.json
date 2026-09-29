@@ -1,0 +1,86 @@
+{
+	"@serene-pub/cli": {
+		".": [
+			"Example"
+		],
+		"./testing": [
+			"HarnessContext",
+			"InvokeRecord",
+			"MountComponentOptions",
+			"MountedComponent",
+			"RefusedInvokeRecord",
+			"RequestRecord",
+			"mountComponent"
+		]
+	},
+	"@serene-pub/component-client": {
+		"./svelte": [
+			"svelteComponent"
+		]
+	},
+	"@serene-pub/contracts": {
+		".": [
+			"assemble",
+			"buildNarratorContext",
+			"buildTemplateContext",
+			"concatCandidates",
+			"contextBudget",
+			"createMessage",
+			"generateJson",
+			"generateText",
+			"lorebookTriggers",
+			"mergeCandidates",
+			"processMessages",
+			"proseTranscript",
+			"sessionCast",
+			"sessionCreated",
+			"sessionHistory",
+			"userMessage"
+		]
+	},
+	"@serene-pub/core-catalog": {
+		".": [
+			"TURN_ORDER_EVENTS",
+			"TurnStrategyPin",
+			"chatGenre",
+			"coreWidgets",
+			"turnOrderSpec"
+		]
+	},
+	"@serene-pub/sdk": {
+		".": [
+			"GenreDecl",
+			"I18n",
+			"LocaleMap",
+			"NodeAddress",
+			"RendezvousPick",
+			"S",
+			"SettingsSchema",
+			"SettingsValues",
+			"ShapeId",
+			"SlotRef",
+			"bandIntent",
+			"component",
+			"defineExtension",
+			"defineSettings",
+			"describeTaskDefinition",
+			"eventListener",
+			"genre",
+			"halt",
+			"handler",
+			"i18nText",
+			"ok",
+			"pin",
+			"rendezvousPick",
+			"sessionEvents",
+			"slot",
+			"spec",
+			"splitCandidates",
+			"use"
+		],
+		"./component": [
+			"I18n",
+			"i18nText"
+		]
+	}
+}

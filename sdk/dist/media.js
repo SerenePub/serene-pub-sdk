@@ -32,11 +32,15 @@
  * Declared as a const array rather than a bare union so it is introspectable:
  * a settings control that offers "which kinds does this accept" enumerates
  * this instead of hardcoding a list that drifts.
+ * @experimental
  */
 export const MEDIA_KINDS = ['image', 'audio', 'video', 'document'];
+/** @experimental */
 export const isMediaKind = (v) => typeof v === 'string' && MEDIA_KINDS.includes(v);
 /** Does `cap` accept this reference? The check a picker and a wire adapter
- *  both need, written once so they cannot disagree. */
+ *  both need, written once so they cannot disagree.
+ * @experimental
+ */
 export function accepts(cap, ref) {
     if (!cap?.accepts?.length)
         return false;
@@ -48,14 +52,16 @@ export function accepts(cap, ref) {
 }
 /** Everything in a part list that is prose, concatenated — the degrade path
  *  for a consumer that only understands text. Reasoning is deliberately
- *  excluded: it is not the answer. */
+ *  excluded: it is not the answer.
+ * @experimental
+ */
 export function partsToText(parts) {
     return parts
         .filter((p) => p.t === 'text')
         .map((p) => p.text)
         .join('');
 }
-/** Every media reference in a part list, in order. */
+/** Every media reference in a part list, in order. @experimental */
 export function partsToMedia(parts) {
     return parts
         .filter((p) => p.t === 'media')

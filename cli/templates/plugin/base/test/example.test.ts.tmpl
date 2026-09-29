@@ -1,0 +1,51 @@
+/**
+ * The executed example, and the golden that stops it drifting.
+ *
+ * The module in `examples/` is built into a document, validated against the same
+ * laws a published pipeline is, and run against the fixture host. The golden
+ * beside it holds the output still: two runs have to produce the same bytes, or
+ * the golden is noise and the first person to see a diff learns to ignore it.
+ *
+ * `goldens/` is empty in a fresh scaffold, and this test fails until it is not.
+ * Record the first one deliberately — vitest forwards no `--update-goldens`, so:
+ *
+ *     UPDATE_GOLDENS=1 npm test
+ *
+ * and commit what it wrote.
+ */
+
+import { describe, expect, it } from 'vitest'
+import { renderExampleDocs } from '@serene-pub/cli'
+import { join } from 'node:path'
+
+const EXAMPLES_DIR = join(import.meta.dirname, '..', 'examples')
+const GOLDENS_DIR = join(EXAMPLES_DIR, 'goldens')
+
+/** Vitest can import a `.ts` module, which is what the renderer needs. */
+const load = (path: string) => import(/* @vite-ignore */ path)
+
+const render = () =>
+	renderExampleDocs({
+		dir: EXAMPLES_DIR,
+		goldensDir: GOLDENS_DIR,
+		update: process.env.UPDATE_GOLDENS === '1',
+		load,
+	})
+
+describe('the executed examples', () => {
+	it('build, validate, run, and still match their goldens', async () => {
+		const { pages, report } = await render()
+
+		expect(report.map((r) => r.slug)).toEqual(['first-run'])
+		if (process.env.UPDATE_GOLDENS !== '1')
+			expect(report.every((r) => !r.recorded && !r.changed)).toBe(true)
+
+		for (const page of pages) expect(page.markdown).toMatch(/outcome ok/)
+	})
+
+	it('produces the same bytes twice', async () => {
+		const first = await render()
+		const second = await render()
+		expect(second.pages.map((p) => p.markdown)).toEqual(first.pages.map((p) => p.markdown))
+	})
+})

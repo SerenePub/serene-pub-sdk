@@ -1,5 +1,10 @@
 /**
- * announce() — the ONE authoring surface (24 §6).
+ * announce() — the serializer behind `defineExtension()` (R48, T1b). A package
+ * is authored with `defineExtension()`; `announcementOf()` compiles that to the
+ * announcement document this builder produces. Kept exported for core's and
+ * the CLI's use, and for one release of packages still exporting a builder.
+ *
+ * Was: "the ONE authoring surface" (24 §6).
  *
  * A package is an announcement: identity first, then everything it declares —
  * genres, hook declarations, pipelines, configs, presets. Plugins compile the
@@ -19,7 +24,7 @@
 import type { BuiltSpec } from './builder.js'
 import { compile, type SpecDocument } from './document.js'
 
-/** announce() accepts pipelines built or already compiled — one shape lands. */
+/** announce() accepts pipelines built or already compiled — one shape lands. @experimental */
 export type AnnouncedSpec = BuiltSpec | SpecDocument
 
 const isDocument = (s: AnnouncedSpec): s is SpecDocument => 'schemaVersion' in s
@@ -31,6 +36,7 @@ const isDocument = (s: AnnouncedSpec): s is SpecDocument => 'schemaVersion' in s
  * fully-typed form (option autocomplete off the published declaration
  * artifact's generated .d.ts) rides the artifact work; this is the
  * reference primitive both share.
+ * @experimental
  */
 export interface ExternalRef {
 	readonly kind: 'external-ref'
@@ -45,18 +51,20 @@ export interface ExternalRef {
  * what the generated typings (`serene-pub types`) produce, so a config over
  * another package's pipeline autocompletes node → slot → field (24 T7b).
  * The phantom never exists at runtime; the document still stores the id.
+ * @experimental
  */
 export interface TypedExternalRef<T> extends ExternalRef {
 	readonly __options?: T
 }
 
-/** Three-level partial: node → slot → fields, all optional — deltas only. */
+/** Three-level partial: node → slot → fields, all optional — deltas only. @experimental */
 export type PartialValues<T> = {
 	[N in keyof T]?: {
 		[S in keyof T[N]]?: T[N][S] extends Record<string, unknown> ? Partial<T[N][S]> : T[N][S]
 	}
 }
 
+/** @public */
 export function use(ref: string): ExternalRef {
 	const m = /^(.*?)@([~^]?\d[^@]*)$/.exec(ref)
 	return Object.freeze(
@@ -66,33 +74,71 @@ export function use(ref: string): ExternalRef {
 	)
 }
 
-const refId = (v: BuiltSpec | ExternalRef | string): string =>
-	typeof v === 'string'
-		? v
-		: 'kind' in v && v.kind === 'external-ref'
-			? v.id
-			: (v as BuiltSpec).id
-import {
-	genre as makeGenre,
-	genreIdOf,
-	sessionEvents,
-	type GenreDecl,
-	type GenreProps,
-} from './genres.js'
-import { makeValueToolkit, isTodo, type ValueToolkit } from './values.js'
-import { isEventId } from './events.js'
-import { ACTION_IDENTITY, actionDocumentFindings, actionsOf, slashCollisions } from './actions.js'
-import type { ComponentDecl } from './extension.js'
-import { isServableEntry, isServablePanelId, type SurfacesDecl } from './surfaces.js'
+/**
+ * A spec as a declaration names it: one this package ships, built or
+ * compiled, or another package's, through `use()`. Never a bare id — a string
+ * is a typo waiting for an install to find it.
+ * @experimental
+ */
+export type SpecRef = AnnouncedSpec | ExternalRef
 
+const isExternalRef = (v: unknown): v is ExternalRef =>
+	!!v && typeof v === 'object' && (v as ExternalRef).kind === 'external-ref'
+
+/** The id a `SpecRef` names; a bare string is refused with the fix. @experimental */
+export function specIdOf(v: unknown, where: string): string {
+	if (typeof v === 'string')
+		throw new Error(
+			`${where} names the spec '${v}' as a string — pass the spec value you built, ` +
+				`or use('${v}') for another package's`,
+		)
+	if (!v || typeof v !== 'object' || typeof (v as { id?: unknown }).id !== 'string')
+		throw new Error(
+			`${where} names no spec — pass the spec value you built, or use('<spec id>') for another package's`,
+		)
+	return (v as { id: string }).id
+}
+
+/** The events a spec's inlet lock answers; undefined for another package's (`use()`). */
+const lockEventsOf = (v: SpecRef): string[] | undefined => {
+	if (isExternalRef(v)) return undefined
+	const lock = (v as { input?: { event?: string; events?: string[] } }).input
+	return lock?.events ? [...lock.events] : lock?.event ? [lock.event] : []
+}
+
+/** The action keys a spec contributes; undefined for another package's (`use()`). */
+const actionKeysOf = (v: SpecRef): string[] | undefined => {
+	if (isExternalRef(v)) return undefined
+	const contributes = 'meta' in v ? v.meta.contributes : (v as SpecDocument).contributes
+	return actionsOf({ id: v.id, contributes }).map((a) => a.key)
+}
+import { genre as makeGenre, genreIdOf, sessionEvents, type GenreDecl, type GenreProps } from './genres.js'
+import { eventById, isEventId, isSessionEventDecl, type SessionEventDecl } from './events.js'
+import { makeValueToolkit, type ValueToolkit } from './values.js'
+import { ACTION_IDENTITY, actionsOf } from './actions.js'
+import type { ComponentDecl, Extension } from './extension.js'
+import type { SurfacesDecl } from './surfaces.js'
+import { i18nFindings, type I18n } from './i18n.js'
+import {
+	declarationFindings,
+	labelFindings,
+	storedSwap,
+	subjectsOf,
+	swapInputFindings,
+	type StoredSwapContribution,
+	type SwapContribution,
+} from './declarations.js'
+
+/** @experimental */
 export interface PackageIdentity {
 	/** The package namespace every declared id lives under — `core`, `acme.dice`. */
 	ns: string
 	author: string
-	title: string
+	/** What the package is called where it is listed — a string or a locale map with `en` (R-20). */
+	title: I18n
 	repo?: string
-	summary?: string
-	description?: string
+	summary?: I18n
+	description?: I18n
 }
 
 /**
@@ -100,6 +146,7 @@ export interface PackageIdentity {
  * implementation lives with its capabilities — core's in core, a plugin's in
  * its sandboxed bundle — and boot/install binds implementation to declared id
  * with a completeness check.
+ * @experimental
  */
 export interface HookDeclaration {
 	event: string
@@ -118,6 +165,7 @@ export interface HookDeclaration {
  * was written for: a pipeline that reuses somebody's summarize step inherits
  * the prompts written for it, and one built from other nodes is offered none of
  * them. Spec scoping said the same thing less precisely and cost the reuse.
+ * @experimental
  */
 export interface PromptDecl {
 	/**
@@ -132,43 +180,78 @@ export interface PromptDecl {
 	 */
 	slot: string
 	slug: string
-	label: string
+	/** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+	label: I18n
 	/** Field name → prose, exactly as that slot declares them. */
 	fields: Record<string, string>
 }
 
-/** A named configuration: a typed delta over a spec's author defaults (24 §7). */
+/** A named configuration: a typed delta over a spec's author defaults (24 §7). @experimental */
 export interface ConfigDecl {
 	/** The spec it configures — may be external (another package's id). */
 	spec: string
 	slug: string
-	label: string
-	description?: string
+	/** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+	label: I18n
+	description?: I18n
 	/** nodeKey → slot → value. Only deviations; everything else inherits. */
 	values: Record<string, Record<string, unknown>>
 }
 
 /**
- * Author a config against a spec handle (announced or external). With a
- * BuiltSpec handle the node keys are validated at announce-compile; with a
- * bare id they are recorded and verified by the instance that has the spec.
+ * A config as authored: the spec it configures is a value, so a
+ * preset binding can check that the config it names was made for the spec
+ * it binds. `config()` makes one; the entry stores it as a `ConfigDecl`.
+ * @experimental
+ */
+export interface ConfigInput<T = Record<string, Record<string, unknown>>> {
+	readonly spec: SpecRef | TypedExternalRef<T>
+	slug: string
+	label: I18n
+	description?: I18n
+	values: PartialValues<T>
+}
+
+/**
+ * Author a config against a spec value, or another package's through `use()`.
+ * With a spec value the node keys are checked at build; through `use()` they
+ * are recorded and checked by the instance that has the spec.
+ * @experimental
  */
 export function config<T = Record<string, Record<string, unknown>>>(
-	spec: BuiltSpec | TypedExternalRef<T> | ExternalRef | string,
+	spec: SpecRef | TypedExternalRef<T>,
 	slug: string,
-	meta: { label: string; description?: string },
+	meta: { label: I18n; description?: I18n },
 	values: PartialValues<T>,
-): ConfigDecl {
+): ConfigInput<T> {
+	assertDisplayText(`config '${slug}'`, meta)
+	specIdOf(spec, `config '${slug}'`)
+	return { spec, slug, label: meta.label, description: meta.description, values }
+}
+
+/** The stored form of a config — the spec read down to its id. @experimental */
+export function storedConfig(c: ConfigInput<any>): ConfigDecl {
 	return {
-		spec: refId(spec),
-		slug,
-		label: meta.label,
-		description: meta.description,
-		values: values as Record<string, Record<string, unknown>>,
+		spec: specIdOf(c?.spec, `config '${c?.slug}'`),
+		slug: c.slug,
+		label: c.label,
+		...(c.description !== undefined ? { description: c.description } : {}),
+		values: c.values as Record<string, Record<string, unknown>>,
 	}
 }
 
-/** One event slot's binding: which pipeline answers, with which config. */
+/**
+ * The display text rule (R-20) as a throw for `config()` / `preset()`, where
+ * the author is. `build()` collects the same findings instead, through the
+ * shared declaration pass.
+ */
+function assertDisplayText(at: string, meta: { label?: unknown; description?: unknown }): void {
+	const findings = labelFindings(at, meta)
+	if (findings.length)
+		throw new Error(`${at} declares display text a publish refuses (R-20):\n · ${findings.join('\n · ')}`)
+}
+
+/** One event slot's binding: which pipeline answers, with which config. @experimental */
 export interface PresetBinding {
 	spec: string
 	/** A config slug of that spec. Absent = the spec's shipped default. */
@@ -183,11 +266,22 @@ export interface PresetBinding {
  * against a newer genre than the instance has can still be started, and a
  * genre's own fields ride along in `genreFields` rather than growing this
  * shape a key at a time.
+ * @experimental
  */
 export interface PresetDefaults {
 	name?: string
 	scenario?: string
-	groupReplyStrategy?: string
+	/**
+	 * Swaps to seat the session with (R40): for each, a definition the named
+	 * spec offers on the named node — its pin or one of its `expose.swaps`,
+	 * or an enabled contribution. The same shape a package contributes with
+	 * (`SwapContribution`), stored with ids:
+	 * `{ spec: chatTurnOrder, node: 'decide.rules.strategy', definition: C.turnManual }`.
+	 * Written as the session's rebinds at create; an entry the node does not
+	 * offer is refused there, logged, and the session starts on the pin.
+	 * Replaced `speakerStrategy` (2026-09-23), which named one node.
+	 */
+	swaps?: StoredSwapContribution[]
 	lorebookId?: number | null
 	tags?: string[]
 	/** The genre's declared fields, by key. */
@@ -204,12 +298,14 @@ export interface PresetDefaults {
 /**
  * A preset populates a genre's event slots (24 §1): for each event the genre
  * declares, which pipeline variant answers it, with which config.
+ * @experimental
  */
 export interface PresetDecl {
 	slug: string
 	genre: string
-	label: string
-	description?: string
+	/** The name the picker lists it by — a string or a locale map with `en` (R-20). */
+	label: I18n
+	description?: I18n
 	bindings: Record<string, PresetBinding>
 	/**
 	 * For the open `session-action` slot: which actions come along, each by
@@ -239,78 +335,256 @@ export interface PresetDecl {
 	enabled?: boolean
 }
 
-type BindingInput =
-	BuiltSpec | ExternalRef | string | [BuiltSpec | ExternalRef | string, ConfigDecl | string]
+/**
+ * One binding in a preset: a spec value, bound on every event its inlet
+ * lock answers, or `{ spec, config?, events? }`. `events` narrows a lock over
+ * several events, and is required for another package's spec (`use()`),
+ * whose lock this build cannot read. The stored form is keyed by event.
+ * @experimental
+ */
+export type BindingEntry =
+	| AnnouncedSpec
+	| { spec: SpecRef; config?: ConfigInput<any>; events?: string[] }
 
-export function preset(
-	slug: string,
-	props: {
-		genre: GenreDecl | string
-		label: string
-		description?: string
-		bindings: Record<string, BindingInput>
-		/**
-		 * Which actions come along (24 §7; W-A): an identity string
-		 * (`'core:spec/narrate#narrate'`), or a spec handle — a `BuiltSpec`
-		 * expands to every action it contributes. A bare spec id, as a string
-		 * or an `ExternalRef`, is refused: the builder cannot know which keys
-		 * that spec declares, and a preset naming a spec where the host
-		 * expects a declaration would match nothing and say nothing.
-		 */
-		actions?: { include: Array<BuiltSpec | string> }
-		defaults?: PresetDefaults
-		/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
-		enabled?: boolean
-	},
-): PresetDecl {
-	const bindings: Record<string, PresetBinding> = {}
-	for (const [event, b] of Object.entries(props.bindings)) {
-		const [specRef, configRef] = Array.isArray(b) ? b : ([b, undefined] as const)
-		bindings[event] = {
-			spec: refId(specRef),
-			...(configRef !== undefined
-				? { config: typeof configRef === 'string' ? configRef : configRef.slug }
-				: {}),
-		}
+/**
+ * An action a preset brings along: a spec value, for every action it
+ * contributes, or `{ spec, key }` for one of them. Stored as the action
+ * identity, `<spec slug>#<key>`.
+ * @experimental
+ */
+export type ActionPick = AnnouncedSpec | { spec: SpecRef; key: string }
+
+/**
+ * Who may record a package's event, as authored: a binding subject — an
+ * event id of the genre (`sessionEvents.messageRespond`), an action pick
+ * (`{ spec, key }`), or a spec value, which stands for every subject its
+ * inlet lock serves.
+ * @experimental
+ */
+export type RecordedByEntry = string | ActionPick
+
+/** A package's event and its recording scope, as authored in `defineExtension({ events })`. @experimental */
+export interface EventDeclarationInput {
+	event: SessionEventDecl
+	genre: GenreDecl | ExternalRef
+	/** The subjects whose pipelines may record it, or `'any'` for every spec. */
+	recordedBy: readonly RecordedByEntry[] | 'any'
+}
+
+/** An event declaration as stored in the manifest and the announcement: ids throughout. @experimental */
+export interface StoredEventDeclaration {
+	event: string
+	payload: string
+	name: I18n
+	description: I18n
+	domain: 'session'
+	genre: string
+	/** Event ids and action identities (`<spec slug>#<key>`), or `'any'`. */
+	recordedBy: string[] | 'any'
+}
+
+/** The stored form of an event declaration; throws the first mistake, with the fix. @experimental */
+export function storedEventDeclaration(d: EventDeclarationInput): StoredEventDeclaration {
+	const where = `event '${(d?.event as { id?: string } | undefined)?.id ?? '?'}'`
+	if (!isSessionEventDecl(d?.event))
+		throw new Error(`${where}: 'event' is the value defineSessionEvent() returned, not an id`)
+	if (typeof d.genre === 'string')
+		throw new Error(`${where} names its genre as a string — pass the genre value, or use('${d.genre}')`)
+	const genre = isExternalRef(d.genre) ? d.genre.id : genreIdOf(d.genre)
+	let recordedBy: string[] | 'any'
+	if (d.recordedBy === 'any') recordedBy = 'any'
+	else {
+		if (!Array.isArray(d.recordedBy) || !d.recordedBy.length)
+			throw new Error(
+				`${where} names nothing that may record it — list the subjects whose pipelines record it, or 'any'`,
+			)
+		recordedBy = d.recordedBy.flatMap((entry, n): string[] => {
+			const at = `${where} recordedBy ${n + 1}`
+			if (typeof entry === 'string') {
+				if (!isEventId(entry) || !eventById(entry))
+					throw new Error(`${at}: '${entry}' is not a declared event id — pass an event of the genre, a spec, or { spec, key }`)
+				if (entry === sessionEvents.sessionAction)
+					throw new Error(
+						`${at}: the action event serves each action on its own — pick the action: { spec, key }, or pass the spec`,
+					)
+				return [entry]
+			}
+			if (isBindingObject(entry)) {
+				const { spec: ref, key } = entry as { spec: SpecRef; key?: unknown }
+				const id = specIdOf(ref, at)
+				if (typeof key !== 'string') throw new Error(`${at} picks from '${id}' without a key — { spec, key }`)
+				const keys = actionKeysOf(ref)
+				if (keys && !keys.includes(key))
+					throw new Error(`${at} picks '${key}' from '${id}', which contributes ${keys.map((k) => `'${k}'`).join(', ') || 'no actions'}`)
+				return [`${id}#${key}`]
+			}
+			specIdOf(entry, at)
+			const subjects = subjectsOf(entry as AnnouncedSpec)
+			if (!subjects.length) throw new Error(`${at}: '${(entry as AnnouncedSpec).id}' has no inlet lock — it serves no subject`)
+			return subjects
+		})
 	}
 	return {
-		slug,
-		genre: genreIdOf(props.genre),
-		label: props.label,
-		description: props.description,
-		bindings,
-		...(props.actions
-			? {
-					actions: {
-						include: props.actions.include.flatMap((entry) => {
-							if (typeof entry === 'string') {
-								if (ACTION_IDENTITY.test(entry)) return [entry]
-								throw new Error(
-									`preset '${slug}' includes '${entry}', which is not an action identity — ` +
-										`name the declaration as '<spec slug>#<key>' ('core:spec/narrate#narrate'), ` +
-										`or pass the built spec to include every action it contributes`,
-								)
-							}
-							const found = actionsOf({ id: entry.id, contributes: entry.meta.contributes })
-							if (!found.length)
-								throw new Error(
-									`preset '${slug}' includes '${entry.id}', which contributes no actions — ` +
-										`nothing to bring along`,
-								)
-							return found.map((a) => `${entry.id}#${a.key}`)
-						}),
-					},
-				}
-			: {}),
-		...(props.defaults ? { defaults: props.defaults } : {}),
-		// Omitted rather than defaulted to `false`, so a declaration that says
-		// nothing hashes as it always did — the announcement is content-hashed
-		// like every other declaration here.
-		...(props.enabled === undefined ? {} : { enabled: props.enabled }),
+		event: d.event.id,
+		payload: d.event.payload,
+		name: d.event.name,
+		description: d.event.description,
+		domain: d.event.domain,
+		genre,
+		recordedBy,
 	}
 }
 
-/** The compiled announcement — the package's declaration artifact (24 §10). */
+/** `PresetDefaults` as authored: swaps name their spec by value. @experimental */
+export type PresetDefaultsInput = Omit<PresetDefaults, 'swaps'> & { swaps?: SwapContribution[] }
+
+/**
+ * A preset as authored: the genre, the bound specs, their configs and
+ * the included actions are values. The entry (`defineExtension`,
+ * `announce().presets`) stores it as a `PresetDecl`, which is unchanged.
+ * @experimental
+ */
+export interface PresetInput {
+	slug: string
+	genre: GenreDecl | ExternalRef
+	/** The name the picker lists it by — a string or a locale map with `en` (R-20). */
+	label: I18n
+	description?: I18n
+	bindings: BindingEntry[]
+	/** Absent means the host's companion rule — see `PresetDecl.actions`. */
+	actions?: { include: ActionPick[] }
+	defaults?: PresetDefaultsInput
+	/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
+	enabled?: boolean
+}
+
+const isBindingObject = (v: unknown): v is { spec: SpecRef; config?: ConfigInput<any>; events?: string[] } =>
+	!!v && typeof v === 'object' && 'spec' in v
+
+/**
+ * The stored form of a preset. Every reference is read down to its id and
+ * checked against what the value says: a binding's events against its spec's
+ * lock, a config against the spec it was made for, an action key against
+ * the keys the spec declares. Throws the first mistake, with the fix.
+ * @experimental
+ */
+export function preset(input: PresetInput): PresetDecl {
+	const where = `preset '${input?.slug}'`
+	assertDisplayText(where, input)
+	if (typeof input.genre === 'string')
+		throw new Error(
+			`${where} names its genre as a string — pass the genre value (import it), or use('${input.genre}')`,
+		)
+	const genre = isExternalRef(input.genre) ? input.genre.id : genreIdOf(input.genre)
+
+	const bindings: Record<string, PresetBinding> = {}
+	if (!Array.isArray(input.bindings))
+		throw new Error(
+			`${where}: bindings is a list of specs — [createSession, { spec: respond, config: tuned }]; ` +
+				`each is bound on the events its inlet lock answers`,
+		)
+	for (const [i, raw] of input.bindings.entries()) {
+		const entry = isBindingObject(raw) ? raw : { spec: raw as SpecRef }
+		const at = `${where} binding ${i + 1}`
+		const id = specIdOf(entry.spec, at)
+		const locked = lockEventsOf(entry.spec)
+		let events = entry.events
+		if (events === undefined) {
+			if (!locked)
+				throw new Error(
+					`${at} binds '${id}', another package's spec — name the events it answers: ` +
+						`{ spec: use('${id}'), events: [ … ] }`,
+				)
+			if (!locked.length)
+				throw new Error(
+					`${at} binds '${id}', which has no inlet lock — a preset binds a spec on the events its lock answers`,
+				)
+			events = locked
+		} else if (!events.length) {
+			throw new Error(`${at} binds '${id}' on no events — drop \`events\` to bind every event its lock answers`)
+		} else if (locked) {
+			const outside = events.filter((e) => !locked.includes(e))
+			if (outside.length)
+				throw new Error(
+					`${at} binds '${id}' on ${outside.map((e) => `'${e}'`).join(', ')}, which its inlet lock ` +
+						`does not answer (${locked.join(', ') || 'no lock'})`,
+				)
+		}
+		let configSlug: string | undefined
+		if (entry.config !== undefined) {
+			const configured = specIdOf(entry.config?.spec, `${at} config`)
+			if (configured !== id)
+				throw new Error(
+					`${at} binds '${id}' with config '${entry.config.slug}', which was made for '${configured}'`,
+				)
+			configSlug = entry.config.slug
+		}
+		for (const event of events) {
+			if (bindings[event])
+				throw new Error(`${where} binds '${event}' twice — to '${bindings[event]!.spec}' and to '${id}'`)
+			bindings[event] = { spec: id, ...(configSlug !== undefined ? { config: configSlug } : {}) }
+		}
+	}
+
+	const include = (pick: ActionPick, n: number): string[] => {
+		const at = `${where} action ${n + 1}`
+		if (typeof pick === 'string')
+			throw new Error(
+				`${at} names '${pick}' as a string — pass the spec value (every action it contributes) ` +
+					`or { spec, key } for one`,
+			)
+		if (isBindingObject(pick)) {
+			const { spec: ref, key } = pick as { spec: SpecRef; key?: unknown }
+			const id = specIdOf(ref, at)
+			if (typeof key !== 'string' || !ACTION_IDENTITY.test(`${id}#${key}`))
+				throw new Error(`${at} picks from '${id}' without a valid key — { spec, key: '<action key>' }`)
+			const keys = actionKeysOf(ref)
+			if (keys && !keys.includes(key))
+				throw new Error(
+					`${at} picks '${key}' from '${id}', which contributes ${keys.length ? keys.map((k) => `'${k}'`).join(', ') : 'no actions'}`,
+				)
+			return [`${id}#${key}`]
+		}
+		const id = specIdOf(pick, at)
+		const keys = actionKeysOf(pick as SpecRef)
+		if (!keys)
+			throw new Error(
+				`${at} includes '${id}', another package's spec — name the action: { spec: use('${id}'), key: '<action key>' }`,
+			)
+		if (!keys.length)
+			throw new Error(`${at} includes '${id}', which contributes no actions — nothing to bring along`)
+		return keys.map((k) => `${id}#${k}`)
+	}
+
+	const swapsOf = (swaps: SwapContribution[]): StoredSwapContribution[] => {
+		const faults = swapInputFindings(swaps)
+		if (faults.length) throw new Error(`${where} defaults.swaps: ${faults.join('; ')}`)
+		return swaps.map((c) => storedSwap(c))
+	}
+
+	return {
+		slug: input.slug,
+		genre,
+		label: input.label,
+		description: input.description,
+		bindings,
+		...(input.actions ? { actions: { include: input.actions.include.flatMap(include) } } : {}),
+		...(input.defaults
+			? {
+					defaults: {
+						...input.defaults,
+						...(input.defaults.swaps ? { swaps: swapsOf(input.defaults.swaps) } : {}),
+					} as PresetDefaults,
+				}
+			: {}),
+		// Omitted rather than defaulted to `false`, so a declaration that says
+		// nothing hashes as it always did — the announcement is content-hashed
+		// like every other declaration here.
+		...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+	}
+}
+
+/** The compiled announcement — the package's declaration artifact (24 §10). @experimental */
 export interface AnnouncementDocument {
 	schemaVersion: 1
 	identity: PackageIdentity
@@ -329,11 +603,23 @@ export interface AnnouncementDocument {
 	surfaces?: SurfacesDecl
 	/** In-document components (10 §2, virtual tier). */
 	components: ComponentDecl[]
+	/**
+	 * Definitions this package offers on other packages' swappable nodes
+	 * (R29), definitions as ids. Absent when the package contributes none, so
+	 * a package that declares no swap announces exactly what it did before.
+	 */
+	swaps?: StoredSwapContribution[]
+	/**
+	 * Events this package declares, with who may record them. Absent
+	 * when it declares none, so a package without events announces exactly
+	 * what it did before.
+	 */
+	events?: StoredEventDeclaration[]
 	/** Ids referenced but not declared here — the instance enforces these at install. */
 	requires: string[]
 }
 
-/** One event slot's standing in a preset, for the coverage report (24 §7). */
+/** One event slot's standing in a preset, for the coverage report (24 §7). @experimental */
 export interface CoverageSlot {
 	event: string
 	required: boolean
@@ -347,6 +633,7 @@ export interface CoverageSlot {
 	status: 'bound' | 'bound-external' | 'unbound' | 'MISSING'
 }
 
+/** @experimental */
 export interface CoverageReport {
 	presets: Array<{ preset: string; genre: string; slots: CoverageSlot[] }>
 	/** Deliberate holes: `todo()` sentinels found in config values. */
@@ -355,6 +642,7 @@ export interface CoverageReport {
 
 const NS = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/
 
+/** @internal The builder behind `announcementOf()`; author a package with `defineExtension()`. */
 export class AnnouncementBuilder {
 	/** The context-bound value toolkit — custom kinds mint under this package. */
 	readonly v: ValueToolkit
@@ -367,6 +655,8 @@ export class AnnouncementBuilder {
 	private _prompts: PromptDecl[] = []
 	private _surfaces: SurfacesDecl | undefined
 	private _components: ComponentDecl[] = []
+	private _swaps: Array<SwapContribution | StoredSwapContribution> = []
+	private _events: StoredEventDeclaration[] = []
 
 	constructor(readonly identity: PackageIdentity) {
 		if (!NS.test(identity.ns))
@@ -408,8 +698,8 @@ export class AnnouncementBuilder {
 		return this
 	}
 
-	configs(...configs: ConfigDecl[]): this {
-		this._configs.push(...configs)
+	configs(...configs: ConfigInput<any>[]): this {
+		this._configs.push(...configs.map(storedConfig))
 		return this
 	}
 
@@ -418,8 +708,8 @@ export class AnnouncementBuilder {
 		return this
 	}
 
-	presets(...presets: PresetDecl[]): this {
-		this._presets.push(...presets)
+	presets(...presets: PresetInput[]): this {
+		this._presets.push(...presets.map(preset))
 		return this
 	}
 
@@ -441,269 +731,61 @@ export class AnnouncementBuilder {
 	}
 
 	/**
+	 * Offer this package's definitions on another package's swappable nodes:
+	 * `.swaps({ spec: chatTurnOrder, node: 'decide.rules.strategy', definition: myStrategy })`,
+	 * the spec a value you imported, or `use('<spec id>')`. For a node of this package's own spec, list
+	 * the swap on the node itself with `expose.swaps` instead.
+	 */
+	swaps(...contributions: SwapContribution[]): this {
+		const faults = swapInputFindings(contributions)
+		if (faults.length) throw new Error(`swaps:\n · ${faults.join('\n · ')}`)
+		this._swaps.push(...contributions)
+		return this
+	}
+
+	/**
 	 * Validate the announcement as a whole and compile it to the document.
 	 * Errors carry exact paths — the teaching-error pattern (15 §1.3).
 	 */
 	build(): { document: AnnouncementDocument; coverage: CoverageReport } {
 		const errors: string[] = []
 		const ns = this.identity.ns
-		const announcedSpecs = new Map(this._pipelines.map((s) => [s.id, s]))
-		const requires = new Set<string>()
 
-		// Every announced id lives under the package namespace.
+		// The display text (R-20, U5i): the package's own title, summary and
+		// description. Every prompt's, config's and preset's label is checked
+		// by the shared declaration pass below, so a hand-built document gets
+		// the same answer the constructor gives.
+		errors.push(...i18nFindings(this.identity.title, 'identity.title', { required: true }))
+		errors.push(...i18nFindings(this.identity.summary, 'identity.summary'))
+		errors.push(...i18nFindings(this.identity.description, 'identity.description'))
+
+		// Every announced id lives under the package namespace. Kept here rather
+		// than in the shared pass because `defineExtension` refuses the same
+		// thing in its own words, naming the plugin slug (D-1).
 		for (const s of this._pipelines) {
 			const owner = s.id.includes(':') ? s.id.slice(0, s.id.indexOf(':')) : undefined
 			if (owner !== ns)
 				errors.push(`pipeline '${s.id}' is not under this package's namespace '${ns}'`)
 		}
 
-		// The input lock (24 §4): session-event specs verified; external genres recorded.
-		const sessionEventSet = new Set<string>(Object.values(sessionEvents))
-		for (const s of this._pipelines) {
-			if (!s.input?.event) continue
-			const genreId = s.input.genre
-			if (!genreId) {
-				// The builder refuses this at authoring time; a hand-built
-				// document gets the same answer here.
-				errors.push(`pipeline '${s.id}' answers '${s.input.event}' with no genre (24 §4)`)
-				continue
-			}
-			if (!this._genres.has(genreId)) requires.add(genreId)
-			if (
-				!sessionEventSet.has(s.input.event) &&
-				!s.input.event.includes(':') // custom events carry their namespace
-			)
-				errors.push(
-					`pipeline '${s.id}' answers unknown event '${s.input.event}' — core events ` +
-						`come from sessionEvents; custom ones are namespaced ('${ns}:your-event')`,
-				)
-		}
-
-		// Exactly one create pipeline per declared genre (24 §3).
-		for (const g of this._genres.values()) {
-			const creates = this._pipelines.filter(
-				(s) => s.input?.genre === g.id && s.input?.event === sessionEvents.sessionCreated,
-			)
-			if (creates.length === 0)
-				errors.push(
-					`genre '${g.id}' has no create pipeline — every genre needs exactly one ` +
-						`spec answering '${sessionEvents.sessionCreated}' (24 §3)`,
-				)
-			if (creates.length > 1)
-				errors.push(
-					`genre '${g.id}' has ${creates.length} create pipelines ` +
-						`(${creates.map((s) => s.id).join(', ')}) — exactly one (24 §3)`,
-				)
-		}
-
-		// Contributed actions (R-15, U5c): each declaration sound, and one
-		// slash name meaning one function across the whole package — the
-		// per-document check cannot see two specs of one package claiming
-		// `/acme.roll` for two different things, so the package is the first
-		// place the collision rule runs across documents; the install is the
-		// second.
-		const packageActions: ReturnType<typeof actionsOf> = []
-		for (const s of this._pipelines) {
-			// A built spec keeps its contributions on `meta`; a document carries
-			// them at the top — one reader for both.
-			const contributed = { id: s.id, contributes: 'meta' in s ? s.meta.contributes : s.contributes }
-			for (const finding of actionDocumentFindings(contributed))
-				errors.push(`pipeline '${s.id}': ${finding}`)
-			packageActions.push(...actionsOf(contributed))
-		}
-		errors.push(...slashCollisions(packageActions))
-
-		// Prompts: slugs unique per POOL, which is `(node type, slot)`.
-		//
-		// Uniqueness is per pool and not global: `summarize-scene-default` names
-		// a row in the batch, synth and naming pools, and they are three
-		// different prompts that happen to have been split out of one bundle.
-		//
-		// A prompt for a node this package does not announce is deliberately NOT
-		// recorded as a requirement, which is the one thing that changed here
-		// besides the key. It is the whole point of node scoping that a package
-		// may ship prose for somebody else's node, and a node type is neither a
-		// genre nor a spec slug — the only two shapes an instance can check
-		// (`requirements.ts`). Listing one would make every install of the
-		// package fail permanently on a requirement nothing can ever satisfy,
-		// where the real failure mode is mild and self-announcing: the row seeds
-		// into a pool no installed pipeline offers, and is simply never shown.
-		const seenPrompts = new Set<string>()
-		for (const pr of this._prompts) {
-			const pool = `${pr.nodeType}#${pr.slot}`
-			const key = `${pool}#${pr.slug}`
-			if (seenPrompts.has(key)) errors.push(`duplicate prompt '${pr.slug}' for '${pool}'`)
-			seenPrompts.add(key)
-		}
-
-		// Configs: node keys verified for announced specs; slugs unique per spec.
-		const configKey = (c: ConfigDecl) => `${c.spec}#${c.slug}`
-		const seenConfigs = new Set<string>()
-		for (const c of this._configs) {
-			if (seenConfigs.has(configKey(c)))
-				errors.push(`duplicate config '${c.slug}' for '${c.spec}'`)
-			seenConfigs.add(configKey(c))
-			const target = announcedSpecs.get(c.spec)
-			if (!target) {
-				requires.add(c.spec)
-				continue
-			}
-			for (const nodeKey of Object.keys(c.values))
-				if (!target.nodes.some((n) => n.key === nodeKey))
-					errors.push(
-						`config '${c.slug}' for '${c.spec}' addresses unknown node '${nodeKey}'`,
-					)
-		}
-
-		// Presets: validated against the genre's event surface (24 §7).
-		const coverage: CoverageReport = { presets: [], todos: [] }
-		for (const p of this._presets) {
-			const g = this._genres.get(p.genre)
-			if (!g) requires.add(p.genre)
-			const surface: Record<string, { required?: boolean; open?: boolean }> = g
-				? { ...g.events }
-				: {}
-			// Slots the preset binds beyond the declared surface are errors when
-			// the genre is ours to know; recorded when it is not.
-			const slots: CoverageSlot[] = []
-			const events = new Set([...Object.keys(surface), ...Object.keys(p.bindings)])
-			for (const event of events) {
-				const declared = surface[event]
-				const binding = p.bindings[event]
-				// A binding is keyed by event ID, whoever owns the genre (R-4).
-				// A bare name (`message-respond`) is the pre-fold spelling; a
-				// package carrying one would have its keys reverted by every
-				// boot's preset sync and bind nothing, silently.
-				if (binding && !isEventId(event)) {
-					errors.push(
-						`preset '${p.slug}' binds '${event}', which is not an event id — bindings ` +
-							`are keyed 'owner:event/name@N' (sessionEvents.messageRespond is ` +
-							`'${sessionEvents.messageRespond}'), never by bare name (R-4)`,
-					)
-					continue
-				}
-				if (g && !declared && binding) {
-					errors.push(
-						`preset '${p.slug}' binds '${event}', which genre '${p.genre}' does not declare`,
-					)
-					continue
-				}
-				if (!binding) {
-					const required = !!declared?.required
-					if (required)
-						errors.push(
-							`preset '${p.slug}' leaves required slot '${event}' of '${p.genre}' unbound`,
-						)
-					slots.push({
-						event,
-						required,
-						status: required ? 'MISSING' : 'unbound',
-					})
-					continue
-				}
-				const bound = announcedSpecs.get(binding.spec)
-				if (!bound) {
-					requires.add(binding.spec)
-					slots.push({
-						event,
-						required: !!declared?.required,
-						binding,
-						status: 'bound-external',
-					})
-				} else {
-					if (bound.input?.event !== event)
-						errors.push(
-							`preset '${p.slug}' binds '${bound.id}' to '${event}', but that spec ` +
-								`answers '${bound.input?.event ?? 'nothing'}' (24 §4)`,
-						)
-					if (bound.input?.genre !== p.genre)
-						errors.push(
-							`preset '${p.slug}' (genre '${p.genre}') binds '${bound.id}', which ` +
-								`serves '${bound.input?.genre ?? 'no genre'}' (24 §4)`,
-						)
-					if (
-						binding.config &&
-						!this._configs.some(
-							(c) => c.spec === binding.spec && c.slug === binding.config,
-						)
-					)
-						errors.push(
-							`preset '${p.slug}' names config '${binding.config}' of ` +
-								`'${binding.spec}', which this package does not declare`,
-						)
-					slots.push({
-						event,
-						required: !!declared?.required,
-						binding,
-						status: 'bound',
-					})
-				}
-			}
-			// An included action names a spec by its identity's first half; a spec
-			// this package does not announce is a requirement on the install.
-			for (const a of p.actions?.include ?? []) {
-				const hash = a.lastIndexOf('#')
-				const specId = hash === -1 ? a : a.slice(0, hash)
-				if (!announcedSpecs.has(specId)) requires.add(specId)
-			}
-			coverage.presets.push({ preset: p.slug, genre: p.genre, slots })
-		}
-
-		// Surfaces and components: an entry that does not exist at install is a
-		// blank panel nobody can debug, so the shape is checked where the author
-		// can still fix it. What is *at* the path is the packager's business.
-		const panelIds = new Set<string>()
-		for (const [i, p] of (this._surfaces?.panels ?? []).entries()) {
-			if (!p?.id) errors.push(`surfaces.panels[${i}] has no id — a layout row keys on it`)
-			else if (panelIds.has(p.id))
-				errors.push(`duplicate panel id '${p.id}' — ids are the layout key (21 §6)`)
-			else {
-				panelIds.add(p.id)
-				if (!isServablePanelId(p.id))
-					errors.push(
-						`panel id '${p.id}' is not one an instance accepts (lowercase letters, ` +
-							`digits, '-' and '_') — it would be dropped silently at install`,
-					)
-			}
-			if (!p?.entry) errors.push(`surfaces.panels[${i}] has no entry document`)
-			else if (!isServableEntry(p.entry))
-				errors.push(
-					`surfaces.panels[${i}] entry '${p.entry}' is not a path an instance will ` +
-						`serve — it would be dropped silently at install`,
-				)
-		}
-		for (const [where, decl] of [
-			['session-view', this._surfaces?.['session-view']],
-			['page', this._surfaces?.page],
-		] as const) {
-			if (decl && !decl.entry) errors.push(`surfaces.${where} has no entry document`)
-			else if (decl?.entry && !isServableEntry(decl.entry))
-				errors.push(
-					`surfaces.${where} entry '${decl.entry}' is not a path an instance will serve`,
-				)
-		}
-
-		const componentSlugs = new Set<string>()
-		for (const [i, c] of this._components.entries()) {
-			if (!c?.slug)
-				errors.push(`components[${i}] has no slug — slugs are the sync key (12 §3b)`)
-			else if (componentSlugs.has(c.slug))
-				errors.push(`duplicate component slug '${c.slug}' (12 §3b)`)
-			else componentSlugs.add(c.slug)
-			if (!c?.entry) errors.push(`components[${i}] ('${c?.slug ?? '?'}') has no entry`)
-			if (!c?.surface)
-				errors.push(`components[${i}] ('${c?.slug ?? '?'}') names no surface point`)
-		}
-
-		// Deliberate holes: todo() sentinels, listed with their paths (24 §7).
-		for (const c of this._configs)
-			for (const [nodeKey, slots] of Object.entries(c.values))
-				for (const [slot, value] of Object.entries(slots))
-					if (isTodo(value))
-						coverage.todos.push({
-							path: `${c.spec}#${c.slug} → ${nodeKey}.${slot}`,
-							note: value['todo@1'].note,
-						})
+		// Everything else a package declares — genres, the input lock, create
+		// pipelines, actions, prompts, configs, presets, surfaces, components —
+		// is checked by the pass `defineExtension` runs too (D-1), so one
+		// mistake gets one sentence wherever it was written.
+		const found = declarationFindings({
+			ns,
+			genres: [...this._genres.values()],
+			pipelines: this._pipelines,
+			prompts: this._prompts,
+			configs: this._configs,
+			presets: this._presets,
+			surfaces: this._surfaces,
+			components: this._components,
+			swaps: this._swaps,
+			events: this._events,
+		})
+		errors.push(...found.errors)
+		const coverage = found.coverage
 
 		if (errors.length) throw new AnnouncementError(errors, coverage)
 
@@ -719,14 +801,16 @@ export class AnnouncementBuilder {
 				presets: this._presets,
 				...(this._surfaces ? { surfaces: this._surfaces } : {}),
 				components: this._components,
-				requires: [...requires].sort(),
+				...(this._swaps.length ? { swaps: this._swaps.map(storedSwap) } : {}),
+				...(this._events.length ? { events: this._events } : {}),
+				requires: found.requires,
 			},
 			coverage,
 		}
 	}
 }
 
-/** Build refusal that still carries the coverage — the report is the error's context. */
+/** Build refusal that still carries the coverage — the report is the error's context. @experimental */
 export class AnnouncementError extends Error {
 	constructor(
 		readonly errors: string[],
@@ -737,6 +821,42 @@ export class AnnouncementError extends Error {
 	}
 }
 
+/** @internal Author a package with `defineExtension()`; this is the serializer behind it. */
 export function announce(identity: PackageIdentity): AnnouncementBuilder {
 	return new AnnouncementBuilder(identity)
+}
+
+/**
+ * The announcement document a `defineExtension()` declaration compiles to —
+ * what a host syncs and what the coverage report reads. Core declares itself
+ * with `defineExtension()` like any package and is announced through this.
+ *
+ * @internal Author a package with `defineExtension()`; this is the host's
+ * view of it.
+ */
+export function announcementOf(e: Extension): { document: AnnouncementDocument; coverage: CoverageReport } {
+	const builder = announce({
+		ns: e.slug,
+		author: e.author ?? e.slug,
+		title: e.name,
+		...(e.repo !== undefined ? { repo: e.repo } : {}),
+		...(e.description !== undefined ? { summary: e.description } : {}),
+	})
+	if (e.hooks && Object.keys(e.hooks).length) builder.hooks(e.hooks)
+	if (e.genres?.length) builder.genres(Object.fromEntries(e.genres.map((g) => [g.id, g])))
+	if (e.pipelines?.length) builder.pipelines(...e.pipelines)
+	if (e.prompts?.length) builder.prompts(...e.prompts)
+	if (e.surfaces) builder.surfaces(e.surfaces)
+	if (e.components?.length) builder.components(...e.components)
+	// Already read down to ids by `defineExtension()`: the stored shapes go in as they are.
+	const stored = builder as unknown as {
+		_configs: ConfigDecl[]
+		_presets: PresetDecl[]
+		_swaps: Array<SwapContribution | StoredSwapContribution>
+	}
+	stored._configs.push(...(e.configs ?? []))
+	stored._presets.push(...(e.presets ?? []))
+	stored._swaps.push(...(e.swaps ?? []))
+	;(builder as unknown as { _events: StoredEventDeclaration[] })._events.push(...(e.events ?? []))
+	return builder.build()
 }

@@ -11,6 +11,9 @@
       "@serene-pub/sdk/tokenizers": [
         "../sdk/src/tokenizers.ts"
       ],
+      "@serene-pub/sdk/template-check": [
+        "../sdk/src/templateCheck.ts"
+      ],
       "@serene-pub/contracts": [
         "../contracts/src/index.ts"
       ],
@@ -31,6 +34,7 @@
   "include": [
     "*.ts",
     "examples/*.ts",
+    "fixtures/*/src/*.ts",
     "../*/src/**/*.ts"
   ],
   "exclude": [

@@ -95,6 +95,11 @@ export interface RenderedMarkdown {
 	headings: DocHeading[]
 	/** Previews by heading id — the body under that heading, ≤180 chars. */
 	previews: Record<string, string>
+	/**
+	 * Search text by heading id — the same body, longer (≤1200 chars), so a
+	 * word further into a section than its preview still finds it.
+	 */
+	sectionTexts: Record<string, string>
 	/** Every relative `.md` link and bare `#anchor`, in document order. */
 	links: DocLinkRef[]
 	/** Every image reference, in document order, as written. */
@@ -444,7 +449,7 @@ export async function renderMarkdown(
 		)
 	}
 
-	const previews = extractPreviews(tokens as Token[])
+	const { previews, sectionTexts } = extractPreviews(tokens as Token[])
 	const body = marked.parser(tokens)
 	const banner = opts.banner
 		? `<aside class="doc-banner" role="note">${escapeHtml(opts.banner)}</aside>\n`
@@ -454,6 +459,7 @@ export async function renderMarkdown(
 		html: banner + body,
 		headings,
 		previews,
+		sectionTexts,
 		links,
 		images,
 		pipelines,
@@ -512,7 +518,13 @@ function collectImages(tokens: Token[], out: ImageToken[]): void {
  * a fenced block cannot invent a section the page does not have — which is the
  * failure the app's line-regex version has.
  */
-function extractPreviews(tokens: Token[]): Record<string, string> {
+/** How much of a section's body the search index carries. */
+const SECTION_TEXT_CHARS = 1200
+
+function extractPreviews(tokens: Token[]): {
+	previews: Record<string, string>
+	sectionTexts: Record<string, string>
+} {
 	const flat: ({ heading: true; text: string } | { heading: false; raw: string })[] = []
 	const walk = (list: Token[]) => {
 		for (const token of list as any[]) {
@@ -533,6 +545,7 @@ function extractPreviews(tokens: Token[]): Record<string, string> {
 	walk(tokens)
 
 	const previews: Record<string, string> = {}
+	const sectionTexts: Record<string, string> = {}
 	// Its own slugger, walking the same headings in the same order as the
 	// renderer's — so a repeat is numbered identically and the previews stay
 	// keyed by the ids the page actually emits.
@@ -544,11 +557,13 @@ function extractPreviews(tokens: Token[]): Record<string, string> {
 		const body: string[] = []
 		for (let j = i + 1; j < flat.length && !flat[j].heading; j++) {
 			body.push((flat[j] as { raw: string }).raw)
-			if (stripInlineMarkdown(body.join('\n')).length >= 180) break
+			if (stripInlineMarkdown(body.join('\n')).length >= SECTION_TEXT_CHARS) break
 		}
-		previews[id] = truncateAtWord(stripInlineMarkdown(body.join('\n')), 180)
+		const text = stripInlineMarkdown(body.join('\n'))
+		previews[id] = truncateAtWord(text, 180)
+		sectionTexts[id] = truncateAtWord(text, SECTION_TEXT_CHARS)
 	}
-	return previews
+	return { previews, sectionTexts }
 }
 
 /** The app's description rule: first paragraph after the H1, ≤200 chars. */

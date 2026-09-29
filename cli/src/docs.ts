@@ -9,14 +9,15 @@
  * cannot drift from the product. The docs site (T9 proper) consumes this
  * markdown and adds live controls once @serene-pub/controls exists.
  */
-import type { AnnouncementDocument, SpecDocument } from '@serene-pub/sdk'
+import { i18nText, type AnnouncementDocument, type I18n, type SpecDocument } from '@serene-pub/sdk'
 import type { TypeSurface } from './scaffold.js'
 
-const en = (v: unknown): string =>
-	typeof v === 'string' ? v : ((v as any)?.en ?? '')
+/** Display text in the docs' one language — the SDK's resolver, `en`. */
+const en = (v: unknown): string => i18nText(v as I18n | undefined) ?? ''
 
 const code = (s: string) => '`' + s + '`'
 
+/** @experimental */
 export interface DocPage {
 	/** Repo-relative path, e.g. `pipelines/core_spec_respond.md`. */
 	path: string
@@ -119,7 +120,7 @@ function specPage(
 		lines.push(`## Shipped prompts`)
 		lines.push('')
 		for (const p of prompts)
-			lines.push(`- **${p.label}** (${code(p.slug)}) — ${code(`${p.nodeType}#${p.slot}`)}`)
+			lines.push(`- **${en(p.label)}** (${code(p.slug)}) — ${code(`${p.nodeType}#${p.slot}`)}`)
 		lines.push('')
 	}
 	return { path: `pipelines/${fileSafe(doc.id)}.md`, markdown: lines.join('\n') }
@@ -166,6 +167,7 @@ function genrePage(
 	return { path: `genres/${fileSafe(genre.id)}.md`, markdown: lines.join('\n') }
 }
 
+/** @internal */
 export function renderAnnouncementDocs(
 	announcement: AnnouncementDocument,
 	typeOf: (definitionId: string, version: number) => TypeSurface | undefined,
@@ -174,9 +176,9 @@ export function renderAnnouncementDocs(
 
 	// The index: what this package is and ships.
 	const index: string[] = []
-	index.push(`# ${announcement.identity.title}`)
+	index.push(`# ${en(announcement.identity.title)}`)
 	index.push('')
-	if (announcement.identity.summary) index.push(announcement.identity.summary)
+	if (announcement.identity.summary) index.push(en(announcement.identity.summary))
 	index.push('')
 	if (announcement.genres.length) {
 		index.push(`## Genres`)
@@ -194,10 +196,10 @@ export function renderAnnouncementDocs(
 		index.push(`## Presets`)
 		index.push('')
 		for (const p of announcement.presets) {
-			index.push(`### ${p.label} (${code(p.slug)})`)
+			index.push(`### ${en(p.label)} (${code(p.slug)})`)
 			index.push('')
 			if (p.description) {
-				index.push(p.description)
+				index.push(en(p.description))
 				index.push('')
 			}
 			index.push('| event | pipeline | config |')

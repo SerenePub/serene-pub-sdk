@@ -20,7 +20,7 @@
  * switched off. Delete, hide (ghost) and swipe are built-ins a genre may
  * switch off through `SessionShape.messageVerbs`, never re-implement. Stop
  * has no spec: it is the run-level guarantee (R-17) and emits
- * `message-stopped` from the finalisation. Regenerate, continue and a
+ * `message-stopped` from the finalisation. Regenerate, extend and a
  * swipe's fresh alternative are the reply road's own `update-message` with a
  * `verb` on its event — content the genre's pipeline produced, written by the
  * outlet the reply already ends in.
@@ -31,13 +31,14 @@
  * `taxonomy.genre` names one; `role: 'action'` because a person invokes it.
  * No `contributes.actions` either — core's message verbs are described once,
  * in the SDK's `CORE_ACTIONS` (30 §U5c): venue `message` (and `extra` for
- * retry/continue), audience `item`, the floors marked. A host merges that
+ * retry/extend), audience `item`, the floors marked. A host merges that
  * table with the genre's `messageVerbs` availability; a spec here declaring
  * a second copy would be a second place for the same fact to drift.
  */
 import { compile, spec, BUILTIN_SPEC_IDS, type BuiltInKind } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
+/** @internal */
 export const BUILTIN_VERSION = '1.0.0'
 
 // The ids live in the SDK since 2026-09-16 (U5b review W8): `validate()`
@@ -46,10 +47,15 @@ export const BUILTIN_VERSION = '1.0.0'
 // a host reads them from.
 export { BUILTIN_SPEC_IDS, type BuiltInKind }
 
+/** @experimental */
 export const BUILTIN_DELETE_SPEC_ID = BUILTIN_SPEC_IDS.delete
+/** @experimental */
 export const BUILTIN_HIDE_SPEC_ID = BUILTIN_SPEC_IDS.hide
+/** @experimental */
 export const BUILTIN_EDIT_SPEC_ID = BUILTIN_SPEC_IDS.edit
+/** @experimental */
 export const BUILTIN_SWIPE_SPEC_ID = BUILTIN_SPEC_IDS.swipe
+/** @experimental */
 export const BUILTIN_BRANCH_SPEC_ID = BUILTIN_SPEC_IDS.branch
 
 const builtIn = (id: string) =>
@@ -58,6 +64,7 @@ const builtIn = (id: string) =>
 		taxonomy: { role: 'action' },
 	}).inlet('input', C.builtInRequest.v1())
 
+/** @experimental */
 export const builtinDeleteSpec = () =>
 	compile(
 		builtIn(BUILTIN_DELETE_SPEC_ID)
@@ -65,6 +72,7 @@ export const builtinDeleteSpec = () =>
 			.build(),
 	)
 
+/** @experimental */
 export const builtinHideSpec = () =>
 	compile(
 		builtIn(BUILTIN_HIDE_SPEC_ID)
@@ -74,6 +82,7 @@ export const builtinHideSpec = () =>
 			.build(),
 	)
 
+/** @experimental */
 export const builtinEditSpec = () =>
 	compile(
 		builtIn(BUILTIN_EDIT_SPEC_ID)
@@ -81,6 +90,7 @@ export const builtinEditSpec = () =>
 			.build(),
 	)
 
+/** @experimental */
 export const builtinSwipeSpec = () =>
 	compile(
 		builtIn(BUILTIN_SWIPE_SPEC_ID)
@@ -94,6 +104,7 @@ export const builtinSwipeSpec = () =>
 			.build(),
 	)
 
+/** @experimental */
 export const builtinBranchSpec = () =>
 	compile(
 		builtIn(BUILTIN_BRANCH_SPEC_ID)

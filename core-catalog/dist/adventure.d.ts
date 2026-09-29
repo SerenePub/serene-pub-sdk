@@ -6,9 +6,9 @@
  *
  * Adventure is chat with a **narrator who plans, a cast who speak for
  * themselves, and a state-keeper who writes the numbers down.** Four agents,
- * one turn, one receipt. Everything the player sees on screen — bars, an
- * inventory, the world strip, the ledger under a reply — is a consequence of
- * the keeper's proposals, never of prose parsing.
+ * one turn, one receipt. Everything the player sees on screen — bars, the
+ * world strip, the ledger under a reply — is a consequence of the keeper's
+ * proposals, never of prose parsing.
  *
  * ## Two of the four are asked a question, not given a turn
  *
@@ -40,7 +40,7 @@
  * instructions. Four types is four pools is four shipped prompts, and a person
  * who wants the narrator wordier edits the narrator.
  *
- * Each stage owns its own `connection` and `sampling` slots too, so the whole
+ * Each step owns its own `connection` and `sampling` slots too, so the whole
  * turn runs on one model or splits across two — a small fast model for the
  * planner and the keeper, a large one for the prose, which is the split this
  * shape exists to make possible.
@@ -60,7 +60,9 @@
  *    Interleaving beat by beat would need a node that takes an order and a set
  *    of texts, which is a new declaration this lane did not need to make.
  */
+/** @internal */
 export declare const ADVENTURE_CREATE_SPEC_ID = "core:spec/adventure-create";
+/** @internal */
 export declare const ADVENTURE_CREATE_VERSION = "1.0.0";
 /**
  * The genre's one required member: what happens when an Adventure session is
@@ -86,10 +88,14 @@ export declare const ADVENTURE_CREATE_VERSION = "1.0.0";
  * the slowest backend and fails the whole creation when no connection is set —
  * on the one screen where a new user is most likely to have set none. The
  * opening scene is `core:spec/adventure-look` instead, which is a button.
+ * @internal
  */
 export declare const adventureCreateSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @internal */
 export declare const ADVENTURE_RESPOND_SPEC_ID = "core:spec/adventure-respond";
+/** @internal */
 export declare const ADVENTURE_RESPOND_VERSION = "1.0.0";
+/** @internal */
 export declare const ADVENTURE_PLAN_SCHEMA: {
     readonly type: 'object';
     readonly properties: {
@@ -140,6 +146,7 @@ export declare const ADVENTURE_PLAN_SCHEMA: {
     readonly required: readonly ['beats', 'speakers', 'worldHints', 'needsLookup'];
     readonly additionalProperties: false;
 };
+/** @internal */
 export declare const ADVENTURE_KEEPER_SCHEMA: {
     readonly type: 'object';
     readonly properties: {
@@ -165,13 +172,16 @@ export declare const ADVENTURE_KEEPER_SCHEMA: {
             };
         };
         /**
-         * Something changing hands, by the entry id the lore gave it.
+         * Something changing hands, by the entry id the lore gave it — an add
+         * (+) or remove (−) on the owner's `inventory` stat once resolved.
+         * Named for the stat it lands on (owner ruling 2026-09-27; was
+         * `possessions`).
          *
          * Its own list rather than a second arm inside `values`, because a
          * schema can only be strict about a list whose items are all one shape.
          * The two are joined again by the `path` parameter naming both.
          */
-        readonly possessions: {
+        readonly inventory: {
             readonly type: 'array';
             readonly items: {
                 readonly type: 'object';
@@ -191,8 +201,9 @@ export declare const ADVENTURE_KEEPER_SCHEMA: {
             };
         };
     };
-    readonly required: readonly ['values', 'possessions'];
+    readonly required: readonly ['values', 'inventory'];
     readonly additionalProperties: false;
 };
+/** @internal */
 export declare const adventureRespondSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=adventure.d.ts.map

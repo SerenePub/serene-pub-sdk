@@ -64,11 +64,18 @@ export async function compileDocs(opts) {
             pagesBySlug.set(page.slug, page);
             ordered.push(page);
         }
-        navGroups.push({
-            group: source.group,
-            source: source.id,
-            pages: settled.ordered.map((page) => page.slug),
-        });
+        // One nav group per settled group — several for a grouped `order`.
+        // A page whose slug clashed was never rendered, so it stays out of
+        // the nav as it stays out of `ordered`.
+        for (const group of settled.groups) {
+            navGroups.push({
+                group: group.group,
+                source: source.id,
+                pages: group.pages
+                    .filter((page) => pagesBySlug.get(page.slug) === page)
+                    .map((page) => page.slug),
+            });
+        }
     }
     // ── 2. Render everything, converting images as they are met. ──
     const converter = new AssetConverter({ maxWidth, quality });
@@ -174,6 +181,7 @@ export async function compileDocs(opts) {
                 title: heading.text,
                 depth: heading.depth,
                 preview: page.previews[heading.id] ?? '',
+                text: page.sectionTexts[heading.id] ?? '',
             });
         }
     }

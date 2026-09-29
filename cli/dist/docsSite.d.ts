@@ -9,7 +9,7 @@
  * Live controls join these pages when @serene-pub/controls exists (T6c);
  * until then the option tables are the reference.
  */
-import type { AnnouncementDocument } from '@serene-pub/sdk';
+import { type AnnouncementDocument } from '@serene-pub/sdk';
 import type { DocPage } from './docs.js';
 export declare function markdownToHtml(md: string): string;
 export interface SitePage {

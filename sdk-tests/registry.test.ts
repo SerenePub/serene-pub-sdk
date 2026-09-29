@@ -17,7 +17,7 @@ import {
 	installable,
 	renderInstall,
 	allDefinitions,
-	pipelineHook,
+	handler,
 	ok,
 } from '@serene-pub/sdk'
 import type { RegistryEntry, SpecDocument } from '@serene-pub/sdk'
@@ -31,7 +31,7 @@ const doc = (): SpecDocument =>
 		spec('chariot.dice-tray:turn', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+			.task('prompt', () => C.assemble.v2())
 			.oracle('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 			),
@@ -217,9 +217,9 @@ describe('an extension hook never runs in the host process', () => {
 		})
 		assert.equal(findings.filter((f) => f.code === 'E_IN_PROCESS_HOOK').length, 0)
 
-		// `pipelineHook` no longer takes a runtime option at all — it is not a
+		// `handler` no longer takes a runtime option at all — it is not a
 		// default that can be overridden, it is the only possibility.
-		const hook = pipelineHook(C.gate, () => ok({}), { visibility: 'private' })
+		const hook = handler(C.gate, () => ok({}), { visibility: 'private' })
 		assert.equal(hook.runtime, 'process')
 	})
 })

@@ -2,13 +2,14 @@
 	"name": "@serene-pub/core-catalog",
 	"version": "0.6.0-preview.0",
 	"type": "module",
-	"description": "Core's announcement (24 \u00a79): the genres, pipelines and hook declarations Serene Pub ships. SP boot-seeds from this package; conformance consumes it as fixtures; modders import it for typed references.",
+	"description": "Core's announcement (24 §9): the genres, pipelines and hook declarations Serene Pub ships. SP boot-seeds from this package; conformance consumes it as fixtures; modders import it for typed references.",
 	"license": "Apache-2.0",
 	"sideEffects": [
 		"./dist/entries.js"
 	],
 	"files": [
 		"dist",
+		"components",
 		"README.md"
 	],
 	"main": "./dist/index.js",
@@ -18,6 +19,27 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
+		"./conversation": {
+			"types": "./dist/ui/sessions/conversation/index.d.ts",
+			"import": "./dist/ui/sessions/conversation/index.js"
+		},
+		"./session-state": {
+			"types": "./dist/ui/sessions/session-state/index.d.ts",
+			"import": "./dist/ui/sessions/session-state/index.js"
+		},
+		"./widgets": {
+			"types": "./dist/ui/sessions/widgetContext.d.ts",
+			"import": "./dist/ui/sessions/widgetContext.js"
+		},
+		"./lore-entries": {
+			"types": "./dist/ui/sessions/lore-entries/index.d.ts",
+			"import": "./dist/ui/sessions/lore-entries/index.js"
+		},
+		"./scene-portraits": {
+			"types": "./dist/ui/sessions/scene-portraits/index.d.ts",
+			"import": "./dist/ui/sessions/scene-portraits/index.js"
+		},
+		"./components/*": "./dist/components/*",
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
@@ -25,10 +47,13 @@
 		"@serene-pub/contracts": ">=0.6.0-preview.0"
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json"
+		"build": "tsc -p tsconfig.build.json && node scripts/buildComponents.mjs"
 	},
 	"devDependencies": {
 		"@serene-pub/sdk": "0.6.0-preview.0",
-		"@serene-pub/contracts": "0.6.0-preview.0"
+		"@serene-pub/contracts": "0.6.0-preview.0",
+		"@serene-pub/cli": "0.6.0-preview.0",
+		"@serene-pub/component-client": "0.6.0-preview.0",
+		"svelte": "^5.56.0"
 	}
 }

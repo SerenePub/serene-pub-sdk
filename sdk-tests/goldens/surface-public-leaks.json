@@ -1,0 +1,199 @@
+{
+	"@serene-pub/cli": {
+		".": {
+			"Example": [
+				"BuiltSpec @experimental",
+				"ExampleRunCtx @experimental",
+				"Receipt @experimental",
+				"SpecDocument @experimental"
+			]
+		},
+		"./testing": {
+			"HarnessContext": [
+				"ComponentSections @experimental"
+			],
+			"InvokeRecord": [
+				"ComponentInvokeArgs @experimental"
+			],
+			"MountComponentOptions": [
+				"WidgetBaseSection @experimental",
+				"WidgetRequestKind @experimental",
+				"WidgetScope @experimental"
+			],
+			"MountedComponent": [
+				"WidgetScope @experimental"
+			]
+		}
+	},
+	"@serene-pub/component-client": {
+		"./svelte": {
+			"svelteComponent": [
+				"ComponentContext @experimental",
+				"ComponentMountFn @experimental"
+			]
+		}
+	},
+	"@serene-pub/contracts": {
+		".": {
+			"assemble": [
+				"Descriptor @experimental",
+				"FieldDecl @experimental",
+				"FieldType @experimental",
+				"Pinned @experimental"
+			],
+			"buildNarratorContext": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"buildTemplateContext": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"concatCandidates": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"SlotDecl @experimental"
+			],
+			"contextBudget": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"PortDecl @experimental"
+			],
+			"createMessage": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"generateJson": [
+				"Descriptor @experimental",
+				"FieldDecl @experimental",
+				"FieldType @experimental",
+				"Pinned @experimental"
+			],
+			"generateText": [
+				"Descriptor @experimental",
+				"FieldDecl @experimental",
+				"FieldType @experimental",
+				"Pinned @experimental"
+			],
+			"lorebookTriggers": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"mergeCandidates": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"SlotDecl @experimental"
+			],
+			"processMessages": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"proseTranscript": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"SlotDecl @experimental"
+			],
+			"sessionCast": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"SlotDecl @experimental"
+			],
+			"sessionCreated": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"PortDecl @experimental",
+				"SlotDecl @experimental"
+			],
+			"sessionHistory": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"userMessage": [
+				"Descriptor @experimental",
+				"Pinned @experimental",
+				"PortDecl @experimental"
+			]
+		}
+	},
+	"@serene-pub/core-catalog": {
+		".": {
+			"coreWidgets": [
+				"WidgetDecl @experimental"
+			],
+			"turnOrderSpec": [
+				"SpecDocument @experimental",
+				"TurnAdvisePin @experimental",
+				"TurnPoolParams @experimental"
+			]
+		}
+	},
+	"@serene-pub/sdk": {
+		".": {
+			"GenreDecl": [
+				"AttributeSheetDecl @experimental",
+				"AttributeSlotDecl @experimental",
+				"CustomAttributes @experimental",
+				"EnabledWhen @experimental",
+				"EnvoyDecl @experimental",
+				"GenreEventDecl @experimental",
+				"GenreLayoutDecl @experimental",
+				"SessionShape @experimental"
+			],
+			"SettingsSchema": [
+				"FieldDecl @experimental"
+			],
+			"bandIntent": [
+				"BandIntent @experimental",
+				"BandIntentFields @experimental"
+			],
+			"component": [
+				"ComponentDecl @experimental"
+			],
+			"defineExtension": [
+				"Extension @experimental",
+				"ExtensionDecl @experimental"
+			],
+			"defineSettings": [
+				"PluginSettings @experimental"
+			],
+			"describeTaskDefinition": [
+				"Descriptor @experimental"
+			],
+			"eventListener": [
+				"EventListener @experimental",
+				"EventListenerDecl @experimental",
+				"SessionEventDecl @experimental"
+			],
+			"genre": [
+				"GenreProps @experimental"
+			],
+			"halt": [
+				"Result @experimental"
+			],
+			"handler": [
+				"Descriptor @experimental",
+				"HandlerDecl @experimental"
+			],
+			"ok": [
+				"Result @experimental"
+			],
+			"pin": [
+				"Descriptor @experimental",
+				"Pinned @experimental"
+			],
+			"slot": [
+				"EnvoyAddress @experimental"
+			],
+			"spec": [
+				"SpecBuilder @experimental",
+				"SpecMeta @experimental"
+			],
+			"splitCandidates": [
+				"BandIntent @experimental"
+			],
+			"use": [
+				"ExternalRef @experimental"
+			]
+		}
+	}
+}

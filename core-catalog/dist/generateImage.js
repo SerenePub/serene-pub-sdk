@@ -29,14 +29,16 @@
 import { compile, spec, sessionEvents, slot } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { chatGenre } from './genres.js';
+/** @experimental */
 export const GENERATE_IMAGE_SPEC_ID = 'core:spec/generate-image';
+/** @internal */
 export const GENERATE_IMAGE_VERSION = '1.0.0';
+/** @experimental */
 export const generateImageSpec = () => compile(spec(GENERATE_IMAGE_SPEC_ID, {
     version: GENERATE_IMAGE_VERSION,
     /** A person-invoked action on chats (23 §2), same as narrate. */
     taxonomy: {
         role: 'action',
-        genre: chatGenre.id,
     },
     /**
      * The contributed action (19 §4; R-15, U5c): offers the
@@ -49,12 +51,13 @@ export const generateImageSpec = () => compile(spec(GENERATE_IMAGE_SPEC_ID, {
         actions: [
             {
                 key: 'generate-image',
-                genre: chatGenre.id,
-                function: 'generate-image',
                 venue: { kind: 'composer' },
                 quick: true,
                 icon: 'image',
+                /** The prompt is the whole instruction (lair pass R3): nothing to render without it. */
+                collects: { text: { need: 'required', label: { en: 'What should the image show?' } } },
                 label: { en: 'Image' },
+                description: { en: 'Describe an image, make it and post it in the session.' },
             },
         ],
     },

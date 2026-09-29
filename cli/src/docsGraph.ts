@@ -9,6 +9,7 @@
 import type { AnnouncementDocument } from '@serene-pub/sdk'
 import { specGraphOf, type DocsGraph } from '@serene-pub/docs'
 
+/** @internal Re-exported from `@serene-pub/docs`, where it is declared (and tagged). */
 export { specGraphOf }
 
 /**
@@ -21,6 +22,7 @@ export { specGraphOf }
  * carries `SpecDocument[]` — the same bytes a package ships. Nothing here needs
  * `CORE_SPECS[].build()`, which would re-derive documents the announcement is
  * already holding and could disagree with them.
+ * @internal
  */
 export function pipelineResolver(
 	announcement: AnnouncementDocument,

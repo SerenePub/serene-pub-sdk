@@ -53,11 +53,14 @@
  * `always` takes every candidate of the band ahead of the scored fill, window
  * permitting, the way a pinned entry is taken — *never dropped* is what the
  * word promises, and the window is the one thing that can still say no.
+ * @experimental
  */
 export declare const BAND_PRIORITIES: readonly ['low', 'normal', 'high', 'always'];
+/** @experimental */
 export type BandPriority = (typeof BAND_PRIORITIES)[number];
+/** @internal */
 export declare const isBandPriority: (v: unknown) => v is BandPriority;
-/** What one source says about its own place in the window. */
+/** What one source says about its own place in the window. @experimental */
 export interface BandIntentFields {
     /**
      * The band's slice of the window, relative to every other band's. `0` is
@@ -70,13 +73,13 @@ export interface BandIntentFields {
     minEntries?: number;
     priority?: BandPriority;
 }
-/** One source's declared intent, as it travels in a candidates list. */
+/** One source's declared intent, as it travels in a candidates list. @experimental */
 export interface BandIntent {
     /** The band this speaks for — `worldLore`, `messages`, a plugin's own key. */
     band: string;
     intent: BandIntentFields;
 }
-/** Build one, dropping fields the source left unset. */
+/** Build one, dropping fields the source left unset. @public */
 export declare function bandIntent(band: string, fields: BandIntentFields): BandIntent;
 /**
  * Is this element a band's intent rather than a candidate?
@@ -85,11 +88,13 @@ export declare function bandIntent(band: string, fields: BandIntentFields): Band
  * intent names it as `band` and carries nothing else. Both keys are checked
  * so a candidate a plugin happens to give a `band` field is not mistaken for
  * one.
+ * @internal
  */
 export declare const isBandIntent: (v: unknown) => v is BandIntent;
 /**
  * A candidates list, split: the intents (first per band wins) and the items,
  * each in the order they arrived.
+ * @public
  */
 export declare function splitCandidates<T = unknown>(list: readonly unknown[] | null | undefined): {
     intents: BandIntent[];
@@ -98,6 +103,7 @@ export declare function splitCandidates<T = unknown>(list: readonly unknown[] | 
 /**
  * Put a list back together the way every core candidate source publishes it:
  * intents first, then items.
+ * @internal
  */
 export declare function withBandIntents<T>(intents: readonly BandIntent[], items: readonly T[]): Array<BandIntent | T>;
 //# sourceMappingURL=candidates.d.ts.map

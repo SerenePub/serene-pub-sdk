@@ -42,6 +42,13 @@
 					"weight": 0.4,
 					"minInclude": 6,
 					"priority": "normal"
+				},
+				"band": {
+					"sourceKey": "history",
+					"items": [],
+					"weight": 0.4,
+					"minInclude": 6,
+					"priority": "normal"
 				}
 			}
 		},
@@ -49,54 +56,17 @@
 			"nodeKey": "prompt",
 			"kind": "task",
 			"result": "ok",
-			"input": {
-				"candidates": {
-					"sourceKey": "history",
-					"items": [
-						"msg0",
-						"msg1",
-						"msg2",
-						"msg3",
-						"msg4",
-						"msg5",
-						"msg6",
-						"msg7",
-						"msg8",
-						"msg9",
-						"msg10",
-						"msg11"
-					],
-					"weight": 0.4,
-					"minInclude": 6,
-					"priority": "normal"
-				}
-			},
+			"input": {},
 			"output": {
 				"main": {
 					"budget": 4096,
-					"alloc": [
-						{
-							"sourceKey": "history",
-							"weight": 0.4,
-							"minInclude": 6,
-							"included": 6,
-							"available": 12
-						}
-					],
-					"dropped": 6
+					"alloc": [],
+					"dropped": 0
 				},
 				"context": {
 					"budget": 4096,
-					"alloc": [
-						{
-							"sourceKey": "history",
-							"weight": 0.4,
-							"minInclude": 6,
-							"included": 6,
-							"available": 12
-						}
-					],
-					"dropped": 6
+					"alloc": [],
+					"dropped": 0
 				}
 			}
 		},
@@ -107,16 +77,8 @@
 			"input": {
 				"context": {
 					"budget": 4096,
-					"alloc": [
-						{
-							"sourceKey": "history",
-							"weight": 0.4,
-							"minInclude": 6,
-							"included": 6,
-							"available": 12
-						}
-					],
-					"dropped": 6
+					"alloc": [],
+					"dropped": 0
 				},
 				"connection": {
 					"id": "ollama-local",
@@ -135,8 +97,8 @@
 				}
 			},
 			"output": {
-				"main": "the reply text",
-				"text": "the reply text"
+				"main": "She rode for the eastern watchtower before first light — you can still catch her at the ford.",
+				"text": "She rode for the eastern watchtower before first light — you can still catch her at the ford."
 			}
 		},
 		{
@@ -144,7 +106,7 @@
 			"kind": "outlet",
 			"result": "ok",
 			"input": {
-				"text": "the reply text"
+				"text": "She rode for the eastern watchtower before first light — you can still catch her at the ford."
 			},
 			"output": {
 				"status": "committed",

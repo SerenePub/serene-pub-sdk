@@ -29,6 +29,7 @@ import type { SpecDocument } from './document.js'
  * This is what makes a migration **idempotent**: re-running after a bug fix matches the
  * existing row by slug and replaces it, instead of creating a second copy beside it
  * (12 §3b). A migration that cannot be safely re-run is a migration nobody dares fix.
+ * @experimental
  */
 export function migratedSlug(sourceTable: string, sourceId: string | number): string {
 	const clean = String(sourceId)
@@ -40,15 +41,17 @@ export function migratedSlug(sourceTable: string, sourceId: string | number): st
 
 // ── The report ──────────────────────────────────────────────────────────────
 
+/** @experimental */
 export type MigrationOutcome = 'migrated' | 'unmapped' | 'skipped'
 
+/** @experimental */
 export interface MigrationEntry {
 	source: { table: string; id: string | number; label?: string }
 	outcome: MigrationOutcome
 	/** Where the value landed: the scope it was written at, and what it became. */
 	target?: {
 		slug: string
-		/** A `ScopeKind` (config.ts): `session · preset · defaults · author` since R-10. */
+		/** A `ScopeKind` (config.ts): `session · config · defaults · author` since R-10. */
 		scopeKind: ScopeKind
 		nodeKey?: string
 		slot?: string
@@ -57,6 +60,7 @@ export interface MigrationEntry {
 	reason?: string
 }
 
+/** @experimental */
 export interface MigrationReport {
 	unit: string
 	entries: MigrationEntry[]
@@ -64,6 +68,7 @@ export interface MigrationReport {
 	parity: ParityResult[]
 }
 
+/** @experimental */
 export function summarize(r: MigrationReport) {
 	const by = (o: MigrationOutcome) => r.entries.filter((e) => e.outcome === o).length
 	return {
@@ -79,14 +84,16 @@ export function summarize(r: MigrationReport) {
  * Everything that did not migrate cleanly must say why, and must remain visible —
  * `spec_diagnostics` in core, the same place an orphaned slot lands after a node swap
  * (12 §5). Same principle as export (12 §7a): nothing is dropped silently.
+ * @experimental
  */
 export function unmappedEntries(r: MigrationReport): MigrationEntry[] {
 	return r.entries.filter((e) => e.outcome !== 'migrated')
 }
 
+/** @experimental */
 export class MigrationError extends Error {}
 
-/** A report with an entry that gives no reason is a bug in the migration, not in the data. */
+/** A report with an entry that gives no reason is a bug in the migration, not in the data. @experimental */
 export function assertReportComplete(r: MigrationReport): void {
 	const silent = r.entries.filter((e) => e.outcome !== 'migrated' && !e.reason)
 	if (silent.length) {
@@ -100,6 +107,7 @@ export function assertReportComplete(r: MigrationReport): void {
 
 // ── Parity ──────────────────────────────────────────────────────────────────
 
+/** @internal */
 export interface ParityResult {
 	fixture: string
 	identical: boolean
@@ -145,6 +153,7 @@ function renderedText(value: unknown): string {
 	return JSON.stringify(value)
 }
 
+/** @internal */
 export function checkParity(
 	fixture: string,
 	legacyPrompt: string,
@@ -189,6 +198,7 @@ export function checkParity(
  * The gate on dropping an old code path (08 §5). Deliberately strict: an empty corpus
  * passes nothing, because "no failures" and "nothing was checked" look identical in a
  * summary and only one of them is safe.
+ * @internal
  */
 export function parityGate(
 	results: ParityResult[],
@@ -210,6 +220,7 @@ export function parityGate(
 	return { pass: true }
 }
 
+/** @internal */
 export function renderParity(r: ParityResult): string {
 	if (r.identical) return `✓ ${r.fixture}  identical (${r.tokensPipeline ?? '?'} tokens)`
 	return [
@@ -235,14 +246,17 @@ export function renderParity(r: ParityResult): string {
  * So the rule is: an id wired in (by edge or by config) means update; nothing wired
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
  * is already the shape 08 §5b uses for "a human has to look at this."
+ * @experimental
  */
 export const LEGACY_COMMIT_MESSAGE = 'core:outlet/commit-message'
 
+/** @experimental */
 export interface SplitResult {
 	document: SpecDocument
 	report: MigrationReport
 }
 
+/** @experimental */
 export function splitCommitMessage(doc: SpecDocument): SplitResult {
 	const entries: MigrationEntry[] = []
 	const nodes = doc.nodes.map((n) => {
@@ -260,7 +274,7 @@ export function splitCommitMessage(doc: SpecDocument): SplitResult {
 				outcome: 'migrated',
 				target: {
 					slug: 'core:outlet/create-message@1',
-					scopeKind: 'preset',
+					scopeKind: 'config',
 					nodeKey: n.key,
 				},
 				reason: 'nothing supplies an id, so this node only ever created',
@@ -291,7 +305,7 @@ export function splitCommitMessage(doc: SpecDocument): SplitResult {
 			outcome: 'migrated',
 			target: {
 				slug: 'core:outlet/update-message@1',
-				scopeKind: 'preset',
+				scopeKind: 'config',
 				nodeKey: n.key,
 			},
 			reason: 'an id is wired in, so this node updated',

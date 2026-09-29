@@ -19,14 +19,23 @@
  * settings surface asks for (12 §6): a control fixed here is fixed for review
  * pauses, plugin settings and extension forms at once.
  */
+/** @experimental */
 import NumberControl from './NumberControl.svelte'
+/** @experimental */
 import BooleanControl from './BooleanControl.svelte'
+/** @experimental */
 import TextControl from './TextControl.svelte'
+/** @experimental */
 import SelectControl from './SelectControl.svelte'
+/** @experimental */
 import WeightsControl from './WeightsControl.svelte'
+/** @experimental */
 import RankingControl from './RankingControl.svelte'
+/** @experimental */
 import UnknownControl from './UnknownControl.svelte'
+/** @experimental */
 import FieldControl from './FieldControl.svelte'
+/** @experimental */
 import SchemaForm from './SchemaForm.svelte'
 
 export {

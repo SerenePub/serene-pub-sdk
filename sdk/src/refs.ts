@@ -4,6 +4,7 @@
  * $ref creates a *data* edge and compiles 1:1 to a pipeline_edges row.
  * slot.* creates a *config* reference, which is resolved before execution and is
  * therefore not an edge and creates no dependency in the graph.
+ * @experimental
  */
 
 export interface DataRef {
@@ -12,6 +13,7 @@ export interface DataRef {
 	port: string
 }
 
+/** @public */
 export interface SlotRef {
 	readonly __ref: 'slot'
 	slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables'
@@ -30,6 +32,7 @@ export interface SlotRef {
 	resolveDownstreamOracle?: boolean
 }
 
+/** @experimental */
 export function $ref(node: string, port = 'main'): DataRef {
 	return { __ref: 'data', node, port }
 }
@@ -38,9 +41,10 @@ export function $ref(node: string, port = 'main'): DataRef {
  * Config references accept a node accessor as well as a key, so a spec never has to
  * name a node twice in two different ways: `slot.connectionOf($.generate)` reads the
  * same as `$.generate.text` two lines below it.
+ * @public
  */
 export type NodeAddress = string | { node: string }
-/** An envoy's config, by the genre-local key: `slot.prompts({ envoy: 'mascot' })`. */
+/** An envoy's config, by the genre-local key: `slot.prompts({ envoy: 'mascot' })`. @experimental */
 export type EnvoyAddress = { envoy: string }
 const addr = (n?: NodeAddress) => (typeof n === 'object' ? n.node : n)
 const isEnvoyAddress = (n: unknown): n is EnvoyAddress =>
@@ -51,11 +55,15 @@ const isEnvoyAddress = (n: unknown): n is EnvoyAddress =>
  * synthetic node key `envoy:<key>`. One spelling, shared by the compiler
  * (`resolvedRefs`), the executor (`resolveConfig`'s key list) and the host's
  * projection, so the three cannot disagree about where a mascot's prompt is.
+ * @internal
  */
 export const ENVOY_CONFIG_PREFIX = 'envoy:'
+/** @experimental */
 export const envoyConfigKey = (key: string): string => `${ENVOY_CONFIG_PREFIX}${key}`
+/** @internal */
 export const isEnvoyConfigKey = (key: string): boolean => key.startsWith(ENVOY_CONFIG_PREFIX)
 
+/** @public */
 export const slot = {
 	connection: (ofNode?: NodeAddress): SlotRef => ({
 		__ref: 'slot',
@@ -144,13 +152,15 @@ export const slot = {
 	}),
 }
 
+/** @experimental */
 export const isDataRef = (v: unknown): v is DataRef =>
 	typeof v === 'object' && v !== null && (v as DataRef).__ref === 'data'
 
+/** @internal */
 export const isSlotRef = (v: unknown): v is SlotRef =>
 	typeof v === 'object' && v !== null && (v as SlotRef).__ref === 'slot'
 
-/** Walk a config object and collect every data ref, with the key path it sat at. */
+/** Walk a config object and collect every data ref, with the key path it sat at. @experimental */
 export function collectDataRefs(
 	config: unknown,
 	path: string[] = [],
@@ -164,6 +174,7 @@ export function collectDataRefs(
 	return []
 }
 
+/** @experimental */
 export function collectSlotRefs(config: unknown): SlotRef[] {
 	if (isSlotRef(config)) return [config]
 	if (Array.isArray(config)) return config.flatMap(collectSlotRefs)

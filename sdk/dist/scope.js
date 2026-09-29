@@ -52,6 +52,7 @@ function refAccessor(node, port = 'main') {
  * @param localPrefix inside a block chain, the qualifier its members share — so a
  *   sibling can be named by its short key (`$.embed`) while an outside node is still
  *   reachable by its full path (`$.gather.semantic.embed`).
+ * @experimental
  */
 export function makeScope(knownKeys, localPrefix, clauseId) {
     /** A sibling inside the same chain wins over a same-named outside key. */
@@ -122,6 +123,6 @@ export function makeScope(knownKeys, localPrefix, clauseId) {
     };
     return walk([]);
 }
-/** The current item inside a map, addressed without knowing the block's key. */
+/** The current item inside a map, addressed without knowing the block's key. @experimental */
 export const ITEM = '$item';
 //# sourceMappingURL=scope.js.map

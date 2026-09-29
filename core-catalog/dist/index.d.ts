@@ -14,7 +14,7 @@
  * the shipped default configs stay derived (declarations + default author
  * preset + ref defaults) — there is no hand-authored config data to carry.
  */
-import { type AnnouncementDocument, type CoverageReport } from '@serene-pub/sdk';
+import { type AnnouncementDocument, type CoverageReport, type Extension, type I18n } from '@serene-pub/sdk';
 export * from './genres.js';
 /**
  * The attribute slots core's genres bring.
@@ -24,6 +24,8 @@ export * from './genres.js';
  * the module being reached, the Adventure genre would name seven declarations
  * that this process has never heard of.
  */
+/** Core's catalogue of stat shapes — declared before the slots that name them. */
+export * from './statShapes.js';
 export * from './slots.js';
 /**
  * Core's entry types (Part 1). Declaring one **registers** it, which is the
@@ -43,21 +45,33 @@ export * from './createChat.js';
 export * from './guide.js';
 export * from './adventure.js';
 export * from './adventureActions.js';
+export * from './lair.js';
+export * from './lairActions.js';
+export * from './writingRoom.js';
+export * from './writingRoomActions.js';
+export * from './whodunit.js';
+export * from './whodunitActions.js';
 export * from './answerForm.js';
 export * from './respond.js';
+export * from './turnOrder.js';
 export * from './narrate.js';
 export * from './narrateCharacter.js';
 export * from './echo.js';
+export * from './annexField.js';
 export * from './builtins.js';
+export * from './sprites.js';
 export * from './toolLoop.js';
 export * from './generateImage.js';
 export * from './graphBuild.js';
 export * from './summarize.js';
 export * from './ui/sessions/widgets.js';
+export * from './ui/sessions/looks.js';
 export * from './ui/sessions/layouts.js';
+/** @experimental */
 export interface CoreSpec {
     slug: string;
-    name: string;
+    /** What a person calls the pipeline — a string or a locale map with `en` (R-20). */
+    name: I18n;
     /**
      * Compiled lazily. Compiling resolves type pins against the registry, and
      * boot syncs that registry first — building at module scope would run the
@@ -71,9 +85,10 @@ export interface CoreSpec {
  * beside a map of display names (two collections that had to agree). `name`
  * is what a person calls the thing; a list showing `core:spec/respond` is a
  * list of identifiers, not of things.
+ * @experimental
  */
 export declare const CORE_SPECS: CoreSpec[];
-/** Lookup by slug, for a caller holding an id that wants the display name. */
+/** Lookup by slug, for a caller holding an id that wants the display name. @experimental */
 export declare const coreSpec: (slug: string) => CoreSpec | undefined;
 /**
  * Core's hook declarations (24 §11): identity, event, contract, ordering —
@@ -86,6 +101,7 @@ export declare const coreSpec: (slug: string) => CoreSpec | undefined;
  * types in @serene-pub/contracts (`slots.scripts.accepts`), and core has no
  * in-process hook implementations yet. The first one added lands here and in
  * core's implementation registry in the same commit, or boot refuses.
+ * @internal
  */
 export declare const CORE_HOOK_DECLARATIONS: Record<string, {
     event: string;
@@ -96,9 +112,17 @@ export declare const CORE_HOOK_DECLARATIONS: Record<string, {
 /**
  * The announcement — the whole package as one validated declaration (24 §6).
  * Compiled lazily for the same registry-sync reason as `CoreSpec.build`.
+ * @experimental
  */
 export declare function coreAnnouncement(): {
     document: AnnouncementDocument;
     coverage: CoverageReport;
 };
+/**
+ * Core, declared the way any package declares itself — one `defineExtension`
+ * call, every reference a value. Built on each call, never at module scope,
+ * for the same registry-sync reason as `CoreSpec.build`.
+ * @experimental
+ */
+export declare const coreExtension: () => Extension;
 //# sourceMappingURL=index.d.ts.map

@@ -10,12 +10,55 @@
 import { collectDataRefs, envoyConfigKey, isEnvoyConfigKey, isSlotRef } from './refs.js';
 import { getDefinition } from './descriptors.js';
 import { getGenre } from './genres.js';
+import { envoySlugOf, envoySlugOfRef } from './participants.js';
+/** The message write whose `speaker` a document may name literally. */
+const CREATE_MESSAGE_ID = 'core:outlet/create-message';
 import { requiredConnections } from './connections.js';
 import { isStreaming } from './shapes.js';
 import { canonicalize, contentHash } from './hash.js';
+/** A clause's own ports; a junction's fired-branch ports never shadow them (M4). @experimental */
+export const JUNCTION_CLAUSE_PORTS = new Set(['main', 'values', 'branches', 'ok']);
+/**
+ * A junction's branch-end nodes (M4): the last node of each chain, by
+ * position. What a junction publishes beyond its clause ports is read off
+ * these.
+ * @experimental
+ */
+export function junctionBranchEnds(nodes, clause, clauses = []) {
+    return clause.chains.map((chain) => {
+        const inChain = nodes.filter((n) => n.clauseId === clause.id && n.clauseChain === chain);
+        const last = inChain.reduce((a, n) => (!a || n.position > a.position ? n : a), undefined);
+        // A branch that ends in a nested clause has no node end: what it
+        // publishes is the clause's union, not a node's ports (M4 review).
+        const nested = clauses.filter((c) => c.clauseId === clause.id && c.clauseChain === chain);
+        const endsInClause = nested.some((c) => !last || c.position > last.position);
+        return { chain, node: endsInClause ? undefined : last };
+    });
+}
+/** The shape every branch of junction `id` agrees `port` has, else undefined (M4). */
+function junctionPortShape(built, id, port) {
+    const clause = built.clauses.find((c) => c.id === id);
+    if (!clause || clause.kind !== 'junction' || JUNCTION_CLAUSE_PORTS.has(port))
+        return undefined;
+    const shapes = junctionBranchEnds(built.nodes, clause, built.clauses).map(({ node }) => node ? getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.ports.out?.[port] : undefined);
+    return shapes.length && shapes.every((s) => s && s === shapes[0]) ? shapes[0] : undefined;
+}
 /** Nodes that participate in the top-level sequential spine (not inside a clause). */
 const spineOf = (nodes) => nodes.filter((n) => !n.clauseId);
+/**
+ * Compile a built spec to the document a host stores. A document that is
+ * already compiled (a helper such as `turnOrderSpec()` returns one) comes back
+ * as a copy, so a list of pipelines can hold either; one written for another
+ * document schema is refused. Its graph checks are the host's publish
+ * `validate()`, which every stored document meets.
+ * @experimental
+ */
 export function compile(built) {
+    if ('schemaVersion' in built) {
+        if (built.schemaVersion !== 1)
+            throw new Error(`spec '${built.id}' is a document for schema ${String(built.schemaVersion)} — this SDK compiles schema 1`);
+        return importDocument(built);
+    }
     const nodes = built.nodes.map((n) => ({
         key: n.key,
         kind: n.kind,
@@ -26,6 +69,7 @@ export function compile(built) {
         clauseKind: n.clauseKind,
         clauseChain: n.clauseChain,
         position: n.position,
+        ...(n.expose ? { expose: n.expose } : {}),
     }));
     const edges = [];
     // Explicit $ref edges.
@@ -34,7 +78,7 @@ export function compile(built) {
             const upstream = built.nodes.find((x) => x.key === ref.node);
             const outShape = upstream
                 ? getDefinition(`${upstream.definitionId}@${upstream.definitionVersion}`)?.ports.out?.[ref.port]
-                : undefined;
+                : junctionPortShape(built, ref.node, ref.port);
             // Whether an edge streams is decided here, at publish — so it is readable
             // off the spec rather than discovered by running it (01 §11).
             edges.push({
@@ -112,6 +156,32 @@ export function compile(built) {
         if (Object.keys(resolved).length)
             n.resolvedRefs = resolved;
     }
+    // A message written as a named envoy (ruled 2026-09-26: everyone has a
+    // name): a literal `speaker: 'envoy:<slug>'` on a message write must name
+    // an envoy the served genre or this spec's own actions declare — refused
+    // by name here, where the author is, because at the write it would be a
+    // line under a name nothing declares. A genre this build has never seen
+    // cannot be checked; the host refuses the write there.
+    for (const n of built.nodes) {
+        if (n.definitionId !== CREATE_MESSAGE_ID)
+            continue;
+        const slug = envoySlugOfRef(n.config.speaker);
+        if (slug === null)
+            continue;
+        const genreId = built.input?.genre;
+        const known = genreId ? getGenre(genreId) : undefined;
+        const own = (built.meta.contributes?.actions ?? []).flatMap((a) => a.envoy?.key ? [envoySlugOf({ action: { specId: built.id } }, a.envoy.key)] : []);
+        if (own.includes(slug))
+            continue;
+        if (genreId && !known)
+            continue;
+        if (known?.envoys?.some((e) => e.key === slug))
+            continue;
+        const declared = [...(known?.envoys ?? []).map((e) => e.key), ...own];
+        throw new Error(`node '${n.key}' speaks as envoy '${slug}', which ` +
+            (genreId ? `'${genreId}' and this spec's actions do not declare` : `nothing declares — the spec serves no genre`) +
+            (declared.length ? ` — declared: ${declared.map((k) => `'${k}'`).join(', ')}` : ' — none are declared'));
+    }
     return {
         schemaVersion: 1,
         id: built.id,
@@ -131,6 +201,7 @@ export function compile(built) {
  * Follow the spine forward from `fromKey` to the first oracle. Linearity is what
  * makes this well-defined (F25). Ambiguity or absence is a publish error that names
  * the candidates — the teaching-error pattern (15 §1.3).
+ * @experimental
  */
 export function resolveDownstreamOracle(built, fromKey) {
     const ordered = built.nodes.slice().sort((a, b) => a.position - b.position);
@@ -153,15 +224,16 @@ export function resolveDownstreamOracle(built, fromKey) {
  * The sort and the digest below moved to `hash.ts` unchanged, because the type
  * registries now need the same two and a document and a declaration must not
  * disagree about what identical content is. Same bytes in, same string out.
+ * @experimental
  */
 export function canonical(doc) {
     return canonicalize(doc);
 }
-/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). */
+/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). @experimental */
 export function canonicalHash(doc) {
     return contentHash(doc);
 }
-/** Import: document → the same in-memory form. `import(export(x))` is identity (F3). */
+/** Import: document → the same in-memory form. `import(export(x))` is identity (F3). @experimental */
 export function importDocument(doc) {
     return JSON.parse(JSON.stringify(doc));
 }
@@ -172,6 +244,7 @@ export function importDocument(doc) {
  * canonical hash legitimately differs from the source's. F3's identity law is about a
  * given export round-tripping — `import(export(x)) === export(x)` — and that still holds
  * exactly.
+ * @experimental
  */
 export function exportDocument(doc, opts = {}) {
     const omitted = [];
@@ -226,6 +299,7 @@ const isRef = (v) => !!v && typeof v === 'object' && typeof v.$ref === 'string';
  * target spelled `envoy:<key>`, once each. The executor resolves config for
  * these beside the nodes and clauses; the host projects the genre's
  * declaration at exactly these keys.
+ * @internal
  */
 export function envoyConfigKeysOf(doc) {
     const out = new Set();

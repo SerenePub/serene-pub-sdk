@@ -18,6 +18,7 @@
  * runtime reads exactly the manifest this emits (its `permissions.ts` interprets
  * `{ storage, network, resources, events }`).
  */
+/** @internal */
 export interface ManifestInput {
     /** "namespace/name" — lowercase, the stable address. */
     id: string;
@@ -42,6 +43,7 @@ export interface ManifestInput {
         events?: string[];
     };
 }
+/** @internal */
 export interface CompiledManifest {
     id: string;
     name: string;
@@ -61,5 +63,6 @@ export interface CompiledManifest {
         events?: string[];
     };
 }
+/** @internal */
 export declare function compileManifest(input: ManifestInput): CompiledManifest;
 //# sourceMappingURL=sandbox.d.ts.map

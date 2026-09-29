@@ -27,6 +27,7 @@ import {
 	type Verdict,
 } from './capabilities.js'
 
+/** @experimental */
 export interface ConnectionRequirement {
 	nodeKey: string
 	slot: string
@@ -73,6 +74,7 @@ const sharedWithAnotherNode = (n: DocNode, slot: string): boolean => {
  *
  * "Needs" means a binding an importer has to make. A slot the document already
  * points at another node's is not one of those — see `sharedWithAnotherNode`.
+ * @experimental
  */
 export function requiredConnections(doc: SpecDocument): ConnectionRequirement[] {
 	const out: ConnectionRequirement[] = []
@@ -98,6 +100,7 @@ export function requiredConnections(doc: SpecDocument): ConnectionRequirement[] 
  * Feeds `needs-configuration` (12 §6), which is deliberately not `broken`. A spec nobody
  * has given a connection is not damaged, it is unfinished — and the difference decides
  * whether a user files a bug or opens settings.
+ * @experimental
  */
 export function unwiredConnections(
 	doc: SpecDocument,
@@ -119,6 +122,7 @@ export function unwiredConnections(
  * "Embeddings", "Image generation"), so `can` only reads for the handful that
  * happen to start with a verb and gives "a connection that can Embeddings" for
  * the rest.
+ * @experimental
  */
 export const renderRequirement = (r: ConnectionRequirement): string => {
 	const caps = (r.requires ?? []).map(capabilityLabel)
@@ -128,7 +132,7 @@ export const renderRequirement = (r: ConnectionRequirement): string => {
 	return `${r.nodeKey}.${r.slot} — needs ${what} (${r.definitionId})`
 }
 
-/** One slot, checked against what the connection bound to it can actually do. */
+/** One slot, checked against what the connection bound to it can actually do. @experimental */
 export interface UnsatisfiedConnection extends ConnectionRequirement {
 	verdict: Verdict
 }
@@ -143,6 +147,7 @@ export interface UnsatisfiedConnection extends ConnectionRequirement {
  *
  * Takes the resolved capability set per slot rather than a connection id, so
  * this stays pure — the caller does the lookup it was going to do anyway.
+ * @experimental
  */
 export function unsatisfiedConnections(
 	doc: SpecDocument,

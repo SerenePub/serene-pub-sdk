@@ -4,7 +4,9 @@
  * $ref creates a *data* edge and compiles 1:1 to a pipeline_edges row.
  * slot.* creates a *config* reference, which is resolved before execution and is
  * therefore not an edge and creates no dependency in the graph.
+ * @experimental
  */
+/** @experimental */
 export function $ref(node, port = 'main') {
     return { __ref: 'data', node, port };
 }
@@ -15,10 +17,14 @@ const isEnvoyAddress = (n) => typeof n === 'object' && n !== null && typeof n.en
  * synthetic node key `envoy:<key>`. One spelling, shared by the compiler
  * (`resolvedRefs`), the executor (`resolveConfig`'s key list) and the host's
  * projection, so the three cannot disagree about where a mascot's prompt is.
+ * @internal
  */
 export const ENVOY_CONFIG_PREFIX = 'envoy:';
+/** @experimental */
 export const envoyConfigKey = (key) => `${ENVOY_CONFIG_PREFIX}${key}`;
+/** @internal */
 export const isEnvoyConfigKey = (key) => key.startsWith(ENVOY_CONFIG_PREFIX);
+/** @public */
 export const slot = {
     connection: (ofNode) => ({
         __ref: 'slot',
@@ -103,9 +109,11 @@ export const slot = {
         resolveDownstreamOracle: true,
     }),
 };
+/** @experimental */
 export const isDataRef = (v) => typeof v === 'object' && v !== null && v.__ref === 'data';
+/** @internal */
 export const isSlotRef = (v) => typeof v === 'object' && v !== null && v.__ref === 'slot';
-/** Walk a config object and collect every data ref, with the key path it sat at. */
+/** Walk a config object and collect every data ref, with the key path it sat at. @experimental */
 export function collectDataRefs(config, path = []) {
     if (isDataRef(config))
         return [{ path, ref: config }];
@@ -116,6 +124,7 @@ export function collectDataRefs(config, path = []) {
     }
     return [];
 }
+/** @experimental */
 export function collectSlotRefs(config) {
     if (isSlotRef(config))
         return [config];

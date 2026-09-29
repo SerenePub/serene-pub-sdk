@@ -1,0 +1,103 @@
+/**
+ * **Ask** — the button, which asks rather than answers.
+ *
+ * A contributed action that posts a question. `core:task/make-choices@1` turns
+ * a document — `{ question, options: [{ key, label }] }` — into one `choices`
+ * block, addressed to somebody; the outlet writes it on a message. Pressing an
+ * option fires the *other* spec, because the block names that spec's
+ * declaration outright.
+ *
+ * ## Addressed to `owner`
+ *
+ * A block with an `addressee` is a **form**: an action still awaiting its
+ * answer. `owner` puts the question to the person playing, so nothing here
+ * reaches `core:event/form-addressed@1` and no model is ever asked to answer on
+ * their behalf. Address it at a participant the AI portrays instead and the
+ * genre's answer pipeline answers it, through an oracle, on a receipt.
+ *
+ * ✎ CHANGE: the question and its options. Two nodes and no model call — if the
+ *   options come from the session rather than from a constant, put a Query and
+ *   an Oracle in front of `choices` and wire its `json` port to the document
+ *   they produced.
+ */
+
+import { sessionEvents, spec } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+{{^genre}}
+import { chatGenre } from '@serene-pub/core-catalog'
+{{/genre}}
+{{#genre}}
+
+import { {{genreVar}} } from '../genre.js'
+{{/genre}}
+
+import { ANSWER_ACTION_KEY, ANSWER_SPEC_ID } from './answer.js'
+
+export const ASK_SPEC_ID = '{{askSpecId}}'
+
+/** The function key the composer's button and the slash name both post. */
+export const ASK_ACTION_KEY = '{{askActionKey}}'
+
+export const askSpec = () =>
+	spec(ASK_SPEC_ID, {
+		version: '1.0.0',
+		contributes: {
+			actions: [
+				{
+					key: ASK_ACTION_KEY,
+					/**
+					 * Where it is reachable from. `composer` is the menu beside
+					 * the message box; `widget` is what a panel's own button
+					 * posts into. `quick` puts it on the quick row.
+					 */
+					venue: [{ kind: 'composer' }],
+					quick: true,
+					/** A plugin's slash name is `<plugin>.<action>`, so it cannot collide with core's. */
+					slash: '{{askSlash}}',
+					icon: 'help-circle',
+					label: { en: 'Ask' },
+					description: { en: '✎ CHANGE: what pressing this does, in one line.' },
+				},
+			],
+		},
+	})
+		.inlet('input', C.userMessage.v1(), {
+{{#genre}}
+			genre: {{genreVar}},
+{{/genre}}
+{{^genre}}
+			/** ✎ CHANGE: the genre this action belongs to. */
+			genre: chatGenre,
+{{/genre}}
+			event: sessionEvents.sessionAction,
+		})
+		.task('choices', () =>
+			C.makeChoices.v1({
+				json: {
+					question: '✎ CHANGE: the question this action puts.',
+					options: [
+						{ key: 'yes', label: 'Yes' },
+						{ key: 'no', label: 'No' },
+					],
+				},
+				/** What every option fires. */
+				fn: ANSWER_ACTION_KEY,
+				/**
+				 * The **identity** of the declaration a press is held to —
+				 * `<spec id>#<key>`. The host checks that action's audience and
+				 * runs that spec, which is what lets asking and answering be two
+				 * graphs.
+				 */
+				action: `${ANSWER_SPEC_ID}#${ANSWER_ACTION_KEY}`,
+				/** The person playing. See the note at the top of this file. */
+				addressee: 'owner',
+			}),
+		)
+		.outlet('ask', ($) =>
+			C.createMessage.v1({
+				narration: true,
+				text: $.choices.text,
+				blocks: $.choices.blocks,
+			}),
+		)
+		.build()

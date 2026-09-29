@@ -17,8 +17,10 @@
 
 import type { I18n } from './descriptors.js'
 
+/** @experimental */
 export type ClauseMode = 'parallel' | 'sequential'
 
+/** @experimental */
 export const CLAUSE_MODES: readonly ClauseMode[] = ['parallel', 'sequential'] as const
 
 /**
@@ -29,6 +31,7 @@ export const CLAUSE_MODES: readonly ClauseMode[] = ['parallel', 'sequential'] as
  * which would leave the one string on that control invented by whichever screen
  * drew it. Naming it here keeps the rule that every label comes from the SDK,
  * and means a host and a plugin's tooling say the same thing.
+ * @experimental
  */
 export const CLAUSE_MODE_DECL: {
 	path: 'mode'
@@ -44,7 +47,7 @@ export const CLAUSE_MODE_DECL: {
 	of: CLAUSE_MODES,
 }
 
-/** The author's declaration is the default; the user's setting wins. */
+/** The author's declaration is the default; the user's setting wins. @experimental */
 export function resolveClauseMode(
 	authorDefault: string | undefined,
 	userSetting: unknown,

@@ -15,6 +15,7 @@ const IF = /\{%\s*if\s+([^%]+?)\s*%\}/g;
  * reported as unknown, and anything computed is marked dynamic rather than verified —
  * an editor that promises correctness and lets a typo through is worse than one that
  * says what it checks (16 §4).
+ * @experimental
  */
 export function extractRefs(src) {
     const bound = new Set();
@@ -49,7 +50,7 @@ export function extractRefs(src) {
     }
     return refs;
 }
-/** Render. Missing values become empty strings — templates never throw at run time. */
+/** Render. Missing values become empty strings — templates never throw at run time. @experimental */
 export function render(src, baseScope) {
     let out = src;
     let prev;
@@ -111,9 +112,11 @@ function get(scope, path) {
     }
     return cur;
 }
+/** @experimental */
 export function templateScope(decl) {
     return decl?.variables ?? {};
 }
+/** @experimental */
 export function checkTemplate(src, scope) {
     const known = Object.keys(scope);
     const bindings = loopBindings(src);
@@ -205,6 +208,7 @@ const INTRINSIC = 'length';
  * `characters.name` is not a near-miss to be corrected — it is a category
  * error, and saying so is the whole reason the old flattened `string[]` form
  * had to go: it accepted exactly that and rejected `characters.0.name`.
+ * @internal
  */
 export function resolvePath(decl, path, base = '') {
     if (decl === undefined || decl === 'any')
@@ -295,6 +299,7 @@ export function resolvePath(decl, path, base = '') {
 function label(base, path) {
     return [base, ...path].filter(Boolean).join('.');
 }
+/** @internal */
 export function elementOf(decl) {
     if (!decl || decl === 'any' || Array.isArray(decl))
         return undefined;
@@ -316,6 +321,7 @@ export function elementOf(decl) {
  * sample carrying a field the schema omits means the schema is incomplete, and
  * an incomplete schema is a completion list missing an entry the author needs —
  * silently, with no way to tell it apart from a field that truly is not there.
+ * @experimental
  */
 export function checkValue(value, field, path = '') {
     const at = path || 'value';
@@ -377,6 +383,7 @@ export function checkValue(value, field, path = '') {
  * unchecked by definition, and a bare `string[]` carries no types to check
  * against — pretending otherwise would fail honest declarations that simply
  * predate the schema.
+ * @experimental
  */
 export function checkScopeSample(values, scope, label = '') {
     const out = [];
@@ -466,5 +473,82 @@ function renderLoops(src, scope) {
         }))
             .join('');
     });
+}
+/**
+ * A `FieldDecl`, in the template type language — `undefined` for what never enters a template.
+ * @internal
+ */
+export function fieldToVarField(f) {
+    if (!f)
+        return undefined;
+    const description = f.description;
+    const base = (type, extra = {}) => ({
+        type,
+        ...(description !== undefined ? { description } : {}),
+        ...extra,
+    });
+    switch (f.type) {
+        case 'string':
+        case 'text':
+        case 'enum':
+        case 'media':
+            return base('string');
+        case 'number':
+        case 'integer':
+            return base('number');
+        case 'boolean':
+            return base('boolean');
+        case 'string[]':
+            return base('list', { of: { type: 'string' } });
+        case 'share':
+        case 'perMember':
+        case 'strengths':
+            return base('record', { of: { type: 'number' } });
+        case 'list': {
+            const of = fieldToVarField(f.item);
+            return base('list', of ? { of } : {});
+        }
+        case 'object': {
+            const fields = {};
+            for (const [k, v] of Object.entries(f.fields ?? {})) {
+                const vf = fieldToVarField(v);
+                if (vf)
+                    fields[k] = vf;
+            }
+            return base('object', { fields });
+        }
+        // A secret never enters a template scope (typed templates §1 "safe" iv).
+        case 'secret':
+        default:
+            return undefined;
+    }
+}
+/**
+ * What a slot's configured value looks like to a template, as a `VarField`.
+ *
+ * `prompts` — an object of the authored text fields, each a string.
+ * `parameters` / `settings` — an object of the declared schema's fields, typed
+ * from the field language; a `secret` field is left out, because a secret
+ * never enters a template's scope. Every other kind (a template, a connection,
+ * a variables slot) is not a value a template reads, and is `undefined`.
+ * @experimental
+ */
+export function slotToVarField(slot) {
+    if (slot.kind === 'prompts') {
+        const fields = {};
+        for (const name of Object.keys(slot.fields ?? {}))
+            fields[name] = { type: 'string' };
+        return { type: 'object', fields };
+    }
+    if (slot.kind === 'parameters' || slot.kind === 'settings') {
+        const fields = {};
+        for (const [name, f] of Object.entries(slot.schema ?? {})) {
+            const vf = fieldToVarField(f);
+            if (vf)
+                fields[name] = vf;
+        }
+        return { type: 'object', fields };
+    }
+    return undefined;
 }
 //# sourceMappingURL=template.js.map

@@ -53,7 +53,9 @@ describe('suppliesOf — the runtime twin of InputOf', () => {
 		// P5): the conversation's band intent, declared on the source.
 		assert.deepEqual(
 			[...s.params].sort(),
-			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share'],
+			// `unplayedOnly` 2026-09-28 (lair re-plan R13): the side channel's
+			// talk since the story's last line.
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'talkOnly', 'unplayedOnly'],
 		)
 		assert.equal(s.ports.includes('limit'), false)
 		assert.equal(s.ports.includes('channel'), false)
@@ -165,10 +167,13 @@ describe('the two derivations agree', () => {
 		const s = suppliesOf(C.sessionHistory)
 		// `budget` was here until 2026-09-16: an in-port nothing filled and
 		// nothing read, culled under R-12.
-		assert.deepEqual([...s.ports].sort(), ['params', 'scope'])
+		// `messageId` since 2026-09-28 (lair re-plan R11): one row, by id.
+		assert.deepEqual([...s.ports].sort(), ['messageId', 'params', 'scope'])
 		assert.deepEqual(
 			[...s.params].sort(),
-			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share'],
+			// `unplayedOnly` 2026-09-28 (lair re-plan R13): the side channel's
+			// talk since the story's last line.
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'talkOnly', 'unplayedOnly'],
 		)
 	})
 
@@ -178,9 +183,25 @@ describe('the two derivations agree', () => {
 			suppliesOf(C.characterLore),
 			suppliesOf(C.historyEntries),
 		]
-		assert.deepEqual([...w.ports].sort(), [...c.ports].sort())
-		assert.deepEqual([...w.ports].sort(), [...h.ports].sort())
+		// The same seven knobs on all three — one `loreSlots()` helper declares
+		// them, which is what makes one handler honest.
 		assert.deepEqual([...w.params].sort(), [...c.params].sort())
 		assert.deepEqual([...w.params].sort(), [...h.params].sort())
+		// World lore and history take the same ports, exactly.
+		assert.deepEqual([...w.ports].sort(), [...h.ports].sort())
+		assert.deepEqual([...w.ports].sort(), ['params', 'scope'])
+		/**
+		 * ⚠ **Character lore declares one port more** (W1, 2026-09-17):
+		 * `speaker`, the per-speaker visibility subject. Its two siblings do not,
+		 * and that is the check working rather than a divergence — character
+		 * lore is the one band a lorebook binding gates, so it is the one lane a
+		 * speaker means anything on.
+		 *
+		 * The shared handler is still typed against the INTERSECTION
+		 * (`SharedInput`), which is still these two names, so nothing about "one
+		 * handler serves three lanes" changed: the speaker reaches it as its own
+		 * argument, from the one arrow that has one.
+		 */
+		assert.deepEqual([...c.ports].sort(), ['params', 'scope', 'speaker'])
 	})
 })

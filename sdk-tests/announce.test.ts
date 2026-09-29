@@ -1,5 +1,5 @@
 /**
- * announce() — the one authoring surface (24 §6) — and the pieces it binds:
+ * announce() — the serializer behind defineExtension() — and the pieces it binds:
  * genres with their own ids (24 §3), the input-node usage lock (24 §4),
  * config deltas and preset bindings with the coverage report (24 §7).
  */
@@ -47,7 +47,7 @@ describe('genres (24 §3)', () => {
 		const g = chatGenre()
 		assert.equal(genreIdOf(g), 'demo:genre/chat')
 		assert.equal(g.events[sessionEvents.sessionCreated]?.required, true)
-		assert.throws(() => genre('demo:chat', { name: {}, family: 'x' }), /genre id/)
+		assert.throws(() => genre('demo:chat', { name: {} as any, family: 'x' }), /genre id/)
 	})
 })
 
@@ -90,16 +90,13 @@ describe('announce (24 §6)', () => {
 			.hooks({ 'trim-history': { event: 'message-created' } })
 			.pipelines(create, respond)
 			.configs(fast)
-			.presets(
-				preset('casual', {
-					genre: g,
-					label: 'Casual',
-					bindings: {
-						[sessionEvents.sessionCreated]: create,
-						[sessionEvents.messageRespond]: [respond, fast],
-					},
-				}),
-			)
+			.presets({
+				slug: 'casual',
+				genre: g,
+				label: 'Casual',
+				// Each spec is bound on the events its inlet lock answers (R48).
+				bindings: [create, { spec: respond, config: fast }],
+			})
 			.build()
 
 		assert.equal(document.identity.ns, 'demo')
@@ -129,13 +126,7 @@ describe('announce (24 §6)', () => {
 			announce(identity)
 				.genres({ g })
 				.pipelines(create)
-				.presets(
-					preset('half', {
-						genre: g,
-						label: 'Half',
-						bindings: { [sessionEvents.sessionCreated]: create },
-					}),
-				)
+				.presets({ slug: 'half', genre: g, label: 'Half', bindings: [create] })
 				.build()
 			assert.fail('should refuse')
 		} catch (e) {
@@ -149,29 +140,67 @@ describe('announce (24 §6)', () => {
 		}
 	})
 
-	test('a binding whose spec answers a different event or genre refuses', () => {
+	test('a binding on an event its spec does not answer refuses, naming the lock', () => {
 		const g = chatGenre()
 		const create = createSpec(g)
 		const respond = respondSpec(g)
 		assert.throws(
 			() =>
-				announce(identity)
-					.genres({ g })
-					.pipelines(create, respond)
-					.presets(
-						preset('wrong', {
-							genre: g,
-							label: 'Wrong',
-							bindings: {
-								[sessionEvents.sessionCreated]: create,
-								// respond bound into the action slot: wrong event.
-								[sessionEvents.sessionAction]: respond,
-							},
-						}),
-					)
-					.build(),
-			(e: unknown) =>
-				e instanceof AnnouncementError && /answers 'core:event\/message-respond@1'/.test(e.message),
+				preset({
+					slug: 'wrong',
+					genre: g,
+					label: 'Wrong',
+					// respond narrowed onto the action slot: not an event its lock answers.
+					bindings: [create, { spec: respond, events: [sessionEvents.sessionAction] }],
+				}),
+			/binds 'demo:spec\/respond' on 'core:event\/session-action@1', which its inlet lock does not answer \(core:event\/message-respond@1\)/,
+		)
+	})
+
+	test('references are values: a string spec, genre or action is refused with the fix (R48)', () => {
+		const g = chatGenre()
+		assert.throws(
+			() => preset({ slug: 's', genre: g, label: 'S', bindings: ['demo:spec/respond' as never] }),
+			/names the spec 'demo:spec\/respond' as a string — pass the spec value you built, or use\('demo:spec\/respond'\)/,
+		)
+		assert.throws(
+			() => preset({ slug: 's', genre: 'demo:genre/chat' as never, label: 'S', bindings: [] }),
+			/names its genre as a string — pass the genre value/,
+		)
+		assert.throws(
+			() =>
+				preset({
+					slug: 's',
+					genre: g,
+					label: 'S',
+					bindings: [createSpec(g)],
+					actions: { include: ['core:spec/narrate#narrate' as never] },
+				}),
+			/names 'core:spec\/narrate#narrate' as a string — pass the spec value .* or \{ spec, key \}/,
+		)
+		assert.throws(() => config('demo:spec/respond' as never, 'x', { label: 'X' }, {}), /as a string/)
+	})
+
+	test('a config made for another spec, and one event bound twice, refuse', () => {
+		const g = chatGenre()
+		const create = createSpec(g)
+		const respond = respondSpec(g)
+		const forCreate = config(create, 'c', { label: 'C' }, {})
+		assert.throws(
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [{ spec: respond, config: forCreate }] }),
+			/with config 'c', which was made for 'demo:spec\/create-chat'/,
+		)
+		assert.throws(
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [respond, respond] }),
+			/binds 'core:event\/message-respond@1' twice/,
+		)
+	})
+
+	test("another package's spec names its events; without them it refuses", () => {
+		const g = chatGenre()
+		assert.throws(
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [use('core:spec/respond') as never] }),
+			/another package's spec — name the events it answers/,
 		)
 	})
 
@@ -189,16 +218,12 @@ describe('announce (24 §6)', () => {
 				announce(identity)
 					.genres({ g })
 					.pipelines(create, respond)
-					.presets(
-						preset('bare', {
-							genre: g,
-							label: 'Bare',
-							bindings: {
-								[sessionEvents.sessionCreated]: create,
-								'message-respond': respond,
-							} as any,
-						}),
-					)
+					.presets({
+						slug: 'bare',
+						genre: g,
+						label: 'Bare',
+						bindings: [create, { spec: use('demo:spec/respond'), events: ['message-respond'] }],
+					})
 					.build(),
 			(e: unknown) =>
 				e instanceof AnnouncementError &&
@@ -209,16 +234,15 @@ describe('announce (24 §6)', () => {
 		assert.throws(
 			() =>
 				announce(identity)
-					.presets(
-						preset('bare-external', {
-							genre: 'core:genre/chat',
-							label: 'Bare external',
-							bindings: {
-								[sessionEvents.sessionCreated]: 'core:spec/create-chat',
-								'message-respond': 'core:spec/respond',
-							} as any,
-						}),
-					)
+					.presets({
+						slug: 'bare-external',
+						genre: use('core:genre/chat'),
+						label: 'Bare external',
+						bindings: [
+							{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] },
+							{ spec: use('core:spec/respond'), events: ['message-respond'] },
+						],
+					})
 					.build(),
 			(e: unknown) =>
 				e instanceof AnnouncementError &&
@@ -242,16 +266,15 @@ describe('announce (24 §6)', () => {
 		)
 		const { document, coverage } = announce(identity)
 			.configs(external)
-			.presets(
-				preset('modded', {
-					genre: 'core:genre/chat',
-					label: 'Modded',
-					bindings: {
-						[sessionEvents.sessionCreated]: 'core:spec/create-chat',
-						[sessionEvents.messageRespond]: ['core:spec/respond', 'mine'],
-					},
-				}),
-			)
+			.presets({
+				slug: 'modded',
+				genre: use('core:genre/chat'),
+				label: 'Modded',
+				bindings: [
+					{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] },
+					{ spec: respondRef, config: external, events: [sessionEvents.messageRespond] },
+				],
+			})
 			.build()
 		assert.deepEqual(document.requires, [
 			'core:genre/chat',
@@ -314,10 +337,9 @@ describe('a preset includes actions by identity (W-A)', () => {
 			contributes: {
 				actions: keys.map((key) => ({
 					key,
-					function: key,
-					genre: genreIdOf(g),
-					venue: { kind: 'composer' },
+					venue: { kind: 'composer' as const },
 					label: { en: key },
+					description: { en: `Run ${key}.` },
 					slash: `demo.${key}`,
 				})),
 			},
@@ -325,13 +347,14 @@ describe('a preset includes actions by identity (W-A)', () => {
 			.inlet('input', C.userMessage.v1(), { genre: g, event: sessionEvents.sessionAction })
 			.build()
 
-	test('an identity string is kept; a built spec expands to each of its actions', () => {
+	test('a pick names one action; a spec value expands to each of its actions', () => {
 		const dice = actionSpec('demo:spec/dice', ['roll', 'reroll'])
-		const p = preset('table', {
+		const p = preset({
+			slug: 'table',
 			genre: g,
 			label: 'Table',
-			bindings: { [sessionEvents.sessionCreated]: createSpec(g) },
-			actions: { include: ['core:spec/narrate#narrate', dice] },
+			bindings: [createSpec(g)],
+			actions: { include: [{ spec: use('core:spec/narrate'), key: 'narrate' }, dice] },
 		})
 		assert.deepEqual(p.actions?.include, [
 			'core:spec/narrate#narrate',
@@ -340,16 +363,18 @@ describe('a preset includes actions by identity (W-A)', () => {
 		])
 	})
 
-	test('a bare spec id is refused with the identity spelling', () => {
+	test('a pick of a key the spec does not declare is refused, naming the keys it does', () => {
+		const dice = actionSpec('demo:spec/dice', ['roll'])
 		assert.throws(
 			() =>
-				preset('table', {
+				preset({
+					slug: 'table',
 					genre: g,
 					label: 'Table',
-					bindings: { [sessionEvents.sessionCreated]: createSpec(g) },
-					actions: { include: ['demo:spec/dice'] },
+					bindings: [createSpec(g)],
+					actions: { include: [{ spec: dice, key: 'reroll' }] },
 				}),
-			/'demo:spec\/dice', which is not an action identity — name the declaration as '<spec slug>#<key>'/,
+			/picks 'reroll' from 'demo:spec\/dice', which contributes 'roll'/,
 		)
 	})
 
@@ -358,17 +383,13 @@ describe('a preset includes actions by identity (W-A)', () => {
 		const { document } = announce({ ns: 'demo', author: 'demo', title: 'Demo pack' })
 			.genres({ g })
 			.pipelines(createSpec(g), respondSpec(g), dice)
-			.presets(
-				preset('table', {
-					genre: g,
-					label: 'Table',
-					bindings: {
-						[sessionEvents.sessionCreated]: 'demo:spec/create-chat',
-						[sessionEvents.messageRespond]: 'demo:spec/respond',
-					},
-					actions: { include: [dice, 'core:spec/narrate#narrate'] },
-				}),
-			)
+			.presets({
+				slug: 'table',
+				genre: g,
+				label: 'Table',
+				bindings: [createSpec(g), respondSpec(g)],
+				actions: { include: [dice, { spec: use('core:spec/narrate'), key: 'narrate' }] },
+			})
 			.build()
 		assert.deepEqual(document.presets[0]!.actions?.include, [
 			'demo:spec/dice#roll',

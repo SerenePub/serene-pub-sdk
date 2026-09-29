@@ -17,6 +17,7 @@
 
 import type { Receipt } from './receipt.js'
 
+/** @experimental */
 export interface PreviewBlock {
 	id?: string
 	sourceKey?: string
@@ -26,16 +27,17 @@ export interface PreviewBlock {
 	priority?: string
 	/**
 	 * Why this block is here, or isn't. The panel is only worth opening if this is
-	 * populated, and it can only be populated if each stage leaves its trace on the
+	 * populated, and it can only be populated if each step leaves its trace on the
 	 * item — the trigger Query records which key matched, the rank Task records the
 	 * probability roll and the group it won or lost, Assemble records budget exhaustion.
 	 */
 	reason?: string
-	/** The full trail, each stage's line in order (src/wire.ts `why`). */
+	/** The full trail, each step's line in order (src/wire.ts `why`). */
 	why?: string[]
 	role?: string
 }
 
+/** @experimental */
 export interface PreviewReport {
 	/** Where the run stopped, and why that node. */
 	atNode: string
@@ -76,6 +78,7 @@ export interface PreviewReport {
  * in the SDK has to agree about what counting one of those means — otherwise a
  * receipt's figure and a budget's figure are measurements of two different
  * things. Shared with `src/tokenizers.ts` rather than reimplemented there.
+ * @experimental
  */
 export const countableText = (v: unknown): string =>
 	typeof v === 'string' ? v : JSON.stringify(v ?? '')
@@ -90,10 +93,11 @@ export const countableText = (v: unknown): string =>
  * no id was configured, when no loader is registered for the one that was, and
  * when a loader threw: budgeting degrades to an estimate rather than failing a
  * run over a tokenizer.
+ * @internal
  */
 export const roughTokens = (v: unknown): number => Math.ceil(countableText(v).length / 4)
 
-/** Choose where a preview stops. */
+/** Choose where a preview stops. @experimental */
 export function previewTarget(
 	nodes: Array<{ key: string; kind: string; clauseId?: string; position: number }>,
 	explicit?: string,
@@ -110,6 +114,7 @@ export function previewTarget(
 	return spine[0] ? { key: spine[0].key, targetedBy: 'first-provider-on-spine' } : undefined
 }
 
+/** @experimental */
 export function renderPreview(p: PreviewReport): string {
 	const out: string[] = []
 	out.push(`preview · stopped before ${p.atNode} (${p.definitionId}) · ${p.targetedBy}`)
@@ -143,5 +148,5 @@ export function renderPreview(p: PreviewReport): string {
 	return out.join('\n')
 }
 
-/** Convenience for a UI: the preview, if this receipt is one. */
+/** Convenience for a UI: the preview, if this receipt is one. @experimental */
 export const previewOf = (r: Receipt): PreviewReport | undefined => r.preview

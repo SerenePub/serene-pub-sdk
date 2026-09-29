@@ -20,6 +20,7 @@
  */
 import { refuseUnlessIdentical } from './hash.js';
 const facets = new Map();
+/** @experimental */
 export function defineFacet(decl) {
     const existing = facets.get(decl.id);
     if (existing)
@@ -27,8 +28,11 @@ export function defineFacet(decl) {
     facets.set(decl.id, decl);
     return decl;
 }
+/** @internal */
 export const getFacet = (id) => facets.get(id);
+/** @experimental */
 export const allFacets = () => [...facets.values()].sort((a, b) => a.order - b.order);
+/** @experimental */
 export function _clearFacets() {
     facets.clear();
 }

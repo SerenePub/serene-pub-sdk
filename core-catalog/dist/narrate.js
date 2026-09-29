@@ -43,6 +43,7 @@
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { chatGenre } from './genres.js';
+/** @experimental */
 export const NARRATE_SPEC_ID = 'core:spec/narrate';
 // 1.1.0: shared prompts slot, exactly as the respond spec (13 §12 finding i).
 // 1.2.0: the `variables` slot, also exactly as the respond spec — and the
@@ -156,13 +157,14 @@ export const NARRATE_SPEC_ID = 'core:spec/narrate';
 // `drizzle/0111_reply_slots_and_relationship_cap.sql` deletes this pin so boot
 // republishes it, and `specHashes.test.ts` records the moved hash in the same
 // change; neither half is optional.
+/** @internal */
 export const NARRATE_VERSION = '1.11.0';
+/** @experimental */
 export const narrateSpec = () => compile(spec(NARRATE_SPEC_ID, {
     version: NARRATE_VERSION,
     /** Catalogue claims (23 §2): a person-invoked action on chats. */
     taxonomy: {
         role: 'action',
-        genre: chatGenre.id,
     },
     /**
      * The canonical contributed action (19 §4; R-15, U5c): this spec
@@ -175,12 +177,11 @@ export const narrateSpec = () => compile(spec(NARRATE_SPEC_ID, {
         actions: [
             {
                 key: 'narrate',
-                genre: chatGenre.id,
-                function: 'narrate',
                 venue: { kind: 'composer' },
                 quick: true,
                 icon: 'book-open-text',
                 label: { en: 'Narrate' },
+                description: { en: 'Ask the narrator to describe what happens next.' },
             },
         ],
     },
@@ -198,7 +199,7 @@ export const narrateSpec = () => compile(spec(NARRATE_SPEC_ID, {
      * narrator's name on it, and the instructions the person typed
      * stored beside it, which is what a narrator turn's triggering
      * text is. `row` is the verb's row: a regenerate, swipe or
-     * continue of a narration routes back here, and without it this
+     * extend of a narration routes back here, and without it this
      * node inserted a second narration while the verb's row stayed
      * generating forever.
      */
@@ -232,11 +233,10 @@ export const narrateSpec = () => compile(spec(NARRATE_SPEC_ID, {
      * is *naming* what they name. No keys, no embedding model.
      *
      * ⚠ Its `messages` out-port is deliberately **not** wired into
-     * `pool` below. `assemble` builds the transcript from `lines`, not
-     * from ranked candidates, so a retrieved message reaching `rank`
-     * would take budget out of the `messages` band and render nowhere at
-     * all — the same shape of failure the reply pipeline's history lane
-     * had between its 1.8.0 and 1.10.0.
+     * `pool` below. Its recalled lines are the declared
+     * `recalledLines` band, which renders only where a context
+     * template places `{{{recalledLines}}}` — no shipped one does, so
+     * wiring it would spend budget on lines the prompt never carries.
      */
     .query('entities', ($) => C.entitySearch.v1({
     scope: $.input.sessionScope,
@@ -459,7 +459,7 @@ export const narrateSpec = () => compile(spec(NARRATE_SPEC_ID, {
     // No `prompts` here: `core:oracle/generate-text@1` declares
     // no such slot any more (culled 2026-09-16, R-12) — the
     // instructions travel inside `context`, from `prompt`.
-}))
+}), { expose: { stream: true, status: 'Narrating' } })
     /** The narration row, filled — see `placeholder`. */
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,

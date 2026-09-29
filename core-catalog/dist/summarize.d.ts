@@ -25,12 +25,19 @@
  * other, so `map` states that and lets the connection's own queue decide the
  * ordering. A loop would impose a sequence the work does not have.
  */
+/** @experimental */
 export declare const SUMMARIZE_WORLD_SPEC_ID = "core:spec/summarize-world";
+/** @experimental */
 export declare const SUMMARIZE_CHARACTER_SPEC_ID = "core:spec/summarize-character";
+/** @experimental */
 export declare const SUMMARIZE_SCENE_SPEC_ID = "core:spec/summarize-scene";
+/** @experimental */
 export declare const SUMMARIZE_HISTORY_SPEC_ID = "core:spec/summarize-history";
+/** @internal */
 export declare const SUMMARIZE_VERSION = "1.3.0";
+/** @experimental */
 export declare const summarizeWorldSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @experimental */
 export declare const summarizeCharacterSpec: () => import("@serene-pub/sdk").SpecDocument;
 /**
  * ⚠ **The cast extraction is ON ICE, not deleted** (plan §2, ruled 2026-09-08).
@@ -61,7 +68,9 @@ export declare const summarizeCharacterSpec: () => import("@serene-pub/sdk").Spe
  * ⚠ Editing this document does not reach a database that has already seeded —
  * publishing is idempotent by `(slug, semver)` — so this ships with a migration
  * deleting the `pipeline_spec_versions` row, precedent `0095`/`0100`.
+ * @experimental
  */
 export declare const summarizeSceneSpec: () => import("@serene-pub/sdk").SpecDocument;
+/** @experimental */
 export declare const summarizeHistorySpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=summarize.d.ts.map

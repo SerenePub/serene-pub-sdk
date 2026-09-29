@@ -46,7 +46,7 @@ const chat = () =>
 		)
 		.task('merge', ($) =>
 			C.mergeCandidates.v1({
-				sources: [$.gather.history.history.messages, $.gather.semantic.vsearch.hits],
+				sources: [$.gather.history.history.band, $.gather.semantic.vsearch.hits],
 			}),
 		)
 		.task('prompt', ($) =>

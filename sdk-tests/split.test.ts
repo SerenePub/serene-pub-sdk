@@ -24,6 +24,7 @@ import {
 } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { publish } from './helpers.js'
 
 // ── 104 · Two names, no inference ──────────────────────────────────────────
@@ -99,7 +100,7 @@ describe('105 · a gate-eligible write publishes write-result@1', () => {
 			C.updateMessage,
 			C.attachImage,
 			C.attachAudio,
-			C.savePluginData,
+			T.savePluginData,
 		]
 			.map((t) => t.descriptor)
 			.filter((d) =>
@@ -243,7 +244,6 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 				// below about `prompt` is checking.
 				.task('prompt', ($) =>
 					C.assemble.v2({
-						candidates: $.history.messages,
 						connection: slot.connectionOf('generate'),
 					}),
 				)
@@ -280,7 +280,6 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.task('prompt', ($) =>
 					C.assemble.v2({
-						candidates: $.history.messages,
 						connection: slot.connection(),
 					}),
 				),

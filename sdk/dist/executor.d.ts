@@ -7,7 +7,7 @@
  */
 import { type SpecDocument } from './document.js';
 import { type Kind } from './descriptors.js';
-import type { Receipt, Outcome, ScriptApplicationRecord } from './receipt.js';
+import type { Receipt, NodeSwap, Outcome, ReceiptMeta, ScriptApplicationRecord } from './receipt.js';
 import { type ConfigWorld } from './config.js';
 import type { CapabilityId, CapabilitySet, Grade, OptionalCapsOf } from './capabilities.js';
 import { type Reviewer } from './review.js';
@@ -51,6 +51,7 @@ import { type Reviewer } from './review.js';
  * sandbox transport and get no `ctx.call`, so none of them can be on the reading
  * end today. If a plugin node ever gains the ability to dispatch, this reference
  * has to be re-projected at that transport rather than assumed to cross it.
+ * @experimental
  */
 export declare const SLOT_REF: unique symbol;
 /**
@@ -59,8 +60,10 @@ export declare const SLOT_REF: unique symbol;
  * Absent means "this node named nothing" — never "the id was lost". Read through
  * this rather than by indexing the symbol, so a host never has to know how the
  * reference is attached.
+ * @internal
  */
 export declare function slotRef(value: unknown): string | number | null;
+/** @experimental */
 export type Result<T = unknown> = {
     kind: 'ok';
     value: T;
@@ -74,14 +77,19 @@ export type Result<T = unknown> = {
     kind: 'halt';
     reason: string;
 };
+/** @public */
 export declare const ok: <T>(value: T) => Result<T>;
+/** @experimental */
 export declare const err: (reason: string) => Result<never>;
+/** @public */
 export declare const halt: (reason: string) => Result<never>;
+/** @experimental */
 export declare const cancelled: (reason: string) => Result<never>;
 /**
  * One entry per branch, in **declaration order** — never completion order, which is
  * the same rule 11 §3 already applies to event dispatch, so the system has one
  * ordering rule rather than two.
+ * @experimental
  */
 export interface BranchResult {
     branchKey: string;
@@ -95,7 +103,7 @@ export interface BranchResult {
      */
     fired?: boolean;
 }
-/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. */
+/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. @experimental */
 export interface BranchResults {
     branches: BranchResult[];
     main: BranchResult[];
@@ -103,6 +111,7 @@ export interface BranchResults {
     values: unknown[];
     ok: boolean;
 }
+/** @experimental */
 export type WriteResult = {
     status: 'committed';
     ids: Record<string, unknown>;
@@ -110,11 +119,13 @@ export type WriteResult = {
     status: 'pending';
     proposalId: string;
 };
+/** @experimental */
 export declare const isCommitted: (w: WriteResult) => w is Extract<WriteResult, {
     status: 'committed';
 }>;
 import type { LogLevel } from './hooks.js';
 import { type StatusText } from './status.js';
+/** @experimental */
 export interface TaskCtx {
     /** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
     random?: () => number;
@@ -172,7 +183,7 @@ export interface TaskCtx {
      * formed payload fits are measuring with one instrument. That is the whole
      * reason it is granted rather than left to each binding: retrieval decides
      * a candidate's cost, ranking spends a budget in those units, and Assemble
-     * allocates over the integers they produced — three stages that must agree,
+     * allocates over the integers they produced — three steps that must agree,
      * and did not while each reached for `roughTokens` independently.
      *
      * Always present. It is `roughTokens` when no tokenizer was configured or
@@ -188,16 +199,23 @@ export interface TaskCtx {
      * answerable from the document. The binding provides the *moment*; the
      * user's configuration provides the *content* — a point name is the only
      * thing that can be passed, never script ids, and an undeclared point
-     * throws. v1 is text-only. Applications land in the receipt marked
-     * `appliedBy: 'binding'`.
+     * throws. Applications land in the receipt marked `appliedBy: 'binding'`.
+     *
+     * `apply` is the broker: whatever the point's kinds flow — a string, a
+     * selection, a cast — goes in and the chain's fold comes back, or the
+     * input unchanged when nothing was attached. `applyText` is the
+     * text-only spelling it began as (18 §4e, v1), kept as a typed alias.
      */
     scripts?: {
+        apply(point: string, value: unknown): Promise<unknown>;
         applyText(point: string, text: string): Promise<string>;
     };
 }
+/** @experimental */
 export interface QueryCtx extends TaskCtx {
     read(table: string, q?: unknown): unknown;
 }
+/** @experimental */
 export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
     /** Material is injected here per call and never readable from config. */
     call(payload: unknown): Promise<unknown>;
@@ -249,10 +267,12 @@ export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends Tas
      */
     can(id: Caps): Grade | false;
 }
+/** @experimental */
 export interface OutletCtx extends TaskCtx {
     commit(payload: unknown): Promise<Record<string, unknown>>;
     emit(handle: string, payload: unknown): void;
 }
+/** @experimental */
 export type Hook = (input: any, ctx: any) => Result | Promise<Result>;
 /**
  * An oracle handler, with `ctx.can()` narrowed to what its own definition declared.
@@ -269,6 +289,7 @@ export type Hook = (input: any, ctx: any) => Result | Promise<Result>;
  *   ctx.can('grammar')       // ❌ compile error — this node never declared it
  * })
  * ```
+ * @experimental
  */
 export declare function providerBinding<D extends {
     slots?: Record<string, {
@@ -277,14 +298,17 @@ export declare function providerBinding<D extends {
 }>(_type: {
     descriptor: D;
 }): (fn: (input: any, ctx: OracleCtx<OptionalCapsOf<D['slots']>>) => Result | Promise<Result>) => Hook;
+/** @experimental */
 export interface Bindings {
     [definitionIdAtVersion: string]: Hook;
 }
+/** @internal */
 export declare function seededRandom(seed: string): () => number;
 /**
  * One node invocation, starting or settling. Identity only — no payloads, no
  * values: this exists so a progress card can say "step 3 of 7 · drafting",
  * and anything richer belongs to the receipt.
+ * @experimental
  */
 export interface NodeEvent {
     phase: 'start' | 'end';
@@ -311,6 +335,7 @@ export interface NodeEvent {
  * One declared hook, as the applier sees it: the address, the phase, and the
  * declaration's attachment rule. The executor computes this from the type's
  * `scripts` slot; the applier never reads a descriptor.
+ * @experimental
  */
 export interface ScriptHookSite {
     nodeKey: string;
@@ -328,6 +353,7 @@ export interface ScriptHookSite {
      */
     origin?: 'substrate' | 'binding';
 }
+/** @experimental */
 export interface ScriptChainOutcome {
     value: unknown;
     applications: ScriptApplicationRecord[];
@@ -351,19 +377,21 @@ export interface ScriptChainOutcome {
  * record whatever happened. A *thrown* applier is treated as engine failure:
  * the value passes through unchanged and the failure is recorded — a broken
  * engine must never cost somebody their reply, and must never vanish either.
+ * @experimental
  */
 export type ScriptChainApplier = (site: ScriptHookSite, 
 /** The resolved slot value — an ordered list of script row ids. */
 chain: unknown, 
 /** The current value at the site's port. */
 value: unknown) => Promise<ScriptChainOutcome>;
-/** A run's place in a tree of runs — see `RunOptions.lineage`. */
+/** A run's place in a tree of runs — see `RunOptions.lineage`. @experimental */
 export interface RunLineage {
     parentRunId: string;
     rootRunId: string;
     /** 0 for a root; a child is its parent's depth plus one. */
     depth: number;
 }
+/** @experimental */
 export interface RunOptions {
     input: unknown;
     bindings: Bindings;
@@ -381,6 +409,23 @@ export interface RunOptions {
      * answer declares an in-port and the host wires it.
      */
     portrayals?: Receipt['portrayals'];
+    /**
+     * The swaps the host seated before calling `run`, by node key: the
+     * document's `definitionId` there is already the swap, and this names the
+     * pin it replaced and whose choice it was. Recorded on that node's row as
+     * `swap`; every other node's row says `swap: null` — the pin ran. Pass
+     * `{}` when nothing was swapped; left out, rows carry no `swap` at all,
+     * because the executor cannot tell a pin from a swap it was not told
+     * about. The executor never resolves a swap itself.
+     * @experimental 🚧
+     */
+    swaps?: Record<string, NodeSwap>;
+    /**
+     * Host facts about how the run was reached (`ReceiptMeta`), recorded
+     * verbatim on the receipt at construction.
+     * @experimental 🚧
+     */
+    meta?: ReceiptMeta;
     /**
      * Where this run stands in a tree of runs (01 §8 *lineage*): the run
      * that dispatched it, the root of the tree, and how deep. Stamped on the
@@ -580,6 +625,7 @@ export interface RunOptions {
  * boundary), and having in-process and out-of-process outlets obey the same rule
  * means the review gate sees the same thing in both cases: a payload, before anything
  * happened.
+ * @experimental
  */
 export interface HostServices {
     /** Scoped read for a Query. The node is passed so the host can enforce scope (F30). */
@@ -614,6 +660,7 @@ export interface HostServices {
         capabilities?: CapabilitySet;
     };
 }
+/** @experimental */
 export interface NodeRef {
     key: string;
     definitionId: string;
@@ -627,6 +674,7 @@ export interface NodeRef {
  * is what keeps the oracle blind to messages. A binding asks for text and gets
  * text; the host, which is the one party that can write a row, is told which
  * row this run is currently filling.
+ * @experimental
  */
 export interface RunFacts {
     /**
@@ -639,7 +687,7 @@ export interface RunFacts {
     /** Whether this run performs writes — see `RunOptions.dry`. */
     dry: boolean;
 }
-/** What `RunOptions.onRunEnd` is told. */
+/** What `RunOptions.onRunEnd` is told. @experimental */
 export interface RunEnd extends RunFacts {
     kind: Outcome;
     receipt: Receipt;
@@ -652,7 +700,8 @@ export interface RunEnd extends RunFacts {
      */
     error?: unknown;
 }
+/** @experimental */
 export declare function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>;
-/** replay(receipt) — deterministic, never re-infers (F16). */
+/** replay(receipt) — deterministic, never re-infers (F16). @experimental */
 export declare function replay(doc: SpecDocument, receipt: Receipt, bindings: Bindings): Promise<Receipt>;
 //# sourceMappingURL=executor.d.ts.map

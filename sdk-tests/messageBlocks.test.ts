@@ -102,13 +102,14 @@ describe('20 §6 · message blocks validate as data', () => {
  * block carrying none is the legacy shape and gets the owner floor.
  */
 describe('W-E · a block action carries the identity of the declaration it fires', () => {
+	// `fn` is the action's KEY (plans/31 V2): the spec's declarations name it
+	// at most once, so a stamp is a lookup and never a guess.
 	const spec = {
 		id: 'acme:spec/lock',
 		contributes: {
 			actions: [
-				{ key: 'pick', function: 'pick-lock', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Pick' } },
-				{ key: 'force-a', function: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force' } },
-				{ key: 'force-b', function: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force harder' } },
+				{ key: 'pick-lock', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Pick' } },
+				{ key: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force' } },
 			],
 		},
 	}
@@ -125,15 +126,15 @@ describe('W-E · a block action carries the identity of the declaration it fires
 		{ kind: 'group', blocks: [{ kind: 'form', fn: 'pick-lock', fields: {} }] },
 	]
 
-	test('the outlet stamps the one action of the spec for each fn; ambiguous or undeclared stays legacy; a stated one is kept', () => {
+	test('the outlet stamps the action of the spec whose key is each fn; undeclared stays legacy; a stated one is kept', () => {
 		const stamped = stampBlockActions(tree, spec)
 		const choices = stamped[0] as Extract<MessageBlock, { kind: 'choices' }>
 		assert.deepEqual(
 			choices.actions.map((a) => a.action),
-			['acme:spec/lock#pick', undefined, undefined, 'core:spec/lock#pick'],
+			['acme:spec/lock#pick-lock', 'acme:spec/lock#force', undefined, 'core:spec/lock#pick'],
 		)
 		const group = stamped[1] as Extract<MessageBlock, { kind: 'group' }>
-		assert.equal((group.blocks[0] as Extract<MessageBlock, { kind: 'form' }>).action, 'acme:spec/lock#pick')
+		assert.equal((group.blocks[0] as Extract<MessageBlock, { kind: 'form' }>).action, 'acme:spec/lock#pick-lock')
 		// A copy: the input tree is what it was.
 		assert.equal((tree[0] as any).actions[0].action, undefined)
 		// …and what it stamped validates.

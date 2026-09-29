@@ -23,9 +23,12 @@
  * and resolved in the receipt; logic inside a leaf is none of those.**
  */
 import { refuseUnlessIdentical } from './hash.js';
+/** @experimental */
 export const isAllocatedContext = (v) => !!v && typeof v === 'object' && Array.isArray(v.blocks);
+/** @experimental */
 export const included = (c) => c.blocks.filter((b) => b.included);
 const formats = new Map();
+/** @experimental */
 export function defineWireFormat(w) {
     const existing = formats.get(w.id);
     // Display text for the same reason a template engine's is: the picker shows
@@ -37,11 +40,15 @@ export function defineWireFormat(w) {
     formats.set(w.id, w);
     return w;
 }
+/** @experimental */
 export const getWireFormat = (id) => formats.get(id);
+/** @experimental */
 export const allWireFormats = () => [...formats.values()];
+/** @internal */
 export function _clearWireFormats() {
     formats.clear();
 }
+/** @experimental */
 export function formatWith(id, ctx, opts) {
     const w = formats.get(id);
     if (!w) {
@@ -52,7 +59,7 @@ export function formatWith(id, ctx, opts) {
 }
 // ── Core formats ────────────────────────────────────────────────────────────
 const roleFor = (b) => (b.role === 'note' ? 'system' : b.role);
-/** Chat completion: the role-tagged array. */
+/** Chat completion: the role-tagged array. @experimental */
 export const messages = defineWireFormat({
     id: 'core:wire/messages@1',
     label: 'Chat completion (messages array)',
@@ -60,7 +67,7 @@ export const messages = defineWireFormat({
     // Per message: the role key, the content key and JSON punctuation. Declared, not guessed.
     overhead: (ctx) => included(ctx).length * 4 + 2,
 });
-/** Text completion, ChatML sequences. */
+/** Text completion, ChatML sequences. @experimental */
 export const chatml = defineWireFormat({
     id: 'core:wire/chatml@1',
     label: 'Text completion (ChatML)',
@@ -69,7 +76,7 @@ export const chatml = defineWireFormat({
         .join('\n') + '\n<|im_start|>assistant\n',
     overhead: (ctx, count) => included(ctx).length * count('<|im_start|>assistant\n<|im_end|>\n') + count('<|im_start|>assistant\n'),
 });
-/** Text completion, Alpaca-style. */
+/** Text completion, Alpaca-style. @experimental */
 export const alpaca = defineWireFormat({
     id: 'core:wire/alpaca@1',
     label: 'Text completion (Alpaca)',
@@ -81,7 +88,7 @@ export const alpaca = defineWireFormat({
     },
     overhead: (_ctx, count) => count('### Instruction:\n\n### Response:\n\n'),
 });
-/** Everything joined, no scaffolding. The reference implementation of zero overhead. */
+/** Everything joined, no scaffolding. The reference implementation of zero overhead. @experimental */
 export const plainWire = defineWireFormat({
     id: 'core:wire/plain@1',
     label: 'Plain concatenation',
@@ -91,6 +98,7 @@ export const plainWire = defineWireFormat({
 /**
  * Prompt **fields**, for a Provider that plugs values into a workflow rather than sending
  * prose — image generation being the case that exposed the whole problem.
+ * @experimental
  */
 export const fields = defineWireFormat({
     id: 'core:wire/fields@1',
@@ -110,6 +118,7 @@ export const fields = defineWireFormat({
  * The allocation loop must never re-render or re-count: count each block at render time,
  * allocate over integers, format exactly once. Anything else has a performance cliff at
  * precisely the moment a user's context is biggest.
+ * @experimental
  */
 export function measureWire(formatId, ctx, count, available, opts) {
     const w = formats.get(formatId);

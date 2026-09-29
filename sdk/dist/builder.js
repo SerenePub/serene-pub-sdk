@@ -9,15 +9,70 @@
  * never this code (F6).
  *
  * Every node method takes either a pinned constructor or a **callback that receives the
- * scope** — `$ => C.assemble({ candidates: $.history.messages })`. The callback form is
+ * scope** — `$ => C.assemble({ messages: $.history.messages })`. The callback form is
  * preferred: it types the node key and the port, and it makes a forward reference
  * impossible to write rather than a finding to read (src/scope.ts). Both forms compile
  * to the same rows.
  */
+import { eventsLockFindings, swapFitFinding, } from './descriptors.js';
 import { makeScope, ITEM } from './scope.js';
+import { isDataRef, isSlotRef } from './refs.js';
 import { assertSpecId, parseSpecId } from './identity.js';
-import { genreIdOf } from './genres.js';
+import { TURN_ORDER_CHANGED_IS_INTERNAL, genreIdOf, sessionEvents } from './genres.js';
+import { eventById, isSessionEventDecl, notADeclaredEvent, packageEventById } from './events.js';
+import { i18nFindings } from './i18n.js';
 import { actionFindings, normalizeContributes, slashCollisions, } from './actions.js';
+/**
+ * The stored mark (R28): swaps as ids, present only when non-empty and
+ * implying `session: true`, plus the streaming step and step status
+ * (B3/B18) when stated; `undefined` when the mark says nothing, so a
+ * node that declares nothing hashes as it always did.
+ */
+function exposeOf(key, pinned, expose) {
+    if (expose.session === false && expose.swaps?.length)
+        throw new Error(`node '${key}': expose.swaps offers a choice in session settings, so it cannot be combined with session: false`);
+    const swaps = swapIds(key, pinned, expose.swaps);
+    if (expose.status !== undefined) {
+        const bad = i18nFindings(expose.status, `node '${key}': expose.status`);
+        if (bad.length)
+            throw new Error(bad[0]);
+    }
+    // What the node shows while it runs (B3/B18) rides beside the session
+    // mark; the streaming step's laws are `validate()`'s, which sees the
+    // whole document (one per execution path, never JSON, never in a repeat).
+    const shown = {
+        ...(expose.stream === true ? { stream: true } : {}),
+        ...(expose.status !== undefined ? { status: expose.status } : {}),
+    };
+    if (swaps.length)
+        return { session: true, swaps, ...shown };
+    if (expose.session === true)
+        return { session: true, ...shown };
+    return Object.keys(shown).length ? shown : undefined;
+}
+/**
+ * The swap list a node declares, refused where it cannot work (R28, R26):
+ * a swap that does not fit would seat a node the spec's edges and config
+ * cannot feed, and a person would pick it and get a broken run with no
+ * sentence. Returns the stored form — definition ids.
+ */
+function swapIds(key, pinned, swaps) {
+    const out = [];
+    for (const s of swaps ?? []) {
+        if (!s?.descriptor)
+            throw new Error(`node '${key}': expose.swaps takes pins (C.turnRandom), not ids — got ${JSON.stringify(s)}`);
+        const id = s.descriptor.id;
+        if (id === pinned.id)
+            throw new Error(`node '${key}': '${id}' is the pin — it is always offered first, so it is never listed in expose.swaps`);
+        if (out.includes(id))
+            throw new Error(`node '${key}': expose.swaps lists '${id}' twice`);
+        const misfit = swapFitFinding(key, pinned, s.descriptor);
+        if (misfit)
+            throw new Error(misfit);
+        out.push(id);
+    }
+    return out;
+}
 /** Lowercase kebab. A slug is a database reference, not display text. */
 const SLUG = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 const parseId = (definitionId) => {
@@ -25,6 +80,7 @@ const parseId = (definitionId) => {
     return m ? { base: m[1], version: Number(m[2]) } : { base: definitionId, version: 1 };
 };
 // ── Chain builders ──────────────────────────────────────────────────────────
+/** @experimental */
 class ChainBuilder {
     spec;
     clauseCtx;
@@ -50,7 +106,7 @@ class ChainBuilder {
         const scope = makeScope(known, localPrefix, this.clauseCtx?.clauseId);
         return arg(scope);
     }
-    add(kind, key, arg) {
+    add(kind, key, arg, opts) {
         const node = this.resolve(arg);
         if (node?.descriptor?.kind !== kind) {
             throw new Error(`.${kind}('${key}', …) was given a ${node?.descriptor?.kind ?? 'non-node'} ` +
@@ -81,13 +137,25 @@ class ChainBuilder {
             kind,
             definitionId: base,
             definitionVersion: version,
-            config: node.config,
+            // A declaration value given as a literal (an event you declared)
+            // is written as its id: the document is JSON, the source is typed.
+            config: Object.fromEntries(Object.entries(node.config ?? {}).map(([k, v]) => [
+                k,
+                // A ref is a proxy that refuses any other property: test it first.
+                !isDataRef(v) && !isSlotRef(v) && isSessionEventDecl(v) ? v.id : v,
+            ])),
             clauseId: this.clauseCtx?.clauseId,
             clauseKind: this.clauseCtx
                 ? (this.spec.clauses.find((b) => b.id === this.clauseCtx.clauseId)?.kind ?? 'gather')
                 : undefined,
             clauseChain: this.clauseCtx?.chain,
             position: this.spec.nodes.length,
+            // Only when stated: a document written before the mark existed
+            // hashes exactly as it did, and a node nobody marked carries no key.
+            ...(() => {
+                const expose = opts?.expose ? exposeOf(key, node.descriptor, opts.expose) : undefined;
+                return expose ? { expose } : {};
+            })(),
         });
         return this;
     }
@@ -203,17 +271,17 @@ class ChainBuilder {
         fn(new JunctionBuilder(this.spec, qualified, clause));
         return this;
     }
-    query(key, node) {
-        return this.add('query', key, node);
+    query(key, node, opts) {
+        return this.add('query', key, node, opts);
     }
-    task(key, node) {
-        return this.add('task', key, node);
+    task(key, node, opts) {
+        return this.add('task', key, node, opts);
     }
-    oracle(key, node) {
-        return this.add('oracle', key, node);
+    oracle(key, node, opts) {
+        return this.add('oracle', key, node, opts);
     }
-    outlet(key, node) {
-        return this.add('outlet', key, node);
+    outlet(key, node, opts) {
+        return this.add('outlet', key, node, opts);
     }
 }
 class GatherBuilder {
@@ -242,6 +310,7 @@ class GatherBuilder {
  * The junction clause's own builder: every branch is a named chain *with a
  * declared predicate*, and the two are stated together so a branch without a
  * condition cannot be written at all.
+ * @experimental
  */
 export class JunctionBuilder {
     spec;
@@ -277,6 +346,7 @@ export class JunctionBuilder {
  * Slot-named methods, for the same reason the chain has kind-named ones (04 §4a): the
  * method names the slot, so setting a slot a node never declared is caught by name rather
  * than becoming an override row that silently matches nothing.
+ * @experimental
  */
 export class PresetBuilder {
     preset;
@@ -308,6 +378,7 @@ export class PresetBuilder {
         return this.set(nodeKey, 'settings', value);
     }
 }
+/** @experimental */
 export class SpecBuilder extends ChainBuilder {
     inletDone = false;
     constructor(rawId, meta) {
@@ -321,29 +392,33 @@ export class SpecBuilder extends ChainBuilder {
          * (`<spec slug>#<key>`, no `@`) refuses. One spelling leaves the builder.
          */
         const id = rawId.replace(/@\d+$/, '');
-        // The deep rename (24 §2): `mode` is accepted as a deprecated alias and
-        // normalized here, so documents only ever carry `genre`.
         const normalized = { ...meta };
-        if (normalized.mode && !normalized.genre)
-            normalized.genre = normalized.mode;
-        delete normalized.mode;
+        // The genre is stated once, on the inlet lock (R48): the catalogue's
+        // `taxonomy.genre` and every contributed action's `genre` are copied
+        // from it by `.inlet()`, so they can never disagree with the lock.
         if (normalized.taxonomy) {
             const t = { ...normalized.taxonomy };
-            if (t.mode && !t.genre)
-                t.genre = t.mode;
-            delete t.mode;
+            if (t.genre !== undefined)
+                throw new Error(`spec '${id}' states taxonomy.genre — drop it: the genre comes from the inlet lock ` +
+                    `(.inlet(key, node, { genre, event })), and taxonomy is filled from there`);
             normalized.taxonomy = t;
         }
-        // The action model (U5c): `triggers` folds into `actions`, every
-        // action's aliases fold with it, and a malformed declaration — an
+        // The action model (U5c): every action takes its document form, and
+        // a malformed declaration — an
         // unknown venue kind, a slash name outside the spec's namespace, a
         // bare-string-less label — is refused here, where the author is.
         if (normalized.contributes) {
+            const stated = (normalized.contributes.actions ?? []).find((a) => a.genre !== undefined);
+            if (stated)
+                throw new Error(`spec '${id}' action '${stated.key ?? '?'}' states a genre — drop it: ` +
+                    `an action is offered to the genre of the spec's inlet lock`);
+            // Normalised actions carry no genre yet; the cast is the authoring type.
             normalized.contributes = normalizeContributes(normalized.contributes);
             const actions = normalized.contributes?.actions ?? [];
-            const faults = actions.flatMap((a) => actionFindings(a, id));
-            if (!faults.length)
-                faults.push(...slashCollisions(actions.map((a) => ({ ...a, specId: id }))));
+            // Validated with the genre still pending — `.inlet()` supplies it,
+            // and `build()` refuses an action that never got one.
+            // Slash names collide per genre, so that check waits for the lock too.
+            const faults = actions.flatMap((a) => actionFindings({ ...a, genre: PENDING_GENRE }, id));
             if (faults.length)
                 throw new Error(`spec '${id}' declares an action core cannot offer:\n · ${faults.join('\n · ')}`);
         }
@@ -358,17 +433,17 @@ export class SpecBuilder extends ChainBuilder {
     }
     // The four node methods are re-declared here purely so the spine keeps offering
     // .gather(), .each(), .include() and .build(). Same implementation, narrower return.
-    query(key, node) {
-        return this.add('query', key, node);
+    query(key, node, opts) {
+        return this.add('query', key, node, opts);
     }
-    task(key, node) {
-        return this.add('task', key, node);
+    task(key, node, opts) {
+        return this.add('task', key, node, opts);
     }
-    oracle(key, node) {
-        return this.add('oracle', key, node);
+    oracle(key, node, opts) {
+        return this.add('oracle', key, node, opts);
     }
-    outlet(key, node) {
-        return this.add('outlet', key, node);
+    outlet(key, node, opts) {
+        return this.add('outlet', key, node, opts);
     }
     /**
      * A named configuration the spec ships with (12 §3a). Declared **after** the nodes,
@@ -388,6 +463,15 @@ export class SpecBuilder extends ChainBuilder {
                 `(e.g. 'lore-heavy'). The slug is a stable database reference an update matches on, ` +
                 `not display text — put the pretty name in \`label\` (12 §3a).`);
         }
+        // The display text (R-20): the label a picker lists the preset by, and
+        // the line under it — refused here, where the author is; `validate()`
+        // gives a stored document the same sentence.
+        const display = [
+            ...i18nFindings(meta.label, `presets[${slug}].label`, { required: true }),
+            ...i18nFindings(meta.description, `presets[${slug}].description`),
+        ];
+        if (display.length)
+            throw new Error(`preset '${slug}' declares display text a publish refuses (R-20):\n · ${display.join('\n · ')}`);
         if (this.spec.presets.some((p) => p.slug === slug)) {
             throw new Error(`duplicate preset slug '${slug}' — slugs are unique per spec, because they are the sync key (12 §3a)`);
         }
@@ -417,18 +501,92 @@ export class SpecBuilder extends ChainBuilder {
      * 2026-09-16 — nothing read them at dispatch.
      */
     inlet(key, node, binding) {
+        // An event is named by value where a package declared it: its id.
+        if (binding) {
+            const idOf = (e) => (isSessionEventDecl(e) ? e.id : e);
+            binding =
+                'events' in binding
+                    ? { ...binding, events: binding.events?.map(idOf) }
+                    : { ...binding, event: idOf(binding.event) };
+        }
         if (this.inletDone)
             throw new Error('a spec has exactly one inlet (01 §2) — .inlet() may be called once');
         if (this.spec.nodes.length > 0)
             throw new Error('the inlet must be the first node (01 §2)');
         if (binding) {
-            if (!binding.event)
+            // The lock over several events (PLAN-turn-order §4.1): `events`
+            // is the alternative to one `event`, never a second copy of it —
+            // a spec says which of the two it is, and a list that is empty or
+            // repeats itself is an authoring mistake, refused here.
+            // Normalised to ids above.
+            const many = 'events' in binding ? binding.events : undefined;
+            const one = 'event' in binding ? binding.event : undefined;
+            if (many !== undefined) {
+                if (!Array.isArray(many) || many.length === 0)
+                    throw new Error('an inlet binding over several events lists them — { genre, events: [ … ] } (PLAN-turn-order §4.1)');
+                if (many.some((e) => typeof e !== 'string' || !e))
+                    throw new Error('an inlet binding lists event ids — every entry of `events` is a string');
+                if (new Set(many).size !== many.length)
+                    throw new Error(`an inlet binding lists each event once — { genre, events: [${many.map((e) => `'${e}'`).join(', ')}] } repeats one`);
+            }
+            else if (!one)
                 throw new Error('an inlet binding names its event — { genre, event } (24 §4)');
+            // An undeclared event would compile, publish and never fire.
+            // Refused here, where the author is.
+            for (const e of many ?? [one]) {
+                if (!eventById(e))
+                    throw new Error(notADeclaredEvent(e));
+                if (e === sessionEvents.turnOrderChanged)
+                    throw new Error(TURN_ORDER_CHANGED_IS_INTERNAL);
+            }
+            // A package's event arrives in the recorded-event envelope, so a
+            // lock on one — even alone — needs an inlet that reads it.
+            if (many === undefined && one && packageEventById(one)) {
+                const d = node?.descriptor;
+                const [first] = eventsLockFindings(d, [one]);
+                if (first)
+                    throw new Error(first);
+            }
+            // An `events` lock is read through one inlet (R33): every listed
+            // event's payload must be one the inlet declares it reads, or the
+            // spec would run on a payload its ports were never shaped for.
+            if (many !== undefined) {
+                const d = node?.descriptor;
+                const [first] = eventsLockFindings(d, many);
+                if (first)
+                    throw new Error(first);
+            }
+            if (typeof binding.genre === 'string')
+                throw new Error(`the inlet lock names its genre as the string '${binding.genre}' — pass the genre value ` +
+                    `(import it), or use('${binding.genre}') for one you cannot import`);
             if (!binding.genre)
-                throw new Error(`a spec answering '${binding.event}' must declare the genre it serves — ` +
+                throw new Error(`a spec answering '${one ?? many.join(', ')}' must declare the genre it serves — ` +
                     `{ genre, event } (24 §4). Required for now; multi-genre opens later ` +
                     `without breaking this declaration.`);
-            this.spec.input = { genre: genreIdOf(binding.genre), event: binding.event };
+            const genre = genreIdOf(binding.genre);
+            this.spec.input =
+                many !== undefined ? { genre, events: [...many] } : { genre, event: one };
+            // The genre's other two homes, filled from the lock (R48).
+            const actions = this.spec.meta.contributes?.actions;
+            if (actions?.length) {
+                const collisions = slashCollisions(actions.map((a) => ({ ...a, genre, specId: this.spec.id })));
+                if (collisions.length)
+                    throw new Error(`spec '${this.spec.id}' declares an action core cannot offer:\n · ${collisions.join('\n · ')}`);
+            }
+            // Taxonomy only where the author declared one: a spec that never
+            // claimed a catalogue place does not grow one (its hash is its own).
+            this.spec.meta = {
+                ...this.spec.meta,
+                ...(this.spec.meta.taxonomy ? { taxonomy: { ...this.spec.meta.taxonomy, genre: genre } } : {}),
+                ...(this.spec.meta.contributes?.actions
+                    ? {
+                        contributes: {
+                            ...this.spec.meta.contributes,
+                            actions: this.spec.meta.contributes.actions.map((a) => ({ ...a, genre: genre })),
+                        },
+                    }
+                    : {}),
+            };
         }
         this.inletDone = true;
         return this.add('inlet', key, node);
@@ -469,12 +627,20 @@ export class SpecBuilder extends ChainBuilder {
         return this;
     }
     build() {
+        const orphan = this.spec.meta.contributes?.actions?.find((a) => !a.genre);
+        if (orphan)
+            throw new Error(`spec '${this.spec.id}' contributes action '${orphan.key}' but has no inlet lock — ` +
+                `an action is offered to the genre of the lock: .inlet(key, node, { genre, event })`);
         return this.spec;
     }
 }
+/** Stands in for an action's genre until `.inlet()` supplies the lock's. */
+const PENDING_GENRE = 'pending:genre/lock';
+/** @public */
 export function spec(id, meta) {
     return new SpecBuilder(id, meta);
 }
+/** @experimental */
 export function fragment(id, fn) {
     const inner = {
         id,

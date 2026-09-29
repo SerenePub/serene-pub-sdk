@@ -29,6 +29,7 @@
  * re-match, which is the only reason the change was safe. From here it must
  * never change again, or every install re-seeds a duplicate.
  */
+/** @internal */
 export interface CorePromptSeed {
     /** The pool: an UNVERSIONED node type id, e.g. `core:task/build-template-context`. */
     nodeType: string;
@@ -56,5 +57,6 @@ export interface CorePromptSeed {
     /** Field name → prose, exactly as the pool's node declares them. */
     fields: Record<string, string>;
 }
+/** @internal */
 export declare const CORE_PROMPTS: CorePromptSeed[];
 //# sourceMappingURL=prompts.d.ts.map

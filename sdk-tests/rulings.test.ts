@@ -16,6 +16,7 @@ import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
 import { pin, describeTaskDefinition } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import {
 	defineEvent,
 	allEvents,
@@ -28,13 +29,20 @@ import {
 	isSecret,
 	forClient,
 	forExport,
-	forOwningHook,
 	defineSettings,
 	type SettingsSchema,
 } from '@serene-pub/sdk'
 import { assertHookSurface, SCHEDULED_WORK_PATH } from '@serene-pub/sdk'
 import type { LoreEntry } from '@serene-pub/sdk'
-import { publish, bindings, world, fakeClock } from './helpers.js'
+import {
+	compile,
+	validate,
+	describeOracleDefinition,
+	getDefinition,
+	allDefinitions,
+	definitionContractHash,
+} from '@serene-pub/sdk'
+import { publish, bindings, world, fakeClock, errorsFor } from './helpers.js'
 
 // ── 42 · The async union shape (13 §1) ─────────────────────────────────────
 describe('42 · async blocks publish branch-results, and joined effects are gone', () => {
@@ -105,7 +113,7 @@ describe('43 · map', () => {
 	const build = (max = 8) =>
 		spec('demo:mapunion@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
+			.task('chunks', ($) => T.chunkText.v1({ text: $.input.text }))
 			.each('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
 				m.oracle('sum', C.generateText.v1({ connection: slot.connection() })),
 			)
@@ -310,11 +318,6 @@ describe('47 · secret settings', () => {
 		assert.deepEqual(forExport(schema, values), { endpoint: 'https://example.test' })
 	})
 
-	test('only the declaring extension’s own hook gets plaintext', () => {
-		const seen = forOwningHook(schema, values, (c) => c.replace('cipher:', ''))
-		assert.equal(seen.apiKey, 'abc123')
-	})
-
 	test('a receipt redacts it BY TYPE — which is the whole argument for typing it', async () => {
 		const echo = pin(
 			describeTaskDefinition({
@@ -421,7 +424,7 @@ describe('49 · ui-action carries both users', () => {
 		const payload: UiActionPayload = {
 			sessionId: 'chat:1',
 			ownerUserId: 'user:owner',
-			triggeringUserId: 'user:guest',
+			actorUserId: 'user:guest',
 			action: 're-roll',
 			modeId: 'dungeon-crawl',
 			input: { text: 'roll again' },
@@ -446,7 +449,7 @@ describe('49 · ui-action carries both users', () => {
 		assert.equal(r.actorUserId, 'user:owner')
 		assert.notEqual(
 			payload.ownerUserId,
-			payload.triggeringUserId,
+			payload.actorUserId,
 			'the two can differ — that was the question',
 		)
 	})
@@ -465,15 +468,13 @@ describe('50 · hook surfaces', () => {
 		// No `readEvent`: the occurrence arrives as argument 0, never as a
 		// method on the surface. Depicting one here would re-teach the shape
 		// the SDK just retired.
-		readOwnRows: () => [],
-		writeOwnRows: () => {},
+		storage: {},
 		log: () => {},
 		signal: new AbortController().signal,
 	}
 	const lifecycleSurface = {
 		readCore: () => [],
-		readOwnRows: () => [],
-		writeOwnRows: () => {},
+		storage: {},
 		log: () => {},
 		signal: new AbortController().signal,
 	}
@@ -544,4 +545,67 @@ test('51 · a lorebook entry can carry a depth — the one real parity gap, clos
 	// not architecture.
 	const e: LoreEntry = { id: 'note', title: 'Note', content: 'c', keys: ['k'], depth: 4 }
 	assert.equal(e.depth, 4)
+})
+
+// ── R-2 · provisional definitions (plans/29, 2026-09-17) ───────────────────
+describe('R-2 · a provisional definition is declared, not bound, and cannot be placed', () => {
+	/** A definition core publishes because a plan owns it, with no handler behind it. */
+	const pending = pin(
+		describeOracleDefinition({
+			id: 'test:oracle/pending@1',
+			effects: 'external',
+			review: { fields: [] },
+			timeoutMs: 1000,
+			provisional: true,
+			ports: { in: { text: S.text }, out: { main: S.json } },
+		}),
+	)
+	const places = () =>
+		spec('demo:places-provisional@1', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.oracle('pending', ($) => pending.v1({ text: $.input.text }))
+
+	test('the three core definitions plans 14 and 28 own carry the flag, and no other core one does', () => {
+		const flagged = ['core:oracle/speak@1', 'core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']
+		for (const id of flagged) assert.equal(getDefinition(id)?.provisional, true, id)
+		assert.deepEqual(
+			allDefinitions()
+				.filter((d) => d.provisional && /^core:/.test(d.id))
+				.map((d) => d.id)
+				.sort(),
+			[...flagged].sort(),
+		)
+		assert.equal(C.attachImage.descriptor.provisional, undefined, 'bound 2026-09-17')
+	})
+
+	test('validate() refuses the document under R-2, and the fix is the two things an author can do', () => {
+		const e = errorsFor(places(), 'R-2')
+		assert.equal(e.length, 1)
+		assert.equal(e[0]!.nodeKey, 'pending')
+		assert.match(e[0]!.message, /provisional — declared, not bound/)
+		assert.equal(e[0]!.fix, 'bind it or remove the node')
+	})
+
+	test('a document that reached the executor anyway halts on the law, not on "no binding registered"', async () => {
+		// Compiled without `publish` — a stored version older than the flag.
+		const doc = compile(places().build())
+		assert.ok(validate(doc).some((f) => f.law === 'R-2'))
+		const r = await run(doc, {
+			input: { text: 'x' },
+			world,
+			bindings: bindings({ 'test:oracle/pending@1': async () => ok({ main: 'never' }) }),
+		})
+		assert.equal(r.outcome, 'err')
+		assert.match(r.haltReason ?? '', /is provisional — declared, not bound/)
+		assert.match(r.haltReason ?? '', /R-2/)
+		assert.doesNotMatch(r.haltReason ?? '', /no binding registered/)
+	})
+
+	test('the flag is policy, not contract: binding it moves no hash (plans/31 V6)', () => {
+		// What is *offered* is policy; what *runs* is contract. The day the
+		// handler lands, every pin stays where it is and the registry row's
+		// `status` moves from `provisional` to `live` on the next sync.
+		const { provisional: _p, ...bound } = pending.descriptor
+		assert.equal(definitionContractHash(pending.descriptor), definitionContractHash(bound))
+	})
 })

@@ -40,7 +40,10 @@
  * that. A flag would have made one config surface serve a narrator and a
  * character, which is precisely what neither wants.
  */
+/** @experimental */
 export declare const NARRATE_SPEC_ID = "core:spec/narrate";
+/** @internal */
 export declare const NARRATE_VERSION = "1.11.0";
+/** @experimental */
 export declare const narrateSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=narrate.d.ts.map

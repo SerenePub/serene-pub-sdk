@@ -1,0 +1,42 @@
+/**
+ * The create pipeline — the genre's one required member.
+ *
+ * Every genre needs exactly one spec answering `session-created`, and this is
+ * it: a session of this genre cannot be started without one, which is why the
+ * declaration refuses to build when it is missing.
+ *
+ * Two nodes, and **no model call**. The opening line is a sentence this package
+ * wrote, because "the session has started" is not a creative act. Read the
+ * session, decide by script, write one message.
+ *
+ * ✎ CHANGE: the opening line. Add the reads you need between the inlet and the
+ *   outlet — `core:query/…` nodes, then Tasks of your own over what they
+ *   published.
+ */
+
+import { sessionEvents, spec } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+
+import { {{genreVar}} } from '../genre.js'
+
+export const CREATE_SESSION_SPEC_ID = '{{createSpecId}}'
+
+export const createSessionSpec = () =>
+	spec(CREATE_SESSION_SPEC_ID, { version: '1.0.0' })
+		/**
+		 * The **usage lock**: this spec answers one event, for one genre. It is
+		 * the whole of the subscription — there is nowhere else to declare one,
+		 * which is what makes a pipeline's reach readable off its document.
+		 */
+		.inlet('input', C.sessionCreated.v1(), {
+			genre: {{genreVar}},
+			event: sessionEvents.sessionCreated,
+		})
+		/** The one write. `narration: true` — nobody in the cast said this. */
+		.outlet('open', () =>
+			C.createMessage.v1({
+				text: '✎ CHANGE: the line a new session opens with.',
+				narration: true,
+			}),
+		)
+		.build()

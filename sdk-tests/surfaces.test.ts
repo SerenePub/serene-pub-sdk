@@ -27,6 +27,13 @@ import {
 	spec,
 	ENTRY_CANDIDATES,
 	FRAME_PROTOCOL,
+	panelToWidgetDecl,
+	parsePluginWidgetId,
+	pluginWidgetId,
+	WIDGET_PROTOCOL,
+	type FrameHostMessage,
+	type HostFrameMessage,
+	type WidgetEvent,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
@@ -106,7 +113,6 @@ describe('announce().surfaces (20 §12, 21 §7)', () => {
 
 	test('components are validated on the same terms as defineExtension', () => {
 		const ok = component({
-			surface: 'core:surface/settings-section@1',
 			slug: 'dice-settings',
 			label: 'Dice settings',
 			framework: 'svelte',
@@ -161,7 +167,6 @@ describe('previewManifest — what the harness renders', () => {
 		const m = previewManifest(
 			dice().components(
 				component({
-					surface: 'core:surface/settings-section@1',
 					slug: 'dice-settings',
 					label: 'Dice settings',
 					framework: 'svelte',
@@ -174,7 +179,7 @@ describe('previewManifest — what the harness renders', () => {
 				id: 'dice-settings',
 				label: 'Dice settings',
 				kind: 'component',
-				point: 'core:surface/settings-section@1',
+				point: 'widget',
 				entry: 'src/Settings.svelte',
 				framework: 'svelte',
 				settings: undefined,
@@ -190,7 +195,6 @@ describe('previewManifest — what the harness renders', () => {
 			version: '1.2.0',
 			components: [
 				component({
-					surface: 'core:surface/composer-action@1',
 					slug: 'roll',
 					label: 'Roll',
 					framework: 'vanilla',
@@ -216,7 +220,6 @@ describe('previewManifest — what the harness renders', () => {
 						surface: { kind: 'frame', pluginId: 'acme.dice', entry: 'ui/map.html' },
 						channels: ['map'],
 					},
-					{ id: 'log', title: 'Log', surface: { kind: 'native', component: 'log' } },
 				],
 			},
 		})
@@ -248,7 +251,7 @@ describe('previewManifest reads tolerantly', () => {
 			schemaVersion: 1,
 			identity: { ns: 'acme.dice', title: 'Dice' },
 			genres: [],
-			components: [{ slug: 'no-entry', label: 'x', surface: 's', framework: 'svelte' }],
+			components: [{ slug: 'no-entry', label: 'x', framework: 'svelte' }],
 			surfaces: {
 				page: {},
 				panels: [{ entry: 'ui/a.html' }, { id: 'ok', entry: 'ui/b.html' }],
@@ -376,5 +379,232 @@ describe('one toolchain, one set of conventions', () => {
 		// and `init` accepts either version — the number says what a frame
 		// *may* send, not what it must.
 		assert.equal(FRAME_PROTOCOL, 2)
+	})
+})
+
+describe('a panel IS a widget (panelToWidgetDecl)', () => {
+	test('every field a panel declares has a home on the widget declaration', () => {
+		const decl = panelToWidgetDecl('acme.dice', {
+			id: 'tray',
+			entry: 'ui/tray.html',
+			title: 'Dice tray',
+			channels: ['dice'],
+			settings: { sides: { type: 'number', default: 6 } },
+		})
+		assert.deepEqual(decl, {
+			id: 'tray',
+			title: 'Dice tray',
+			role: 'secondary',
+			surface: { kind: 'frame', pluginId: 'acme.dice', entry: 'ui/tray.html' },
+			channels: ['dice'],
+			settings: { sides: { type: 'number', default: 6 } },
+		})
+	})
+
+	test('an untitled panel is titled by its id, and declares no keys it was not given', () => {
+		const decl = panelToWidgetDecl('acme.dice', { id: 'tray', entry: 'ui/tray.html' })
+		assert.equal(decl.title, 'tray')
+		// Absent, not empty: a host reading `channels` must be able to tell
+		// "every lane" from "the lanes this panel named", and `[]` says the
+		// second while meaning the first.
+		assert.equal('channels' in decl, false)
+		assert.equal('settings' in decl, false)
+	})
+
+	test('the declared channels are copied, never shared', () => {
+		const channels = ['dice']
+		const decl = panelToWidgetDecl('acme.dice', {
+			id: 'tray',
+			entry: 'ui/tray.html',
+			channels,
+		})
+		channels.push('main')
+		assert.deepEqual(decl.channels, ['dice'])
+	})
+})
+
+describe('a plugin widget id is namespaced (pluginWidgetId / parsePluginWidgetId)', () => {
+	test("the projection's bare id is the package's, the seated id is namespaced", () => {
+		const decl = panelToWidgetDecl('acme.dice', { id: 'tray', entry: 'ui/tray.html' })
+		// The two halves of the contract, in one test: the SDK projects what
+		// the package wrote, and the host seats it under an id no other
+		// package can also have written.
+		assert.equal(decl.id, 'tray')
+		assert.equal(pluginWidgetId('acme.dice', decl.id), 'acme.dice:tray')
+	})
+
+	test('a namespaced id round-trips, whichever legal shape either half takes', () => {
+		for (const [pluginId, panelId] of [
+			['acme.dice', 'tray'],
+			['chariot.dice-tray', 'map'],
+			['showcase.twenty-questions', 'tally_2'],
+			['a', 'b'],
+		]) {
+			const id = pluginWidgetId(pluginId, panelId)
+			assert.deepEqual(parsePluginWidgetId(id), { pluginId, panelId })
+		}
+	})
+
+	test('an id no plugin could have produced is not read as one', () => {
+		// Core and genre widgets keep plain ids and must come back null —
+		// this is the test for "is this widget a plugin's", so a false
+		// positive here seats a core widget against a plugin that does not
+		// exist.
+		for (const id of [
+			'conversation',
+			'scene-portraits',
+			'',
+			':tray',
+			'acme.dice:',
+			// Two colons: the second lands in the panel half, which refuses
+			// it — a surprising panel is worse than no answer.
+			'acme.dice:tray:extra',
+			// A slash is the genre/type grammar, never a panel id.
+			'core:genre/chat',
+			// Neither half may carry case or spaces.
+			'Acme.Dice:tray',
+			'acme.dice:Tray',
+			'acme dice:tray',
+		])
+			assert.equal(parsePluginWidgetId(id), null, id)
+	})
+
+	test('the halves it accepts are exactly the halves an instance serves', () => {
+		// Pinned against the grammars the app drops a surface by, so the two
+		// cannot drift into "the harness previewed it, the instance seated it
+		// under something else".
+		const parsed = parsePluginWidgetId('acme.dice:tray')!
+		assert.equal(isServablePanelId(parsed.panelId), true)
+		assert.equal(parsePluginWidgetId('acme.dice:tray!'), null)
+	})
+})
+
+describe('the frame protocol is one union, exhaustively', () => {
+	// A `switch` over `t` whose default asserts `never`. It compiles only while
+	// every member is handled, so a member added to either union without a
+	// reader here is a build failure rather than a message some host silently
+	// drops.
+	test('every host → frame member is accounted for', () => {
+		const seen: string[] = []
+		const read = (m: HostFrameMessage): string => {
+			switch (m.t) {
+				case 'init':
+					return `init@${m.protocol}`
+				case 'session':
+					return `session#${m.session.id}`
+				case 'messages':
+				case 'channel':
+					return `${m.t}:${m.messages.length}`
+				case 'message':
+					return `message#${m.message.id}`
+				case 'props':
+				case 'settings':
+					return `${m.t}:${Object.keys(m.t === 'props' ? m.props : m.settings).length}`
+				case 'style':
+					return `style:${m.css.length}`
+				case 'layout':
+					return `layout:${m.layout.tier}`
+				case 'event':
+					return `event:${m.event.kind}`
+				case 'actions':
+					return `actions:${Object.keys(m.actions).length}`
+				case 'theme':
+					return `theme:${m.mode}`
+				case 'suspend':
+				case 'resume':
+					return m.t
+				case 'page':
+					return `page:${m.rows.length}`
+				case 'state':
+					return `state:${Object.keys(m.state).length}`
+				case 'annex':
+					return `annex:${Object.keys(m.annex).length}`
+				case 'locale':
+					return `locale:${m.locale}`
+				case 'response':
+					return `response:${m.ok}`
+				case 'strings':
+					return `strings:${Object.keys(m.strings).length}`
+				case 'viewer':
+					return `viewer:${m.viewer.isAdmin}`
+				case 'turn-order':
+					return `turn-order:${m.turnOrder.order.length}`
+				case 'scoped':
+					return `scoped:${m.section}`
+				case 'grants':
+					return `grants:${m.grants.length}`
+				default: {
+					const never: never = m
+					return String(never)
+				}
+			}
+		}
+		seen.push(read({ t: 'init', protocol: FRAME_PROTOCOL, surface: 'panel' }))
+		seen.push(read({ t: 'session', session: { id: 7, name: null } }))
+		seen.push(read({ t: 'suspend' }))
+		assert.deepEqual(seen, ['init@2', 'session#7', 'suspend'])
+	})
+
+	test('every frame → host member is accounted for', () => {
+		const read = (m: FrameHostMessage): string => {
+			switch (m.t) {
+				case 'ready':
+					return 'ready'
+				case 'action':
+					return `action:${m.fn}`
+				case 'invoke':
+					return `invoke:${m.key}`
+				case 'error':
+					return `error:${m.message}`
+				case 'request':
+					return `request:${m.what}`
+				case 'save-state':
+					return `save-state:${Object.keys(m.state).length}`
+				case 'translate':
+					return `translate:${m.sources.length}`
+				default: {
+					const never: never = m
+					return String(never)
+				}
+			}
+		}
+		assert.equal(read({ t: 'invoke', key: 'roll' }), 'invoke:roll')
+		assert.equal(read({ t: 'ready' }), 'ready')
+	})
+
+	test('native and frame report ONE protocol number', () => {
+		// Native is frame minus the iframe, so a second clock for the
+		// in-document lane would be a second contract by accident.
+		assert.equal(WIDGET_PROTOCOL, FRAME_PROTOCOL)
+	})
+})
+
+describe('the widget event union narrows', () => {
+	test('a custom kind is namespaced, and the union still discriminates', () => {
+		const describeEvent = (e: WidgetEvent): string => {
+			switch (e.kind) {
+				// `messageId` is reachable here ONLY because the union still
+				// discriminates — a bare `{ kind: string }` member widened it
+				// back to "any string" and took every other member's narrowing
+				// with it.
+				case 'message:created':
+					return `${e.channel}#${e.messageId} lane ${e.lane}`
+				case 'layout:changed':
+					return `layout ${e.layout.tier}`
+				default:
+					return e.kind
+			}
+		}
+		assert.equal(
+			describeEvent({
+				kind: 'message:created',
+				channel: 'dice',
+				slug: 'dice',
+				lane: 1,
+				messageId: 3,
+			}),
+			'dice#3 lane 1',
+		)
+		assert.equal(describeEvent({ kind: 'custom:acme.rolled' }), 'custom:acme.rolled')
 	})
 })

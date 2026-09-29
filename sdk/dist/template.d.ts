@@ -7,7 +7,9 @@
  *
  * ⚠ Writing this surfaced a correction to 16 §4 — see `templateScope`.
  */
-import type { I18n } from './descriptors.js';
+import type { I18n, SlotDecl } from './descriptors.js';
+import type { FieldDecl } from './settings.js';
+/** @experimental */
 export interface TemplateRef {
     /** The root identifier, e.g. `message` in `{{ message.author.name }}`. */
     root: string;
@@ -21,9 +23,10 @@ export interface TemplateRef {
  * reported as unknown, and anything computed is marked dynamic rather than verified —
  * an editor that promises correctness and lets a typo through is worse than one that
  * says what it checks (16 §4).
+ * @experimental
  */
 export declare function extractRefs(src: string): TemplateRef[];
-/** Render. Missing values become empty strings — templates never throw at run time. */
+/** Render. Missing values become empty strings — templates never throw at run time. @experimental */
 export declare function render(src: string, baseScope: Record<string, unknown>): string;
 /**
  * ⚠ CORRECTION TO 16 §4.
@@ -48,6 +51,7 @@ export declare function render(src: string, baseScope: Record<string, unknown>):
  * is a case where the author is back to guessing. Six kinds cover every value
  * core renders, and a seventh should have to earn its place by naming the
  * variable that needs it.
+ * @experimental
  */
 export type VarType = 'string' | 'number' | 'boolean'
 /** A fixed set of named fields — `fields`. */
@@ -56,6 +60,7 @@ export type VarType = 'string' | 'number' | 'boolean'
  | 'list'
 /** Keyed by author-chosen strings — `of` describes a value. */
  | 'record';
+/** @experimental */
 export interface VarField {
     type: VarType;
     /** Shown in the editor's completion list and on hover. */
@@ -89,17 +94,94 @@ export interface VarField {
  * across this upgrade, which is the whole reason they survive — lint can nudge
  * an author toward a real schema, but an upgrade that broke every third-party
  * node's declaration to buy nothing but tidiness is not a trade worth making.
+ * @experimental
  */
 export type VarDecl = VarField | 'any' | string[];
+/** @experimental */
 export type TemplateScope = Record<string, VarDecl>;
+/** @experimental */
 export declare function templateScope(decl: {
     variables?: TemplateScope;
 } | undefined): TemplateScope;
+/**
+ * What a template check found wrong.
+ *
+ * `checkTemplate` (the mini engine) fills the first three; the source checker
+ * (`@serene-pub/sdk/template-check`) fills the rest too — which name, where in
+ * the source, and what was there instead.
+ * @experimental
+ */
 export interface TemplateFinding {
     severity: 'error' | 'warning';
     message: string;
     fix: string;
+    kind?: TemplateFindingKind;
+    /** The root name (or helper) the finding is about, as the template spells it. */
+    name?: string;
+    /** The whole reference as written — `characters.nmae`, `../injectionsByIndx`. */
+    path?: string;
+    /** 1-based, as both engines report it. */
+    line?: number;
+    column?: number;
+    /** 0-based offsets of the reference in the source. */
+    start?: number;
+    end?: number;
+    /** The enclosing tag (`{{ … }}`), when the engine reports one. */
+    tag?: {
+        start: number;
+        end: number;
+    };
+    /** What does exist where the name was looked up. */
+    available?: string[];
+    /** The nearest of `available`, when one is near enough to say "did you mean". */
+    suggestion?: string;
 }
+/**
+ * - `syntax` — the source does not parse (always an error).
+ * - `unknown-name` — a root the scope does not have.
+ * - `unknown-path` — a field the declared type contradicts.
+ * - `unknown-helper` — a Handlebars helper nobody registered.
+ * @experimental
+ */
+export type TemplateFindingKind = 'syntax' | 'unknown-name' | 'unknown-path' | 'unknown-helper';
+/**
+ * What a host's engines register, as names — the checker's input
+ * (`@serene-pub/sdk/template-check`). Declared here, on the barrel, so a
+ * dependency-free module can take a checker as a value without importing the
+ * engines (typed templates P5).
+ * @experimental
+ */
+export interface TemplateCheckOptions {
+    /** Handlebars helpers the host registers beyond the built-ins. */
+    helpers?: Iterable<string>;
+    /** What the host's Liquid instance registers — the checker parses with the same vocabulary. */
+    liquid?: {
+        /** `{% name %}…{% endname %}` tags; `key: value` arguments are read as expressions. */
+        blockTags?: Iterable<string>;
+        /** Filters beyond Liquid's own. Filters are strict: an unknown one does not parse. */
+        filters?: Iterable<string>;
+        /** Tags refused at parse time, each with the sentence that says why. */
+        refusedTags?: Readonly<Record<string, string>>;
+        /** Characters one parse may consume. */
+        parseLimit?: number;
+    };
+    /**
+     * `templateScopeReport().untyped` — producers whose keys reach the template
+     * undeclared. Non-empty: name and path findings are warnings.
+     */
+    untyped?: readonly string[];
+}
+/** @experimental */
+export interface TemplateSourceCheck {
+    /**
+     * False when nothing was looked at — an engine this checker does not read
+     * (a plugin's), or an analyser that failed on a source that parsed. An
+     * empty `findings` then means "not checked", never "clean".
+     */
+    checked: boolean;
+    findings: TemplateFinding[];
+}
+/** @experimental */
 export declare function checkTemplate(src: string, scope: TemplateScope): TemplateFinding[];
 /**
  * Walking a path against a schema.
@@ -115,6 +197,7 @@ export declare function checkTemplate(src: string, scope: TemplateScope): Templa
  * So `ok: false` is reserved for a path the schema positively contradicts.
  * Everything else resolves, with `checked` saying whether the answer means
  * anything downstream.
+ * @experimental
  */
 export interface PathResolution {
     ok: boolean;
@@ -135,8 +218,10 @@ export interface PathResolution {
  * `characters.name` is not a near-miss to be corrected — it is a category
  * error, and saying so is the whole reason the old flattened `string[]` form
  * had to go: it accepted exactly that and rejected `characters.0.name`.
+ * @internal
  */
 export declare function resolvePath(decl: VarDecl | undefined, path: readonly string[], base?: string): PathResolution;
+/** @internal */
 export declare function elementOf(decl: VarDecl | undefined): VarField | undefined;
 /**
  * Does a value match a declared schema?
@@ -152,6 +237,7 @@ export declare function elementOf(decl: VarDecl | undefined): VarField | undefin
  * sample carrying a field the schema omits means the schema is incomplete, and
  * an incomplete schema is a completion list missing an entry the author needs —
  * silently, with no way to tell it apart from a field that truly is not there.
+ * @experimental
  */
 export declare function checkValue(value: unknown, field: VarField, path?: string): string[];
 /**
@@ -161,6 +247,66 @@ export declare function checkValue(value: unknown, field: VarField, path?: strin
  * unchecked by definition, and a bare `string[]` carries no types to check
  * against — pretending otherwise would fail honest declarations that simply
  * predate the schema.
+ * @experimental
  */
 export declare function checkScopeSample(values: Record<string, unknown>, scope: TemplateScope, label?: string): string[];
+/** An object's fields as TS: optional ones may be absent or null (see `VarField.optional`). */
+type ObjectValue<Fs> = {
+    -readonly [K in keyof Fs as Fs[K] extends {
+        optional: true;
+    } ? never : K]: VarValue<Fs[K]>;
+} & {
+    -readonly [K in keyof Fs as Fs[K] extends {
+        optional: true;
+    } ? K : never]?: VarValue<Fs[K]> | null;
+};
+/**
+ * The TypeScript type of a value a declaration describes.
+ *
+ * `VarValue<{ type: 'record', of: { type: 'string' } }>` is
+ * `Record<string, string>`. A declaration written as a literal (or `as const`)
+ * types exactly; one widened to `VarField` — or `'any'` — is `unknown`, which
+ * is the honest answer for a shape the compiler cannot see. What makes a
+ * variable's `sample` and a layout's in-code fallback compile-checked.
+ * @experimental
+ */
+export type VarValue<F> = F extends 'any' ? unknown : F extends readonly string[] ? {
+    [K in F[number]]?: unknown;
+} : F extends {
+    type: 'string';
+} ? string : F extends {
+    type: 'number';
+} ? number : F extends {
+    type: 'boolean';
+} ? boolean : F extends {
+    type: 'list';
+    of: infer O;
+} ? VarValue<O>[] : F extends {
+    type: 'record';
+    of: infer O;
+} ? Record<string, VarValue<O>> : F extends {
+    type: 'object';
+    fields: infer Fs;
+} ? ObjectValue<Fs> : unknown;
+/** Every root of a template scope, typed — `ScopeValues<typeof decl.scope>`. @experimental */
+export type ScopeValues<S extends TemplateScope> = {
+    -readonly [K in keyof S]: VarValue<S[K]>;
+};
+/**
+ * A `FieldDecl`, in the template type language — `undefined` for what never enters a template.
+ * @internal
+ */
+export declare function fieldToVarField(f: FieldDecl | undefined): VarField | undefined;
+/**
+ * What a slot's configured value looks like to a template, as a `VarField`.
+ *
+ * `prompts` — an object of the authored text fields, each a string.
+ * `parameters` / `settings` — an object of the declared schema's fields, typed
+ * from the field language; a `secret` field is left out, because a secret
+ * never enters a template's scope. Every other kind (a template, a connection,
+ * a variables slot) is not a value a template reads, and is `undefined`.
+ * @experimental
+ */
+export declare function slotToVarField(slot: SlotDecl): VarField | undefined;
+export {};
 //# sourceMappingURL=template.d.ts.map

@@ -48,6 +48,7 @@ import { type SpecDocument } from './document.js';
 import type { Extension } from './extension.js';
 import { type RegistryEntry } from './registry.js';
 import type { Bindings } from './executor.js';
+/** @experimental */
 export interface DevOverlay {
     slug: string;
     version: string;
@@ -69,9 +70,12 @@ export interface DevOverlay {
  * host's job — it owns the module cache, the watcher and the sandbox — and keeping that out
  * of here means this function is pure and testable, and that the SDK is not quietly a
  * module loader.
+ * @experimental
  */
 export declare function devOverlay(extension: Extension, entry: string, now: number): DevOverlay;
+/** @experimental */
 export type ChangeKind = 'type-added' | 'type-removed' | 'type-changed' | 'pipeline-added' | 'pipeline-removed' | 'pipeline-changed' | 'component-changed' | 'binding-changed';
+/** @experimental */
 export interface Change {
     kind: ChangeKind;
     id: string;
@@ -79,6 +83,7 @@ export interface Change {
     hot: boolean;
     note?: string;
 }
+/** @experimental */
 export interface ReloadPlan {
     changes: Change[];
     /** Applied immediately. */
@@ -99,6 +104,7 @@ export interface ReloadPlan {
  *
  * Components are always hot: they render, they do not participate in a run, and a developer
  * iterating on a message renderer should never be told to wait.
+ * @experimental
  */
 export declare function reloadPlan(prev: DevOverlay, next: DevOverlay, inFlight?: ReadonlyArray<{
     runId: string;
@@ -108,6 +114,7 @@ export declare function reloadPlan(prev: DevOverlay, next: DevOverlay, inFlight?
 /**
  * What a dev overlay must never do. Exported as data so the host can assert it rather than
  * remember it — the persistence rule is the one that silently stops being true.
+ * @experimental
  */
 export declare const DEV_INVARIANTS: readonly [{
     readonly id: 'D1';

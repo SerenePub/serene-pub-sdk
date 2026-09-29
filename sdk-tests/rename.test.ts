@@ -2,8 +2,8 @@
  * The one-shot rename (plans/30 §U3; R-1, R-4, R-7 P2, R-10, R-13, R-14 —
  * ruled 2026-09-14/15, landed 2026-09-16). Each pin here is a word the
  * constitution now uses, held against the code: the kinds and their ids, the
- * clauses, the one event registry, the four-scope chain, the params owner rule,
- * and the deprecated spellings a plugin may still import for one release.
+ * clauses, the one event registry, the four-scope chain and the params owner
+ * rule.
  */
 
 import { test, describe } from 'node:test'
@@ -23,14 +23,6 @@ import {
 	S,
 	pin,
 	describeQueryDefinition,
-	// the deprecated spellings — resolvable, and the same objects
-	describeQueryType,
-	getType,
-	getDefinition,
-	pipelineHook,
-	handler,
-	defineScriptType,
-	defineScriptKind,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { CORE_SPECS } from '@serene-pub/core-catalog'
@@ -163,8 +155,12 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 			const actions = (doc.contributes as any)?.actions ?? []
 			for (const a of actions) {
 				assert.ok(Array.isArray(a.venue) && a.venue.length, `${s.slug} action ${a.key} venue`)
+				// `form` since the U5d review (S1): the venue a block alone reaches.
 				for (const v of a.venue)
-					assert.ok(['composer', 'message'].includes(v.kind), `${s.slug} action venue ${v.kind}`)
+					assert.ok(
+						['composer', 'message', 'form'].includes(v.kind),
+						`${s.slug} action venue ${v.kind}`,
+					)
 				assert.equal('kind' in a, false)
 				assert.equal('pick' in a, false)
 			}
@@ -173,9 +169,9 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 	})
 })
 
-describe('R-10 · the scope chain is session · preset · defaults · author', () => {
+describe('R-10 · the scope chain is session · config · defaults · author', () => {
 	test('the constant and the matrix agree', () => {
-		assert.deepEqual(SCOPE_ORDER, ['session', 'preset', 'defaults', 'author'])
+		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
 		for (const scopes of Object.values(WRITE_MATRIX))
 			for (const s of scopes) assert.ok(SCOPE_ORDER.includes(s), `matrix names ${s}`)
 	})
@@ -264,14 +260,5 @@ describe('R-7 P2 · one params owner per setting per spec', () => {
 			const n = doc.nodes.find((x) => x.key === 'names.arm.embed')!
 			assert.equal(n.resolvedRefs?.['params'], 'semantic.arm.embed', slug)
 		}
-	})
-})
-
-describe('the deprecated spellings resolve to the same things, for one release', () => {
-	test('aliases are the renamed values', () => {
-		assert.equal(describeQueryType, describeQueryDefinition)
-		assert.equal(getType, getDefinition)
-		assert.equal(pipelineHook, handler)
-		assert.equal(defineScriptType, defineScriptKind)
 	})
 })

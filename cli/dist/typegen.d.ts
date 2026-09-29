@@ -9,7 +9,7 @@
  * Generated, never written: the same declarations that ship become the
  * types, so they cannot drift from the documents.
  */
-import type { AnnouncementDocument } from '@serene-pub/sdk';
+import { type AnnouncementDocument } from '@serene-pub/sdk';
 import type { TypeSurface } from './scaffold.js';
 /** The generated module: one typed handle per pipeline, one per genre id. */
 export declare function generateTypedHandles(announcement: AnnouncementDocument, typeOf: (definitionId: string, version: number) => TypeSurface | undefined): string;

@@ -29,6 +29,7 @@ import type { Result } from './executor.js'
 
 // ── Quota ───────────────────────────────────────────────────────────────────
 
+/** @experimental */
 export interface StorageUsage {
 	/** The ceiling, from the manifest's `storage.quotaBytes`. */
 	quotaBytes: number
@@ -48,6 +49,7 @@ export interface StorageUsage {
  * A write that would exceed the quota returns `err` — it does not throw, and it
  * does not partially apply. The usage figures come back either way so a caller
  * can prune and retry without a second round trip.
+ * @experimental
  */
 export interface WriteReceipt {
 	/** Bytes this write added (negative when it replaced something larger). */
@@ -65,6 +67,7 @@ export interface WriteReceipt {
  * is a different (and much bigger) conversation than "let a plugin keep some
  * state" — and a query language here would become a compatibility surface no
  * one can change.
+ * @experimental
  */
 export interface RowQuery {
 	/** Keys starting with this. Absent means every key. */
@@ -81,6 +84,7 @@ export interface RowQuery {
 	order?: 'newest' | 'oldest' | 'key'
 }
 
+/** @experimental */
 export interface RowEntry<T = unknown> {
 	key: string
 	value: T
@@ -89,6 +93,7 @@ export interface RowEntry<T = unknown> {
 	updatedAt: string
 }
 
+/** @experimental */
 export interface RowPage<T = unknown> {
 	rows: RowEntry<T>[]
 	/** Absent when this was the last page. */
@@ -97,6 +102,7 @@ export interface RowPage<T = unknown> {
 
 // ── Files ───────────────────────────────────────────────────────────────────
 
+/** @experimental */
 export interface FileEntry {
 	/** Relative to the extension's own directory. Never absolute, never
 	 *  escaping it — the host rejects `..` rather than normalising it. */
@@ -112,6 +118,7 @@ export interface FileEntry {
  * Jailed the same way plugin storage and media already are: paths are relative,
  * containment is asserted by the host, and nothing an extension supplies
  * reaches a filesystem call unchecked.
+ * @experimental
  */
 export interface ExtensionFiles {
 	list(prefix?: string): Promise<FileEntry[]>
@@ -125,6 +132,7 @@ export interface ExtensionFiles {
 
 // ── The surface ─────────────────────────────────────────────────────────────
 
+/** @experimental */
 export interface ExtensionStorage {
 	/** Ask, at any time. Cheap enough to call before a large write. */
 	usage(): Promise<StorageUsage>
@@ -144,5 +152,7 @@ export interface ExtensionStorage {
 
 /** Nothing here reaches outside the extension's own namespace, so there is no
  *  capability to grant and nothing to put on a consent screen: an extension
- *  managing its own rows is not a permission, it is housekeeping. */
+ *  managing its own rows is not a permission, it is housekeeping. 
+ * @experimental
+ */
 export const STORAGE_IS_UNPRIVILEGED = true as const

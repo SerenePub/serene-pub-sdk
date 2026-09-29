@@ -72,7 +72,7 @@ describe('an unpicked sampling slot falls back to the instance default', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'preset' as const,
+						scopeKind: 'config' as const,
 					},
 				],
 			},

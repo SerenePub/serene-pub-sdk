@@ -18,6 +18,7 @@
  */
 import type { SpecDocument } from './document.js';
 import { type CapabilityId, type CapabilitySet, type Verdict } from './capabilities.js';
+/** @experimental */
 export interface ConnectionRequirement {
     nodeKey: string;
     slot: string;
@@ -34,6 +35,7 @@ export interface ConnectionRequirement {
  *
  * "Needs" means a binding an importer has to make. A slot the document already
  * points at another node's is not one of those — see `sharedWithAnotherNode`.
+ * @experimental
  */
 export declare function requiredConnections(doc: SpecDocument): ConnectionRequirement[];
 /**
@@ -42,6 +44,7 @@ export declare function requiredConnections(doc: SpecDocument): ConnectionRequir
  * Feeds `needs-configuration` (12 §6), which is deliberately not `broken`. A spec nobody
  * has given a connection is not damaged, it is unfinished — and the difference decides
  * whether a user files a bug or opens settings.
+ * @experimental
  */
 export declare function unwiredConnections(doc: SpecDocument, bound: ReadonlyArray<{
     nodeKey: string;
@@ -59,9 +62,10 @@ export declare function unwiredConnections(doc: SpecDocument, bound: ReadonlyArr
  * "Embeddings", "Image generation"), so `can` only reads for the handful that
  * happen to start with a verb and gives "a connection that can Embeddings" for
  * the rest.
+ * @experimental
  */
 export declare const renderRequirement: (r: ConnectionRequirement) => string;
-/** One slot, checked against what the connection bound to it can actually do. */
+/** One slot, checked against what the connection bound to it can actually do. @experimental */
 export interface UnsatisfiedConnection extends ConnectionRequirement {
     verdict: Verdict;
 }
@@ -75,6 +79,7 @@ export interface UnsatisfiedConnection extends ConnectionRequirement {
  *
  * Takes the resolved capability set per slot rather than a connection id, so
  * this stays pure — the caller does the lookup it was going to do anyway.
+ * @experimental
  */
 export declare function unsatisfiedConnections(doc: SpecDocument, boundCapabilities: ReadonlyArray<{
     nodeKey: string;

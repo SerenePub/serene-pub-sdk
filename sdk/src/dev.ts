@@ -51,6 +51,7 @@ import { bindingsOf, handlersOf } from './extension.js'
 import { snapshotRegistry, type RegistryEntry } from './registry.js'
 import type { Bindings } from './executor.js'
 
+/** @experimental */
 export interface DevOverlay {
 	slug: string
 	version: string
@@ -73,6 +74,7 @@ export interface DevOverlay {
  * host's job — it owns the module cache, the watcher and the sandbox — and keeping that out
  * of here means this function is pure and testable, and that the SDK is not quietly a
  * module loader.
+ * @experimental
  */
 export function devOverlay(extension: Extension, entry: string, now: number): DevOverlay {
 	return {
@@ -91,6 +93,7 @@ export function devOverlay(extension: Extension, entry: string, now: number): De
 	}
 }
 
+/** @experimental */
 export type ChangeKind =
 	| 'type-added'
 	| 'type-removed'
@@ -101,6 +104,7 @@ export type ChangeKind =
 	| 'component-changed'
 	| 'binding-changed'
 
+/** @experimental */
 export interface Change {
 	kind: ChangeKind
 	id: string
@@ -109,6 +113,7 @@ export interface Change {
 	note?: string
 }
 
+/** @experimental */
 export interface ReloadPlan {
 	changes: Change[]
 	/** Applied immediately. */
@@ -130,6 +135,7 @@ export interface ReloadPlan {
  *
  * Components are always hot: they render, they do not participate in a run, and a developer
  * iterating on a message renderer should never be told to wait.
+ * @experimental
  */
 export function reloadPlan(prev: DevOverlay, next: DevOverlay, inFlight: ReadonlyArray<{ runId: string; specId: string; typeIds: string[] }> = []): ReloadPlan {
 	const changes: Change[] = []
@@ -189,6 +195,7 @@ export function reloadPlan(prev: DevOverlay, next: DevOverlay, inFlight: Readonl
 /**
  * What a dev overlay must never do. Exported as data so the host can assert it rather than
  * remember it — the persistence rule is the one that silently stops being true.
+ * @experimental
  */
 export const DEV_INVARIANTS = [
 	{

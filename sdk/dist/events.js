@@ -1,9 +1,9 @@
 /**
  * The event registry (01 §8 / F8, 13 §7 and §7g).
  *
- * Only core emits, from a closed core-owned set. Nodes have no emit API and plugins
- * cannot define events; they subscribe. This file is the registry's *shape*, built so
- * that reopening plugin-defined events later is a permission rather than a migration.
+ * No node emits: a write causes the event its outlet declares. Core's events are a
+ * closed set; a package declares its own with `defineSessionEvent()` and records one
+ * with the `record-event` write. Both kinds live in this registry.
  *
  * Two things here are deliberate and both were rulings, not conveniences:
  *
@@ -21,9 +21,11 @@
  *    observes" or need a special case in the CTE.
  */
 import { refuseUnlessIdentical } from './hash.js';
-import { S } from './shapes.js';
+import { S, getShape } from './shapes.js';
+import { i18nFindings, i18nText } from './i18n.js';
 const bySlug = new Map();
 let nextId = 1;
+/** @experimental */
 export function defineEvent(def) {
     const existing = bySlug.get(def.slug);
     // Built against the id the slug already holds, so an identical re-declaration
@@ -39,12 +41,41 @@ export function defineEvent(def) {
         throw new Error(`action event '${def.slug}' declares causedBy. Action events are requests, not ` +
             `consequences of a write — that is what keeps them out of the cycle graph (13 §7)`);
     }
+    if (def.declaredRoot && def.causedBy?.length) {
+        throw new Error(`event '${def.slug}' is a declared root and declares causedBy — a root starts outside ` +
+            `every pipeline, so nothing writes it. Drop one of the two`);
+    }
     if (!existing)
         nextId++;
     bySlug.set(def.slug, e);
     return e;
 }
+/** @internal */
 export const getEvent = (slug) => bySlug.get(slug);
+/**
+ * The event an id names — core's (`core:event/message-completed@1`) or one a
+ * package declared — or `undefined`. Core's are keyed by bare slug, so the
+ * owner and version are checked here rather than trusted:
+ * `acme:event/message-completed@1` is not core's event.
+ * @experimental
+ */
+export function eventById(id) {
+    const m = /^core:event\/([a-z0-9]+(?:-[a-z0-9]+)*)@(\d+)$/.exec(id);
+    if (!m)
+        return packageEventViews.get(id);
+    const e = bySlug.get(m[1]);
+    // Compared as written: `@01` is not `@1`, and would match no binding key.
+    return e && String(e.version) === m[2] ? e : undefined;
+}
+/**
+ * The sentence every door refuses an undeclared event with: a lock, a
+ * `causesEvent`, a recording. One wording, so a modder meets the same fix
+ * wherever the mistake was written.
+ * @experimental
+ */
+export const notADeclaredEvent = (id) => `'${id}' is not a declared event — core defines its own, and a package declares one with ` +
+    `defineSessionEvent({ id, payload, … }) and names it in defineExtension({ events }).`;
+/** @internal */
 export const allEvents = () => [...bySlug.values()];
 /**
  * `owner:event/name@N` — the grammar every event key wears since R-4: a
@@ -52,23 +83,125 @@ export const allEvents = () => [...bySlug.values()];
  * are keyed by this and nothing else. The owner segment matches the genre
  * id's (`core`, `acme.rp`); the name is lowercase-hyphenated; the version
  * is a whole number.
+ * @experimental
  */
 export const EVENT_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*:event\/[a-z0-9]+(?:-[a-z0-9]+)*@\d+$/;
 /**
  * Is this string an event id? A bare name (`message-respond`) is not, and a
  * host that stored bare keys before the fold migrates them once — it never
  * accepts a new one (plans/30 §U3 review, W6).
+ * @internal
  */
 export const isEventId = (id) => EVENT_ID.test(id);
 /**
  * The events the inter-spec cycle CTE reads (F9). Action events are excluded by
  * construction rather than by an exception someone has to remember.
+ * @experimental
  */
 export const cycleRelevantEvents = () => allEvents().filter((e) => e.family === 'data');
+/** @experimental */
 export function _clearEvents() {
     bySlug.clear();
+    packageEvents.clear();
+    packageEventViews.clear();
     nextId = 1;
 }
+const packageEvents = new Map();
+const packageEventViews = new Map();
+/** The shape every recorded event reaches a listener in (see `RecordedEventPayload`). @experimental */
+export const RECORDED_EVENT_SHAPE = 'core:shape/recorded-event@1';
+/**
+ * Declare an event your package's pipelines record. The id is under
+ * your package's slug; the payload is a shape id, and a pipeline that records
+ * the event is checked against it at publish. Registered on declaration, so a
+ * spec's inlet may lock on it: `.inlet('e', C.sessionEvent.v1(), { genre,
+ * events: [guessed] })`.
+ * @experimental
+ */
+export function defineSessionEvent(d) {
+    if (!EVENT_ID.test(d.id) || d.id.startsWith('core:') || /@0\d/.test(d.id))
+        throw new Error(`'${d.id}' is not an event id a package may declare — '<your slug>:event/<name>@<version>', ` +
+            `lowercase and hyphenated, the version a whole number; 'core:' is core's`);
+    const text = [...i18nFindings(d.name, 'name', { required: true }), ...i18nFindings(d.description, 'description')];
+    if (text.length)
+        throw new Error(`event '${d.id}': ${text.join('; ')}`);
+    if ('delivery' in d)
+        throw new Error(`event '${d.id}': an event has no 'delivery' — it is heard by everything in its scope. ` +
+            `Remove it, and keep anything secret in state, not in the event`);
+    const payloadId = typeof d.payload === 'string' ? d.payload : d.payload?.id;
+    if (!payloadId || !getShape(payloadId))
+        throw new Error(`event '${d.id}': payload '${String(payloadId)}' is not a registered shape — pass one of S.*`);
+    // The declaration travels as data in the manifest and a package's own
+    // shapes do not, so an instance could not re-declare the event.
+    if (!payloadId.startsWith('core:'))
+        throw new Error(`event '${d.id}': payload '${payloadId}' is your package's own shape, which an installed ` +
+            `package cannot carry yet — use S.json and check the payload in the listener`);
+    const decl = Object.freeze({
+        __decl: 'session-event',
+        id: d.id,
+        payload: payloadId,
+        name: d.name,
+        description: d.description,
+        domain: 'session',
+    });
+    const existing = packageEvents.get(d.id);
+    if (existing)
+        refuseUnlessIdentical(existing, decl, `event '${d.id}' is declared twice, differently`);
+    packageEvents.set(d.id, decl);
+    const [, version] = d.id.split('@');
+    packageEventViews.set(d.id, {
+        id: 0,
+        slug: d.id,
+        version: Number(version),
+        family: 'data',
+        affectsUser: false,
+        causedBy: ['core:outlet/record-event'],
+        payload: RECORDED_EVENT_SHAPE,
+        name: typeof d.name === 'string' ? { en: d.name } : d.name,
+        description: i18nText(d.description) ?? '',
+        ownerPluginId: null,
+    });
+    return decl;
+}
+/** The most a recording's payload may weigh, serialized — it rides every listener's inlet and the ledger. @experimental */
+export const MAX_RECORDED_PAYLOAD_BYTES = 64 * 1024;
+/**
+ * What is wrong with a value recorded as an event's payload, or undefined.
+ * The host's check at the write: plain JSON, within the size cap, and a
+ * string where the declared shape is text. Publish checks the wiring; this
+ * checks the value that actually arrived.
+ * @experimental
+ */
+export function recordedPayloadFindings(shape, value) {
+    let json;
+    try {
+        json = JSON.stringify(value ?? null);
+    }
+    catch {
+        return 'the payload is not plain JSON (a cycle, or a value JSON cannot carry)';
+    }
+    if (json === undefined)
+        return 'the payload is not plain JSON';
+    const bytes = new TextEncoder().encode(json).length;
+    if (bytes > MAX_RECORDED_PAYLOAD_BYTES)
+        return `the payload is ${bytes} bytes; a recording carries at most ${MAX_RECORDED_PAYLOAD_BYTES}`;
+    if (shape === 'core:shape/text@1' && typeof value !== 'string')
+        return `the event's payload is text, and ${value === null || value === undefined ? 'nothing' : typeof value} arrived`;
+    return undefined;
+}
+/**
+ * Withdraw a package event, so an upgraded package may declare it again,
+ * differently. The host's to call on uninstall and reinstall.
+ * @internal
+ */
+export function _withdrawSessionEvent(id) {
+    packageEvents.delete(id);
+    packageEventViews.delete(id);
+}
+/** A package event by id, or undefined. @experimental */
+export const packageEventById = (id) => packageEvents.get(id);
+/** Whether a value is an event declaration (so a literal can be written as its id). @experimental */
+export const isSessionEventDecl = (v) => !!v && typeof v === 'object' && v.__decl === 'session-event';
 // ── The closed core set — THE ONE registry (R-4, ruled 2026-09-15) ──────────
 //
 // The genre's session events (24 §5) are core events, folded in here from
@@ -78,6 +211,7 @@ export function _clearEvents() {
 // spec's inlet lock (`.inlet(key, node, { genre, event })`) is the only
 // subscription there is. The DATA events core's outlets cause are here too, so
 // a host projecting this set projects the whole registry and keeps no copy.
+/** @experimental */
 export const CORE_EVENTS = {
     messageCreated: defineEvent({
         slug: 'message-created',
@@ -90,8 +224,8 @@ export const CORE_EVENTS = {
     }),
     /**
      * A row was finished or rewritten by a pipeline's own write. A regenerate,
-     * a swipe's fresh alternative and a continue are THIS event with `verb`
-     * on the payload — `regenerate` · `swipe` · `continue` — rather than three
+     * a swipe's fresh alternative and an extend are THIS event with `verb`
+     * on the payload — `regenerate` · `swipe` · `extend` — rather than three
      * events of their own (R-15, 2026-09-16): each is the genre's pipeline
      * producing text plus core's rewrite of the row, and the rewrite is one
      * outlet. A plain reply's finishing write carries no `verb`.
@@ -151,6 +285,23 @@ export const CORE_EVENTS = {
         description: 'A different alternative of a message was selected, or a new one recorded. The payload carries the alternative that was showing and the index now selected.',
     }),
     /**
+     * A line's **shown sprite** changed (DESIGN-sprites §5.2): a sprite picker
+     * chose one after a reply, or a person changed it from the message menu.
+     * The payload names the line, the speaker, the `{ set, label }` now shown
+     * (null for none) and `source` — `picker` or `person`. What TTS line
+     * direction and any face-driven widget listen for.
+     */
+    spriteShown: defineEvent({
+        slug: 'sprite-shown',
+        name: { en: 'Sprite shown' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        causedBy: ['core:outlet/show-sprite'],
+        payload: S.sessionChange,
+        description: "A line's sprite changed — chosen by a sprite picker after a reply, or by a person. The payload carries the set and label now shown and who chose it.",
+    }),
+    /**
      * Stop is not a write outlet: it is the run-level guarantee (R-17) —
      * core finalises the row a cancelled run was filling — so it has no
      * `causedBy`. Emitted by the host from that finalisation, and from the
@@ -174,6 +325,101 @@ export const CORE_EVENTS = {
         causedBy: ['core:outlet/branch-session'],
         payload: S.sessionChange,
         description: 'A session was branched at a message into a new session. The payload names the new session and the message it forked from.',
+    }),
+    // ── Turn order as event-driven state (PLAN-turn-order §4.1, 2026-09-21) ──
+    // The four events the turn-order spec answers or causes. Every session
+    // event's payload carries a `cause` (`EventCause`): who or what fired
+    // it, which is what the auto-advance listener keys on.
+    /**
+     * A row that is **not generating** landed: a user send, a seeded
+     * greeting, a finalised reply, a stopped reply. Never for a placeholder
+     * or a generating row — the reply's *completion* is the fact, not its
+     * opening. Distinct from `message-created` (which fires at the write,
+     * placeholder included) and `message-updated` (which also fires on an
+     * attach): this is the one event that means "there is a new settled
+     * turn to answer".
+     */
+    messageCompleted: defineEvent({
+        slug: 'message-completed',
+        name: { en: 'Message completed' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        causedBy: [
+            'core:outlet/create-message',
+            'core:outlet/seed-greetings',
+            'core:outlet/update-message',
+        ],
+        payload: S.sessionChange,
+        description: 'A message finished landing — a send, a seeded greeting, a finished or stopped reply. Never a placeholder or a row still being written.',
+    }),
+    /**
+     * A seated participant's row changed — switched on or off (`active`),
+     * `position` or portrayal. Not add or remove: those stay
+     * `member-added` / `member-removed`. No `causedBy`: the cast toggles are
+     * socket writes, not an outlet's.
+     */
+    castChanged: defineEvent({
+        slug: 'cast-changed',
+        declaredRoot: true,
+        name: { en: 'Cast changed' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        payload: S.castChange,
+        description: 'A session character, persona or envoy row changed — switched on or off, position or portrayal. The payload names the participant and what moved.',
+    }),
+    /**
+     * `sessions:update` landed — name, scenario, lorebook, genre fields,
+     * preset, channels, tags. The payload's `changed` lists the fields by
+     * name. No `causedBy`: a socket write. ⚠ Never emitted by
+     * `writeTurnOrder`, which is raw SQL for exactly this reason (§3).
+     */
+    sessionUpdated: defineEvent({
+        slug: 'session-updated',
+        declaredRoot: true,
+        name: { en: 'Session updated' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        payload: S.sessionChange,
+        description: "The session's settings changed — name, scenario, lorebook, genre fields, preset, channels or tags. The payload lists which.",
+    }),
+    /**
+     * `metadata.turnOrder` was written by `core:outlet/set-turn-order@1`.
+     * **Core-internal**: the auto-advance listener and the
+     * `sessions:turnOrder` push read it; `genre()` refuses it in a genre's
+     * `events`, so no preset can bind a spec to it and the recompute cannot
+     * feed itself.
+     */
+    turnOrderChanged: defineEvent({
+        slug: 'turn-order-changed',
+        name: { en: 'Turn order changed' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        causedBy: ['core:outlet/set-turn-order'],
+        payload: S.turnOrderChanged,
+        description: "The session's turn order was recomputed and written. The payload carries the order as written and the cause that led to it.",
+    }),
+    /**
+     * A pipeline's annex entry changed: "my state changed", for any genre.
+     * A package writes its annex through `core:outlet/set-session-annex@1`
+     * and binds this; for a named happening of its own it declares an event
+     * and records it. Emitted only
+     * when the merged value differs from the stored one, so a spec that
+     * rewrites the same value cannot feed itself; the lineage caps stop the
+     * rest.
+     */
+    annexChanged: defineEvent({
+        slug: 'annex-changed',
+        name: { en: 'Annex changed' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        causedBy: ['core:outlet/set-session-annex', 'core:outlet/set-annex-field'],
+        payload: S.annexChange,
+        description: "A pipeline's own session state changed — its annex entry. The payload names the owner whose entry moved.",
     }),
     /**
      * Not a write's event: the marker the `sessionChanges` list ends with when
@@ -228,6 +474,23 @@ export const CORE_EVENTS = {
         payload: S.sessionChange,
         description: 'A question or form in a message was answered. The payload carries the answer, who answered as whom, and the action it fired.',
     }),
+    /**
+     * A form was **superseded** (plans/29 R-15 *Staleness and order*; 30
+     * §U5f): the channel head moved past the turn it was issued at before it
+     * was answered, and a press on it reached the door. Recorded ONCE per
+     * block, the first time the door sees it stale, so the next reply's
+     * inlet learns the question lapsed — not on every render, and never by a
+     * render. No outlet causes it: the door does, like the truncation marker.
+     */
+    formSuperseded: defineEvent({
+        slug: 'form-superseded',
+        name: { en: 'Form superseded' },
+        version: 1,
+        family: 'data',
+        affectsUser: false,
+        payload: S.sessionChange,
+        description: 'A question or form in a message was overtaken — the conversation moved on before it was answered, and a press on it was refused. The payload names the message and the block.',
+    }),
     loreEntryCreated: defineEvent({
         slug: 'lore-entry-created',
         name: { en: 'Lore entry written' },
@@ -236,6 +499,23 @@ export const CORE_EVENTS = {
         affectsUser: true,
         causedBy: ['core:outlet/create-lore-entry'],
         description: 'A lorebook entry was written.',
+    }),
+    /**
+     * Two lore entries were linked (L2, 2026-09-17) — a room's exit, who keeps
+     * what, what stands near what.
+     *
+     * Its own event rather than `lore-entry-created`: a link is not an entry,
+     * nothing about it is created or changed, and a subscriber that wants to
+     * redraw a map wants exactly this and none of the writes that make rows.
+     */
+    loreLinkCreated: defineEvent({
+        slug: 'lore-link-created',
+        name: { en: 'Lore entries linked' },
+        version: 1,
+        family: 'data',
+        affectsUser: true,
+        causedBy: ['core:outlet/link-lore-entries'],
+        description: 'Two lorebook entries were linked.',
     }),
     graphProposalCreated: defineEvent({
         slug: 'graph-proposal-created',
@@ -250,6 +530,7 @@ export const CORE_EVENTS = {
     /** The create slot — required; exactly one pipeline per genre answers it. */
     sessionCreated: defineEvent({
         slug: 'session-created',
+        declaredRoot: true,
         name: { en: 'Session created' },
         version: 1,
         family: 'action',
@@ -259,6 +540,7 @@ export const CORE_EVENTS = {
     /** The primary turn. A swipe is this pipeline re-run, not a new event. */
     messageRespond: defineEvent({
         slug: 'message-respond',
+        declaredRoot: true,
         name: { en: 'Reply' },
         version: 1,
         family: 'action',
@@ -268,6 +550,7 @@ export const CORE_EVENTS = {
     /** Arbitrary buttons/triggers — the contributed functions surface (19 §3). */
     sessionAction: defineEvent({
         slug: 'session-action',
+        declaredRoot: true,
         name: { en: 'Action' },
         version: 1,
         family: 'action',
@@ -276,19 +559,25 @@ export const CORE_EVENTS = {
     }),
     memberAdded: defineEvent({
         slug: 'member-added',
+        declaredRoot: true,
         name: { en: 'Member joined' },
         version: 1,
         family: 'action',
         affectsUser: false,
-        description: 'A character or persona joined a session; the payload carries which.',
+        // A seat is a cast change (R31): `change: 'added'`, `ref` the member.
+        payload: S.castChange,
+        description: 'A character, persona or envoy joined a session; the payload carries which.',
     }),
     memberRemoved: defineEvent({
         slug: 'member-removed',
+        declaredRoot: true,
         name: { en: 'Member left' },
         version: 1,
         family: 'action',
         affectsUser: false,
-        description: 'A character or persona left a session; the payload carries which.',
+        // An unseat is a cast change (R31): `change: 'removed'`, `ref` the member.
+        payload: S.castChange,
+        description: 'A character, persona or envoy left a session; the payload carries which.',
     }),
     /**
      * A UI action asked for a run (13 §7). Carrying both users is what answers the
@@ -308,7 +597,7 @@ export const CORE_EVENTS = {
         family: 'action',
         affectsUser: true,
         description: 'Someone asked for a run from the interface — a composer action, a message action, ' +
-            'a re-roll. Payload: sessionId, ownerUserId, triggeringUserId, action, modeId, input.',
+            'a re-roll. Payload: sessionId, ownerUserId, actorUserId, action, modeId, input.',
     }),
     /**
      * The path for scheduled model work (13 §7c). No callable may call an oracle

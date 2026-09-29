@@ -38,6 +38,7 @@ import type { FieldDecl, MemberDecl } from './settings.js'
  * switching it off are different acts — the first forgets where it sat, the
  * second keeps its place — and a list that could only express the first would
  * make "turn the lore off for a moment" destroy the ordering somebody tuned.
+ * @experimental
  */
 export interface PromptBlockEntry {
 	/** The template variable that renders this section — `worldLore`, `history`. */
@@ -57,6 +58,7 @@ export interface PromptBlockEntry {
  *
  * Order is the 0.5 prompt's order, unchanged. Do not tidy it: every entry's
  * position is a byte in every prompt on every install that has changed nothing.
+ * @internal
  */
 export const SHIPPED_PROMPT_BLOCK_IDS = [
 	'currentDate',
@@ -70,6 +72,7 @@ export const SHIPPED_PROMPT_BLOCK_IDS = [
 	'relationshipsKnown',
 ] as const
 
+/** @experimental */
 export type ShippedPromptBlockId = (typeof SHIPPED_PROMPT_BLOCK_IDS)[number]
 
 /** What a person reads in the list editor, in the declaration rather than the client. */
@@ -98,6 +101,7 @@ const BLOCK_MEMBERS: readonly MemberDecl[] = SHIPPED_PROMPT_BLOCK_IDS.map((key) 
  * one off there is no row anywhere and the pack is whatever this says — which
  * is also what lets the shipped order be corrected in a release rather than
  * swept through every install's rows.
+ * @internal
  */
 export const SHIPPED_PROMPT_BLOCKS: readonly PromptBlockEntry[] = SHIPPED_PROMPT_BLOCK_IDS.map(
 	(id) => ({ id, enabled: true }),
@@ -112,6 +116,7 @@ export const SHIPPED_PROMPT_BLOCKS: readonly PromptBlockEntry[] = SHIPPED_PROMPT
  * carry is honoured if the template produces it and reported on the receipt if
  * it does not (`resolvePromptBlocks`). A refusal there would turn "I switched
  * my pipeline's template" into a run that stops.
+ * @experimental
  */
 export const PROMPT_BLOCKS_DECL: FieldDecl = {
 	type: 'list',
@@ -147,6 +152,7 @@ export const PROMPT_BLOCKS_DECL: FieldDecl = {
  * Serene Pub ships and are emphatically not the same thing for one somebody
  * wrote, whose sections may sit in an order they chose. Treating the default as
  * an instruction would silently rewrite every custom template on first run.
+ * @internal
  */
 export function isShippedPromptBlocks(value: unknown): boolean {
 	if (!Array.isArray(value)) return false
@@ -158,7 +164,7 @@ export function isShippedPromptBlocks(value: unknown): boolean {
 	})
 }
 
-/** What a resolution decided, and what the receipt says about it. */
+/** What a resolution decided, and what the receipt says about it. @experimental */
 export interface ResolvedPromptBlocks {
 	/** The effective order: block ids, as they will be rendered. */
 	order: string[]
@@ -184,6 +190,7 @@ export interface ResolvedPromptBlocks {
  *
  * A duplicate id keeps its first position and is dropped thereafter: a block is
  * one section, and rendering it twice is not a thing the list can mean.
+ * @internal
  */
 export function resolvePromptBlocks(
 	configured: unknown,

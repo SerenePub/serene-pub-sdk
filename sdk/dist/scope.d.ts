@@ -21,6 +21,7 @@ import type { PortDecl } from './descriptors.js';
 /**
  * A node accessor. It **is** a ref to `main`, and property access refines the port —
  * so `$.generate` and `$.generate.text` are both legal and mean what they look like.
+ * @experimental
  */
 export type NodeAccessor<Out extends PortDecl> = DataRef & {
     readonly [K in keyof Out]: DataRef;
@@ -45,6 +46,7 @@ type Nested<N> = {
  * What the callback receives. `Nodes` is accumulated by the builder, one entry per
  * declared node, so autocomplete lists exactly the nodes that exist at this point in
  * the chain — and nothing later.
+ * @experimental
  */
 export type Scope<Nodes extends Record<string, PortDecl>> = Nested<Nodes>;
 /**
@@ -54,9 +56,10 @@ export type Scope<Nodes extends Record<string, PortDecl>> = Nested<Nodes>;
  * @param localPrefix inside a block chain, the qualifier its members share — so a
  *   sibling can be named by its short key (`$.embed`) while an outside node is still
  *   reachable by its full path (`$.gather.semantic.embed`).
+ * @experimental
  */
 export declare function makeScope(knownKeys: Set<string>, localPrefix?: string, clauseId?: string): any;
-/** The current item inside a map, addressed without knowing the block's key. */
+/** The current item inside a map, addressed without knowing the block's key. @experimental */
 export declare const ITEM = "$item";
 export {};
 //# sourceMappingURL=scope.d.ts.map

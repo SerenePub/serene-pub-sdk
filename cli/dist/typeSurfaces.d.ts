@@ -8,5 +8,6 @@
  * function is not a thing to ask of a caller.
  */
 import type { TypeSurface } from './scaffold.js';
+/** @internal */
 export declare function typeSurfaces(): Promise<(definitionId: string, version: number) => TypeSurface | undefined>;
 //# sourceMappingURL=typeSurfaces.d.ts.map

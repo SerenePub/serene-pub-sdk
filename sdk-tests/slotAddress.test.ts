@@ -89,7 +89,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 						slot: 'connection',
 						path: SLOT_VALUE,
 						value: 'picked-one',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -132,39 +132,13 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 						slot: 'connection',
 						path: SLOT_VALUE,
 						value: 22, // a NUMBER, as the panel writes it
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
 		})
 		assert.equal(seen.connection?.id, '22', 'the picked connection, not the default')
 		assert.notEqual(seen.connection?.id, '11')
-	})
-
-	test('the legacy addresses are still read, so no stored row is stranded', async () => {
-		// `'ref'` was written by the app's own legacy projection and `'$ref'` was
-		// what this executor read. Both are folded to SLOT_VALUE at the single
-		// resolution chokepoint, loudly, rather than silently resolving to nothing.
-		for (const legacy of ['ref', '$ref']) {
-			const { seen, bindings: b } = capturing()
-			await run(doc(), {
-				input: {},
-				bindings: b,
-				world: {
-					...twoConnections,
-					overrides: [
-						{
-							nodeKey: 'generate',
-							slot: 'connection',
-							path: legacy,
-							value: 'picked-one',
-							scopeKind: 'preset',
-						},
-					],
-				},
-			})
-			assert.equal(seen.connection?.id, 'picked-one', `legacy path '${legacy}'`)
-		}
 	})
 
 	test('with no pick at all it still falls back to the instance default', async () => {
@@ -211,7 +185,7 @@ describe('a ref slot resolves at one address, by value not identity', () => {
 							slot: 'sampling',
 							path: SLOT_VALUE,
 							value: 'cfg_precise',
-							scopeKind: 'preset',
+							scopeKind: 'config',
 						},
 					],
 				},

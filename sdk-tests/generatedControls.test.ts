@@ -175,7 +175,6 @@ describe('a surface declares its props, and the harness reads them', () => {
 			})
 			.components(
 				component({
-					surface: 'core:surface/settings-section@1',
 					slug: 'dice-settings',
 					label: 'Dice settings',
 					framework: 'svelte',

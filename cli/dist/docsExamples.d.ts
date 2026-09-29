@@ -24,6 +24,7 @@
 import { type BuiltSpec, type Receipt, type SpecDocument } from '@serene-pub/sdk';
 import { type ExampleRunCtx, type ExampleRunOptions } from '@serene-pub/sdk/testing';
 import type { DocPage } from './docs.js';
+import type { HarnessContext, MountedComponent } from './testing.js';
 /**
  * The pieces an executed example runs on — the fixed seed and clock, the run
  * context, and the receipt rendering the page shows — now live in
@@ -32,7 +33,7 @@ import type { DocPage } from './docs.js';
  * the same way, and it cannot import this file (it is Node).
  */
 export type { ExampleRunCtx, ExampleRunOptions };
-/** One `<slug>.example.ts` module's default-ish export. */
+/** @public One `<slug>.example.ts` module's default-ish export. */
 export interface Example {
     /** Matches the filename stem — it is the page's name and the golden's. */
     slug: string;
@@ -42,6 +43,26 @@ export interface Example {
     build(): BuiltSpec | SpecDocument;
     run(ctx: ExampleRunCtx): Promise<Receipt>;
 }
+/**
+ * A component example (C3b): a component mounted by the harness with a canned
+ * context — and, optionally, a few presses — whose page shows its source and
+ * the DOM the page would show. Exported as `componentExample` from a
+ * `<slug>.example.ts`, in place of `example`.
+ * @experimental
+ */
+export interface ComponentExample {
+    slug: string;
+    title: string;
+    summary: string;
+    /** The component's entry, relative to the examples directory. */
+    entry: string;
+    /** The files the page prints, relative to the examples directory; the entry when omitted. */
+    show?: string[];
+    context?: HarnessContext;
+    /** What a person does before the page reads the DOM. */
+    act?(view: MountedComponent): Promise<void>;
+}
+/** @experimental */
 export interface ExampleGoldenReport {
     slug: string;
     /** There was no golden and `update` wrote the first one. */
@@ -49,6 +70,7 @@ export interface ExampleGoldenReport {
     /** A golden existed, the run no longer matches it, and `update` rewrote it. */
     changed: boolean;
 }
+/** @experimental */
 export interface ExampleDocsOptions {
     /** Directory holding `*.example.ts`. */
     dir: string;
@@ -66,6 +88,7 @@ export interface ExampleDocsOptions {
  * a claim nobody checked: a module that exports no `example`, a slug that does
  * not match its filename, a document with a validation finding, or a run that
  * no longer matches its golden.
+ * @experimental
  */
 export declare function renderExampleDocs(opts: ExampleDocsOptions): Promise<{
     pages: DocPage[];

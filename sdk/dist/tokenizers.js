@@ -20,8 +20,10 @@
  *
  * ## Why the data-bearing loaders are registered rather than imported here
  *
- * The SDK has **no dependencies**, deliberately — nothing in `src/` imports
- * anything outside it. Real tokenizers are the opposite of that: the four
+ * The SDK barrel has **no dependencies**, deliberately — nothing it reaches
+ * imports anything outside `src/`. (The one exception is its own entry point:
+ * `/template-check` parses with `handlebars` and `liquidjs`, typed templates
+ * Q5, and nothing on the barrel imports it.) Real tokenizers are the opposite of that: the four
  * packages a host needs for the twelve ids below are ~69 MB on disk, and an
  * author who installed `@serene-pub/sdk` to write one node type has no business
  * downloading a BPE merge table. There is also a hard mechanical reason: this
@@ -43,7 +45,7 @@
  * fails.
  */
 import { countableText, roughTokens } from './preview.js';
-/** What `count` is when nothing better could be resolved. */
+/** What `count` is when nothing better could be resolved. @internal */
 export const ROUGH_TOKENIZER_ID = 'rough';
 /**
  * A counter that is nothing but a characters-per-token ratio.
@@ -88,7 +90,7 @@ const HOST_PROVIDED = [
     'mistral',
     'cohere',
 ];
-/** Every id this SDK will answer to, whether or not a loader is registered. */
+/** Every id this SDK will answer to, whether or not a loader is registered. @internal */
 export const TOKENIZER_IDS = [...definitions.keys(), ...HOST_PROVIDED];
 /**
  * In-flight and settled loads, keyed by id.
@@ -110,6 +112,7 @@ const loading = new Map();
  * session. The trade is that a plugin can shadow a host's loader for an id —
  * which is a real risk and a deliberate one: the alternative was worse, and a
  * shadowing loader still cannot change what the id *means*, only how it loads.
+ * @experimental
  */
 export function defineTokenizer(t) {
     definitions.set(t.id, t);
@@ -117,7 +120,7 @@ export function defineTokenizer(t) {
     loading.delete(t.id);
     return t;
 }
-/** Every id that currently has a loader — the registered ones plus the built-ins. */
+/** Every id that currently has a loader — the registered ones plus the built-ins. @internal */
 export const registeredTokenizers = () => [...definitions.keys()];
 /**
  * Resolve an id to something that can count, and never fail.
@@ -128,6 +131,7 @@ export const registeredTokenizers = () => [...definitions.keys()];
  * that threw is an environment problem worth naming *with its own message*,
  * because "gpt-tokenizer is not installed" and "this Android build cannot parse
  * that regex" want different fixes.
+ * @internal
  */
 export async function loadTokenizer(id) {
     const requested = typeof id === 'string' ? id.trim() : '';

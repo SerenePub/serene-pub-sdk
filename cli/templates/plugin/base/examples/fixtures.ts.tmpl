@@ -1,0 +1,111 @@
+/**
+ * The fixture host the executed example runs against — one binding per node
+ * definition, every one of them deterministic.
+ *
+ * Nothing here reaches a model, reads a clock or rolls, so the receipt the
+ * example produces is the receipt on every machine and the golden beside it is
+ * a test rather than noise.
+ *
+ * **This plugin's own node is answered by this plugin's own handler.** That is
+ * the point of an example: the stand-ins are the *core* nodes, and everything
+ * the package actually decides really runs.
+ *
+ * ✎ CHANGE: add a stand-in for every core node your spec pins. A node with no
+ *   binding halts the run, and the receipt names it.
+ */
+
+/* `any` on the stand-ins is deliberate: a fixture host answers every node
+   definition, and their inputs are as many shapes as there are nodes. */
+import { ok, type Bindings, type ConfigWorld } from '@serene-pub/sdk'
+
+import { echoDefinition, echoHandler } from '../src/index.js'
+
+/** The world a run resolves its slots against: one connection, one sampling config. */
+export const world: ConfigWorld = {
+	overrides: [],
+	samplingConfigs: [
+		{
+			id: 'cfg_default',
+			name: 'Default',
+			shape: 'core:shape/text-gen@1',
+			values: { temperature: 0.7 },
+		},
+	],
+	connections: [
+		{
+			id: 'local',
+			name: 'Local',
+			kind: 'core:shape/text-gen@1',
+			metadata: { contextLength: 4096, tokenizer: 'llama-bpe', model: 'llama3' },
+			material: { apiKey: 'SECRET-DO-NOT-LEAK' },
+		},
+	],
+	activeConnection: { 'core:shape/text-gen@1': 'local' },
+	authorDefaults: {},
+}
+
+/** What the conversation looks like when the example runs. */
+export const TRANSCRIPT = [
+	{ id: 1, channel: 'main', role: 'user', content: 'are you there' },
+]
+
+export interface FixtureOptions {
+	/** The line the stand-in oracle answers with. */
+	reply?: string
+}
+
+export function bindings(opts: FixtureOptions = {}, over: Bindings = {}): Bindings {
+	const reply = opts.reply ?? 'I am. ✎ CHANGE: whatever your model would have said.'
+
+	const base: Bindings = {
+		/* ── core: the inlets ────────────────────────────────────────────── */
+		'core:inlet/user-message@1': async (i) => ok(i),
+		'core:inlet/session-created@1': async (i) => ok(i),
+
+		/* ── core: the reads ─────────────────────────────────────────────── */
+		'core:query/session-history@1': async () =>
+			ok({
+				main: 'history',
+				messages: TRANSCRIPT,
+				band: {
+					sourceKey: 'history',
+					items: [],
+					weight: 0.4,
+					minInclude: 2,
+					priority: 'normal',
+				},
+			}),
+		'core:query/session-cast@1': async () =>
+			ok({ main: 'cast', cast: { characters: [{ id: 7, name: 'Someone' }], personas: [] } }),
+
+		/* ── this package's own node, answered by this package ───────────── */
+		[echoDefinition.id]: echoHandler as never,
+
+		/* ── core: the context and the prompt ────────────────────────────── */
+		'core:task/build-template-context@1': async () =>
+			ok({ main: 'character', templateContext: { kind: 'character' }, seedName: 'Someone' }),
+		'core:task/assemble@2': async (i: any) => {
+			const input = i as { messages?: unknown[] }
+			const context = { lines: (input.messages ?? []).length }
+			return ok({ main: context, context })
+		},
+
+		/* ── core: the one call that would cross the boundary ────────────── */
+		'core:oracle/generate-text@1': async (_i: any, ctx: any) => {
+			const oracle = ctx as { reportUsage(n: number): void; call(p: unknown): Promise<unknown> }
+			oracle.reportUsage(24)
+			await oracle.call({ shape: 'reply' })
+			return ok({ main: reply, text: reply })
+		},
+
+		/* ── core: the one write ─────────────────────────────────────────── */
+		'core:outlet/create-message@1': async (i: any, ctx: any) => {
+			const input = i as { text?: string; blocks?: unknown }
+			const outlet = ctx as { commit(p: unknown): Promise<{ id: string | number }> }
+			const row = await outlet.commit({ text: input.text, blocks: input.blocks })
+			return ok({ main: row.id, messageId: row.id })
+		},
+	}
+
+	return { ...base, ...over }
+}

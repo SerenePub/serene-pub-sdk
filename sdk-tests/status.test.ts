@@ -4,7 +4,7 @@
  * The laws, each with what would be broken if it failed:
  *
  *  · `ctx.status` is on EVERY kind's ctx — a query saying *thinking* and an
- *    oracle saying *typing* is the whole point; a kind without it is a stage
+ *    oracle saying *typing* is the whole point; a kind without it is a step
  *    the person watching cannot hear from.
  *  · the host hears each CHANGE with the node key, and nothing else — six
  *    parallel reads all saying *thinking* are one status, not six frames.
@@ -29,6 +29,7 @@ import {
 	slot,
 	fillStatusVars,
 	renderStatusText,
+	i18nText,
 	sameStatus,
 	statusVarsMentioned,
 	HOST_FILLED_STATUS_VARS,
@@ -36,6 +37,7 @@ import {
 	type Kind,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { publish, bindings, world } from './helpers.js'
 
 const THINKING: StatusText = { i18n: { en: '{speaker} is thinking' } }
@@ -49,7 +51,6 @@ const reply = () =>
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('prompt', ($) =>
 			C.assemble.v2({
-				candidates: $.history.messages,
 				connection: slot.connection(),
 				template: slot.template(),
 			}),
@@ -113,7 +114,7 @@ describe('R-19 · ctx.status on every kind', () => {
 		assert.equal(r.outcome, 'ok')
 		assert.deepEqual([...kinds].sort(), ['inlet', 'oracle', 'outlet', 'query', 'task'])
 		assert.deepEqual(
-			seen.map((s) => [s.nodeKey, s.text.i18n.en]),
+			seen.map((s) => [s.nodeKey, i18nText(s.text.i18n)]),
 			[
 				['history', '{speaker} is thinking'],
 				['prompt', '{speaker} is composing'],
@@ -198,7 +199,7 @@ describe('R-19 · ctx.status on every kind', () => {
 		})
 		assert.equal(r.outcome, 'ok')
 		assert.deepEqual(
-			seen.map((s) => s.text.i18n.en),
+			seen.map((s) => i18nText(s.text.i18n)),
 			['{speaker} is thinking', '{speaker} is typing'],
 		)
 	})
@@ -354,7 +355,7 @@ describe('ctx.iteration · identity for a counting status', () => {
 		const doc = publish(
 			spec('demo:statuses-each@1', { version: '1.0.0' })
 				.inlet('input', C.userMessage.v1())
-				.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
+				.task('chunks', ($) => T.chunkText.v1({ text: $.input.text }))
 				.each('summarize', { over: ($) => $.chunks.items, max: 8 }, (m) =>
 					m.oracle('sum', C.generateText.v1({ connection: slot.connection() })),
 				),
@@ -364,7 +365,7 @@ describe('ctx.iteration · identity for a counting status', () => {
 			input: { text: 'a|b|c' },
 			world,
 			bindings: bindings({
-				'core:task/chunk-text@1': async (i: any, ctx: any) => {
+				'test:task/chunk-text@1': async (i: any, ctx: any) => {
 					seen.push({ nodeKey: 'chunks', iteration: ctx.iteration })
 					const items = String(i.text ?? '').split('|')
 					return ok({ main: items, items })

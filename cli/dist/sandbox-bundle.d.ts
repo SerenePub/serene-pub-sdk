@@ -18,8 +18,9 @@
  * (declared a peerDependency so the host toolchain provides it).
  */
 import * as esbuild from "esbuild";
-/** The base esbuild options for a plugin bundle. */
+/** @internal The base esbuild options for a plugin bundle. */
 export declare function pluginBundleOptions(): esbuild.BuildOptions;
+/** @internal */
 export interface BundleInput {
     /** Inline entry source (for programmatic/test use). */
     source?: string;
@@ -29,6 +30,8 @@ export interface BundleInput {
     resolveDir?: string;
 }
 /** Bundle a plugin to a single self-contained CJS string. Throws on a build
- * error (including a forbidden capability import). */
+ * error (including a forbidden capability import).
+ * @internal
+ */
 export declare function bundlePlugin(input: BundleInput): Promise<string>;
 //# sourceMappingURL=sandbox-bundle.d.ts.map

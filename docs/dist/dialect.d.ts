@@ -69,6 +69,11 @@ export interface RenderedMarkdown {
     headings: DocHeading[];
     /** Previews by heading id — the body under that heading, ≤180 chars. */
     previews: Record<string, string>;
+    /**
+     * Search text by heading id — the same body, longer (≤1200 chars), so a
+     * word further into a section than its preview still finds it.
+     */
+    sectionTexts: Record<string, string>;
     /** Every relative `.md` link and bare `#anchor`, in document order. */
     links: DocLinkRef[];
     /** Every image reference, in document order, as written. */

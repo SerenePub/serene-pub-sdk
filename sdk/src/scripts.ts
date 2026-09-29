@@ -33,10 +33,11 @@
  */
 
 import type { I18n } from './descriptors.js'
+import { i18nFindings } from './i18n.js'
 import type { ShapeId } from './shapes.js'
 import { refuseUnlessIdentical } from './hash.js'
 
-/** `core:script:text/stop@1` — namespaced, segmented by payload, pinned. */
+/** `core:script:text/stop@1` — namespaced, segmented by payload, pinned. @experimental */
 export type ScriptKindId = string
 
 /**
@@ -45,6 +46,7 @@ export type ScriptKindId = string
  * Declared per operation rather than per hook, because it is a property of the
  * contract: two `text` operations differ precisely in whether their return
  * flows onward or is consumed as a judgement.
+ * @experimental
  */
 export type ChainSemantics =
 	/**
@@ -61,6 +63,7 @@ export type ChainSemantics =
 	 */
 	| 'verdict'
 
+/** @experimental */
 export interface ScriptKindDecl {
 	id: ScriptKindId
 	i18n?: { name?: I18n; description?: I18n }
@@ -92,7 +95,7 @@ export interface ScriptKindDecl {
 	ports: { in: Record<string, ShapeId>; out: Record<string, ShapeId> }
 }
 
-/** A parsed script id. The segments callers actually branch on. */
+/** A parsed script id. The segments callers actually branch on. @experimental */
 export interface ParsedScriptKindId {
 	namespace: string
 	/** e.g. `text`, `messages`, `candidates`, `context`. */
@@ -107,7 +110,7 @@ export interface ParsedScriptKindId {
 const SCRIPT_ID =
 	/^([a-z0-9][a-z0-9.-]*):script:([a-z0-9][a-z0-9-]*)\/([a-z0-9][a-z0-9-]*)@(\d+)$/
 
-/** Is this a script id at all? Cheap enough to call in a filter. */
+/** Is this a script id at all? Cheap enough to call in a filter. @experimental */
 export const isScriptKindId = (id: string): boolean => SCRIPT_ID.test(id)
 
 /**
@@ -118,6 +121,7 @@ export const isScriptKindId = (id: string): boolean => SCRIPT_ID.test(id)
  * and a fallback that half-works is how a script ends up attached to a hook
  * nobody meant. An id is either well-formed or it is a bug in the thing that
  * produced it.
+ * @internal
  */
 export function parseScriptKindId(id: string): ParsedScriptKindId {
 	const m = SCRIPT_ID.exec(id)
@@ -147,6 +151,7 @@ export function parseScriptKindId(id: string): ParsedScriptKindId {
  * `candidates` script dropped into a `text/transform` chain refuses at attach
  * rather than at run time, and neither the registry nor the script body has to
  * be consulted to know it.
+ * @experimental
  */
 export const scriptSpace = (id: ScriptKindId): string => parseScriptKindId(id).space
 
@@ -160,9 +165,22 @@ const scriptTypes = new Map<ScriptKindId, ScriptKindDecl>()
  * matters more for scripts than elsewhere: these ids are matched by *segment*,
  * so a malformed one does not fail loudly, it quietly belongs to no chain and
  * no hook.
+ * @experimental
  */
 export function defineScriptKind(decl: ScriptKindDecl): ScriptKindDecl {
 	parseScriptKindId(decl.id)
+	// The display text (R-20): the name and description a panel lists it by,
+	// and the blast-radius badge — required, because a chain a person cannot
+	// read the consequences of is a permission nobody can grant knowingly.
+	const findings = [
+		...i18nFindings(decl.i18n?.name, `${decl.id} i18n.name`),
+		...i18nFindings(decl.i18n?.description, `${decl.id} i18n.description`),
+		...i18nFindings(decl.blastRadius, `${decl.id} blastRadius`, { required: true }),
+	]
+	if (findings.length)
+		throw new Error(
+			`${decl.id} declares display text a publish refuses (R-20):\n · ${findings.join('\n · ')}`,
+		)
 	const existing = scriptTypes.get(decl.id)
 	if (existing)
 		refuseUnlessIdentical(existing, decl, `duplicate script type id: ${decl.id}`, {
@@ -182,6 +200,7 @@ export function defineScriptKind(decl: ScriptKindDecl): ScriptKindDecl {
  * The plugin-facing door. Same registration, minus the ability to claim core's
  * namespace — checked here rather than in `defineScriptKind` so core's own
  * declarations do not have to argue past their own guard.
+ * @experimental
  */
 export function definePluginScriptKind(pluginId: string, decl: ScriptKindDecl): ScriptKindDecl {
 	if (decl.id.startsWith('core:'))
@@ -194,15 +213,18 @@ export function definePluginScriptKind(pluginId: string, decl: ScriptKindDecl): 
 	return defineScriptKind(decl)
 }
 
+/** @internal */
 export const getScriptKind = (id: ScriptKindId) => scriptTypes.get(id)
+/** @experimental */
 export const allScriptKinds = () => [...scriptTypes.values()]
+/** @internal */
 export function _clearScriptKinds(): void {
 	scriptTypes.clear()
 }
 
 // ── Core's catalog, v1 (18 §3) ──────────────────────────────────────────────
 //
-// Eight types across five content scopes. The scopes map onto the existing
+// Nine types across six content scopes. The scopes map onto the existing
 // shape vocabulary rather than inventing a second taxonomy of what data is —
 // which is also what lets an extension add `image` or `audio` alongside its own
 // types and get a modality-agnostic tier for free.
@@ -211,6 +233,7 @@ const TEXT = 'core:shape/text@1'
 const CANDIDATES = 'core:shape/context-candidates@1'
 const JSON_SHAPE = 'core:shape/json@1'
 
+/** @experimental */
 export const textTransform = defineScriptKind({
 	id: 'core:script:text/transform@1',
 	i18n: {
@@ -237,6 +260,7 @@ export const textTransform = defineScriptKind({
  * It is also the one type with a conformance law attached (S1): the verdict is
  * a function of the accumulated text only, never of chunk boundaries, or a
  * reply replays differently than it streamed.
+ * @experimental
  */
 export const textStop = defineScriptKind({
 	id: 'core:script:text/stop@1',
@@ -259,6 +283,7 @@ export const textStop = defineScriptKind({
  * rewrites. That choice only exists because the two are separate operations —
  * a single `messages/edit` would have made "add a reminder at depth 2" and
  * "delete half the history" the same permission.
+ * @experimental
  */
 export const messagesInject = defineScriptKind({
 	id: 'core:script:messages/inject@1',
@@ -273,6 +298,7 @@ export const messagesInject = defineScriptKind({
 	ports: { in: { context: JSON_SHAPE }, out: { injections: JSON_SHAPE } },
 })
 
+/** @experimental */
 export const messagesTransform = defineScriptKind({
 	id: 'core:script:messages/transform@1',
 	i18n: {
@@ -284,6 +310,7 @@ export const messagesTransform = defineScriptKind({
 	ports: { in: { messages: JSON_SHAPE }, out: { messages: JSON_SHAPE } },
 })
 
+/** @experimental */
 export const candidatesFilter = defineScriptKind({
 	id: 'core:script:candidates/filter@1',
 	i18n: {
@@ -295,6 +322,7 @@ export const candidatesFilter = defineScriptKind({
 	ports: { in: { candidates: CANDIDATES }, out: { candidates: CANDIDATES } },
 })
 
+/** @experimental */
 export const candidatesRescore = defineScriptKind({
 	id: 'core:script:candidates/rescore@1',
 	i18n: {
@@ -306,6 +334,7 @@ export const candidatesRescore = defineScriptKind({
 	ports: { in: { candidates: CANDIDATES }, out: { candidates: CANDIDATES } },
 })
 
+/** @experimental */
 export const contextTransform = defineScriptKind({
 	id: 'core:script:context/transform@1',
 	i18n: {
@@ -332,6 +361,7 @@ export const contextTransform = defineScriptKind({
  * paste-rung half of replaceable cast extraction. The other half is the node
  * rebind: a whole different extractor is a same-shaped provider, never a
  * script, because scripts are pure compute and extraction calls a model.
+ * @experimental
  */
 export const castTransform = defineScriptKind({
 	id: 'core:script:cast/transform@1',
@@ -347,12 +377,48 @@ export const castTransform = defineScriptKind({
 })
 
 /**
+ * Who speaks next, as a script (plans/19 §5, second half; ruled 2026-09-21).
+ *
+ * The one seam a plugin — or an admin, in the Scripts panel with no plugin at
+ * all — has for turn detection of its own. Core's `core:task/turn-scripted@1`
+ * declares this kind at its `select` point and hands the chain a
+ * **selection**: `{ speaker, candidates, lastSpeaker, sinceUser }` — the pick so
+ * far (null until a link decides), every seat a strategy may seat (characters
+ * and in-turn envoys, each a participant reference with its position and name),
+ * who spoke last, and how many replies have landed since the person last
+ * spoke. A link returns the selection with `speaker` set, or nothing to leave
+ * the decision to the next link. The host seats only a reference that is in
+ * `candidates`; anything else is recorded and ignored, so a script can never
+ * seat somebody the cast does not hold.
+ *
+ * A transform rather than a verdict: the chain's *order* is its precedence —
+ * "the mentioned character, else whoever is due" is two links — and a verdict
+ * reduction would need a rule for which reference wins that no reduction states
+ * naturally. Its own content scope for the reason `cast` has one: chain
+ * homogeneity is keyed on content, and a selection is not a cast.
+ * @experimental
+ */
+export const turnSelect = defineScriptKind({
+	id: 'core:script:turn/select@1',
+	i18n: {
+		name: { en: 'Select the speaker' },
+		description: {
+			en: 'Decide who takes the next turn — the character who was addressed, the one who has been quiet longest, whoever the scene calls for.',
+		},
+	},
+	blastRadius: { en: 'Decides who speaks' },
+	semantics: 'transform',
+	ports: { in: { selection: JSON_SHAPE }, out: { selection: JSON_SHAPE } },
+})
+
+/**
  * Every content scope core ships, in panel order.
  *
  * Derived from the registry rather than restated, so a scope arrives the moment
  * a type using it is declared — including an extension's. A hand-written list
  * is the thing 18 §1 rule 3 warns against: a second taxonomy of what data is,
  * kept in step by hand.
+ * @experimental
  */
 export const scriptContentScopes = (): string[] => [
 	...new Set(allScriptKinds().map((t) => parseScriptKindId(t.id).content)),

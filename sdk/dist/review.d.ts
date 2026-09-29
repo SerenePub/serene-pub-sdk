@@ -25,14 +25,17 @@ import { type SettingsSchema } from './settings.js';
  * `on` is the old `sync`: the run parks until somebody decides. `resolvePosition`
  * still reads the two old spellings, because a stored setting or a plugin's
  * `reviewDefault` may predate this.
+ * @experimental
  */
 export type ReviewPosition = 'off' | 'on';
+/** @experimental */
 export interface ReviewRequest {
     nodeKey: string;
     definitionId: string;
     payload: unknown;
     position: Extract<ReviewPosition, 'on'>;
 }
+/** @experimental */
 export interface ReviewDecision {
     action: 'approve' | 'edit' | 'reject';
     /** Present only for 'edit'. The binding cannot tell this from an approval. */
@@ -40,6 +43,7 @@ export interface ReviewDecision {
     by: string;
     at: number;
 }
+/** @experimental */
 export interface ReviewRecord {
     nodeKey: string;
     position: ReviewPosition;
@@ -49,7 +53,7 @@ export interface ReviewRecord {
     by?: string;
     at?: number;
 }
-/** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). */
+/** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). @experimental */
 export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>;
 /**
  * The form a reviewer is shown for this node's payload.
@@ -66,6 +70,7 @@ export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>;
  * field the form did not offer cannot be written by construction. The refusal
  * in `undeclaredReviewFields` is the second, independent guard: a submission
  * naming one is refused outright rather than dropped in silence.
+ * @internal
  */
 export declare function reviewSchemaFor(definition: {
     review?: {
@@ -76,6 +81,7 @@ export declare function reviewSchemaFor(definition: {
  * The keys of a decision's values that the definition's `review.fields` does
  * not allow — empty when nothing is declared (every key is then a form
  * field) or when every submitted key is declared. Non-empty means refuse.
+ * @internal
  */
 export declare function undeclaredReviewFields(definition: {
     review?: {
@@ -86,14 +92,17 @@ export declare function undeclaredReviewFields(definition: {
  * There is deliberately no `'never'` position and no descriptor field that could produce
  * one. An author picks a default; the user's setting wins over it. Forbidding review is
  * not a value this type can hold, which is the enforcement (F14).
+ * @experimental
  */
 export declare const POSITIONS: readonly ReviewPosition[];
+/** @experimental */
 export declare function hashPayload(v: unknown): string;
 /**
  * Resolve the effective position: user setting if present, else the author's default,
  * else off. An author can raise the floor and never lower it below what a user chose.
+ * @experimental
  */
 export declare function resolvePosition(authorDefault: ReviewPosition | undefined, userSetting: unknown): ReviewPosition;
-/** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). */
+/** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). @experimental */
 export declare function isGated(effects: string | undefined): boolean;
 //# sourceMappingURL=review.d.ts.map

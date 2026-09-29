@@ -7,6 +7,7 @@
  * module implements them and the tests check whether it held.
  *
  * Verdict, recorded honestly at the bottom of this file.
+ * @experimental
  */
 
 export interface LoreEntry {
@@ -43,6 +44,7 @@ export interface LoreEntry {
 	preventRecursion?: boolean
 }
 
+/** @experimental */
 export interface ScanParams {
 	scanDepth: number
 	caseSensitive: boolean
@@ -87,6 +89,7 @@ const secondaryOk = (e: LoreEntry, text: string, p: ScanParams): boolean => {
  * Recursion lives *inside* the Query hook's opaque interior (01 §12.3) and is bounded by a
  * declared param — so it needs no pipeline-level construct and cannot become an unbounded
  * loop. This is the part of the parity claim that held cleanly.
+ * @experimental
  */
 export function activate(
 	entries: LoreEntry[],
@@ -121,7 +124,7 @@ export function activate(
 	return [...found.values()]
 }
 
-/** Probability, rolled against the run seed — so it replays, which ST's cannot. */
+/** Probability, rolled against the run seed — so it replays, which ST's cannot. @experimental */
 export function rollProbability(
 	hits: { entry: LoreEntry; depth: number }[],
 	random: () => number,
@@ -141,6 +144,7 @@ export function rollProbability(
  * insertion order as the deterministic tiebreak.
  *
  * This is ranking, so it belongs in the rank Task (16 §5c) — no new mechanism.
+ * @experimental
  */
 export function resolveGroups(entries: LoreEntry[], random: () => number): { kept: LoreEntry[]; lost: string[] } {
 	const groups = new Map<string, LoreEntry[]>()
@@ -172,6 +176,7 @@ export function resolveGroups(entries: LoreEntry[], random: () => number): { kep
 	return { kept, lost }
 }
 
+/** @experimental */
 export interface PositionedItem {
 	id: string
 	rendered: string
@@ -202,6 +207,7 @@ export interface PositionedItem {
  *
  * This function remains as the Task-side alternative, for authors who would rather compute
  * placement than express it in a template.
+ * @experimental
  */
 export function assembleWithPositions(
 	history: PositionedItem[],

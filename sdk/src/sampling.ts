@@ -53,6 +53,7 @@ import { S } from './shapes.js'
  * key the *chosen* connection cannot honour (enabling DRY and then pointing the
  * config at Anthropic); that is reported by the adapter as ignored, not blocked
  * here, because the config outlives the connection it happens to be paired with.
+ * @internal
  */
 export const textSamplingSchema: SettingsSchema = {
 	// ── Core ────────────────────────────────────────────────────────────
@@ -325,10 +326,10 @@ export const textSamplingSchema: SettingsSchema = {
 	},
 
 	// ── Reasoning ───────────────────────────────────────────────────────
-	// How hard the model thinks is a SAMPLING parameter, chosen per stage
+	// How hard the model thinks is a SAMPLING parameter, chosen per step
 	// through the sampling slot (ruling 2026-09-12) — never a flag on the
 	// connection. A connection is shared, so a flag there is one answer for
-	// every stage that shares it, and a planner nobody reads cannot then differ
+	// every step that shares it, and a planner nobody reads cannot then differ
 	// from the prose the reader is waiting for.
 	//
 	// The four members below are the whole enum: there is no `default`/`auto`
@@ -342,6 +343,12 @@ export const textSamplingSchema: SettingsSchema = {
 		description:
 			'How much the model reasons before answering. Off sends none of it; the response token limit still counts reasoning on most services.',
 		of: ['off', 'low', 'medium', 'high'],
+		members: [
+			{ key: 'off', label: 'Off' },
+			{ key: 'low', label: 'Low' },
+			{ key: 'medium', label: 'Medium' },
+			{ key: 'high', label: 'High' },
+		],
 		default: 'off',
 		group: 'Reasoning',
 	},
@@ -435,6 +442,7 @@ export const textSamplingSchema: SettingsSchema = {
  * is exactly what the "What is not here" note above forbids — and by the same
  * argument there is no such thing as a hosted sampling *preset*: a hosted
  * service has no sampling knobs to preset, it has a profile.
+ * @internal
  */
 export const imageSamplingSchema: SettingsSchema = {
 	steps: {
@@ -539,6 +547,7 @@ export const imageSamplingSchema: SettingsSchema = {
  *
  * `voice` is a free string for the same reason `sampler` is on images: the valid
  * names belong to the connection, not to the vocabulary.
+ * @internal
  */
 export const ttsSamplingSchema: SettingsSchema = {
 	voice: {
@@ -578,14 +587,14 @@ export const ttsSamplingSchema: SettingsSchema = {
 	},
 }
 
-/** Every vocabulary, keyed by the shape whose connections speak it. */
+/** Every vocabulary, keyed by the shape whose connections speak it. @internal */
 export const SAMPLING_SCHEMAS: Record<ShapeId, SettingsSchema> = {
 	[S.textGen]: textSamplingSchema,
 	[S.imageGen]: imageSamplingSchema,
 	[S.tts]: ttsSamplingSchema,
 }
 
-/** The shape a row without one is assumed to speak. */
+/** The shape a row without one is assumed to speak. @experimental */
 export const DEFAULT_SAMPLING_SHAPE: ShapeId = S.textGen
 
 /**
@@ -594,6 +603,7 @@ export const DEFAULT_SAMPLING_SHAPE: ShapeId = S.textGen
  * An unknown shape resolves to an empty schema rather than throwing: a row
  * written by a plugin whose provider is not installed should read as "no
  * parameters I can offer", not as a crash in whatever happened to load it.
+ * @internal
  */
 export function samplingSchemaFor(shape?: ShapeId | null): SettingsSchema {
 	return SAMPLING_SCHEMAS[shape ?? DEFAULT_SAMPLING_SHAPE] ?? {}
@@ -601,14 +611,14 @@ export function samplingSchemaFor(shape?: ShapeId | null): SettingsSchema {
 
 // ── Resolution ──────────────────────────────────────────────────────────────
 
-/** The stored side of a sampling config — the three columns that carry meaning. */
+/** The stored side of a sampling config — the three columns that carry meaning. @experimental */
 export interface SamplingRowLike {
 	shape?: ShapeId | null
 	values?: Record<string, unknown> | null
 	enabled?: readonly string[] | null
 }
 
-/** What an adapter receives: flat, enabled-only, defaults already applied. */
+/** What an adapter receives: flat, enabled-only, defaults already applied. @internal */
 export type ResolvedSampling = Record<string, unknown>
 
 /**
@@ -618,6 +628,7 @@ export type ResolvedSampling = Record<string, unknown>
  * so "is this key on?" has exactly one answer in the codebase. Callers get a
  * plain object: spreading a runtime override onto it is expected and is how
  * per-call budgets are applied.
+ * @internal
  */
 export function resolveSamplingValues(
 	row: SamplingRowLike,
@@ -655,6 +666,7 @@ export function resolveSamplingValues(
  * `contextTokensUnlocked`, or a parameter belonging to a shape this build does
  * not know — stay exactly where they were, and `resolveSamplingValues` is what
  * keeps them off the wire.
+ * @internal
  */
 export function normalizeSamplingRow(
 	row: SamplingRowLike,

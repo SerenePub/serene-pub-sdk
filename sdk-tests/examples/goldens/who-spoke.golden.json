@@ -1,0 +1,9 @@
+{
+	"slug": "who-spoke",
+	"html": "<div class=\"space-y-2 p-3\">\n  <p class=\"text-sm font-semibold\">\n    Who spoke last\n  </p>\n  <ol class=\"text-sm\">\n    <li>\n      Tobin\n    </li>\n    <li>\n      Narrator\n    </li>\n    <li>\n      Mira\n    </li>\n  </ol>\n  <button type=\"button\" class=\"btn preset-tonal\">\n    <sp-icon name=\"play\" size=\"14\">\n    </sp-icon>\n    Continue\n  </button>\n</div>",
+	"invoked": [
+		{
+			"key": "advance"
+		}
+	]
+}

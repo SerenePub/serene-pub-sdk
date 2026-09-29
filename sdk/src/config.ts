@@ -5,11 +5,11 @@
  *
  * ## The chain (R-10, ruled 2026-09-15; 09-B B8)
  *
- * **`session · preset · defaults · author`.**
+ * **`session · config · defaults · author`.**
  *
  *  - `session` — a session's own override of a value (the *chat override* of
  *    12 §2's "pipeline → config → chat override").
- *  - `preset` — the rows of the **selected config**: the config IS the
+ *  - `config` — the rows of the **selected config**: the config IS the
  *    instance's tuning. An administrator's edit lands in the config (ruled
  *    2026-08-24), so there is no separate `instance` layer for it to be shadowed
  *    by, and no `user` layer — a preference that differs per user is a session's
@@ -21,19 +21,39 @@
  *
  * `user` and `instance` stood in this list until 2026-09-16 and were pushed by
  * nothing: `world.ts` never projected a row at either (plans/29a §3). Their
- * semantics fold into `preset` — the config an admin edits is the instance's
+ * semantics fold into `config` — the config an admin edits is the instance's
  * configuration — which is the 2026-08-24 ruling stated as a constant.
  *
  * Resolved run-wide *before* execution, which is why referencing another node's
  * config is not a data edge (F35).
+ *
+ * ## `config`, not `preset` (R1)
+ *
+ * Two other things are called a preset — a **session preset** (the bundle a
+ * session is born on) and an author's `.preset(…)` on a spec — and neither is
+ * this layer, so the scope takes the canon's word for what it holds: the
+ * **config**.
  */
 
 import type { CapabilitySet } from './capabilities.js'
 
-export type ScopeKind = 'session' | 'preset' | 'defaults' | 'author'
+/** @experimental */
+export type ScopeKind = 'session' | 'config' | 'defaults' | 'author'
 
-export const SCOPE_ORDER: ScopeKind[] = ['session', 'preset', 'defaults', 'author']
+/** @internal */
+export const SCOPE_ORDER: ScopeKind[] = ['session', 'config', 'defaults', 'author']
 
+/**
+ * A row's scope kind. Anything that is not a `ScopeKind` is `undefined` — a
+ * row at a scope nobody resolves at, which resolution skips rather than
+ * guesses about.
+ * @experimental 🚧
+ */
+export function scopeKindOf(raw: unknown): ScopeKind | undefined {
+	return (SCOPE_ORDER as readonly unknown[]).includes(raw) ? (raw as ScopeKind) : undefined
+}
+
+/** @experimental */
 export interface OverrideRow {
 	nodeKey: string
 	slot: string
@@ -60,48 +80,11 @@ export interface OverrideRow {
  * is already in every user's `pipeline_config_values`. Any other choice would
  * migrate live data to match a convention only the reader believed in.
  *
- * @see normalizeSlotPath — accepts the two dead spellings, loudly.
+ * @internal
  */
 export const SLOT_VALUE = '' as const
 
-/** Slots whose value is a row reference, not a structure. */
-const REF_SLOTS = new Set(['connection', 'sampling'])
-
-/** The two spellings that were never written by the panel but were read for. */
-const LEGACY_SLOT_PATHS = new Set(['ref', '$ref'])
-
-const warned = new Set<string>()
-
-/**
- * A ref slot's path, with the historical spellings folded in.
- *
- * Deliberately narrow: it applies only to `connection` and `sampling`, and only
- * to the two exact strings. A `sampling` slot legitimately carries *other* paths
- * — a node-level override of one sampler is stored at that sampler's own name —
- * and none of those is `ref` or `$ref`, so nothing real is captured by accident.
- *
- * It warns once per address rather than staying quiet, because the failure this
- * replaces was silent. A row that still needs migrating should say so.
- */
-function normalizeSlotPath(slot: string, path: string): string {
-	if (!REF_SLOTS.has(slot) || !LEGACY_SLOT_PATHS.has(path)) return path
-	const key = `${slot}:${path}`
-	if (!warned.has(key)) {
-		warned.add(key)
-		console.warn(
-			`[config] a ${slot} slot value is stored at the legacy path '${path}'; ` +
-				`reading it as '${SLOT_VALUE}'. Migration 0175 normalises these — ` +
-				`if this appears after it has run, something is still writing the old address.`,
-		)
-	}
-	return SLOT_VALUE
-}
-
-/** Test seam: the warn-once set is process-global by design. */
-export function _resetSlotPathWarnings(): void {
-	warned.clear()
-}
-
+/** @experimental */
 export interface SamplingConfig {
 	id: string
 	name: string
@@ -123,6 +106,7 @@ export interface SamplingConfig {
 	enabled?: string[]
 }
 
+/** @experimental */
 export interface ConnectionRecord {
 	id: string
 	name: string
@@ -176,6 +160,7 @@ export interface ConnectionRecord {
  * model it is presumed to mean; what a host does with a half-named pair —
  * resolve a default of its own, or refuse it as unconfigured — is the host's
  * ruling. This type's only job is to say which half is absent.
+ * @internal
  */
 export type ConnectionSlotValue =
 	| string
@@ -193,6 +178,7 @@ export type ConnectionSlotValue =
  * stays a number. Row ids belong to the host, and this package has no business
  * ruling that they are one or the other; the string/number divide is reconciled
  * where the comparison happens, not here.
+ * @internal
  */
 export function slotConnectionId(value: unknown): string | number | null {
 	if (typeof value === 'number') return Number.isFinite(value) ? value : null
@@ -213,6 +199,7 @@ export function slotConnectionId(value: unknown): string | number | null {
  * compatibility story — and null is *absence*, never a model the endpoint is
  * taken to mean. Same id-type rule as {@link slotConnectionId}: stored as
  * given, back as stored.
+ * @internal
  */
 export function slotConnectionModelId(value: unknown): string | number | null {
 	if (!value || typeof value !== 'object') return null
@@ -235,6 +222,7 @@ export function slotConnectionModelId(value: unknown): string | number | null {
  * holds an endpoint id alone, so there is no model half here to carry. A host
  * whose own defaults are pairs resolves that half for itself, from the store
  * the default came out of.
+ * @experimental
  */
 export interface ResolvedConnection {
 	id: string
@@ -254,6 +242,7 @@ export interface ResolvedConnection {
 	contextWindow: number | null
 }
 
+/** @experimental */
 export interface ConfigWorld {
 	overrides: OverrideRow[]
 	samplingConfigs: SamplingConfig[]
@@ -287,6 +276,7 @@ export interface ConfigWorld {
 	authorDefaults?: Record<string, Record<string, Record<string, unknown>>>
 }
 
+/** @experimental */
 export type ResolvedConfig = Record<string, Record<string, Record<string, unknown>>>
 
 /**
@@ -296,6 +286,7 @@ export type ResolvedConfig = Record<string, Record<string, Record<string, unknow
  * most common support question this system can produce, and it is unanswerable
  * from the value alone — the answer is always "something above you set it too",
  * and only this says which something.
+ * @experimental
  */
 export interface ResolvedSource {
 	value: unknown
@@ -305,6 +296,7 @@ export interface ResolvedSource {
 	scopeId?: string | number
 }
 
+/** @experimental */
 export type ResolvedConfigSources = Record<string, Record<string, Record<string, ResolvedSource>>>
 
 /**
@@ -314,6 +306,7 @@ export type ResolvedConfigSources = Record<string, Record<string, Record<string,
  * beside it. Two implementations of a five-layer walk are two implementations
  * that eventually disagree about which layer wins — and the one that disagrees
  * silently is whichever one the UI is not using.
+ * @internal
  */
 export function resolveConfigSources(
 	world: ConfigWorld,
@@ -346,25 +339,19 @@ export function resolveConfigSources(
 		// version of this fix was lost in transit.
 		const SEP = '\u0000'
 		const addresses = new Map<string, [string, string]>()
-		// Normalised as the address is formed, so this is the ONE chokepoint every
-		// read passes through — a legacy spelling can never again resolve to its
-		// own private address (see SLOT_VALUE).
-		for (const r of rows) {
-			const path = normalizeSlotPath(r.slot, r.path)
-			addresses.set(`${r.slot}${SEP}${path}`, [r.slot, path])
-		}
+		for (const r of rows) addresses.set(`${r.slot}${SEP}${r.path}`, [r.slot, r.path])
 
 		for (const [slot, path] of addresses.values()) {
 			const candidates = rows.filter(
-				(r) => r.slot === slot && normalizeSlotPath(r.slot, r.path) === path,
+				(r) => r.slot === slot && r.path === path,
 			)
 			for (const scope of SCOPE_ORDER) {
-				const hit = candidates.find((c) => c.scopeKind === scope)
+				const hit = candidates.find((c) => scopeKindOf(c.scopeKind) === scope)
 				if (hit) {
 					node[slot] ??= {}
 					node[slot]![path] = {
 						value: hit.value,
-						scopeKind: hit.scopeKind,
+						scopeKind: scope,
 						...(hit.scopeId !== undefined ? { scopeId: hit.scopeId } : {}),
 					}
 					break
@@ -375,7 +362,7 @@ export function resolveConfigSources(
 	return out
 }
 
-/** Effective config = base ⊕ overrides, per (nodeKey, slot, path). */
+/** Effective config = base ⊕ overrides, per (nodeKey, slot, path). @internal */
 export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedConfig {
 	const out: ResolvedConfig = {}
 	for (const [nodeKey, slots] of Object.entries(resolveConfigSources(world, nodeKeys))) {
@@ -394,9 +381,10 @@ export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedC
  * connection has no writable scope below the config for a non-admin, so an
  * admin's choice reaches everyone automatically.
  *
- * `preset` here is the selected config — the one place an administrator's
+ * `config` here is the selected config — the one place an administrator's
  * edit lands (R-10 folded `instance` into it, 2026-09-16). A slot a session may
  * not write is a slot only the config carries.
+ * @internal
  */
 export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
 	// `session` added 2026-08-26 so a session may point at its own connection —
@@ -407,29 +395,31 @@ export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
 	// ⚠ An AUTHOR preset (12 §3a, `PresetBuilder`) still may not carry a
 	// connection — it does not export — which is F20's actual concern; that
 	// refusal is `PresetBuilder`'s deliberate absence of `.connection()`.
-	connection: ['session', 'preset'],
-	sampling: ['session', 'preset'],
-	template: ['preset'],
+	connection: ['session', 'config'],
+	sampling: ['session', 'config'],
+	template: ['config'],
 	// How a context variable is presented is a property of the instance's
 	// configuration, not a personal preference: two users whose characters render
 	// differently are two users whose bug reports cannot be compared. Same
 	// scopes as `template`, which is the same decision one level up.
-	variables: ['preset'],
-	prompts: ['session', 'preset'],
-	params: ['session', 'preset'],
-	settings: ['session', 'preset'],
+	variables: ['config'],
+	prompts: ['session', 'config'],
+	params: ['session', 'config'],
+	settings: ['session', 'config'],
 	// A chain changes what every run of the pipeline sends — the `variables`
 	// argument one tier up: two users whose chains differ are two users whose
 	// reports cannot be compared. Same scopes as `template`; widening to
 	// session later is one entry here, additively (18 §4a).
-	scripts: ['preset'],
+	scripts: ['config'],
 }
 
+/** @internal */
 export function mayWrite(slot: string, scope: ScopeKind): boolean {
-	return (WRITE_MATRIX[slot] ?? []).includes(scope)
+	const kind = scopeKindOf(scope)
+	return kind !== undefined && (WRITE_MATRIX[slot] ?? []).includes(kind)
 }
 
-/** Reject a write the matrix forbids, with the reason (15 §1.3). */
+/** Reject a write the matrix forbids, with the reason (15 §1.3). @experimental */
 export function assertWritable(slot: string, scope: ScopeKind): void {
 	if (!mayWrite(slot, scope)) {
 		throw new Error(

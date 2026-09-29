@@ -22,6 +22,7 @@
 import type { I18n } from './descriptors.js'
 import { refuseUnlessIdentical } from './hash.js'
 
+/** @experimental */
 export interface FacetDecl {
 	id: string
 	/**
@@ -47,6 +48,7 @@ export interface FacetDecl {
 
 const facets = new Map<string, FacetDecl>()
 
+/** @experimental */
 export function defineFacet(decl: FacetDecl): FacetDecl {
 	const existing = facets.get(decl.id)
 	if (existing) refuseUnlessIdentical(existing, decl, `duplicate facet: ${decl.id}`)
@@ -54,9 +56,12 @@ export function defineFacet(decl: FacetDecl): FacetDecl {
 	return decl
 }
 
+/** @internal */
 export const getFacet = (id: string) => facets.get(id)
+/** @experimental */
 export const allFacets = () =>
 	[...facets.values()].sort((a, b) => a.order - b.order)
+/** @experimental */
 export function _clearFacets(): void {
 	facets.clear()
 }

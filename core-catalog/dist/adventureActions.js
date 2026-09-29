@@ -13,25 +13,28 @@
  * `adventure-look` writes a message and changes nothing. The other two change
  * state and write no message at all, which is worth stating plainly because it
  * looks like a bug the first time you see a run with no reply: pressing Rest
- * produces a ledger under the last message, not a new one. A pipeline is
- * allowed exactly one write-class Consumer (F7) and is not obliged to have one.
+ * produces a ledger under the last message, not a new one. A pipeline may
+ * write as often as it likes and is not obliged to write at all (F7).
  *
  * ## Why `adventure-inventory` is not here
  *
  * The design lists a fourth action: a prose inventory check with no model call.
- * Two things say it should not be a pipeline. `core:query/session-state@1`
- * publishes possessions as a map keyed by owner, and no core node turns a map
- * into text — `join-text` reads a list. And the question it answers is the one
- * the **Inventory widget** answers continuously, in the session, with the item
+ * Two things say it should not be a pipeline. What somebody carries is their
+ * `inventory` stat (phase 3b), already in the state block every prompt reads,
+ * so a pipeline would only restate it. And the question it answers was the one
+ * the **Inventory widget** answered continuously, in the session, with the item
  * prose on hover. A button that writes a worse copy of a panel already on
- * screen is a feature competing with itself.
+ * screen is a feature competing with itself. (R79 removed that widget for now;
+ * the first reason still stands on its own, so the action stays out.)
  */
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { ADVENTURE_KEEPER_SCHEMA } from './adventure.js';
 import { adventureGenre } from './genres.js';
 /* ── look ───────────────────────────────────────────────────────────────── */
+/** @internal */
 export const ADVENTURE_LOOK_SPEC_ID = 'core:spec/adventure-look';
+/** @internal */
 export const ADVENTURE_LOOK_VERSION = '1.0.0';
 /**
  * The narrator describes where you are, from the lore and the world state, and
@@ -44,23 +47,22 @@ export const ADVENTURE_LOOK_VERSION = '1.0.0';
  * `state` port.** That port has been declared and unfilled since the stats
  * substrate landed, because Chat must never grow a state block. This is a genre
  * that wants one, using the standard context surface to get it.
+ * @internal
  */
 export const adventureLookSpec = () => compile(spec(ADVENTURE_LOOK_SPEC_ID, {
     version: ADVENTURE_LOOK_VERSION,
     taxonomy: {
         role: 'action',
-        genre: adventureGenre.id,
     },
     contributes: {
         actions: [
             {
                 key: 'look',
-                genre: adventureGenre.id,
-                function: 'look',
                 venue: { kind: 'composer' },
                 quick: true,
                 icon: 'eye',
                 label: { en: 'Look' },
+                description: { en: 'Have the narrator describe where you are and what you can see.' },
             },
         ],
     },
@@ -134,7 +136,7 @@ export const adventureLookSpec = () => compile(spec(ADVENTURE_LOOK_SPEC_ID, {
     params: slot.params(),
     // No `prompts` on the generating step — see `respond.ts`
     // (culled 2026-09-16, R-12).
-}))
+}), { expose: { stream: true, status: 'Looking around' } })
     .outlet('save', ($) => C.createMessage.v1({ text: $.write.text }))
     .build());
 /* ── the two keeper-only actions ────────────────────────────────────────── */
@@ -156,18 +158,16 @@ const keeperAction = (id, version, trigger) => compile(spec(id, {
     version,
     taxonomy: {
         role: 'action',
-        genre: adventureGenre.id,
     },
     contributes: {
         actions: [
             {
-                key: trigger.function,
-                genre: adventureGenre.id,
-                function: trigger.function,
+                key: trigger.key,
                 venue: { kind: 'composer' },
                 quick: true,
                 icon: trigger.icon,
                 label: { en: trigger.label },
+                description: { en: trigger.description },
             },
         ],
     },
@@ -238,57 +238,74 @@ const keeperAction = (id, version, trigger) => compile(spec(id, {
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}))
+}), { expose: { status: 'Updating the world' } })
     .query('resolve', ($) => C.resolveStateChanges.v1({
     changes: $.write.items,
     scope: $.input.sessionScope,
+    // The version this run read — see `respond`'s keeperResolve.
+    base: $.gather.state.read.version,
 }))
     .junction('commit', { on: ($) => $.input.fields }, (r) => r
     .when('trusted', { path: 'trustNarrator', truthy: true }, (c) => c.task('apply', ($) => C.setState.v1({
     changes: $.resolve.changes,
     scope: $.input.sessionScope,
+    base: $.gather.state.read.version,
     params: slot.params(),
 })))
     .otherwise('reviewed', (c) => c.task('propose', ($) => C.setState.v1({
     changes: $.resolve.changes,
     scope: $.input.sessionScope,
+    base: $.gather.state.read.version,
     params: slot.params(),
 }))))
     .preset('adventure', { label: 'Adventure', default: true }, (p) => p
     // The keeper's two arms, joined into the one list
     // the resolver takes.
-    .params('write', { path: 'values,possessions' })
+    .params('write', { path: 'values,inventory' })
     .params('commit.trusted.apply', { mode: 'apply' }))
     .build());
+/** @internal */
 export const ADVENTURE_REST_SPEC_ID = 'core:spec/adventure-rest';
+/** @internal */
 export const ADVENTURE_REST_VERSION = '1.0.0';
-/** Stop and recover: stamina and health back, and the clock moves on. */
+/** Stop and recover: stamina and health back, and the clock moves on. @internal */
 export const adventureRestSpec = () => keeperAction(ADVENTURE_REST_SPEC_ID, ADVENTURE_REST_VERSION, {
-    function: 'rest',
+    key: 'rest',
     icon: 'bed',
     label: 'Rest',
+    description: 'Stop to recover stamina and health while time moves on.',
 });
+/** @internal */
 export const ADVENTURE_ADVANCE_TIME_SPEC_ID = 'core:spec/adventure-advance-time';
+/** @internal */
 export const ADVENTURE_ADVANCE_TIME_VERSION = '1.0.0';
-/** Let time pass: the world clock steps on, and the weather may turn with it. */
+/** Let time pass: the world clock steps on, and the weather may turn with it. @internal */
 export const adventureAdvanceTimeSpec = () => keeperAction(ADVENTURE_ADVANCE_TIME_SPEC_ID, ADVENTURE_ADVANCE_TIME_VERSION, {
-    function: 'advance-time',
+    key: 'advance-time',
     icon: 'clock',
     label: 'Time passes',
+    description: 'Let time pass in the world; the weather may change with it.',
 });
 /* ── ask / answer: the worked form (plans/29 R-15 *Forms*; 30 §U5d) ──────── */
+/** @internal */
 export const ADVENTURE_ASK_SPEC_ID = 'core:spec/adventure-ask';
+/** @internal */
 export const ADVENTURE_ASK_VERSION = '1.0.0';
+/** @internal */
 export const ADVENTURE_ANSWER_SPEC_ID = 'core:spec/adventure-answer';
+/** @internal */
 export const ADVENTURE_ANSWER_VERSION = '1.0.0';
 /**
  * What the narrator's question comes back as, from `generate-json@1`.
  *
  * The addressee is a **name** rather than a participant reference: the
- * model reads names off the transcript, and `make-choices@1` resolves the
- * name against the cast into `character:<id>` at the write. A name that
- * resolves to nobody leaves the block unaddressed — buttons the owner may
- * press — rather than a broken form.
+ * model reads names off the transcript, and `make-choices@1` resolves
+ * the name — against the cast first, then the members' presences, by
+ * name or nickname — into `character:<id>` at the write. A name that
+ * resolves to nobody leaves the block unaddressed; a press on an
+ * unaddressed block is answered as the presser (their presence when
+ * they hold one, else their own line).
+ * @internal
  */
 export const ADVENTURE_ASK_SCHEMA = {
     type: 'object',
@@ -328,16 +345,15 @@ export const ADVENTURE_ASK_SCHEMA = {
  * declared here so the block has an identity to be stamped with. `answer`
  * is offered to any participant — the form's **addressee** is who may
  * actually press it, decided per block at the fire.
+ * @internal
  */
 export const adventureAskSpec = () => compile(spec(ADVENTURE_ASK_SPEC_ID, {
     version: ADVENTURE_ASK_VERSION,
-    taxonomy: { role: 'action', genre: adventureGenre.id },
+    taxonomy: { role: 'action' },
     contributes: {
         actions: [
             {
                 key: 'ask',
-                genre: adventureGenre.id,
-                function: 'ask',
                 venue: { kind: 'composer' },
                 quick: true,
                 icon: 'message-circle-question',
@@ -389,10 +405,14 @@ export const adventureAskSpec = () => compile(spec(ADVENTURE_ASK_SPEC_ID, {
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}))
+}), { expose: { status: 'Posing a question' } })
     .task('choices', ($) => C.makeChoices.v1({
     json: $.write.json,
     fn: 'answer',
+    // Answer is the other spec's declaration, named on purpose:
+    // the host holds the options to THAT action's audience —
+    // the block's addressee — and runs THAT spec on a press.
+    action: `${ADVENTURE_ANSWER_SPEC_ID}#answer`,
     cast: $.gather.cast.read.cast,
 }))
     .outlet('save', ($) => C.createMessage.v1({
@@ -412,23 +432,23 @@ export const adventureAskSpec = () => compile(spec(ADVENTURE_ASK_SPEC_ID, {
  *
  * Declared on its own spec rather than folded into `ask`: a spec has one
  * inlet and one graph, and asking and answering are two graphs.
+ * @internal
  */
 export const adventureAnswerSpec = () => compile(spec(ADVENTURE_ANSWER_SPEC_ID, {
     version: ADVENTURE_ANSWER_VERSION,
-    taxonomy: { role: 'action', genre: adventureGenre.id },
+    taxonomy: { role: 'action' },
     contributes: {
         actions: [
             {
                 key: 'answer',
-                genre: adventureGenre.id,
-                function: 'answer',
                 /**
-                 * Carried by a block in a message. ⏳ Listed in every
-                 * message's overflow as well until enabled-when (U5e)
-                 * can say "only where a form names it"; pressed from
-                 * the menu with no form, the run halts with a sentence.
+                 * Carried by a block in a message and pressed from that
+                 * block alone: the `form` venue (U5d review, S1) is the
+                 * one no listing offers, so *Answer* is in no message's
+                 * overflow and no composer menu — a question is answered
+                 * where it was asked. The block's fire still resolves it.
                  */
-                venue: { kind: 'message' },
+                venue: { kind: 'form' },
                 audience: { see: ['participant'], act: ['participant'] },
                 icon: 'message-circle-reply',
                 label: { en: 'Answer' },

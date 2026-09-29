@@ -7,6 +7,7 @@
  * module implements them and the tests check whether it held.
  *
  * Verdict, recorded honestly at the bottom of this file.
+ * @experimental
  */
 const matches = (text, key, useRegex, caseSensitive) => {
     if (useRegex) {
@@ -43,6 +44,7 @@ const secondaryOk = (e, text, p) => {
  * Recursion lives *inside* the Query hook's opaque interior (01 §12.3) and is bounded by a
  * declared param — so it needs no pipeline-level construct and cannot become an unbounded
  * loop. This is the part of the parity claim that held cleanly.
+ * @experimental
  */
 export function activate(entries, scanText, p) {
     const scanned = scanText.slice(0, Math.max(0, p.scanDepth)).join('\n');
@@ -74,7 +76,7 @@ export function activate(entries, scanText, p) {
     }
     return [...found.values()];
 }
-/** Probability, rolled against the run seed — so it replays, which ST's cannot. */
+/** Probability, rolled against the run seed — so it replays, which ST's cannot. @experimental */
 export function rollProbability(hits, random) {
     const kept = [];
     const rolledOut = [];
@@ -92,6 +94,7 @@ export function rollProbability(hits, random) {
  * insertion order as the deterministic tiebreak.
  *
  * This is ranking, so it belongs in the rank Task (16 §5c) — no new mechanism.
+ * @experimental
  */
 export function resolveGroups(entries, random) {
     const groups = new Map();
@@ -143,6 +146,7 @@ export function resolveGroups(entries, random) {
  *
  * This function remains as the Task-side alternative, for authors who would rather compute
  * placement than express it in a template.
+ * @experimental
  */
 export function assembleWithPositions(history, lore, budget, costOf) {
     const byPriority = (a, b) => {

@@ -1,4 +1,5 @@
 import { actionsOf, sessionEvents } from '@serene-pub/sdk';
+export { scaffoldPlugin, scaffoldValues, writeScaffoldedPlugin, ScaffoldError, } from './scaffoldPlugin.js';
 const comment = (lines, indent) => lines.map((l) => `${indent}// ${l}`).join('\n');
 const short = (v) => {
     const s = JSON.stringify(v);
@@ -31,6 +32,7 @@ function fieldLines(name, field) {
 /**
  * The config skeleton for one spec: every node with declarations, every
  * slot, every field — commented, defaults shown, ready to delete down.
+ * @experimental
  */
 export function scaffoldConfig(doc, typeOf) {
     const lines = [];
@@ -87,6 +89,7 @@ export function scaffoldConfig(doc, typeOf) {
 /**
  * The preset skeleton for one genre: its event surface with requiredness,
  * and for each slot the announced pipelines able to fill it.
+ * @experimental
  */
 export function scaffoldPreset(genreId, announcement) {
     const genre = announcement.genres.find((g) => g.id === genreId);
@@ -96,14 +99,17 @@ export function scaffoldPreset(genreId, announcement) {
         .filter((p) => p.input?.genre === genreId && p.input?.event === event)
         .map((p) => p.id);
     const lines = [];
-    lines.push(`// ${genreId} — the event surface a preset fills (24 §7).`);
-    lines.push(`// Required slots refuse to build unbound; open slots list actions.`);
-    lines.push(`import { preset, use } from "@serene-pub/sdk"`);
+    lines.push(`// ${genreId} — the event surface a preset fills.`);
+    lines.push(`// Each binding is a spec, bound on the events its inlet lock answers.`);
+    lines.push(`// Required slots refuse to build unbound. Specs you ship: pass the value`);
+    lines.push(`// you built instead of use(…), and drop \`events\` — it is read off the lock.`);
+    lines.push(`import { use, type PresetInput } from "@serene-pub/sdk"`);
     lines.push(``);
-    lines.push(`export const myPreset = preset("mine", {`);
-    lines.push(`\tgenre: ${JSON.stringify(genreId)},`);
+    lines.push(`export const myPreset: PresetInput = {`);
+    lines.push(`\tslug: "mine",`);
+    lines.push(`\tgenre: use(${JSON.stringify(genreId)}),`);
     lines.push(`\tlabel: "Mine",`);
-    lines.push(`\tbindings: {`);
+    lines.push(`\tbindings: [`);
     for (const [event, decl] of Object.entries(genre.events)) {
         if (decl?.open)
             continue;
@@ -111,23 +117,23 @@ export function scaffoldPreset(genreId, announcement) {
         const required = decl?.required;
         lines.push(`\t\t// ${event}${required ? '  (required)' : '  (optional)'}${c.length ? ` — candidates: ${c.join(', ')}` : ' — no announced candidate'}`);
         lines.push(c.length
-            ? `\t\t${JSON.stringify(event)}: ${JSON.stringify(c[0])},`
-            : `\t\t// ${JSON.stringify(event)}: <spec id>,`);
+            ? `\t\t{ spec: use(${JSON.stringify(c[0])}), events: [${JSON.stringify(event)}] },`
+            : `\t\t// { spec: use("<spec id>"), events: [${JSON.stringify(event)}] },`);
     }
-    lines.push(`\t},`);
+    lines.push(`\t],`);
     const open = Object.entries(genre.events)
         .filter(([, d]) => d?.open)
         .map(([e]) => e);
     if (open.length) {
-        // By identity (`<spec>#<key>`): a preset curates declarations, not
-        // specs — every action each session-action pipeline contributes.
-        const actions = announcement.pipelines
+        // A preset curates declarations, not specs: every action each
+        // session-action pipeline contributes, one pick per action.
+        const picks = announcement.pipelines
             .filter((p) => candidates(sessionEvents.sessionAction).includes(p.id))
-            .flatMap((p) => actionsOf(p).map((a) => `${p.id}#${a.key}`));
-        lines.push(`\t// open slots (${open.join(', ')}): which actions come along, by identity.`);
-        lines.push(`\tactions: { include: [${actions.map((a) => JSON.stringify(a)).join(', ')}] },`);
+            .flatMap((p) => actionsOf(p).map((a) => `{ spec: use(${JSON.stringify(p.id)}), key: ${JSON.stringify(a.key)} }`));
+        lines.push(`\t// open slots (${open.join(', ')}): which actions come along.`);
+        lines.push(`\tactions: { include: [${picks.join(', ')}] },`);
     }
-    lines.push(`})`);
+    lines.push(`}`);
     return lines.join('\n') + '\n';
 }
 //# sourceMappingURL=scaffold.js.map

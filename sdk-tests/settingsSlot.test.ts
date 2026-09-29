@@ -33,7 +33,8 @@ import {
 	type SlotDecl,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { findings } from './helpers.js'
+import { compile, run, validate, ok, $ref, type SpecDocument } from '@serene-pub/sdk'
+import { bindings, findings, world } from './helpers.js'
 
 describe('R-9 · the substrate declares the settings slot', () => {
 	test('an optional definition carries `enabled`, defaulting on and quick', () => {
@@ -136,6 +137,33 @@ describe('R-9 · the substrate declares the settings slot', () => {
 					slots: { switches: { kind: 'settings', schema: {} } },
 				}),
 			/slot 'switches' with kind 'settings'/,
+		)
+	})
+
+	test('nor an out-port of the name, or a path under it (F39; U7 review, S2)', () => {
+		// `<node>.settings[.…]` is what the F39 edge rule reads as the
+		// substrate's address: a definition publishing a port there could
+		// never be wired from it. Refused at the declaration, so the edge
+		// rule can never false-positive on a declared port.
+		for (const port of ['settings', 'settings.review'])
+			assert.throws(
+				() =>
+					describeTaskDefinition({
+						id: 'test:task/claims-settings-port@1',
+						ports: { in: { main: S.text }, out: { main: S.text, [port]: S.text } },
+					}),
+				(e: Error) =>
+					e.message.includes(`out-port named '${port}'`) &&
+					/F39: settings never travel/.test(e.message) &&
+					/name the port for what it publishes/.test(e.message),
+				port,
+			)
+		// A port that merely starts with the word is a port ('settingsApplied').
+		assert.doesNotThrow(() =>
+			describeTaskDefinition({
+				id: 'test:task/claims-settings-port-ok@1',
+				ports: { in: { main: S.text }, out: { main: S.text, settingsApplied: S.text } },
+			}),
 		)
 	})
 
@@ -300,5 +328,107 @@ describe('R-9 · a gather clause declares its mode the same way', () => {
 		})
 		assert.equal(receipt.outcome, 'halt')
 		assert.equal(receipt.nodes.find((n: any) => n.nodeKey === 'save')?.reason, 'rejected at review')
+	})
+})
+
+describe('F39 · settings never travel; only data does (12 §2 P3, plans/30 U7)', () => {
+	/** inlet → a gated write (so `save` carries `settings`) → a task that tries to read it. */
+	const probing = (main: unknown): SpecDocument =>
+		compile(
+			spec('demo:settings-travel', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1())
+				.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
+				.task('probe', () => C.gate.v1({ main: main as any }))
+				.build(),
+		)
+
+	/** The other door: a hand-written config reference naming the substrate's slot. */
+	const settingsRef = (ofNode: string) => ({ __ref: 'slot', slot: 'settings', ofNode }) as const
+
+	/** A setting planted at `save`'s address — what must never arrive anywhere else. */
+	const planted = {
+		...world,
+		overrides: [
+			...world.overrides,
+			{ scopeKind: 'config' as const, nodeKey: 'save', slot: 'settings', path: 'review', value: 'off' },
+			{ scopeKind: 'config' as const, nodeKey: 'save', slot: 'settings', path: 'probe', value: 'F39-sentinel' },
+		],
+	}
+
+	test('a data edge from a settings address is refused as the law, with the fix', () => {
+		for (const port of ['settings', 'settings.review']) {
+			const errs = validate(probing($ref('save', port))).filter((f) => f.law === 'F39')
+			assert.equal(errs.length, 1, port)
+			assert.match(errs[0]!.message, /a setting, not a port/)
+			assert.match(errs[0]!.fix, /slot\.params\(\{ node: 'save' \}\)/)
+		}
+	})
+
+	test('a config reference naming another node\'s settings is refused the same way', () => {
+		const errs = validate(probing(settingsRef('save'))).filter((f) => f.law === 'F39')
+		assert.equal(errs.length, 1)
+		assert.match(errs[0]!.message, /'probe\.main' references 'save\.settings'/)
+		assert.match(errs[0]!.fix, /read a port 'save' publishes/)
+	})
+
+	test('a hand-written reference naming no slot at all is a finding, not a crash (U7 delta review, 3)', () => {
+		// `{ __ref: 'slot' }` with no `slot`: before the guard, `validate()`
+		// threw a TypeError out of the F39 pass, so a publish crashed instead
+		// of refusing. A shape fault, said as one, with the fix.
+		for (const slot of [undefined, '', 7]) {
+			const doc = probing({ __ref: 'slot', ...(slot === undefined ? {} : { slot }) })
+			let findings: ReturnType<typeof validate> = []
+			assert.doesNotThrow(() => {
+				findings = validate(doc)
+			}, `slot: ${JSON.stringify(slot)}`)
+			const shape = findings.filter((f) => f.severity === 'error' && f.law === '12 §2')
+			assert.equal(shape.length, 1, `slot: ${JSON.stringify(slot)}`)
+			assert.match(shape[0]!.message, /'probe\.main' is a slot reference that names no slot/)
+			assert.match(shape[0]!.fix, /slot\.params\(\)/)
+			assert.equal(findings.filter((f) => f.law === 'F39').length, 0, 'not mistaken for the settings address')
+		}
+	})
+
+	test('an unvalidated document that tries the reference gets nothing, and the row says why', async () => {
+		// Before the guard, `resolveSlot`'s generic fallthrough returned
+		// `config['save'].settings` — the other node's switches, sentinel and
+		// all — to the probe's binding.
+		let received: unknown = 'never called'
+		const r = await run(probing(settingsRef('save')), {
+			input: {},
+			world: planted,
+			bindings: bindings({
+				'test:task/gate@1': async (i: any) => {
+					received = i.main
+					return ok({ main: 'probed' })
+				},
+			}),
+		})
+		assert.equal(r.outcome, 'ok', r.haltReason)
+		assert.deepEqual(received, {}, 'the reference resolved to nothing')
+		assert.equal(JSON.stringify(r).includes('F39-sentinel'), false, 'the planted setting reached no row of the receipt')
+		const probe = r.nodes.find((n) => n.nodeKey === 'probe')!
+		assert.ok(
+			probe.notes?.some((n) => /^F39: 'probe\.main' references 'save\.settings'/.test(n)),
+			`the row says why: ${JSON.stringify(probe.notes)}`,
+		)
+		assert.ok(probe.notes?.some((n) => /slot\.params\(\{ node: 'save' \}\)/.test(n)), 'and what to do instead')
+	})
+
+	test('a data edge from the address carries nothing either — settings are not on any port', async () => {
+		let received: unknown = 'never called'
+		const r = await run(probing($ref('save', 'settings')), {
+			input: {},
+			world: planted,
+			bindings: bindings({
+				'test:task/gate@1': async (i: any) => {
+					received = i.main
+					return ok({ main: 'probed' })
+				},
+			}),
+		})
+		assert.equal(r.outcome, 'ok', r.haltReason)
+		assert.equal(received, undefined)
+		assert.equal(JSON.stringify(r).includes('F39-sentinel'), false)
 	})
 })

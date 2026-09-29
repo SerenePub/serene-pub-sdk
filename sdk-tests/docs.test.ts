@@ -405,7 +405,119 @@ describe('compiling a docs site', () => {
 		})
 	})
 
-	test('search.json is one entry per heading, with previews capped at 180 chars', async () => {
+	test('a grouped `order` fills several nav groups from one source, in order', async () => {
+		await inTempDir(async (dir) => {
+			const appDir = join(dir, 'app')
+			for (const slug of ['alpha', 'beta', 'gamma', 'delta', 'omega'])
+				await writeDoc(appDir, `${slug}.md`, `# ${slug}\n\nA page.\n`)
+
+			const report = await compileDocs(
+				baseOptions(dir, [
+					{
+						id: 'app',
+						group: 'Using Serene Pub',
+						dir: appDir,
+						order: [
+							{ group: 'Start here', pages: ['gamma', 'alpha'] },
+							{ group: 'Not written yet', pages: ['nope'] },
+							{ group: 'Guides', pages: ['delta', 'alpha'] },
+						],
+					},
+					{
+						id: 'sdk',
+						group: 'SDK',
+						prefix: 'sdk',
+						pages: [{ path: 'index.md', markdown: '# Core\n\nWhat core ships.\n' }],
+					},
+				]),
+			)
+
+			// Declared groups in order, the empty one dropped, then the trailing
+			// catch-all under the source's own `group` — then the next source.
+			assert.deepEqual(report.manifest.nav, [
+				{ group: 'Start here', source: 'app', pages: ['gamma', 'alpha'] },
+				{ group: 'Guides', source: 'app', pages: ['delta'] },
+				{ group: 'Using Serene Pub', source: 'app', pages: ['beta', 'omega'] },
+				{ group: 'SDK', source: 'sdk', pages: ['sdk/index'] },
+			])
+			// `order` on a page is still its position within its SOURCE.
+			assert.equal(report.manifest.pages['gamma'].order, 0)
+			assert.equal(report.manifest.pages['delta'].order, 2)
+			assert.equal(report.manifest.pages['omega'].order, 4)
+			assert.deepEqual(report.manifest.sources['app'], { group: 'Using Serene Pub' })
+
+			assert.equal(report.warnings.length, 4)
+			assert.match(report.warnings[0], /`nope`, which has no page/)
+			assert.match(report.warnings[1], /`alpha` more than once/)
+			assert.match(report.warnings[2], /`beta`.*missing from `order`/)
+			assert.match(report.warnings[3], /`omega`.*missing from `order`/)
+		})
+	})
+
+	test('a grouped `order` appends unlisted pages to a declared group named like the source', async () => {
+		await inTempDir(async (dir) => {
+			const appDir = join(dir, 'app')
+			for (const slug of ['alpha', 'beta', 'gamma'])
+				await writeDoc(appDir, `${slug}.md`, `# ${slug}\n\nA page.\n`)
+
+			const report = await compileDocs(
+				baseOptions(dir, [
+					{
+						id: 'app',
+						group: 'Reference',
+						dir: appDir,
+						order: [
+							{ group: 'Reference', pages: ['gamma'] },
+							{ group: 'Guides', pages: ['alpha'] },
+						],
+					},
+				]),
+			)
+			assert.deepEqual(report.manifest.nav, [
+				{ group: 'Reference', source: 'app', pages: ['gamma', 'beta'] },
+				{ group: 'Guides', source: 'app', pages: ['alpha'] },
+			])
+		})
+	})
+
+	test('a grouped `order` refuses a duplicate group name or a mix of slugs and groups', async () => {
+		await inTempDir(async (dir) => {
+			const appDir = join(dir, 'app')
+			await writeDoc(appDir, 'alpha.md', '# Alpha\n\nFirst.\n')
+
+			await assert.rejects(
+				compileDocs(
+					baseOptions(dir, [
+						{
+							id: 'app',
+							group: 'Using Serene Pub',
+							dir: appDir,
+							order: [
+								{ group: 'Guides', pages: ['alpha'] },
+								{ group: 'Guides', pages: [] },
+							],
+						},
+					]),
+				),
+				/declares the group `Guides` twice/,
+			)
+			await assert.rejects(
+				compileDocs(
+					baseOptions(dir, [
+						{
+							id: 'app',
+							group: 'Using Serene Pub',
+							dir: appDir,
+							order: ['alpha', { group: 'Guides', pages: [] }] as never,
+						},
+					]),
+				),
+				/mixes slugs and groups/,
+			)
+		})
+	})
+
+	test('search.json is one entry per heading, with previews capped at 180 chars and search text at 1200', async () => {
 		await inTempDir(async (dir) => {
 			const appDir = join(dir, 'app')
 			const long = 'word '.repeat(120).trim()
@@ -428,8 +540,13 @@ describe('compiling a docs site', () => {
 				title: 'Sessions',
 				depth: 1,
 				preview: 'Intro line.',
+				text: 'Intro line.',
 			})
 			for (const entry of search) assert.ok(entry.preview.length <= 180, entry.preview)
+			// The search text is the same body, longer: the long section keeps
+			// all 599 characters the 180-char preview cut.
+			for (const entry of search) assert.ok(entry.text.length <= 1200, entry.text)
+			assert.equal(search[1].text, long)
 			// Cut at a word boundary, not mid-word: what's left (minus the
 			// ellipsis) is a clean, unbroken prefix of the source text.
 			const longPreview = search[1].preview

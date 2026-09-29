@@ -47,6 +47,7 @@ import {
 } from '@serene-pub/sdk/testing'
 
 import type { DocPage } from './docs.js'
+import type { HarnessContext, MountedComponent } from './testing.js'
 
 /**
  * The pieces an executed example runs on — the fixed seed and clock, the run
@@ -57,7 +58,7 @@ import type { DocPage } from './docs.js'
  */
 export type { ExampleRunCtx, ExampleRunOptions }
 
-/** One `<slug>.example.ts` module's default-ish export. */
+/** @public One `<slug>.example.ts` module's default-ish export. */
 export interface Example {
 	/** Matches the filename stem — it is the page's name and the golden's. */
 	slug: string
@@ -68,6 +69,34 @@ export interface Example {
 	run(ctx: ExampleRunCtx): Promise<Receipt>
 }
 
+/**
+ * A component example (C3b): a component mounted by the harness with a canned
+ * context — and, optionally, a few presses — whose page shows its source and
+ * the DOM the page would show. Exported as `componentExample` from a
+ * `<slug>.example.ts`, in place of `example`.
+ * @experimental
+ */
+export interface ComponentExample {
+	slug: string
+	title: string
+	summary: string
+	/** The component's entry, relative to the examples directory. */
+	entry: string
+	/** The files the page prints, relative to the examples directory; the entry when omitted. */
+	show?: string[]
+	context?: HarnessContext
+	/** What a person does before the page reads the DOM. */
+	act?(view: MountedComponent): Promise<void>
+}
+
+/** A component example's golden: the mirrored DOM, and what the component pressed. */
+interface ComponentGolden {
+	slug: string
+	html: string
+	invoked: unknown[]
+}
+
+/** @experimental */
 export interface ExampleGoldenReport {
 	slug: string
 	/** There was no golden and `update` wrote the first one. */
@@ -76,6 +105,7 @@ export interface ExampleGoldenReport {
 	changed: boolean
 }
 
+/** @experimental */
 export interface ExampleDocsOptions {
 	/** Directory holding `*.example.ts`. */
 	dir: string
@@ -163,6 +193,7 @@ function page(example: Example, source: string, output: string): DocPage {
  * a claim nobody checked: a module that exports no `example`, a slug that does
  * not match its filename, a document with a validation finding, or a run that
  * no longer matches its golden.
+ * @experimental
  */
 export async function renderExampleDocs(
 	opts: ExampleDocsOptions,
@@ -176,11 +207,20 @@ export async function renderExampleDocs(
 	for (const file of files) {
 		const path = join(opts.dir, file)
 		const stem = file.slice(0, -EXAMPLE_SUFFIX.length)
-		const mod = (await load(path)) as { example?: Example }
+		const mod = (await load(path)) as { example?: Example; componentExample?: ComponentExample }
+		if (mod?.componentExample) {
+			const c = mod.componentExample
+			if (c.slug !== stem)
+				throw new Error(`${file} declares slug '${c.slug}' — the slug is the filename stem`)
+			const { page: p, report: r } = await renderComponentExample(c, opts, await readFile(path, 'utf8'))
+			pages.push(p)
+			report.push(r)
+			continue
+		}
 		const example = mod?.example
 		if (!example)
 			throw new Error(
-				`${file} exports no 'example' — an executed example is one module, one export`,
+				`${file} exports no 'example' (or 'componentExample') — an executed example is one module, one export`,
 			)
 		if (example.slug !== stem)
 			throw new Error(
@@ -235,4 +275,83 @@ export async function renderExampleDocs(
 	}
 
 	return { pages, report }
+}
+
+/** Pretty enough to read and diff: one element per line, indented by depth. */
+function indentHtml(html: string): string {
+	const out: string[] = []
+	let depth = 0
+	for (const token of html.split(/(<[^>]+>)/).filter((t) => t.trim())) {
+		if (token.startsWith('</')) depth = Math.max(0, depth - 1)
+		out.push('  '.repeat(depth) + token.trim())
+		if (token.startsWith('<') && !token.startsWith('</') && !token.endsWith('/>') && !/^<(input|img|br|hr)\b/.test(token)) depth++
+	}
+	return out.join('\n')
+}
+
+async function renderComponentExample(
+	c: ComponentExample,
+	opts: ExampleDocsOptions,
+	moduleSource: string,
+): Promise<{ page: DocPage; report: ExampleGoldenReport }> {
+	// Loaded here: the harness brings Remote DOM, which nothing else in the CLI needs.
+	const { mountComponent } = await import('./testing.js')
+	const view = await mountComponent({ entry: join(opts.dir, c.entry), context: c.context })
+	let golden: ComponentGolden
+	try {
+		await c.act?.(view)
+		if (view.refused.length)
+			throw new Error(`component example '${c.slug}' places what the vocabulary refuses:\n  ${view.refused.join('\n  ')}`)
+		golden = { slug: c.slug, html: indentHtml(view.html()), invoked: [...view.invoked] }
+	} finally {
+		await view.unmount()
+	}
+	const goldenPath = join(opts.goldensDir, `${c.slug}.golden.json`)
+	let stored: ComponentGolden | undefined
+	try {
+		stored = JSON.parse(await readFile(goldenPath, 'utf8')) as ComponentGolden
+	} catch (e) {
+		if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e
+	}
+	const same = !!stored && JSON.stringify(stored) === JSON.stringify(golden)
+	let recorded = false
+	let changed = false
+	if (opts.update) {
+		recorded = !stored
+		changed = !!stored && !same
+		if (recorded || changed) {
+			await mkdir(opts.goldensDir, { recursive: true })
+			await writeFile(goldenPath, JSON.stringify(golden, null, '\t') + '\n')
+		}
+	} else if (!stored) {
+		throw new Error(
+			`component example '${c.slug}' has no golden at ${goldenPath}. Record it with --update-goldens, and commit it.`,
+		)
+	} else if (!same) {
+		throw new Error(
+			`component example '${c.slug}' no longer renders its golden.\n--- golden\n${stored.html}\n--- now\n${golden.html}` +
+				(JSON.stringify(stored.invoked) === JSON.stringify(golden.invoked)
+					? ''
+					: `\n--- invoked: golden ${JSON.stringify(stored.invoked)}, now ${JSON.stringify(golden.invoked)}`),
+		)
+	}
+
+	const lines: string[] = [`# ${c.title}`, '', introOf(moduleSource) ?? c.summary, '', '## The code', '']
+	for (const f of c.show ?? [c.entry]) {
+		const ext = f.split('.').pop()
+		lines.push(`\`${f}\``, '', '```' + (ext === 'svelte' ? 'svelte' : 'ts'), (await readFile(join(opts.dir, f), 'utf8')).trimEnd(), '```', '')
+	}
+	lines.push('## What the page shows', '', '```html', golden.html, '```', '')
+	if (golden.invoked.length) lines.push('It pressed:', '', '```json', JSON.stringify(golden.invoked, null, 2), '```', '')
+	lines.push(
+		'## Golden',
+		'',
+		`Mounted by the component harness (\`@serene-pub/cli/testing\`) on every build and checked ` +
+			`against \`${c.slug}.golden.json\` — the DOM above is what the harness mirrored, not a transcript.`,
+		'',
+	)
+	return {
+		page: { path: `examples/${c.slug}.md`, markdown: lines.join('\n') },
+		report: { slug: c.slug, recorded, changed },
+	}
 }

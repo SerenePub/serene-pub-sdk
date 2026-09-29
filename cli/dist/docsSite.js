@@ -1,3 +1,15 @@
+/**
+ * The docs site shell (24 T9): the generated markdown, rendered as a
+ * self-contained static site — no dependencies, no build step, open
+ * index.html. The converter handles exactly the markdown `docs.ts` emits
+ * (headings, tables, lists, fenced code, inline code, links, bold) — it is a
+ * renderer for our own output, not a general markdown engine, which is what
+ * keeps it a page of code instead of a dependency.
+ *
+ * Live controls join these pages when @serene-pub/controls exists (T6c);
+ * until then the option tables are the reference.
+ */
+import { i18nText } from '@serene-pub/sdk';
 const esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 /** Inline spans: code, bold, links — applied after escaping. */
 const inline = (s) => esc(s)
@@ -98,7 +110,7 @@ a { color:var(--accent); }
 @media (max-width: 760px) { .layout { display:block; } nav { position:static; width:auto; height:auto; border-right:none; border-bottom:1px solid var(--line); } }
 `;
 export function renderSite(announcement, pages) {
-    const title = announcement.identity.title;
+    const title = i18nText(announcement.identity.title) ?? announcement.identity.ns;
     const navFor = (depth, current) => {
         const prefix = depth === 0 ? '' : '../';
         const link = (mdPath, label) => {
@@ -111,7 +123,7 @@ export function renderSite(announcement, pages) {
         if (announcement.genres.length) {
             parts.push(`<div class="group">Genres</div>`);
             for (const g of announcement.genres)
-                parts.push(link(`genres/${g.id.replace(/[:/]/g, '_')}.md`, typeof g.name === 'string' ? g.name : (g.name?.en ?? g.id)));
+                parts.push(link(`genres/${g.id.replace(/[:/]/g, '_')}.md`, i18nText(g.name) ?? g.id));
         }
         parts.push(`<div class="group">Pipelines</div>`);
         for (const p of announcement.pipelines)

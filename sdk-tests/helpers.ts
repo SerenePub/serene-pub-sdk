@@ -3,6 +3,9 @@ import { assertValid, validate, type Finding } from '@serene-pub/sdk'
 import type { SpecBuilder } from '@serene-pub/sdk'
 import { ok, halt, err, type Bindings, type Result } from '@serene-pub/sdk'
 import type { ConfigWorld } from '@serene-pub/sdk'
+// Registers the suite's own `test:` definitions (see the module's docblock),
+// so every fixture host below carries a stand-in for each of them.
+import './fixtures.js'
 
 export function publish(b: SpecBuilder<any>): SpecDocument {
 	const doc = compile(b.build())
@@ -84,8 +87,35 @@ export function withEmbeddings(): ConfigWorld {
 	}
 }
 
-/** Default bindings — deterministic, so goldens are stable. */
-export function bindings(over: Bindings = {}): Bindings {
+/**
+ * The knobs the fixture host takes, beside the hooks themselves.
+ *
+ * `reply` scripts what the `generate-text` stand-in says: a string it answers
+ * with, or a function called with that node's input so a reply can quote what
+ * it was asked. Leave it out and the stand-in answers exactly as it always
+ * has — every golden in this suite was recorded against that default, and none
+ * of them may move because a new knob exists.
+ *
+ * Deliberately not random and never reads the clock. A scripted reply is
+ * printed on a documentation page, and a page whose text changed between two
+ * builds is a page a reader learns to skip.
+ */
+export interface FixtureOptions {
+	reply?: string | ((input: unknown) => string)
+}
+
+/**
+ * Default bindings — deterministic, so goldens are stable.
+ *
+ * Takes either hook overrides keyed by definition id, as it always has, or the
+ * fixture knobs above. `reply` can never collide with an override: a
+ * definition id is `slug:kind/name@version`, never a bare word.
+ */
+export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
+	const { reply, ...hooks } = over as FixtureOptions & { [definitionId: string]: unknown }
+	const say = (input: unknown): string =>
+		reply === undefined ? 'the reply text' : typeof reply === 'function' ? reply(input) : reply
+
 	const base: Bindings = {
 		'core:inlet/user-message@1': async (i) => ok(i),
 		'core:inlet/message-created@1': async (i) => ok(i),
@@ -100,6 +130,18 @@ export function bindings(over: Bindings = {}): Bindings {
 					minInclude: i.params?.minInclude ?? 6,
 					priority: 'normal',
 				},
+				// The transcript's band intent alone — its slice of the window
+				// with no items, which is what a spec concatenates in with the
+				// lore (16 §5a). The rows above go to `process-messages`; the
+				// stand-in keeps them on `messages` so a test can still read
+				// what was fetched.
+				band: {
+					sourceKey: 'history',
+					items: [],
+					weight: i.params?.weight ?? 0.4,
+					minInclude: i.params?.minInclude ?? 6,
+					priority: 'normal',
+				},
 			}),
 
 		'core:query/lorebook-triggers@1': async (i: any) =>
@@ -108,19 +150,13 @@ export function bindings(over: Bindings = {}): Bindings {
 				hits: { sourceKey: 'lore', items: ['elf', 'sister', 'castle'], weight: i.params?.weight ?? 0.35, minInclude: 3, priority: 'high' },
 			}),
 
-		'core:query/lorebook-probabilistic@1': async (_i, ctx: any) => {
-			const entries = ['a', 'b', 'c', 'd', 'e', 'f']
-			const won = entries.filter(() => ctx.random() < 0.5)
-			return ok({ main: 'prob', hits: { sourceKey: 'prob', items: won, weight: 0.2, minInclude: 0 } })
-		},
-
 		'core:query/vector-search@1': async (i: any) => {
 			if (!i.vector) return ok({ main: 'vsearch', hits: { sourceKey: 'vector', items: [], weight: 0.3, minInclude: 0 } })
 			return ok({ main: 'vsearch', hits: { sourceKey: 'vector', items: ['v1', 'v2'], weight: 0.3, minInclude: 0 } })
 		},
 
-		'core:query/persona-card@1': async () => ok({ main: 'persona', card: { sourceKey: 'persona', items: ['Mira'], weight: 0.25, minInclude: 0 } }),
-		'core:query/message-text@1': async () => ok({ main: 'text', plain: 'the raw message text' }),
+		'test:query/persona-card@1': async () => ok({ main: 'persona', card: { sourceKey: 'persona', items: ['Mira'], weight: 0.25, minInclude: 0 } }),
+		'test:query/message-text@1': async () => ok({ main: 'text', plain: 'the raw message text' }),
 
 		'core:oracle/embed-text@1': async (i: any, ctx: any) => {
 			const enabled = i.params?.enabled ?? 'auto'
@@ -150,16 +186,15 @@ export function bindings(over: Bindings = {}): Bindings {
 		},
 
 		'core:task/rank-hybrid@1': async (i: any) => ok({ main: i.candidates, candidates: i.candidates }),
-		'core:task/rank-by-recency@1': async (i: any) => ok({ main: i.candidates, candidates: i.candidates }),
 		'chariot.recall:rank-recall@1': async (i: any) => ok({ main: i.candidates, candidates: i.candidates }),
-		'core:task/render-entries@1': async (i: any) => ok({ main: `rendered(${i.entries?.items?.length ?? 0})` }),
-		'core:task/to-candidates@1': async (i: any) => {
+		'test:task/render-entries@1': async (i: any) => ok({ main: `rendered(${i.entries?.items?.length ?? 0})` }),
+		'test:task/to-candidates@1': async (i: any) => {
 			const items = Array.isArray(i.items) ? i.items : [i.items].filter(Boolean)
 			const block = { sourceKey: 'summaries', items, weight: 0.5, minInclude: 0, priority: 'normal' }
 			return ok({ main: block, candidates: block })
 		},
 		'core:outlet/attach-image@1': async (i: any, ctx: any) => {
-			const row = await ctx.commit({ image: i.image })
+			const row = await ctx.commit({ target: i.target, image: i.image })
 			return ok({ main: row.id })
 		},
 
@@ -178,7 +213,25 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: { budget, alloc, dropped }, context: { budget, alloc, dropped } })
 		},
 
-		'core:task/chunk-text@1': async (i: any) => {
+		'core:task/join-text@1': async (i: any) => {
+			const path = typeof i.params?.path === 'string' ? i.params.path : 'text'
+			const separator = typeof i.params?.separator === 'string' ? i.params.separator : '\n\n'
+			// The host hands this a list; the suite's queries publish a
+			// candidates BLOCK whose `items` are plain strings, so both are
+			// read — an item that is already a string is the entry itself.
+			const entries: unknown[] = Array.isArray(i.items)
+				? i.items
+				: Array.isArray(i.items?.items)
+					? i.items.items
+					: []
+			const text = entries
+				.map((e) => (typeof e === 'string' ? e : path ? (e as any)?.[path] : e))
+				.filter((t): t is string => typeof t === 'string' && t.length > 0)
+				.join(separator)
+			return ok({ main: text, text })
+		},
+
+		'test:task/chunk-text@1': async (i: any) => {
 			const items = String(i.text ?? '').split('|')
 			return ok({ main: items, items })
 		},
@@ -200,12 +253,18 @@ export function bindings(over: Bindings = {}): Bindings {
 			ctx.reportSampling(applied, ignored)
 			ctx.reportUsage(214)
 			await ctx.call({ context: i.context, sampling: applied })
-			return ok({ main: 'the reply text', text: 'the reply text' })
+			const text = say(i)
+			return ok({ main: text, text })
 		},
 
-		'core:oracle/speak@1': async (i: any, ctx: any) => {
+		'test:oracle/speak@1': async (_i: any, ctx: any) => {
 			ctx.reportUsage(1)
 			return ok({ main: 'audio:blob', audio: 'audio:blob' })
+		},
+
+		'core:oracle/generate-image@1': async (_i, ctx: any) => {
+			ctx.reportUsage(1)
+			return ok({ main: 'image:blob', image: 'image:blob' })
 		},
 
 		'chariot.comfy:render-image@1': async (_i, ctx: any) => {
@@ -213,13 +272,13 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: 'image:blob', image: 'image:blob' })
 		},
 
-		'core:oracle/mcp-tool@1': async (i: any, ctx: any) => {
+		'test:oracle/mcp-tool@1': async (i: any, ctx: any) => {
 			ctx.reportUsage(1)
 			await ctx.call(i.args)
 			return ok({ main: { done: true }, result: { done: true } })
 		},
 
-		'core:task/first-json@1': async () => ok({ main: { early: true } }),
+		'test:task/first-json@1': async () => ok({ main: { early: true } }),
 		'test:task/sloppy-stream@1': async () => ok({ main: { early: true } }),
 		'test:task/gate@1': async () => ok({ main: 'passed' }),
 		'test:task/passthrough@1': async (i: any) => ok({ main: i.main }),
@@ -227,6 +286,10 @@ export function bindings(over: Bindings = {}): Bindings {
 		'test:query/network@1': async (_i, ctx: any) => {
 			if ('fetch' in ctx) return err('a Query reached the network')
 			return ok({ main: 'no network handle available' })
+		},
+		'test:task/delay@1': async (i: any) => {
+			await new Promise((r) => setTimeout(r, Number(i.ms ?? 0)))
+			return ok({ main: i.ms ?? 0 })
 		},
 		'test:task/slow@1': async () => {
 			await new Promise((r) => setTimeout(r, 200))
@@ -238,19 +301,19 @@ export function bindings(over: Bindings = {}): Bindings {
 			return ok({ main: row.id, messageId: row.id })
 		},
 		'core:outlet/attach-audio@1': async (i: any, ctx: any) => {
-			const row = await ctx.commit({ audio: i.audio })
+			const row = await ctx.commit({ target: i.target, audio: i.audio })
 			return ok({ main: row.id })
 		},
-		'core:outlet/save-plugin-data@1': async (i: any, ctx: any) => {
+		'test:outlet/save-plugin-data@1': async (i: any, ctx: any) => {
 			const row = await ctx.commit({ value: i.value })
 			return ok({ main: row.id })
 		},
-		'core:outlet/emit-socket@1': async (i: any, ctx: any) => {
+		'test:outlet/emit-socket@1': async (i: any, ctx: any) => {
 			ctx.emit(String(i.handle ?? 'unnamed'), i.from)
 			return ok({ main: 'emitted' })
 		},
 	}
-	return { ...base, ...over }
+	return { ...base, ...(hooks as Bindings) }
 }
 
 export const H = { ok, halt, err }

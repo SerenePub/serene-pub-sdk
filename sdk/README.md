@@ -55,7 +55,7 @@ mistake that is supposed to be a compile error stops being one.**
 | `sdk/src/review.ts` | the gate: three positions, keyed on **declared effects** not kind; no position forbids it |
 | `sdk/src/template.ts` | a minimal renderer + static variable checking |
 | `sdk/src/wire.ts` | **allocation vs. formatting** — allocated blocks, the wire registry, one measurement |
-| `conformance/src/index.ts` | **the kit SP Core upgrades against**: 15 requirements, each naming what breaks |
+| `conformance/src/index.ts` | **the kit SP Core upgrades against**: 26 requirements, each naming what breaks |
 | `sdk/src/engines.ts` | template engines as a **registry** — render, extract, check, and the cost profile |
 | `sdk/src/identity.ts` | owner + slug + semver; the import rule; ownership is not transferred |
 | `sdk/src/migration.ts` | the parity harness: legacy output vs the **preview payload** |
@@ -63,7 +63,7 @@ mistake that is supposed to be a compile error stops being one.**
 | `sdk/src/events.ts` | the core-owned registry: unique slugs, **data vs action** families |
 | `sdk/src/hooks.ts` | the three hook kinds and their surfaces; the F32 conformance probe |
 | `sdk/src/settings.ts` | the plugin settings schema: one declaration → form, validation, manifest, types |
-| `sdk/src/extension.ts` | `defineExtension` — one declaration ties hooks, settings, components and pipelines |
+| `sdk/src/extension.ts` | `defineExtension` — one declaration ties handlers, settings, components, genres, presets and pipelines |
 | `sdk/src/testing.ts` | the author's harness: goldens, binding probes, the equivalence law |
 | `sdk/src/connections.ts` | what an import must wire, derived from types rather than stored rows |
 | `sdk/src/registry.ts` | `type_registry` rows, and install-time validation from data alone |
@@ -83,7 +83,7 @@ unwritable rather than reported:
 
 ```ts
 .query('history', $ => C.chatHistory({ scope: $.input.chatScope }))
-.task ('prompt',  $ => C.assemble({ candidates: $.history.messages }))
+.task ('prompt',  $ => C.assemble({ messages: $.history.messages }))
 .outlet('save',  $ => C.createMessage({ text: $.generate.text }))
 ```
 
@@ -129,7 +129,7 @@ Each maps to a law or a documented behaviour, so a failure points at the doc it 
 |---|---|---|
 | 01 | minimal chat turn runs; kind mismatch cannot compile | 04 §4a |
 | 02 | exactly one Input, positionally first | 01 §2 |
-| 03 | one primary write; emits unlimited; chain continues past it | F7 |
+| 03 | one live row; other writes and emits unlimited; chain continues past it | F7 |
 | 04 | no branch method; fan-in is legal | F25 |
 | 05 | halt ends the run as `halt`, records node + reason, skips downstream | 01 §5 |
 | 06 | seeded dice replay identically; no `random` without `declaresRandomness` | F11 |
@@ -352,7 +352,7 @@ Unimplemented, not undecided.
   what F26 asserts, but the draft does not actually run iterations concurrently — a single
   shared value map cannot hold two iterations at once. Real per-iteration scoping is the
   work, not the shape.
-- **`secret` values are stored as tagged plaintext**, not encrypted. `forOwningHook` takes a
+- **`secret` values are stored as tagged plaintext**, not encrypted. `forOwningHookSplit` takes a
   `decrypt` function so the seam is in the right place; the app secret in `meta.json` is
   core's side of it (13 §5).
 

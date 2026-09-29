@@ -1,0 +1,66 @@
+/**
+ * **Answer** — what the question's options fire.
+ *
+ * The matching half of `ask.ts`. Its action declares the `form` venue: it is
+ * carried by a block in a message and pressed from that block alone, so it
+ * appears in no composer menu and no message overflow. An answer is given where
+ * the question was asked.
+ *
+ * `core:task/read-answer@1` takes the press's `payload` and the `form` facts the
+ * host read off the row, and publishes the answer port by port — the chosen
+ * key, its label, the question, the addressee. Read it; never re-derive it from
+ * the message text.
+ *
+ * ✎ CHANGE: what happens with the answer. This one writes it back as a line;
+ *   yours probably decides something first.
+ */
+
+import { sessionEvents, spec } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+{{^genre}}
+import { chatGenre } from '@serene-pub/core-catalog'
+{{/genre}}
+{{#genre}}
+
+import { {{genreVar}} } from '../genre.js'
+{{/genre}}
+
+export const ANSWER_SPEC_ID = '{{answerSpecId}}'
+
+/** The function key the question's options fire. */
+export const ANSWER_ACTION_KEY = '{{answerActionKey}}'
+
+export const answerSpec = () =>
+	spec(ANSWER_SPEC_ID, {
+		version: '1.0.0',
+		contributes: {
+			actions: [
+				{
+					key: ANSWER_ACTION_KEY,
+					/** Pressed from the block that carries it, and nowhere else. */
+					venue: { kind: 'form' },
+					icon: 'check',
+					label: { en: 'Answer' },
+					description: { en: '✎ CHANGE: what sending the answer does.' },
+				},
+			],
+		},
+	})
+		.inlet('input', C.userMessage.v1(), {
+{{#genre}}
+			genre: {{genreVar}},
+{{/genre}}
+{{^genre}}
+			/** ✎ CHANGE: the genre this action belongs to. */
+			genre: chatGenre,
+{{/genre}}
+			event: sessionEvents.sessionAction,
+		})
+		/** The answer, port by port. Pure — no model, no rows. */
+		.task('answer', ($) =>
+			C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }),
+		)
+		.outlet('save', ($) =>
+			C.createMessage.v1({ text: $.answer.label, narration: true }),
+		)
+		.build()

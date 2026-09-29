@@ -2,12 +2,19 @@
 	/**
 	 * A frame surface, in the sandbox it will actually live in.
 	 *
-	 * This is the host half of frame protocol v1, and it is deliberately the
-	 * *same* protocol the app's `PluginFrame.svelte` speaks — the message union
-	 * is declared once in the SDK (`HostFrameMessage`/`FrameHostMessage`) and
-	 * both hosts pin to it, so a surface that works here is not working against
-	 * a friendlier harness. In particular the harness keeps the two properties
-	 * that make the sandbox mean something:
+	 * This is the host half of frame **protocol 2** (`FRAME_PROTOCOL`), and it
+	 * is deliberately the *same* protocol the app's `PluginFrame.svelte` speaks
+	 * — the message union is declared once in the SDK
+	 * (`HostFrameMessage`/`FrameHostMessage`) and both hosts pin to it, so a
+	 * surface that works here is not working against a friendlier harness. The
+	 * decisions live in `framePort.ts`, which has no DOM in it and is what the
+	 * SDK suite pins; this file owns the iframe, the port and the chrome.
+	 *
+	 * ⚠ Core is still a protocol-**1** host: it answers none of `error`,
+	 * `request` or `save-state`. A surface must therefore treat `page` and
+	 * `state` as messages that may never arrive, exactly as it already treats
+	 * `theme`. In particular the harness keeps the two properties that make the
+	 * sandbox mean something:
 	 *
 	 *   · `sandbox="allow-scripts"` with **no** `allow-same-origin` — opaque
 	 *     origin, no cookies, no DOM reach into the harness.
@@ -22,6 +29,8 @@
 	 */
 	import { onDestroy, untrack } from 'svelte'
 	import type { FramePoint, PreviewTarget } from '@serene-pub/sdk'
+	import { FRAME_PROTOCOL } from '@serene-pub/sdk'
+	import { answerFrameMessage, initMessage, savedFrameState } from './framePort.js'
 	import { themeCssPath } from 'virtual:serene-pub/surfaces'
 	import { theme } from './theme.svelte.js'
 	import type { Fixtures } from './fixtures.js'
@@ -37,7 +46,13 @@
 	}
 	let { target, src, fixtures, props, reloadKey }: Props = $props()
 
-	type LogEntry = { dir: 'down' | 'up'; t: string; detail: string; at: string }
+	type LogEntry = {
+		dir: 'down' | 'up'
+		t: string
+		detail: string
+		at: string
+		level?: 'error' | 'fatal'
+	}
 
 	let frame = $state<HTMLIFrameElement | null>(null)
 	let port: MessagePort | null = null
@@ -45,23 +60,35 @@
 	let lastSuspended = false
 	let suspended = $state(false)
 	let log = $state<LogEntry[]>([])
+	/**
+	 * The last failure the frame reported (protocol 2's `error`), shown in the
+	 * bar rather than only in the log — a broken total-conversion surface should
+	 * say so rather than sit blank, which is the whole reason the message exists.
+	 */
+	let failure = $state<{ message: string; fatal: boolean } | null>(null)
 
 	const surface = $derived<FramePoint>(target.point as FramePoint)
 	const channels = $derived(target.channels ?? [])
 
 	const stamp = () => new Date().toISOString().slice(11, 23)
 
-	function record(dir: 'down' | 'up', t: string, detail: unknown) {
+	function record(dir: 'down' | 'up', t: string, detail: unknown, level?: 'error' | 'fatal') {
 		// `untrack` is load-bearing, not tidy. `record` runs inside the push
 		// effect and appending reads the existing log — a read and a write of
 		// the same state in one effect, which is an infinite loop. The symptom
 		// is not an error but a wedged page, so it is worth naming here.
-		untrack(() => appendLog(dir, t, detail))
+		untrack(() => appendLog(dir, t, detail, level))
 	}
 
-	function appendLog(dir: 'down' | 'up', t: string, detail: unknown) {
+	function appendLog(dir: 'down' | 'up', t: string, detail: unknown, level?: 'error' | 'fatal') {
 		log = [
-			{ dir, t, detail: typeof detail === 'string' ? detail : JSON.stringify(detail), at: stamp() },
+			{
+				dir,
+				t,
+				detail: typeof detail === 'string' ? detail : JSON.stringify(detail),
+				at: stamp(),
+				...(level ? { level } : {})
+			},
 			...log
 		].slice(0, 200)
 	}
@@ -87,6 +114,11 @@
 		if (msg.t === 'channel') return `${msg.channel}: ${(msg.messages as unknown[]).length} message(s)`
 		if (msg.t === 'messages') return `${(msg.messages as unknown[]).length} message(s)`
 		if (msg.t === 'props') return Object.keys(msg.props as object).join(', ')
+		if (msg.t === 'page')
+			return `#${msg.requestId}: ${(msg.rows as unknown[]).length} row(s)${
+				msg.nextCursor ? ', more to come' : ''
+			}`
+		if (msg.t === 'state') return `${Object.keys(msg.state as object).length} restored key(s)`
 		return ''
 	}
 
@@ -94,37 +126,36 @@
 		// A fresh channel per document load — a reloaded frame must never
 		// receive a stale port. `lastSuspended` resets with it: a reloaded
 		// document has never been told to idle, so leaving the flag set would
-		// let a running frame sit behind a UI that says "suspended".
+		// let a running frame sit behind a UI that says "suspended". `failure`
+		// resets too: a reloaded document has not failed yet, and a stale FATAL
+		// in the bar would be the harness lying about the surface in front of it.
 		port?.close()
 		ready = false
 		lastSuspended = false
+		failure = null
 		const channel = new MessageChannel()
 		port = channel.port1
 		port.onmessage = (e) => {
-			const m = e.data
-			if (!m || typeof m !== 'object') return
-			if (m.t === 'ready') {
-				// No `push()` here. `ready` is read inside `push`, which runs
-				// inside the effect, so flipping it re-runs the effect and the
-				// batch goes out once. Calling it here as well posted the whole
-				// batch twice on every reload — invisible except as a doubled
-				// channel log, which is exactly the thing the log is for.
-				ready = true
-				record('up', 'ready', '')
-			} else if (m.t === 'action' && typeof m.fn === 'string') {
-				record(
-					'up',
-					'action',
-					`${m.fn}${typeof m.messageId === 'number' ? ` #${m.messageId}` : ''} ${
-						m.payload ? JSON.stringify(m.payload) : ''
-					}`
-				)
-			} else {
-				record('up', String(m.t ?? '?'), 'not a protocol v1 message — the host ignores it')
-			}
+			// Every decision is `framePort.ts`'s — this half only moves the
+			// bytes and paints the outcome, so what the harness answers can be
+			// pinned without a browser.
+			const reply = answerFrameMessage(e.data, {
+				surfaceId: target.id,
+				source: { messages: $state.snapshot(fixtures.messages), channels },
+				state: savedFrameState
+			})
+			if (!reply) return
+			record('up', reply.log.t, reply.log.detail, reply.log.level)
+			if (reply.error) failure = reply.error
+			for (const msg of reply.post) post(msg as Record<string, unknown>)
+			// Flipped LAST. `ready` is read inside `push`, which runs inside the
+			// effect, so flipping it re-runs the effect and the batch goes out
+			// once — and it goes out after any `state` the host just restored,
+			// which is the order a remounting surface needs.
+			if (reply.ready) ready = true
 		}
-		frame?.contentWindow?.postMessage({ t: 'init', protocol: 1, surface }, '*', [channel.port2])
-		record('down', 'init', `surface=${surface}`)
+		frame?.contentWindow?.postMessage(initMessage(surface), '*', [channel.port2])
+		record('down', 'init', `surface=${surface} · protocol ${FRAME_PROTOCOL}`)
 	}
 
 	/**
@@ -181,6 +212,9 @@
 		// them. Core does not send this yet; the harness does, so a surface can
 		// be built against it.
 		post({ t: 'theme', theme: theme.current.theme, mode: theme.current.mode })
+		// The viewer's language (`locale.v1`), as core sends it last. The
+		// browser's, here: the preview has no user to ask.
+		post({ t: 'locale', locale: (navigator.language || 'en').split('-')[0] })
 	}
 
 	/**
@@ -232,6 +266,13 @@
 	<div class="bar">
 		<span class="pill" class:on={ready}>{ready ? 'ready' : 'waiting for ready'}</span>
 		<span class="muted">{surface}</span>
+		<!-- Protocol 2's `error`, in the chrome and not only in the log: a broken
+		     total-conversion surface should say so rather than sit blank. -->
+		{#if failure}
+			<span class="pill bad" title={failure.message}>
+				{failure.fatal ? 'fatal' : 'error'}: {failure.message}
+			</span>
+		{/if}
 		{#if channels.length}
 			<!-- Stated, not toggled. This was a switch, and the off position
 			     posted `{t:'messages'}` to a channel-declaring panel — a shape
@@ -314,6 +355,15 @@
 				so a panel's declared lanes do not survive install today.
 			</li>
 			<li>
+				<strong>Protocol 2 is harness-only, for now.</strong> This host answers
+				<code>request</code> with a <code>page</code>, holds <code>save-state</code> for the
+				harness session and returns it as <code>state</code>, and shows <code>error</code> in
+				the bar. Core is still a protocol-<strong>1</strong> host and answers none of them, so
+				treat <code>page</code> and <code>state</code> as messages that may never arrive. The
+				page size and the cursor's spelling are this harness's choice — read
+				<code>nextCursor</code> and hand it back; never parse it.
+			</li>
+			<li>
 				<strong><code>connect-src</code> is wider here.</strong> Production grants only the
 				hosts your manifest declares; this frame also reaches Vite's HMR socket, because
 				otherwise nothing hot-reloads.
@@ -326,9 +376,9 @@
 		</ul>
 		<p>
 			What is <em>not</em> different, deliberately: the sandbox attributes, the CSP's other
-			directives, protocol v1's message shapes, and which messages each surface point
-			receives — a <code>page</code> frame gets <code>init</code> and nothing else here,
-			exactly as in the app.
+			directives, the message <em>shapes</em> (one union, declared in the SDK), and which
+			messages each surface point receives unprompted — a <code>page</code> surface gets
+			<code>init</code> and nothing else here, exactly as in the app.
 		</p>
 	</details>
 
@@ -351,7 +401,7 @@
 				<li class={e.dir}>
 					<span class="at">{e.at}</span>
 					<span class="arrow">{e.dir === 'down' ? '→' : '←'}</span>
-					<strong>{e.t}</strong>
+					<strong class:err={!!e.level}>{e.t}</strong>
 					<span class="muted">{e.detail}</span>
 				</li>
 			{/each}
@@ -392,6 +442,17 @@
 	.pill.on {
 		color: var(--accent);
 		border-color: var(--accent);
+	}
+	.pill.bad {
+		color: #d94b4b;
+		border-color: #d94b4b;
+		max-width: 40ch;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+	li.up strong.err {
+		color: #d94b4b;
 	}
 	.body {
 		flex: 1;

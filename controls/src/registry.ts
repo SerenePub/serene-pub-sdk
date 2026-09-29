@@ -7,6 +7,7 @@
  * host's database (a prompt list is an instance fact, not a declaration) —
  * the host renders those with its own data-connected control; the package
  * deliberately ships none, and the canary counts the marker as covered.
+ * @experimental
  */
 export interface ControlEntry {
 	/** The component's export name in `@serene-pub/controls`. */
@@ -15,6 +16,7 @@ export interface ControlEntry {
 	hostIntegrated?: boolean
 }
 
+/** @experimental */
 export const CONTROL_REGISTRY: Record<string, ControlEntry> = {
 	'integer@1': { component: 'NumberControl' },
 	'number@1': { component: 'NumberControl' },

@@ -33,13 +33,22 @@ import {
 /** A declaration as data — never registered, so a doctored one claims no id. */
 const asType = (id: string, entryShape: EntryShape) => ({ id, entryShape })
 
-describe('the three shapes a lorebook row can be', () => {
-	test('all three are declared, registered, and the only entry types core ships', () => {
+describe('the shapes a lorebook row can be', () => {
+	test('all five are declared, registered, and the only entry types core ships', () => {
+		// Places (L3, 2026-09-17) and items (attributes phase 3a, 2026-09-26)
+		// joined the original three; both are world lore's shape with a
+		// reason of their own — a place's exits, an item's supply.
 		assert.deepEqual(
 			allEntryTypes().map((t) => t.id),
-			['core:entry/world-lore@1', 'core:entry/character-lore@1', 'core:entry/history@1'],
+			[
+				'core:entry/world-lore@1',
+				'core:entry/character-lore@1',
+				'core:entry/history@1',
+				'core:entry/location@1',
+				'core:entry/item@1',
+			],
 		)
-		assert.equal(CORE_ENTRY_TYPES.length, 3)
+		assert.equal(CORE_ENTRY_TYPES.length, 5)
 		for (const t of allEntryTypes()) assert.equal(t.kind, 'entry')
 	})
 
@@ -55,12 +64,16 @@ describe('the three shapes a lorebook row can be', () => {
 	})
 
 	test('the wire names stay short — a type id is never written into a file', () => {
+		// A place and an item declare none: no marker is honest, where a
+		// marker no importer reads round-trips into the wrong shape. Both
+		// export as world lore and read back as world lore.
 		assert.deepEqual(
 			allEntryTypes().map((t) => t.entryShape.exportKey),
-			['world', 'character', 'history'],
+			['world', 'character', 'history', undefined, undefined],
 		)
 		for (const t of allEntryTypes())
-			assert.ok((ENTRY_EXPORT_KEYS as readonly string[]).includes(t.entryShape.exportKey!))
+			if (t.entryShape.exportKey !== undefined)
+				assert.ok((ENTRY_EXPORT_KEYS as readonly string[]).includes(t.entryShape.exportKey))
 	})
 
 	test('character lore is the one with an anchor, under a core-owned policy', () => {

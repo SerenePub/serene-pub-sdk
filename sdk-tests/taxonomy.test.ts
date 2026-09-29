@@ -12,22 +12,21 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec, compile, canonicalHash, importDocument } from '@serene-pub/sdk'
+import { spec, compile, canonicalHash, importDocument, use } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
-const built = (taxonomy?: any) =>
+const built = (taxonomy?: any, lockGenre?: string) =>
 	spec('demo:spec/taxed', { version: '1.0.0', ...(taxonomy ? { taxonomy } : {}) })
-		.inlet('input', C.userMessage.v1())
+		.inlet(
+			'input',
+			C.userMessage.v1(),
+			...((lockGenre ? [{ genre: use(lockGenre), event: 'core:event/message-respond@1' }] : []) as []),
+		)
 		.build()
 
 describe('spec taxonomy', () => {
-	test('rides the document and round-trips (F3)', () => {
-		const doc = compile(
-			built({
-				role: 'action',
-				genre: 'core:genre/chat',
-			}),
-		)
+	test('rides the document and round-trips (F3) — its genre copied from the inlet lock (R48)', () => {
+		const doc = compile(built({ role: 'action' }, 'core:genre/chat'))
 		assert.deepEqual(doc.taxonomy, {
 			role: 'action',
 			genre: 'core:genre/chat',
@@ -43,20 +42,8 @@ describe('spec taxonomy', () => {
 		assert.notEqual(canonicalHash(a), canonicalHash(b))
 	})
 
-	test('the deprecated `mode` spelling normalizes to `genre` (24 §2)', () => {
-		const doc = compile(built({ mode: 'core:genre/chat' }))
-		assert.deepEqual(doc.taxonomy, { genre: 'core:genre/chat' })
-		// meta.mode likewise: the document carries `genre`, never `mode`.
-		const metaAliased = compile(
-			spec('demo:spec/aliased', {
-				version: '1.0.0',
-				mode: { name: { en: 'Chat' }, family: 'chat' },
-			})
-				.inlet('input', C.userMessage.v1())
-				.build(),
-		)
-		assert.equal(metaAliased.mode, undefined)
-		assert.deepEqual(metaAliased.genre, { name: { en: 'Chat' }, family: 'chat' })
+	test('taxonomy never states a genre (R48)', () => {
+		assert.throws(() => built({ genre: 'core:genre/chat' }), /states taxonomy.genre — drop it/)
 	})
 
 	test('a create spec carries its genre declaration — name, family, shape (24 §3)', () => {
@@ -78,6 +65,9 @@ describe('spec taxonomy', () => {
 				.build(),
 		)
 		assert.equal((doc.taxonomy as any).role, 'create')
+		// A bare slug stays a bare slug in the document (R-C, 2026-09-17): the
+		// element union added the long form, it did not normalise the short one
+		// away, which is what keeps every genre written before it on its hash.
 		assert.deepEqual((doc.genre as any).shape.channels, ['map'])
 		// The shape is content: reshaping the genre moves the hash (republish).
 		const reshaped = compile(
@@ -94,6 +84,44 @@ describe('spec taxonomy', () => {
 				.build(),
 		)
 		assert.notEqual(canonicalHash(reshaped), canonicalHash(doc))
+	})
+
+	test('a channel declared in full rides the document as written (R-C)', () => {
+		const doc = compile(
+			spec('demo:spec/create-room', {
+				version: '1.0.0',
+				taxonomy: { role: 'create' },
+				genre: {
+					name: { en: 'Writing Room' },
+					family: 'writing',
+					shape: {
+						channels: ['main', { slug: 'manuscript', role: 'folio', voice: 'none' }],
+					},
+				},
+			})
+				.inlet('input', C.userMessage.v1())
+				.build(),
+		)
+		assert.deepEqual((doc.genre as any).shape.channels, [
+			'main',
+			{ slug: 'manuscript', role: 'folio', voice: 'none' },
+		])
+		// Long form and short form are different declarations, so they hash
+		// differently — the hash covers what was written, not what it resolves to.
+		const short = compile(
+			spec('demo:spec/create-room', {
+				version: '1.0.0',
+				taxonomy: { role: 'create' },
+				genre: {
+					name: { en: 'Writing Room' },
+					family: 'writing',
+					shape: { channels: ['main', 'manuscript'] },
+				},
+			})
+				.inlet('input', C.userMessage.v1())
+				.build(),
+		)
+		assert.notEqual(canonicalHash(short), canonicalHash(doc))
 	})
 
 	test('absent taxonomy is fine and hashes distinctly from declared', () => {

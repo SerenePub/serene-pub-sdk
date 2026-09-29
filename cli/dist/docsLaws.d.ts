@@ -5,6 +5,7 @@ import type { DocPage } from './docs.js';
  * Returns an array because this sits beside `renderAnnouncementDocs()` in the
  * same source and may grow a second page; a caller appends it to that source's
  * pages.
+ * @internal
  */
 export declare function renderLawsDocs(): DocPage[];
 //# sourceMappingURL=docsLaws.d.ts.map

@@ -7,7 +7,7 @@
  */
 import { renderPreview } from './preview.js';
 import { renderStatusText } from './status.js';
-/** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. */
+/** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. @experimental */
 export function renderReceipt(r) {
     const out = [];
     out.push(`run ${r.runId}  spec ${r.specId} v${r.specVersion}   seed ${r.seed}`);

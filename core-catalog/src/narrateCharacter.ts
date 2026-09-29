@@ -49,8 +49,10 @@
 
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { withSpriteTail } from './sprites.js'
 import { chatGenre } from './genres.js'
 
+/** @experimental */
 export const NARRATE_CHARACTER_SPEC_ID = 'core:spec/narrate-character'
 // 1.0.0: a new declaration, not a bump. The 0.6 version freeze forbids moving
 // an existing spec's semver; it says nothing about publishing a new spec, and
@@ -93,16 +95,19 @@ export const NARRATE_CHARACTER_SPEC_ID = 'core:spec/narrate-character'
 // `drizzle/0111_reply_slots_and_relationship_cap.sql` deletes this pin so boot
 // republishes it, and `specHashes.test.ts` records the moved hash in the same
 // change; neither half is optional.
+/** @internal */
 export const NARRATE_CHARACTER_VERSION = '1.0.0'
 
+/** @experimental */
 export const narrateCharacterSpec = () =>
 	compile(
+		// The sprite tail (DESIGN-sprites §5): after `save`, choose the line's face.
+		withSpriteTail(
 		spec(NARRATE_CHARACTER_SPEC_ID, {
 			version: NARRATE_CHARACTER_VERSION,
 			/** Catalogue claims (23 §2): a person-invoked action on chats. */
 			taxonomy: {
 				role: 'action',
-				genre: chatGenre.id,
 			},
 			/**
 			 * Its contributed trigger (19 §4). Same namespace as the genre
@@ -115,19 +120,18 @@ export const narrateCharacterSpec = () =>
 			 * **bespoke lifecycle** like `narrate` and `respond` — the press
 			 * opens a modal whose first step is *who speaks*, and the run needs
 			 * the streaming message row that modal's answer creates — so the
-			 * generic `sessions:triggerFunction` route refuses it by name and
+			 * generic `sessions:fireAction` route refuses it by name and
 			 * sends the client to that flow instead.
 			 */
 			contributes: {
 				actions: [
 					{
 						key: 'narrate-character',
-						genre: chatGenre.id,
-						function: 'narrate-character',
 						venue: { kind: 'composer' },
 						quick: true,
 						icon: 'user-round',
 						label: { en: 'Side character' },
+						description: { en: 'Have someone you name speak a line, whether or not they are in the cast.' },
 					},
 				],
 			},
@@ -209,9 +213,8 @@ export const narrateCharacterSpec = () =>
 			/**
 			 * The entity mechanism — rows found because the scene is *naming*
 			 * what they name. Its `messages` out-port is deliberately not wired
-			 * into `pool`: `assemble` builds the transcript from `lines`, so a
-			 * retrieved message reaching `rank` would take budget out of the
-			 * `messages` band and render nowhere.
+			 * into `pool`: its recalled lines render only where a context
+			 * template places `{{{recalledLines}}}`, and no shipped one does.
 			 */
 			.query('entities', ($) =>
 				C.entitySearch.v1({
@@ -414,6 +417,7 @@ export const narrateCharacterSpec = () =>
 					params: slot.params(),
 					// No `prompts` here — see `respond.ts` (culled 2026-09-16).
 				}),
+				{ expose: { stream: true, status: 'Narrating' } },
 			)
 			/** The side character's row, filled — see `placeholder`. */
 			.outlet('save', ($) =>
@@ -423,5 +427,6 @@ export const narrateCharacterSpec = () =>
 					thinking: $.generate.thinking,
 				}),
 			)
+		)
 			.build(),
 	)

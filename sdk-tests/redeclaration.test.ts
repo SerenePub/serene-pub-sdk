@@ -20,6 +20,7 @@ import assert from 'node:assert/strict'
 
 import {
 	describeTaskDefinition,
+	describeOracleDefinition,
 	describeEntryType,
 	getDefinition,
 	allDefinitions,
@@ -92,10 +93,63 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 	})
 
 	/**
+	 * Policy is not content either (plans/31 V6): the registry compares the
+	 * **contract** (`definitionContractHash`), so a re-declaration that flips
+	 * `provisional`, moves a timeout or changes the gate's default is accepted
+	 * and **replaces** the entry — a dev flipping a flag under hot reload sees
+	 * it take effect, with no pin moving anywhere.
+	 */
+	test('policy is not content — a re-declaration with different policy is accepted, and the fresher policy wins', () => {
+		const contract = {
+			id: 'test:oracle/policy@1' as const,
+			effects: 'external' as const,
+			review: { fields: [] as string[] },
+			ports: { in: { text: TEXT }, out: { main: JSON_SHAPE } },
+		}
+		describeOracleDefinition({ ...contract, timeoutMs: 1000, provisional: true, reviewDefault: 'on' })
+		const second = describeOracleDefinition({
+			...contract,
+			timeoutMs: 5000,
+			timeoutKind: 'idle',
+			toggleable: true,
+			reviewDefault: 'off',
+		})
+		assert.equal(allDefinitions().filter((t) => t.id === 'test:oracle/policy@1').length, 1)
+		assert.equal(getDefinition('test:oracle/policy@1'), second)
+		const kept = getDefinition('test:oracle/policy@1')!
+		assert.equal(kept.provisional, undefined, 'bound now — the flag is gone')
+		assert.equal(kept.timeoutMs, 5000)
+		assert.equal(kept.timeoutKind, 'idle')
+		assert.equal(kept.toggleable, true)
+		assert.equal(kept.reviewDefault, 'off')
+	})
+
+	test('a contract change under an existing id still throws, naming both hashes — review.fields is contract', () => {
+		describeOracleDefinition({
+			id: 'test:oracle/fields@1',
+			effects: 'external',
+			review: { fields: ['text'] },
+			ports: { in: { text: TEXT }, out: { main: JSON_SHAPE } },
+		})
+		assert.throws(
+			() =>
+				describeOracleDefinition({
+					id: 'test:oracle/fields@1',
+					effects: 'external',
+					review: { fields: [] },
+					ports: { in: { text: TEXT }, out: { main: JSON_SHAPE } },
+				}),
+			(e: Error) =>
+				/duplicate type id: test:oracle\/fields@1/.test(e.message) && namesBothHashes(e.message),
+		)
+		assert.deepEqual(getDefinition('test:oracle/fields@1')!.review, { fields: ['text'] })
+	})
+
+	/**
 	 * The word `title` means two opposite things inside one `Descriptor`, and
 	 * this pins the half that is contract.
 	 *
-	 * `PanelDecl.title` is a heading and would be display text; `EntryRoles.title`
+	 * `WidgetDecl.title` is a heading and would be display text; `EntryRoles.title`
 	 * is *which field* the engine reads as a row's display title, and moving it
 	 * changes what an untouched install does — an `@N+1` on purpose. So `title`
 	 * is deliberately not in the descriptor registry's display list. Anyone

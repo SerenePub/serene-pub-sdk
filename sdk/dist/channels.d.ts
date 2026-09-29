@@ -42,11 +42,11 @@
  * A write always normalises through `formatChannel(parseChannel(x))`, so two
  * spellings of the same lane cannot land in the column as two lanes.
  */
-/** The channel every session has, whatever its genre declares. */
+/** The channel every session has, whatever its genre declares. @experimental */
 export declare const DEFAULT_CHANNEL = "main";
-/** The lane every channel has. A bare slug means this one. */
+/** The lane every channel has. A bare slug means this one. @internal */
 export declare const DEFAULT_LANE = 1;
-/** A channel string, taken apart. */
+/** A channel string, taken apart. @experimental */
 export interface ChannelRef {
     /** The genre-declared bucket. The reference; never a number. */
     slug: string;
@@ -79,6 +79,7 @@ export interface ChannelRef {
  *
  * Never throws. Absent, blank, or non-string is the default channel's default
  * lane — the session always has one, so there is nothing to refuse.
+ * @experimental
  */
 export declare function parseChannel(raw: unknown): ChannelRef;
 /**
@@ -87,6 +88,7 @@ export declare function parseChannel(raw: unknown): ChannelRef;
  * Lane 1 is the bare slug. This is the only shape that may reach the column: a
  * row stored as `main:1` and a row stored as `main` would be one lane wearing
  * two names, and every prefix read would then have to know both.
+ * @experimental
  */
 export declare function formatChannel(ref: {
     slug: string;
@@ -98,6 +100,7 @@ export declare function formatChannel(ref: {
  * Canonical equality, so `main` and `main:1` are the same lane and `phone` and
  * `phone:2` are not. `explicit` deliberately plays no part — it says how a read
  * was *phrased*, not which lane it landed on.
+ * @internal
  */
 export declare function isSameChannel(a: unknown, b: unknown): boolean;
 //# sourceMappingURL=channels.d.ts.map

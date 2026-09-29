@@ -36,11 +36,13 @@
 import { compile, spec, slot } from "@serene-pub/sdk"
 import * as C from "@serene-pub/contracts"
 
+/** @experimental */
 export const GRAPH_BUILD_SPEC_ID = "core:spec/graph-build"
 // 1.0.1: `$.building.item` compiles to a real per-iteration edge now (the SDK
 // scope fix) — 1.0.0's published rows carried a dud reference, so each step ran
 // against no scene. Same authored source; corrected document; new version,
 // because a published version is immutable.
+/** @internal */
 export const GRAPH_BUILD_VERSION = "1.2.0"
 
 /** Every step takes the scene it is working on and its own three slots. */
@@ -61,6 +63,7 @@ const step = ($: any) => ({
  */
 const MAX_SCENES = 500
 
+/** @experimental */
 export const graphBuildSpec = () =>
 	compile(
 		spec(GRAPH_BUILD_SPEC_ID, {

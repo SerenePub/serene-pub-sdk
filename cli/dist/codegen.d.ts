@@ -20,23 +20,25 @@
  *   `generate-text`, `embed-text`, `render-image`, `create-message`, `assemble`.
  * - **Query types name their source** — a Query is chosen by what it returns, which is
  *   what a user tuning "how much should lore matter" is looking at: `session-history`,
- *   `persona-card`, `lorebook-triggers`.
+ *   `world-lore`, `lorebook-triggers`.
  *
  * Renaming `core:oracle/text-gen@1` to `core:oracle/generate-text@1` also removed a
  * collision worth naming: it was the same string as `core:shape/text-gen@1`, the operation
  * and the category spelled identically in different namespaces.
  */
 import type { Descriptor } from "@serene-pub/sdk";
-/** `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
+/** @internal `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
 export declare function parseDefinitionId(id: string): {
     ns: string;
     kind?: string;
     name: string;
     version: number;
 };
+/** @internal */
 export declare const camel: (s: string) => string;
-/** The one and only rule. */
+/** @internal The one and only rule. */
 export declare const bindingNameFor: (id: string) => string;
+/** @internal */
 export interface DerivationProblem {
     id: string;
     given: string;
@@ -45,11 +47,13 @@ export interface DerivationProblem {
 /**
  * Check a hand-written contracts module against the rule. Run in CI: the moment a name
  * stops being derivable, generation would need an alias table, and that is the failure.
+ * @internal
  */
 export declare function checkDerivable(entries: Array<{
     name: string;
     id: string;
 }>): DerivationProblem[];
+/** @internal */
 export interface NameCollision {
     name: string;
     ids: string[];
@@ -67,10 +71,12 @@ export interface NameCollision {
  * plugin example already used. Reported as its own problem rather than folded
  * into `checkDerivable`, because the fix is different — a collision is resolved
  * by renaming a *type*, not by renaming a binding.
+ * @internal
  */
 export declare function checkUnique(entries: Array<{
     id: string;
 }>): NameCollision[];
+/** @experimental */
 export interface GenerateOptions {
     /** Written into the banner so a stale file is obvious in a diff. */
     release?: string;
@@ -81,11 +87,13 @@ export interface GenerateOptions {
  * Emit a contracts module. Descriptors are emitted as data plus a `pin()` call, so the
  * generated file is readable and diffable rather than a blob — a plugin author reading
  * `/contracts` to find out what ports a node has should be able to.
+ * @experimental
  */
 export declare function generateContracts(types: Descriptor[], opts?: GenerateOptions): string;
 /**
  * The manifest's view of a node definition: what an admin's audit screen and the
  * install-time permission check read, without loading any code (10 §10.2).
+ * @internal
  */
 export interface DefinitionSummary {
     id: string;
@@ -102,6 +110,25 @@ export interface DefinitionSummary {
     public?: boolean;
     declaresRandomness?: boolean;
     timeoutMs?: number;
+    /**
+     * The **declaration** this summarizes, verbatim (D-6b).
+     *
+     * Everything above is a summary — port *names*, slot *names* — which is
+     * what an audit screen shows and not enough to register the definition. An
+     * instance projects a plugin's definitions into `pipeline_definition_registry`
+     * the way it projects core's, and that projection is over the descriptor:
+     * port shapes, slot declarations, the session shape, the entry shape. A row
+     * built from names alone would declare ports no edge could be checked
+     * against and a form with no fields in it.
+     *
+     * Carried inside the summary rather than in a second list beside it,
+     * because two lists of definitions are two things that can disagree about
+     * which definitions a package has. A descriptor is data: the instance reads
+     * it exactly as it reads the pipeline documents, and never evaluates the
+     * plugin to get it (F6).
+     */
+    declaration?: Descriptor;
 }
+/** @internal */
 export declare const summarizeDefinition: (d: Descriptor) => DefinitionSummary;
 //# sourceMappingURL=codegen.d.ts.map

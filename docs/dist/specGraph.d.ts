@@ -26,6 +26,7 @@ import type { DocsGraph } from './types.js';
  * `pipeline_edges` rows, so two `$ref`s from the same upstream node into two
  * different config paths are two rows and the same line — drawn twice, it is
  * the same line, slightly fatter, for no reader's benefit.
+ * @internal
  */
 export declare function specGraphOf(doc: SpecDocument, opts?: {
     title?: string;

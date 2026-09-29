@@ -40,28 +40,7 @@ describe('R-11 · a point declares what it accepts', () => {
 		assert.deepEqual(p, { key: 'draft', accepts: [FILTER], label: { en: 'Draft' } })
 	})
 
-	test('a bare key is a text-transform point — the deprecated spelling, one release', () => {
-		const [p] = scriptPointsOf({ scriptPoints: ['draft'] })
-		assert.deepEqual(p, { key: 'draft', accepts: [TEXT] })
-	})
-
-	test("a point declared before `accepts` existed reads the same way, and `i18n` folds to `label`", () => {
-		const [p] = scriptPointsOf({
-			scriptPoints: [{ key: 'draft', i18n: { en: 'Each draft' } } as never],
-		})
-		assert.equal(p!.key, 'draft')
-		assert.deepEqual(p!.accepts, [TEXT])
-		assert.deepEqual(p!.label, { en: 'Each draft' })
-		// Folded, not duplicated: the row never carries both spellings.
-		assert.equal('i18n' in p!, false)
-	})
-
-	test('an explicit `accepts: []` is read as written, and `register` refuses it (U4 residual)', () => {
-		// The reader folds only an ABSENT list. An empty one is authored: it
-		// reaches the reader as `[]` rather than silently becoming text/transform.
-		const [p] = scriptPointsOf({ scriptPoints: [{ key: 'draft', accepts: [] }] })
-		assert.deepEqual(p!.accepts, [])
-		// And a declaration carrying it is refused where the author is.
+	test('a point accepting nothing is refused where the author is (U4 residual)', () => {
 		assert.throws(
 			() =>
 				describeOracleDefinition({
@@ -70,7 +49,7 @@ describe('R-11 · a point declares what it accepts', () => {
 					ports: { in: { text: S.text }, out: { main: S.text } },
 					scriptPoints: [{ key: 'draft', accepts: [] }],
 				}),
-			/script point 'draft' with accepts: \[\]/,
+			/script point 'draft' accepting no script kind/,
 		)
 	})
 
@@ -110,9 +89,7 @@ describe('R-11 · the executor hands the applier the point’s own list', () => 
 			ports: { in: { text: S.text }, out: { main: S.text } },
 			scriptPoints: [
 				{ key: 'candidates', accepts: [FILTER], label: { en: 'Candidates' } },
-				// The deprecated spelling beside the full one, so a plugin that
-				// mixes them gets both read the same way.
-				'draft',
+				{ key: 'draft', accepts: [TEXT] },
 			],
 		}),
 	)

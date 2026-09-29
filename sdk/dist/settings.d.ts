@@ -30,12 +30,16 @@
  * keep it write-only in the UI. A free-form column cannot tell a key from a note.
  */
 import type { MediaKind } from './media.js';
+import { type I18nText } from './i18n.js';
+/** @experimental */
 export interface SecretValue {
     readonly $secret: true;
     /** Ciphertext at rest; plaintext exists only inside the owning hook's invocation. */
     readonly value: string;
 }
+/** @experimental */
 export declare const secret: (value: string) => SecretValue;
+/** @internal */
 export declare const isSecret: (v: unknown) => v is SecretValue;
 /**
  * The one field language, for real this time.
@@ -49,10 +53,8 @@ export declare const isSecret: (v: unknown) => v is SecretValue;
  * (whose `fields` are a `SettingsSchema`) could not declare a `share` control
  * that a node beside it could.
  *
- * `ParamDecl` is now an alias of this type and the union is the merge of both.
- * `label` is canonical; `i18n` is accepted as the historical alias so every
- * existing contract keeps compiling. Read either through `fieldLabel()` rather
- * than reaching for a key.
+ * This type is the merge of both, and `label` is the one display key.
+ * @experimental
  */
 export type FieldType = 'string' | 'text' | 'number' | 'integer' | 'boolean' | 'enum' | 'string[]' | 'secret'
 /** Normalised `Record<string, number>` over `members` — ratios only, always
@@ -109,16 +111,12 @@ export type FieldType = 'string' | 'text' | 'number' | 'integer' | 'boolean' | '
  * mistyped key from a deliberate one.
  */
  | 'object';
-export type I18nText = string | ({
-    en: string;
-} & Record<string, string>);
-/** One band of a `share` / `perMember` / `strengths` control, or a labelled `enum` choice. */
+export type { I18nText } from './i18n.js';
+/** One band of a `share` / `perMember` / `strengths` control, or a labelled `enum` choice. @experimental */
 export interface MemberDecl {
     /** The key inside the parameter's value object. */
     key: string;
     label?: I18nText;
-    /** @deprecated alias of `label`. */
-    i18n?: I18nText;
     description?: I18nText;
     /**
      * Which colour this band takes, as an index rather than a value. The
@@ -127,15 +125,10 @@ export interface MemberDecl {
      */
     tone?: number;
 }
+/** @experimental */
 export interface FieldDecl<T extends FieldType = FieldType, O extends readonly string[] = readonly string[]> {
     type: T;
     label?: I18nText;
-    /**
-     * @deprecated alias of `label`, kept so the contracts that were written
-     * against the node-params spelling keep compiling. `fieldLabel()` reads
-     * whichever is present.
-     */
-    i18n?: I18nText;
     description?: I18nText;
     default?: unknown;
     /**
@@ -159,12 +152,27 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
      */
     facet?: string;
     /**
-     * For `share`, `perMember` and `strengths`: the bands, in render order. An `enum` may
-     * use this **instead of** `of`, and should whenever the stored values are
-     * not what a person should read — `of` is derived from the keys, so
-     * nothing that reads `of` has to learn about this.
+     * For `share`, `perMember` and `strengths`: the bands, in render order.
+     *
+     * For an `enum`: each option's display text — `{ key, label, description? }`,
+     * `key` the stored value. Declared **beside** `of` (which keeps the stored
+     * values, their order, the inferred value type and the value check) or
+     * **instead of** it (`of` is then derived from the keys). It is the one way
+     * to say what a stored value like `oldest-first` reads as; a renderer shows
+     * an option with no member, or a member with no label, as its value
+     * humanised ("Oldest first"), never raw. Optional, and hashed wherever the
+     * field's own `label` is — a create spec inlines its genre's fields, so
+     * adding or rewording one moves that spec's pin.
      */
     members?: readonly MemberDecl[];
+    /**
+     * For `secret`: lend it to this package's nodes when they run in another
+     * package's pipeline (R63). Off by default — a node you made public runs
+     * for other packages without your keys unless you lend them. Either way
+     * the code holds a **secret handle**, never the value: `ctx.fetch` fills it
+     * in at the network boundary, for your declared hosts only.
+     */
+    lend?: boolean;
     /**
      * For `list`: the declaration every element satisfies.
      *
@@ -272,22 +280,39 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
      * renderer shows JSON and the submit path parses it back. Produced by
      * `inferSchema` for nested payloads; an author declaring settings should
      * declare real fields instead.
+     *
+     * `'story-time'` (🚧): a `string` holding a position on the story
+     * calendar in its canonical line (`412-03-05 22:30`, `storyTime.ts`) — the
+     * field a clock/date stat is declared as (`core:stat-shape/story-time@1`).
      */
-    format?: 'json';
+    format?: 'json' | 'story-time';
 }
+/** @public */
 export type SettingsSchema = Record<string, FieldDecl>;
 /**
- * @deprecated `ParamDecl` and `FieldDecl` are one type. The alias remains so
- * `descriptors.ts` and every contract written against node params keep
- * compiling; new code should say `FieldDecl`.
+ * The label to render, resolved through `i18nText` in `language` — a bare
+ * string is itself, a map answers the locale or falls back to `en`.
+ * @internal
  */
-export type ParamDecl = FieldDecl;
-/** The label to render, from whichever key the author used. */
 export declare function fieldLabel(decl: {
     label?: I18nText;
-    i18n?: I18nText;
-}): I18nText | undefined;
-/** The media kinds a `media` field offers. Images unless it says otherwise. */
+}, language?: string): string | undefined;
+/**
+ * Every display-text fault in one settings schema (R-20), as sentences that
+ * name the field: each field's `label` and its `description`; each
+ * `members[]` band's label and description; and the
+ * same for a `list`'s `item` and an `object`'s `fields`, recursively. A schema
+ * that is not an object is one finding. Run at every door a schema arrives
+ * through — `register()` for node params, `genre()` for a shape's fields,
+ * a widget's `settings`, `validate()` for a document — so a blank label is
+ * refused where the author is and never reaches a form.
+ *
+ * `of` stays unread: an enum's options are stored values, not display text,
+ * and their labels live on `members[]`.
+ * @experimental
+ */
+export declare function settingsSchemaFindings(schema: unknown, where: string): string[];
+/** The media kinds a `media` field offers. Images unless it says otherwise. @experimental */
 export declare function fieldAccepts(decl: FieldDecl): readonly MediaKind[];
 type ValueOf<F> = F extends {
     type: 'secret';
@@ -312,11 +337,13 @@ type RequiredKeys<S> = {
         required: true;
     } ? K : never;
 }[keyof S];
+/** @public */
 export type SettingsValues<S extends SettingsSchema> = {
     [K in RequiredKeys<S>]: ValueOf<S[K]>;
 } & {
     [K in Exclude<keyof S, RequiredKeys<S>>]?: ValueOf<S[K]>;
 };
+/** @experimental */
 export interface SettingsFinding {
     field?: string;
     severity: 'error' | 'warning';
@@ -324,9 +351,11 @@ export interface SettingsFinding {
     /** What to do instead — required, like every other finding in this SDK (15 §1.3). */
     fix: string;
 }
-/** Mistakes that would otherwise become silent leaks or dead form fields. */
+/** Mistakes that would otherwise become silent leaks or dead form fields. @experimental */
 export declare function checkSchema(schema: SettingsSchema): SettingsFinding[];
+/** @internal */
 export declare function checkValues(schema: SettingsSchema, values: Record<string, unknown>): SettingsFinding[];
+/** @experimental */
 export interface Reconciled {
     values: Record<string, unknown>;
     /** Stored values the new schema no longer declares. **Never deleted** (12 §6, 02 §7). */
@@ -344,20 +373,42 @@ export interface Reconciled {
  * values land in diagnostics rather than disappearing.** An author who renames a field
  * and an admin who then downgrades should both get their data back; silently dropping it
  * makes the update irreversible in the one direction that matters.
+ * @internal
  */
 export declare function reconcile(schema: SettingsSchema, stored: Record<string, unknown>): Reconciled;
-/** What the settings form sends back. A secret reports only whether it is set. */
+/** What the settings form sends back. A secret reports only whether it is set. @internal */
 export declare function forClient(schema: SettingsSchema, values: Record<string, unknown>): Record<string, unknown>;
-/** What an export carries. Secrets never leave, on the same footing as credentials. */
+/** What an export carries. Secrets never leave, on the same footing as credentials. @experimental */
 export declare function forExport(schema: SettingsSchema, values: Record<string, unknown>): Record<string, unknown>;
 /**
  * What the declaring extension's own hook receives — the only place plaintext appears,
  * and only for the extension that owns the field. Same shape as F18's per-call injection
  * of connection material.
  */
-export declare function forOwningHook(schema: SettingsSchema, values: Record<string, unknown>, decrypt: (cipher: string) => string): Record<string, unknown>;
-/** What a component receives at render — extension-side fields never reach the browser. */
+/**
+ * The handle plugin code holds for a secret setting — never its value (R63).
+ * `nonce` is minted by the host per plugin load, so a handle cannot be forged
+ * from text that came from anywhere but the host.
+ * @experimental
+ */
+export declare const secretHandle: (key: string, nonce: string) => string;
+/** A secret's key, as a handle can carry it. @experimental */
+export declare const SECRET_KEY: RegExp;
+/**
+ * What a hook's `settings` carries (R63): every value, and a **secret handle**
+ * in place of each secret — so the plugin's code never holds a key — beside
+ * the plaintext the host keeps for the fetch bridge and the scrub, and the
+ * keys the package lends to its nodes in other packages' pipelines.
+ * @internal
+ */
+export declare function forOwningHookSplit(schema: SettingsSchema, values: Record<string, unknown>, decrypt: (cipher: string) => string, nonce: string): {
+    settings: Record<string, unknown>;
+    secrets: Record<string, string>;
+    lent: string[];
+};
+/** What a component receives at render — extension-side fields never reach the browser. @experimental */
 export declare function forComponent(schema: SettingsSchema, values: Record<string, unknown>): Record<string, unknown>;
+/** @internal */
 export type PluginConfigState = {
     state: 'ready';
 }
@@ -371,7 +422,9 @@ export type PluginConfigState = {
     missing: string[];
     message: string;
 };
+/** @internal */
 export declare function configState(schema: SettingsSchema, values: Record<string, unknown>): PluginConfigState;
+/** @experimental */
 export interface FormGroup {
     group: string;
     fields: Array<{
@@ -379,10 +432,11 @@ export interface FormGroup {
         decl: FieldDecl;
     }>;
 }
-/** Declaration order within a group; group order is first appearance. */
+/** Declaration order within a group; group order is first appearance. @experimental */
 export declare function formLayout(schema: SettingsSchema): FormGroup[];
-/** Is this field currently shown, given the values? One level of `showIf`, no rules engine. */
+/** Is this field currently shown, given the values? One level of `showIf`, no rules engine. @experimental */
 export declare const isVisible: (decl: FieldDecl, values: Record<string, unknown>) => boolean;
+/** @experimental */
 export interface PluginSettings<S extends SettingsSchema> {
     schema: S;
     /** Phantom, for `typeof s.values` in the extension's own code. Never populated. */
@@ -395,18 +449,17 @@ export interface PluginSettings<S extends SettingsSchema> {
     forClient(values: Record<string, unknown>): Record<string, unknown>;
     forExport(values: Record<string, unknown>): Record<string, unknown>;
     forComponent(values: Record<string, unknown>): Record<string, unknown>;
-    forOwningHook(values: Record<string, unknown>, decrypt: (c: string) => string): Record<string, unknown>;
 }
+/** @experimental */
 export declare class SettingsError extends Error {
 }
 /**
  * Declare a plugin's settings. The compiler extracts this statically into the manifest,
  * so it must be a literal — a schema assembled at runtime cannot be read without running
  * the author's code, which the packager never does (F6, 03 §3).
+ * @public
  */
 export declare function defineSettings<const S extends SettingsSchema>(schema: S): PluginSettings<S>;
-/** Back-compat alias for the earlier name. */
-export declare const validateSettingsSchema: (s: SettingsSchema) => string[];
 /**
  * A `SettingsSchema` inferred from a payload — the review gate's form producer.
  *
@@ -418,9 +471,10 @@ export declare const validateSettingsSchema: (s: SettingsSchema) => string[];
  * and structure a form cannot decompose arrives as JSON rather than being
  * silently dropped — an edit surface that hides part of the payload is a
  * review gate a write can sneak past.
+ * @experimental
  */
 export declare function inferSchema(payload: unknown): SettingsSchema;
-/** The payload as form values — JSON-format fields serialized for editing. */
+/** The payload as form values — JSON-format fields serialized for editing. @internal */
 export declare function valuesForForm(schema: SettingsSchema, payload: unknown): Record<string, unknown>;
 /**
  * Fold edited form values back into the payload shape the node expects.
@@ -429,7 +483,7 @@ export declare function valuesForForm(schema: SettingsSchema, payload: unknown):
  * unparseable edit throws with the field named rather than committing a
  * string where an object stood), untouched keys keep their original values —
  * a form is an edit surface, never a filter.
+ * @internal
  */
 export declare function applyFormValues(schema: SettingsSchema, payload: unknown, edited: Record<string, unknown>): unknown;
-export {};
 //# sourceMappingURL=settings.d.ts.map

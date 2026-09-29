@@ -21,6 +21,7 @@
  * in the SDK has to agree about what counting one of those means — otherwise a
  * receipt's figure and a budget's figure are measurements of two different
  * things. Shared with `src/tokenizers.ts` rather than reimplemented there.
+ * @experimental
  */
 export const countableText = (v) => typeof v === 'string' ? v : JSON.stringify(v ?? '');
 /**
@@ -33,9 +34,10 @@ export const countableText = (v) => typeof v === 'string' ? v : JSON.stringify(v
  * no id was configured, when no loader is registered for the one that was, and
  * when a loader threw: budgeting degrades to an estimate rather than failing a
  * run over a tokenizer.
+ * @internal
  */
 export const roughTokens = (v) => Math.ceil(countableText(v).length / 4);
-/** Choose where a preview stops. */
+/** Choose where a preview stops. @experimental */
 export function previewTarget(nodes, explicit) {
     if (explicit)
         return { key: explicit, targetedBy: 'explicit' };
@@ -49,6 +51,7 @@ export function previewTarget(nodes, explicit) {
         .sort((a, b) => a.position - b.position);
     return spine[0] ? { key: spine[0].key, targetedBy: 'first-provider-on-spine' } : undefined;
 }
+/** @experimental */
 export function renderPreview(p) {
     const out = [];
     out.push(`preview · stopped before ${p.atNode} (${p.definitionId}) · ${p.targetedBy}`);
@@ -74,6 +77,6 @@ export function renderPreview(p) {
     }
     return out.join('\n');
 }
-/** Convenience for a UI: the preview, if this receipt is one. */
+/** Convenience for a UI: the preview, if this receipt is one. @experimental */
 export const previewOf = (r) => r.preview;
 //# sourceMappingURL=preview.js.map

@@ -37,7 +37,7 @@ const migrated = () =>
 	spec('core:spec/chat-turn@1', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+		.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }))
 		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)
@@ -47,7 +47,7 @@ const parityBindings = (systemPrompt: string, history: string[]) =>
 	bindings({
 		'core:query/session-history@1': async () => ok({ main: history, messages: history }),
 		'core:task/assemble@2': async (i: any) => {
-			const out = legacyEngine(systemPrompt, i.candidates ?? [])
+			const out = legacyEngine(systemPrompt, i.messages ?? [])
 			return ok({ main: out, context: out })
 		},
 	})

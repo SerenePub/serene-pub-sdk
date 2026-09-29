@@ -1,4 +1,5 @@
 import { specGraphOf } from '@serene-pub/docs';
+/** @internal Re-exported from `@serene-pub/docs`, where it is declared (and tagged). */
 export { specGraphOf };
 /**
  * The resolver `compileDocs({ resolvers: { pipeline } })` wants, over one
@@ -10,6 +11,7 @@ export { specGraphOf };
  * carries `SpecDocument[]` — the same bytes a package ships. Nothing here needs
  * `CORE_SPECS[].build()`, which would re-derive documents the announcement is
  * already holding and could disagree with them.
+ * @internal
  */
 export function pipelineResolver(announcement) {
     const byId = new Map(announcement.pipelines.map((doc) => [doc.id, doc]));

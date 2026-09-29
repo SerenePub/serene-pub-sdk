@@ -25,7 +25,8 @@
  * control renderer (@serene-pub/controls), scaffold printer (cli) — and a
  * conformance canary asserts no shipped type is missing any of the four.
  */
-/** The one key of a declaration — its type id. Throws on malformed decls. */
+import { i18nFindings } from './i18n.js';
+/** The one key of a declaration — its type id. Throws on malformed decls. @experimental */
 export function valueKind(decl) {
     const keys = Object.keys(decl);
     if (keys.length !== 1)
@@ -34,6 +35,7 @@ export function valueKind(decl) {
 }
 /** Type id syntax: `name@N` or `owner:name@N` — same discipline as node types. */
 const VALUE_TYPE_ID = /^([a-z0-9]+(?:[.-][a-z0-9]+)*:)?[a-z0-9]+(?:-[a-z0-9]+)*@\d+$/;
+/** @experimental */
 export function assertValueTypeId(id) {
     if (!VALUE_TYPE_ID.test(id))
         throw new Error(`'${id}' is not a valid value-type id. Use 'name@N' for core kinds or ` +
@@ -51,22 +53,47 @@ function decl(definitionId, props) {
     return freeze({ [definitionId]: freeze(clean) });
 }
 /**
- * Construct a toolkit. `ns` is the declaring package's namespace — the
- * context-bound form `announce()` hands authors — and prefixes every custom
- * kind. The bare exported `v` has no namespace and mints no custom kinds.
+ * The authoring door's half of R-20: a declaration's `label` and
+ * `description`, and each select option's, are display text — a string or a
+ * locale map with `en` — refused at the author's line otherwise. `decl()`
+ * itself stays unchecked because `valueDeclOf` bridges stored schemas through
+ * it at read time, and a panel is not the place to refuse a row.
+ */
+function declared(definitionId, props) {
+    const findings = [
+        ...i18nFindings(props.label, `${definitionId} label`),
+        ...i18nFindings(props.description, `${definitionId} description`),
+    ];
+    if (Array.isArray(props.options))
+        props.options.forEach((o, i) => {
+            if (!o || typeof o !== 'object')
+                return;
+            const at = `${definitionId} options[${typeof o.value === 'string' ? o.value : i}]`;
+            findings.push(...i18nFindings(o.label, `${at}.label`));
+            findings.push(...i18nFindings(o.description, `${at}.description`));
+        });
+    if (findings.length)
+        throw new Error(`${definitionId} declares display text a publish refuses (R-20):\n · ${findings.join('\n · ')}`);
+    return decl(definitionId, props);
+}
+/**
+ * Construct a toolkit. `ns` is the declaring package's namespace — your
+ * plugin's slug — and prefixes every custom kind. The bare exported `v` has no
+ * namespace and mints no custom kinds.
+ * @experimental
  */
 export function makeValueToolkit(ns) {
     return freeze({
-        integer: (p = {}) => decl('integer@1', { ...p }),
-        number: (p = {}) => decl('number@1', { ...p }),
-        fraction: (p = {}) => decl('number@1', { min: 0, max: 1, step: p.step ?? 0.01, ...p }),
+        integer: (p = {}) => declared('integer@1', { ...p }),
+        number: (p = {}) => declared('number@1', { ...p }),
+        fraction: (p = {}) => declared('number@1', { min: 0, max: 1, step: p.step ?? 0.01, ...p }),
         weights: (p) => {
             validateWeightsProps(p);
-            return decl('weights@1', { ...p });
+            return declared('weights@1', { ...p });
         },
         stackedBar: (p) => {
             validateWeightsProps(p);
-            return decl('weights@1', { ...p, control: 'stacked-bar' });
+            return declared('weights@1', { ...p, control: 'stacked-bar' });
         },
         select: (options, props) => {
             const p = Array.isArray(options)
@@ -74,26 +101,26 @@ export function makeValueToolkit(ns) {
                 : options;
             if (!p.options?.length)
                 throw new Error('select needs at least one option');
-            return decl('select@1', { ...p });
+            return declared('select@1', { ...p });
         },
         ranking: (options, props) => {
             if (!options?.length)
                 throw new Error('ranking needs at least one option');
-            return decl('ranking@1', { options, ...props });
+            return declared('ranking@1', { options, ...props });
         },
         text: (p = {}) => {
             if (p.pattern !== undefined)
                 new RegExp(p.pattern); // throws at the author's line
-            return decl('text@1', { ...p });
+            return declared('text@1', { ...p });
         },
-        boolean: (p = {}) => decl('boolean@1', { ...p }),
-        prompt: (p = {}) => decl('prompt-ref@1', { ...p }),
+        boolean: (p = {}) => declared('boolean@1', { ...p }),
+        prompt: (p = {}) => declared('prompt-ref@1', { ...p }),
         custom: (kind, version, props) => {
             if (!ns)
-                throw new Error(`custom value kinds need a package context — use the toolkit announce() hands you, ` +
+                throw new Error(`custom value kinds need a package context — mint them with makeValueToolkit('<your slug>'), ` +
                     `so '${kind}' serializes namespaced ('yourpkg:${kind}@${version}') and cannot ` +
                     `shadow a core kind.`);
-            return decl(`${ns}:${kind}@${version}`, props);
+            return declared(`${ns}:${kind}@${version}`, props);
         },
     });
 }
@@ -116,7 +143,7 @@ function validateWeightsProps(p) {
             throw new Error(`part '${name}' is above max ${p.max}`);
     }
 }
-/** The bare toolkit: core kinds only, no custom minting. */
+/** The bare toolkit: core kinds only, no custom minting. @experimental */
 export const v = makeValueToolkit();
 const num = (x) => typeof x === 'number' && Number.isFinite(x);
 const numberValidator = (integer) => (s, value) => {
@@ -135,6 +162,7 @@ const numberValidator = (integer) => (s, value) => {
  * Validators for the shipped kinds, keyed by type id. Kept beside the
  * factories so adding a kind is one edit — the conformance canary refuses a
  * factory output whose kind has no validator here.
+ * @experimental
  */
 export const valueValidators = {
     'integer@1': numberValidator(true),
@@ -209,6 +237,7 @@ export const valueValidators = {
 /**
  * Validate one value against its declaration. Unknown type ids refuse —
  * a consumer must never accept a write it cannot check (24 §8).
+ * @experimental
  */
 export function validateValue(declaration, value) {
     const kind = valueKind(declaration);
@@ -221,15 +250,17 @@ export function validateValue(declaration, value) {
  * A deliberate hole (24 §7): type-checks wherever a value goes, so authoring
  * can continue — but the coverage report lists it as a named gap, and
  * validation refuses it like any other unknown.
+ * @experimental
  */
 export function todo(note) {
     return freeze({ 'todo@1': freeze({ note }) });
 }
+/** @experimental */
 export const isTodo = (value) => typeof value === 'object' &&
     value !== null &&
     Object.keys(value).length === 1 &&
     'todo@1' in value;
-/** Every kind the bare toolkit can mint — the registry the canary checks. */
+/** Every kind the bare toolkit can mint — the registry the canary checks. @experimental */
 export const shippedValueKinds = Object.freeze(Object.keys(valueValidators));
 /**
  * The bridge from the settings-schema vocabulary (`{type:'integer', …}` on
@@ -238,6 +269,7 @@ export const shippedValueKinds = Object.freeze(Object.keys(valueValidators));
  * the value-decl contract while the schemas migrate underneath at their own
  * pace. Unknown entry types map to nothing, and the caller keeps its
  * legacy rendering for them.
+ * @experimental
  */
 export function valueDeclOf(entry) {
     const e = entry;
@@ -287,7 +319,7 @@ export function valueDeclOf(entry) {
             const options = (e.of ??
                 e.members?.map((m) => ({
                     value: String(m.key ?? m),
-                    label: m.i18n ?? m.label,
+                    label: m.label,
                 })) ??
                 []);
             if (!options.length)

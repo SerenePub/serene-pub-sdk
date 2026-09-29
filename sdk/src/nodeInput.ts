@@ -96,6 +96,7 @@ type DeclaredNames<T> = [T] extends [never] ? never : Extract<keyof DeclaredOnly
  * what `@serene-pub/contracts` exports and what a spec author already holds)
  * and a bare descriptor, so a plugin that has only its own `describeQueryDefinition`
  * return value can use these helpers without wrapping it in a `pin` first.
+ * @experimental
  */
 export type DescriptorOf<P> = P extends { descriptor: infer D }
 	? D
@@ -111,6 +112,7 @@ type InPortMap<P> = DescriptorOf<P> extends { ports: { in?: infer I } } ? NonNul
  *
  * Names only — see the file header for why a `ShapeId` has no value type to
  * derive.
+ * @experimental
  */
 export type InPortsOf<P> = DeclaredNames<InPortMap<P>>
 
@@ -125,6 +127,7 @@ type SlotMap<P> = DescriptorOf<P> extends { slots?: infer S } ? NonNullable<S> :
  * into `Record<string, SlotDecl>` and there was nothing left to derive from.
  * Now that every `describe*` captures its argument, a node that declares no
  * `template` slot no longer silently accepts `input.template`.
+ * @experimental
  */
 export type SlotNamesOf<P> = DeclaredNames<SlotMap<P>>
 
@@ -138,7 +141,7 @@ type ParamsSchema<P> =
 			: never
 		: never
 
-/** The parameter names a contract declares. */
+/** The parameter names a contract declares. @experimental */
 export type ParamNamesOf<P> = DeclaredNames<ParamsSchema<P>>
 
 // ── Parameter values ────────────────────────────────────────────────────────
@@ -154,6 +157,7 @@ export type ParamNamesOf<P> = DeclaredNames<ParamsSchema<P>>
  * ⚠ `unknown` for an unanswered type rather than `any`, deliberately. A field
  * type nobody mapped should make the *use* fail loudly at the binding, not
  * quietly become the thing `any` becomes: another silent read.
+ * @experimental
  */
 export type FieldValue<F> = F extends { type: infer T }
 	? T extends 'string' | 'text' | 'secret' | 'media'
@@ -200,6 +204,7 @@ type EnumValue<F> = F extends { of: readonly (infer V)[] }
  * that never set a control simply has no key for it. The declared `default` is
  * applied by the *binding*, with `??`, which is why every core read of a param
  * already has one.
+ * @experimental
  */
 export type ParamsOf<P> = {
 	[K in ParamNamesOf<P>]?: FieldValue<ParamsSchema<P>[K]>
@@ -225,6 +230,7 @@ type PlainKeys<P> = Exclude<InPortsOf<P> | SlotNamesOf<P>, 'params'>
  * `Partial` over the ports because a port is only present when a spec wired
  * one, and a spec that wires nothing into an optional in-port is legal — the
  * binding's `??` is the contract there, not the type.
+ * @experimental
  */
 export type InputOf<P> = Partial<Record<PlainKeys<P>, any>> &
 	([ParamNamesOf<P>] extends [never] ? unknown : { params?: ParamsOf<P> })
@@ -282,6 +288,7 @@ type SharedParamValue<Ps extends readonly unknown[], K extends string> = {
  * resolved, every name it touches is declared. A key one lane adds is
  * unreadable here until the others add it too — visible as a type error at the
  * read, rather than as `undefined` on two lanes out of three.
+ * @experimental
  */
 export type SharedInput<Ps extends readonly unknown[]> = Partial<Record<SharedNames<Ps>, any>> &
 	([SharedParamNames<Ps>] extends [never]
@@ -310,6 +317,7 @@ export type SharedInput<Ps extends readonly unknown[]> = Partial<Record<SharedNa
  * the node's config, wired edges and resolved slot refs alike. Splitting them
  * here would ask a caller to know which of the two a name is, which is
  * precisely the knowledge the flat input takes away.
+ * @experimental
  */
 export interface HandlerRequires {
 	/** In-port and slot names read off `input` directly. */
@@ -333,6 +341,7 @@ export interface HandlerRequires {
  * function carrying an extra property is assignable to a function type — so a
  * host that never looks at `requires` is unaffected, and one that does gets the
  * declaration where the handler is.
+ * @experimental
  */
 export type DeclaredHook<H extends (...args: any[]) => any> = H & {
 	readonly requires: HandlerRequires
@@ -351,6 +360,7 @@ export type DeclaredHook<H extends (...args: any[]) => any> = H & {
  * Returns the same function object rather than a wrapper: a wrapper would
  * change the identity the executor's binding table holds, and one binding table
  * keyed by identity is how a shared handler is recognised as shared.
+ * @experimental
  */
 export function declaresReads<H extends (...args: any[]) => any>(
 	hook: H,
@@ -370,10 +380,11 @@ export function declaresReads<H extends (...args: any[]) => any>(
  * the same two spellings `InputOf` and `SharedInput` take. A pinned contract is
  * an object and never an array, so the tuple branch cannot be entered by
  * accident.
+ * @experimental
  */
 export type ReadablePorts<P> = P extends readonly unknown[] ? SharedNames<P> : PlainKeys<P>
 
-/** The parameter names a handler bound to `P` may declare it reads. */
+/** The parameter names a handler bound to `P` may declare it reads. @experimental */
 export type ReadableParams<P> = P extends readonly unknown[] ? SharedParamNames<P> : ParamNamesOf<P>
 
 /**
@@ -383,6 +394,7 @@ export type ReadableParams<P> = P extends readonly unknown[] ? SharedParamNames<
  * contract's own literals — so `params: ['limt']` fails to compile where the
  * untyped form would let the typo through to `structuralCompat` at boot, or,
  * on a name the guard never reaches, through to nothing at all.
+ * @experimental
  */
 export interface TypedReads<P> {
 	/** In-port and slot names read off `input` directly. */
@@ -428,6 +440,7 @@ export interface TypedReads<P> {
  * shared handler through a per-pin arrow (`(input, ctx) => shared(input, ctx)`)
  * when the two pins read differently, and declare the intersection when they
  * do not. An identical redeclaration is a no-op, on the registry's own terms.
+ * @experimental
  */
 export function reads<P>(hook: Hook, requires: TypedReads<P>): DeclaredHook<Hook> {
 	const plain: HandlerRequires = {
@@ -462,7 +475,7 @@ function sameRequires(a: HandlerRequires, b: HandlerRequires): boolean {
 	return keys.every((k) => ta[k] === tb[k])
 }
 
-/** Does this hook carry a read declaration? */
+/** Does this hook carry a read declaration? @internal */
 export function readsOf(hook: unknown): HandlerRequires | undefined {
 	const r = (hook as { requires?: unknown } | undefined)?.requires
 	if (!r || typeof r !== 'object') return undefined
@@ -485,6 +498,7 @@ export function readsOf(hook: unknown): HandlerRequires | undefined {
  * `SlotDecl` is imported for the shape of what is walked; nothing here reads a
  * slot's `kind` except to find the schema, because a schema is a schema
  * whatever the slot is called.
+ * @internal
  */
 export function suppliesOf(contract: unknown): {
 	id: string

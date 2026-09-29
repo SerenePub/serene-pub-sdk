@@ -1,0 +1,72 @@
+/**
+ * The turn: read the session, assemble a prompt, ask, write one line.
+ *
+ * The smallest reply that is still the real shape. The two nodes between the
+ * reads and the oracle are not ceremony — `generate-text@1`'s `context` port
+ * takes an **assembled context**, not raw text, so something has to compile the
+ * cast into a template context and something has to assemble what was read.
+ * Wire text straight in and the spec does not publish: the law names the port
+ * that produced the shape and the port that could not take it, at publish time
+ * rather than at 2am.
+ *
+ * ✎ CHANGE: add the retrieval, the ranking and the budget your genre needs
+ *   between `cast` and `prompt`. `slot.prompts()`, `slot.connection()` and
+ *   `slot.sampling()` are **slots**: what fills them is a configuration's
+ *   answer and an administrator's, never this document's.
+ */
+
+import { sessionEvents, slot, spec } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+
+import { {{genreVar}} } from '../genre.js'
+
+export const RESPOND_SPEC_ID = '{{respondSpecId}}'
+
+export const respondSpec = () =>
+	spec(RESPOND_SPEC_ID, { version: '1.0.0' })
+		.inlet('input', C.userMessage.v1(), {
+			genre: {{genreVar}},
+			event: sessionEvents.messageRespond,
+		})
+		/** A **Query** reads Serene Pub's own data. It cannot reach the network. */
+		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
+		/**
+		 * A **Task** is pure. This one compiles the speaking character's card
+		 * into the context the prompt is assembled from; its `prompts` slot is
+		 * the pool the package's shipped prompt row seeds into.
+		 */
+		.task('context', ($) =>
+			C.buildTemplateContext.v1({
+				cast: $.cast.cast,
+				currentCharacterId: $.input.characterId,
+				prompts: slot.prompts(),
+			}),
+		)
+		.task('prompt', ($) =>
+			C.assemble.v2({
+				messages: $.history.messages,
+				templateContext: $.context.templateContext,
+			}),
+		)
+		/**
+		 * The **Oracle** — the one node that crosses the boundary, and the only
+		 * kind that may. Which service answers is an admin's choice, which is
+		 * why the connection is a slot rather than an id.
+		 */
+		.oracle('speak', ($) =>
+			C.generateText.v1({
+				context: $.prompt.context,
+				connection: slot.connection(),
+				sampling: slot.sampling(),
+			}),
+		)
+		/** The one write (law F7: one message per run). */
+		.outlet('save', ($) =>
+			C.createMessage.v1({
+				text: $.speak.text,
+				characterId: $.input.characterId,
+				speaker: $.input.speaker,
+			}),
+		)
+		.build()

@@ -25,18 +25,24 @@
  *    the address `envoy:mascot`, an administrator tunes them in the Pipelines
  *    panel as deviations, and `assemble` reads the same text by reference —
  *    one authored text, one place to edit it, no second schema.
- *  - **The docs are the lore.** `core:query/docs-search@1` scores the compiled
- *    documentation's sections against the recent messages and publishes the
- *    best in the `worldLore` band, so the ranker budgets them and assembly
- *    lays them out under the section's title, exactly as it would a lorebook's
- *    entries. Three lore lanes, four graph reads and two embedding arms are
- *    not here because a guide session has no lorebook and no cast to bind one
- *    to; a person who attaches one gets it on `respond`, not here.
+ *  - **The docs are its only knowledge.** `core:query/docs-search@1` ranks
+ *    the compiled documentation's sections — the app's guides and the SDK's —
+ *    against the person's latest questions and publishes the relevant ones in
+ *    its own declared band, `docsExcerpts`, which the ranker budgets and the
+ *    guide's own template (`GUIDE_RESPOND_TEMPLATE`, the spec's default
+ *    preset) places under a heading that says what they are — or, when
+ *    nothing matched, says that instead. Three lore lanes, four graph reads
+ *    and two embedding arms are not here because a guide session has no
+ *    lorebook and no cast to bind one to; a person who attaches one gets it
+ *    on `respond`, not here.
  */
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk';
+import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
+import { withSpriteTail } from './sprites.js';
 import { GUIDE_MASCOT_KEY, guideGenre } from './genres.js';
+/** @internal */
 export const CREATE_GUIDE_SPEC_ID = 'core:spec/create-guide';
+/** @internal */
 export const CREATE_GUIDE_VERSION = '1.0.0';
 /**
  * The guide's create pipeline — the genre's one required member (24 §3).
@@ -47,10 +53,11 @@ export const CREATE_GUIDE_VERSION = '1.0.0';
  * The genre's declaration — envoys included — rides `meta.genre` on the
  * version row, which is where the host reads "which speakers does this genre
  * bring" from (`listSessionGenres`).
+ * @internal
  */
 export const createGuideSpec = () => compile(spec(CREATE_GUIDE_SPEC_ID, {
     version: CREATE_GUIDE_VERSION,
-    taxonomy: { role: 'create', genre: guideGenre.id },
+    taxonomy: { role: 'create' },
     genre: {
         name: guideGenre.name,
         family: guideGenre.family,
@@ -70,21 +77,124 @@ export const createGuideSpec = () => compile(spec(CREATE_GUIDE_SPEC_ID, {
     channel: guideGenre.shape?.greeting?.channel ?? 'main',
 }))
     .build());
+/** @internal */
 export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond';
-export const GUIDE_RESPOND_VERSION = '1.0.0';
-/** The guide's reply: the envoy answers, grounded in the docs. */
-export const guideRespondSpec = () => compile(spec(GUIDE_RESPOND_SPEC_ID, {
+// 1.1.0: the `speaker` node moved to `core:spec/turn-order` — see
+// `RESPOND_VERSION`, same change, same reason.
+// 1.2.0 (2026-09-27): the guide's own template, as the spec's default preset
+// — the docs arrive in their declared `docsExcerpts` band, framed as the only
+// source of truth, with an explicit line for a turn nothing matched. The
+// shared Default template rendered them as anonymous `worldLore` JSON.
+/** @internal */
+export const GUIDE_RESPOND_VERSION = '1.2.0';
+/**
+ * The guide's context template (2026-09-27).
+ *
+ * Structure plus the one sentence each branch of the docs band needs, and
+ * nothing a story template carries: no scenario, no lore, no relationships —
+ * a guide session has none. The transcript loop is the shipped Default's,
+ * unchanged, so injections, the post-history reminder and the envoy's open
+ * seed line render exactly as they do in any other reply.
+ *
+ * `{{#if docsExcerpts}} … {{else}} … {{/if}}` is the grounding: an excerpt
+ * turn says the excerpts are the only documentation the model has and asks
+ * for the path it used; an empty turn says nothing matched, in so many words,
+ * so a model is never left to decide for itself whether it was given docs.
+ * @internal
+ */
+export const GUIDE_RESPOND_TEMPLATE = `{{#systemBlock}}
+{{#if instructions}}
+{{{instructions}}}
+{{/if}}
+
+{{#if characters}}
+{{{characters}}}
+{{/if}}
+
+{{#if personas}}
+{{{personas}}}
+{{/if}}
+
+{{#if docsExcerpts}}
+Documentation excerpts retrieved for the person's latest question. These are the only Serene Pub documentation you have. Each key is the page and section; each value starts with the page's path.
+{{{docsExcerpts}}}
+Answer only from these excerpts, and end with the path of the page you used, copied exactly. If they do not answer the question, say "I couldn't find that in the docs."
+{{else}}
+No documentation excerpts matched the person's latest question. You have no documentation for it: say "I couldn't find that in the docs." and suggest rephrasing the question or browsing /docs. Do not answer from memory.
+{{/if}}
+{{/systemBlock}}
+
+{{#each sessionMessages as |sessionMessage msgIndex|}}
+{{#each (lookup ../injectionsByIndex msgIndex)}}
+{{#if (eq this.role "assistant")}}
+{{#assistantBlock}}
+{{{this.content}}}
+{{/assistantBlock}}
+{{else if (eq this.role "user")}}
+{{#userBlock}}
+{{{this.content}}}
+{{/userBlock}}
+{{else}}
+{{#systemBlock}}
+{{{this.content}}}
+{{/systemBlock}}
+{{/if}}
+{{/each}}
+{{#with ../postHistory}}
+{{#if (and (eq msgIndex targetIndex) hasContent)}}
+{{#systemBlock}}
+{{#if instructions}}
+Response reminder:
+\`\`\`text
+{{{instructions}}}
+\`\`\`
+{{/if}}
+{{#if charInstructions}}
+Character reminder:
+\`\`\`text
+{{{charInstructions}}}
+\`\`\`
+{{/if}}
+{{/systemBlock}}
+{{/if}}
+{{/with}}
+{{#if (eq role "assistant")}}
+{{#assistantBlock}}
+{{{name}}}: {{{message}}}
+{{/assistantBlock}}
+{{/if}}
+{{#if (eq role "user")}}
+{{#userBlock}}
+{{{name}}}: {{{message}}}
+{{/userBlock}}
+{{/if}}
+{{/each}}`;
+/** The guide's reply: the envoy answers, grounded in the docs. @internal */
+export const guideRespondSpec = () => compile(
+// The sprite tail (DESIGN-sprites §5): after `save`, choose the line's face.
+withSpriteTail(spec(GUIDE_RESPOND_SPEC_ID, {
     version: GUIDE_RESPOND_VERSION,
-    taxonomy: { role: 'primary', genre: guideGenre.id },
+    taxonomy: { role: 'primary' },
 })
     .inlet('input', C.userMessage.v1(), {
     genre: guideGenre,
     event: sessionEvents.messageRespond,
 })
     /**
-     * The reply row (R-17), created by the pipeline that fills it.
-     * `speaker` is the envoy's reference — the row's only identity,
-     * since `characterId` is null for a speaker with no row.
+     * The reply row, created by the pipeline that fills it (R-17) —
+     * **directly after the inlet** (PLAN-turn-order §4.4).
+     *
+     * It used to wait for the cast and history reads, because a
+     * `speaker` node between them decided who the row was for. Turn
+     * order is state now: the entry being fired names the speaker,
+     * and it arrives on the inlet — so the row can be made in the
+     * first milliseconds of the run, before anything costs a token.
+     * This is the placeholder the composer shows while the turn runs,
+     * the run's live row the oracle's stream lands in, and the row
+     * Stop finalises with whatever had arrived. `save` at the end
+     * updates it; the pair is one primary row. A regenerate, swipe or
+     * extend hands its existing row in on `messageId` and this node
+     * claims it instead of inserting.
      */
     .outlet('placeholder', ($) => C.createMessage.v1({
     generating: true,
@@ -99,8 +209,9 @@ export const guideRespondSpec = () => compile(spec(GUIDE_RESPOND_SPEC_ID, {
 })))
     .chain('cast', (c) => c.query('read', ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
     /**
-     * The one mechanism. Takes the scope and reads the newest
-     * rows itself rather than `history`'s output, because
+     * The one mechanism: the `docsExcerpts` band. Takes the
+     * scope and reads the newest rows itself rather than
+     * `history`'s output, because
      * chains of a parallel gather cannot see each other and a
      * read of a few rows is cheaper than the block a second
      * pass would cost.
@@ -109,18 +220,6 @@ export const guideRespondSpec = () => compile(spec(GUIDE_RESPOND_SPEC_ID, {
     scope: $.input.sessionScope,
     params: slot.params(),
 }))))
-    /**
-     * Who speaks: the trigger's pick — `envoy:mascot` — always wins,
-     * and `turn-manual` records it. Seated as the genre's default,
-     * the envoy is the only in-turn candidate a strategy could find
-     * here anyway.
-     */
-    .task('speaker', ($) => C.turnManual.v1({
-    cast: $.gather.cast.read.cast,
-    messages: $.gather.history.read.messages,
-    speaker: $.input.speaker,
-    characterId: $.input.characterId,
-}))
     .task('contextBudget', ($) => C.contextBudget.v1({
     sampling: slot.samplingOf('generate'),
     connection: slot.connectionOf('generate'),
@@ -147,8 +246,8 @@ export const guideRespondSpec = () => compile(spec(GUIDE_RESPOND_SPEC_ID, {
      */
     .task('context', ($) => C.buildTemplateContext.v1({
     cast: $.gather.cast.read.cast,
-    currentCharacterId: $.speaker.characterId,
-    speaker: $.speaker.speaker,
+    currentCharacterId: $.input.characterId,
+    speaker: $.input.speaker,
     prompts: slot.prompts({ envoy: GUIDE_MASCOT_KEY }),
     variables: slot.variables(),
 }))
@@ -183,15 +282,20 @@ export const guideRespondSpec = () => compile(spec(GUIDE_RESPOND_SPEC_ID, {
 }))
     .oracle('generate', ($) => C.generateText.v1({
     context: $.prompt.context,
-    currentCharacterId: $.speaker.characterId,
+    currentCharacterId: $.input.characterId,
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}))
+}), { expose: { stream: true, status: '{speaker} is typing' } })
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,
     text: $.generate.text,
     thinking: $.generate.thinking,
+})))
+    /** The guide's own template (1.2.0) — see `GUIDE_RESPOND_TEMPLATE`. */
+    .preset('guide', { label: 'Guide', default: true }, (p) => p.template('prompt', {
+    source: GUIDE_RESPOND_TEMPLATE,
+    engine: handlebars.id,
 }))
     .build());
 //# sourceMappingURL=guide.js.map

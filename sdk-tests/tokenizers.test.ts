@@ -39,7 +39,7 @@ const chat = () =>
 			C.contextBudget.v1({ connection: slot.downstreamOracle(), params: slot.params() }),
 		)
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-		.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.history.messages] }))
+		.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.history.band] }))
 		.task('prompt', ($) =>
 			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
 		)

@@ -14,6 +14,7 @@
 
 import { sessionEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { chatGenre } from '@serene-pub/core-catalog'
 import type { Example } from '@serene-pub/cli'
 
 import { bindings, world } from '../helpers.js'
@@ -31,14 +32,14 @@ const smallestReply = spec('example:echo-reply', { version: '1.0.0' })
 	// subscription: this spec answers one event, for one genre. The core
 	// catalog exports `chatGenre` for the same id.
 	.inlet('input', C.userMessage.v1(), {
-		genre: 'core:genre/chat',
+		genre: chatGenre,
 		event: sessionEvents.messageRespond,
 	})
 	// Query: reads Serene Pub's own data, and cannot reach the network — a
 	// Query's context carries no `call`.
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	// Task: pure. It turns what was read into the context the oracle takes.
-	.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+	.task('prompt', () => C.assemble.v2())
 	// Oracle: the one node that crosses the boundary. `connection` is a slot —
 	// which service answers is an admin's choice, not the document's.
 	.oracle('generate', ($) =>
@@ -56,7 +57,13 @@ export const example: Example = {
 	run: (ctx) =>
 		ctx.run({
 			input: { text: 'where is my sister', sessionScope: 'session:991' },
-			bindings: bindings(),
+			// The stand-in's line. It is scripted rather than generated for the
+			// same reason everything else here is: two runs have to produce the
+			// same bytes. What it buys is that the last row of the receipt below
+			// is an answer to the turn above it, not a placeholder.
+			bindings: bindings({
+				reply: 'She rode for the eastern watchtower before first light — you can still catch her at the ford.',
+			}),
 			world,
 			subscribers: { 'core:event/message-created@1': 1 },
 		}),

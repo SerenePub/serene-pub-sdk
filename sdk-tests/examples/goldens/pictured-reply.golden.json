@@ -1,0 +1,111 @@
+{
+	"name": "pictured-reply",
+	"specId": "example:pictured-reply",
+	"specVersion": "1.0.0",
+	"seed": "seed:example",
+	"outcome": "ok",
+	"nodes": [
+		{
+			"nodeKey": "input",
+			"kind": "inlet",
+			"result": "ok",
+			"output": {
+				"messageId": "msg:88213",
+				"text": "my sister and the elf, at the castle"
+			}
+		},
+		{
+			"nodeKey": "lore",
+			"kind": "query",
+			"result": "ok",
+			"input": {
+				"text": "my sister and the elf, at the castle"
+			},
+			"output": {
+				"main": "lore",
+				"hits": {
+					"sourceKey": "lore",
+					"items": [
+						"elf",
+						"sister",
+						"castle"
+					],
+					"weight": 0.35,
+					"minInclude": 3,
+					"priority": "high"
+				}
+			}
+		},
+		{
+			"nodeKey": "prompt",
+			"kind": "task",
+			"result": "ok",
+			"input": {
+				"items": {
+					"sourceKey": "lore",
+					"items": [
+						"elf",
+						"sister",
+						"castle"
+					],
+					"weight": 0.35,
+					"minInclude": 3,
+					"priority": "high"
+				}
+			},
+			"output": {
+				"main": "elf\n\nsister\n\ncastle",
+				"text": "elf\n\nsister\n\ncastle"
+			}
+		},
+		{
+			"nodeKey": "render",
+			"kind": "oracle",
+			"result": "ok",
+			"input": {
+				"prompt": "elf\n\nsister\n\ncastle",
+				"connection": {
+					"id": "sd-local",
+					"kind": "core:shape/image-gen@1",
+					"metadata": {
+						"model": "sdxl"
+					},
+					"modelId": null,
+					"contextWindow": null
+				},
+				"sampling": {}
+			},
+			"output": {
+				"main": "image:blob",
+				"image": "image:blob"
+			}
+		},
+		{
+			"nodeKey": "attach",
+			"kind": "outlet",
+			"result": "ok",
+			"input": {
+				"target": "msg:88213",
+				"image": "image:blob"
+			},
+			"output": {
+				"status": "committed",
+				"ids": {
+					"main": "row:attach"
+				},
+				"main": {
+					"status": "committed",
+					"ids": {
+						"main": "row:attach"
+					}
+				}
+			}
+		}
+	],
+	"emitted": [
+		{
+			"event": "core:event/message-updated@1",
+			"cause": "attach"
+		}
+	]
+}

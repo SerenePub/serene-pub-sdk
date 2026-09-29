@@ -265,7 +265,7 @@ describe('the host hears the run end, once, with the live row', () => {
 					overrides: [
 						...world.overrides,
 						{
-							scopeKind: 'preset',
+							scopeKind: 'config',
 							nodeKey: 'save',
 							slot: 'settings',
 							path: 'review',

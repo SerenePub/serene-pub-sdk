@@ -31,7 +31,6 @@ import {
 	type OutputPart,
 	type SettingsSchema,
 	type FieldDecl,
-	type ParamDecl,
 } from '@serene-pub/sdk'
 import '@serene-pub/contracts'
 
@@ -127,15 +126,6 @@ describe('generate-text can finally receive media', () => {
 })
 
 describe('one field language', () => {
-	test('ParamDecl and FieldDecl are the same type', () => {
-		// Not "the same shape" as a promise in a comment — the same type. A
-		// value of one is assignable to the other in both directions.
-		const asParam: ParamDecl = { type: 'share', members: [{ key: 'a' }] }
-		const asField: FieldDecl = asParam
-		const back: ParamDecl = asField
-		assert.equal(back.type, 'share')
-	})
-
 	test('the merged vocabulary validates from either half', () => {
 		const schema: SettingsSchema = {
 			// was node-params only
@@ -158,12 +148,6 @@ describe('one field language', () => {
 		assert.deepEqual(checkSchema(fields), [])
 	})
 
-	test('label reads whichever key the author used', () => {
-		assert.equal(fieldLabel({ label: 'A' }), 'A')
-		assert.equal(fieldLabel({ i18n: 'B' }), 'B')
-		// `label` wins when both are present.
-		assert.equal(fieldLabel({ label: 'A', i18n: 'B' }), 'A')
-	})
 })
 
 describe('the media field reaches a control', () => {

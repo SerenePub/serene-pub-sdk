@@ -27,14 +27,19 @@
  */
 import { compile, spec, slot } from "@serene-pub/sdk";
 import * as C from "@serene-pub/contracts";
+/** @experimental */
 export const SUMMARIZE_WORLD_SPEC_ID = "core:spec/summarize-world";
+/** @experimental */
 export const SUMMARIZE_CHARACTER_SPEC_ID = "core:spec/summarize-character";
+/** @experimental */
 export const SUMMARIZE_SCENE_SPEC_ID = "core:spec/summarize-scene";
+/** @experimental */
 export const SUMMARIZE_HISTORY_SPEC_ID = "core:spec/summarize-history";
 // 1.1.0: the request travels to the drafting, synthesis and cast steps, so a
 // topic focuses every prompt and the known-cast list reaches extraction. A
 // published version is immutable, so the wiring change is a new version and
 // 1.0.0 stays for anything that resolved against it.
+/** @internal */
 export const SUMMARIZE_VERSION = "1.3.0";
 /**
  * The ceiling on batches for one run.
@@ -137,11 +142,18 @@ const summarizeSpec = ({ id, loreType, extractsCast }) => compile((() => {
     return withCast
         .outlet("save", ($) => C.createLoreEntry.v1({
         name: $.naming.name,
-        content: $.synth.content
+        content: $.synth.content,
+        // Which KIND of entry this summarizer files (L3): the
+        // four namespaces exist so the press decides, and the
+        // slot is how that decision reaches the row instead of
+        // rendering a control nothing reads.
+        params: slot.params()
     }))
         .build();
 })());
+/** @experimental */
 export const summarizeWorldSpec = () => summarizeSpec({ id: SUMMARIZE_WORLD_SPEC_ID, loreType: "world" });
+/** @experimental */
 export const summarizeCharacterSpec = () => summarizeSpec({ id: SUMMARIZE_CHARACTER_SPEC_ID, loreType: "character" });
 /**
  * ⚠ **The cast extraction is ON ICE, not deleted** (plan §2, ruled 2026-09-08).
@@ -172,10 +184,12 @@ export const summarizeCharacterSpec = () => summarizeSpec({ id: SUMMARIZE_CHARAC
  * ⚠ Editing this document does not reach a database that has already seeded —
  * publishing is idempotent by `(slug, semver)` — so this ships with a migration
  * deleting the `pipeline_spec_versions` row, precedent `0095`/`0100`.
+ * @experimental
  */
 export const summarizeSceneSpec = () => summarizeSpec({
     id: SUMMARIZE_SCENE_SPEC_ID,
     loreType: "scene"
 });
+/** @experimental */
 export const summarizeHistorySpec = () => summarizeSpec({ id: SUMMARIZE_HISTORY_SPEC_ID, loreType: "history" });
 //# sourceMappingURL=summarize.js.map

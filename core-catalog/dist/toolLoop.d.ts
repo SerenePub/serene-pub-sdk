@@ -1,4 +1,6 @@
+/** @experimental */
 export declare const TOOL_LOOP_SPEC_ID = "core:spec/tool-loop";
+/** @internal */
 export declare const TOOL_LOOP_VERSION = "1.0.0";
 /**
  * The assembly template, inline.
@@ -20,7 +22,9 @@ export declare const TOOL_LOOP_VERSION = "1.0.0";
  * prose going to a model, not markup going to a browser, and Handlebars' HTML
  * escaping turns the fenced tool convention into `&#x60;&#x60;&#x60;` — an
  * advertisement the model cannot follow and the parser cannot read back.
+ * @experimental
  */
 export declare const TOOL_LOOP_TEMPLATE = "{{{system}}}\n\n{{{advertisement}}}\n\n{{#if results}}\n# What your tools have returned so far\n{{{results}}}\n{{/if}}\n\n{{#if chatMessages}}\n# The conversation\n{{{chatMessages}}}\n{{/if}}\n\n{{#if postHistory}}\n{{{postHistory}}}\n{{/if}}";
+/** @experimental */
 export declare const toolLoopSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=toolLoop.d.ts.map

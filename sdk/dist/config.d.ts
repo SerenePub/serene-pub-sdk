@@ -5,11 +5,11 @@
  *
  * ## The chain (R-10, ruled 2026-09-15; 09-B B8)
  *
- * **`session · preset · defaults · author`.**
+ * **`session · config · defaults · author`.**
  *
  *  - `session` — a session's own override of a value (the *chat override* of
  *    12 §2's "pipeline → config → chat override").
- *  - `preset` — the rows of the **selected config**: the config IS the
+ *  - `config` — the rows of the **selected config**: the config IS the
  *    instance's tuning. An administrator's edit lands in the config (ruled
  *    2026-08-24), so there is no separate `instance` layer for it to be shadowed
  *    by, and no `user` layer — a preference that differs per user is a session's
@@ -21,15 +21,32 @@
  *
  * `user` and `instance` stood in this list until 2026-09-16 and were pushed by
  * nothing: `world.ts` never projected a row at either (plans/29a §3). Their
- * semantics fold into `preset` — the config an admin edits is the instance's
+ * semantics fold into `config` — the config an admin edits is the instance's
  * configuration — which is the 2026-08-24 ruling stated as a constant.
  *
  * Resolved run-wide *before* execution, which is why referencing another node's
  * config is not a data edge (F35).
+ *
+ * ## `config`, not `preset` (R1)
+ *
+ * Two other things are called a preset — a **session preset** (the bundle a
+ * session is born on) and an author's `.preset(…)` on a spec — and neither is
+ * this layer, so the scope takes the canon's word for what it holds: the
+ * **config**.
  */
 import type { CapabilitySet } from './capabilities.js';
-export type ScopeKind = 'session' | 'preset' | 'defaults' | 'author';
+/** @experimental */
+export type ScopeKind = 'session' | 'config' | 'defaults' | 'author';
+/** @internal */
 export declare const SCOPE_ORDER: ScopeKind[];
+/**
+ * A row's scope kind. Anything that is not a `ScopeKind` is `undefined` — a
+ * row at a scope nobody resolves at, which resolution skips rather than
+ * guesses about.
+ * @experimental 🚧
+ */
+export declare function scopeKindOf(raw: unknown): ScopeKind | undefined;
+/** @experimental */
 export interface OverrideRow {
     nodeKey: string;
     slot: string;
@@ -55,11 +72,10 @@ export interface OverrideRow {
  * is already in every user's `pipeline_config_values`. Any other choice would
  * migrate live data to match a convention only the reader believed in.
  *
- * @see normalizeSlotPath — accepts the two dead spellings, loudly.
+ * @internal
  */
 export declare const SLOT_VALUE: '';
-/** Test seam: the warn-once set is process-global by design. */
-export declare function _resetSlotPathWarnings(): void;
+/** @experimental */
 export interface SamplingConfig {
     id: string;
     name: string;
@@ -80,6 +96,7 @@ export interface SamplingConfig {
      */
     enabled?: string[];
 }
+/** @experimental */
 export interface ConnectionRecord {
     id: string;
     name: string;
@@ -132,6 +149,7 @@ export interface ConnectionRecord {
  * model it is presumed to mean; what a host does with a half-named pair —
  * resolve a default of its own, or refuse it as unconfigured — is the host's
  * ruling. This type's only job is to say which half is absent.
+ * @internal
  */
 export type ConnectionSlotValue = string | number | {
     ref?: string | number;
@@ -145,6 +163,7 @@ export type ConnectionSlotValue = string | number | {
  * stays a number. Row ids belong to the host, and this package has no business
  * ruling that they are one or the other; the string/number divide is reconciled
  * where the comparison happens, not here.
+ * @internal
  */
 export declare function slotConnectionId(value: unknown): string | number | null;
 /**
@@ -154,6 +173,7 @@ export declare function slotConnectionId(value: unknown): string | number | null
  * compatibility story — and null is *absence*, never a model the endpoint is
  * taken to mean. Same id-type rule as {@link slotConnectionId}: stored as
  * given, back as stored.
+ * @internal
  */
 export declare function slotConnectionModelId(value: unknown): string | number | null;
 /**
@@ -169,6 +189,7 @@ export declare function slotConnectionModelId(value: unknown): string | number |
  * holds an endpoint id alone, so there is no model half here to carry. A host
  * whose own defaults are pairs resolves that half for itself, from the store
  * the default came out of.
+ * @experimental
  */
 export interface ResolvedConnection {
     id: string;
@@ -187,6 +208,7 @@ export interface ResolvedConnection {
      */
     contextWindow: number | null;
 }
+/** @experimental */
 export interface ConfigWorld {
     overrides: OverrideRow[];
     samplingConfigs: SamplingConfig[];
@@ -223,6 +245,7 @@ export interface ConfigWorld {
     activeSampling?: Record<string, string | null>;
     authorDefaults?: Record<string, Record<string, Record<string, unknown>>>;
 }
+/** @experimental */
 export type ResolvedConfig = Record<string, Record<string, Record<string, unknown>>>;
 /**
  * A resolved value **and the layer it won at**.
@@ -231,6 +254,7 @@ export type ResolvedConfig = Record<string, Record<string, Record<string, unknow
  * most common support question this system can produce, and it is unanswerable
  * from the value alone — the answer is always "something above you set it too",
  * and only this says which something.
+ * @experimental
  */
 export interface ResolvedSource {
     value: unknown;
@@ -239,6 +263,7 @@ export interface ResolvedSource {
     /** The user or chat the winning row belonged to, where one applies. */
     scopeId?: string | number;
 }
+/** @experimental */
 export type ResolvedConfigSources = Record<string, Record<string, Record<string, ResolvedSource>>>;
 /**
  * Effective config **with provenance** = base ⊕ overrides, per (nodeKey, slot, path).
@@ -247,21 +272,24 @@ export type ResolvedConfigSources = Record<string, Record<string, Record<string,
  * beside it. Two implementations of a five-layer walk are two implementations
  * that eventually disagree about which layer wins — and the one that disagrees
  * silently is whichever one the UI is not using.
+ * @internal
  */
 export declare function resolveConfigSources(world: ConfigWorld, nodeKeys: string[]): ResolvedConfigSources;
-/** Effective config = base ⊕ overrides, per (nodeKey, slot, path). */
+/** Effective config = base ⊕ overrides, per (nodeKey, slot, path). @internal */
 export declare function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedConfig;
 /**
  * Which scopes may write which slot (12 §4). The admin cascade needs no mechanism:
  * connection has no writable scope below the config for a non-admin, so an
  * admin's choice reaches everyone automatically.
  *
- * `preset` here is the selected config — the one place an administrator's
+ * `config` here is the selected config — the one place an administrator's
  * edit lands (R-10 folded `instance` into it, 2026-09-16). A slot a session may
  * not write is a slot only the config carries.
+ * @internal
  */
 export declare const WRITE_MATRIX: Record<string, ScopeKind[]>;
+/** @internal */
 export declare function mayWrite(slot: string, scope: ScopeKind): boolean;
-/** Reject a write the matrix forbids, with the reason (15 §1.3). */
+/** Reject a write the matrix forbids, with the reason (15 §1.3). @experimental */
 export declare function assertWritable(slot: string, scope: ScopeKind): void;
 //# sourceMappingURL=config.d.ts.map

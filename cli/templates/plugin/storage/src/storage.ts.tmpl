@@ -1,0 +1,137 @@
+/**
+ * The plugin's own store, reached from a node handler through `ctx.storage`.
+ *
+ * ## Where storage comes from, precisely
+ *
+ * A plugin's node handlers are not invoked by the SDK executor's own context.
+ * The app's binding calls the hook **inside this plugin's sandbox**, against a
+ * context the sandbox builds — and that one carries `random`, `now`, `log`,
+ * `signal`, and, for the kinds that are granted them, `storage` and `fetch`.
+ * Storage is quota-enforced and keyed to this plugin alone: nothing else can
+ * read it, and it reads nothing of core's.
+ *
+ * ## Why these are outlets and not tasks
+ *
+ * The grant follows the **kind**, not the intent (plans/29 R-3). A Task is pure
+ * and is granted neither storage nor fetch; a Query is granted storage and is
+ * the one kind a plugin may not declare at all, because nothing endows its
+ * `ctx.read`. That leaves an **emit-class outlet** — `effects: 'emit'` — which
+ * is granted storage, writes rows in this plugin's own namespace and none of
+ * core's, and so is not the terminal write law F7 counts. It may sit mid-spine
+ * like any other node. `serene-pub check` refuses the other spellings by name.
+ *
+ * ## What the SDK harness does NOT carry
+ *
+ * `TaskCtx` does not declare `storage`, because under the SDK's own harness
+ * there is no sandbox to endow it from — which is exactly the situation `test/`
+ * and `examples/` are in. So the type below is `storage?`, optional, and every
+ * handler says so out loud rather than reaching through an `any`. A fixture host
+ * that wants to run these has to supply one.
+ *
+ * ✎ CHANGE: the key shape, the row shape, and what the two handlers do. The
+ *   pair is a pattern, not a feature: one node writes a keyed row, another reads
+ *   it back, and nothing between them holds state in memory.
+ */
+
+import {
+	describeOutletDefinition,
+	halt,
+	ok,
+	pin,
+	S,
+	type ExtensionStorage,
+	type Result,
+} from '@serene-pub/sdk'
+
+/** What these handlers are actually handed. `storage` is optional — see above. */
+export interface PluginCtx {
+	storage?: ExtensionStorage
+}
+
+/**
+ * One row per session, under a key this plugin owns.
+ *
+ * ✎ CHANGE: the prefix and what goes under it. Keys are the store's only index,
+ *   so put what you will want to enumerate at the front of one.
+ */
+export const noteKey = (sessionId: number | string) => `session/${sessionId}/note`
+
+/**
+ * The sentence a handler halts with when storage is absent.
+ *
+ * A halt rather than a guess. A handler that invented an empty row because it
+ * could not find the real one would answer about a state that is not there —
+ * silently. "This could not run" is a far better answer.
+ */
+export const NO_STORAGE =
+	`this node needs the plugin's own storage and was handed a context without it. ` +
+	`A node handler gets 'ctx.storage' when it runs inside its plugin's sandbox — the ` +
+	`manifest must declare a storage grant, and an administrator must have left it ` +
+	`granted. Under the SDK's own harness there is no sandbox and no storage: supply ` +
+	`one on the ctx.`
+
+const haltNoStorage = (): Result => halt(NO_STORAGE)
+
+/* ── Write ──────────────────────────────────────────────────────────────── */
+
+export const saveNoteDefinition = pin(
+	describeOutletDefinition({
+		id: '{{saveNoteDefinitionId}}',
+		i18n: {
+			name: { en: 'Save note' },
+			description: { en: "Writes one row in this plugin's own store." },
+		},
+		timeoutMs: 2000,
+		ports: { in: { sessionId: S.rowIds, note: S.text }, out: { main: S.json, key: S.text } },
+		/** Emit-class: this plugin's own rows, never core's. See the module note. */
+		effects: 'emit',
+	}),
+)
+
+/**
+ * `storage.put` returns a `Result` rather than throwing, so exceeding the quota
+ * is a sentence this node can publish on its own output — which is where "why
+ * did it stop saving" gets an answer.
+ */
+export const saveNoteHandler = async (
+	input: { sessionId?: number | string; note?: string },
+	ctx: PluginCtx,
+): Promise<Result> => {
+	const store = ctx?.storage
+	if (!store) return haltNoStorage()
+	const key = noteKey(input.sessionId ?? 'unknown')
+	const written = await store.put(key, { note: input.note ?? '' })
+	if (written.kind !== 'ok')
+		return halt((written as { reason?: string }).reason ?? `the write to '${key}' was refused`)
+	return ok({ main: { key }, key })
+}
+
+/* ── Read ───────────────────────────────────────────────────────────────── */
+
+export const readNoteDefinition = pin(
+	describeOutletDefinition({
+		id: '{{readNoteDefinitionId}}',
+		i18n: {
+			name: { en: 'Read note' },
+			description: { en: "Reads back the row this plugin's own store holds." },
+		},
+		timeoutMs: 2000,
+		ports: { in: { sessionId: S.rowIds }, out: { main: S.json, note: S.text } },
+		effects: 'emit',
+	}),
+)
+
+/**
+ * `undefined` is a real answer: a session nobody has written for has no row, so
+ * a missing key is never an error and this handler decides what an absence
+ * means.
+ */
+export const readNoteHandler = async (
+	input: { sessionId?: number | string },
+	ctx: PluginCtx,
+): Promise<Result> => {
+	const store = ctx?.storage
+	if (!store) return haltNoStorage()
+	const row = await store.get<{ note?: string }>(noteKey(input.sessionId ?? 'unknown'))
+	return ok({ main: row ?? null, note: row?.note ?? '' })
+}

@@ -27,6 +27,9 @@ import {
 	envoySlugOfRef,
 	envoyConfigKey,
 	envoyConfigKeysOf,
+	genreFallbackEnvoy,
+	UNCLAIMED_LINE_NAME,
+	i18nText,
 	actionFindings,
 	normalizeAction,
 	sessionEvents,
@@ -75,7 +78,7 @@ describe('a genre declares envoys', () => {
 		assert.ok(Object.isFrozen(g.envoys![0]), 'each entry is frozen')
 		// Read back by id, and by key.
 		assert.equal(genreEnvoys(g.id).length, 2)
-		assert.equal(genreEnvoy(g, 'mascot')?.name.en, 'Guide')
+		assert.equal(i18nText(genreEnvoy(g, 'mascot')?.name), 'Guide')
 		assert.equal(genreEnvoy(g.id, 'nobody'), undefined)
 		// A genre this build never declared answers with none — never a guess.
 		assert.deepEqual(genreEnvoys('nobody:genre/x'), [])
@@ -94,9 +97,11 @@ describe('a genre declares envoys', () => {
 		)
 		assert.throws(
 			() => fresh({ envoys: [{ ...mascot, name: { fr: 'Guide' } as any }] }),
-			/name is a locale map with a required 'en'/,
+			/name: a locale map with a required 'en'/,
 		)
-		assert.throws(() => fresh({ envoys: [{ ...mascot, name: 'Guide' as any }] }), /required 'en'/)
+		// A bare string is `en` (R-20, ruled 2026-09-17); a blank one is refused.
+		assert.equal(i18nText(fresh({ envoys: [{ ...mascot, name: 'Guide' }] }).envoys?.[0]?.name), 'Guide')
+		assert.throws(() => fresh({ envoys: [{ ...mascot, name: '  ' }] }), /name is empty/)
 		assert.throws(() => fresh({ envoys: [{ ...mascot, key: 'Has.Dots' }] }), /lowercase kebab/)
 		assert.throws(() => fresh({ envoys: [{ ...mascot, speaks: 'sometimes' as any }] }), /'in-turn' or 'on-action'/)
 		// The list form is the whole rule; the findings are sentences, not throws.
@@ -136,7 +141,7 @@ describe('a genre declares envoys', () => {
 		assert.equal(genre(id, props).envoys?.length, first.envoys?.length)
 		// Display text is not content: a renamed envoy reloads without a throw.
 		genre(id, { ...props, envoys: [{ ...mascot, name: { en: 'Renamed' } }] })
-		assert.equal(getGenre(id)?.envoys?.[0]?.name.en, 'Renamed')
+		assert.equal(i18nText(getGenre(id)?.envoys?.[0]?.name), 'Renamed')
 		// A changed prompt is content — it is the envoy's configuration default.
 		assert.throws(
 			() => genre(id, { ...props, envoys: [{ ...mascot, prompts: { systemPrompt: 'other' } }] }),
@@ -148,10 +153,10 @@ describe('a genre declares envoys', () => {
 describe("an action's envoy", () => {
 	const base = {
 		key: 'roll',
-		function: 'roll',
 		genre: 'core:genre/chat',
 		venue: { kind: 'composer' as const },
 		label: { en: 'Roll' },
+		description: { en: 'Roll the dice.' },
 	}
 
 	test('is on-action by construction; in-turn is refused', () => {
@@ -164,9 +169,14 @@ describe("an action's envoy", () => {
 		)
 		assert.equal(findings.length, 1)
 		assert.match(findings[0]!, /speaks 'on-action' only/)
-		// The envoy itself is checked like a genre's.
+		// The envoy itself is checked like a genre's — a bare name is `en`, a
+		// map without one is refused.
+		assert.deepEqual(
+			actionFindings({ ...base, envoy: { key: 'master', name: 'Dice Master' } }, 'acme:spec/dice'),
+			[],
+		)
 		assert.match(
-			actionFindings({ ...base, envoy: { key: 'master', name: 'Dice Master' } }, 'acme:spec/dice')[0]!,
+			actionFindings({ ...base, envoy: { key: 'master', name: { fr: 'Maître' } } }, 'acme:spec/dice')[0]!,
 			/required 'en'/,
 		)
 	})
@@ -299,7 +309,7 @@ describe('slot.prompts({ envoy }) — configuration at envoy:<key>', () => {
 		const tuned: ConfigWorld = {
 			...projected,
 			overrides: [
-				{ nodeKey: 'envoy:mascot', slot: 'prompts', path: 'systemPrompt', value: 'Tuned.', scopeKind: 'preset' },
+				{ nodeKey: 'envoy:mascot', slot: 'prompts', path: 'systemPrompt', value: 'Tuned.', scopeKind: 'config' },
 			],
 		}
 		await run(doc, { bindings, world: tuned, input: { main: {}, text: 'hi' } })
@@ -335,5 +345,96 @@ describe('the shipped guide genre', () => {
 		// The create spec carries the envoys on the row for the host to read.
 		const create = createGuideSpec()
 		assert.equal((create.genre as any)?.envoys?.[0]?.key, 'mascot')
+	})
+})
+
+/*
+ * Everyone has a name (ruled 2026-09-26): "everyone should have names, even
+ * just placeholders (genre should be able to define, like we do for envoys)".
+ * A genre marks one of its envoys `fallback: true` — the speaker a line
+ * nobody claims posts as; a literal envoy `speaker` on a message write is
+ * refused by name when nothing declares it; and the generic last resort is
+ * a locale map, never "Unknown".
+ */
+describe('the fallback envoy — a line nobody claims still has a name', () => {
+	const referee: EnvoyDecl = { key: 'referee', name: { en: 'Referee' }, speaks: 'on-action', fallback: true }
+
+	test("a genre marks one envoy the fallback; genreFallbackEnvoy reads it, and it is part of the declaration", () => {
+		const g = fresh({ envoys: [mascot, referee] })
+		assert.equal(genreFallbackEnvoy(g)?.key, 'referee')
+		assert.equal(genreFallbackEnvoy(g.id)?.key, 'referee')
+		assert.equal(genreFallbackEnvoy(fresh())?.key, undefined)
+		assert.equal(getGenre(g.id)?.envoys?.find((e) => e.key === 'referee')?.fallback, true)
+	})
+
+	test('two fallbacks, a non-boolean, and a fallback on an action envoy are refused with sentences', () => {
+		const two = envoysFindings([referee, { ...herald, fallback: true }], 'g.envoys')
+		assert.equal(two.length, 1)
+		assert.match(two[0]!, /'referee', 'herald' are all 'fallback: true'/)
+		assert.match(envoysFindings([{ ...herald, fallback: 'yes' }], 'g.envoys')[0]!, /'fallback' is a boolean/)
+		assert.match(
+			envoyFindings({ key: 'master', name: 'Dice Master', fallback: true }, 'a.envoy', 'action')[0]!,
+			/an action's envoy cannot be the fallback/,
+		)
+	})
+
+	test('the generic last resort is display text with en, and it is never "Unknown"', () => {
+		assert.equal(typeof UNCLAIMED_LINE_NAME.en, 'string')
+		assert.ok(UNCLAIMED_LINE_NAME.en.trim())
+		assert.notEqual(UNCLAIMED_LINE_NAME.en, 'Unknown')
+		assert.equal(i18nText(UNCLAIMED_LINE_NAME, 'fr'), UNCLAIMED_LINE_NAME.en)
+	})
+
+	test("a message write naming an envoy nothing declares is refused by name; a declared one compiles", () => {
+		const g = fresh({ envoys: [mascot, referee] })
+		const writer = (id: string, speaker: string) =>
+			spec(id, { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1(), { genre: g, event: sessionEvents.messageRespond })
+				.outlet('save', () => C.createMessage.v1({ text: 'Correct!', speaker: speaker as never }))
+				.build()
+		const doc = compile(writer('test.envoys:spec/speaks-ok', 'envoy:referee'))
+		assert.equal(doc.nodes.find((n) => n.key === 'save')?.config.speaker, 'envoy:referee')
+		assert.throws(
+			() => compile(writer('test.envoys:spec/speaks-bad', 'envoy:umpire')),
+			/node 'save' speaks as envoy 'umpire', which .* do not declare — declared: 'mascot', 'referee'/,
+		)
+	})
+
+	test("an action's own envoy may be named by the spec that declares it", () => {
+		const g = fresh()
+		const doc = compile(
+			spec('test.envoys:spec/dice', {
+				version: '1.0.0',
+				contributes: {
+					actions: [
+						{ key: 'roll', venue: { kind: 'composer' }, label: { en: 'Roll' }, description: { en: 'Roll the dice.' }, envoy: { key: 'master', name: 'Dice Master' } },
+					],
+				},
+			})
+				.inlet('input', C.userMessage.v1(), { genre: g, event: sessionEvents.sessionAction })
+				.outlet('save', () =>
+					C.createMessage.v1({ text: '4', speaker: envoyIdentity({ action: { specId: 'test.envoys:spec/dice' } }, 'master') as never }),
+				)
+				.build(),
+		)
+		assert.equal(doc.nodes.find((n) => n.key === 'save')?.config.speaker, 'envoy:test.envoys.master')
+	})
+})
+
+describe('core genres name their unclaimed lines', () => {
+	// And 2026-09-28 (lair re-plan R6): the Lair's own voice is the
+	// Castellan, its fallback envoy.
+	test('the Guide, the Writing Room and the Lair mark their envoy the fallback; the other narrator genres declare none', async () => {
+		const cat = await import('@serene-pub/core-catalog')
+		assert.equal(genreFallbackEnvoy(cat.guideGenre)?.key, cat.GUIDE_MASCOT_KEY)
+		assert.equal(i18nText(genreFallbackEnvoy(cat.guideGenre)!.name, 'en'), 'Guide')
+		assert.equal(genreFallbackEnvoy(cat.writingRoomGenre)?.key, cat.WRITING_ROOM_SCRIBE_KEY)
+		assert.equal(i18nText(genreFallbackEnvoy(cat.writingRoomGenre)!.name, 'en'), 'Scribe')
+		assert.equal(genreFallbackEnvoy(cat.lairGenre)?.key, cat.LAIR_CASTELLAN_KEY)
+		assert.equal(i18nText(genreFallbackEnvoy(cat.lairGenre)!.name, 'en'), 'Castellan')
+		// "The narrator is `voice`, not an envoy" (genres.ts): these fall to
+		// the session's narrator name, then UNCLAIMED_LINE_NAME, at the host.
+		for (const g of [cat.chatGenre, cat.adventureGenre, cat.whodunitGenre])
+			assert.equal(genreFallbackEnvoy(g), undefined, g.id)
 	})
 })

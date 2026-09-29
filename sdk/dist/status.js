@@ -11,8 +11,8 @@
  * `cancelled`, because "what was it doing when it died" is a question the
  * receipt should answer.
  *
- * Text is a locale map with variables; the CLIENT resolves the locale, so a
- * handler never sees a language. `{speaker}` is the one variable the HOST
+ * Text is display text with variables — a string, or a locale map (R-20);
+ * the CLIENT resolves the locale, so a handler never sees a language. `{speaker}` is the one variable the HOST
  * fills — see `HOST_FILLED_STATUS_VARS` — because a handler is blind to who
  * is speaking and must stay so.
  *
@@ -20,6 +20,7 @@
  * *outcome* (`ok · halt · err · cancelled`): a status is prose about progress,
  * and it decides nothing.
  */
+import { i18nText, isI18n, localeMapOf } from './i18n.js';
 /**
  * The variables a host fills, by name, when a status's text mentions them and
  * the handler did not supply a value. One entry: `speaker` — the display name
@@ -27,23 +28,27 @@
  * know and the host always can. A text naming `{speaker}` on a run with no
  * speaker keeps the variable unset; see `renderStatusText` for what a reader
  * sees then.
+ * @experimental
  */
 export const HOST_FILLED_STATUS_VARS = ['speaker'];
 /** `{name}` — one variable placeholder, as every locale of a status spells it. */
 const VAR_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-/** Is this a status a run can carry? A locale map with an `en` string, at least. */
+/**
+ * Is this a status a run can carry? `i18n` is display text a publish accepts
+ * (R-20): a non-blank string, or a locale map whose `en` is non-blank. The
+ * executor drops a status that is not, with a note on the receipt — a status
+ * is advisory and never halts a run.
+ * @internal
+ */
 export function isStatusText(value) {
     if (!value || typeof value !== 'object')
         return false;
-    const i18n = value.i18n;
-    if (!i18n || typeof i18n !== 'object')
-        return false;
-    return typeof i18n.en === 'string';
+    return isI18n(value.i18n);
 }
-/** The variable names a status's text mentions, across every locale it carries. */
+/** The variable names a status's text mentions, across every locale it carries. @internal */
 export function statusVarsMentioned(text) {
     const names = new Set();
-    for (const template of Object.values(text.i18n)) {
+    for (const template of Object.values(localeMapOf(text.i18n))) {
         if (typeof template !== 'string')
             continue;
         for (const m of template.matchAll(VAR_PATTERN))
@@ -58,6 +63,7 @@ export function statusVarsMentioned(text) {
  *
  * Returns the same object when nothing changes, so a caller can dedupe by
  * identity as well as by content.
+ * @internal
  */
 export function fillStatusVars(text, values) {
     const mentioned = statusVarsMentioned(text);
@@ -83,22 +89,23 @@ export function fillStatusVars(text, values) {
  * summarize, a graph build) leaves `speaker` unset by design, and "is
  * thinking" reads fine with nobody named. An empty gap elsewhere is one
  * nobody would notice.
+ * @internal
  */
 export function renderStatusText(text, language = 'en') {
-    const template = text.i18n[language] ?? text.i18n.en;
+    const template = i18nText(text.i18n, language) ?? '';
     const vars = text.vars ?? {};
     const withoutUnfilledSpeaker = !('speaker' in vars) && template.startsWith('{speaker} ')
         ? template.slice('{speaker} '.length)
         : template;
     return withoutUnfilledSpeaker.replace(VAR_PATTERN, (whole, name) => name in vars ? String(vars[name]) : whole);
 }
-/** Two statuses that would render identically in every locale. */
+/** Two statuses that would render identically in every locale. @internal */
 export function sameStatus(a, b) {
     if (a === b)
         return true;
     if (!a || !b)
         return false;
-    return sameLocaleMap(a.i18n, b.i18n) && sameVars(a.vars, b.vars);
+    return sameLocaleMap(localeMapOf(a.i18n), localeMapOf(b.i18n)) && sameVars(a.vars, b.vars);
 }
 /** Same locale map — order-independent, like `sameVars` (a rebuilt object must still match). */
 function sameLocaleMap(a, b) {

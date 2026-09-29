@@ -10,6 +10,7 @@
 import { spec, fragment } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 
 // ── A port the node does not declare ────────────────────────────────────────
 spec('types:ports@1', { version: '1.0.0' })
@@ -102,11 +103,11 @@ spec('types:block-leaf@1', { version: '1.0.0' })
 // ── A map's members, and the current item ──────────────────────────────────
 spec('types:map@1', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1())
-	.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
+	.task('chunks', ($) => T.chunkText.v1({ text: $.input.text }))
 	.each('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
 		m.oracle('sum', ($) => C.generateText.v1({ text: $.$item, connection: slot.connection() })),
 	)
-	.task('collect', ($) => C.toCandidates.v1({ items: $.summarize.item.sum.text }))
+	.task('collect', ($) => T.toCandidates.v1({ items: $.summarize.item.sum.text }))
 
 // ── A fragment's nodes arrive namespaced by the include key ────────────────
 const ctx = fragment('demo:frag/ctx@1', (c) =>

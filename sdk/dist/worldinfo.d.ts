@@ -7,6 +7,7 @@
  * module implements them and the tests check whether it held.
  *
  * Verdict, recorded honestly at the bottom of this file.
+ * @experimental
  */
 export interface LoreEntry {
     id: string;
@@ -46,6 +47,7 @@ export interface LoreEntry {
     recursable?: boolean;
     preventRecursion?: boolean;
 }
+/** @experimental */
 export interface ScanParams {
     scanDepth: number;
     caseSensitive: boolean;
@@ -58,12 +60,13 @@ export interface ScanParams {
  * Recursion lives *inside* the Query hook's opaque interior (01 §12.3) and is bounded by a
  * declared param — so it needs no pipeline-level construct and cannot become an unbounded
  * loop. This is the part of the parity claim that held cleanly.
+ * @experimental
  */
 export declare function activate(entries: LoreEntry[], scanText: string[], p: ScanParams): {
     entry: LoreEntry;
     depth: number;
 }[];
-/** Probability, rolled against the run seed — so it replays, which ST's cannot. */
+/** Probability, rolled against the run seed — so it replays, which ST's cannot. @experimental */
 export declare function rollProbability(hits: {
     entry: LoreEntry;
     depth: number;
@@ -76,11 +79,13 @@ export declare function rollProbability(hits: {
  * insertion order as the deterministic tiebreak.
  *
  * This is ranking, so it belongs in the rank Task (16 §5c) — no new mechanism.
+ * @experimental
  */
 export declare function resolveGroups(entries: LoreEntry[], random: () => number): {
     kept: LoreEntry[];
     lost: string[];
 };
+/** @experimental */
 export interface PositionedItem {
     id: string;
     rendered: string;
@@ -110,6 +115,7 @@ export interface PositionedItem {
  *
  * This function remains as the Task-side alternative, for authors who would rather compute
  * placement than express it in a template.
+ * @experimental
  */
 export declare function assembleWithPositions(history: PositionedItem[], lore: PositionedItem[], budget: number, costOf: (s: string) => number): {
     text: string;

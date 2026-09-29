@@ -39,6 +39,10 @@ import {
 	MESSAGE_VERB_FLOORS,
 	MESSAGE_VERB_BUILT_INS,
 	S,
+	resolveTurnControls,
+	turnControlPresent,
+	assertTurnControls,
+	TURN_CONTROLS,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
@@ -47,6 +51,9 @@ import {
 	builtinEditSpec,
 	builtinSwipeSpec,
 	builtinBranchSpec,
+	chatGenre,
+	adventureGenre,
+	lairGenre,
 } from '@serene-pub/core-catalog'
 
 describe('the floors are unrepresentable', () => {
@@ -223,11 +230,141 @@ describe('identity is not reviewable (C1)', () => {
 	})
 
 	test('absent a declaration, the whole payload is the form and nothing is undeclared', () => {
-		const d = getDefinition('core:outlet/create-lore-entry@1')
-		assert.ok(d)
-		assert.equal(d.review, undefined)
+		// Every core definition declares its fields since U5d (the review-fields
+		// rule, `sdk-tests/forms.test.ts`), so the inference fallback is shown
+		// on a definition with none — the shape a plugin's gets.
+		const d = { id: 'acme:outlet/loose@1', effects: 'write', review: undefined } as const
 		const schema = reviewSchemaFor(d, { name: 'The Gate', content: 'Sealed.' })
 		assert.deepEqual(Object.keys(schema).sort(), ['content', 'name'])
 		assert.deepEqual(undeclaredReviewFields(d, { anything: 1 }), [])
+		// And the lore entry's write, which used to be the example here,
+		// now declares exactly the two.
+		assert.deepEqual(getDefinition('core:outlet/create-lore-entry@1')?.review?.fields, [
+			'name',
+			'content',
+		])
+	})
+})
+
+describe("the prefill extend and the turn control are switched separately (lair pass B7, D4)", () => {
+	const verbs = (g: { shape?: unknown }) =>
+		((g.shape as { messageVerbs?: Record<string, boolean> } | undefined)?.messageVerbs ?? {})
+
+	const offered = (g: { shape?: unknown }) =>
+		Object.fromEntries(
+			Object.entries(resolveTurnControls(g.shape)).map(([k, v]) => [k, v.offered]),
+		)
+
+	test('the Lair switches the prefill extend off and keeps the turn control', () => {
+		assert.equal(verbs(lairGenre).extend, false)
+		assert.equal(resolveTurnControls(lairGenre.shape).advance.offered, true)
+	})
+
+	test('Chat and Adventure still offer both, and keep their turn controls (B8)', () => {
+		for (const g of [chatGenre, adventureGenre]) {
+			assert.notEqual(verbs(g).extend, false, g.id)
+			for (const t of TURN_CONTROLS)
+				assert.deepEqual(resolveTurnControls(g.shape)[t].presentWhen, [], `${g.id} ${t}`)
+		}
+		// Chat: Continue and Pick; its narrator is the narrate spec, not a turn.
+		assert.deepEqual(offered(chatGenre), { advance: true, pick: true, narrate: false, retake: false })
+		// Adventure: a narrator genre, so the narrator is a turn to hand over.
+		assert.deepEqual(offered(adventureGenre), { advance: true, pick: true, narrate: true, retake: false })
+	})
+
+	test('resolveTurnControls: undeclared is the shape default, only an explicit false takes one away', () => {
+		const withCast = { characters: { min: 0 } }
+		assert.deepEqual(offered({ shape: undefined }), { advance: true, pick: true, narrate: false, retake: false })
+		assert.deepEqual(offered({ shape: { ...withCast, turnControls: 'nope' } }), {
+			advance: true,
+			pick: true,
+			narrate: false,
+			retake: false,
+		})
+		assert.deepEqual(offered({ shape: { ...withCast, turnControls: { advance: false } } }), {
+			advance: false,
+			pick: true,
+			narrate: false,
+			retake: false,
+		})
+		// No character system (Guide): nobody to continue as or pick.
+		assert.deepEqual(offered({ shape: { characters: { min: 0, max: 0 } } }), {
+			advance: false,
+			pick: false,
+			narrate: false,
+			retake: false,
+		})
+		// A narrator: the narrator's turn is on unless declared off.
+		assert.deepEqual(offered({ shape: { ...withCast, voice: 'narrator' } }), {
+			advance: true,
+			pick: true,
+			narrate: true,
+			retake: false,
+		})
+		assert.equal(
+			offered({ shape: { ...withCast, voice: 'narrator', turnControls: { narrate: false } } }).narrate,
+			false,
+		)
+	})
+})
+
+describe('turn controls carry a presence condition (lair pass B8, D2/D3)', () => {
+	// Present-when is core machinery with no shipped user since the Lair went
+	// cast only (R12, 2026-09-28): a synthetic genre shape carries the case.
+	const inX = { session: { fields: { mode: 'x' } } }
+	const inY = { session: { fields: { mode: 'y' } } }
+	const synthetic = {
+		characters: { min: 0 },
+		voice: 'narrator',
+		turnControls: {
+			advance: true,
+			pick: {
+				presentWhen: {
+					on: 'session.fields.mode',
+					equals: 'x',
+					reason: { en: 'Pick who speaks is for mode x.' },
+				},
+			},
+			narrate: true,
+		},
+	}
+
+	test('a control with a present-when is present while it holds, hidden with its reason while not', () => {
+		const p = resolveTurnControls(synthetic as any)
+		assert.deepEqual(turnControlPresent(p, 'advance', inY), { present: true })
+		assert.deepEqual(turnControlPresent(p, 'narrate', inY), { present: true })
+		assert.deepEqual(turnControlPresent(p, 'pick', inX), { present: true })
+		const hidden = turnControlPresent(p, 'pick', inY)
+		assert.equal(hidden.present, false)
+		assert.match(String((hidden as any).reason?.en), /mode x/)
+		assert.doesNotThrow(() => assertTurnControls(synthetic as any, 'synthetic'))
+	})
+
+	test('the Lair: Continue, Pick and Narrate all present (cast only, R12)', () => {
+		const p = resolveTurnControls(lairGenre.shape)
+		for (const doc of [inX, inY, { session: { fields: { turnStyle: 'narrator' } } }]) {
+			assert.deepEqual(turnControlPresent(p, 'advance', doc), { present: true })
+			assert.deepEqual(turnControlPresent(p, 'pick', doc), { present: true })
+			assert.deepEqual(turnControlPresent(p, 'narrate', doc), { present: true })
+		}
+	})
+
+	test('a control the genre does not offer is absent with no reason', () => {
+		const p = resolveTurnControls(chatGenre.shape)
+		assert.deepEqual(turnControlPresent(p, 'narrate', inX), { present: false, reason: null })
+	})
+
+	test('a declaration is judged: unknown control, bad value, item.* present-when', () => {
+		assert.throws(() => assertTurnControls({ turnControls: { dance: true } } as any, 'x'), /not a turn control/)
+		assert.throws(() => assertTurnControls({ turnControls: { pick: 'yes' } } as any, 'x'), /presentWhen/)
+		assert.throws(
+			() =>
+				assertTurnControls(
+					{ turnControls: { pick: { presentWhen: { on: 'item.role', equals: 'user', reason: 'x' } } } } as any,
+					'x',
+				),
+			/acts on no row/,
+		)
+		assert.doesNotThrow(() => assertTurnControls(lairGenre.shape, 'lair'))
 	})
 })

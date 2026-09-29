@@ -4,7 +4,7 @@
 	 * selected option's description said below, because a stored value like
 	 * `rag` is not a word anybody chose to read.
 	 */
-	import { valueKind, type ValueDecl } from "@serene-pub/sdk"
+	import { i18nText, valueKind, type I18n, type ValueDecl } from "@serene-pub/sdk"
 
 	interface Props {
 		decl: ValueDecl
@@ -17,15 +17,24 @@
 	let { decl, value, readonly = false, id, oncommit }: Props = $props()
 
 	const schema = $derived(decl[valueKind(decl)] as Record<string, any>)
-	const en = (v: unknown): string =>
-		typeof v === "string" ? v : ((v as any)?.en ?? "")
+	// Display text through the SDK's one resolver (R-20); blank for a value publish never let in.
+	const en = (v: unknown): string => i18nText(v as I18n | undefined) ?? ""
+	// An option nobody labelled reads as its value in sentence case
+	// (`oldest-first` → "Oldest first"), never as the raw stored token.
+	const humanize = (v: string): string =>
+		v
+			.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+			.replace(/[-_]+/g, " ")
+			.trim()
+			.toLowerCase()
+			.replace(/^./, (c) => c.toUpperCase())
 	const options = $derived(
 		((schema.options ?? []) as unknown[]).map((o) =>
 			typeof o === "string"
-				? { value: o, label: o, description: "" }
+				? { value: o, label: humanize(o), description: "" }
 				: {
 						value: (o as any).value,
-						label: en((o as any).label) || (o as any).value,
+						label: en((o as any).label) || humanize(String((o as any).value)),
 						description: en((o as any).description)
 					}
 		)

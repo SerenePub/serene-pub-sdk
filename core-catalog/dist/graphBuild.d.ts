@@ -32,7 +32,10 @@
  * health probe then reads as a dead server. The steps therefore default to the
  * same config, and diverging is a deliberate act rather than the starting state.
  */
+/** @experimental */
 export declare const GRAPH_BUILD_SPEC_ID = "core:spec/graph-build";
+/** @internal */
 export declare const GRAPH_BUILD_VERSION = "1.2.0";
+/** @experimental */
 export declare const graphBuildSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=graphBuild.d.ts.map

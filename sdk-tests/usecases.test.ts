@@ -22,6 +22,7 @@ import { renderReceipt } from '@serene-pub/sdk'
 import { resolveConfig, resolveConfigSources, assertWritable, mayWrite } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import {
 	publish,
 	findings,
@@ -38,7 +39,7 @@ describe('01 · a minimal chat turn runs end to end', () => {
 		spec('demo:minimal@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+			.task('prompt', () => C.assemble.v2())
 			.oracle('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 			)
@@ -92,16 +93,15 @@ describe('02 · exactly one Input, positionally first', () => {
 	})
 })
 
-// ── 03 · One primary write; emits unlimited (F7) ────────────────────────────
-describe('03 · one primary write, emits unlimited', () => {
-	test('two write-class consumers is an error naming the alternative', () => {
+// ── 03 · One live row; other writes and emits unlimited (F7, W1) ────────────
+describe('03 · one live row, other outlets unlimited', () => {
+	test('two reply rows is an error naming the alternative', () => {
 		const b = spec('demo:two-writes@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.outlet('save', C.createMessage.v1({ text: 'a' }))
-			.outlet('save2', C.createMessage.v1({ text: 'b' }))
+			.outlet('save', C.createMessage.v1({ text: '', generating: true }))
+			.outlet('save2', C.createMessage.v1({ text: '', generating: true }))
 		const e = errorsFor(b, 'F7')
-		assert.equal(e.length, 1)
-		assert.match(e[0]!.fix, /emit-class outlets are unlimited/)
+		assert.ok(e.some((x) => /as many as you like/.test(x.fix)))
 	})
 
 	test('one write plus many emits is fine, and the chain continues past the write', async () => {
@@ -110,11 +110,11 @@ describe('03 · one primary write, emits unlimited', () => {
 				.inlet('input', C.userMessage.v1())
 				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 				.outlet('stream', ($) =>
-					C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
+					T.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
 				)
 				.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 				.outlet('done', ($) =>
-					C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+					T.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
 				),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
@@ -141,7 +141,7 @@ describe('04 · no branching', () => {
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 				.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 				.task('merge', ($) =>
-					C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
+					C.mergeCandidates.v1({ sources: [$.history.band, $.lore.hits] }),
 				),
 		)
 		assert.equal(validate(doc).filter((f) => f.severity === 'error').length, 0)
@@ -271,7 +271,7 @@ describe('08 · async block equivalence', () => {
 					sources: [
 						$.gather.semantic.vsearch.hits,
 						$.gather.keyword.triggers.hits,
-						$.gather.history.history.messages,
+						$.gather.history.history.band,
 					],
 				}),
 			)
@@ -301,15 +301,13 @@ describe('08 · async block equivalence', () => {
 		)
 	})
 
-	test('a write-class consumer inside a block is rejected (01 §4)', () => {
+	test('a write-class consumer inside a gather is allowed (01 §4, W1)', () => {
 		const b = spec('demo:blockwrite@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.gather('blk', {}, (bb) =>
 				bb.chain('c', (c) => c.outlet('save', C.createMessage.v1({ text: 'x' }))),
 			)
-		const e = errorsFor(b, '01 §4')
-		assert.equal(e.length, 1)
-		assert.match(e[0]!.fix, /move the write onto the spine/)
+		assert.deepEqual(errorsFor(b, '01 §4'), [])
 	})
 })
 
@@ -318,11 +316,11 @@ describe('09 · map over chunks', () => {
 	const build = (max = 64) =>
 		spec('demo:summarize@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
+			.task('chunks', ($) => T.chunkText.v1({ text: $.input.text }))
 			.each('summarize', { over: ($) => $.chunks.items, max, mode: 'parallel' }, (m) =>
 				m.oracle('sum', C.generateText.v1({ connection: slot.connection() })),
 			)
-			.task('collect', ($) => C.toCandidates.v1({ items: $.summarize.values }))
+			.task('collect', ($) => T.toCandidates.v1({ items: $.summarize.values }))
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.collect.candidates }))
 
 	test('publishes with a declared max', () => {
@@ -343,7 +341,7 @@ describe('10 · streaming', () => {
 			spec('demo:stream@1', { version: '1.0.0' })
 				.inlet('input', C.userMessage.v1())
 				.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
-				.task('first', ($) => C.firstJson.v1({ main: $.generate.text })),
+				.task('first', ($) => T.firstJson.v1({ main: $.generate.text })),
 		)
 		const edge = doc.edges.find((e) => e.from === 'generate' && e.to === 'first')!
 		assert.equal(edge.streaming, true, 'the document says this edge streams')
@@ -354,8 +352,8 @@ describe('10 · streaming', () => {
 	test('earlyExit on a settled input is a warning — there is nothing to exit early from', () => {
 		const b = spec('demo:pointless-early@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.query('text', ($) => C.messageText.v1({ messageId: $.input.main }))
-			.task('first', ($) => C.firstJson.v1({ main: $.text.plain }))
+			.query('text', ($) => T.messageText.v1({ messageId: $.input.main }))
+			.task('first', ($) => T.firstJson.v1({ main: $.text.plain }))
 		const f = findings(b).filter((x) => x.law === 'F22')
 		assert.equal(f.length, 1)
 		assert.match(f[0]!.fix, /nothing to exit early from/)
@@ -473,7 +471,7 @@ describe('13 · configuration resolves per slot through four layers', () => {
 						slot: 'sampling',
 						path: 'temperature',
 						value: 0.7,
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 					{
 						nodeKey: 'generate',
@@ -488,7 +486,7 @@ describe('13 · configuration resolves per slot through four layers', () => {
 						slot: 'sampling',
 						path: 'top_p',
 						value: 0.9,
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -516,7 +514,7 @@ describe('13 · configuration resolves per slot through four layers', () => {
 						slot: 'connection',
 						path: SLOT_VALUE,
 						value: 'ollama-local',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -526,15 +524,15 @@ describe('13 · configuration resolves per slot through four layers', () => {
 		assert.equal(resolved['generate']!['connection']![SLOT_VALUE], 'ollama-local')
 	})
 
-	test('the chain is exactly session · preset · defaults · author (R-10)', () => {
+	test('the chain is exactly session · config · defaults · author (R-10)', () => {
 		// `user` and `instance` were in the list and pushed by nothing; the
 		// config an admin edits IS the instance's configuration (ruled
 		// 2026-08-24, folded 2026-09-16). A scope the SDK does not know is not a
 		// scope a host may write at.
-		assert.deepEqual(SCOPE_ORDER, ['session', 'preset', 'defaults', 'author'])
+		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
 		assert.equal(mayWrite('connection', 'defaults'), false)
 		assert.equal(mayWrite('connection', 'session'), true)
-		assert.equal(mayWrite('connection', 'preset'), true)
+		assert.equal(mayWrite('connection', 'config'), true)
 		assert.equal(mayWrite('prompts', 'session'), true)
 		assert.equal(mayWrite('template', 'session'), false)
 		assert.throws(() => assertWritable('connection', 'defaults'), /admin-only/)
@@ -569,14 +567,14 @@ describe('13 · configuration resolves per slot through four layers', () => {
 					slot: 'prompts',
 					path: 'system',
 					value: 'be terse',
-					scopeKind: 'preset' as const,
+					scopeKind: 'config' as const,
 				},
 			],
 		}
 		const sourced = resolveConfigSources(w, ['generate'])
 		assert.equal(sourced['generate']!['sampling']!['temperature']!.scopeKind, 'session')
 		assert.equal(sourced['generate']!['sampling']!['temperature']!.scopeId, 42)
-		assert.equal(sourced['generate']!['prompts']!['system']!.scopeKind, 'preset')
+		assert.equal(sourced['generate']!['prompts']!['system']!.scopeKind, 'config')
 		assert.equal(sourced['generate']!['params']!['stopSequences']!.scopeKind, 'author')
 
 		const plain = resolveConfig(w, ['generate'])
@@ -635,7 +633,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 					{
 						nodeKey: 'generate',
@@ -677,7 +675,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_switched',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -738,7 +736,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_switched',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 					{
 						nodeKey: 'generate',
@@ -780,7 +778,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -810,7 +808,7 @@ describe('14 · sampling', () => {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},
@@ -852,7 +850,7 @@ describe('16 · the context budget flows forward', () => {
 			.task('budget', C.contextBudget.v1({ connection: slot.downstreamOracle() }))
 			.query('history', ($) => C.sessionHistory.v1({ budget: $.budget.available }))
 			.task('prompt', ($) =>
-				C.assemble.v2({ candidates: $.history.messages, budget: $.budget.available }),
+				C.assemble.v2({ budget: $.budget.available }),
 			)
 			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 
@@ -887,7 +885,7 @@ test('17 · assemble reads declared weights off its inputs, so adding a source n
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 			.task('merge', ($) =>
-				C.mergeCandidates.v1({ sources: [$.history.messages, $.lore.hits] }),
+				C.mergeCandidates.v1({ sources: [$.history.band, $.lore.hits] }),
 			)
 			.task('prompt', ($) => C.assemble.v2({ candidates: $.merge.candidates })),
 	)
@@ -946,7 +944,7 @@ test('19 · a plugin ranker substitutes for core with no other change', async ()
 				.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 				.task('rank', ($) => ranker.v1({ candidates: $.lore.hits })),
 		)
-	for (const ranker of [C.rankHybrid, C.rankByRecency, C.rankRecall]) {
+	for (const ranker of [C.rankHybrid, C.rankRecall]) {
 		const r = await run(build(ranker), { input: { text: 'x' }, bindings: bindings(), world })
 		assert.equal(r.outcome, 'ok')
 	}
@@ -1011,7 +1009,7 @@ describe('22 · events', () => {
 			.outlet('save', C.createMessage.v1({ text: 'x', emits: ['whatever'] }))
 		const e = errorsFor(b, 'F8')
 		assert.equal(e.length, 1)
-		assert.match(e[0]!.fix, /only core emits events/)
+		assert.match(e[0]!.fix, /no node emits: a write causes the event its outlet declares/)
 	})
 })
 
@@ -1050,9 +1048,9 @@ describe('24 · modality agnosticism', () => {
 		const doc = publish(
 			spec('chariot.tts:speak-reply@1', { version: '1.0.0' })
 				.inlet('input', C.userMessage.v1())
-				.query('text', ($) => C.messageText.v1({ messageId: $.input.messageId }))
+				.query('text', ($) => T.messageText.v1({ messageId: $.input.messageId }))
 				.oracle('audio', ($) =>
-					C.speak.v1({
+					T.speak.v1({
 						text: $.text.plain,
 						connection: slot.connection(),
 						sampling: slot.sampling(),
@@ -1103,7 +1101,7 @@ describe('24 · modality agnosticism', () => {
 				.inlet('input', C.userMessage.v1())
 				.oracle(
 					'tool',
-					C.mcpTool.v1({ args: { path: '/tmp/x' }, connection: slot.connection() }),
+					T.mcpTool.v1({ args: { path: '/tmp/x' }, connection: slot.connection() }),
 				),
 		)
 		const r = await run(doc, { input: {}, bindings: bindings(), world })
@@ -1180,7 +1178,7 @@ test('a full chat turn renders a legible receipt', async () => {
 					sources: [
 						$.gather.semantic.vsearch.hits,
 						$.gather.keyword.triggers.hits,
-						$.gather.history.history.messages,
+						$.gather.history.history.band,
 					],
 				}),
 			)
@@ -1196,11 +1194,11 @@ test('a full chat turn renders a legible receipt', async () => {
 				}),
 			)
 			.outlet('stream', ($) =>
-				C.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
+				T.emitSocket.v1({ handle: 'chat:reply', from: $.generate.text }),
 			)
 			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 			.outlet('done', ($) =>
-				C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+				T.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
 			),
 	)
 
@@ -1215,7 +1213,7 @@ test('a full chat turn renders a legible receipt', async () => {
 					slot: 'sampling',
 					path: SLOT_VALUE,
 					value: 'cfg_creative',
-					scopeKind: 'preset',
+					scopeKind: 'config',
 				},
 			],
 		},

@@ -91,7 +91,7 @@ async function resolveWith(value: unknown) {
 					slot: 'connection',
 					path: SLOT_VALUE,
 					value,
-					scopeKind: 'preset',
+					scopeKind: 'config',
 				},
 			],
 		},

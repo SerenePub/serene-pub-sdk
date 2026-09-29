@@ -26,12 +26,14 @@
  * gradient rather than a ban.
  */
 import { type TemplateFinding, type TemplateScope } from "./template.js";
+/** @experimental */
 export type EngineId = string;
-/** What a template slot actually stores: the source **and** what it is written in. */
+/** What a template slot actually stores: the source **and** what it is written in. @experimental */
 export interface TemplateValue {
     engine: EngineId;
     source: string;
 }
+/** @experimental */
 export interface CostProfile {
     /** Tokens contributed by literal text outside any repetition. */
     fixed: number;
@@ -44,6 +46,7 @@ export interface CostProfile {
      */
     exact: boolean;
 }
+/** @experimental */
 export interface TemplateEngine {
     id: EngineId;
     /** Human-facing, for the template editor's language picker. */
@@ -60,16 +63,22 @@ export interface TemplateEngine {
      */
     costProfile(source: string, count: (s: string) => number): CostProfile;
 }
+/** @experimental */
 export declare function defineEngine(e: TemplateEngine): TemplateEngine;
+/** @experimental */
 export declare const getEngine: (id: EngineId) => TemplateEngine | undefined;
+/** @experimental */
 export declare const allEngines: () => TemplateEngine[];
+/** @experimental */
 export declare function _clearEngines(): void;
-/** Resolve and render, with an error that names the engine rather than failing obscurely. */
+/** Resolve and render, with an error that names the engine rather than failing obscurely. @experimental */
 export declare function renderWith(value: TemplateValue, scope: Record<string, unknown>): string;
+/** @experimental */
 export declare const jinja2: TemplateEngine;
 /**
  * No substitution at all. Useful on its own — a fixed system preamble is a template with
  * no variables — and useful as the reference implementation of an exact cost profile.
+ * @experimental
  */
 export declare const plain: TemplateEngine;
 /**
@@ -85,6 +94,7 @@ export declare const plain: TemplateEngine;
  * and every core template in SP is Handlebars with a registered helper set. The
  * template-engine registry is exactly the mechanism that makes that a one-line change
  * rather than a redesign, which is the argument for having built it.
+ * @experimental
  */
 export declare const handlebars: TemplateEngine;
 /**
@@ -95,10 +105,13 @@ export declare const handlebars: TemplateEngine;
  * registered tag and filter set (`systemBlock`/`assistantBlock`/`userBlock`, `json`,
  * `jsonValue`, `pad`) under a configuration a second implementation would not
  * reproduce, and a near-miss renderer fails as what reads like a template bug.
+ * @experimental
  */
 export declare const liquid: TemplateEngine;
-/** Sugar so a spec reads `template: jinja(SOURCE)` rather than repeating the id. */
+/** Sugar so a spec reads `template: jinja(SOURCE)` rather than repeating the id. @experimental */
 export declare const templateOf: (engine: TemplateEngine) => (source: string) => TemplateValue;
+/** @experimental */
 export declare const jinja: (source: string) => TemplateValue;
+/** @experimental */
 export declare const text: (source: string) => TemplateValue;
 //# sourceMappingURL=engines.d.ts.map

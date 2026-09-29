@@ -20,13 +20,13 @@
  *   `generate-text`, `embed-text`, `render-image`, `create-message`, `assemble`.
  * - **Query types name their source** — a Query is chosen by what it returns, which is
  *   what a user tuning "how much should lore matter" is looking at: `session-history`,
- *   `persona-card`, `lorebook-triggers`.
+ *   `world-lore`, `lorebook-triggers`.
  *
  * Renaming `core:oracle/text-gen@1` to `core:oracle/generate-text@1` also removed a
  * collision worth naming: it was the same string as `core:shape/text-gen@1`, the operation
  * and the category spelled identically in different namespaces.
  */
-/** `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
+/** @internal `'core:query/session-history@2'` → `{ ns: 'core', kind: 'query', name: 'session-history', version: 2 }` */
 export function parseDefinitionId(id) {
     const at = /@(\d+)$/.exec(id);
     const version = at ? Number(at[1]) : 1;
@@ -42,12 +42,14 @@ export function parseDefinitionId(id) {
             version
         };
 }
+/** @internal */
 export const camel = (s) => s.replace(/-(\w)/g, (_, c) => c.toUpperCase());
-/** The one and only rule. */
+/** @internal The one and only rule. */
 export const bindingNameFor = (id) => camel(parseDefinitionId(id).name);
 /**
  * Check a hand-written contracts module against the rule. Run in CI: the moment a name
  * stops being derivable, generation would need an alias table, and that is the failure.
+ * @internal
  */
 export function checkDerivable(entries) {
     return entries
@@ -71,6 +73,7 @@ export function checkDerivable(entries) {
  * plugin example already used. Reported as its own problem rather than folded
  * into `checkDerivable`, because the fix is different — a collision is resolved
  * by renaming a *type*, not by renaming a binding.
+ * @internal
  */
 export function checkUnique(entries) {
     const byName = new Map();
@@ -96,6 +99,7 @@ const lit = (v) => JSON.stringify(v);
  * Emit a contracts module. Descriptors are emitted as data plus a `pin()` call, so the
  * generated file is readable and diffable rather than a blob — a plugin author reading
  * `/contracts` to find out what ports a node has should be able to.
+ * @experimental
  */
 export function generateContracts(types, opts = {}) {
     const sdk = opts.sdk ?? "@serene-pub/sdk";
@@ -137,6 +141,7 @@ export function generateContracts(types, opts = {}) {
     }
     return out.join("\n");
 }
+/** @internal */
 export const summarizeDefinition = (d) => ({
     id: d.id,
     binding: bindingNameFor(d.id),
@@ -151,6 +156,7 @@ export const summarizeDefinition = (d) => ({
     causesEvent: d.causesEvent,
     public: d.public,
     declaresRandomness: d.declaresRandomness,
-    timeoutMs: d.timeoutMs
+    timeoutMs: d.timeoutMs,
+    declaration: d
 });
 //# sourceMappingURL=codegen.js.map

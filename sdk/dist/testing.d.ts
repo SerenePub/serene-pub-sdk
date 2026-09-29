@@ -16,6 +16,14 @@ import type { Receipt } from './receipt.js';
 import type { SpecDocument } from './document.js';
 import type { Bindings, RunOptions } from './executor.js';
 import type { Descriptor } from './descriptors.js';
+/**
+ * The plugin sandbox's context, in this harness (plans 29 §14 D-3) — the half
+ * the executor cannot supply, because a plugin's node handlers never run
+ * against the executor's context at install. Re-exported here so an author's
+ * one import is `@serene-pub/sdk/testing`.
+ */
+export * from './pluginHarness.js';
+/** @experimental */
 export interface Golden {
     name: string;
     specId: string;
@@ -44,32 +52,38 @@ export interface Golden {
  * Timings, run ids and wall-clock are all excluded — a golden that fails because a run
  * took 3ms instead of 2ms is a golden nobody keeps. What is kept is every decision and
  * every payload, which is what actually changes when a plugin's behaviour changes.
+ * @experimental
  */
 export declare function toGolden(name: string, r: Receipt): Golden;
+/** @experimental */
 export interface GoldenDiff {
     path: string;
     before: unknown;
     after: unknown;
 }
-/** A structural diff, deepest-path-first, so the first line names the actual change. */
+/** A structural diff, deepest-path-first, so the first line names the actual change. @experimental */
 export declare function diffGolden(before: Golden, after: Golden): GoldenDiff[];
+/** @experimental */
 export declare function renderDiff(d: GoldenDiff[]): string;
+/** @experimental */
 export declare class GoldenMismatch extends Error {
     readonly name: string;
     readonly diff: GoldenDiff[];
     constructor(name: string, diff: GoldenDiff[]);
 }
-/** Record if absent, compare if present. The whole workflow in one call. */
+/** Record if absent, compare if present. The whole workflow in one call. @experimental */
 export declare function checkGolden(name: string, r: Receipt, stored?: Golden): {
     golden: Golden;
     recorded: boolean;
 };
+/** @experimental */
 export interface BindingProbe {
     id: string;
     title: string;
     consequence: string;
     check(hook: (input: any, ctx: any) => any, d: Descriptor, ctx: ProbeCtx): Promise<void> | void;
 }
+/** @experimental */
 export interface ProbeCtx {
     sampleInput: unknown;
     /** A context object shaped like the one the executor injects for this kind. */
@@ -78,8 +92,10 @@ export interface ProbeCtx {
 /**
  * What a hook has to do to be a hook. Run these in your own tests — the executor assumes
  * all of it, and a hook that breaks one of them fails in a way that is hard to attribute.
+ * @experimental
  */
 export declare const BINDING_PROBES: BindingProbe[];
+/** @experimental */
 export interface ProbeResult {
     id: string;
     title: string;
@@ -87,8 +103,9 @@ export interface ProbeResult {
     error?: string;
     consequence?: string;
 }
+/** @experimental */
 export declare function probeBinding(hook: (input: any, ctx: any) => any, descriptor: Descriptor, ctx: ProbeCtx): Promise<ProbeResult[]>;
-/** A context shaped like the executor's, per kind — so a probe tests the real surface. */
+/** A context shaped like the executor's, per kind — so a probe tests the real surface. @experimental */
 export declare const probeCtxFor: (kind: Descriptor['kind'], sampleInput?: unknown) => ProbeCtx;
 /**
  * The seed and the clock an executed example runs on.
@@ -103,16 +120,19 @@ export declare const probeCtxFor: (kind: Descriptor['kind'], sampleInput?: unkno
  * is not the only thing that runs an example any more: the browser playground
  * runs the same module against the same seed, and a reader who compares what
  * they just ran against the page has to be comparing the same run.
+ * @experimental
  */
 export declare const EXAMPLE_SEED = "seed:example";
+/** @experimental */
 export declare const EXAMPLE_CLOCK = 1700000000000;
-/** Everything `run` takes except the two things the harness decides. */
+/** Everything `run` takes except the two things the harness decides. @experimental */
 export type ExampleRunOptions = Omit<RunOptions, 'seed' | 'now'>;
 /**
  * What an example's `run()` is handed: its own compiled document, and the way
  * to execute it deterministically. Deliberately small — the fixture host itself
  * (bindings, scope data) is the example's own import, because a reader of the
  * page has to be able to see which hooks answered.
+ * @experimental
  */
 export interface ExampleRunCtx {
     /** This example's document — already compiled from `build()` and validated. */
@@ -124,7 +144,7 @@ export interface ExampleRunCtx {
     /** Execute `doc` under this seed and clock. Everything else is the example's. */
     run(opts: ExampleRunOptions): Promise<Receipt>;
 }
-/** The context an executed example runs against. Seed and clock default to the fixed pair. */
+/** The context an executed example runs against. Seed and clock default to the fixed pair. @experimental */
 export declare function makeExampleRunCtx(doc: SpecDocument, opts?: {
     seed?: string;
     now?: () => number;
@@ -137,18 +157,21 @@ export declare function makeExampleRunCtx(doc: SpecDocument, opts?: {
  * between two identical runs, and a page that changed on every build would
  * teach a reader to ignore it. What is left is what the run DECIDED — which is
  * the only part worth pinning.
+ * @experimental
  */
 export declare function renderRunSummary(r: Receipt): string;
 /**
  * F26 as a one-liner an author can run: parallel and forced-sequential must produce the
  * same result. If your hook has a hidden ordering dependency, this is where it shows up
  * — not in a user's chat at 2am under load.
+ * @experimental
  */
 export declare function assertEquivalent(doc: SpecDocument, opts: RunOptions): Promise<void>;
-/** Run the same spec twice on one seed and assert nothing moved (F11). */
+/** Run the same spec twice on one seed and assert nothing moved (F11). @experimental */
 export declare function assertDeterministic(doc: SpecDocument, opts: RunOptions & {
     seed: string;
 }): Promise<void>;
+/** @experimental */
 export declare function renderProbes(results: ProbeResult[]): string;
 export type { Bindings };
 //# sourceMappingURL=testing.d.ts.map

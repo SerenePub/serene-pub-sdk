@@ -35,14 +35,17 @@ import { compile, spec, sessionEvents } from "@serene-pub/sdk"
 import * as C from "@serene-pub/contracts"
 import { chatGenre } from "./genres.js"
 
+/** @internal */
 export const CREATE_CHAT_SPEC_ID = "core:spec/create-chat"
+/** @internal */
 export const CREATE_CHAT_VERSION = "2.2.0"
 
+/** @internal */
 export const createChatSpec = () =>
 	compile(
 		spec(CREATE_CHAT_SPEC_ID, {
 			version: CREATE_CHAT_VERSION,
-			taxonomy: { role: "create", genre: chatGenre.id },
+			taxonomy: { role: "create"},
 			genre: {
 				name: chatGenre.name,
 				family: chatGenre.family,

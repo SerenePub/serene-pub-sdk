@@ -48,6 +48,7 @@ import type { ShapeId } from './shapes.js';
  * key the *chosen* connection cannot honour (enabling DRY and then pointing the
  * config at Anthropic); that is reported by the adapter as ignored, not blocked
  * here, because the config outlives the connection it happens to be paired with.
+ * @internal
  */
 export declare const textSamplingSchema: SettingsSchema;
 /**
@@ -80,6 +81,7 @@ export declare const textSamplingSchema: SettingsSchema;
  * is exactly what the "What is not here" note above forbids — and by the same
  * argument there is no such thing as a hosted sampling *preset*: a hosted
  * service has no sampling knobs to preset, it has a profile.
+ * @internal
  */
 export declare const imageSamplingSchema: SettingsSchema;
 /**
@@ -93,11 +95,12 @@ export declare const imageSamplingSchema: SettingsSchema;
  *
  * `voice` is a free string for the same reason `sampler` is on images: the valid
  * names belong to the connection, not to the vocabulary.
+ * @internal
  */
 export declare const ttsSamplingSchema: SettingsSchema;
-/** Every vocabulary, keyed by the shape whose connections speak it. */
+/** Every vocabulary, keyed by the shape whose connections speak it. @internal */
 export declare const SAMPLING_SCHEMAS: Record<ShapeId, SettingsSchema>;
-/** The shape a row without one is assumed to speak. */
+/** The shape a row without one is assumed to speak. @experimental */
 export declare const DEFAULT_SAMPLING_SHAPE: ShapeId;
 /**
  * The vocabulary for a shape.
@@ -105,15 +108,16 @@ export declare const DEFAULT_SAMPLING_SHAPE: ShapeId;
  * An unknown shape resolves to an empty schema rather than throwing: a row
  * written by a plugin whose provider is not installed should read as "no
  * parameters I can offer", not as a crash in whatever happened to load it.
+ * @internal
  */
 export declare function samplingSchemaFor(shape?: ShapeId | null): SettingsSchema;
-/** The stored side of a sampling config — the three columns that carry meaning. */
+/** The stored side of a sampling config — the three columns that carry meaning. @experimental */
 export interface SamplingRowLike {
     shape?: ShapeId | null;
     values?: Record<string, unknown> | null;
     enabled?: readonly string[] | null;
 }
-/** What an adapter receives: flat, enabled-only, defaults already applied. */
+/** What an adapter receives: flat, enabled-only, defaults already applied. @internal */
 export type ResolvedSampling = Record<string, unknown>;
 /**
  * Stored row → what the adapter is handed.
@@ -122,6 +126,7 @@ export type ResolvedSampling = Record<string, unknown>;
  * so "is this key on?" has exactly one answer in the codebase. Callers get a
  * plain object: spreading a runtime override onto it is expected and is how
  * per-call budgets are applied.
+ * @internal
  */
 export declare function resolveSamplingValues(row: SamplingRowLike, schema?: SettingsSchema): ResolvedSampling;
 /**
@@ -137,6 +142,7 @@ export declare function resolveSamplingValues(row: SamplingRowLike, schema?: Set
  * `contextTokensUnlocked`, or a parameter belonging to a shape this build does
  * not know — stay exactly where they were, and `resolveSamplingValues` is what
  * keeps them off the wire.
+ * @internal
  */
 export declare function normalizeSamplingRow(row: SamplingRowLike, schema?: SettingsSchema): {
     shape: ShapeId;

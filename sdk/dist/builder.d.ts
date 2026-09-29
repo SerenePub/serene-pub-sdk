@@ -9,18 +9,22 @@
  * never this code (F6).
  *
  * Every node method takes either a pinned constructor or a **callback that receives the
- * scope** — `$ => C.assemble({ candidates: $.history.messages })`. The callback form is
+ * scope** — `$ => C.assemble({ messages: $.history.messages })`. The callback form is
  * preferred: it types the node key and the port, and it makes a forward reference
  * impossible to write rather than a finding to read (src/scope.ts). Both forms compile
  * to the same rows.
  */
 import { type NodeSpec, type Kind, type PortDecl, type OutPortsOf, type Descriptor } from './descriptors.js';
 import { ITEM, type Scope } from './scope.js';
-import type { DataRef } from './refs.js';
+import { type DataRef } from './refs.js';
 import type { SessionShape } from './descriptors.js';
 import type { TemplateValue } from './engines.js';
 import { type EnvoyDecl, type GenreDecl } from './genres.js';
-import { type ActionDecl, type TriggerDeclAlias } from './actions.js';
+import type { ExternalRef } from './announce.js';
+import { type SessionEventDecl } from './events.js';
+import { type I18n } from './i18n.js';
+import { type ActionDecl } from './actions.js';
+/** @experimental */
 export interface SpecMeta {
     /**
      * Semver. **The upgrade key, not part of the identity** — an import replaces the
@@ -40,8 +44,7 @@ export interface SpecMeta {
      * For the genre's create pipeline this carries the genre's declaration
      * (24 §3): display name, family, standing `SessionShape`, event surface.
      * Stored on the version row so shape checks stay SELECTs, never document
-     * loads. `genre` replaced `mode` in the deep rename (24 §2); `mode` is
-     * accepted as a deprecated alias and normalized at construction.
+     * loads.
      */
     genre?: {
         name: unknown;
@@ -65,9 +68,20 @@ export interface SpecMeta {
          * registry — which is also what makes them part of the spec's hash.
          */
         envoys?: readonly EnvoyDecl[];
+        /**
+         * What a person's persona-less line is called (R4), persisted with the
+         * declaration on the same terms as the envoys: the host names those
+         * lines off the create spec's row. See `GenreDecl.playerLabel`.
+         */
+        playerLabel?: unknown;
+        /**
+         * The genre's pinned settings (PLAN-turn-order §4.13), persisted
+         * with the declaration on the same terms as the envoys: the host
+         * resolves the settings cascade off the create spec's row, never
+         * from the running registry. See `GenreDecl.settings`.
+         */
+        settings?: Readonly<Record<string, unknown>>;
     };
-    /** @deprecated renamed to `genre` (24 §2) — normalized at construction. */
-    mode?: SpecMeta['genre'];
     i18n?: {
         name?: unknown;
     };
@@ -90,20 +104,23 @@ export interface SpecMeta {
      * The action model (plans/29 R-15, 30 §U5c): every action declares a
      * **venue** (where, per channel), an **audience** (who sees, who acts),
      * `quick` (primary set or overflow), a **slash name** and a localised
-     * `label` — see `actions.ts`. `triggers` is the pre-U5c spelling, kept
-     * one release and folded into `actions` at construction; a document this
-     * release compiles only ever carries `actions`.
+     * `label` — see `actions.ts`.
      */
     contributes?: {
-        actions?: ActionDecl[];
-        /** @deprecated the pre-U5c spelling — normalised into `actions` at construction. */
-        triggers?: TriggerDeclAlias[];
+        /**
+         * Each action is offered to the genre of the spec's inlet lock, so an
+         * action never names a genre — `.inlet()` fills it in.
+         */
+        actions?: Array<Omit<ActionDecl, 'genre'> & {
+            genre?: never;
+        }>;
     };
 }
 /**
  * The catalogue claims (ruled 2026-08-27). All optional — an undeclared spec
  * still lists, it just sorts under "unclassified" — and all open to change on
  * republish without touching identity.
+ * @experimental
  */
 export interface SpecTaxonomy {
     /**
@@ -111,22 +128,17 @@ export interface SpecTaxonomy {
      * type (23 §7 — the required one; the spec IS the session type), `primary`
      * carries the main turn, `action` is invoked by a person or trigger,
      * `maintenance` runs off the critical path (summaries, graph builds).
-     *
-     * ⏳ `zone` stood beside this and was culled 2026-09-16 (U3, R-15): a
-     * placement word the action model's `venue` supersedes. `role` and `genre`
-     * stay.
      */
     role?: 'create' | 'primary' | 'action' | 'maintenance';
     /**
      * The one session genre this spec serves — a genre id (24 §3), e.g.
-     * `core:genre/chat`. Absent = not genre-bound. Superseded as the source
-     * of truth by the input-node lock (24 §4) — kept as a projection the
-     * catalogue reads; the input declaration wins when both exist.
+     * `core:genre/chat`. **Never written by an author**: `.inlet()`
+     * copies it from the lock, so the catalogue and the lock cannot
+     * disagree. A document read back carries it.
      */
-    genre?: string;
-    /** @deprecated renamed to `genre` (24 §2) — normalized at construction. */
-    mode?: string;
+    genre?: never;
 }
+/** @experimental */
 export interface BuiltNode {
     key: string;
     kind: Kind;
@@ -138,19 +150,73 @@ export interface BuiltNode {
     clauseKind?: ClauseKind;
     clauseChain?: string;
     position: number;
+    /**
+     * Where this node's controls may be shown beyond the admin's pipeline
+     * panel (PLAN-turn-order §4.11, R12). `session: true` marks the node's
+     * rebind (on a strategy node) or its params as a **declared session
+     * setting**: the session settings form renders a card for the spec with
+     * exactly the marked keys, and nothing else. Stored in the document, so
+     * the form reads it off the registry. Absent = admin panel only.
+     *
+     * `swaps` (R28, the modder pass): the definition ids a session may seat
+     * here instead of the pin, in the order a picker lists them. The pin is
+     * the default and is always offered first, so it is never listed. Present
+     * only when non-empty; a node with swaps is always `session: true`.
+     *
+     * `stream` and `status` (lair pass B3/B18, ruled 2026-09-27, D6/D5) are
+     * what the node shows **while it runs**:
+     *
+     *  · `stream: true` — **the streaming step**: this oracle's tokens are
+     *    the reply's prose, routed into the run's live row as they arrive.
+     *    Declared, never inferred (D6): a spec that marks nothing streams
+     *    nothing and shows its status until the write lands. At most one on
+     *    any single execution path — steps in mutually exclusive branches of
+     *    one junction may each stream, and the one that runs does (W2) — an
+     *    oracle with a streaming out-port — a JSON step never
+     *    streams — and never inside an `each` or a `loop`; `validate()`
+     *    refuses the rest (law `streaming step`).
+     *  · `status` — **the step status**: the sentence the row and the
+     *    progress card show while this node runs (*Planning the turn*), a
+     *    string or a locale map (R-20), `{speaker}` filled by the host. It
+     *    wins over any status the node's own handler sets, for this node
+     *    only.
+     */
+    expose?: {
+        session?: boolean;
+        swaps?: string[];
+        stream?: true;
+        status?: I18n;
+    };
 }
 /**
- * One branch's condition (20 §10). Exactly one of `equals` / `truthy` /
- * `default` per predicate; `path` narrows what `equals`/`truthy` read off the
- * junction's value (dot path, e.g. `call.tool`). Deliberately not a rules
- * engine — a decision too rich for this table belongs in a Task that computes
- * a value this table can read.
+ * One branch's condition (20 §10). Exactly one of `equals` / `equalsPath` /
+ * `truthy` / `default` per predicate; `path` narrows what the condition reads
+ * off the junction's value (dot path, e.g. `call.tool`). Deliberately not a
+ * rules engine — a decision too rich for this table belongs in a Task that
+ * computes a value this table can read.
+ *
+ * The shape is `predicates.ts`'s, which an action's *enabled-when* reads too,
+ * so a branch and a greyed button can never mean two different things by the
+ * same words.
+ * @experimental
  */
 export interface JunctionPredicate {
     /** Dot path read off the junction's value first. Absent = the value itself. */
     path?: string;
     /** Fires when the (possibly path-read) value strictly equals this literal. */
     equals?: unknown;
+    /**
+     * Fires when the value strictly equals the value at **another path on the
+     * same junction value** (D-4a, 2026-09-17) — `{ path: 'accused',
+     * equalsPath: 'culprit' }` over a task publishing both.
+     *
+     * `equals` takes a literal, so without this a branch could ask *is the
+     * accused Vell?* and never *is the accused the culprit?* — the one
+     * question a genre that DERIVES its hidden fact has to ask. ⚠ Either side
+     * absent fires nothing: two unwired ports must not compare equal and route
+     * the branch that means *you got it right*.
+     */
+    equalsPath?: string;
     /** Fires when the value is truthy. */
     truthy?: boolean;
     /** Fires exactly when no other branch fired. At most one per junction. */
@@ -164,8 +230,10 @@ export interface JunctionPredicate {
  * while a predicate holds, **junction** runs the branches whose predicates
  * fired (was `route`). Stored documents say these words; the content hash
  * moved once, with the kinds.
+ * @experimental
  */
 export type ClauseKind = 'gather' | 'each' | 'loop' | 'junction';
+/** @experimental */
 export interface BuiltClause {
     id: string;
     kind: ClauseKind;
@@ -216,9 +284,10 @@ export interface BuiltClause {
  * The scope chain's layer 5 is a single author default per slot, which is enough for one
  * opinion and no help at all for "here are three coherent ways to run this." Named author
  * presets fill that, and they need no schema: they seed `config_presets` and
- * `node_overrides` rows at `scope_kind='preset'` on install, which both already exist.
+ * `node_overrides` rows at `scope_kind='config'` on install, which both already exist.
  *
  * Two rulings ride on this — see 12 §3a.
+ * @experimental
  */
 export interface BuiltPreset {
     /**
@@ -231,8 +300,9 @@ export interface BuiltPreset {
      * user's selection intact. Changing the *slug* is a delete plus a create.
      */
     slug: string;
-    label: string;
-    description?: string;
+    /** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+    label: I18n;
+    description?: I18n;
     /** At most one author preset may be the shipped default. */
     default?: boolean;
     /**
@@ -250,6 +320,7 @@ export interface BuiltPreset {
         value: unknown;
     }>;
 }
+/** @experimental */
 export interface BuiltSpec {
     id: string;
     meta: SpecMeta;
@@ -266,19 +337,52 @@ export interface BuiltSpec {
      * The usage lock (24 §4): the session event this spec's input answers,
      * and the genre it serves. Declared on `.input()`, serialized with the
      * document, hashed with it, enforced at compile, publish and dispatch.
+     *
+     * `events` (PLAN-turn-order §4.1, 2026-09-21): the alternative to one
+     * `event` — a spec that answers several session events (the turn-order
+     * spec answers nine). A dispatched event is accepted when it is the
+     * locked `event` or is in `events`. Preset bindings are unchanged: a
+     * spec bound to N events has N binding rows.
      */
     input?: {
         genre?: string;
         event?: string;
+        events?: string[];
     };
 }
-/** What a node method accepts: the value, or a function of the scope that returns it. */
+/** What a node method accepts: the value, or a function of the scope that returns it. @experimental */
 export type NodeArg<N, Nodes extends Record<string, PortDecl>> = N | (($: Scope<Nodes>) => N);
+/**
+ * The optional third argument of a node method (PLAN-turn-order §4.11):
+ * `{ expose: { session: true } }` marks the node's controls as a declared
+ * session setting — see `BuiltNode.expose`. Additive: every existing call
+ * passes nothing and lands exactly the row it landed before.
+ *
+ * `swaps` (R28) lists the pins a session may seat instead of this node's —
+ * pins, not strings, so a typo is a compile error and the fit is checked
+ * here: each must be the same kind with the same in- and out-ports, by name
+ * and shape. Listing swaps implies `session: true`.
+ * @experimental
+ */
+export interface NodeOpts {
+    expose?: {
+        session?: boolean;
+        swaps?: readonly {
+            readonly id: string;
+            readonly descriptor: Descriptor<any, any, any>;
+        }[];
+        /** This oracle is the streaming step — see `BuiltNode.expose` (B3, D6). */
+        stream?: true;
+        /** The step status shown while this node runs — see `BuiltNode.expose` (B18, D5). */
+        status?: I18n;
+    };
+}
 /**
  * A pinned constructor of a given kind. Constraining each method to its own kind makes
  * `.query('x', C.generateText())` a **compile** error rather than a throw — 04 §4a said
  * the method names the kind, and this is that claim actually enforced by the type system
  * instead of by a message at authoring time.
+ * @experimental
  */
 export type NodeOf<K extends Kind> = NodeSpec<Descriptor<any, any> & {
     kind: K;
@@ -287,6 +391,7 @@ export type NodeOf<K extends Kind> = NodeSpec<Descriptor<any, any> & {
  * What an each iterates. Kept as a closed union rather than `unknown | fn`, because a
  * union with `unknown` collapses to `unknown` and the callback's parameter loses its
  * type — the exact thing this whole change exists to prevent.
+ * @experimental
  */
 export type EachOver<Nodes extends Record<string, PortDecl>> = (($: Scope<Nodes>) => DataRef) | DataRef | readonly unknown[];
 /**
@@ -302,12 +407,13 @@ type Add<Nodes extends Record<string, PortDecl>, K extends string, N> = Nodes & 
 type AddPorts<Nodes extends Record<string, PortDecl>, K extends string, P extends PortDecl> = Nodes & {
     [X in K]: P;
 };
-/** Pull the accumulated node map back out of a builder the author handed us. */
+/** Pull the accumulated node map back out of a builder the author handed us. @experimental */
 export type NodesOf<B> = B extends ChainBuilder<infer M, any> ? M : B extends GatherBuilder<infer M, any> ? M : never;
 /**
  * What a clause publishes. Addressable like a node, because it is the only well-defined
  * handle on a construct that ran more than once — "whichever iteration happened to run
  * last" is not a value anyone means.
+ * @experimental
  */
 export type BranchPorts = {
     main: string;
@@ -315,10 +421,21 @@ export type BranchPorts = {
     branches: string;
     ok: string;
 };
+/**
+ * What a junction publishes (M4, PLAN-turn-order §4.14): the clause ports,
+ * and the fired branch's own ports beside them — `$.decide.order`. Open at
+ * the type level (any port name reads); `validate()` holds the document to
+ * ports every branch's last node actually publishes, with one shape.
+ * @experimental
+ */
+export type JunctionPorts = BranchPorts & {
+    [port: string]: string;
+};
 /** Namespace a fragment's nodes under the include key, at publish and in the type (16 §3a). */
 type Prefixed<K extends string, M> = {
     [P in keyof M & string as `${K}.${P}`]: M[P];
 };
+/** @experimental */
 declare class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends string = ''> {
     protected spec: BuiltSpec;
     protected clauseCtx?: {
@@ -331,7 +448,7 @@ declare class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix e
     } | undefined);
     /** Resolve the callback form against the nodes declared so far. */
     protected resolve<N>(arg: NodeArg<N, Nodes>): N;
-    protected add(kind: Kind, key: string, arg: NodeArg<NodeSpec<any>, Nodes>): any;
+    protected add(kind: Kind, key: string, arg: NodeArg<NodeSpec<any>, Nodes>, opts?: NodeOpts): any;
     protected qualify(key: string): string;
     /** Where a clause declared here sits, so clauses nest exactly as nodes do. */
     protected declareClause(b: Omit<BuiltClause, 'clauseId' | 'clauseChain' | 'position'>): BuiltClause;
@@ -388,11 +505,11 @@ declare class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix e
     junction<Id extends string, R extends JunctionBuilder<any, any>>(id: Id, opts: {
         on: (($: Scope<any>) => DataRef) | DataRef;
         mode?: 'sequential' | 'parallel';
-    }, fn: (r: JunctionBuilder<Nodes, Qualify<Prefix, Id>>) => R): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>;
-    query<K extends string, N extends NodeOf<'query'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
-    task<K extends string, N extends NodeOf<'task'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
-    oracle<K extends string, N extends NodeOf<'oracle'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
-    outlet<K extends string, N extends NodeOf<'outlet'>>(key: K, node: NodeArg<N, Nodes>): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
+    }, fn: (r: JunctionBuilder<Nodes, Qualify<Prefix, Id>>) => R): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, JunctionPorts>, Prefix>;
+    query<K extends string, N extends NodeOf<'query'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
+    task<K extends string, N extends NodeOf<'task'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
+    oracle<K extends string, N extends NodeOf<'oracle'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
+    outlet<K extends string, N extends NodeOf<'outlet'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>;
 }
 declare class GatherBuilder<Nodes extends Record<string, PortDecl> = {}, Id extends string = string> {
     private spec;
@@ -409,6 +526,7 @@ declare class GatherBuilder<Nodes extends Record<string, PortDecl> = {}, Id exte
  * The junction clause's own builder: every branch is a named chain *with a
  * declared predicate*, and the two are stated together so a branch without a
  * condition cannot be written at all.
+ * @experimental
  */
 export declare class JunctionBuilder<Nodes extends Record<string, PortDecl> = {}, Id extends string = string> {
     private spec;
@@ -424,6 +542,7 @@ export declare class JunctionBuilder<Nodes extends Record<string, PortDecl> = {}
  * Slot-named methods, for the same reason the chain has kind-named ones (04 §4a): the
  * method names the slot, so setting a slot a node never declared is caught by name rather
  * than becoming an override row that silently matches nothing.
+ * @experimental
  */
 export declare class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
     private preset;
@@ -440,13 +559,14 @@ export declare class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> 
     /** Node toggles and the review position. */
     settings(nodeKey: keyof Nodes & string, value: Record<string, unknown>): this;
 }
+/** @experimental */
 export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends ChainBuilder<Nodes> {
     private inletDone;
     constructor(rawId: string, meta: SpecMeta);
-    query<K extends string, N extends NodeOf<'query'>>(key: K, node: NodeArg<N, Nodes>): SpecBuilder<Add<Nodes, K, N>>;
-    task<K extends string, N extends NodeOf<'task'>>(key: K, node: NodeArg<N, Nodes>): SpecBuilder<Add<Nodes, K, N>>;
-    oracle<K extends string, N extends NodeOf<'oracle'>>(key: K, node: NodeArg<N, Nodes>): SpecBuilder<Add<Nodes, K, N>>;
-    outlet<K extends string, N extends NodeOf<'outlet'>>(key: K, node: NodeArg<N, Nodes>): SpecBuilder<Add<Nodes, K, N>>;
+    query<K extends string, N extends NodeOf<'query'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): SpecBuilder<Add<Nodes, K, N>>;
+    task<K extends string, N extends NodeOf<'task'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): SpecBuilder<Add<Nodes, K, N>>;
+    oracle<K extends string, N extends NodeOf<'oracle'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): SpecBuilder<Add<Nodes, K, N>>;
+    outlet<K extends string, N extends NodeOf<'outlet'>>(key: K, node: NodeArg<N, Nodes>, opts?: NodeOpts): SpecBuilder<Add<Nodes, K, N>>;
     /**
      * A named configuration the spec ships with (12 §3a). Declared **after** the nodes,
      * so the node keys it addresses are the ones that exist — same accumulation the
@@ -460,8 +580,8 @@ export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> ex
      * ```
      */
     preset(slug: string, meta: {
-        label: string;
-        description?: string;
+        label: I18n;
+        description?: I18n;
         default?: boolean;
         owner?: string;
     }, fn: (p: PresetBuilder<Nodes>) => unknown): this;
@@ -477,8 +597,11 @@ export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> ex
      * 2026-09-16 — nothing read them at dispatch.
      */
     inlet<K extends string, N extends NodeOf<'inlet'>>(key: K, node: N, binding?: {
-        genre: GenreDecl | string;
-        event: string;
+        genre: GenreDecl | ExternalRef;
+        event: string | SessionEventDecl;
+    } | {
+        genre: GenreDecl | ExternalRef;
+        events: Array<string | SessionEventDecl>;
     }): SpecBuilder<Add<Nodes, K, N>>;
     gather<Id extends string, R extends GatherBuilder<any, any>>(id: Id, opts: {
         mode?: 'sequential' | 'parallel';
@@ -497,16 +620,18 @@ export declare class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> ex
     junction<Id extends string, R extends JunctionBuilder<any, any>>(id: Id, opts: {
         on: (($: Scope<any>) => DataRef) | DataRef;
         mode?: 'sequential' | 'parallel';
-    }, fn: (r: JunctionBuilder<Nodes, Id>) => R): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>>;
+    }, fn: (r: JunctionBuilder<Nodes, Id>) => R): SpecBuilder<AddPorts<NodesOf<R>, Id, JunctionPorts>>;
     /** Compile-time include — expanded here, so rows hold the flat chain (16 §3a). */
     include<K extends string, F extends Fragment<any>>(key: K, fragment: F): SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>>;
     build(): BuiltSpec;
 }
+/** @public */
 export declare function spec(id: string, meta: SpecMeta): SpecBuilder<{}>;
 /**
  * A fragment carries its node map in its type, so `.include('ctx', contextInfill)` puts
  * `ctx.embed`, `ctx.search`, `ctx.merge` into the including spec's scope — namespaced by
  * the include key in the type exactly as they are namespaced in the rows (16 §3a).
+ * @experimental
  */
 export interface Fragment<Nodes extends Record<string, PortDecl> = {}> {
     id: string;
@@ -515,6 +640,7 @@ export interface Fragment<Nodes extends Record<string, PortDecl> = {}> {
     /** Phantom — carries the node map. Never populated at runtime. */
     readonly __nodes?: Nodes;
 }
+/** @experimental */
 export declare function fragment<R extends ChainBuilder<any, any>>(id: string, fn: (c: ChainBuilder<{}, ''>) => R): Fragment<NodesOf<R>>;
 export { ChainBuilder };
 //# sourceMappingURL=builder.d.ts.map

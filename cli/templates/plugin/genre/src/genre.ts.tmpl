@@ -1,0 +1,83 @@
+/**
+ * The genre — what kind of session this is, and it owns its id.
+ *
+ * A genre is a **package-level declaration**, like a pipeline: the shape sits
+ * here, every surface reads it, and it is not a habit of whichever pipelines
+ * happen to be bound. Say the rules once, in the one place an instance,
+ * the session picker and the layout all read.
+ *
+ * ✎ CHANGE: the shape, the events, and the description. Everything below is a
+ *   working default — the standard chat's shape, narrowed to nothing in
+ *   particular.
+ */
+
+import { genre, sessionEvents, type GenreDecl{{#panel}}, type WidgetDecl{{/panel}} } from '@serene-pub/sdk'
+
+export const GENRE_ID = '{{genreId}}'
+{{#panel}}
+
+/** The panel's id — what a saved layout row and a `surface:open` intent key on. */
+export const PANEL_ID = '{{panelId}}'
+/** The document the panel mounts, relative to the package root. */
+export const PANEL_ENTRY = '{{panelEntry}}'
+
+/**
+ * The panel, as the session grid sees it.
+ *
+ * ⚠ **Declared twice, on purpose.** `surfaces.panels[]` in `src/index.ts` is
+ * what the packager, `serene-pub ui` and an instance's file server read — *what
+ * may be served*. This is what puts it on the session grid — *what is mounted*.
+ * Two questions, and both need answering.
+ *
+ * ✎ CHANGE: the zone, the span and the minimum cells.
+ */
+export const panelWidget: WidgetDecl = {
+	id: PANEL_ID,
+	title: { en: '{{displayName}}' },
+	role: 'secondary',
+	surface: { kind: 'frame', pluginId: '{{slug}}', entry: PANEL_ENTRY },
+	/** A panel is a view onto channels. Name the lanes it may see, and no others. */
+	channels: ['main'],
+	cells: { minW: 2, minH: 2 },
+	placement: { zone: 'right', span: 3 },
+	fold: 'scroll',
+}
+{{/panel}}
+
+export const {{genreVar}}: GenreDecl = genre(GENRE_ID, {
+	name: { en: '{{displayName}}' },
+	/**
+	 * An open string; the session picker groups its cards by it. `chat`,
+	 * `adventure` and `game` are the families in use.
+	 */
+	family: 'chat',
+	description: { en: '✎ CHANGE: one sentence, on the card in the session picker.' },
+	/**
+	 * The shape: what a session of this genre may hold, and what it may do.
+	 * Stated here rather than assumed, so every surface agrees.
+	 */
+	shape: {
+		characters: { min: 1 },
+		personas: { min: 0, max: 1 },
+		lorebook: 'optional',
+		composer: 'text',
+		voice: 'character',
+		greeting: { enabled: true, channel: 'main' },
+{{#panel}}
+		/** The panels this genre brings with it. */
+		panels: [panelWidget],
+{{/panel}}
+	},
+	/**
+	 * The event surface: which session events exist here, and which a preset
+	 * must bind. `session-created` is required for every genre whether it is
+	 * written or not — a genre nothing can instantiate is not a genre.
+	 *
+	 * `open` means no preset binds it: the slot is filled by the contributed
+	 * actions a preset includes.
+	 */
+	events: {
+		[sessionEvents.messageRespond]: { required: true },
+		[sessionEvents.sessionAction]: { open: true },
+	},
+})

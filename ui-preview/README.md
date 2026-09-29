@@ -11,23 +11,27 @@ serene-pub ui . --fixtures ./my-session.json
 
 ## What it loads
 
-Whatever your entry module's default export announces — an `announce(…)`
-builder, its built document, or a `defineExtension(…)` result:
+Whatever your entry module's default export declares — its `defineExtension(…)`
+result:
 
 ```ts
-export default announce({ ns: 'acme.dice', author: 'acme', title: 'Dice' })
-	.surfaces({
+export default defineExtension({
+	slug: 'acme.dice',
+	name: 'Dice',
+	version: '0.1.0',
+	surfaces: {
 		'session-view': { entry: 'ui/session.html', title: 'Crawl view' },
 		page:        { entry: 'ui/index.html',   title: 'Dashboard' },
 		panels: [{ id: 'tray', entry: 'ui/tray.html', title: 'Dice tray', channels: ['dice'] }]
-	})
-	.components(component({
+	},
+	components: [component({
 		surface: 'core:surface/settings-section@1',
 		slug: 'dice-settings',
 		label: 'Dice settings',
 		framework: 'svelte',
 		entry: 'src/ui/Settings.svelte'
-	}))
+	})]
+})
 ```
 
 Nothing is discovered by scanning a directory. A surface you see in the harness

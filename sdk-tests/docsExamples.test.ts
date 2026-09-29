@@ -32,7 +32,9 @@ const GOLDENS_DIR = join(EXAMPLES_DIR, 'goldens')
 /** The examples are `.ts`; this suite runs under tsx, which can import one. */
 const load = (path: string) => import(path)
 
-const SLUGS = ['echo-reply', 'retrieved-reply', 'spoken-reply']
+const SLUGS = ['echo-reply', 'pictured-reply', 'retrieved-reply']
+/** Component examples (C3b), mounted by the harness; they sort in beside the pipelines. */
+const COMPONENT_SLUGS = ['who-spoke']
 
 /** A temp goldens directory per test, removed however the test ends. */
 async function inTempGoldens<T>(run: (dir: string) => Promise<T>): Promise<T> {
@@ -54,10 +56,10 @@ describe('executed examples', () => {
 				load,
 			})
 
-			assert.equal(pages.length, SLUGS.length)
+			assert.equal(pages.length, SLUGS.length + COMPONENT_SLUGS.length)
 			assert.deepEqual(
 				report.map((r) => r.slug),
-				SLUGS,
+				[...SLUGS, ...COMPONENT_SLUGS].sort(),
 			)
 			// Nothing was there, so every golden is a first recording.
 			assert.ok(report.every((r) => r.recorded && !r.changed))
@@ -91,7 +93,15 @@ describe('executed examples', () => {
 				/▸ input[\s\S]*▸ history[\s\S]*▸ generate[\s\S]*▸ save/,
 			)
 			// The sampler the adapter could not carry is named, not dropped.
-			assert.match(pages[1]!.markdown, /ignored samplers: mirostat_tau/)
+			assert.match(pages[2]!.markdown, /ignored samplers: mirostat_tau/)
+
+			// A component example: its source, and the DOM the harness mirrored.
+			const who = pages.find((p) => p.path === 'examples/who-spoke.md')!
+			assert.match(who.markdown, /```svelte\n<script lang="ts">/)
+			assert.match(who.markdown, /## What the page shows/)
+			assert.match(who.markdown, /<li>\s*\n?\s*Tobin[\s\S]*Narrator[\s\S]*Mira/)
+			assert.match(who.markdown, /<sp-icon name="play" size="14">/)
+			assert.match(who.markdown, /"key": "advance"/)
 		})
 	})
 
@@ -150,7 +160,7 @@ describe('executed examples', () => {
 			goldensDir: GOLDENS_DIR,
 			load,
 		})
-		assert.equal(pages.length, SLUGS.length)
+		assert.equal(pages.length, SLUGS.length + COMPONENT_SLUGS.length)
 		assert.ok(report.every((r) => !r.recorded && !r.changed))
 	})
 })

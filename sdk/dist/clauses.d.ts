@@ -15,7 +15,9 @@
  * override.
  */
 import type { I18n } from './descriptors.js';
+/** @experimental */
 export type ClauseMode = 'parallel' | 'sequential';
+/** @experimental */
 export declare const CLAUSE_MODES: readonly ClauseMode[];
 /**
  * What the panel renders for a gather clause, declared here rather than written
@@ -25,6 +27,7 @@ export declare const CLAUSE_MODES: readonly ClauseMode[];
  * which would leave the one string on that control invented by whichever screen
  * drew it. Naming it here keeps the rule that every label comes from the SDK,
  * and means a host and a plugin's tooling say the same thing.
+ * @experimental
  */
 export declare const CLAUSE_MODE_DECL: {
     path: 'mode';
@@ -32,6 +35,6 @@ export declare const CLAUSE_MODE_DECL: {
     description: I18n;
     of: readonly ClauseMode[];
 };
-/** The author's declaration is the default; the user's setting wins. */
+/** The author's declaration is the default; the user's setting wins. @experimental */
 export declare function resolveClauseMode(authorDefault: string | undefined, userSetting: unknown): ClauseMode;
 //# sourceMappingURL=clauses.d.ts.map

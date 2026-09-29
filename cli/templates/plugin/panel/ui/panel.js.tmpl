@@ -1,0 +1,47 @@
+/**
+ * The panel's whole client. Frame protocol 2.
+ *
+ * It sends exactly two messages — `ready` once, and `invoke` when the button is
+ * pressed, naming the action by its identity (`<spec slug>#<key>`) — and
+ * ignores every host message it does not recognise, which is what lets a v2
+ * host and a v1 host both talk to it.
+ *
+ * It asks for nothing: no `request`, no `save-state`, no storage. What it draws
+ * is already in the channel it was given.
+ *
+ * ✎ CHANGE: `count()` — what this panel reads off the messages — and the
+ *   action identity the button fires.
+ */
+
+/** ✎ CHANGE: the identity of a contributed action (`--action` scaffolds one). */
+const ACTION_KEY = '{{askSpecId}}#{{askActionKey}}'
+
+let port = null
+const count = document.getElementById('count')
+
+/**
+ * ✎ CHANGE: everything this panel knows, it reads here.
+ *
+ * A message carries its parts, and a part's `data.blocks` is the block tree a
+ * pipeline's outlet wrote. Read those; never parse prose.
+ */
+function draw(messages) {
+	const lines = (messages || []).length
+	count.textContent = lines === 1 ? '1 message' : `${lines} messages`
+}
+
+document.getElementById('act').addEventListener('click', () => {
+	if (port) port.postMessage({ t: 'invoke', key: ACTION_KEY, payload: {} })
+})
+
+addEventListener('message', (e) => {
+	if (e.data?.t !== 'init' || !e.ports[0]) return
+	port = e.ports[0]
+	port.onmessage = (m) => {
+		// `channel` when the host scopes this panel to its declared lanes;
+		// `messages` when it posts the whole log. Both mean the same thing here.
+		if (m.data?.t === 'channel' && m.data.channel === 'main') draw(m.data.messages)
+		else if (m.data?.t === 'messages') draw(m.data.messages)
+	}
+	port.postMessage({ t: 'ready' })
+})

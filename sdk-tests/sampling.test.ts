@@ -65,9 +65,9 @@ describe('the vocabularies', () => {
 
 	test('text declares reasoning as two ordinary samplers', () => {
 		// Ordinary is the assertion. A reasoning setting that lives on the
-		// CONNECTION cannot be chosen per stage and no config panel can show
+		// CONNECTION cannot be chosen per step and no config panel can show
 		// it; declaring it here is what makes it a checkbox and a control like
-		// every other sampler, and what lets one config say "this stage does
+		// every other sampler, and what lets one config say "this step does
 		// not think" while another beside it does.
 		const level = textSamplingSchema.reasoning
 		assert.equal(level?.type, 'enum')

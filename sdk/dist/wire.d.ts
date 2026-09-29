@@ -22,7 +22,9 @@
  * retrieval-strategy switch: **a declared field is visible in config, rendered in a lens
  * and resolved in the receipt; logic inside a leaf is none of those.**
  */
+/** @experimental */
 export type BlockRole = 'system' | 'user' | 'assistant' | 'tool' | 'note';
+/** @experimental */
 export interface ContextBlock {
     id?: string;
     /** Which retrieval source produced it — the axis the weights lens groups by. */
@@ -39,7 +41,7 @@ export interface ContextBlock {
     depth?: number;
     included: boolean;
     /**
-     * **The trail.** Each stage appends one line — the trigger Query says which key
+     * **The trail.** Each step appends one line — the trigger Query says which key
      * matched, the rank Task says which group it won or lost and how the probability
      * rolled, Assemble says whether the budget reached it.
      *
@@ -48,6 +50,7 @@ export interface ContextBlock {
      */
     why: string[];
 }
+/** @experimental */
 export interface AllocatedContext {
     blocks: ContextBlock[];
     allocation: {
@@ -59,8 +62,11 @@ export interface AllocatedContext {
         estimateExact?: boolean;
     };
 }
+/** @experimental */
 export declare const isAllocatedContext: (v: unknown) => v is AllocatedContext;
+/** @experimental */
 export declare const included: (c: AllocatedContext) => ContextBlock[];
+/** @experimental */
 export interface WireFormat {
     id: string;
     label: string;
@@ -73,24 +79,31 @@ export interface WireFormat {
      */
     overhead(ctx: AllocatedContext, count: (s: string) => number): number;
 }
+/** @experimental */
 export declare function defineWireFormat(w: WireFormat): WireFormat;
+/** @experimental */
 export declare const getWireFormat: (id: string) => WireFormat | undefined;
+/** @experimental */
 export declare const allWireFormats: () => WireFormat[];
+/** @internal */
 export declare function _clearWireFormats(): void;
+/** @experimental */
 export declare function formatWith(id: string, ctx: AllocatedContext, opts?: Record<string, unknown>): unknown;
-/** Chat completion: the role-tagged array. */
+/** Chat completion: the role-tagged array. @experimental */
 export declare const messages: WireFormat;
-/** Text completion, ChatML sequences. */
+/** Text completion, ChatML sequences. @experimental */
 export declare const chatml: WireFormat;
-/** Text completion, Alpaca-style. */
+/** Text completion, Alpaca-style. @experimental */
 export declare const alpaca: WireFormat;
-/** Everything joined, no scaffolding. The reference implementation of zero overhead. */
+/** Everything joined, no scaffolding. The reference implementation of zero overhead. @experimental */
 export declare const plainWire: WireFormat;
 /**
  * Prompt **fields**, for a Provider that plugs values into a workflow rather than sending
  * prose — image generation being the case that exposed the whole problem.
+ * @experimental
  */
 export declare const fields: WireFormat;
+/** @experimental */
 export interface WireMeasure {
     format: string;
     payload: unknown;
@@ -107,6 +120,7 @@ export interface WireMeasure {
  * The allocation loop must never re-render or re-count: count each block at render time,
  * allocate over integers, format exactly once. Anything else has a performance cliff at
  * precisely the moment a user's context is biggest.
+ * @experimental
  */
 export declare function measureWire(formatId: string, ctx: AllocatedContext, count: (s: string) => number, available?: number, opts?: Record<string, unknown>): WireMeasure;
 //# sourceMappingURL=wire.d.ts.map

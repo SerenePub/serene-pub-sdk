@@ -245,10 +245,4 @@ describe('82 · audiences', () => {
 	test('a component receives only component-side fields', () => {
 		assert.deepEqual(S.forComponent(configured), { showBadge: true })
 	})
-
-	test('only the declaring extension’s own hook sees plaintext', () => {
-		const seen = S.forOwningHook(configured, (c) => c.replace('cipher:', ''))
-		assert.equal(seen.apiKey, 'abc')
-		assert.equal(isSecret(seen.apiKey), false, 'decrypted, not still wrapped')
-	})
 })

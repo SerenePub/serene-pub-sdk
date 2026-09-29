@@ -20,8 +20,10 @@
  *
  * ## Why the data-bearing loaders are registered rather than imported here
  *
- * The SDK has **no dependencies**, deliberately — nothing in `src/` imports
- * anything outside it. Real tokenizers are the opposite of that: the four
+ * The SDK barrel has **no dependencies**, deliberately — nothing it reaches
+ * imports anything outside `src/`. (The one exception is its own entry point:
+ * `/template-check` parses with `handlebars` and `liquidjs`, typed templates
+ * Q5, and nothing on the barrel imports it.) Real tokenizers are the opposite of that: the four
  * packages a host needs for the twelve ids below are ~69 MB on disk, and an
  * author who installed `@serene-pub/sdk` to write one node type has no business
  * downloading a BPE merge table. There is also a hard mechanical reason: this
@@ -45,6 +47,7 @@
 /**
  * Counting, after loading. Takes `unknown` because a wire payload is not always
  * a string and a counter must not be the thing that decides it should have been.
+ * @experimental
  */
 export type TokenCount = (value: unknown) => number;
 /**
@@ -53,6 +56,7 @@ export type TokenCount = (value: unknown) => number;
  * `load` may be async and is awaited at most once per id per process — the
  * result is what gets called sixty times while a context is allocated, so it
  * must be resident by then rather than resolved per block.
+ * @experimental
  */
 export interface TokenizerDefinition {
     /** The id core stores and passes — `connections.token_counter`'s vocabulary. */
@@ -60,7 +64,7 @@ export interface TokenizerDefinition {
     /** Resolve whatever data this needs and return the synchronous counter. */
     load(): Promise<TokenCount> | TokenCount;
 }
-/** A tokenizer that is resident and ready to count. */
+/** A tokenizer that is resident and ready to count. @experimental */
 export interface LoadedTokenizer {
     /** What was asked for. Kept even when it could not be honoured. */
     requested: string;
@@ -75,9 +79,9 @@ export interface LoadedTokenizer {
      */
     degraded?: string;
 }
-/** What `count` is when nothing better could be resolved. */
+/** What `count` is when nothing better could be resolved. @internal */
 export declare const ROUGH_TOKENIZER_ID = "rough";
-/** Every id this SDK will answer to, whether or not a loader is registered. */
+/** Every id this SDK will answer to, whether or not a loader is registered. @internal */
 export declare const TOKENIZER_IDS: readonly string[];
 /**
  * Offer a tokenizer, or replace one.
@@ -89,9 +93,10 @@ export declare const TOKENIZER_IDS: readonly string[];
  * session. The trade is that a plugin can shadow a host's loader for an id —
  * which is a real risk and a deliberate one: the alternative was worse, and a
  * shadowing loader still cannot change what the id *means*, only how it loads.
+ * @experimental
  */
 export declare function defineTokenizer(t: TokenizerDefinition): TokenizerDefinition;
-/** Every id that currently has a loader — the registered ones plus the built-ins. */
+/** Every id that currently has a loader — the registered ones plus the built-ins. @internal */
 export declare const registeredTokenizers: () => string[];
 /**
  * Resolve an id to something that can count, and never fail.
@@ -102,6 +107,7 @@ export declare const registeredTokenizers: () => string[];
  * that threw is an environment problem worth naming *with its own message*,
  * because "gpt-tokenizer is not installed" and "this Android build cannot parse
  * that regex" want different fixes.
+ * @internal
  */
 export declare function loadTokenizer(id: string | null | undefined): Promise<LoadedTokenizer>;
 //# sourceMappingURL=tokenizers.d.ts.map

@@ -9,9 +9,8 @@
  * ```
  *
  * Both middle steps are Tasks, so both are swappable: `rankHybrid` can be
- * replaced by `rankByRecency` or by a plugin's own ranker without touching
- * anything either side of it — same kind, same shape, and the tuning survives
- * the swap.
+ * replaced by a plugin's own ranker without touching anything either side of
+ * it — same kind, same shape, and the tuning survives the swap.
  *
  * The run below also answers "why does mirostat do nothing here". The sampling
  * slot resolves to the `Creative` config, which carries `mirostat_tau`, and
@@ -22,13 +21,14 @@
 
 import { SLOT_VALUE, sessionEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { chatGenre } from '@serene-pub/core-catalog'
 import type { Example } from '@serene-pub/cli'
 
 import { bindings, world } from '../helpers.js'
 
 const retrievedReply = spec('example:retrieved-reply', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1(), {
-		genre: 'core:genre/chat',
+		genre: chatGenre,
 		event: sessionEvents.messageRespond,
 	})
 	// What the reply may spend, read off the oracle the budget is for.
@@ -42,7 +42,7 @@ const retrievedReply = spec('example:retrieved-reply', { version: '1.0.0' })
 	.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
 	// Combine: the Task between fetching and rendering. It decides which
 	// sources survive, and records the strategy it resolved.
-	.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.lore.hits, $.history.messages] }))
+	.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.lore.hits, $.history.band] }))
 	// Rank: a second pure Task, and the swappable one.
 	.task('rank', ($) => C.rankHybrid.v1({ candidates: $.merge.candidates }))
 	// Render: weights and minimums are declared on the blocks themselves, so
@@ -59,9 +59,8 @@ const retrievedReply = spec('example:retrieved-reply', { version: '1.0.0' })
 			sampling: slot.sampling(),
 		}),
 	)
-	// Emit while it streams, commit once at settle. Emit-class outlets are
-	// unlimited; there is exactly one write (F7).
-	.outlet('stream', ($) => C.emitSocket.v1({ handle: 'session:reply', from: $.generate.text }))
+	// Commit once at settle: exactly one write (F7). Streaming is the oracle's
+	// own business — the host routes its stream to the reply's live row.
 	.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
 export const example: Example = {
@@ -73,7 +72,13 @@ export const example: Example = {
 	run: (ctx) =>
 		ctx.run({
 			input: { text: 'where is my sister', sessionScope: 'session:991' },
-			bindings: bindings(),
+			// The stand-in's line, written to spend what was retrieved: the `lore`
+			// Query returns `elf`, `sister` and `castle`, and the reply uses all
+			// three. Retrieval that no reply ever mentions is the failure this
+			// chain exists to make visible, so the page shows it landing.
+			bindings: bindings({
+				reply: 'Your sister left the castle with the elf envoy, and neither of them has come back down the hill.',
+			}),
 			// The config layer, one row of it: this instance points the
 			// `generate` node's sampling slot at the `Creative` config.
 			world: {
@@ -84,7 +89,7 @@ export const example: Example = {
 						slot: 'sampling',
 						path: SLOT_VALUE,
 						value: 'cfg_creative',
-						scopeKind: 'preset',
+						scopeKind: 'config',
 					},
 				],
 			},

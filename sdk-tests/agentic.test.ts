@@ -25,6 +25,7 @@ import { slot } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
 import { pin, describeOracleDefinition, describeTaskDefinition } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { publish, bindings, errorsFor, world } from './helpers.js'
 
 // A Provider that may ask for tools, and a Task that folds results back into context.
@@ -65,7 +66,7 @@ const agentic = (max = 8) =>
 				)
 				.each('tools', { over: ($: any) => $.agent.item.turn.toolCalls, max: 16 }, (m) =>
 					m.oracle('call', ($: any) =>
-						C.mcpTool.v1({ args: $.$item, connection: slot.connection() }),
+						T.mcpTool.v1({ args: $.$item, connection: slot.connection() }),
 					),
 				)
 				.task('fold', ($: any) =>
@@ -90,7 +91,7 @@ const scripted = (rounds: number) => {
 				hasToolCalls: more,
 			})
 		},
-		'core:oracle/mcp-tool@1': async (i: any) =>
+		'test:oracle/mcp-tool@1': async (i: any) =>
 			ok({ main: `ran ${i.args?.tool}`, result: `ran ${i.args?.tool}` }),
 		'demo:task/fold-tool-results@1': async () => ok({ main: 'folded', context: 'folded' }),
 	})
@@ -147,7 +148,7 @@ test('84 · "which tool" is a value flowing through, never a branch', async () =
 		world,
 		bindings: {
 			...scripted(1),
-			'core:oracle/mcp-tool@1': async (i: any) => {
+			'test:oracle/mcp-tool@1': async (i: any) => {
 				seen.push(i.args?.tool)
 				return ok({ main: 'done' })
 			},
@@ -225,13 +226,13 @@ describe('87 · the bounds are enforced, not advised', () => {
 		assert.match(e[0]!.fix, /always run to its max of 4/)
 	})
 
-	test('a write inside a repeating block is refused — one write is one transaction', () => {
+	test('the live row inside a repeating block is refused — one reply row per pass (W1)', () => {
 		const b = base().loop('l', { repeatWhile: ($: any) => $.l.item.t.main, max: 4 }, (l) =>
-			l.task('t', C.gate.v1({})).outlet('save', C.createMessage.v1({ text: 'x' })),
+			l.task('t', C.gate.v1({})).outlet('save', C.createMessage.v1({ text: '', generating: true })),
 		)
-		const e = errorsFor(b, 'F7')
+		const e = errorsFor(b, '01 §4')
 		assert.equal(e.length, 1)
-		assert.match(e[0]!.fix, /a repeated write is neither/)
+		assert.match(e[0]!.fix, /open the reply row on the spine/)
 	})
 
 	test('referencing into a repeating block from outside is refused, and names the fix', () => {

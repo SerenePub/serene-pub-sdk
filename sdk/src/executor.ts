@@ -6,12 +6,21 @@
  * but never waiting, consumption budgets, per-kind injection, and core-emitted events.
  */
 
-import { envoyConfigKeysOf, type SpecDocument, type DocNode } from './document.js'
-import { getDefinition, scriptPointsOf, type Kind } from './descriptors.js'
+import { JUNCTION_CLAUSE_PORTS, envoyConfigKeysOf, type SpecDocument, type DocNode } from './document.js'
+import { AMBIENT_SCRIPT_EXTRAS, getDefinition, opensLiveRow, scriptPointsOf, type Kind } from './descriptors.js'
+import { packageEventById } from './events.js'
 import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
-import type { Receipt, NodeReceipt, Outcome, ScriptApplicationRecord } from './receipt.js'
+import type {
+	Receipt,
+	NodeReceipt,
+	NodeSwap,
+	Outcome,
+	ReceiptMeta,
+	ScriptApplicationRecord,
+} from './receipt.js'
 import {
-	resolveConfig,
+	resolveConfigSources,
+	type ScopeKind,
 	slotConnectionId,
 	slotConnectionModelId,
 	SLOT_VALUE,
@@ -29,9 +38,14 @@ import {
 	type ReviewRecord,
 } from './review.js'
 import { isSecret } from './settings.js'
+// The verdicts the run hears (01 §13): F39 at `resolveInput`, R-2 at the
+// node, R-20 at a status. `verdicts.ts` reads only leaf vocabulary.
+import { i18nVerdict, provisionalVerdict, refusalText, settingsTravelVerdict } from './verdicts.js'
+import { i18nText } from './i18n.js'
 import { previewTarget, roughTokens, type PreviewReport, type PreviewBlock } from './preview.js'
 import { resolveClauseMode } from './clauses.js'
 import { ITEM as ITEM_KEY } from './scope.js'
+import { predicateHolds, readPath, truthy } from './predicates.js'
 import { isAllocatedContext, measureWire, type AllocatedContext, type WireMeasure } from './wire.js'
 
 // ── The reference behind a resolved slot ────────────────────────────────────
@@ -76,6 +90,7 @@ import { isAllocatedContext, measureWire, type AllocatedContext, type WireMeasur
  * sandbox transport and get no `ctx.call`, so none of them can be on the reading
  * end today. If a plugin node ever gains the ability to dispatch, this reference
  * has to be re-projected at that transport rather than assumed to cross it.
+ * @experimental
  */
 export const SLOT_REF = Symbol.for('@serene-pub/sdk:slot-ref')
 
@@ -85,6 +100,7 @@ export const SLOT_REF = Symbol.for('@serene-pub/sdk:slot-ref')
  * Absent means "this node named nothing" — never "the id was lost". Read through
  * this rather than by indexing the symbol, so a host never has to know how the
  * reference is attached.
+ * @internal
  */
 export function slotRef(value: unknown): string | number | null {
 	if (!value || typeof value !== 'object') return null
@@ -94,18 +110,23 @@ export function slotRef(value: unknown): string | number | null {
 
 // ── Results ─────────────────────────────────────────────────────────────────
 
+/** @experimental */
 export type Result<T = unknown> =
 	| { kind: 'ok'; value: T }
 	| { kind: 'err'; reason: string }
 	| { kind: 'cancelled'; reason?: string }
 	| { kind: 'halt'; reason: string }
 
+/** @public */
 export const ok = <T>(value: T): Result<T> => ({ kind: 'ok', value })
+/** @experimental */
 export const err = (reason: string): Result<never> => ({ kind: 'err', reason })
+/** @public */
 export const halt = (reason: string): Result<never> => ({
 	kind: 'halt',
 	reason,
 })
+/** @experimental */
 export const cancelled = (reason: string): Result<never> => ({
 	kind: 'cancelled',
 	reason,
@@ -117,6 +138,7 @@ export const cancelled = (reason: string): Result<never> => ({
  * One entry per branch, in **declaration order** — never completion order, which is
  * the same rule 11 §3 already applies to event dispatch, so the system has one
  * ordering rule rather than two.
+ * @experimental
  */
 export interface BranchResult {
 	branchKey: string
@@ -131,7 +153,7 @@ export interface BranchResult {
 	fired?: boolean
 }
 
-/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. */
+/** What a clause publishes. `main` aliases `branches` so `$ref(clauseId)` works bare. @experimental */
 export interface BranchResults {
 	branches: BranchResult[]
 	main: BranchResult[]
@@ -167,10 +189,12 @@ class ValueScope {
 
 // ── The discriminated write result (13 §7j-b) ───────────────────────────────
 
+/** @experimental */
 export type WriteResult =
 	| { status: 'committed'; ids: Record<string, unknown> }
 	| { status: 'pending'; proposalId: string }
 
+/** @experimental */
 export const isCommitted = (w: WriteResult): w is Extract<WriteResult, { status: 'committed' }> =>
 	w.status === 'committed'
 
@@ -179,6 +203,7 @@ import { isStatusText, sameStatus, type LastStatus, type StatusText } from './st
 
 // ── Injection surfaces, per kind (F11) ──────────────────────────────────────
 
+/** @experimental */
 export interface TaskCtx {
 	/** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
 	random?: () => number
@@ -233,7 +258,7 @@ export interface TaskCtx {
 	 * formed payload fits are measuring with one instrument. That is the whole
 	 * reason it is granted rather than left to each binding: retrieval decides
 	 * a candidate's cost, ranking spends a budget in those units, and Assemble
-	 * allocates over the integers they produced — three stages that must agree,
+	 * allocates over the integers they produced — three steps that must agree,
 	 * and did not while each reached for `roughTokens` independently.
 	 *
 	 * Always present. It is `roughTokens` when no tokenizer was configured or
@@ -249,17 +274,24 @@ export interface TaskCtx {
 	 * answerable from the document. The binding provides the *moment*; the
 	 * user's configuration provides the *content* — a point name is the only
 	 * thing that can be passed, never script ids, and an undeclared point
-	 * throws. v1 is text-only. Applications land in the receipt marked
-	 * `appliedBy: 'binding'`.
+	 * throws. Applications land in the receipt marked `appliedBy: 'binding'`.
+	 *
+	 * `apply` is the broker: whatever the point's kinds flow — a string, a
+	 * selection, a cast — goes in and the chain's fold comes back, or the
+	 * input unchanged when nothing was attached. `applyText` is the
+	 * text-only spelling it began as (18 §4e, v1), kept as a typed alias.
 	 */
 	scripts?: {
+		apply(point: string, value: unknown): Promise<unknown>
 		applyText(point: string, text: string): Promise<string>
 	}
 }
+/** @experimental */
 export interface QueryCtx extends TaskCtx {
 	read(table: string, q?: unknown): unknown
 	/** Deliberately absent: fetch. A Query may not reach the network (16 §1). */
 }
+/** @experimental */
 export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
 	/** Material is injected here per call and never readable from config. */
 	call(payload: unknown): Promise<unknown>
@@ -307,11 +339,13 @@ export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends Tas
 	 */
 	can(id: Caps): Grade | false
 }
+/** @experimental */
 export interface OutletCtx extends TaskCtx {
 	commit(payload: unknown): Promise<Record<string, unknown>>
 	emit(handle: string, payload: unknown): void
 }
 
+/** @experimental */
 export type Hook = (input: any, ctx: any) => Result | Promise<Result>
 
 /**
@@ -329,6 +363,7 @@ export type Hook = (input: any, ctx: any) => Result | Promise<Result>
  *   ctx.can('grammar')       // ❌ compile error — this node never declared it
  * })
  * ```
+ * @experimental
  */
 export function providerBinding<
 	D extends { slots?: Record<string, { optional?: readonly CapabilityId[] }> },
@@ -348,12 +383,14 @@ export function providerBinding<
 	): Hook => fn as Hook
 }
 
+/** @experimental */
 export interface Bindings {
 	[definitionIdAtVersion: string]: Hook
 }
 
 // ── Deterministic RNG from the run seed (F11) ───────────────────────────────
 
+/** @internal */
 export function seededRandom(seed: string): () => number {
 	let h = 2166136261
 	for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 16777619)
@@ -370,6 +407,7 @@ export function seededRandom(seed: string): () => number {
  * One node invocation, starting or settling. Identity only — no payloads, no
  * values: this exists so a progress card can say "step 3 of 7 · drafting",
  * and anything richer belongs to the receipt.
+ * @experimental
  */
 export interface NodeEvent {
 	phase: 'start' | 'end'
@@ -399,6 +437,7 @@ export interface NodeEvent {
  * One declared hook, as the applier sees it: the address, the phase, and the
  * declaration's attachment rule. The executor computes this from the type's
  * `scripts` slot; the applier never reads a descriptor.
+ * @experimental
  */
 export interface ScriptHookSite {
 	nodeKey: string
@@ -417,6 +456,12 @@ export interface ScriptHookSite {
 	origin?: 'substrate' | 'binding'
 }
 
+/** A site's extras: the slot's own, then the ambient set, each once. */
+const withAmbientExtras = (own: readonly string[] = []): string[] => [
+	...new Set([...own, ...AMBIENT_SCRIPT_EXTRAS]),
+]
+
+/** @experimental */
 export interface ScriptChainOutcome {
 	value: unknown
 	applications: ScriptApplicationRecord[]
@@ -441,6 +486,7 @@ export interface ScriptChainOutcome {
  * record whatever happened. A *thrown* applier is treated as engine failure:
  * the value passes through unchanged and the failure is recorded — a broken
  * engine must never cost somebody their reply, and must never vanish either.
+ * @experimental
  */
 export type ScriptChainApplier = (
 	site: ScriptHookSite,
@@ -452,7 +498,7 @@ export type ScriptChainApplier = (
 
 // ── Run options ─────────────────────────────────────────────────────────────
 
-/** A run's place in a tree of runs — see `RunOptions.lineage`. */
+/** A run's place in a tree of runs — see `RunOptions.lineage`. @experimental */
 export interface RunLineage {
 	parentRunId: string
 	rootRunId: string
@@ -460,6 +506,7 @@ export interface RunLineage {
 	depth: number
 }
 
+/** @experimental */
 export interface RunOptions {
 	input: unknown
 	bindings: Bindings
@@ -477,6 +524,23 @@ export interface RunOptions {
 	 * answer declares an in-port and the host wires it.
 	 */
 	portrayals?: Receipt['portrayals']
+	/**
+	 * The swaps the host seated before calling `run`, by node key: the
+	 * document's `definitionId` there is already the swap, and this names the
+	 * pin it replaced and whose choice it was. Recorded on that node's row as
+	 * `swap`; every other node's row says `swap: null` — the pin ran. Pass
+	 * `{}` when nothing was swapped; left out, rows carry no `swap` at all,
+	 * because the executor cannot tell a pin from a swap it was not told
+	 * about. The executor never resolves a swap itself.
+	 * @experimental 🚧
+	 */
+	swaps?: Record<string, NodeSwap>
+	/**
+	 * Host facts about how the run was reached (`ReceiptMeta`), recorded
+	 * verbatim on the receipt at construction.
+	 * @experimental 🚧
+	 */
+	meta?: ReceiptMeta
 	/**
 	 * Where this run stands in a tree of runs (01 §8 *lineage*): the run
 	 * that dispatched it, the root of the tree, and how deep. Stamped on the
@@ -669,6 +733,7 @@ export interface RunOptions {
  * boundary), and having in-process and out-of-process outlets obey the same rule
  * means the review gate sees the same thing in both cases: a payload, before anything
  * happened.
+ * @experimental
  */
 export interface HostServices {
 	/** Scoped read for a Query. The node is passed so the host can enforce scope (F30). */
@@ -704,6 +769,7 @@ export interface HostServices {
 	}
 }
 
+/** @experimental */
 export interface NodeRef {
 	key: string
 	definitionId: string
@@ -718,6 +784,7 @@ export interface NodeRef {
  * is what keeps the oracle blind to messages. A binding asks for text and gets
  * text; the host, which is the one party that can write a row, is told which
  * row this run is currently filling.
+ * @experimental
  */
 export interface RunFacts {
 	/**
@@ -731,7 +798,7 @@ export interface RunFacts {
 	dry: boolean
 }
 
-/** What `RunOptions.onRunEnd` is told. */
+/** What `RunOptions.onRunEnd` is told. @experimental */
 export interface RunEnd extends RunFacts {
 	kind: Outcome
 	receipt: Receipt
@@ -789,6 +856,7 @@ async function resolveTokenizer(
 	}
 }
 
+/** @experimental */
 export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt> {
 	const world = opts.world ?? EMPTY_WORLD
 	const seed = opts.seed ?? 'seed:0'
@@ -798,7 +866,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	// its own — its execution mode. Keys cannot collide: a clause id qualifies
 	// the nodes inside it (`drafting` contains `drafting.item.draft`), so the
 	// clause's own id is never also a node's.
-	const config: ResolvedConfig = resolveConfig(world, [
+	const sources = resolveConfigSources(world, [
 		...doc.nodes.map((n) => n.key),
 		...doc.clauses.map((b) => b.id),
 		// An envoy's config (R-18 (2)) is addressed like a node's, at the
@@ -807,6 +875,24 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		// sit above it.
 		...envoyConfigKeysOf(doc),
 	])
+	// Values and the layer each won at, from ONE walk: the executor reads the
+	// values, and each node's receipt row keeps the layers (`configLayers`).
+	const config: ResolvedConfig = {}
+	const layers: Record<string, Record<string, Record<string, ScopeKind>>> = {}
+	for (const [key, slots] of Object.entries(sources)) {
+		const values: Record<string, Record<string, unknown>> = {}
+		const won: Record<string, Record<string, ScopeKind>> = {}
+		for (const [slot, paths] of Object.entries(slots)) {
+			values[slot] = {}
+			won[slot] = {}
+			for (const [path, resolved] of Object.entries(paths)) {
+				values[slot]![path] = resolved.value
+				won[slot]![path] = resolved.scopeKind
+			}
+		}
+		config[key] = values
+		if (Object.keys(won).length) layers[key] = won
+	}
 
 	// The one await a tokenizer costs, taken BEFORE `startedAt` is stamped: a
 	// cold merge table is setup, not work, and charging the first run of a
@@ -827,6 +913,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		actorUserId: opts.actorUserId,
 		// Pinned at construction — before any node — and never touched again.
 		...(opts.portrayals ? { portrayals: opts.portrayals } : {}),
+		...(opts.meta && Object.keys(opts.meta).length ? { meta: { ...opts.meta } } : {}),
 		// Lineage likewise: a dispatched child names its parent and root
 		// here, before node 1; a root run has neither and stands at 0.
 		...(opts.lineage
@@ -996,13 +1083,43 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 	const ordered = doc.nodes.slice().sort((a, b) => a.position - b.position)
 
-	const resolveInput = (node: DocNode, scope: ValueScope) => {
+	const resolveInput = (node: DocNode, scope: ValueScope, note?: (m: string) => void) => {
 		const cfg: Record<string, unknown> = { ...node.config }
 		for (const { path, ref } of collectDataRefs(node.config)) {
 			setPath(cfg, path, readPort(scope.get(ref.node), ref.port))
 		}
 		for (const [k, v] of Object.entries(cfg)) {
-			if (isSlotRef(v)) cfg[k] = resolveSlot(node, v as SlotRef)
+			if (!isSlotRef(v)) continue
+			const ref = v as SlotRef
+			// F39 — settings never travel; only data does (12 §2 P3). The
+			// substrate's `settings` is not a slot a reference may name:
+			// `SlotRef.slot` cannot spell it and `slot.*` never produces it, so
+			// one here is hand-crafted, and before this guard the generic
+			// fallthrough in `resolveSlot` handed the binding ANOTHER node's
+			// switches. It resolves to nothing, whoever it names — a node's
+			// own switches are read by the executor at the node and handed to
+			// no binding — and the row says so, because a silent `{}` is "it
+			// does nothing" with no error anywhere. `validate()` refuses the
+			// document with the same sentence: `core:verdict/settings-travel`
+			// owns it, and this is the run's door (01 §13). A reference naming
+			// no slot is not it — `validate()` refuses that shape; an
+			// unvalidated one falls through to `resolveSlot` as before.
+			const heard = settingsTravelVerdict.judge({
+				kind: 'reference',
+				node: node.key,
+				key: k,
+				slot: ref.slot,
+				target: node.resolvedRefs?.[k] ?? ref.ofNode ?? node.key,
+			})
+			if (!heard.ok) {
+				note?.(
+					`${settingsTravelVerdict.law}: ${i18nText(heard.sentence)}; resolved to nothing — ` +
+						`${i18nText(heard.fix)}`,
+				)
+				cfg[k] = {}
+				continue
+			}
+			cfg[k] = resolveSlot(node, ref)
 		}
 		return cfg
 	}
@@ -1206,11 +1323,12 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			)
 			return { ...own, ...fromOwner }
 		}
-		// The generic slots (prompts, template, settings) honour the reference
-		// target too: a shared prompts slot reads the *owner's* configured
-		// values, so one authored text serves every node that declared it
-		// shared (13 §12 finding i). Without `ofNode` the target is the node
-		// itself, which is the behaviour every existing spec compiled against.
+		// The generic slots (prompts, template) honour the reference target
+		// too: a shared prompts slot reads the *owner's* configured values, so
+		// one authored text serves every node that declared it shared (13 §12
+		// finding i). Without `ofNode` the target is the node itself, which is
+		// the behaviour every existing spec compiled against. `settings` never
+		// reaches here — `resolveInput` stops it first (F39).
 		return config[targetKey]?.[slotName] ?? {}
 	}
 
@@ -1223,6 +1341,19 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	): Promise<Result> => {
 		const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
 		if (!d) return err(`unknown type ${node.definitionId}@${node.definitionVersion}`)
+		// Declared, not bound (plans/29 R-2). `validate()` refuses the document;
+		// this is the same refusal for a document that reached the executor by
+		// another door — a stored version older than the flag — so it halts on
+		// the law rather than on "no binding registered" pointing at bindings.ts.
+		// `core:verdict/provisional` owns the sentence; this is its run door.
+		const placed = provisionalVerdict.judge({
+			kind: 'placement',
+			nodeKey: node.key,
+			definitionId: node.definitionId,
+			definitionVersion: node.definitionVersion,
+			provisional: d.provisional === true,
+		})
+		if (!placed.ok) return err(refusalText(placed))
 		const hook = opts.bindings[`${node.definitionId}@${node.definitionVersion}`]
 		const started = now()
 		const nr: NodeReceipt = {
@@ -1237,6 +1368,9 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			blockMode,
 			iteration,
 			resolvedRefs: node.resolvedRefs,
+			...(layers[node.key] ? { configLayers: layers[node.key] } : {}),
+			// Only a host that says what it seated can say "the pin ran".
+			...(opts.swaps ? { swap: opts.swaps[node.key] ?? null } : {}),
 			notes: [],
 		}
 
@@ -1287,7 +1421,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 							phase,
 							port,
 							accepts: sd.accepts ?? [],
-							extras: sd.extras ?? [],
+							extras: withAmbientExtras(sd.extras),
 						},
 						chain,
 						before,
@@ -1347,7 +1481,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		}
 		if (!hook) return err(`no binding registered for ${node.definitionId}@${node.definitionVersion}`)
 
-		let input = resolveInput(node, scope)
+		let input = resolveInput(node, scope, (m) => nr.notes!.push(m))
 
 		// ── Switched off ──────────────────────────────────────────────────────
 		//
@@ -1525,10 +1659,18 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			progress: () => {}, // ephemeral, never recorded (F34)
 			// The status seam (R-19), on the same ephemeral footing: the host
 			// hears it, the receipt keeps only the last one on a run that
-			// did not end `ok`. A malformed text is a note, never a failure.
+			// did not end `ok`. A malformed text — no `i18n`, a map without
+			// `en`, a blank one — is a note and the status is dropped (R-20),
+			// never a failure: a status is advisory. The note quotes
+			// `core:verdict/i18n` — the run is one of R-20's doors (01 §13).
 			status: (text) => {
 				if (!isStatusText(text)) {
-					nr.notes!.push('status ignored: a status is { i18n: { en, … }, vars? }')
+					const heard = i18nVerdict.judge({
+						value: (text as { i18n?: unknown } | null | undefined)?.i18n,
+						where: 'status.i18n',
+						required: true,
+					})
+					nr.notes!.push(`status ignored: ${heard.ok ? 'a status is { i18n, vars? }' : refusalText(heard)}`)
 					return
 				}
 				const changed = !sameStatus(lastStatus?.text, text)
@@ -1564,33 +1706,40 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			// The full shape, deprecated spellings folded — so `accepts` is
 			// always the point's own (R-11), never a literal written here.
 			const declared = scriptPointsOf(d)
-			base.scripts = {
-				applyText: async (point: string, text: string) => {
-					const known = declared.find((sp) => sp.key === point)
-					if (!known)
-						throw new Error(
-							`'${point}' is not a script point '${nr.definitionId}' declares. ` +
-								`Declared: ${declared.map((sp) => sp.key).join(', ')}. ` +
-								`Points are part of the hashed contract — declare it on the descriptor.`,
-						)
-					const outcome = await applyScripts(
-						{
-							nodeKey: node.key,
-							definitionId: nr.definitionId,
-							slot: 'scripts',
-							phase: 'before',
-							port: point,
-							accepts: [...known.accepts],
-							extras: [],
-							origin: 'binding',
-						},
-						config[node.key]?.['scripts']?.[point],
-						text,
+			const apply = async (point: string, value: unknown): Promise<unknown> => {
+				const known = declared.find((sp) => sp.key === point)
+				if (!known)
+					throw new Error(
+						`'${point}' is not a script point '${nr.definitionId}' declares. ` +
+							`Declared: ${declared.map((sp) => sp.key).join(', ')}. ` +
+							`Points are part of the hashed contract — declare it on the descriptor.`,
 					)
-					if (outcome.applications.length)
-						nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
-					if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
-					return typeof outcome.value === 'string' ? outcome.value : text
+				const outcome = await applyScripts(
+					{
+						nodeKey: node.key,
+						definitionId: nr.definitionId,
+						slot: 'scripts',
+						phase: 'before',
+						port: point,
+						accepts: [...known.accepts],
+						// Interior points declare no extras of their own; what
+						// every point is handed is the ambient set (R32).
+						extras: withAmbientExtras(),
+						origin: 'binding',
+					},
+					config[node.key]?.['scripts']?.[point],
+					value,
+				)
+				if (outcome.applications.length)
+					nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
+				if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
+				return outcome.value
+			}
+			base.scripts = {
+				apply,
+				applyText: async (point: string, text: string) => {
+					const out = await apply(point, text)
+					return typeof out === 'string' ? out : text
 				},
 			}
 		}
@@ -1670,10 +1819,23 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		 * the publish is the binding's business and the row is the host's.
 		 */
 		let committedRow: string | number | undefined
+		let wroteNothing = false
 		if (node.kind === 'outlet') {
 			ctx = {
 				...base,
 				commit: async (p: unknown) => {
+					// A recording names its event by literal (E1). A document that
+					// reached the executor without publish's check could name a
+					// core event — forging a `session-created` — or one nobody
+					// declared; the executor refuses both itself.
+					if (d.causesEventFrom) {
+						const named = node.config[d.causesEventFrom]
+						if (typeof named !== 'string' || named.startsWith('core:') || !packageEventById(named))
+							throw new Error(
+								`'${node.key}' records ${typeof named === 'string' ? `'${named}'` : 'no event'} — ` +
+									`only an event a package declared may be recorded; core's are caused by core's writes`,
+							)
+					}
 					// A dry run's outlet reaches no host (R-21 (1)). The id is
 					// synthetic and says so, so a downstream node — and a reader
 					// of the receipt — can tell it from a row.
@@ -1688,6 +1850,9 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 							: { id: `row:${node.key}`, ...(p as object) }
 					const id = (ids as { id?: unknown }).id
 					if (typeof id === 'string' || typeof id === 'number') committedRow = id
+					// A host that looked and found nothing to write (an unchanged
+					// annex) says so; the write caused no event (M3/W1).
+					if ((ids as { written?: unknown }).written === false) wroteNothing = true
 					return ids
 				},
 				emit: (handle: string, payload?: unknown) => {
@@ -1761,8 +1926,10 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			// when the declaration says its row is the one a stream goes to.
 			// A dry run's synthetic id counts — a downstream oracle in a dry
 			// run still streams to nothing, and the host is told so by `dry`
-			// rather than by the row's absence.
-			if (d.liveRow && committedRow !== undefined) liveRow = committedRow
+			// rather than by the row's absence. Judged on the node's inputs,
+			// not on what its binding chose to commit: a complete message from
+			// the same outlet is an ordinary write, not the live row (F7, W1).
+			if (d.liveRow && opensLiveRow(input) && committedRow !== undefined) liveRow = committedRow
 			scope.set(node.key, published)
 			res = ok(published)
 			nr.output = redact(published)
@@ -1770,17 +1937,18 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			nr.reason = (res as any).reason
 		}
 
-		// Core emits, not the node (01 §8 / F8).
-		if (
-			res.kind === 'ok' &&
-			node.kind === 'outlet' &&
-			d.effects === 'write' &&
-			d.causesEvent
-		) {
+		// Core emits, not the node (01 §8 / F8). The event is the definition's,
+		// or — for a recording — the one its literal names (E1).
+		const caused =
+			d.causesEvent ??
+			(d.causesEventFrom && typeof node.config[d.causesEventFrom] === 'string'
+				? (node.config[d.causesEventFrom] as string)
+				: undefined)
+		if (res.kind === 'ok' && node.kind === 'outlet' && d.effects === 'write' && caused && !wroteNothing) {
 			receipt.emitted.push({
-				event: d.causesEvent,
+				event: caused,
 				cause: node.key,
-				subscribers: opts.subscribers?.[d.causesEvent] ?? 0,
+				subscribers: opts.subscribers?.[caused] ?? 0,
 				// Recorded, never dispatched: a dry run caused nothing, and a
 				// reader of the receipt has to be able to tell that from a
 				// write whose subscribers happened to be zero.
@@ -1843,6 +2011,46 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 	type Level = { clauseId?: string; chain?: string }
 
+	/**
+	 * **The write order (01 §4, W1b — owner 2026-09-23).** A clause may run its
+	 * chains in parallel, and its chains may write. A write-class outlet in
+	 * chain *i* starts only once every chain declared before it — in this
+	 * clause and in every enclosing parallel clause — has finished. So the
+	 * clause's commits land in declaration order whatever the mode, and a
+	 * parallel run leaves the state a sequential one leaves. Reads, prompts
+	 * and model calls still run side by side; only the writes take turns.
+	 *
+	 * A chain waits on lower-numbered chains only, so no wait is ever a
+	 * cycle. The wait sits before the node starts, so it is waiting, never
+	 * execution: no timeout clock runs on it (F36).
+	 */
+	type WriteGate = readonly Promise<unknown>[]
+	const writesOnLevel = (node: DocNode): boolean =>
+		node.kind === 'outlet' &&
+		getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.effects === 'write'
+	/**
+	 * Run `run(0..n-1)` in parallel, handing chain *i* the parent's gate plus
+	 * "every chain before *i* has finished".
+	 */
+	const parallelInOrder = async <T,>(
+		items: T[],
+		gate: WriteGate,
+		run: (item: T, i: number, gate: WriteGate) => Promise<Result>,
+	): Promise<Result[]> => {
+		const finished = items.map(() => {
+			let done!: () => void
+			const p = new Promise<void>((r) => (done = r))
+			return { p, done }
+		})
+		return Promise.all(
+			items.map((item, i) =>
+				run(item, i, [...gate, ...finished.slice(0, i).map((f) => f.p)]).finally(() =>
+					finished[i]!.done(),
+				),
+			),
+		)
+	}
+
 	const itemsAt = (level: Level) => {
 		const nodes = ordered
 			.filter((n) => n.clauseId === level.clauseId && n.clauseChain === level.chain)
@@ -1867,12 +2075,17 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		clauseMode?: 'sequential' | 'parallel',
 		iteration?: number,
 		iterationCount?: number,
+		gate: WriteGate = [],
 	): Promise<Result> => {
 		let last: Result = ok(null)
 		for (const item of itemsAt(level)) {
 			if (checkCancel()) return cancelled('cancelled')
+			if (!item.isClause && gate.length && writesOnLevel(item.run as DocNode)) {
+				await Promise.all(gate)
+				if (checkCancel()) return cancelled('cancelled')
+			}
 			last = item.isClause
-				? await runClause(item.run as SpecDocument['clauses'][number], scope)
+				? await runClause(item.run as SpecDocument['clauses'][number], scope, gate)
 				: await invoke(item.run as DocNode, scope, clauseMode, iteration, iterationCount)
 			// A node that settled badly while the stop was pending settled
 			// badly BECAUSE of the stop: an oracle whose call was aborted
@@ -1884,11 +2097,10 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		return last
 	}
 
-	const truthy = (v: unknown) => !!v && !(Array.isArray(v) && v.length === 0)
-
 	const runClause = async (
 		clause: SpecDocument['clauses'][number],
 		scope: ValueScope,
+		gate: WriteGate = [],
 	): Promise<Result> => {
 		// `forceSequential` still wins over both: it is how a preview replays a
 		// run deterministically, and a user setting must not be able to make a
@@ -1927,11 +2139,12 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		if (clause.kind === 'gather') {
 			// Chains share the scope: a sibling is addressable by its qualified key, and
 			// keys are unique, so there is nothing to collide.
-			const run = (chain: string) => runLevel({ clauseId: clause.id, chain }, scope, mode)
+			const run = (chain: string, g: WriteGate = gate) =>
+				runLevel({ clauseId: clause.id, chain }, scope, mode, undefined, undefined, g)
 			const results =
 				mode === 'parallel'
-					? await Promise.all(clause.chains.map(run))
-					: await sequential(clause.chains, run)
+					? await parallelInOrder(clause.chains, gate, (chain, _i, g) => run(chain, g))
+					: await sequential(clause.chains, (chain) => run(chain))
 			clause.chains.forEach((chain, i) =>
 				collected.push({
 					branchKey: chain,
@@ -1952,14 +2165,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			}
 			// Each iteration gets its own scope, so genuinely parallel maps are correct
 			// rather than merely equivalent-if-you-squint.
-			const run = async (item: unknown, i: number): Promise<Result> => {
+			const run = async (item: unknown, i: number, g: WriteGate = gate): Promise<Result> => {
 				const child = scope.child()
 				child.set(`${clause.id}.${ITEM_KEY}`, item)
-				return runLevel({ clauseId: clause.id, chain: 'item' }, child, mode, i, items.length)
+				return runLevel({ clauseId: clause.id, chain: 'item' }, child, mode, i, items.length, g)
 			}
 			const results =
 				mode === 'parallel'
-					? await Promise.all(items.map(run))
+					? await parallelInOrder(items, gate, run)
 					: await sequential(
 							items.map((item, i) => ({ item, i })),
 							({ item, i }) => run(item, i),
@@ -1982,18 +2195,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			// alike — so "why did the lore branch not run" answers from rows.
 			const value = resolvePredicate(clause.on, scope)
 			const branches = clause.branches ?? {}
-			const read = (path?: string): unknown => {
-				if (!path) return value
-				let cur: any = value
-				for (const seg of path.split('.')) {
-					if (cur == null) return undefined
-					cur = cur[seg]
-				}
-				return cur
-			}
+			// The predicate core is `predicates.ts` — the same `readPath` /
+			// `predicateHolds` an action's enabled-when reads (U5e), so a
+			// branch and a greyed button can never disagree about a value.
+			const read = (path?: string): unknown => readPath(value, path)
 			const describe = (p: {
 				path?: string
 				equals?: unknown
+				equalsPath?: string
 				truthy?: boolean
 				default?: boolean
 			}): string =>
@@ -2001,18 +2210,24 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 					? 'default'
 					: p.equals !== undefined
 						? `${p.path ?? 'value'} equals ${JSON.stringify(p.equals)}`
-						: `${p.path ?? 'value'} truthy`
+						: p.equalsPath !== undefined
+							? `${p.path ?? 'value'} equals the value at ${p.equalsPath}`
+							: `${p.path ?? 'value'} truthy`
 			const fires = (p: {
 				path?: string
 				equals?: unknown
+				equalsPath?: string
 				truthy?: boolean
 				default?: boolean
 			}): boolean => {
 				if (p.default) return false // resolved after the others
-				const v = read(p.path)
-				if (p.equals !== undefined) return v === p.equals
-				if (p.truthy) return truthy(v)
-				return false
+				// The routed value is handed in twice on purpose: once as the
+				// subject (`read(p.path)`) and once as the **scope** an
+				// `equalsPath` reads its other side from. One document, read
+				// twice — which is what lets a branch ask *is the accused the
+				// culprit?* about two ports of the same task, rather than only
+				// *is the accused Vell?* against a literal the author typed.
+				return predicateHolds(p, read(p.path), value)
 			}
 			const fired = new Map<string, boolean>()
 			for (const chain of clause.chains) fired.set(chain, fires(branches[chain] ?? {}))
@@ -2031,10 +2246,11 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			]
 
 			const firedChains = clause.chains.filter((c) => fired.get(c))
-			const run = (chain: string) => runLevel({ clauseId: clause.id, chain }, scope, mode)
+			const run = (chain: string, g: WriteGate = gate) =>
+				runLevel({ clauseId: clause.id, chain }, scope, mode, undefined, undefined, g)
 			const results = new Map<string, Result>()
 			if (mode === 'parallel') {
-				const rs = await Promise.all(firedChains.map(run))
+				const rs = await parallelInOrder(firedChains, gate, (chain, _i, g) => run(chain, g))
 				firedChains.forEach((c, i) => results.set(c, rs[i]!))
 			} else {
 				for (const c of firedChains) {
@@ -2065,6 +2281,17 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 				},
 				ok: collected.every((b) => !b.fired || b.result.kind === 'ok'),
 			}
+			// A junction passes its result on (PLAN-turn-order §4.14, M4): the
+			// fired branch's own ports — its last node's published value — are
+			// readable under the clause's id, beside the four clause ports, so
+			// `$.decide.order` needs no fold node. The first fired branch in
+			// declaration order answers when several fire; `validate()` holds
+			// every branch to publishing any port a spec reads this way.
+			const answered = collected.find((b) => b.fired && b.result.kind === 'ok')
+			const firedValue = answered ? (answered.result as Extract<Result, { kind: 'ok' }>).value : undefined
+			if (firedValue && typeof firedValue === 'object')
+				for (const [port, v] of Object.entries(firedValue as Record<string, unknown>))
+					if (!JUNCTION_CLAUSE_PORTS.has(port)) (union as unknown as Record<string, unknown>)[port] = v
 			scope.set(clause.id, union)
 			return collected.find((b) => b.fired && b.result.kind !== 'ok')?.result ?? ok(null)
 		}
@@ -2101,7 +2328,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 				return cancelled('cancelled')
 			}
 			const child = carry.child()
-			const r = await runLevel({ clauseId: clause.id, chain: 'item' }, child, 'sequential', i)
+			const r = await runLevel({ clauseId: clause.id, chain: 'item' }, child, 'sequential', i, undefined, gate)
 			ran++
 			collected.push({
 				branchKey: `${clause.id}[${i}]`,
@@ -2336,7 +2563,7 @@ function redact(v: unknown): unknown {
 	return v
 }
 
-/** replay(receipt) — deterministic, never re-infers (F16). */
+/** replay(receipt) — deterministic, never re-infers (F16). @experimental */
 export async function replay(
 	doc: SpecDocument,
 	receipt: Receipt,

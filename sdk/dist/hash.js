@@ -34,11 +34,11 @@ const sortDeep = (v) => {
     }
     return v;
 };
-/** Canonical form — stable key order, for hashing and round-trip identity (F3). */
+/** Canonical form — stable key order, for hashing and round-trip identity (F3). @experimental */
 export function canonicalize(v) {
     return JSON.stringify(sortDeep(v));
 }
-/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). */
+/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). @experimental */
 export function contentHash(v) {
     const s = canonicalize(v);
     let h1 = 0xdeadbeef;
@@ -62,15 +62,15 @@ export function contentHash(v) {
  * this pair; nothing subtracts from it.
  */
 const UNIVERSAL_DISPLAY = ['i18n', 'description'];
-const stripDisplay = (v, display) => {
+const stripDisplay = (v, display, functions = 'source') => {
     if (typeof v === 'function')
-        return `[fn] ${String(v)}`;
+        return functions === 'source' ? `[fn] ${String(v)}` : undefined;
     if (Array.isArray(v))
-        return v.map((e) => stripDisplay(e, display));
+        return v.map((e) => stripDisplay(e, display, functions));
     if (v && typeof v === 'object') {
         return Object.fromEntries(Object.entries(v)
-            .filter(([k]) => !display.has(k))
-            .map(([k, val]) => [k, stripDisplay(val, display)]));
+            .filter(([k, val]) => !display.has(k) && !(functions === 'omit' && typeof val === 'function'))
+            .map(([k, val]) => [k, stripDisplay(val, display, functions)]));
     }
     return v;
 };
@@ -98,25 +98,40 @@ const displaySet = (opts) => opts?.display?.length ? new Set([...UNIVERSAL_DISPL
  *    the comparison a re-evaluation needs: the same source re-runs to the same
  *    hash, an edited one does not.
  *
- * ## Exported, because core hashes the same declarations a second time
+ * ## Exported, because the strip is the one thing every hash here shares
  *
- * A `Descriptor` is compared here when it is re-declared, and projected into a
- * `pipeline_definition_registry` row whose `typeContentHash` decides whether an
+ * A `Descriptor` is compared when it is re-declared, and projected into a
+ * `pipeline_definition_registry` row whose `content_hash` decides whether an
  * upgrading install may republish it. Those are two answers to one question —
- * *is this the same content?* — and they were computed by two functions that
- * disagreed: core stripped `i18n` and `description`, this stripped `label` as
- * well (see `DESCRIPTOR_DISPLAY_KEYS`), so renaming a parameter was free on one
- * side and a frozen-type conflict on the other.
- *
- * The material is exported rather than the hash because core does not hash a
- * declaration whole — it selects the fields a spec can depend on and hashes
- * *that* object. What it needs from here is the strip, not the digest, and one
- * strip shared is what keeps the two answers from drifting again.
+ * *is this the same content?* — and they were once computed by two functions
+ * that disagreed: core stripped `i18n` and `description`, this stripped
+ * `label` as well (see `DESCRIPTOR_DISPLAY_KEYS`), so renaming a parameter was
+ * free on one side and a frozen-type conflict on the other. Both now call
+ * `definitionContract`, which reads every contract field through this strip
+ * (`declarationData`); the strip is exported so that function is the only
+ * place a definition's material is composed, and so the registries that hash
+ * a declaration whole keep the same words for display text.
+ * @experimental
  */
 export function declarationMaterial(v, opts) {
     return stripDisplay(v, displaySet(opts));
 }
-/** The content hash of a declaration — see `declarationMaterial` for what counts. */
+/**
+ * `declarationMaterial` for a declaration that is **data**: display text out,
+ * and a function value **omitted** rather than rendered as source.
+ *
+ * The node-definition contract (`definitionContract`) reads its fields
+ * through this. A definition's contract is what a registry row carries so
+ * core can judge a plugin without executing it (F6), and a row cannot carry
+ * a function — so a function is not contract, and its source text is not
+ * either. No `Descriptor` field is a function today; the rule is here so the
+ * day one is, it is classified rather than digested by accident.
+ * @experimental
+ */
+export function declarationData(v, opts) {
+    return stripDisplay(v, displaySet(opts), 'omit');
+}
+/** The content hash of a declaration — see `declarationMaterial` for what counts. @experimental */
 export function declarationHash(v, opts) {
     return contentHash(stripDisplay(v, displaySet(opts)));
 }
@@ -132,10 +147,18 @@ export function declarationHash(v, opts) {
  * Different content throws exactly as before, with both hashes named — because
  * the first question an author asks a "duplicate id" error is "but they *are*
  * the same", and the two hashes are the evidence that they are not.
+ * @experimental
  */
 export function refuseUnlessIdentical(existing, next, why, opts) {
-    const registered = declarationHash(existing, opts);
-    const redeclared = declarationHash(next, opts);
+    refuseUnlessSameHash(declarationHash(existing, opts), declarationHash(next, opts), why);
+}
+/**
+ * The refusal itself, for a registry that digests its own material: the
+ * descriptor registry compares two `definitionContractHash`es through this,
+ * so a "duplicate type id" reads the same whichever material was digested.
+ * @experimental
+ */
+export function refuseUnlessSameHash(registered, redeclared, why) {
     if (registered === redeclared)
         return;
     throw new Error(`${why} (registered ${registered}, redeclared ${redeclared})`);

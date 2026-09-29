@@ -25,9 +25,12 @@ import type { SpecDocument } from './document.js';
  * This is what makes a migration **idempotent**: re-running after a bug fix matches the
  * existing row by slug and replaces it, instead of creating a second copy beside it
  * (12 §3b). A migration that cannot be safely re-run is a migration nobody dares fix.
+ * @experimental
  */
 export declare function migratedSlug(sourceTable: string, sourceId: string | number): string;
+/** @experimental */
 export type MigrationOutcome = 'migrated' | 'unmapped' | 'skipped';
+/** @experimental */
 export interface MigrationEntry {
     source: {
         table: string;
@@ -38,7 +41,7 @@ export interface MigrationEntry {
     /** Where the value landed: the scope it was written at, and what it became. */
     target?: {
         slug: string;
-        /** A `ScopeKind` (config.ts): `session · preset · defaults · author` since R-10. */
+        /** A `ScopeKind` (config.ts): `session · config · defaults · author` since R-10. */
         scopeKind: ScopeKind;
         nodeKey?: string;
         slot?: string;
@@ -46,12 +49,14 @@ export interface MigrationEntry {
     /** Required whenever the outcome is not `migrated` — never a silent drop. */
     reason?: string;
 }
+/** @experimental */
 export interface MigrationReport {
     unit: string;
     entries: MigrationEntry[];
     /** Fixture-level parity results; empty means nobody checked, which is not the same as passing. */
     parity: ParityResult[];
 }
+/** @experimental */
 export declare function summarize(r: MigrationReport): {
     migrated: number;
     unmapped: number;
@@ -63,12 +68,15 @@ export declare function summarize(r: MigrationReport): {
  * Everything that did not migrate cleanly must say why, and must remain visible —
  * `spec_diagnostics` in core, the same place an orphaned slot lands after a node swap
  * (12 §5). Same principle as export (12 §7a): nothing is dropped silently.
+ * @experimental
  */
 export declare function unmappedEntries(r: MigrationReport): MigrationEntry[];
+/** @experimental */
 export declare class MigrationError extends Error {
 }
-/** A report with an entry that gives no reason is a bug in the migration, not in the data. */
+/** A report with an entry that gives no reason is a bug in the migration, not in the data. @experimental */
 export declare function assertReportComplete(r: MigrationReport): void;
+/** @internal */
 export interface ParityResult {
     fixture: string;
     identical: boolean;
@@ -79,16 +87,19 @@ export interface ParityResult {
     tokensLegacy?: number;
     tokensPipeline?: number;
 }
+/** @internal */
 export declare function checkParity(fixture: string, legacyPrompt: string, preview: Receipt, count?: (v: unknown) => number): ParityResult;
 /**
  * The gate on dropping an old code path (08 §5). Deliberately strict: an empty corpus
  * passes nothing, because "no failures" and "nothing was checked" look identical in a
  * summary and only one of them is safe.
+ * @internal
  */
 export declare function parityGate(results: ParityResult[], minimumCorpus?: number): {
     pass: boolean;
     reason?: string;
 };
+/** @internal */
 export declare function renderParity(r: ParityResult): string;
 /**
  * Rewrite a legacy `commit-message@1` node into `create-message@1` or
@@ -104,11 +115,14 @@ export declare function renderParity(r: ParityResult): string;
  * So the rule is: an id wired in (by edge or by config) means update; nothing wired
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
  * is already the shape 08 §5b uses for "a human has to look at this."
+ * @experimental
  */
 export declare const LEGACY_COMMIT_MESSAGE = "core:outlet/commit-message";
+/** @experimental */
 export interface SplitResult {
     document: SpecDocument;
     report: MigrationReport;
 }
+/** @experimental */
 export declare function splitCommitMessage(doc: SpecDocument): SplitResult;
 //# sourceMappingURL=migration.d.ts.map

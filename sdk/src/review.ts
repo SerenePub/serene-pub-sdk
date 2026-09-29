@@ -27,9 +27,11 @@ import { inferSchema, type SettingsSchema } from './settings.js'
  * `on` is the old `sync`: the run parks until somebody decides. `resolvePosition`
  * still reads the two old spellings, because a stored setting or a plugin's
  * `reviewDefault` may predate this.
+ * @experimental
  */
 export type ReviewPosition = 'off' | 'on'
 
+/** @experimental */
 export interface ReviewRequest {
 	nodeKey: string
 	definitionId: string
@@ -37,6 +39,7 @@ export interface ReviewRequest {
 	position: Extract<ReviewPosition, 'on'>
 }
 
+/** @experimental */
 export interface ReviewDecision {
 	action: 'approve' | 'edit' | 'reject'
 	/** Present only for 'edit'. The binding cannot tell this from an approval. */
@@ -45,6 +48,7 @@ export interface ReviewDecision {
 	at: number
 }
 
+/** @experimental */
 export interface ReviewRecord {
 	nodeKey: string
 	position: ReviewPosition
@@ -55,7 +59,7 @@ export interface ReviewRecord {
 	at?: number
 }
 
-/** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). */
+/** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). @experimental */
 export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
 
 /**
@@ -73,6 +77,7 @@ export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
  * field the form did not offer cannot be written by construction. The refusal
  * in `undeclaredReviewFields` is the second, independent guard: a submission
  * naming one is refused outright rather than dropped in silence.
+ * @internal
  */
 export function reviewSchemaFor(
 	definition: { review?: { fields: readonly string[] } } | undefined,
@@ -89,6 +94,7 @@ export function reviewSchemaFor(
  * The keys of a decision's values that the definition's `review.fields` does
  * not allow — empty when nothing is declared (every key is then a form
  * field) or when every submitted key is declared. Non-empty means refuse.
+ * @internal
  */
 export function undeclaredReviewFields(
 	definition: { review?: { fields: readonly string[] } } | undefined,
@@ -104,6 +110,7 @@ export function undeclaredReviewFields(
  * There is deliberately no `'never'` position and no descriptor field that could produce
  * one. An author picks a default; the user's setting wins over it. Forbidding review is
  * not a value this type can hold, which is the enforcement (F14).
+ * @experimental
  */
 export const POSITIONS: readonly ReviewPosition[] = ['off', 'on'] as const
 
@@ -122,6 +129,7 @@ const LEGACY_POSITIONS: Record<string, ReviewPosition> = {
 	on: 'on',
 }
 
+/** @experimental */
 export function hashPayload(v: unknown): string {
 	const s = JSON.stringify(v ?? null)
 	let h = 2166136261
@@ -132,6 +140,7 @@ export function hashPayload(v: unknown): string {
 /**
  * Resolve the effective position: user setting if present, else the author's default,
  * else off. An author can raise the floor and never lower it below what a user chose.
+ * @experimental
  */
 export function resolvePosition(
 	authorDefault: ReviewPosition | undefined,
@@ -144,7 +153,7 @@ export function resolvePosition(
 	return 'off'
 }
 
-/** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). */
+/** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). @experimental */
 export function isGated(effects: string | undefined): boolean {
 	return effects === 'write' || effects === 'external'
 }

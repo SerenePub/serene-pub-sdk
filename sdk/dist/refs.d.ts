@@ -4,12 +4,14 @@
  * $ref creates a *data* edge and compiles 1:1 to a pipeline_edges row.
  * slot.* creates a *config* reference, which is resolved before execution and is
  * therefore not an edge and creates no dependency in the graph.
+ * @experimental
  */
 export interface DataRef {
     readonly __ref: 'data';
     node: string;
     port: string;
 }
+/** @public */
 export interface SlotRef {
     readonly __ref: 'slot';
     slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables';
@@ -27,16 +29,18 @@ export interface SlotRef {
     /** Unresolved marker: resolve to the first oracle reachable forward (16 §5b-i). */
     resolveDownstreamOracle?: boolean;
 }
+/** @experimental */
 export declare function $ref(node: string, port?: string): DataRef;
 /**
  * Config references accept a node accessor as well as a key, so a spec never has to
  * name a node twice in two different ways: `slot.connectionOf($.generate)` reads the
  * same as `$.generate.text` two lines below it.
+ * @public
  */
 export type NodeAddress = string | {
     node: string;
 };
-/** An envoy's config, by the genre-local key: `slot.prompts({ envoy: 'mascot' })`. */
+/** An envoy's config, by the genre-local key: `slot.prompts({ envoy: 'mascot' })`. @experimental */
 export type EnvoyAddress = {
     envoy: string;
 };
@@ -45,10 +49,14 @@ export type EnvoyAddress = {
  * synthetic node key `envoy:<key>`. One spelling, shared by the compiler
  * (`resolvedRefs`), the executor (`resolveConfig`'s key list) and the host's
  * projection, so the three cannot disagree about where a mascot's prompt is.
+ * @internal
  */
 export declare const ENVOY_CONFIG_PREFIX = "envoy:";
+/** @experimental */
 export declare const envoyConfigKey: (key: string) => string;
+/** @internal */
 export declare const isEnvoyConfigKey: (key: string) => boolean;
+/** @public */
 export declare const slot: {
     connection: (ofNode?: NodeAddress) => SlotRef;
     sampling: (ofNode?: NodeAddress) => SlotRef;
@@ -95,12 +103,15 @@ export declare const slot: {
      */
     downstreamOracle: () => SlotRef;
 };
+/** @experimental */
 export declare const isDataRef: (v: unknown) => v is DataRef;
+/** @internal */
 export declare const isSlotRef: (v: unknown) => v is SlotRef;
-/** Walk a config object and collect every data ref, with the key path it sat at. */
+/** Walk a config object and collect every data ref, with the key path it sat at. @experimental */
 export declare function collectDataRefs(config: unknown, path?: string[]): Array<{
     path: string[];
     ref: DataRef;
 }>;
+/** @experimental */
 export declare function collectSlotRefs(config: unknown): SlotRef[];
 //# sourceMappingURL=refs.d.ts.map

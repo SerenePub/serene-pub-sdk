@@ -29,13 +29,71 @@
  * core mechanically redact it from receipts (F16), exclude it from export (12 §7) and
  * keep it write-only in the UI. A free-form column cannot tell a key from a note.
  */
+import { pluginRuleRef } from './pluginRuleRef.js';
+import { i18nFindings, i18nText } from './i18n.js';
+/** @experimental */
 export const secret = (value) => ({ $secret: true, value });
+/** @internal */
 export const isSecret = (v) => !!v && typeof v === 'object' && v.$secret === true;
-/** The label to render, from whichever key the author used. */
-export function fieldLabel(decl) {
-    return decl.label ?? decl.i18n;
+/**
+ * The label to render, resolved through `i18nText` in `language` — a bare
+ * string is itself, a map answers the locale or falls back to `en`.
+ * @internal
+ */
+export function fieldLabel(decl, language = 'en') {
+    return i18nText(decl.label, language);
 }
-/** The media kinds a `media` field offers. Images unless it says otherwise. */
+/**
+ * Every display-text fault in one settings schema (R-20), as sentences that
+ * name the field: each field's `label` and its `description`; each
+ * `members[]` band's label and description; and the
+ * same for a `list`'s `item` and an `object`'s `fields`, recursively. A schema
+ * that is not an object is one finding. Run at every door a schema arrives
+ * through — `register()` for node params, `genre()` for a shape's fields,
+ * a widget's `settings`, `validate()` for a document — so a blank label is
+ * refused where the author is and never reaches a form.
+ *
+ * `of` stays unread: an enum's options are stored values, not display text,
+ * and their labels live on `members[]`.
+ * @experimental
+ */
+export function settingsSchemaFindings(schema, where) {
+    if (schema === undefined)
+        return [];
+    if (!schema || typeof schema !== 'object' || Array.isArray(schema))
+        return [`${where}: a settings schema is an object keyed by field name — { depth: { type: 'integer', label: 'Depth' } }`];
+    const out = [];
+    for (const [key, raw] of Object.entries(schema)) {
+        const at = `${where}.${key}`;
+        if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+            out.push(`${at}: a field declaration is an object — { type: 'string', label: 'Name' }`);
+            continue;
+        }
+        const f = raw;
+        out.push(...i18nFindings(f.label, `${at}.label`));
+        out.push(...i18nFindings(f.description, `${at}.description`));
+        if (f.members !== undefined) {
+            if (!Array.isArray(f.members))
+                out.push(`${at}.members: the bands are an array — [{ key: 'lore', label: 'Lore' }]`);
+            else
+                f.members.forEach((m, i) => {
+                    const band = `${at}.members[${typeof m?.key === 'string' ? m.key : i}]`;
+                    if (!m || typeof m !== 'object') {
+                        out.push(`${band}: a band is an object — { key: 'lore', label: 'Lore' }`);
+                        return;
+                    }
+                    out.push(...i18nFindings(m.label, `${band}.label`));
+                    out.push(...i18nFindings(m.description, `${band}.description`));
+                });
+        }
+        if (f.item !== undefined)
+            out.push(...settingsSchemaFindings({ item: f.item }, at));
+        if (f.fields !== undefined)
+            out.push(...settingsSchemaFindings(f.fields, `${at}.fields`));
+    }
+    return out;
+}
+/** The media kinds a `media` field offers. Images unless it says otherwise. @experimental */
 export function fieldAccepts(decl) {
     return decl.accepts?.length ? decl.accepts : ['image'];
 }
@@ -49,7 +107,7 @@ export function fieldAccepts(decl) {
  *
  * ⚠ **A `secret` may not be nested**, and this is the guard for it rather than a
  * documented caution. Redaction is flat everywhere it happens — `forClient`,
- * `forExport` and `forOwningHook` all walk the schema's own keys and switch on
+ * `forExport` and `forOwningHookSplit` all walk the schema's own keys and switch on
  * `type === 'secret'` — so a credential inside a list would be exported, sent to
  * the browser, and written into a receipt with nothing anywhere saying so. The
  * refusal is at declaration time, which is the only place it is cheap.
@@ -95,7 +153,7 @@ function checkNested(decl, path) {
         });
     return f;
 }
-/** Mistakes that would otherwise become silent leaks or dead form fields. */
+/** Mistakes that would otherwise become silent leaks or dead form fields. @experimental */
 export function checkSchema(schema) {
     const f = [];
     for (const [key, d] of Object.entries(schema)) {
@@ -105,7 +163,22 @@ export function checkSchema(schema) {
         // meaning inside a row.
         if (d.type === 'list' || d.type === 'object')
             f.push(...checkNested(d, key));
+        if (d.lend !== undefined && d.type !== 'secret')
+            f.push({
+                field: key,
+                severity: 'error',
+                message: `'${key}' says 'lend', which only a secret has`,
+                fix: "remove 'lend' — only a secret is withheld from other packages' pipelines, so only a secret can be lent" +
+                    pluginRuleRef('secrets'),
+            });
         if (d.type === 'secret') {
+            if (!SECRET_KEY.test(key))
+                f.push({
+                    field: key,
+                    severity: 'error',
+                    message: `'${key}' is a secret whose name a handle cannot carry`,
+                    fix: 'name it with letters, digits, "_", "." and "-" only',
+                });
             if (d.side === 'component') {
                 f.push({
                     field: key,
@@ -240,6 +313,7 @@ function checkOne(decl, value, path) {
     }
     return f;
 }
+/** @internal */
 export function checkValues(schema, values) {
     const f = [];
     for (const [key, d] of Object.entries(schema)) {
@@ -266,6 +340,7 @@ export function checkValues(schema, values) {
  * values land in diagnostics rather than disappearing.** An author who renames a field
  * and an admin who then downgrades should both get their data back; silently dropping it
  * makes the update irreversible in the one direction that matters.
+ * @internal
  */
 export function reconcile(schema, stored) {
     const values = {};
@@ -285,7 +360,7 @@ export function reconcile(schema, stored) {
     return { values, orphaned, findings: checkValues(schema, values) };
 }
 // ── The three audiences ─────────────────────────────────────────────────────
-/** What the settings form sends back. A secret reports only whether it is set. */
+/** What the settings form sends back. A secret reports only whether it is set. @internal */
 export function forClient(schema, values) {
     const out = {};
     for (const [key, d] of Object.entries(schema)) {
@@ -293,7 +368,7 @@ export function forClient(schema, values) {
     }
     return out;
 }
-/** What an export carries. Secrets never leave, on the same footing as credentials. */
+/** What an export carries. Secrets never leave, on the same footing as credentials. @experimental */
 export function forExport(schema, values) {
     const out = {};
     for (const [key, d] of Object.entries(schema)) {
@@ -308,15 +383,50 @@ export function forExport(schema, values) {
  * and only for the extension that owns the field. Same shape as F18's per-call injection
  * of connection material.
  */
-export function forOwningHook(schema, values, decrypt) {
-    const out = {};
+/**
+ * The handle plugin code holds for a secret setting — never its value (R63).
+ * `nonce` is minted by the host per plugin load, so a handle cannot be forged
+ * from text that came from anywhere but the host.
+ * @experimental
+ */
+export const secretHandle = (key, nonce) => `\u27E6secret:${key}:${nonce}\u27E7`;
+/** A secret's key, as a handle can carry it. @experimental */
+export const SECRET_KEY = /^[A-Za-z0-9_.-]+$/;
+/**
+ * What a hook's `settings` carries (R63): every value, and a **secret handle**
+ * in place of each secret — so the plugin's code never holds a key — beside
+ * the plaintext the host keeps for the fetch bridge and the scrub, and the
+ * keys the package lends to its nodes in other packages' pipelines.
+ * @internal
+ */
+export function forOwningHookSplit(schema, values, decrypt, nonce) {
+    const settings = {};
+    const secrets = {};
+    const lent = [];
     for (const [key, d] of Object.entries(schema)) {
         const v = values[key];
-        out[key] = d.type === 'secret' && isSecret(v) ? decrypt(v.value) : v;
+        if (d.type !== 'secret') {
+            settings[key] = v;
+            continue;
+        }
+        // Unset stays unset.
+        if (v === undefined || v === null)
+            continue;
+        // A value stored before the field was a secret is plaintext already;
+        // it is treated as the secret it now is — a handle, never the value.
+        const plain = isSecret(v) ? decrypt(v.value) : typeof v === 'string' ? v : '';
+        if (!plain) {
+            settings[key] = '';
+            continue;
+        }
+        secrets[key] = plain;
+        settings[key] = secretHandle(key, nonce);
+        if (d.lend)
+            lent.push(key);
     }
-    return out;
+    return { settings, secrets, lent };
 }
-/** What a component receives at render — extension-side fields never reach the browser. */
+/** What a component receives at render — extension-side fields never reach the browser. @experimental */
 export function forComponent(schema, values) {
     const out = {};
     for (const [key, d] of Object.entries(schema)) {
@@ -326,6 +436,7 @@ export function forComponent(schema, values) {
     }
     return out;
 }
+/** @internal */
 export function configState(schema, values) {
     const missing = Object.entries(schema)
         .filter(([k, d]) => d.required && d.default === undefined && (values[k] === undefined || values[k] === null))
@@ -338,7 +449,7 @@ export function configState(schema, values) {
         message: `waiting on ${missing.join(', ')} in plugin settings`,
     };
 }
-/** Declaration order within a group; group order is first appearance. */
+/** Declaration order within a group; group order is first appearance. @experimental */
 export function formLayout(schema) {
     const groups = [];
     for (const [key, decl] of Object.entries(schema)) {
@@ -350,14 +461,16 @@ export function formLayout(schema) {
     }
     return groups;
 }
-/** Is this field currently shown, given the values? One level of `showIf`, no rules engine. */
+/** Is this field currently shown, given the values? One level of `showIf`, no rules engine. @experimental */
 export const isVisible = (decl, values) => !decl.showIf || values[decl.showIf.field] === decl.showIf.equals;
+/** @experimental */
 export class SettingsError extends Error {
 }
 /**
  * Declare a plugin's settings. The compiler extracts this statically into the manifest,
  * so it must be a literal — a schema assembled at runtime cannot be read without running
  * the author's code, which the packager never does (F6, 03 §3).
+ * @public
  */
 export function defineSettings(schema) {
     const errs = checkSchema(schema).filter((x) => x.severity === 'error');
@@ -376,11 +489,8 @@ export function defineSettings(schema) {
         forClient: (v) => forClient(schema, v),
         forExport: (v) => forExport(schema, v),
         forComponent: (v) => forComponent(schema, v),
-        forOwningHook: (v, d) => forOwningHook(schema, v, d),
     };
 }
-/** Back-compat alias for the earlier name. */
-export const validateSettingsSchema = (s) => checkSchema(s).map((f) => f.message);
 // ── Forms from data (review pauses, arbitrary extension forms) ──────────────
 const humanize = (key) => key
     .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
@@ -397,6 +507,7 @@ const humanize = (key) => key
  * and structure a form cannot decompose arrives as JSON rather than being
  * silently dropped — an edit surface that hides part of the payload is a
  * review gate a write can sneak past.
+ * @experimental
  */
 export function inferSchema(payload) {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload)
@@ -426,7 +537,7 @@ export function inferSchema(payload) {
     }
     return schema;
 }
-/** The payload as form values — JSON-format fields serialized for editing. */
+/** The payload as form values — JSON-format fields serialized for editing. @internal */
 export function valuesForForm(schema, payload) {
     const source = payload && typeof payload === 'object' && !Array.isArray(payload)
         ? payload
@@ -445,6 +556,7 @@ export function valuesForForm(schema, payload) {
  * unparseable edit throws with the field named rather than committing a
  * string where an object stood), untouched keys keep their original values —
  * a form is an edit surface, never a filter.
+ * @internal
  */
 export function applyFormValues(schema, payload, edited) {
     const wrapped = !(payload &&

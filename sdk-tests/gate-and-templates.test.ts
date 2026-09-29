@@ -20,6 +20,7 @@ import { slot } from '@serene-pub/sdk'
 import { pin, describeOutletDefinition, describeQueryDefinition, validate } from '@serene-pub/sdk'
 import { S } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { publish, bindings, world, fakeClock, findings } from './helpers.js'
 
 const approver: Reviewer = async () => ({ action: 'approve', by: 'jody', at: 1 })
@@ -244,7 +245,7 @@ describe('30 · pending and committed are one shape', () => {
 			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 			.outlet('done', ($) =>
-				C.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
+				T.emitSocket.v1({ handle: 'chat:complete', from: $.save.messageId }),
 			)
 
 	/**
@@ -273,7 +274,7 @@ describe('30 · pending and committed are one shape', () => {
 								ok({ status: 'pending', proposalId: 'proposal:save' }),
 						}
 					: {}),
-				'core:outlet/emit-socket@1': async (i: any) => {
+				'test:outlet/emit-socket@1': async (i: any) => {
 					seen = i.from
 					return ok({ main: 'emitted' })
 				},
@@ -373,14 +374,14 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 			.inlet('input', C.userMessage.v1())
 			.oracle(
 				'tool',
-				C.mcpTool.v1({
+				T.mcpTool.v1({
 					args: { to: 'someone@example.com' },
 					connection: slot.connection(),
 				}),
 			)
 
 	test('it is eligible', () => {
-		assert.equal(isGated(C.mcpTool.v1().descriptor.effects), true)
+		assert.equal(isGated(T.mcpTool.v1().descriptor.effects), true)
 	})
 
 	test('but with no classification it runs unreviewed', async () => {
@@ -389,7 +390,7 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 			input: {},
 			world,
 			bindings: bindings({
-				'core:oracle/mcp-tool@1': async (_i, ctx: any) => {
+				'test:oracle/mcp-tool@1': async (_i, ctx: any) => {
 					called++
 					ctx.reportUsage(1)
 					return ok({ main: {}, result: {} })
@@ -415,7 +416,7 @@ describe('30a · an unclassified external tool is gate-eligible but ungated', ()
 						slot: 'settings',
 						path: 'review',
 						value: 'sync',
-						scopeKind: 'preset' as const,
+						scopeKind: 'config' as const,
 					},
 				],
 			},
@@ -498,7 +499,7 @@ test('34 · template scope is declared on the slot — typed ports alone cannot 
 	// same scope on a template slot no binding read and no row was ever seeded
 	// for, so the panel showed an empty picker. The declaration lives on the
 	// node whose job is the rendering.
-	const render = C.renderEntries.v1().descriptor
+	const render = T.renderEntries.v1().descriptor
 	const asm = C.assemble.v2().descriptor
 
 	// A source template's scope is the *item*, which lives inside the port payload.
@@ -508,8 +509,12 @@ test('34 · template scope is declared on the slot — typed ports alone cannot 
 	assert.equal(render.ports.in!['entries'], 'core:shape/context-candidates@1')
 
 	// An assembly template's scope does correspond to its inputs — so 16 §4 is half right.
-	assert.ok(asm.slots!['template']!.variables!['blocks'])
-	assert.ok(asm.slots!['template']!.variables!['budget'])
+	// (Corrected 2026-09-27, typed templates P3: `blocks` was declared and never
+	// reached a template; the slot now declares what `render()` supplies.)
+	const asmScope = asm.slots!['template']!.variables! as Record<string, unknown>
+	assert.equal(asmScope['blocks'], undefined)
+	assert.ok(asmScope['budget'])
+	assert.ok(asmScope['sessionMessages'])
 
 	// The point: knowing the port shape tells you nothing about `entry.title`.
 	const f = checkTemplate('{{ entry.title }}', {})

@@ -64,13 +64,14 @@ import { MEDIA_KINDS } from './media.js';
  * ⚠ **Append, never insert.** `side()` orders a transform's kinds by position
  * here, so moving an existing member rewrites ids that are stored as primary
  * keys (`connection_defaults`) and compared as strings everywhere else.
+ * @experimental
  */
 export const IO_KINDS = ['text', ...MEDIA_KINDS, 'embedding', 'entities'];
 const KIND_ORDER = new Map(IO_KINDS.map((k, i) => [k, i]));
 const side = (kinds) => [...new Set(kinds)]
     .sort((a, b) => (KIND_ORDER.get(a) ?? 99) - (KIND_ORDER.get(b) ?? 99))
     .join('+');
-/** Read an id back apart, for a UI that wants the kinds rather than the string. */
+/** Read an id back apart, for a UI that wants the kinds rather than the string. @internal */
 export function parseTransform(id) {
     const [inS = '', outS = ''] = id.split('->');
     return {
@@ -97,6 +98,7 @@ export function parseTransform(id) {
  * `satisfies Record<IoKind, IoKind>` is load-bearing in both directions: adding
  * a kind to `IO_KINDS` without adding it here stops compiling, and so does a
  * member here whose value is not its own name.
+ * @experimental
  */
 export const IoKinds = {
     text: 'text',
@@ -126,6 +128,7 @@ export const IoKinds = {
  * out: [IoKinds.image] })` compiles and yields `'audio->image'`, which `TRANSFORMS`
  * does not name. Core's table names what core ships; a plugin may introduce a
  * transform, and closing that door is a separate ruling nobody has taken.
+ * @experimental
  */
 export function tf(t) {
     return build(t);
@@ -144,6 +147,7 @@ const build = (t) => `${side(t.in)}->${side(t.out)}`;
  * reject: `tf({ in: [], out: [IoKinds.text] })` fails the non-empty `Kinds`
  * check, falls through to `readonly IoKind[]`, and compiles as `TransformId`.
  * Two faces over one body keeps `tf` strict and this one honest.
+ * @internal
  */
 export const transformId = (t) => build(t);
 /**
@@ -153,6 +157,7 @@ export const transformId = (t) => build(t);
  * does not name, and everything keeps working — it simply shows as its id until
  * somebody names it. Never render a raw `text->image` to a person; that is what
  * `transformLabel` is for.
+ * @internal
  */
 export const TRANSFORMS = {
     'text->text': {
@@ -219,6 +224,7 @@ export const TRANSFORMS = {
  * The axis they share, and the reason none of them is a transform, is that every
  * one qualifies a call whose in and out kinds are already settled. `text->text`
  * either way; these say HOW.
+ * @experimental
  */
 export const FEATURES = [
     'json_object',
@@ -251,7 +257,7 @@ export const FEATURES = [
     'wire_chat',
     'wire_completion',
 ];
-/** Transforms contain `->`; features never do. The two spaces cannot collide. */
+/** Transforms contain `->`; features never do. The two spaces cannot collide. @internal */
 export const isTransformId = (id) => id.includes('->');
 /**
  * Strengthenings: holding the key implies holding the values, at the same BAND.
@@ -260,6 +266,7 @@ export const isTransformId = (id) => id.includes('->');
  * Declaring the implication once means an adapter states the strongest thing it
  * does and the rest follows, rather than seven adapters each remembering to list
  * the weaker forms.
+ * @internal
  */
 export const IMPLIES = {
     strict_schema: ['json_schema'],
@@ -272,6 +279,7 @@ export const IMPLIES = {
  * becomes data instead of a comment. `jsonSchemaToGbnf` is literally
  * "provide `json_schema` by compiling it to a `grammar`" — declared here once,
  * rather than re-derived inside each adapter that happens to have a grammar.
+ * @internal
  */
 export const EMULATABLE_VIA = {
     json_object: ['json_schema', 'grammar'],
@@ -286,6 +294,7 @@ export const EMULATABLE_VIA = {
  * `"nativ"` a compile error at the place it was typed. The openness that matters
  * is `bandsFor`'s fallback — a plugin's own transform grades correctly without
  * anybody editing this file — and that needs no new band NAMES to work.
+ * @experimental
  */
 export const BAND = {
     none: 'none',
@@ -298,6 +307,7 @@ export const BAND = {
  * Consulted when a band a capability does not HAVE is asked for: `emulated`
  * asked of `text->image` walks down to `none`, because a claim is never stronger
  * than what permits it and nothing supplies an emulated picture.
+ * @internal
  */
 export const BAND_ORDER = [BAND.none, BAND.emulated, BAND.native];
 /**
@@ -315,18 +325,20 @@ export const BAND_ORDER = [BAND.none, BAND.emulated, BAND.native];
  * table records. `closure` raises through `gradeOf(id, BAND.emulated)`, so a
  * capability with no such band cannot be emulated upward at all — the honest
  * answer, arrived at without a second list stating it.
+ * @experimental
  */
 export const BANDS = {
     json_object: [BAND.none, BAND.emulated, BAND.native],
     json_schema: [BAND.none, BAND.emulated, BAND.native],
     tools: [BAND.none, BAND.emulated, BAND.native],
 };
-/** A capability nobody gave bands: it either works or it does not. */
+/** A capability nobody gave bands: it either works or it does not. @experimental */
 export const DEFAULT_BANDS = [BAND.none, BAND.native];
+/** @internal */
 export const bandsFor = (id) => BANDS[id] ?? DEFAULT_BANDS;
-/** The best this capability can be — what `native` means FOR IT. */
+/** The best this capability can be — what `native` means FOR IT. @experimental */
 export const topGrade = (id) => bandsFor(id).length - 1;
-/** Which band a grade lands in, or `undefined` for a grade off the scale. */
+/** Which band a grade lands in, or `undefined` for a grade off the scale. @internal */
 export const bandOf = (id, grade) => bandsFor(id)[grade];
 /**
  * A spec as a grade, on this capability's own scale.
@@ -335,6 +347,7 @@ export const bandOf = (id, grade) => bandsFor(id)[grade];
  * range, and a band the capability does not have walks DOWN `BAND_ORDER`. Both
  * failures are authoring bugs rather than data, so this stays pure and the
  * manifest conformance test is what fails the build over one.
+ * @internal
  */
 export function gradeOf(id, spec) {
     if (typeof spec === 'number')
@@ -380,6 +393,7 @@ const rebase = (from, to, grade) => {
  *
  * Neither can promise past the other, so the composite is the floor — and the
  * two need no second column, table or stored field to be graded independently.
+ * @experimental
  */
 export const composite = (api, model) => Math.min(api, model);
 const isUnproven = (d) => typeof d === 'object' && d !== null;
@@ -410,6 +424,7 @@ const floor = (id, d) => gradeOf(id, isUnproven(d) ? d.until : d);
  *
  * Grade 0 has no letter, because 0 is not a quality but an absence; the caller
  * says "Off". Anything past `Z` clamps rather than walking out of the alphabet.
+ * @internal
  */
 export function gradeLetter(id, grade) {
     if (typeof grade !== 'number' || grade <= 0)
@@ -425,6 +440,7 @@ export function gradeLetter(id, grade) {
  * stays a lookup. The fixpoint loop is bounded by the feature count; it exists
  * because the two relations chain — a native `grammar` gives `json_schema` at
  * `emulated`, which in turn implies `json_object`.
+ * @experimental
  */
 export function closure(set) {
     const out = { ...set };
@@ -470,6 +486,7 @@ export function closure(set) {
  *
  * Pure and total: no I/O, and every input optional, so a connection that has
  * never been tested still resolves to something coherent rather than to nothing.
+ * @internal
  */
 export function resolveCapabilities(args) {
     const { adapter, preset, probe, overrides } = args;
@@ -519,6 +536,7 @@ export function resolveCapabilities(args) {
     }
     return closure(out);
 }
+/** @experimental */
 export function satisfies(need, have) {
     const missing = [];
     const degraded = [];
@@ -563,6 +581,7 @@ export function satisfies(need, have) {
  * Two ids rather than one enum-valued key because a backend routinely offers
  * BOTH, and a single key could not say so — nor be graded, presetted, probed and
  * hand-overridden independently, which is the entire four-layer model.
+ * @internal
  */
 export const WIRE_CAPABILITY = {
     chat: 'wire_chat',
@@ -588,6 +607,7 @@ export const WIRE_CAPABILITY = {
  *
  * A caller that genuinely requires one mode does not consult this at all — it
  * asks for that mode's capability by id, like any other.
+ * @internal
  */
 export const WIRE_MODE_ORDER = ['chat', 'completion'];
 /**
@@ -598,6 +618,7 @@ export const WIRE_MODE_ORDER = ['chat', 'completion'];
  * — a set that names neither wire capability has not been resolved against an
  * adapter that declares one — and is deliberately not defaulted here, because
  * the honest fallback depends on what the caller knows about the connection.
+ * @internal
  */
 export function wireModeOf(have) {
     for (const mode of WIRE_MODE_ORDER) {
@@ -633,6 +654,7 @@ const FEATURE_LABELS = {
  * a capability screen full of arrows is the thing rulings about newcomers are
  * trying to prevent. An unknown id falls back to the id so a plugin's capability
  * is legible rather than blank.
+ * @internal
  */
 export function capabilityLabel(id) {
     if (isTransformId(id)) {
@@ -644,14 +666,14 @@ export function capabilityLabel(id) {
     }
     return FEATURE_LABELS[id] ?? id;
 }
-/** The one-liner under the name, when there is one. */
+/** The one-liner under the name, when there is one. @internal */
 export function capabilityTagline(id) {
     if (!isTransformId(id))
         return undefined;
     const t = TRANSFORMS[id]?.tagline;
     return typeof t === 'string' ? t : t?.en;
 }
-/** Whether a first-timer should see this without opening anything. */
+/** Whether a first-timer should see this without opening anything. @internal */
 export const isBasicCapability = (id) => isTransformId(id) &&
     TRANSFORMS[id]?.disclosure === 'basic';
 //# sourceMappingURL=capabilities.js.map

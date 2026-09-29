@@ -126,3 +126,128 @@ describe('20 §10 · routing', () => {
 		)
 	})
 })
+
+/**
+ * The two-port compare on a junction (D-4a, ruled 2026-09-17).
+ *
+ * `equals` takes a literal, so a branch could ask *is the accused Vell?* and
+ * never *is the accused the culprit?* — and a genre that DERIVES its hidden
+ * fact (Whodunit's, over `core:task/pick-by-hash@1`) has no other question to
+ * ask. The predicate shape gained `equalsPath` in `predicates.ts`; what is
+ * pinned here is the junction half of it:
+ *
+ *  · the routed value is the scope, so both sides come off ONE document;
+ *  · either side absent fires **nothing** — two unwired ports comparing equal
+ *    would route the branch that means *you got it right*;
+ *  · the receipt says which two paths were compared, as it says the literal;
+ *  · `validate()` accepts a branch stating it, and still refuses one stating
+ *    no condition at all.
+ */
+describe('20 §10 · the two-port compare', () => {
+	/** decide publishes the accusation and the derived culprit; the junction compares them. */
+	const verdict = () =>
+		spec('demo:verdict', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.task('decide', ($: any) => decide.v1({ text: $.input.text }))
+			.junction('adjudicate', { on: ($: any) => $.decide.call }, (r) =>
+				r
+					.when('right', { path: 'accused', equalsPath: 'culprit' }, (c) =>
+						c.task('go', ($: any) => act.v1({ what: 'solved' })),
+					)
+					.otherwise('wrong', (c) => c.task('go', ($: any) => act.v1({ what: 'unsolved' }))),
+			)
+
+	const adjudicate = async (call: unknown) =>
+		run(publish(verdict()), {
+			world,
+			input: { text: 'x' },
+			seed: 's',
+			triggerSource: 'event',
+			bindings: scripted(call),
+		})
+
+	const firedOf = (receipt: any) =>
+		receipt.nodes
+			.filter((n: any) => n.nodeKey?.startsWith('adjudicate.'))
+			.map((n: any) => n.nodeKey)
+
+	test('the branch fires when the two paths carry the same value', async () => {
+		const receipt: any = await adjudicate({
+			accused: 'character:12',
+			culprit: 'character:12',
+		})
+		assert.equal(receipt.outcome, 'ok')
+		assert.deepEqual(firedOf(receipt), ['adjudicate.right.go'])
+	})
+
+	test('and not when they differ — the otherwise takes it', async () => {
+		const receipt: any = await adjudicate({
+			accused: 'character:12',
+			culprit: 'character:13',
+		})
+		assert.equal(receipt.outcome, 'ok')
+		assert.deepEqual(firedOf(receipt), ['adjudicate.wrong.go'])
+	})
+
+	test('either side absent fires nothing — an unwired port is not a match', async () => {
+		// The dangerous case and the reason this is not plain `===`: the
+		// branch that fires means *the accused IS the culprit*, so two ports
+		// that carried nothing must not route it.
+		for (const call of [
+			{ culprit: 'character:12' },
+			{ accused: 'character:12' },
+			{},
+		]) {
+			const receipt: any = await adjudicate(call)
+			assert.deepEqual(
+				firedOf(receipt),
+				['adjudicate.wrong.go'],
+				JSON.stringify(call),
+			)
+		}
+	})
+
+	test('the receipt names both paths, as it names a literal', async () => {
+		const receipt: any = await adjudicate({
+			accused: 'character:12',
+			culprit: 'character:12',
+		})
+		const notes = (receipt.notes ?? []).filter((n: string) =>
+			n.startsWith("junction 'adjudicate'"),
+		)
+		assert.equal(notes.length, 2)
+		assert.ok(
+			notes.some((n: string) =>
+				n.includes("'right' fired (accused equals the value at culprit)"),
+			),
+			notes.join('\n'),
+		)
+	})
+
+	test('validate() accepts it, and still refuses a branch stating no condition', async () => {
+		// One list answers both doors (`PREDICATE_CONDITION_KEYS`): before
+		// this, `equalsPath` was legal in an action's enabled-when and refused
+		// here as "states no conditions" — one predicate meaning two things.
+		assert.deepEqual(errorsFor(verdict() as any, '20 §10'), [])
+
+		const stateless = spec('demo:verdict-bare', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.task('decide', ($: any) => decide.v1({ text: $.input.text }))
+			.junction('adjudicate', { on: ($: any) => $.decide.call }, (r) =>
+				r.when('right', { path: 'accused' } as any, (c) =>
+					c.task('go', ($: any) => act.v1({ what: 'solved' })),
+				),
+			)
+		const bare = errorsFor(stateless as any, '20 §10')
+		assert.ok(
+			bare.some((f) => f.message.includes('states no conditions')),
+			bare.map((f) => f.message).join('\n'),
+		)
+		// And the sentence is counted off the same list, so it can never again
+		// name a condition the evaluator does not read.
+		assert.ok(
+			bare.some((f) => /equals \/ equalsPath \/ truthy \/ default/.test(f.fix)),
+			bare.map((f) => f.fix).join('\n'),
+		)
+	})
+})

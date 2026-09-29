@@ -9,7 +9,7 @@
  * Live controls join these pages when @serene-pub/controls exists (T6c);
  * until then the option tables are the reference.
  */
-import type { AnnouncementDocument } from '@serene-pub/sdk'
+import { i18nText, type AnnouncementDocument } from '@serene-pub/sdk'
 import type { DocPage } from './docs.js'
 
 const esc = (s: string) =>
@@ -128,7 +128,7 @@ export function renderSite(
 	announcement: AnnouncementDocument,
 	pages: DocPage[],
 ): SitePage[] {
-	const title = announcement.identity.title
+	const title = i18nText(announcement.identity.title) ?? announcement.identity.ns
 
 	const navFor = (depth: number, current: string): string => {
 		const prefix = depth === 0 ? '' : '../'
@@ -145,7 +145,7 @@ export function renderSite(
 				parts.push(
 					link(
 						`genres/${g.id.replace(/[:/]/g, '_')}.md`,
-						typeof g.name === 'string' ? g.name : ((g.name as any)?.en ?? g.id),
+						i18nText(g.name) ?? g.id,
 					),
 				)
 		}

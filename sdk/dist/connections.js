@@ -50,6 +50,7 @@ const sharedWithAnotherNode = (n, slot) => {
  *
  * "Needs" means a binding an importer has to make. A slot the document already
  * points at another node's is not one of those — see `sharedWithAnotherNode`.
+ * @experimental
  */
 export function requiredConnections(doc) {
     const out = [];
@@ -74,6 +75,7 @@ export function requiredConnections(doc) {
  * Feeds `needs-configuration` (12 §6), which is deliberately not `broken`. A spec nobody
  * has given a connection is not damaged, it is unfinished — and the difference decides
  * whether a user files a bug or opens settings.
+ * @experimental
  */
 export function unwiredConnections(doc, bound) {
     const has = new Set(bound.map((b) => `${b.nodeKey} ${b.slot}`));
@@ -91,6 +93,7 @@ export function unwiredConnections(doc, bound) {
  * "Embeddings", "Image generation"), so `can` only reads for the handful that
  * happen to start with a verb and gives "a connection that can Embeddings" for
  * the rest.
+ * @experimental
  */
 export const renderRequirement = (r) => {
     const caps = (r.requires ?? []).map(capabilityLabel);
@@ -109,6 +112,7 @@ export const renderRequirement = (r) => {
  *
  * Takes the resolved capability set per slot rather than a connection id, so
  * this stays pure — the caller does the lookup it was going to do anyway.
+ * @experimental
  */
 export function unsatisfiedConnections(doc, boundCapabilities) {
     const byAddress = new Map(boundCapabilities.map((b) => [`${b.nodeKey} ${b.slot}`, b.capabilities]));

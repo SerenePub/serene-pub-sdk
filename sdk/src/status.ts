@@ -11,8 +11,8 @@
  * `cancelled`, because "what was it doing when it died" is a question the
  * receipt should answer.
  *
- * Text is a locale map with variables; the CLIENT resolves the locale, so a
- * handler never sees a language. `{speaker}` is the one variable the HOST
+ * Text is display text with variables — a string, or a locale map (R-20);
+ * the CLIENT resolves the locale, so a handler never sees a language. `{speaker}` is the one variable the HOST
  * fills — see `HOST_FILLED_STATUS_VARS` — because a handler is blind to who
  * is speaking and must stay so.
  *
@@ -21,11 +21,16 @@
  * and it decides nothing.
  */
 
-import type { LocaleMap } from './descriptors.js'
+import { i18nText, isI18n, localeMapOf, type I18n, type LocaleMap } from './i18n.js'
 
-/** One status: a locale map with `en`, and the values its `{vars}` take. */
+/**
+ * One status: display text (R-20 — a string or a locale map with `en`), and
+ * the values its `{vars}` take. A bare string is `en`, so `ctx.status({ i18n:
+ * '{speaker} is thinking' })` is the short spelling of the map form.
+ * @experimental
+ */
 export interface StatusText {
-	i18n: LocaleMap
+	i18n: I18n
 	vars?: Record<string, string | number>
 }
 
@@ -33,6 +38,7 @@ export interface StatusText {
  * The receipt's one record of a status — the last one set, and the node that
  * set it — present only when the run ended `halt`, `err` or `cancelled`
  * (R-21, "optional, taken"). Never on an `ok` receipt, and never a node row.
+ * @experimental
  */
 export interface LastStatus {
 	nodeKey: string
@@ -46,24 +52,29 @@ export interface LastStatus {
  * know and the host always can. A text naming `{speaker}` on a run with no
  * speaker keeps the variable unset; see `renderStatusText` for what a reader
  * sees then.
+ * @experimental
  */
 export const HOST_FILLED_STATUS_VARS = ['speaker'] as const
 
 /** `{name}` — one variable placeholder, as every locale of a status spells it. */
 const VAR_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g
 
-/** Is this a status a run can carry? A locale map with an `en` string, at least. */
+/**
+ * Is this a status a run can carry? `i18n` is display text a publish accepts
+ * (R-20): a non-blank string, or a locale map whose `en` is non-blank. The
+ * executor drops a status that is not, with a note on the receipt — a status
+ * is advisory and never halts a run.
+ * @internal
+ */
 export function isStatusText(value: unknown): value is StatusText {
 	if (!value || typeof value !== 'object') return false
-	const i18n = (value as { i18n?: unknown }).i18n
-	if (!i18n || typeof i18n !== 'object') return false
-	return typeof (i18n as { en?: unknown }).en === 'string'
+	return isI18n((value as { i18n?: unknown }).i18n)
 }
 
-/** The variable names a status's text mentions, across every locale it carries. */
+/** The variable names a status's text mentions, across every locale it carries. @internal */
 export function statusVarsMentioned(text: StatusText): string[] {
 	const names = new Set<string>()
-	for (const template of Object.values(text.i18n)) {
+	for (const template of Object.values(localeMapOf(text.i18n))) {
 		if (typeof template !== 'string') continue
 		for (const m of template.matchAll(VAR_PATTERN)) names.add(m[1]!)
 	}
@@ -77,6 +88,7 @@ export function statusVarsMentioned(text: StatusText): string[] {
  *
  * Returns the same object when nothing changes, so a caller can dedupe by
  * identity as well as by content.
+ * @internal
  */
 export function fillStatusVars(
 	text: StatusText,
@@ -103,9 +115,10 @@ export function fillStatusVars(
  * summarize, a graph build) leaves `speaker` unset by design, and "is
  * thinking" reads fine with nobody named. An empty gap elsewhere is one
  * nobody would notice.
+ * @internal
  */
 export function renderStatusText(text: StatusText, language = 'en'): string {
-	const template = text.i18n[language] ?? text.i18n.en
+	const template = i18nText(text.i18n, language) ?? ''
 	const vars = text.vars ?? {}
 	const withoutUnfilledSpeaker =
 		!('speaker' in vars) && template.startsWith('{speaker} ')
@@ -116,11 +129,11 @@ export function renderStatusText(text: StatusText, language = 'en'): string {
 	)
 }
 
-/** Two statuses that would render identically in every locale. */
+/** Two statuses that would render identically in every locale. @internal */
 export function sameStatus(a: StatusText | undefined, b: StatusText | undefined): boolean {
 	if (a === b) return true
 	if (!a || !b) return false
-	return sameLocaleMap(a.i18n, b.i18n) && sameVars(a.vars, b.vars)
+	return sameLocaleMap(localeMapOf(a.i18n), localeMapOf(b.i18n)) && sameVars(a.vars, b.vars)
 }
 
 /** Same locale map — order-independent, like `sameVars` (a rebuilt object must still match). */

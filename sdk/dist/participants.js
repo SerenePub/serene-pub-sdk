@@ -37,7 +37,7 @@
  * question's shape (`Portrayal`) and never answers it: nodes stay blind to
  * it, and a definition that needs the answer declares an in-port.
  *
- * *Portrayal*, not *voice*: a **voice** is one cast member's stage inside an
+ * *Portrayal*, not *voice*: a **voice** is one cast member's step inside an
  * adventure turn (`.each('voices')`), and a connection's `voices` are TTS —
  * the resolver's answer is a third thing and gets its own word (ruled
  * 2026-09-16).
@@ -48,8 +48,107 @@
  * not *availability* (the genre's `messageVerbs`). A reference says *who*;
  * the venue says *where*; the resolver says *whether they are here*.
  */
-/** The role-shaped references — no id, resolved against the session and the run. */
-export const PARTICIPANT_ROLES = ['owner', 'admin', 'participant', 'item', 'run-owner'];
+/**
+ * The role-shaped references — no id, resolved against the session and the run.
+ *
+ * `participant` is everyone in the session: its people, and the model's
+ * context. The two catch-alls split it (R57): `person` is every human member,
+ * `ai` is the model's context — what goes into a prompt. A data audience
+ * (`see` on a stored value) is written in these; an empty one is pipelines
+ * only.
+ * @experimental
+ */
+export const PARTICIPANT_ROLES = ['owner', 'admin', 'participant', 'person', 'ai', 'item', 'run-owner'];
+/**
+ * Does the viewer hold any of these references, under the resolver's rules?
+ * A reference the viewer *is* — a `person` portrayal naming them — holds.
+ * `item` is the per-message ownership rule: with `item` given, that is its
+ * answer; with none (a listing, ahead of any message) it holds and the
+ * caller reports it separately as `itemGated`, a question for a message
+ * rather than a refusal.
+ *
+ * The judge of `core:verdict/audience` (`verdicts.ts`): the host's listing
+ * reads `canAct` through it and its fire quotes the verdict, so the two
+ * cannot disagree.
+ * @internal
+ */
+export function audienceHolds(refs, portrayals, viewer, item) {
+    for (const ref of refs) {
+        if (ref === 'item') {
+            if (item === undefined || item)
+                return true;
+            continue;
+        }
+        const p = portrayals[ref];
+        if (p?.by === 'person' && p.userId === String(viewer.userId))
+            return true;
+    }
+    return false;
+}
+/**
+ * Does the model's context hold any of these references (R57)? The prompt
+ * built for `speaker` — a `character:` or `envoy:` reference, when there is
+ * one — may carry what everyone may see (`participant`), what the model may
+ * (`ai`), and what that speaker may. `[]` holds for nobody.
+ * @internal
+ */
+export function aiHolds(refs, speaker) {
+    const who = speaker && isParticipantRef(speaker) ? canonicalParticipantRef(speaker) : null;
+    return refs.some((r) => {
+        if (!isParticipantRef(r))
+            return false;
+        const c = canonicalParticipantRef(r);
+        return c === 'ai' || c === 'participant' || (!!who && c === who);
+    });
+}
+/** The one spelling of a reference — `' character:7 '` is `character:7`. Throws on a non-reference. @internal */
+export const canonicalParticipantRef = (raw) => formatParticipantRef(parseParticipantRef(raw));
+/**
+ * One reader's view of an owner-keyed store (R57): the values whose audience
+ * `holds` for that reader, as one object per owner. An owner left with no
+ * value the reader may see is left out. Pipelines read the store itself, not
+ * this.
+ * @internal
+ */
+export function visibleTo(values, audiences, holds) {
+    const out = {};
+    for (const [owner, doc] of Object.entries(values)) {
+        if (!doc || typeof doc !== 'object' || Array.isArray(doc))
+            continue;
+        const seen = {};
+        for (const [key, value] of Object.entries(doc)) {
+            const refs = audiences[owner]?.[key] ?? [];
+            if (refs.length && holds(refs))
+                seen[key] = value;
+        }
+        if (Object.keys(seen).length)
+            out[owner] = seen;
+    }
+    return out;
+}
+/**
+ * What is wrong with an audience a write names, or undefined (R57). A list of
+ * participant references; `item` and `run-owner` mean nothing for a stored
+ * value — there is no message to own, and a value outlives the run.
+ * @internal
+ */
+export function dataAudienceFindings(raw) {
+    if (raw === undefined)
+        return undefined;
+    if (!Array.isArray(raw))
+        return 'an audience is a list of participant references';
+    for (const ref of raw) {
+        try {
+            parseParticipantRef(ref);
+        }
+        catch (e) {
+            return e.message;
+        }
+        if (ref === 'item' || ref === 'run-owner')
+            return `'${ref}' is not an audience for a stored value — it names a message or a run, and the value outlives both`;
+    }
+    return undefined;
+}
 // An id: anything but whitespace and the separator. The host narrows it.
 const ID = /^[^\s:]+$/;
 // A slug, optionally namespaced by dots (`<plugin>.<key>` for an action's envoy).
@@ -59,6 +158,7 @@ const roles = new Set(PARTICIPANT_ROLES);
  * Take a reference apart. Throws on anything that is not one, with the
  * sentence a declaration error should carry — an audience naming `user:` with
  * no id, or `character:Tom`, is an authoring mistake, not a read to degrade.
+ * @internal
  */
 export function parseParticipantRef(raw) {
     if (typeof raw !== 'string')
@@ -87,7 +187,7 @@ export function parseParticipantRef(raw) {
             throw new Error(`'${raw}' is not a participant reference — '${kind}:' is not a kind (user, character, envoy)`);
     }
 }
-/** The one spelling a parsed reference has. `parse(format(x))` is `x`. */
+/** The one spelling a parsed reference has. `parse(format(x))` is `x`. @internal */
 export function formatParticipantRef(parsed) {
     switch (parsed.kind) {
         case 'user':
@@ -100,7 +200,7 @@ export function formatParticipantRef(parsed) {
             return parsed.kind;
     }
 }
-/** Is this a well-formed participant reference? Never throws. */
+/** Is this a well-formed participant reference? Never throws. @internal */
 export function isParticipantRef(raw) {
     try {
         parseParticipantRef(raw);
@@ -123,6 +223,7 @@ const namespaceOf = (specId) => {
  * no dot); a core action taking a bare key would give that up. The origin
  * itself is a fact of the declaration (`DeclaredEnvoy.origin` on the host),
  * never re-derived from the slug.
+ * @internal
  */
 export function envoySlugOf(owner, key) {
     if ('genre' in owner)
@@ -132,11 +233,11 @@ export function envoySlugOf(owner, key) {
         throw new Error(`an action's envoy is namespaced by its spec ('<plugin>.<key>') and '${owner.action.specId}' has no namespace`);
     return `${ns}.${key}`;
 }
-/** The participant reference for an envoy: `envoy:<slug>` (see `envoySlugOf`). */
+/** The participant reference for an envoy: `envoy:<slug>` (see `envoySlugOf`). @experimental */
 export function envoyIdentity(owner, key) {
     return `envoy:${envoySlugOf(owner, key)}`;
 }
-/** The slug of an `envoy:` reference, or null for any other reference. */
+/** The slug of an `envoy:` reference, or null for any other reference. @internal */
 export function envoySlugOfRef(ref) {
     if (typeof ref !== 'string')
         return null;

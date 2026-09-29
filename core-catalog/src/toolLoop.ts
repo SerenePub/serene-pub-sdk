@@ -47,8 +47,11 @@
  */
 import { compile, handlebars, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { withSpriteTail } from './sprites.js'
 
+/** @experimental */
 export const TOOL_LOOP_SPEC_ID = 'core:spec/tool-loop'
+/** @internal */
 export const TOOL_LOOP_VERSION = '1.0.0'
 
 /**
@@ -71,6 +74,7 @@ export const TOOL_LOOP_VERSION = '1.0.0'
  * prose going to a model, not markup going to a browser, and Handlebars' HTML
  * escaping turns the fenced tool convention into `&#x60;&#x60;&#x60;` — an
  * advertisement the model cannot follow and the parser cannot read back.
+ * @experimental
  */
 export const TOOL_LOOP_TEMPLATE = `{{{system}}}
 
@@ -90,8 +94,11 @@ export const TOOL_LOOP_TEMPLATE = `{{{system}}}
 {{{postHistory}}}
 {{/if}}`
 
+/** @experimental */
 export const toolLoopSpec = () =>
 	compile(
+		// The sprite tail (DESIGN-sprites §5): after `save`, choose the line's face.
+		withSpriteTail(
 		spec(TOOL_LOOP_SPEC_ID, {
 			version: TOOL_LOOP_VERSION,
 			/**
@@ -217,6 +224,7 @@ export const toolLoopSpec = () =>
 							// `prompt` owns the pool and the text rides in
 							// `context`.
 						}),
+						{ expose: { status: 'Thinking' } },
 					)
 					.task('parse', ($: any) =>
 						C.parseToolCall.v1({
@@ -235,6 +243,7 @@ export const toolLoopSpec = () =>
 							tools: $.available.tools,
 							text: $.tools.item.parse.text,
 						}),
+						{ expose: { status: 'Using a tool' } },
 					),
 			)
 			.task('answer', ($: any) =>
@@ -271,5 +280,6 @@ export const toolLoopSpec = () =>
 					})
 					.params('answer', { path: 'answer' }),
 			)
+		)
 			.build(),
 	)

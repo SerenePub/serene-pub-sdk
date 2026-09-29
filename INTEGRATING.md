@@ -61,13 +61,43 @@ stable. Run it against real rows, not fixtures.
 
 ### Step 2 — Type registry and boot sync (U2)
 
-`snapshotRegistry(allTypes(), { release })` projects descriptors into `type_registry` rows.
-Sync on boot; a version whose hash changed **raises** rather than publishing or ignoring.
+`snapshotRegistry(allDefinitions(), { release })` projects descriptors into registry rows
+(core: `pipeline_definition_registry`, one per slug, and `pipeline_definition_declarations`,
+one per content hash). Sync on boot.
 
-**Proves it:** sync idempotence, plus `checkInstall` returning clean for a document
-compiled against this release and `E_SHAPE_DRIFT` for one compiled against another. The
-second is the one worth having a fixture for — every id resolving while a shape has moved
-is the failure a version number alone does not catch.
+**Edit a declaration and it publishes under a new hash; there is nothing to version.**
+A slug — `acme.dice:roll@1`, `acme.dice:spec/board@1.0.0` — is an *indirection* to a content
+hash, and the rows are keyed by that hash. Boot compares what your package declares against
+what the instance already holds: an unseen declaration is filed under its hash and the
+slug's current pointer moves to it, while the declaration it moved off stays exactly where
+it is, so every receipt that pinned the old hash still resolves. Nothing is rewritten,
+nothing is deleted, and no migration is involved — correcting a range, declaring a port you
+were always supplied, fixing a default, all reach an install by republishing. What still
+calls for `@N+1` is a change that **breaks the documents pinning the old one**: a removed
+port, a narrowed range, a withdrawn enum option. That is a judgement about your consumers,
+not a technical constraint — the instance will publish either way.
+
+**Proves it:** sync idempotence, republishing a changed declaration and finding the previous
+one still resolvable by its hash, plus `checkInstall` returning clean for a document compiled
+against this release and `E_SHAPE_DRIFT` for one compiled against another. The last is the one
+worth having a fixture for — every id resolving while a shape has moved is the failure a
+version number alone does not catch.
+
+**A published definition is bound, provisional, or gone — the boot says which (plans/29 R-2).**
+After the sync, `assertCoreDefinitionsBound` walks every `core:` definition the build publishes
+against `coreBindings()`: one with no handler and no `provisional: true` refuses a dev boot with
+the list, and is said once on `console.error` in production. `provisional` is the declaration's
+own word for *a plan owns this, nothing runs it yet* — **policy, not contract** (plans/31 V6), so
+binding it later moves no pin: the registry row's `policy` and `status: 'provisional'` are refreshed
+in place on the next sync. No listing that offers definitions
+shows it, `validate()` refuses a document placing it (law R-2, *bind it or remove the node*),
+and the executor refuses the node with the same sentence. The sync is also a **reverse-diff**
+when told it holds the owner's complete set (`complete: true`, which core's boot passes): a row
+whose slug the build does not declare is marked `status: 'removed'` with `removed_at`, never
+deleted — a stored spec may still pin it, and `reconcilePlacedNodes` turns each such pin into a
+config notice of kind `unbound` rather than a refused boot. A host integrating the SDK keeps the
+same three facts: which of its published definitions have handlers, which are provisional, and
+which a stored document pins that the build no longer publishes.
 
 ### Step 3 — Executor and bindings for what already exists (U3, U5)
 
@@ -75,11 +105,11 @@ Bind the core types to the code that already does the work:
 
 | type                             | binds to                                            |
 | -------------------------------- | --------------------------------------------------- |
-| `core:query/chat-history@1`      | today's history loader                              |
+| `core:query/session-history@1`   | today's history loader                              |
 | `core:query/lorebook-triggers@1` | today's World Info scan                             |
 | `core:task/assemble@2`           | today's prompt builder, behind the allocation shape |
-| `core:oracle/generate-text@1`  | today's connection adapters                         |
-| `core:outlet/create-message@1` | today's message insert                              |
+| `core:oracle/generate-text@1`    | today's connection adapters                         |
+| `core:outlet/create-message@1`   | today's message insert                              |
 
 Nothing is rewritten in this step. Each binding is a wrapper, and the wrapper is where the
 old code keeps living. One addition at the message outlet: blocks with choices/forms are
@@ -90,9 +120,10 @@ stamped with the writing spec's identity via `stampBlockActions` — the seam U5
 **C6** (budgets meter consumption, waiting is free), **C7** (timeouts bound execution, not
 waiting), **C8** (forced-sequential is identical to parallel).
 
-**Status:** `chat-history`, `create-message` and `update-message` are bound and running
-against real rows (`src/lib/server/pipelines/`). `assemble` and `generate-text` halt with a
-reason, for the structural reason below.
+**Status:** all five are bound in `src/lib/server/pipelines/runtime/bindings.ts`
+(`session-history`, `lorebook-triggers`, `assemble@2`, `generate-text`, `create-message`),
+and a reply pipeline runs end to end. The options below record why `assemble` and
+`generate-text` were bound the way they were.
 
 ### Handler input types come from the contract
 
@@ -171,7 +202,13 @@ structuralCompat(
 A handler declares what it reads with `reads<typeof C.x>(hook, { ports, params })` — the
 arrays are typed against the definition, so a misspelt name fails to compile — or with the
 untyped `declaresReads(hook, { ports, params })`; a plugin declares it in its manifest, on
-the `nodeDefinitions` entry (`{ hook: 'search', reads: { ports: [...], params: [...] } }`).
+its binding entry (`{ hook: 'search', reads: { ports: [...], params: [...] } }`). That
+binding is `hooks.nodeHandlers` — `{ '<definitionId>@<version>': 'search' }` — since D-6b,
+where `nodeDefinitions` became the array of summaries the audit screen and the registry
+projection read; the map spelling under `nodeDefinitions` is still read, for a manifest
+written by hand. ⏳ `serene-pub build` writes the plain-string form (it has no way to
+derive what a handler reads), so a packaged plugin declares no reads and is held to
+nothing — the typed `reads<…>()` at the author's own call site is what holds it there.
 **Every core handler carries one** (R-12, 2026-09-16), and the declaration is held in both
 directions: `bindingCompat.ts` refuses a boot where a handler reads what its definition does
 not supply, and `boot/declaredReads.ts` fails the suite where a definition declares an
@@ -215,7 +252,7 @@ Three ways out, and they are not equal:
    Two implementations of every provider protocol, diverging from the first bug fix onward.
 
 Option 1 also decides the shape of `assemble`: PromptBuilder is already pure given its
-inputs — the caller hydrates the chat and passes it in — so `assemble` can wrap it directly
+inputs — the caller hydrates the session and passes it in — so `assemble` can wrap it directly
 **provided a Query loads those inputs first**. A Task is handed no services (F11), so the
 hydration cannot happen inside `assemble`; it belongs in a Query, and connection **metadata**
 reaches it while material never does (F18).
@@ -228,8 +265,8 @@ occasion (`08 §5b`). `checkParity` and `parityGate` are in the SDK.
 
 `parityGate` fails an empty corpus on purpose: "nothing was checked" is not "nothing was
 wrong", and an integration that reports green over zero fixtures is the single most
-expensive mistake available here. Build the corpus from real chats — group chats, chats
-with lorebooks, chats at the context limit, chats with custom prompt configs.
+expensive mistake available here. Build the corpus from real sessions — group sessions, sessions
+with lorebooks, sessions at the context limit, sessions with custom prompt configs.
 
 **Proves it:** every fixture byte-identical, over a corpus somebody looked at.
 
@@ -257,6 +294,17 @@ around.
 **Proves it:** **C5** (replay without calling the Provider), **C11** (an admin kill is
 `cancelled` with an actor, not `err`), **C12** (an event-triggered halt before any effect
 compacts; a click does not), **C14** (no receipt in the corpus contains a credential).
+
+**Who portrays whom (R-21 (4), U5a).** Core resolves it — `runtime/portrayals.ts`, from the
+session's members, cast and persona rows — **once, before `run()`**, and hands the map in as
+`RunOptions.portrayals`; the executor stamps it on the receipt at construction and never
+reads it. It rides `HostScope.portrayals` read-only for the host's own seams and is
+deliberately not on any node's `ctx`: a definition that needs the answer declares an in-port
+and the spec wires it. Resolved for every run with a session behind it except a pre-call
+preview (`preview: true` — nobody speaks, so nobody is portrayed); a `{ atNode }` run is
+answered. The inlet's `speaker` port is a participant reference (`character:<id>` |
+`envoy:<slug>`), the one form audiences use, and the speaker is the AI's unless a member's
+presence portrays them.
 
 **The built-in writes (R-15, U5b).** *Anything that alters message state is a built-in*: core
 implements the write and it always emits what changed and what was lost. A venue's handler makes
@@ -286,6 +334,139 @@ things follow from "it is a run":
   `pipeline_event_registry.payload_shape`, so a listener can be checked against what it will receive
   without loading anything.
 
+**Forms and the effects line (R-15 *Forms* · *The line*, R-21 (5), U5d).** The message writes take
+a **`blocks`** in-port — a `MessageBlock[]` — and the host's commit is where a block becomes a
+**form**: `checkMessageBlocks` gates the tree; `undeclaredBlockFunctions` refuses a function the
+running document declares no action for (`HostScope.contributes` is the document's
+`contributes`, set by `runSpec`); a block naming another spec's identity on purpose is held to the
+installed declaration (`foreignBlockActions` → `listGenreActions`); `worldBlockFunctions` and the
+same lookup refuse a `world` action; `stampBlockActions` writes the identity and `assignBlockIds`
+the id; one `core:blocks` part is appended (`messages/blocks.ts`). Then the **pinned** portrayals
+(`HostScope.portrayals`, never re-resolved) answer for every block with an `addressee`: `ai` pushes
+`{ payload, form }` onto `HostScope.addressed`, and `runSpec` dispatches each as
+`core:event/form-addressed@1` **after `saveReceipt`** — through `dispatchSessionEvent`, with
+`lineage: childLineage(this run)` and the parent's `io` and `signal` — and awaits the tree before
+returning. A person or nobody: the block waits. Four things a host wired by hand should know:
+
+- **Lineage is the executor's to stamp and the host's to enforce.** `RunOptions.lineage`
+  (`RunLineage`: `parentRunId` · `rootRunId` · `depth`) lands on the receipt; `saveReceipt` writes
+  the three `pipeline_runs` columns (migration 0140); `runtime/lineage.ts` holds the per-root caps
+  (`MAX_RUN_DEPTH = 4`, `MAX_RUN_DESCENDANTS = 16`), asked once per dispatch — by
+  `dispatchSessionEvent` at the event door and by the `answer-form` commit at the fire door; a
+  refusal is **receipted** (`refusalReceipt`, `sessionEvents.ts`) — a halted run row naming the
+  cap, lineage filled, the routed spec named — never dropped. The fire door's refusal is written
+  by `dispatchFires` **after the answer run's own row** (U5d review, S-b): the commit only records
+  `refused` on the `PendingFire`, so the tree's rows land in dispatch order. A root releases its
+  count when it finishes.
+- **`answer-form@1` is a click — made at the commit, run after the receipt** (U5d review, W1/W2).
+  Its commit (`host.ts`) reads the block off the row, checks the answer against
+  `formAnswerSchema` (`formFireOf` / `checkValues`), routes the spec, asks the caps, chooses the
+  child's run id and pushes a `PendingFire` onto `HostScope.fires`; it publishes `firedAction` and
+  `firedRunId`, and every failure to make the fire — an answer naming no option, a form already
+  answered, a cap — is a **halt** of the answer run, never a throw. `runSpec` then dispatches each
+  fire through `fireAction` (`runtime/fireAction.ts` — the road `sessions:fireAction` also
+  takes) **after `saveReceipt`**, outside any node timeout, with
+  `actor: { userId: run owner, as: addressee }`, `lineage: childLineage(this run)`, the parent's
+  `io` / `signal` / `sink` / `onStatus` / `onParked`, and the answer run's **pinned** `portrayals`
+  (W3). `fireAction` admits an `as` fire only for a block whose addressee is that reference and
+  whose portrayal — pinned, for a dispatched fire; resolved now, for a click — is `ai`; a person's
+  fire on the same block only when they portray the addressee, or when nobody does and they are
+  the owner (W4); normalises a `choices` press to `{ choice }` and checks a `form` press's values
+  (W5); refuses a `world` action either way, by the pressed declaration or by the routed spec's
+  governing action on the legacy branch (W6); refuses a form already `answered` (W7); and, once
+  the action's run lands, records `form-answered` in `session_changes` with `answeredBy`, stamps
+  `answered` on the stored block (`markFormAnswered`) and announces the row with its parts. **Every
+  fire leaves a row under `firedRunId`** (W-a): a refusal is a halt, a fire stopped before it
+  started is `cancelled` with the stop's actor and reason, a fire that threw is a halt on the
+  error's sentence — `dispatchFires` writes each through `refusalReceipt`, never only a log line.
+  The outlet may be placed only under `core:inlet/form-addressed@1` — `validate()` refuses it
+  elsewhere and the host checks `HostScope.inletDefinitionId`. Its `timeoutMs` is a write's order
+  of magnitude (30 s, S-a: the commit does database work of its own, and under PGlite contention
+  five seconds turned a halt into a timeout `err`).
+- **The host stamps the channel head, and the door compares against it** (R-15 *Staleness and
+  order*, U5f). `writeBlocks` reads `stalenessHead(db, sessionId, row.channel, row.id)` — the
+  greatest `session_messages.id` on the row's exact channel string, lane-scoped, among rows that
+  are not **answers to a form on that row** — and stamps it on every `choices` / `form` block as
+  `head` (`assignBlockHead`; a head a spec wrote is replaced, and the validator names a malformed
+  one as host-owned). An answer's row is known by `metadata.answersForm: { messageId, blockId }`,
+  which the `create-message` commit stamps from `HostScope.answersForm` — set by `fireAction` on
+  the run it starts for a press (`SpecRunRequest.answersForm`), never taken from a spec's or a
+  client's `metadata` — so an answer does not move the conversation on from the row it answers
+  and several questions on one row are each answerable. `channelHead` stays the newest-row read
+  behind `itemValuesFor`'s `item.isNewest`. Staleness is never stored: `fireAction`, after the
+  `answered` refusal and before the audience, reads the staleness head now and refuses a press where
+  `isFormStale(block, headNow)` — `!answered && head != null && headNow > head` — with
+  `FORM_OVERTAKEN` (*That question was overtaken — the conversation moved on before it was
+  answered.*); a dispatched fire meets the same door and `dispatchFires` receipts it as a halt on
+  that sentence. The first stale press records `core:event/form-superseded@1` `{ messageId,
+  blockId }` in `session_changes` (`recordFormSuperseded`, once per block), so the next reply's
+  inlet learns the question lapsed. Deleted rows do not count toward the head; hidden ones do; a
+  block with no `head` (pre-U5f) is never stale; answered beats stale. The client mirrors the rule
+  (`utils/formAnswer.ts` `staleOf` over the list it holds) and collapses the block.
+- **A parked run releases its caller** (U5d review, R-b). `createReviewer` takes `onParked`, told
+  once per gate after the card is pushed; `runSpec` relays it as `SpecRunRequest.onParked` and
+  hands it to every child. `fireAction` races its run against its own park: the moment its gate
+  parks it answers `{ kind: 'parked', runId, specId }`, the run keeps its handle (the gate is
+  unchanged — stop, decide, resolve as before), and how it ends arrives on
+  `FireActionRequest.onSettled` (`ran` / `stopped` / `failed`). A park in a descendant does not
+  park the caller: the descendant's own `fireAction` returns, the tree unwinds, and the fact rides
+  the `ran` outcome's `parked` list. `sessions:fireAction` answers `parked: true` either way
+  and releases the session's generation lock with the ack; the settled run's terminal frame, relist
+  and answer arrive later as pushes.
+- **`validate()` runs at the instance's publish** (W9): `saveDocument` refuses a document with
+  any error-severity finding (`assertValidates`), with the finding's sentence. The shipped catalog
+  is clean; a host that wants a document past that door has no door to go through. One shipped
+  spec that stopped validating would be a boot failure by design — the zero-error test over the
+  catalog is the guard. A transcript wired as candidates (`messages@1` into a
+  `context-candidates@1` port) is a **warning** naming the `band` port, never an error (R-a):
+  `messages@1` is no longer assignable to `context-candidates@1`, because the host drops rows
+  handed as candidates rather than ranking them. A reference wired into a *field* of a port is
+  held to nothing where the port is one a spec assembles from parts (`json@1`,
+  `template-context@1`) and to the port's shape everywhere else (S-c).
+- **Display text is enforced at every publish door (R-20; U5i, ruled 2026-09-17).** Every
+  author-facing string is `I18n = string | LocaleMap` — a bare string is `en` — and one check,
+  `i18nFindings`, refuses a map without `en`, a blank `en` or bare string, and any other value,
+  each with a sentence naming the field and the fix. The doors: `register()` (a definition's
+  `i18n`, its slots' `description` / prompt `fields` / `schema`, script points, a shape's
+  `fields` and `panels[].title`, an entry shape's `fields`), `genre()`, `envoyFindings`,
+  `defineAttributeSlot*` / `defineAttributeSheet*`, `defineScriptKind`, the value toolkit,
+  `config()` / `preset()` / `announce.build()`, `defineExtension` and the packager
+  (`E_MANIFEST_DISPLAY_TEXT`), an action's label and an enabled-when's reason, `validate()`
+  (`law: 'R-20'`: presets, the carried genre's name / description / envoys / shape) — and so the
+  host's publish through `saveDocument` — and the host's plugin install
+  (`manifestDisplayTextFindings`, `plugins/store.ts`). `ctx.status` drops a malformed status
+  with a receipt note, never a halt. Readers resolve through `i18nText(v, language)` — the SDK's
+  one resolver; the app's `i18nTextIn` wraps it, and widget titles are resolved at
+  `$lib/shared/widgets/types`. Exempt: slash names, receipt notes, form-block content, message
+  content, permission ids.
+- **Review fields are the general rule.** `reviewFieldsFinding` is asked at `register()`: an
+  effectful definition without `review.fields` still registers, but the omission is kept
+  (`definitionFindings`) and `validate()` warns on every node bound to it; every core definition
+  declares its fields. A host reading `definitionFindings()` at boot can say so once.
+- **The line is enforced everywhere an author is.** `ActionDecl.effects` (`fiction` | `world`);
+  `actionFindings` refuses a `world` action's venue outside `WORLD_ACTION_VENUES` or an `act`
+  outside `WORLD_ACTION_ACTORS` — at construction, in `validate()`, in `announce.build()`, and at
+  the host's publish (`saveDocument` runs `actionDocumentFindings`).
+- **Enabled-when is the door's second verdict (R-15; U5e, 2026-09-17).** The host builds one
+  **published values** document per listing and per fire (`entities/publishedValues.ts`:
+  `session.generating`, `session.fields`, the resolver's `state`, and `item` for the message a
+  press names — `shared/actions/itemValues.ts` is the shape the client builds per row) and
+  evaluates each action's effective predicate set with the SDK's `evaluateEnabledWhen`: the
+  session's binding override (`pipeline_bindings.enabled_when` on the action's identity, set
+  through `sessions:bindFunction` with a `subject`), else the declaration's `enabledWhen` (an
+  explicit `[]` opts out of the genre's default), else the genre's default for that identity
+  (`genreEnabledWhen`; plans/31 V2 — the identity `<spec slug>#<key>` is the one key). `fireAction`
+  asks `enablementVerdict` after the audience and before routing — a form's answer and a
+  hand-made `sessions:fireAction` alike — and refuses with the failing predicate's `reason`
+  rendered in the actor's language; the core verb handlers ask the same through `verbRefusal`'s
+  `door`, and the floors no genre can switch off (edit, branch) through `verbEnablementRefusal`
+  (`messages/verbs.ts`). The listing (`listSessionActions`) answers `enabled` / `reason` for
+  what it could judge and hands the `item.*` predicates to the client as `itemPredicates`; both
+  read `enablementOf`, so a grey control and a refusal never disagree. When a root run starts
+  and again when it ends the host pushes `sessions:actions` to the session's users
+  (`sessions/actionsPush.ts`) — the server, never the client, decides when a verdict has moved. The junction clause reads the same `readPath` / `predicateHolds`
+  (`predicates.ts`).
+
 **Statuses (R-19, R-21, U5h).** Every kind's ctx carries `ctx.status({ i18n, vars })` — a query
 says *{speaker} is thinking*, `assemble` says *{speaker} is composing*, the oracle says *{speaker}
 is typing* before its call; a draft inside an `each` says *summarising part {n} of {total}* from
@@ -314,7 +495,23 @@ The property that makes this worth doing is that the preview _is_ the payload �
 allocation, same wire formatting, same measurement — so the estimate cannot drift from the
 send.
 
-**Proves it:** **C13** — the previewed payload is byte-identical to the sent one.
+A preview is a **dry run** (09-B B4, R-21 (1)): every outlet before the halt still runs — the
+reply's placeholder outlet included — but `ctx.commit` returns a synthetic id and reaches no
+host, the node row is marked `dry`, and the event the write would have caused is recorded
+flagged rather than emitted. `RunOptions.dry` defaults to the preview flag
+(`dry = opts.dry ?? !!opts.preview`); a host may pass it alone to run a document to the end
+and write nothing.
+
+⚠ This is a semantic of `preview` itself, not of the shipped specs: a `preview: { atNode }`
+on ANY document performs none of the writes before `atNode`, and there is no per-outlet
+exemption. For a plugin author that means an outlet placed before the node a preview halts at
+runs — its binding is invoked, its payload is formed, the review gate sees it — and commits a
+synthetic id (`dry:<nodeKey>`) that downstream nodes read as they would a real one. A spec
+that needs a real row to exist during a preview is a design to reconsider, not a flag to flip;
+`dry: false` on a preview is the host's decision, never the document's.
+
+**Proves it:** **C13** — the previewed payload is byte-identical to the sent one — and the
+app's `replyRoad.int.test.ts`, which adds that the estimate leaves zero rows.
 
 ### Step 8 — Plugins (U14, U10, U21)
 
@@ -330,8 +527,44 @@ registers an event listener. Before the fold only `.on()` subscriptions surfaced
 pipeline that ran on every primary turn listed nothing; a manifest rebuilt against this
 release therefore carries one permission per locked pipeline that its previous build did
 not. Preset `bindings` are keyed by event **id** (`core:event/message-respond@1`), never by
-bare name; `announce.build()` refuses a bare key, and the host normalises one it finds in an
-already-installed manifest for one release, logging once.
+bare name; `announce.build()` refuses a bare key, and `syncPluginPresets` skips and reports one
+it finds in an installed manifest, logging once per preset — never written.
+
+A plugin's session widgets declare per-instance settings the same way core's do: a
+`settings` schema on `WidgetDecl` (`sdk/src/layout.ts`), written in the SDK's one field
+language — the `FieldDecl` a node's `params` use, so `SchemaForm` renders it with no UI work
+by the author. Core adds `title` and `lane` to every widget and reserves those two keys; a
+field declared in the `behaviour` group appears behind the settings card's advanced
+disclosure, and a field declared nowhere is never shown. Values are stored as deviations from
+the declared defaults, per widget instance, so a default changed in a later version reaches
+every instance that has not overridden it. A field no longer declared has its stored values
+pruned at boot (`db/widgetSettings.ts`) — ⏳ for core's widgets only; nothing yet calls the
+prune for a plugin's on install or update. The effective settings reach the widget through the
+data contract's `settings.v1` section — natively on `ctx`, and over the port as
+`{ t: "settings" }` for a frame.
+
+**What a hook's `ctx` carries is decided by the kind of hook (plans/29 R-3).** One table,
+`plugins/hookCtx.ts`, read by both sandboxes, by the boot and by the install probe:
+
+| kind                                       | `storage` | `fetch` |
+| ------------------------------------------ | --------- | ------- |
+| `task`, `chain-link`                       | —         | —       |
+| `query`, `outlet`, `event`, `lifecycle`    | yes       | —       |
+| `oracle`                                   | yes       | yes     |
+
+A task is pure (F11) and a chain link is a script — the in-app script host hands one
+`{ random, log }` and a plugin's link gets the same; the four storage kinds get an extension's
+own namespaced rows and nothing that reaches the network (F32); an oracle is the one kind that
+calls out. Every `callHook` names its kind (`CallOptions.kind` → `InvokeOptions.kind`), a call
+without one throws, and a member the kind is not granted is *absent* from `ctx` — never a stub
+that refuses — so `Object.keys(ctx)` is the whole answer. The boot runs the SDK's
+`assertHookSurface` over the event and lifecycle rows and holds the two pure rows to carrying
+neither member; the install-time conformance probe runs each hook the manifest binds to a
+`task` definition and fails the bundle, naming R-3/F11, when its failure changes once `storage`
+and `fetch` appear. A host integrating the SDK owns this table, and the conformance kit reaches
+it: **C25** asks the host for `hookCtxKeys(kind)` and holds each kind to `hookCtxKeysFor` from
+`@serene-pub/sdk/testing`, with `read`/`call`/`commit` reaching no handler. The host's own
+sandbox tests still prove the dispatch; the kit proves the table.
 
 ### Step 9 — Retire the old tables (0.7–0.8)
 
@@ -344,7 +577,7 @@ slower one is the user's.
 ## 1b. Tool loops
 
 A **tool** is a named, read-only function a model may ask for by name mid-run.
-Canonically it is a plugin's sandboxed hook; core ships four. The three nodes
+Canonically it is a plugin's sandboxed hook; core ships seven. The three nodes
 around it are deliberately small, and two of the three are pure — what makes an
 agentic turn expressible is the `loop` block, not a clever node.
 
@@ -399,10 +632,12 @@ through on `answer`.
    manifest is the one source of truth, never a convention guessed from an id.
    The hook runs through the sandbox that already exists, so permissions, the
    deadline, the seeded RNG and the invocation log all apply.
-2. **A core tool** — `search_entries`, `get_entry`, `grep_transcript`,
-   `read_summary`. All read-only, all reading the session through the host's own
-   enumerated read, so the hidden-message convention and the character-lore
-   privacy gate apply without a tool knowing they exist.
+2. **A core tool** (`runtime/tools/coreTools.ts`) — four reads, `search_entries`,
+   `get_entry`, `grep_transcript`, `read_summary`, all reading the session through
+   the host's own enumerated read, so the hidden-message convention and the
+   character-lore privacy gate apply without a tool knowing they exist; and three
+   that *ask*, `set_state`, `give_item`, `take_item` (`stateTools.ts`), which
+   only ever file a proposal (§1c).
 3. **Refused, by name.** Not "no result": a model told "unknown tool" with no
    name asks for the same one again.
 
@@ -414,7 +649,9 @@ An error is a **result**, never a throw: `main` is `{ tool, error }` and `text`
 renders it, so the model reads what went wrong and tries something else. A throw
 would end the run at the one moment the agent could have recovered. **A tool may
 not write** — a write inside a repeating block is N writes, which the validator
-refuses on the spine (F7) and which a writing tool would smuggle past it.
+refuses on the spine (F7) and which a writing tool would smuggle past it. The three
+state tools do not break this: what they create is a request with no effect on any
+value until a person accepts it.
 
 ### The carry
 
@@ -482,8 +719,8 @@ over a backend that never heard of tools, needing no adapter code at all.
 ## 1c. Attribute slots — declaring a stat
 
 A **stat** is a typed value about one owner that changes: health, mood, weather. Core owns the
-five *types* — whole number with optional bounds, one-of-a-set, text, on/off, and derived — and
-nobody adds a sixth. What a genre or a plugin declares is a **definition** composed from those:
+six *types* — whole number with optional bounds, one-of-a-set, text, on/off, a list, and derived —
+and nobody adds a seventh. What a genre or a plugin declares is a **definition** composed from those:
 
 ```ts
 import { defineAttributeSlot, definePluginAttributeSlot, derivations } from '@serene-pub/sdk'
@@ -493,7 +730,7 @@ const hp = defineAttributeSlot('acme.crawl:slot/hp@1', {
   label: { en: 'Health' },                       // what a person reads — free to copyedit
   description: { en: 'How much punishment they can take.' },
   descriptor: 'Current health out of the maximum; zero means down.',  // what the MODEL reads
-  appliesTo: ['cast'],                           // 'cast' | 'world'
+  appliesTo: ['cast'],                           // 'cast' | 'world' | 'location'
   config: { min: 0, max: 20 },                   // what attaching decides, by default
   default: 20,                                   // what a read falls back to
 })
@@ -515,18 +752,56 @@ Three rules worth knowing before you write one:
   they *change*. A value is validated against the configuration in force for its own owner, so
   35 is refused on a 20-cap character and accepted on a 40-cap one.
 - **Derived slots are never written.** `type: 'derived'` names one of core's derivations
-  (`derivations.age.id` today) and the slot it reads (`config.from`). There is nothing to store
-  and nothing that can go stale.
+  — `derivations.age` with the slot it reads (`config.from`), or `derivations.liquid` with a
+  LiquidJS expression in the declaration's `derive`. There is nothing to store and nothing that
+  can go stale.
 
-An inventory is **not** a slot: an item is a lorebook entry and carrying it is a possession
-edge, so the item keeps its prose, keywords and retrieval. Declaring an `items: text` slot is
+An item is a lorebook entry (`core:entry/item@1`), so it keeps its prose, keywords and
+retrieval; what somebody carries is the `inventory` list stat (`core:slot/inventory@1`), whose
+items are references to those entries with a held count. Declaring an `items: text` slot is
 the one modelling mistake this vocabulary exists to prevent.
 
 On the pipeline side, `core:query/session-state@1` publishes the resolved state
-(`{ world, cast, possessions }`) and `core:task/set-state@1` changes it. Set state defaults to
+(`{ world, cast }`) and `core:task/set-state@1` changes it. Set state defaults to
 `mode: 'propose'`, which holds the change for a person to accept — the review gate a model's
 writes always pass through. The three core tools (`set_state`, `give_item`, `take_item`)
 likewise only ever propose.
+
+**The state version and `base`** (plans/29 R-15 *Staleness and order*; plans/30 U5f). The host
+keeps `sessions.state_version`, moved by one for every row `setValue` writes (items are inventory
+list changes since attributes phase 3b) —
+inside the write's transaction, under `pg_advisory_xact_lock(hashtext('stateVersion'),
+sessionId)` — and stamped on the row (`attribute_values.state_version`). `session-state@1` publishes it as `version` (and inside
+`state` as `state.version`); `resolve-state-changes@1` takes it on an optional **`base`** in-port
+and passes it through onto every resolved change; `set-state@1` takes `base` too (a change's own
+`base` wins over the node's). In `apply` mode a delta whose target's in-force row landed after
+the base is put on the new **`refused`** out-port — *"<slot> changed since this run read it
+(v<base> → v<now>); resolve-state-changes must rebase on the next turn"* — and the untouched
+ones apply (`applyChange` → `movedSinceBase`, `state/write.ts`); a run never re-enters an
+earlier node, the next turn re-resolves. In `propose` mode
+the base lands in `state_proposals.base_version` (the caller's, else the version at propose
+time), and the accept judges the same way: untouched since → applied (the rebase); moved →
+`status: 'superseded'`, nothing applied, `movedSlots` on the `state:decide` reply;
+`supersededProposals` lists them beside the pending rows. The Adventure keeper graphs wire `base: $.gather.state.read.version` into the resolver and both `set-state`
+arms.
+
+**🚧 Lorebook stats and the stat trail (2026-09-27).** `core:query/lorebook-state@1` reads a
+lorebook's durable stats — `{ lorebookId, branchId, slots, world, cast, locations }`, cast keyed
+by cast member id — with no session needed (optional `owner` port, `slotIds` param).
+`core:query/stat-trail@1` (the *stat trail*, its document on the `trail` port) lists one slot's values over time for one owner (`params.slotId`,
+`mode: 'both' | 'messages' | 'timeline'`, `last`; `since: { messageId?, date? }` port): points
+`{ value, layer: 'session' | 'timeline', anchor: { messageId } | { historyEntryId, date },
+provenance: { updatedBy, sessionId, messageId, sceneId, note, createdAt } }`, the timeline ordered
+by story date under the shared `compareDates`. Both are Queries over `ctx.read` (host tables
+`lorebook_state`, `stat_trail`; core's `state/lorebookState.ts`, `state/statTrail.ts`); the host
+answers only for the scope session's lorebook or one the run's scope grants
+(`HostScope.lorebookId` — ⏳ nothing grants one yet), and refuses any other with
+`HostScopeError` (`lorebookInScope`, `host.ts`). 🚧 They read the scope session's line and moment,
+or with no session the book's most recently used line at the head; on a branch, main's dated
+values count only up to the fork date. Optional in-ports override it: `branch` (`'main' |
+'mostRecent' | 'session' | <branch id>`), `at` (`'head' | { year, month?, day? }`), `forkCut`
+(`false` reads all of main); a branch of another book is refused. Both documents add `moment` and
+`forkedAt`.
 
 ---
 
@@ -564,8 +839,10 @@ an action's namespace, so a genre's key and an action's slug can never collide),
 `image` that is neither a `data:image/…` URI nor an `http(s)://` URL. The envoys are part of
 the genre's declaration and of the create spec's `meta.genre`, so a changed envoy is a
 changed hash. The host re-runs the same findings where a document lands as rows
-(`saveDocument`), so a plugin's genre — which `genre()` never saw — is refused with the same
-sentences there.
+(`boot/store.ts` `saveDocument`, which plugin install publishes through), so a plugin's
+genre — which `genre()` never saw — is refused with the same sentences there, and a second
+spec of one namespace claiming an action envoy's key is refused at the pointer move
+(`assertActionEnvoyKeysFree`).
 
 **Its data is configuration, not a schema.** A pipeline reads the envoy's instructions with
 `prompts: slot.prompts({ envoy: 'mascot' })` on the context builder; the compiler checks the
@@ -601,6 +878,46 @@ byte) and `envoySeatMigration.int.test.ts`.
 
 ---
 
+## 1e. Who speaks — the turn order is state, written by events
+
+Since the turn-order work (PLAN-turn-order, built 2026-09-21→24; canon at A9) **nobody decides
+who speaks inside a reply**. Each genre has its own turn-order pipeline
+(`core:spec/<genre>-turn-order`), bound by the genre's presets to every event that can change
+whose turn it is (`message-completed`, edits, deletions, cast and settings changes, …). It
+runs on the session's event queue after the write that caused it, **writes no message**, and
+writes the session's prepared turns with `core:outlet/set-turn-order@1` into
+`sessions.metadata.turnOrder` (`TurnOrderV1`). Its steps are the rules path — **turn pool**
+(who may be seated) → **turn orderer** (`turn-mentioned`: a mention moves a character up) →
+**turn strategy** (`turn-round-robin` by default; a swappable node) — or, under the genre field
+`turnMode: model`, the **turn advise** oracle.
+
+Everything else **reads** that state and never recomputes it:
+
+- the `sessions:turnOrder` push (on write, and alongside `sessions:view`) feeds the composer's
+  line and the turn picker; `who.next` and the previews read the stored head;
+- **Continue** and the picker **fire a turn** (`sessions:fireTurn` → `fireTurnEntry`): the
+  entry's subject is dispatched with its `ref` as the explicit pick, so the reply run is told
+  its speaker and the placeholder is made for them; a person's entry is never fired;
+- **auto-advance** is a core listener on `turn-order-changed` (never a pipeline): `off`,
+  `next` (once per send) or `round` (continue while the event's cause is an automatic run's
+  own — `runReply` → `runTurn` → `runSpec` forwards `auto`, so every write the run makes carries
+  `cause.auto` — until a person's entry, an empty order or `MAX_AUTO_ADVANCE_PER_SEND`);
+- a run's own data events ride its tree on the **listener lane** (R65, `listenerLineage`):
+  no depth, no descendant budget, their own echo cap, so a pipeline that answers its own write
+  parks for the owner instead of looping.
+
+A session's strategy choice is a **swap** (`pipeline_node_rebinds`, set with
+`sessions:setNodeRebind`, shown as a pipeline card via `sessions:pipelineCards`); a plugin
+offers alternatives as swap contributions, switchable on the genre hub.
+
+**Proves it:** `sessions.turnOrder.int.test.ts` and `turnOrder.write.int.test.ts` (the state
+and its write rule), `fireTurn.int.test.ts` (firing, picks, the person rule),
+`autoAdvance.int.test.ts` (off / next / round, the cap), `turnAdvise.int.test.ts` (the model
+path and rebinds), `lineage.test.ts` (the lane), `eventMapCheck.int.test.ts` (every loop has
+a termination policy), `envoyRoad.int.test.ts`.
+
+---
+
 ## 2. Seams that will need work — known, not discovered
 
 These are places where the draft is deliberately minimal. Each one is a substitution, not a
@@ -608,22 +925,37 @@ redesign, and the tests around them pin the contract rather than the implementat
 
 | seam                       | what the draft has                      | what core needs                                                                                                                                                      |
 | -------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Template engine**        | ~200 lines: `{{ a.b }}` and `{% for %}` | a real Jinja2. The registry (`src/engines.ts`) already treats the engine as a datapoint, so this is registering one, not rewriting callers                           |
-| **Tokenizer**              | `roughTokens`, chars ÷ 4                | the real tokenizer per connection. `CostProfile.exact: false` already marks estimates so they degrade visibly rather than silently                                   |
+| **Jinja2 engine**          | ~200 lines: `{{ a.b }}` and `{% for %}` | a real Jinja2. Handlebars and Liquid already show the shape: the SDK declares them (`src/engines.ts`) and the host supplies the renderer, so this is registering one, not rewriting callers |
 | **The packager's scanner** | a dependency-free lexical scan          | a real TypeScript parser. The scan is correct for the shapes it recognises and is explicitly commented as a placeholder — swap `scanSource` and keep `compilePlugin` |
-| **Map concurrency**        | forced sequential                       | real per-iteration scoping. The observable result is identical, which is exactly what C8 asserts, so this is a performance change and not a semantic one             |
-| **Secrets**                | tagged plaintext                        | encryption against the app secret in `meta.json`. `forOwningHook(decrypt)` is already the seam                                                                       |
 | **Sidecars**               | no transport                            | `jsonrpc-stdio@1` (U13)                                                                                                                                              |
 
-A template slot may name **one** language (`engine: handlebars.id`) or the **set** it accepts (`engines: [handlebars.id, liquid.id]`, most-preferred first — the first entry is what a new template in that slot is written in, and the host offers the union of the accepted pools in one picker); both spellings stay valid, so declare `engines` only when your slot genuinely renders more than one.
+A template slot may name **one** language (`engine: handlebars.id`) or the **set** it accepts (`acceptedEngines: [handlebars.id, liquid.id]`, most-preferred first — the first entry is what a new template in that slot is written in, and the host offers the union of the accepted pools in one picker); both spellings stay valid, so declare `acceptedEngines` only when your slot genuinely renders more than one.
+
+---
+
+## 2a. One verdict per law — core's doors quote the SDK's verdicts (01 §13, plans/31 V4)
+
+A rule has exactly one verdict function, registered with the SDK (`defineVerdict`,
+`verdicts()`); every door — construction, the registry, `validate()`, publish, the run, the
+fire, the write, a listing — calls it and quotes its sentence. Core's doors are the app's
+half of that: `fireAction` hears `stalenessVerdict`, `effectsLineVerdict` (as a `press`)
+and `audienceVerdict` (through `sessionActions.audienceVerdict`, which resolves the
+portrayals and hands in the item rule's answer); `runtime/host.ts` hears `effectsLineVerdict`
+at the block write (`block`, and `identity` for a foreign declaration); `boot/bindingCompat.ts`
+hears `provisionalVerdict` at the registry; the client, through core-catalog's
+`conversation` module, hears `audienceVerdict` (`messageVerbState.notYoursToUse`) and
+`stalenessVerdict` (`formAnswer.staleOf`). A door that compares `effects === "world"`,
+recomputes staleness, or writes its own wording of a refusal is a defect — add the input kind
+to the verdict instead. The kit's **C27** holds a host to this through `HostUnderTest.doors`;
+⏳ the app host that answers it is plans/31 V5.
 
 ---
 
 ## 3. What "integrated" means, as a checklist
 
-- [ ] `@serene-pub/conformance` runs in CI against core's executor, all 15 green
-- [ ] one real chat turn runs as a pipeline end to end, from a real trigger
-- [ ] the parity corpus is byte-identical over fixtures drawn from real chats
+- [ ] `@serene-pub/conformance` runs in CI against core's executor, all 33 green
+- [x] one real session turn runs as a pipeline end to end, from a real event
+- [ ] the parity corpus is byte-identical over fixtures drawn from real sessions
 - [ ] every existing user prompt config appears as a preset, or as a reported exception
 - [ ] debug mode reads from the preview, and the preview matches the send
 - [ ] a plugin built with `serene-pub build` installs, and one built against another

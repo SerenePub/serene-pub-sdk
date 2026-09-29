@@ -15,6 +15,7 @@ import { compile, canonicalHash } from '@serene-pub/sdk'
 import { run, ok } from '@serene-pub/sdk'
 import { $ref, slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { publish, bindings, world } from './helpers.js'
 
 // ── 52 · The two forms compile to the same document ─────────────────────────
@@ -23,7 +24,7 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 		spec('demo:chat@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('history', C.sessionHistory.v1({ scope: $ref('input', 'sessionScope') }))
-			.task('prompt', C.assemble.v2({ candidates: $ref('history', 'messages') }))
+			.task('prompt', C.assemble.v2({ messages: $ref('history', 'messages') }))
 			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
 			.outlet('save', C.createMessage.v1({ text: $ref('generate', 'text') }))
 
@@ -31,7 +32,7 @@ describe('52 · scope sugar is invisible downstream (F3, F6)', () => {
 		spec('demo:chat@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+			.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }))
 			.oracle('generate', () => C.generateText.v1({ connection: slot.connection() }))
 			.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 
@@ -75,7 +76,7 @@ test('53 · `$.history` means main; `$.history.messages` refines the port', () =
 	const b = spec('demo:bare@1', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input }))
-		.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))
+		.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }))
 	const doc = compile(b.build())
 	const bare = doc.edges.find((e) => e.to === 'history' && !e.implicit)!
 	assert.equal(bare.fromPort, 'main', 'a bare accessor is the main port')
@@ -168,7 +169,7 @@ describe('56 · block chains', () => {
 			.task('merge', ($: any) =>
 				C.mergeCandidates.v1({
 					// From outside, the qualified path — which reads like the key it is.
-					sources: [$.gather.semantic.vsearch.hits, $.gather.history.history.messages],
+					sources: [$.gather.semantic.vsearch.hits, $.gather.history.history.band],
 				}),
 			)
 
@@ -185,7 +186,7 @@ describe('56 · block chains', () => {
 			.filter((x) => x.to === 'merge' && !x.implicit)
 			.map((x) => `${x.from}.${x.fromPort}`)
 		assert.deepEqual(froms.sort(), [
-			'gather.history.history.messages',
+			'gather.history.history.band',
 			'gather.semantic.vsearch.hits',
 		])
 	})
@@ -223,7 +224,7 @@ describe('56 · block chains', () => {
 				C.mergeCandidates.v1({
 					sources: [
 						$ref('gather.semantic.vsearch', 'hits'),
-						$ref('gather.history.history', 'messages'),
+						$ref('gather.history.history', 'band'),
 					],
 				}),
 			)
@@ -239,13 +240,13 @@ describe('57 · map', () => {
 	const built = () =>
 		spec('demo:mapscope@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.task('chunks', ($) => C.chunkText.v1({ text: $.input.text }))
+			.task('chunks', ($) => T.chunkText.v1({ text: $.input.text }))
 			.each('summarize', { over: ($) => $.chunks.items, max: 64 }, (m) =>
 				m.oracle('sum', ($: any) =>
 					C.generateText.v1({ text: $.$item, connection: slot.connection() }),
 				),
 			)
-			.task('collect', ($: any) => C.toCandidates.v1({ items: $.summarize.values }))
+			.task('collect', ($: any) => T.toCandidates.v1({ items: $.summarize.values }))
 
 	test('`over` resolves through the scope', () => {
 		const b = built().build()

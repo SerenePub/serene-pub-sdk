@@ -9,9 +9,10 @@
 
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { withSpriteTail } from './sprites.js'
 import { chatGenre } from './genres.js'
 
-/** The spec a session turn runs. */
+/** The spec a session turn runs. @experimental */
 export const RESPOND_SPEC_ID = 'core:spec/respond'
 // 1.1.0: one authored prompt, not three. The context builder owns the
 // `prompts` slot; assemble and generate read it by reference (13 §12 finding
@@ -89,7 +90,10 @@ export const RESPOND_SPEC_ID = 'core:spec/respond'
 // decision. Pinned to `turn-manual` because the socket still pre-picks every
 // turn — the node passes the pick through and today's bytes are unchanged.
 // U-C5 retires the pre-pick, and swapping this pin to `turn-round-robin` is
-// then a version bump, not a rewiring.
+// then a version bump, not a rewiring. **Done 2026-09-21** (edited in place
+// under the freeze, content-addressed): the socket pre-picks nothing, the
+// node is pinned `turn-round-robin` and seated BEFORE `placeholder`, whose
+// row now takes `characterId`/`speaker` from the node's output.
 // 1.15.0 (24): the deep genre rename — taxonomy claims `genre:
 // core:genre/chat` (the genre's own id, 24 §3) and the input carries the
 // usage lock (24 §4). Document fields changed, so the hash moves: a bump.
@@ -217,7 +221,7 @@ export const RESPOND_SPEC_ID = 'core:spec/respond'
 // with a migration.**
 //
 // `lines` gained `continuationPrefill: $.input.continuationPrefill`, so the
-// text a continue is continuing reaches the seed line the model writes from.
+// text an extend is carrying on reaches the seed line the model writes from.
 // Under the same version freeze, and therefore under the same terms as the
 // paragraph above: migration `0106` deletes this pin's published
 // `pipeline_spec_versions` row so boot republishes it, and re-projects
@@ -289,7 +293,16 @@ export const RESPOND_SPEC_ID = 'core:spec/respond'
 // ranked relationship read publish their intents at the head of `main`, which
 // this document already wired, so nothing else here moves. Same numbers, same
 // prompt; the parity corpus holds it. Migration 0135 moves the stored maps.
-export const RESPOND_VERSION = '1.20.0'
+// 1.21.0: the `speaker` node moved to `core:spec/turn-order`
+// (PLAN-turn-order §4.4, §7). Who speaks is STATE now — the entry being
+// fired names them, and it arrives on the inlet — so this spec no longer
+// decides anything about turn-taking, and `placeholder` has returned to
+// directly after the inlet, where it can make the row before a token is
+// spent. A new semver rather than an in-place edit: the node list changed,
+// so a stored 1.20.0 document must stay exactly as it is and this must
+// re-project (§0 rule 3).
+/** @internal */
+export const RESPOND_VERSION = '1.21.0'
 
 /**
  * Core's answer-a-message pipeline.
@@ -299,15 +312,17 @@ export const RESPOND_VERSION = '1.20.0'
  * find. Three of the five need nothing installed; the two that read embeddings
  * need a model and both ship switched off, so a first boot runs exactly the
  * zero-cost path it always did.
+ * @experimental
  */
 export const respondSpec = () =>
 	compile(
+		// The sprite tail (DESIGN-sprites §5): after `save`, choose the line's face.
+		withSpriteTail(
 		spec(RESPOND_SPEC_ID, {
 			version: RESPOND_VERSION,
 			/** Catalogue claims (23 §2): the standard chat's main turn. */
 			taxonomy: {
 				role: 'primary',
-				genre: chatGenre.id,
 			},
 		})
 			/** The usage lock (24 §4): this spec answers Chat's primary turn. */
@@ -316,20 +331,26 @@ export const respondSpec = () =>
 				event: sessionEvents.messageRespond,
 			})
 			/**
-			 * The reply row, created by the pipeline that fills it (R-17).
+			 * The reply row, created by the pipeline that fills it (R-17) —
+			 * **directly after the inlet** (PLAN-turn-order §4.4).
 			 *
-			 * Straight after the inlet, before anything costs a token: this is
-			 * the placeholder the composer shows while the turn runs, the run's
-			 * live row the oracle's stream lands in, and the row Stop finalises
-			 * with whatever had arrived. `save` at the end updates it; the pair
-			 * is one primary row. The trigger inserts nothing any more — a
-			 * regenerate, swipe or continue hands its existing row in on
-			 * `messageId` and this node claims it instead of inserting.
+			 * It used to wait for the cast and history reads, because a
+			 * `speaker` node between them decided who the row was for. Turn
+			 * order is state now: the entry being fired names the speaker,
+			 * and it arrives on the inlet — so the row can be made in the
+			 * first milliseconds of the run, before anything costs a token.
+			 * This is the placeholder the composer shows while the turn runs,
+			 * the run's live row the oracle's stream lands in, and the row
+			 * Stop finalises with whatever had arrived. `save` at the end
+			 * updates it; the pair is one primary row. A regenerate, swipe or
+			 * extend hands its existing row in on `messageId` and this node
+			 * claims it instead of inserting.
 			 */
 			.outlet('placeholder', ($) =>
 				C.createMessage.v1({
 					generating: true,
 					characterId: $.input.characterId,
+					speaker: $.input.speaker,
 					row: $.input.messageId,
 				}),
 			)
@@ -426,14 +447,14 @@ export const respondSpec = () =>
 					// retrieval over conversation history in the product.
 					//
 					// ⚠ Its `messages` out-port is deliberately **not** wired
-					// into `lore` below. `assemble` builds the transcript from
-					// `lines`, not from ranked candidates, so a retrieved
-					// message reaching `rank` would take budget out of the
-					// `messages` band — half the window by default — and render
-					// nowhere at all. That is the shape of the failure history
-					// had between 1.8.0 and 1.10.0, and it is not one to repeat
-					// on purpose. Retrieved transcript lands when design §5's
-					// compression region does.
+					// into `lore` below. It publishes the declared
+					// `recalledLines` band (2026-09-27), which renders only where
+					// a context template places `{{{recalledLines}}}` — and no
+					// shipped template does. Which genre places recalled lines,
+					// and where, is the compression region's call (design §5);
+					// wiring the port without a template that places them would
+					// spend budget on lines the prompt never carries (the
+					// receipt says so, but the budget is still spent).
 					.chain('entities', (c) =>
 						c.query('read', ($) =>
 							C.entitySearch.v1({
@@ -530,6 +551,7 @@ export const respondSpec = () =>
 					),
 			)
 			/**
+			/**
 			 * The fourth mechanism — retrieval by meaning (1.19.0, design phase 2).
 			 *
 			 * Three nodes, and the split is the same one the other mechanisms have:
@@ -589,23 +611,6 @@ export const respondSpec = () =>
 							}),
 						),
 				),
-			)
-			/**
-			 * Who speaks (19 §5). The trigger's pick arrives on
-			 * `input.speaker` — a participant reference (R-18 (3)), so a
-			 * genre's envoy arrives the same way a library character does —
-			 * and always wins; the strategy decides only when the trigger did
-			 * not. `characterId` rides beside it one release longer for the
-			 * readers that still take the bare id. `turn-manual` never decides
-			 * — see the 1.11.0 note for why that is today's correct pin.
-			 */
-			.task('speaker', ($) =>
-				C.turnManual.v1({
-					cast: $.gather.cast.read.cast,
-					messages: $.gather.history.read.messages,
-					speaker: $.input.speaker,
-					characterId: $.input.characterId,
-				}),
 			)
 			/**
 			 * How much room the context has, from the window itself.
@@ -794,7 +799,7 @@ export const respondSpec = () =>
 			.task('context', ($) =>
 				C.buildTemplateContext.v1({
 					cast: $.gather.cast.read.cast,
-					currentCharacterId: $.speaker.characterId,
+					currentCharacterId: $.input.characterId,
 					/**
 					 * The narrative graph, both ways it can arrive.
 					 *
@@ -840,11 +845,11 @@ export const respondSpec = () =>
 					templateContext: $.context.templateContext,
 					seedName: $.context.seedName,
 					/**
-					 * The continue verb, wired (ruling 2026-09-08, D-2).
+					 * The extend verb, wired (ruling 2026-09-08, D-2; `continue` until 2026-09-28).
 					 *
 					 * ⚠ Wiring it is the whole of it. `process-messages` has put
 					 * `continuationPrefill` on the seed line since the runtime
-					 * was written, and no spec supplied a value — so a continue
+					 * was written, and no spec supplied a value — so an extend
 					 * sent an EMPTY seed, got a fresh reply, and the socket
 					 * glued the partial on afterwards. This is the same class of
 					 * omission as 1.16.0's unwired `params`: the mechanism
@@ -852,7 +857,7 @@ export const respondSpec = () =>
 					 *
 					 * Empty on an ordinary turn, and the port carries "" — so
 					 * this pipeline is byte-identical for every turn that is not
-					 * a continue.
+					 * an extend.
 					 */
 					continuationPrefill: $.input.continuationPrefill,
 				}),
@@ -916,7 +921,7 @@ export const respondSpec = () =>
 					context: $.prompt.context,
 					// The stop-string exclusion follows the speaker node's
 					// output — the payload-wins seam in the host (19 §5).
-					currentCharacterId: $.speaker.characterId,
+					currentCharacterId: $.input.characterId,
 					// ⚠ **The two slots this node has always been the OWNER of,
 					// and never named.**
 					//
@@ -970,6 +975,7 @@ export const respondSpec = () =>
 					// no such slot any more (culled 2026-09-16, R-12) — the
 					// instructions travel inside `context`, from `prompt`.
 				}),
+				{ expose: { stream: true, status: '{speaker} is typing' } },
 			)
 			/**
 			 * The reply row, filled. The placeholder above created it; this
@@ -983,5 +989,6 @@ export const respondSpec = () =>
 					thinking: $.generate.thinking,
 				}),
 			)
+		)
 			.build(),
 	)

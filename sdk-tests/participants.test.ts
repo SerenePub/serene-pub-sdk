@@ -40,7 +40,7 @@ describe('the grammar', () => {
 			assert.deepEqual(parsed, { kind: role })
 			assert.equal(formatParticipantRef(parsed), role)
 		}
-		assert.deepEqual([...PARTICIPANT_ROLES], ['owner', 'admin', 'participant', 'item', 'run-owner'])
+		assert.deepEqual([...PARTICIPANT_ROLES], ['owner', 'admin', 'participant', 'person', 'ai', 'item', 'run-owner'])
 	})
 
 	test('user, character and envoy round-trip', () => {
@@ -149,10 +149,23 @@ describe('the inlet publishes `speaker` as a reference', () => {
 		// envoy's row has no `characterId`, so the reference is its identity.
 		assert.equal(C.createMessage.descriptor.ports.in!.speaker, S.participantRef)
 		assert.equal(C.buildTemplateContext.descriptor.ports.in!.speaker, S.participantRef)
-		for (const t of [C.turnRoundRobin, C.turnRandom, C.turnManual, C.turnNone]) {
-			assert.equal(t.descriptor.ports.in!.speaker, S.participantRef)
-			assert.equal(t.descriptor.ports.out!.speaker, S.participantRef)
-			assert.equal(t.descriptor.ports.out!.characterId, S.rowIds)
+		// ⚠ The strategies declare NO `speaker` port, in either direction,
+		// since PLAN-turn-order A6 (§4.4): an explicit pick never enters a
+		// strategy — it fires the prepared entry — and what a strategy
+		// publishes is an ORDER, not a speaker. `turn-none` is deleted (§7).
+		for (const t of [
+			C.turnRoundRobin,
+			C.turnUserSplit,
+			C.turnRandom,
+			C.turnScripted,
+			C.turnManual,
+			C.turnNarrator,
+		]) {
+			assert.equal('speaker' in t.descriptor.ports.in!, false)
+			assert.equal('characterId' in t.descriptor.ports.in!, false)
+			assert.equal(t.descriptor.ports.in!.candidates, S.turnCandidates)
+			assert.equal(t.descriptor.ports.out!.main, S.turnEntries)
+			assert.equal(t.descriptor.ports.out!.order, S.turnEntries)
 		}
 		// `session-created` names no speaker, and so gains no port.
 		assert.equal('speaker' in C.sessionCreated.descriptor.ports.out!, false)

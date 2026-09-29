@@ -1,0 +1,111 @@
+# {{displayName}} — a Serene Pub plugin
+
+✎ CHANGE: two sentences saying what this plugin is for, and what a person gets from
+installing it. This is the paragraph a plugin list shows under the name.
+
+```bash
+npm install
+npm run build      # tsc → dist/
+npm run check      # what core would refuse, and the permissions the shipped code requests
+npm run package    # dist/plugin/: the manifest plus one document per pipeline
+npm test           # the declaration, and the executed example against its golden
+npm run typecheck  # src, test and examples together
+npm run ui         # the surface harness: this package's frames, in core's own sandbox
+```
+
+The `@serene-pub/*` dependencies are `file:` links to `../serene-pub-sdk/…`. ✎ CHANGE
+them if the SDK checkout is not a sibling of this directory.
+
+There is no golden yet, so `npm test` fails until you record one:
+`UPDATE_GOLDENS=1 npm test` writes `examples/goldens/first-run.golden.json`. Commit it —
+an example whose output nothing pins is a page that can drift.
+
+## What it shows
+
+✎ CHANGE: the one thing this plugin exists to demonstrate, said in a paragraph. A
+showcase with three lessons teaches none of them.
+
+## What it declares
+
+| | |
+| --- | --- |
+{{#genre}}
+| Genre | `{{genreId}}` |
+| Pipelines | `create-session` · `respond`{{#action}} · `ask` · `answer`{{/action}} |
+| Preset | `{{presetSlug}}` — binds `session-created` and `message-respond` |
+| Prompts | one row for `core:task/build-template-context@1`'s `prompts` slot |
+{{/genre}}
+{{^genre}}
+{{#action}}
+| Pipelines | `ask` · `answer` |
+{{/action}}
+{{/genre}}
+{{#action}}
+| Actions | **Ask** (composer, quick) → a question addressed to `owner`; **Answer** (the `form` venue) reads what was chosen |
+{{/action}}
+{{#panel}}
+| Surfaces | one frame panel, `{{panelId}}`, viewing `main` |
+{{/panel}}
+| Node definitions | `echo` — a Task. ✎ CHANGE |
+{{#storage}}
+| Permissions | a storage grant of {{quotaBytes}} bytes. Nothing else |
+{{/storage}}
+{{^storage}}
+| Permissions | whatever `npm run check` prints, and nothing you did not write |
+{{/storage}}
+
+`npx serene-pub check src` prints that last line from the source rather than from this
+table, which is the point of it: if it ever lists something you did not expect, the code
+asked for it.
+
+## The chain, one line each
+
+✎ CHANGE: one bullet per pipeline, naming its nodes in order. A reader who wants to know
+what this package does should not have to open `src/specs/`.
+
+## What this plugin deliberately does not do
+
+✎ CHANGE: the absences that are decisions. A plugin that reads a lorebook and declares it
+will never write to one is saying something; a plugin that simply has not got round to it
+is not.
+
+## Notes for anyone building on this
+
+- **The kind decides the grant, and a plugin may not declare a Query.** A node handler
+  runs in the plugin's sandbox, which endows `{ random, now, log, signal }` plus what the
+  kind earns: a Task earns nothing, an emit-class outlet (`effects: 'emit'`) earns
+  `storage`, an oracle earns `storage` and `fetch`. `ctx.read`, `ctx.call` and `ctx.commit`
+  are the *executor's*, and a plugin's handler never goes through it — so a Query you
+  declare is a node whose one seam is endowed by nobody. It would pass your tests, because
+  the SDK harness endows `read`; `serene-pub check` refuses it instead. Read through a
+  `core:query/…` node and take its output port.
+{{#panel}}
+- **The frame's script is a file.** A frame document is served under `script-src 'self'`,
+  so an inline `<script>` is refused — and from inside the panel that failure is silent:
+  the markup renders and nothing ever happens. `npx serene-pub ui .` serves frames under
+  core's own CSP, which is how you find out before an install does. Inline `<style>` is
+  allowed, and a `<form>` is not: a submit would navigate a document with nowhere to go.
+{{/panel}}
+{{#panel}}
+{{#genre}}
+- **The panel is declared twice, on purpose.** `surfaces.panels[]` is what the packager,
+  the preview harness and an instance's file server read; the genre's `shape.panels[]` is
+  what puts it on the session grid. Two questions — *what may be served* and *what is
+  mounted* — and both need answering.
+{{/genre}}
+{{/panel}}
+{{#storage}}
+- **A declared quota is a request.** An instance clamps it into its own band and an
+  administrator may deny it; until somebody has looked, the plugin runs with the grant
+  refused. Handlers halt when `ctx.storage` is absent rather than inventing an empty row.
+{{/storage}}
+- **`npm run check` scans `src`, and `serene-pub check .` sweeps the checkout.** The
+  sweep still lints `test/` and `examples/` — a `fetch()` there is a `fetch()` in the
+  package — but their calls never become a requested permission: `examples/fixtures.ts` is
+  a stand-in **host**, and its `ctx.commit` is not this plugin's reach. `--ignore <glob>`
+  is the blunt instrument if you need one.
+
+## Licence
+
+✎ CHANGE. The scaffold's `package.json` says Apache-2.0, matching the Serene Pub SDK. The
+Serene Pub application is a separate work under the AGPL.

@@ -1,0 +1,62 @@
+{
+	"builtOn": "2026-09-26",
+	"package": "frozen.fixtures",
+	"widgets": [
+		{
+			"id": "ledger",
+			"title": "Ledger",
+			"component": "ledger"
+		},
+		{
+			"id": "controls",
+			"title": "Controls",
+			"component": "controls"
+		},
+		{
+			"id": "counter",
+			"title": "Counter",
+			"component": "counter"
+		}
+	],
+	"components": [
+		{
+			"slug": "ledger",
+			"label": "Ledger",
+			"framework": "svelte",
+			"entry": "ledger.js",
+			"source": "components/ledger.ts",
+			"builtAgainst": {
+				"widgetProtocol": 2,
+				"hostElements": "1.0",
+				"sdk": "0.6.0-preview.0",
+				"componentClient": "0.6.0-preview.0"
+			}
+		},
+		{
+			"slug": "controls",
+			"label": "Controls",
+			"framework": "svelte",
+			"entry": "controls.js",
+			"source": "components/controls.ts",
+			"builtAgainst": {
+				"widgetProtocol": 2,
+				"hostElements": "1.0",
+				"sdk": "0.6.0-preview.0",
+				"componentClient": "0.6.0-preview.0"
+			}
+		},
+		{
+			"slug": "counter",
+			"label": "Counter",
+			"framework": "vanilla",
+			"entry": "counter.js",
+			"source": "components/counter.ts",
+			"builtAgainst": {
+				"widgetProtocol": 2,
+				"hostElements": "1.0",
+				"sdk": "0.6.0-preview.0",
+				"componentClient": "0.6.0-preview.0"
+			}
+		}
+	]
+}

@@ -5,7 +5,10 @@
  * alternative is a bug, and there is a test asserting exactly that.
  */
 
-import type { SpecDocument } from './document.js'
+import { pluginRuleRef } from './pluginRuleRef.js'
+import { JUNCTION_CLAUSE_PORTS, junctionBranchEnds, type SpecDocument } from './document.js'
+import { notADeclaredEvent, packageEventById } from './events.js'
+import { annexDeclarationOf, annexStepFindings } from './annexFields.js'
 import { settingsSlotFor } from './settingsSlot.js'
 import {
 	ANSWER_FORM_OUTLET_ID,
@@ -13,12 +16,20 @@ import {
 	getDefinition,
 	isBuiltInOutlet,
 	isBuiltInSpec,
+	LIVE_ROW_PORTS,
 	reviewFieldsFinding,
+	widgetDeclsFindings,
 	type SlotDecl,
 } from './descriptors.js'
-import { actionDocumentFindings } from './actions.js'
+import { i18nFindings, i18nText, type I18n } from './i18n.js'
+import { formatChannel, parseChannel } from './channels.js'
+import { PREDICATE_CONDITION_KEYS } from './predicates.js'
+import { provisionalVerdict, settingsTravelVerdict } from './verdicts.js'
+import { settingsSchemaFindings } from './settings.js'
+import { actionDocumentFindingsByLaw } from './actions.js'
+import { templateLawFindings, type TemplateChecking } from './templateFit.js'
 import { isSlotRef, type SlotRef } from './refs.js'
-import { assignable, isStreaming } from './shapes.js'
+import { assignable, isStreaming, JSON_SHAPE } from './shapes.js'
 import {
 	capabilityLabel,
 	FEATURES,
@@ -30,6 +41,19 @@ import {
 	type TransformId,
 } from './capabilities.js'
 
+/**
+ * The port shapes a spec may assemble field by field (`templateContext: {
+ * advertisement: …, results: … }`): the permissive sink, and the object a
+ * context template renders against — the tool loop's prompt builds the
+ * latter from two text ports, and nothing publishes it whole for that spec.
+ * A field edge into any other port is held to the port's shape.
+ */
+const FIELD_ASSEMBLED_SHAPES: ReadonlySet<string> = new Set([
+	JSON_SHAPE,
+	'core:shape/template-context@1',
+])
+
+/** @experimental */
 export interface Finding {
 	law: string
 	severity: 'error' | 'warning'
@@ -39,7 +63,30 @@ export interface Finding {
 	fix: string
 }
 
-export function validate(doc: SpecDocument): Finding[] {
+/**
+ * A verdict's sentence or fix as a finding's string (01 §13): findings are
+ * `en`, the locale every map carries. An absent fix is the empty string —
+ * every verdict this file quotes declares one.
+ */
+const en = (v: I18n | undefined): string => (v === undefined ? '' : (i18nText(v) ?? ''))
+
+/**
+ * What `validate()` is handed beyond the document. @experimental
+ */
+export interface ValidateOptions {
+	/**
+	 * The template checker, for law T1's name check (typed templates P5):
+	 * `{ check: checkTemplateSourceReport }` from `@serene-pub/sdk/template-check`,
+	 * plus the host's vocabulary. A value rather than an import because the
+	 * checker carries the engines and this module is on the dependency-free
+	 * barrel. Absent, T1 still refuses scope collisions, forbidden kinds and a
+	 * band with no variable; it does not read template sources.
+	 */
+	templates?: TemplateChecking
+}
+
+/** @experimental */
+export function validate(doc: SpecDocument, options: ValidateOptions = {}): Finding[] {
 	const f: Finding[] = []
 	const byKey = new Map(doc.nodes.map((n) => [n.key, n]))
 	const desc = (k: string) => {
@@ -66,33 +113,117 @@ export function validate(doc: SpecDocument): Finding[] {
 		})
 	}
 
-	// ── F7 — one primary row; emits unlimited ─────────────────────────────────
+	// ── R-2 — a provisional definition cannot be placed ───────────────────────
 	//
-	// "One primary write" restated as **one primary row** (09-B B4, R-17): a
-	// write that UPDATES the row an earlier write in this document created —
-	// its `target` fed by an edge from a write-class outlet — is the same
-	// row, not a second one. That is the reply's own shape: a placeholder
-	// outlet after the inlet, filled at the end. Two independent writes are
-	// still two rows, and still refused.
+	// Declared, not bound (plans/29 R-2): the definition is published because a
+	// plan owns it, and no handler runs it. A document placing one would
+	// publish, seed configs and halt at the node with "no binding registered"
+	// pointing at the wrong file — so it is refused here, where the author is,
+	// with the two things they can do. The executor refuses the same node with
+	// the same sentence (defence in depth: a stored document predates the flag);
+	// `core:verdict/provisional` owns it, and both doors quote it (01 §13).
+	for (const n of doc.nodes) {
+		const heard = provisionalVerdict.judge({
+			kind: 'placement',
+			nodeKey: n.key,
+			definitionId: n.definitionId,
+			definitionVersion: n.definitionVersion,
+			provisional: desc(n.key)?.provisional === true,
+		})
+		if (heard.ok) continue
+		f.push({
+			law: provisionalVerdict.law,
+			severity: 'error',
+			nodeKey: n.key,
+			message: en(heard.sentence),
+			fix: en(heard.fix),
+		})
+	}
+
+	// ── F7 — one live row; other writes unlimited (R44, W1) ────────────────
+	//
+	// A pipeline may write as often as it likes. What a run has one of is its
+	// LIVE ROW — the row a stream lands in and Stop finalises: a `liveRow`
+	// outlet's write that is still being written (`generating` fed, or a
+	// claimed `row` — LIVE_ROW_PORTS). The same outlet writing a complete
+	// message is an ordinary write. Beside the live row, a second MESSAGE on
+	// its channel is two rows racing for one place: refused here where the
+	// channel is a literal (or unset = main), and by the host where it is
+	// wired. A port fed by an edge or a reference counts as fed — the
+	// document cannot prove it will be falsy.
+	//
+	// Beside, not after (amended 2026-09-27, lair pass B16): once a write has
+	// FINISHED the live row — an outlet whose `target` is the live row's own
+	// result — the row is settled and holds its place, so a message that runs
+	// strictly after that write lands after it and races nothing. That is how
+	// a turn writes its narrator's row and then a row per speaker. The host
+	// applies the same rule at run time (`racesLiveRow`).
+	//
+	// Per EXECUTION PATH (amended 2026-09-28, lair pass R8), as the
+	// streaming law already reads (W2): two live-row outlets that can never
+	// run in the same execution — mutually exclusive branches of one junction
+	// (`exclusiveSteps`) — are each the run's one live row on their own path.
+	// That is how one spec opens its row where each branch needs it: the
+	// Lair's delver after the Sanctum's beats row, its Castellan's narration,
+	// its Sanctum talk. Anything not provably exclusive is still one path.
 	const writes = doc.nodes.filter(
 		(n) => n.kind === 'outlet' && desc(n.key)?.effects === 'write',
 	)
-	const writeKeys = new Set(writes.map((w) => w.key))
-	const rows = writes.filter(
-		(w) =>
-			!doc.edges.some(
-				(e) =>
-					e.to === w.key && e.toPort.split('.')[0] === 'target' && writeKeys.has(e.from),
-			),
+	const fed = (n: (typeof writes)[number], port: string): boolean => {
+		const v = (n.config as Record<string, unknown> | undefined)?.[port]
+		if (v !== undefined && v !== null && v !== false) return true
+		return doc.edges.some((e) => e.to === n.key && e.toPort.split('.')[0] === port)
+	}
+	const opensLive = (n: (typeof writes)[number]) =>
+		Boolean(desc(n.key)?.liveRow) && LIVE_ROW_PORTS.some((p) => fed(n, p))
+	const liveRows = writes.filter(opensLive)
+	const pathClauses = new Map(doc.clauses.map((c) => [c.id, c]))
+	const onOnePath = liveRows.filter((a) =>
+		liveRows.some((b) => b !== a && !exclusiveSteps(pathClauses, a, b)),
 	)
-	if (rows.length > 1) {
+	if (onOnePath.length > 1) {
 		f.push({
 			law: 'F7',
 			severity: 'error',
-			nodeKey: rows[1]!.key,
-			message: `a pipeline has at most one primary row; found ${rows.length} (${rows.map((w) => w.key).join(', ')})`,
-			fix: 'keep one write-class .outlet() per row — an update whose target is an earlier write in this document is the same row; emit-class outlets are unlimited, or trigger a second pipeline via the event a write causes',
+			nodeKey: onOnePath[1]!.key,
+			message: `a run has at most one live row; found ${onOnePath.length} (${onOnePath.map((w) => w.key).join(', ')})`,
+			fix: 'keep one row that is written into (a placeholder or a claimed row) and fill it with update-message; write anything else beside it — complete messages on other channels, the annex, lore — as many as you like. Two may each open one only from mutually exclusive branches of one junction',
 		})
+	}
+	// The channel a message write lands on, canonical, when this document
+	// fixes it: a literal, or unset (= main). A wired channel (a ref) is
+	// known only at run time — the host refuses there.
+	const channelOf = (n: (typeof writes)[number]): string | undefined => {
+		const v = (n.config as Record<string, unknown> | undefined)?.channel
+		if (v !== undefined && v !== null && typeof v !== 'string') return undefined
+		return formatChannel(parseChannel(v ?? 'main'))
+	}
+	// Each live row against the writes that can run beside it: a write on
+	// an exclusive path can never race it, whatever channel it names.
+	const raced = new Set<string>()
+	for (const live of liveRows) {
+		const liveChannel = !fed(live, 'row') ? channelOf(live) : undefined
+		if (liveChannel === undefined) continue
+		const finishers = writes.filter((w) =>
+			doc.edges.some(
+				(e) => e.from === live.key && e.to === w.key && e.toPort.split('.')[0] === 'target',
+			),
+		)
+		for (const w of writes) {
+			if (liveRows.includes(w) || raced.has(w.key)) continue
+			if (!desc(w.key)?.ports.in?.channel) continue
+			if (channelOf(w) !== liveChannel) continue
+			if (exclusiveSteps(pathClauses, live, w)) continue
+			if (finishers.some((f) => runsStrictlyAfter(doc, w, f))) continue
+			raced.add(w.key)
+			f.push({
+				law: 'F7',
+				severity: 'error',
+				nodeKey: w.key,
+				message: `'${w.key}' writes a message on channel '${liveChannel}', the live row's channel ('${live.key}') — two rows racing for one place`,
+				fix: `put it on the live row as blocks, or on another channel — a second message beside the reply belongs somewhere the reply is not`,
+			})
+		}
 	}
 
 	// ── F25 — no branching. A node may not feed two divergent spine successors ─
@@ -132,7 +263,41 @@ export function validate(doc: SpecDocument): Finding[] {
 		const outShape = up.ports.out?.[e.fromPort]
 		const inShape = down.ports.in?.[e.toPort.split('.')[0]!]
 		if (!outShape || !inShape) continue
-		if (!assignable(outShape, inShape)) {
+		// A reference wired into a FIELD of a port (`templateContext.results`)
+		// assembles the port's value from parts, and a part has no declared
+		// shape to be held to — but only where the port's whole shape is one
+		// a spec builds field by field (U5d review, W9 then S-c). Any other
+		// port is a whole value, and a field edge into it is held to the
+		// port's shape like a whole-port edge: `messages.x: $.lore.hits` is
+		// the mistake 01 §3 exists to catch, not an object under construction.
+		const wholePort = !e.toPort.includes('.') || !FIELD_ASSEMBLED_SHAPES.has(inShape)
+		// R-a (U5d review, 2026-09-17) — a transcript is not a candidates list.
+		// `messages@1` was assignable to `context-candidates@1` for one day
+		// (W9), which legalised a wiring the host silently drops: a row
+		// handed to `concat-candidates` is keyed `undefined:<id>`, the
+		// ranker's `select` excludes it as `excluded_unknown_source`, and
+		// `assemble` given rows as its candidates halts on "no ranking
+		// decisions". A warning rather than 01 §3's error, so a document
+		// built from the older teaching corpus still compiles — and is told.
+		const transcriptAsCandidates =
+			wholePort &&
+			outShape === 'core:shape/messages@1' &&
+			inShape === 'core:shape/context-candidates@1'
+		if (transcriptAsCandidates) {
+			f.push({
+				law: '16 §5a',
+				severity: 'warning',
+				nodeKey: e.to,
+				message:
+					`'${e.from}.${e.fromPort}' is the transcript (core:shape/messages@1), wired into ` +
+					`'${e.to}.${e.toPort}' as candidates — the rows are not ranked there, they are dropped`,
+				fix:
+					`wire '${e.from}.band' into the merge or concat that feeds the ranker (the ` +
+					`transcript's share of the window rides the band intent), and hand the rows ` +
+					`themselves to core:task/process-messages@1; assemble's 'candidates' takes the ` +
+					`ranked list, not the transcript`,
+			})
+		} else if (wholePort && !assignable(outShape, inShape)) {
 			// The write-result case gets its own message, because the generic one
 			// ("insert a converter") is the wrong advice: there is nothing to convert.
 			// A write publishes a discriminated result, and a port that wants
@@ -172,6 +337,80 @@ export function validate(doc: SpecDocument): Finding[] {
 			})
 		}
 	}
+
+	// ── F39 — settings never travel; only data does (12 §2 P3, 29 §5d) ───────
+	//
+	// `<nodeKey>.settings.*` is the substrate's address — `enabled`, `review`,
+	// `mode` — read by the executor at its owner and handed to nobody. It is
+	// not a port: a data edge drawn from it carries nothing at run time, and a
+	// document that draws one has made a node depend on another node's switch
+	// (a plugin node keyed to whether `save` is reviewed), which is exactly
+	// the coupling that stops two configs from being independent. Refused as
+	// the law it breaks rather than as an unknown port, because the fix is
+	// different: read a value the owner publishes, or reference its slot.
+	// `core:verdict/settings-travel` judges each edge and each reference; the
+	// registry and the executor quote the same verdict (01 §13).
+	for (const e of doc.edges) {
+		if (e.implicit) continue
+		const heard = settingsTravelVerdict.judge({
+			kind: 'edge',
+			from: e.from,
+			fromPort: e.fromPort,
+			to: e.to,
+			toPort: e.toPort,
+		})
+		if (heard.ok) continue
+		f.push({
+			law: settingsTravelVerdict.law,
+			severity: 'error',
+			nodeKey: e.to,
+			message: en(heard.sentence),
+			fix: en(heard.fix),
+		})
+	}
+	// The same law through the other door: a config reference naming the
+	// substrate's slot. `SlotRef.slot` cannot spell it and `slot.*` never
+	// produces it, so one here is a hand-written document; the executor
+	// resolves it to nothing and notes why (`resolveInput`), and the document
+	// is refused before it gets that far.
+	for (const n of doc.nodes)
+		for (const [k, v] of Object.entries(n.config)) {
+			if (!isSlotRef(v)) continue
+			const slotName = (v as SlotRef).slot as unknown
+			// A reference naming no slot at all is a shape fault, said as one:
+			// before this guard it was a TypeError out of `validate()`, and a
+			// publish that crashes is worse than one refused (U7 delta review, 3).
+			if (typeof slotName !== 'string' || !slotName) {
+				f.push({
+					law: '12 §2',
+					severity: 'error',
+					nodeKey: n.key,
+					message:
+						`'${n.key}.${k}' is a slot reference that names no slot — ` +
+						`{ __ref: 'slot', slot } names one of connection, sampling, prompts, template, ` +
+						`params, variables`,
+					fix:
+						`write the reference with slot.<name>() — slot.params(), slot.connection(), ` +
+						`slot.prompts() — or give '${n.key}.${k}' a value`,
+				})
+				continue
+			}
+			const heard = settingsTravelVerdict.judge({
+				kind: 'reference',
+				node: n.key,
+				key: k,
+				slot: slotName,
+				target: n.resolvedRefs?.[k] ?? (v as SlotRef).ofNode ?? n.key,
+			})
+			if (heard.ok) continue
+			f.push({
+				law: settingsTravelVerdict.law,
+				severity: 'error',
+				nodeKey: n.key,
+				message: en(heard.sentence),
+				fix: en(heard.fix),
+			})
+		}
 
 	// ── R-15 — a built-in outlet only in the built-in's own spec ─────────────
 	//
@@ -246,35 +485,49 @@ export function validate(doc: SpecDocument): Finding[] {
 	}
 
 	// ── R-15 — contributed actions declare a venue core offers, a slash name in
-	// the spec's own namespace, a localised label ─────────────────────────────
+	// the spec's own namespace, a localised label; F41 — the effects line ────
 	//
 	// The builder refuses these at construction; a document from any other
-	// source (an import, a hand-written JSON) gets the same answer here, and the
-	// `triggers` alias is read through the same fold. Two actions of one spec
+	// source (an import, a hand-written JSON) gets the same answer here. Two actions of one spec
 	// claiming one slash name for two different functions is a collision the
-	// namespace rule cannot prevent — refused as such.
-	for (const finding of actionDocumentFindings(doc)) {
+	// namespace rule cannot prevent — refused as such. Each finding carries
+	// the law it comes from (`ActionFinding`): the declaration's shape is
+	// R-15's, a `world` action across the line — in a message venue, or
+	// acted on by a participant — is F41's (U7 review, W3), so the
+	// conformance kit's C20 keys on the label and never on a word. An F41
+	// finding carries the fix `core:verdict/effects-line` states; a shape
+	// finding gets the one alternative there is.
+	for (const { law, message, fix } of actionDocumentFindingsByLaw(doc)) {
 		f.push({
-			law: 'R-15',
+			law,
 			severity: 'error',
-			message: finding,
-			fix: 'declare the action as `contributes.actions[]` describes — see the SDK\'s actions.ts',
+			message,
+			fix: fix ?? 'declare the action as `contributes.actions[]` describes — see the SDK\'s actions.ts',
 		})
 	}
 
-	// ── Clauses: no write-class outlets inside (01 §4) ────────────────────────
-	for (const n of doc.nodes) {
-		if (!n.clauseId) continue
-		if (n.kind === 'outlet' && desc(n.key)?.effects === 'write') {
-			f.push({
-				law: '01 §4',
-				severity: 'error',
-				nodeKey: n.key,
-				message: `write-class outlet '${n.key}' is inside ${n.clauseKind} clause '${n.clauseId}'`,
-				fix: 'move the write onto the spine after the clause completes — concurrent writes make ordering observable and break the equivalence law (F26)',
-			})
-		}
-	}
+	// ── R-20 — every author-facing string the document carries is display text
+	// (a string or a locale map with `en`, never blank; U5i, ruled 2026-09-17):
+	// each author preset's label and description; the genre a create pipeline
+	// carries — its name and description, its shape's fields schema and panel
+	// titles, each envoy's name and description. An action's label is R-15's
+	// above, through `actionDocumentFindingsByLaw`. The builder, `genre()` and
+	// `announce.build()` refuse these at authoring; a document from any other
+	// source gets the same sentence here, and the host's publish runs this.
+	for (const message of documentDisplayTextFindings(doc))
+		f.push({
+			law: 'R-20',
+			severity: 'error',
+			message,
+			fix:
+				"write display text a person reads — a plain string ('Lore-heavy') or a locale map " +
+				"with 'en' ({ en: 'Lore-heavy', fr: '…' }); a bare string reads as en",
+		})
+
+	// Writes inside a clause are allowed since W1 (R44): a gather's writes
+	// land as its chains complete, a junction's only on the branch that
+	// fires, and a repeating clause's once per pass, bounded by its `max`.
+	// The one refusal left is the live row in a repeat, below.
 
 	// ── Repetition bounds (01 §4, §4a) ────────────────────────────────────────
 	const clauseById = new Map(doc.clauses.map((b) => [b.id, b]))
@@ -296,6 +549,18 @@ export function validate(doc: SpecDocument): Finding[] {
 		}
 		return false
 	}
+
+	/**
+	 * What a branch may state, counted off ONE list (D-4a, 2026-09-17).
+	 *
+	 * This read the three words out of a literal, so the night `equalsPath`
+	 * joined the grammar it was legal in an action's enabled-when and refused
+	 * here as "states no conditions" — the same predicate meaning two things at
+	 * two doors, which is the one thing a shared shape exists to prevent.
+	 * `default` is the junction's own fourth: only a branch can fire because
+	 * nothing else did.
+	 */
+	const BRANCH_CONDITIONS = [...PREDICATE_CONDITION_KEYS, 'default']
 
 	for (const b of doc.clauses) {
 		if (b.kind !== 'junction') continue
@@ -330,14 +595,14 @@ export function validate(doc: SpecDocument): Finding[] {
 				})
 				continue
 			}
-			const stated = ['equals', 'truthy', 'default'].filter((k) => p[k] !== undefined)
+			const stated = BRANCH_CONDITIONS.filter((k) => p[k] !== undefined)
 			if (p.default) defaults++
 			if (stated.length !== 1) {
 				f.push({
 					law: '20 §10',
 					severity: 'error',
 					message: `junction '${b.id}' branch '${chain}' states ${stated.length || 'no'} conditions`,
-					fix: 'exactly one of equals / truthy / default per branch — a richer decision belongs in a Task the junction reads',
+					fix: `exactly one of ${BRANCH_CONDITIONS.join(' / ')} per branch — a richer decision belongs in a Task the junction reads`,
 				})
 			}
 		}
@@ -387,6 +652,64 @@ export function validate(doc: SpecDocument): Finding[] {
 		}
 	}
 
+	// ── A junction's result ports (M4, PLAN-turn-order §4.14) ──────────────────
+	// A ref to a junction port beyond its clause ports reads the fired
+	// branch's own port, so every branch must end in a node publishing it,
+	// with one shape — or a branch that fires hands the consumer nothing.
+	for (const e of doc.edges) {
+		if (e.implicit) continue
+		const clause = doc.clauses.find((c) => c.id === e.from)
+		if (!clause || clause.kind !== 'junction' || JUNCTION_CLAUSE_PORTS.has(e.fromPort)) continue
+		const ends = junctionBranchEnds(doc.nodes, clause, doc.clauses)
+		const shapes = new Set<string>()
+		// A junction with no `otherwise` can fire nothing, and then its result
+		// port is empty — a consumer handed `undefined` in silence (R26).
+		if (!Object.values(clause.branches ?? {}).some((b) => b?.default))
+			f.push({
+				law: '20 §10',
+				severity: 'error',
+				nodeKey: e.to,
+				message: `'${e.from}.${e.fromPort}' reads junction '${e.from}''s result, but it has no otherwise branch, so it can fire nothing and hand on nothing`,
+				fix: `add .otherwise(...) to '${e.from}', or read $.${e.from}.values`,
+			})
+		for (const { chain, node } of ends) {
+			const shape = node
+				? getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.ports.out?.[e.fromPort]
+				: undefined
+			if (!shape) {
+				f.push({
+					law: '20 §10',
+					severity: 'error',
+					nodeKey: e.to,
+					message:
+						`'${e.from}.${e.fromPort}' is not published by every branch of junction '${e.from}' — ` +
+						`'${chain}' ends in ${node ? `'${node.key}', which has no '${e.fromPort}'` : 'no node'}`,
+					fix: `end every branch in a node publishing '${e.fromPort}', or read $.${e.from}.values`,
+				})
+			} else shapes.add(shape)
+		}
+		if (shapes.size > 1)
+			f.push({
+				law: '20 §10',
+				severity: 'error',
+				nodeKey: e.to,
+				message: `the branches of junction '${e.from}' publish '${e.fromPort}' as different shapes (${[...shapes].join(', ')})`,
+				fix: 'end every branch in nodes whose port shapes agree',
+			})
+		else if (shapes.size === 1) {
+			const outShape = [...shapes][0]!
+			const inShape = desc(e.to)?.ports.in?.[e.toPort.split('.')[0]!]
+			if (inShape && !e.toPort.includes('.') && !assignable(outShape, inShape))
+				f.push({
+					law: '01 §3',
+					severity: 'error',
+					nodeKey: e.to,
+					message: `'${e.from}.${e.fromPort}' produces ${outShape}; '${e.to}.${e.toPort}' needs ${inShape}`,
+					fix: `insert a node that converts ${outShape} to ${inShape}, or pick a type whose port accepts ${outShape}`,
+				})
+		}
+	}
+
 	// ── Referencing into a repeating clause from outside (01 §4a) ─────────────
 	for (const e of doc.edges) {
 		if (e.implicit) continue
@@ -404,17 +727,17 @@ export function validate(doc: SpecDocument): Finding[] {
 		})
 	}
 
-	// ── A write inside a repeating clause would write N times (F7, 01 §4) ─────
+	// ── A live row inside a repeating clause would be N live rows (01 §4, W1) ─
 	for (const n of doc.nodes) {
-		if (n.kind !== 'outlet' || desc(n.key)?.effects !== 'write') continue
+		if (n.kind !== 'outlet' || desc(n.key)?.effects !== 'write' || !opensLive(n)) continue
 		const repeating = repeats(n.clauseId)
 		if (!repeating) continue
 		f.push({
-			law: 'F7',
+			law: '01 §4',
 			severity: 'error',
 			nodeKey: n.key,
-			message: `write-class outlet '${n.key}' is inside ${clauseById.get(repeating)!.kind} '${repeating}'`,
-			fix: 'move the write onto the spine after the clause completes — one primary write per pipeline is one transaction, and a repeated write is neither',
+			message: `live-row outlet '${n.key}' is inside ${clauseById.get(repeating)!.kind} '${repeating}' — one reply row per pass is N live rows`,
+			fix: 'open the reply row on the spine, before or after the repeat; writes that are not the live row may stay inside it',
 		})
 	}
 
@@ -426,8 +749,157 @@ export function validate(doc: SpecDocument): Finding[] {
 				severity: 'error',
 				nodeKey: n.key,
 				message: `'${n.key}' declares emits`,
-				fix: 'only core emits events, from its own actions. A write causes the event its outlet declares; a pipeline answers an event through its inlet lock (24 §4)',
+				fix:
+					'no node emits: a write causes the event its outlet declares, and a package records its own declared event with record-event. A pipeline answers an event through its inlet lock' +
+					pluginRuleRef('events'),
 			})
+		}
+	}
+
+	// ── F8 / E1 — recording a declared event ──────────────────────────────────
+	// A write may cause an event its literal names (`causesEventFrom`). The
+	// event is a package's declaration, named as a literal so what a pipeline
+	// records is known before it runs, and the payload carries its shape.
+	// Scope — which pipelines may record it — is the package entry's to say,
+	// and is checked by the package pass and the host.
+	for (const n of doc.nodes) {
+		const d = desc(n.key)
+		const port = d?.causesEventFrom
+		if (!port) continue
+		const literal = n.config[port]
+		const wired =
+			doc.edges.some((e) => e.to === n.key && e.toPort.split('.')[0] === port) ||
+			(!!literal && typeof literal === 'object')
+		const refuse = (message: string, fix: string) =>
+			f.push({ law: 'F8', severity: 'error', nodeKey: n.key, message, fix })
+		if (wired) {
+			refuse(
+				`'${n.key}' wires the event it records`,
+				'name the event as a literal — pass the declaration value — so what a pipeline records is known before it runs',
+			)
+			continue
+		}
+		if (typeof literal !== 'string' || !literal) {
+			refuse(`'${n.key}' names no event to record`, 'pass the event you declared with defineSessionEvent()')
+			continue
+		}
+		if (literal.startsWith('core:')) {
+			refuse(
+				`'${n.key}' records '${literal}', a core event`,
+				"core events are caused by core's own writes — declare your own event with defineSessionEvent()",
+			)
+			continue
+		}
+		const event = packageEventById(literal)
+		if (!event) {
+			refuse(`'${n.key}' records '${literal}', which is not declared`, notADeclaredEvent(literal))
+			continue
+		}
+		// The payload: present always; for any shape but json, wired whole
+		// from a port of that shape — an assembled or literal value has no
+		// shape the declaration could be held to.
+		const into = doc.edges.filter((e) => e.to === n.key && e.toPort.split('.')[0] === 'payload')
+		const whole = into.filter((e) => e.toPort === 'payload')
+		const literalPayload = n.config.payload !== undefined
+		if (!into.length && !literalPayload) {
+			refuse(`'${n.key}' records '${literal}' with no payload`, `wire a value of shape '${event.payload}' into payload`)
+			continue
+		}
+		if (event.payload === JSON_SHAPE) continue
+		if (whole.length !== 1 || into.length !== 1) {
+			refuse(
+				`'${n.key}' records '${literal}' with an assembled or literal payload; the event carries '${event.payload}'`,
+				`wire one port of shape '${event.payload}' into payload, whole`,
+			)
+			continue
+		}
+		const outShape = desc(whole[0]!.from)?.ports.out?.[whole[0]!.fromPort]
+		if (outShape && !assignable(outShape, event.payload))
+			refuse(
+				`'${n.key}' records '${literal}' with a '${outShape}' payload; the event carries '${event.payload}'`,
+				`wire a value of shape '${event.payload}' into payload — the event's declaration says what a listener receives`,
+			)
+	}
+
+	// ── R57 — an annex write names only its owner's declared keys ────────────
+	// One annex declaration per owner is the single source of truth (owner
+	// ruling 2026-09-26): a `set-session-annex` step writes only the keys its
+	// owner declares with `annexField()`, and the audience stored is the
+	// declaration's. Judged here where the keys are literal and the owner's
+	// declaration is known in this process (core's; an installed package's on
+	// the host); a wired `value`, or an owner not known here, is the package
+	// pass's and the host's write to judge.
+	for (const hit of annexStepFindings(doc, annexDeclarationOf))
+		for (const refusal of hit.refusals)
+			f.push({
+				law: 'R57',
+				severity: 'error',
+				nodeKey: hit.nodeKey,
+				message: `'${hit.nodeKey}' writes the annex of '${hit.owner}': ${refusal}`,
+				fix: `write only keys '${hit.owner}' declares — add the key to its annexFields with its shape and who may see it`,
+			})
+
+	// ── R60 — the whole annex feeding a prompt is warned ──────────────────────
+	// The annex as a pipeline reads it carries every value, a secret included;
+	// a prompt should read the AI's view (`view: 'ai'`). Followed forward from
+	// its sources — `session-annex` without `view: 'ai'`, the settings
+	// document (`session-settings`, or an inlet's `session` port, whole or its
+	// `annex`) — through every node it reaches, to
+	// any node that builds a prompt (an `assembled-context` out-port). A
+	// warning, not a refusal: a pipeline may mean it.
+	{
+		const PROMPT = 'core:shape/assembled-context@1'
+		const buildsPrompt = (key: string) =>
+			Object.values(desc(key)?.ports.out ?? {}).some((shape) => shape === PROMPT)
+		const sources: string[] = []
+		for (const n of doc.nodes) {
+			// A `view` wired rather than written is decided at run time; only a
+			// literal that is not `'ai'` is known to be the whole annex.
+			const viewWired = doc.edges.some((e) => e.to === n.key && e.toPort.split('.')[0] === 'view')
+			// `'template'` (typed templates P6) is not the whole annex either:
+			// declared keys only, and law T2 holds it to a template's port.
+			if (
+				n.definitionId === 'core:query/session-annex' &&
+				n.config.view !== 'ai' &&
+				n.config.view !== 'template' &&
+				!viewWired
+			)
+				sources.push(n.key)
+			// The settings document carries the whole annex too.
+			if (n.definitionId === 'core:query/session-settings') sources.push(n.key)
+		}
+		const tainted = new Map<string, string>()
+		for (const key of sources) tainted.set(key, key)
+		const queue = [...sources]
+		for (const e of doc.edges) {
+			const from = doc.nodes.find((n) => n.key === e.from)
+			const path = e.fromPort.split('.')
+			// An inlet's settings document, whole or its `annex`.
+			const carries = path[0] === 'session' && (path.length === 1 || path[1] === 'annex')
+			if (from?.kind === 'inlet' && carries && !tainted.has(e.to)) {
+				tainted.set(e.to, e.from)
+				queue.push(e.to)
+			}
+		}
+		const warned = new Set<string>()
+		while (queue.length) {
+			const key = queue.shift()!
+			const origin = tainted.get(key)!
+			if (buildsPrompt(key) && !warned.has(origin)) {
+				warned.add(origin)
+				f.push({
+					law: 'R60',
+					severity: 'warning',
+					nodeKey: origin,
+					message: `'${origin}' carries the whole session annex into a prompt ('${key}') — every value, secrets included`,
+					fix: "read the annex with view: 'ai' (and the speaker) so the prompt carries only what the model may see",
+				})
+			}
+			for (const e of doc.edges)
+				if (e.from === key && !tainted.has(e.to)) {
+					tainted.set(e.to, origin)
+					queue.push(e.to)
+				}
 		}
 	}
 
@@ -444,7 +916,7 @@ export function validate(doc: SpecDocument): Finding[] {
 	// one not tuning the others — is exactly two nodes that each OWN a params
 	// slot (neither references the other) and both declare a `shared` field
 	// under one name. A field left unmarked is the node's own by declaration:
-	// four `assemble` stages in one run each declaring `postHistoryDepth`, the
+	// four `assemble` steps in one run each declaring `postHistoryDepth`, the
 	// three relationship reads each declaring `maxEntries`, are several
 	// settings that happen to share a spelling, and take no part. Nor does a
 	// node whose `params` is a reference — it is not an owner.
@@ -677,7 +1149,226 @@ export function validate(doc: SpecDocument): Finding[] {
 		}
 	}
 
+	// ── T1 — a template fits where it is rendered (typed templates P5) ─────────
+	// Collisions and forbidden kinds in a template node's scope, a band with
+	// no variable, and — given the checker — every template source the
+	// document carries against the typed scope of the slot it fills.
+	f.push(...templateLawFindings(doc, options.templates))
+
+	// ── streaming step + step status (lair pass B3/B18, D6/D5, 2026-09-27) ──
+	f.push(...streamingStepFindings(doc))
+
 	return f
+}
+
+/**
+ * The streaming step and the step status, as declared on `expose` (lair
+ * pass B3/B18; owner D6 and D5, 2026-09-27).
+ *
+ * Which oracle streams into the reply is **declared**, never inferred: the
+ * inference it replaced skipped every oracle inside a clause and streamed the
+ * Lair's planner JSON into the row. What a declaration can still get wrong is
+ * refused here, each with the fix:
+ *
+ *  · **a JSON step never streams** — a step whose `main` out-port is not a
+ *    streaming shape (`generate-json`, whose `main` is `core:shape/json@1`)
+ *    would write its document into the row a person is reading;
+ *  · **one per execution path** — a run has one live row, and two streams
+ *    interleave or concatenate into it. Two steps that can never run in the
+ *    same execution may each stream (W2, 2026-09-27): they sit in different
+ *    branches of one junction whose predicates are mutually exclusive — one
+ *    is the `otherwise`, or both are `equals` on the same path with different
+ *    literals. The runtime streams whichever one runs. Anything weaker (a
+ *    `truthy`, an `equalsPath`, two different paths) could fire both, so it
+ *    is refused, and so is a step on the spine beside one in a branch;
+ *  · **never in an each or a loop** — the step would stream once per pass
+ *    into the same row;
+ *  · **an oracle** — only an oracle has a model's tokens to stream.
+ *
+ * A step status is display text (R-20).
+ * @internal
+ */
+export function streamingStepFindings(doc: SpecDocument): Finding[] {
+	const f: Finding[] = []
+	const LAW = 'streaming step'
+	const clauseById = new Map(doc.clauses.map((c) => [c.id, c]))
+	const repeatingClause = (clauseId: string | undefined): string | undefined => {
+		const seen = new Set<string>()
+		for (let id = clauseId; id && !seen.has(id); ) {
+			seen.add(id)
+			const c = clauseById.get(id)
+			if (!c) return undefined
+			if (c.kind === 'each' || c.kind === 'loop') return c.id
+			id = c.clauseId
+		}
+		return undefined
+	}
+
+	const streaming = doc.nodes.filter((n) => n.expose?.stream === true)
+	for (const n of streaming) {
+		if (n.kind !== 'oracle') {
+			f.push({
+				law: LAW,
+				severity: 'error',
+				nodeKey: n.key,
+				message: `'${n.key}' is declared the streaming step, but it is a ${n.kind} — only an oracle has a model's tokens to stream`,
+				fix: 'move `expose: { stream: true }` to the oracle that writes the reply\'s prose',
+			})
+			continue
+		}
+		const def = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
+		const out = def?.ports.out ?? {}
+		// Judged on `main`, what the step IS: `generate-json` also publishes
+		// the raw `text` it parsed as a text stream, for diagnosis, and that
+		// port does not make its answer prose.
+		const streams = out.main !== undefined && isStreaming(out.main)
+		if (def && !streams) {
+			const json = out.main === JSON_SHAPE
+			f.push({
+				law: LAW,
+				severity: 'error',
+				nodeKey: n.key,
+				message: json
+					? `'${n.key}' (${n.definitionId}) is declared the streaming step, but it answers in JSON — a JSON step never streams into a row (D6)`
+					: `'${n.key}' (${n.definitionId}) is declared the streaming step, but its main out-port does not stream`,
+				fix:
+					'declare `expose: { stream: true }` on the step that writes the prose (a `core:oracle/generate-text` oracle), ' +
+					'or on none — a spec that streams nothing shows its step status until the write lands',
+			})
+		}
+		const repeat = repeatingClause(n.clauseId)
+		if (repeat)
+			f.push({
+				law: LAW,
+				severity: 'error',
+				nodeKey: n.key,
+				message: `'${n.key}' is declared the streaming step inside '${repeat}', which repeats — every pass would stream into the same row`,
+				fix: 'stream a step outside the each or loop, or none; the repeated step\'s text reaches the row at the write',
+			})
+	}
+	// Pairwise: every two streaming steps must be provably exclusive. A set
+	// whose every pair is exclusive can never run two in one execution.
+	const reported = new Set<string>()
+	for (let i = 0; i < streaming.length; i++)
+		for (let j = i + 1; j < streaming.length; j++) {
+			const a = streaming[i]!
+			const b = streaming[j]!
+			if (reported.has(b.key) || exclusiveSteps(clauseById, a, b)) continue
+			reported.add(b.key)
+			f.push({
+				law: LAW,
+				severity: 'error',
+				nodeKey: b.key,
+				message: `'${a.key}' and '${b.key}' are both declared the streaming step on the same execution path — a run has one live row, and at most one streaming step may run in any one execution`,
+				fix:
+					'keep `expose: { stream: true }` on the step whose text is the reply, and give the others a `status` instead — ' +
+					'two may each stream only from mutually exclusive branches of one junction (an `otherwise`, or `equals` on the same path with different values)',
+			})
+		}
+
+	for (const n of doc.nodes) {
+		const status = n.expose?.status
+		if (status === undefined) continue
+		for (const message of i18nFindings(status, `'${n.key}' expose.status`))
+			f.push({
+				law: 'R-20',
+				severity: 'error',
+				nodeKey: n.key,
+				message,
+				fix: "write the step status a person reads while it runs — a string ('Planning the turn') or a locale map with 'en'",
+			})
+	}
+	return f
+}
+
+type ClauseLike = SpecDocument['clauses'][number] & { branches?: Record<string, JunctionPredicateLike> }
+type JunctionPredicateLike = { path?: string; equals?: unknown; equalsPath?: string; truthy?: boolean; default?: boolean }
+
+/**
+ * Whether `a` always runs after `b` has finished (F7's "after, not beside").
+ *
+ * A level — the spine, or one chain of one clause — runs its items one at a
+ * time in position order; only a clause's chains may run side by side. So
+ * `a` follows `b` exactly when, at the innermost level both sit in, the item
+ * holding `a` is positioned after the item holding `b`. Two branches of one
+ * clause meet at that clause's own position, and are never ordered.
+ */
+function runsStrictlyAfter(
+	doc: SpecDocument,
+	a: { clauseId?: string; clauseChain?: string; position: number },
+	b: { clauseId?: string; clauseChain?: string; position: number },
+): boolean {
+	const clauseById = new Map(doc.clauses.map((c) => [c.id, c]))
+	// Every level a node sits in, innermost first, with the position of the
+	// item there that holds it.
+	const levels = (n: { clauseId?: string; clauseChain?: string; position: number }) => {
+		const out: Array<{ level: string; position: number }> = []
+		let at: { clauseId?: string; clauseChain?: string; position: number } | undefined = n
+		const seen = new Set<string>()
+		while (at) {
+			out.push({ level: `${at.clauseId ?? ''}\u0000${at.clauseChain ?? ''}`, position: at.position })
+			if (!at.clauseId || seen.has(at.clauseId)) break
+			seen.add(at.clauseId)
+			at = clauseById.get(at.clauseId)
+		}
+		return out
+	}
+	const bAt = new Map(levels(b).map((l) => [l.level, l.position]))
+	for (const l of levels(a)) {
+		const other = bAt.get(l.level)
+		if (other !== undefined) return l.position > other
+	}
+	return false
+}
+
+/**
+ * Whether two nodes can never run in the same execution (W2): they diverge
+ * in two branches of one junction whose predicates cannot both fire.
+ * Conservative — anything not provably exclusive is the same path.
+ */
+function exclusiveSteps(
+	clauseById: ReadonlyMap<string, SpecDocument['clauses'][number]>,
+	a: { clauseId?: string; clauseChain?: string },
+	b: { clauseId?: string; clauseChain?: string },
+): boolean {
+	// Each node's ancestry, innermost first, as (clause, chain) pairs.
+	const ancestry = (n: { clauseId?: string; clauseChain?: string }) => {
+		const out: Array<{ clause: string; chain: string | undefined }> = []
+		const seen = new Set<string>()
+		for (let id = n.clauseId, chain = n.clauseChain; id && !seen.has(id); ) {
+			seen.add(id)
+			out.push({ clause: id, chain })
+			const c = clauseById.get(id)
+			if (!c) break
+			id = c.clauseId
+			chain = c.clauseChain
+		}
+		return out
+	}
+	const bChains = new Map(ancestry(b).map((x) => [x.clause, x.chain]))
+	// The innermost clause both sit in is where they diverge, if they do.
+	for (const { clause, chain } of ancestry(a)) {
+		if (!bChains.has(clause)) continue
+		const other = bChains.get(clause)
+		if (chain === other) return false
+		const c = clauseById.get(clause) as ClauseLike | undefined
+		if (!c || c.kind !== 'junction' || chain === undefined || other === undefined) return false
+		const p = c.branches?.[chain]
+		const q = c.branches?.[other]
+		return !!p && !!q && exclusivePredicates(p, q)
+	}
+	return false
+}
+
+/** Two junction predicates that can never both fire. */
+function exclusivePredicates(p: JunctionPredicateLike, q: JunctionPredicateLike): boolean {
+	// `otherwise` fires exactly when nothing else did.
+	if (p.default === true || q.default === true) return p.default !== q.default
+	const onlyEquals = (x: JunctionPredicateLike) =>
+		'equals' in x && x.equalsPath === undefined && x.truthy === undefined
+	if (!onlyEquals(p) || !onlyEquals(q)) return false
+	if ((p.path ?? '') !== (q.path ?? '')) return false
+	return JSON.stringify(p.equals) !== JSON.stringify(q.equals)
 }
 
 /**
@@ -733,12 +1424,50 @@ function reaches(doc: SpecDocument, from: string, to: string, seen = new Set<str
 	return doc.edges.filter((e) => e.from === from).some((e) => reaches(doc, e.to, to, seen))
 }
 
-export function assertValid(doc: SpecDocument): void {
-	const errs = validate(doc).filter((x) => x.severity === 'error')
+/** @experimental */
+export function assertValid(doc: SpecDocument, options?: ValidateOptions): void {
+	const errs = validate(doc, options).filter((x) => x.severity === 'error')
 	if (errs.length) {
 		throw new Error(
 			'spec validation failed:\n' +
 				errs.map((e) => `  [${e.law}] ${e.message}\n    → ${e.fix}`).join('\n'),
 		)
 	}
+}
+
+/**
+ * The R-20 findings over one stored document: presets, and the genre
+ * declaration a create pipeline carries. Read as `unknown` throughout — a
+ * document may have come from anywhere — so a wrong shape is a sentence,
+ * never a throw.
+ * @experimental
+ */
+export function documentDisplayTextFindings(doc: SpecDocument): string[] {
+	const out: string[] = []
+	const presets = (doc as { presets?: unknown }).presets
+	if (Array.isArray(presets))
+		presets.forEach((p, i) => {
+			const preset = p as { slug?: unknown; label?: unknown; description?: unknown } | null
+			const at = `presets[${typeof preset?.slug === 'string' ? preset.slug : i}]`
+			out.push(...i18nFindings(preset?.label, `${at}.label`, { required: true }))
+			out.push(...i18nFindings(preset?.description, `${at}.description`))
+		})
+	const genre = (doc.genre as Record<string, unknown> | undefined) ?? undefined
+	if (genre && typeof genre === 'object') {
+		out.push(...i18nFindings(genre.name, 'genre.name', { required: true }))
+		out.push(...i18nFindings(genre.description, 'genre.description'))
+		const shape = genre.shape as { fields?: unknown; panels?: unknown } | undefined
+		if (shape && typeof shape === 'object') {
+			out.push(...settingsSchemaFindings(shape.fields, 'genre.shape.fields'))
+			out.push(...widgetDeclsFindings(shape.panels, 'genre.shape.panels'))
+		}
+		if (Array.isArray(genre.envoys))
+			genre.envoys.forEach((e, i) => {
+				const envoy = e as { key?: unknown; name?: unknown; description?: unknown } | null
+				const at = `genre.envoys[${typeof envoy?.key === 'string' ? envoy.key : i}]`
+				out.push(...i18nFindings(envoy?.name, `${at}.name`, { required: true }))
+				out.push(...i18nFindings(envoy?.description, `${at}.description`))
+			})
+	}
+	return out
 }

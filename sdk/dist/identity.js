@@ -12,11 +12,13 @@
  *
  * So a spec id carries **no `@N` suffix**. The version is not part of the identity; it is
  * what the identity is compared *at*.
+ * @experimental
  */
 const SLUG_PART = /^[a-z0-9]+([./-][a-z0-9]+)*$/;
 /**
  * Parse `owner:slug` — `chariot.rp:chat`, `core:chat-turn`, or a bare `chat-turn` for a
  * document someone hand-wrote and imported.
+ * @experimental
  */
 export function parseSpecId(id) {
     // Tolerated and ignored: a trailing @N. It is type-pin syntax that reads like a
@@ -30,6 +32,7 @@ export function parseSpecId(id) {
         return { slug: withoutPin };
     return { owner: withoutPin.slice(0, i), slug: withoutPin.slice(i + 1) };
 }
+/** @experimental */
 export function assertSpecId(id) {
     const { owner, slug } = parseSpecId(id);
     if (!SLUG_PART.test(slug) || (owner !== undefined && !SLUG_PART.test(owner))) {
@@ -46,7 +49,7 @@ const parts = (v) => {
         return null;
     return { major: +m[1], minor: +m[2], patch: +m[3], pre: m[4] };
 };
-/** −1, 0, 1. A prerelease sorts below the release it leads to. */
+/** −1, 0, 1. A prerelease sorts below the release it leads to. @experimental */
 export function compareVersions(a, b) {
     const x = parts(a);
     const y = parts(b);
@@ -69,6 +72,7 @@ export function compareVersions(a, b) {
  * or older one is ignored.** Ownership is checked first, because "newer" is not a licence
  * to overwrite somebody else's row — a plugin update must not silently take over a spec
  * an admin imported by hand, or one another plugin ships.
+ * @experimental
  */
 export function decideImport(incoming, installed) {
     if (!installed)
@@ -83,12 +87,49 @@ export function decideImport(incoming, installed) {
     }
     const c = compareVersions(incoming.version, installed.version);
     if (c > 0)
-        return { action: 'replace', reason: `${incoming.version} is newer than ${installed.version}` };
+        return {
+            action: 'replace',
+            reason: `${incoming.version} is newer than ${installed.version}`,
+        };
     return {
         action: 'ignore',
         reason: `${incoming.version} is not newer than the installed ${installed.version}`,
     };
 }
-/** Display form for logs and diffs — never a storage key. */
+/** Display form for logs and diffs — never a storage key. @experimental */
 export const qualify = (i) => `${i.owner ? `${i.owner}:` : ''}${i.slug}@${i.version}`;
+/* ── Action identity ─────────────────────────────────────────────────────── */
+/** The spec id core's own verbs are listed under — a name, not a row. @internal */
+export const CORE_ACTION_SPEC_ID = 'core';
+/**
+ * An action's **identity** on the wire: `<spec slug>#<key>` — a spec slug
+ * (`core`, `core:spec/narrate`, `acme:spec/roll`; versionless, so no `@`)
+ * and a key (a lowercase kebab token), joined by `#`. One string names one
+ * declaration; everything that keys on an action keys on this — a binding's
+ * subject, a preset's included set, a session's enablement row, a genre's
+ * enabled-when default, the fire, a block's `action`, the *new* mark (plans/31
+ * V2: the one key; there is no bare function beside it). The host's
+ * `shared/actions/identity.ts` reads the same grammar from here.
+ * @internal
+ */
+export const ACTION_IDENTITY = /^[a-z0-9:./-]+#[a-z0-9-]+$/;
+/** The longest identity the wire accepts; a spec slug is never near this. @internal */
+export const ACTION_IDENTITY_MAX_LENGTH = 200;
+/** Is this string an action identity — `<spec slug>#<key>`, within the wire's length? @experimental */
+export function isActionIdentity(v) {
+    return (typeof v === 'string' && v.length <= ACTION_IDENTITY_MAX_LENGTH && ACTION_IDENTITY.test(v));
+}
+/** An action's identity from its two halves: `{ specSlug: 'core', key: 'edit' }` → `core#edit`. @experimental */
+export const actionIdentity = (a) => `${a.specSlug}#${a.key}`;
+/**
+ * The two halves of an action identity, or null for anything that is not one.
+ * Split at the last `#` — neither half may hold one, so it is the only one.
+ * @experimental
+ */
+export function parseActionIdentity(raw) {
+    if (!isActionIdentity(raw))
+        return null;
+    const i = raw.lastIndexOf('#');
+    return { specSlug: raw.slice(0, i), key: raw.slice(i + 1) };
+}
 //# sourceMappingURL=identity.js.map

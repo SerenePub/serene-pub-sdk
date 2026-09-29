@@ -25,7 +25,14 @@
  * control renderer (@serene-pub/controls), scaffold printer (cli) — and a
  * conformance canary asserts no shipped type is missing any of the four.
  */
-/** One condition over sibling values — the route-predicate shape (20 §10). */
+import { type I18n } from './i18n.js';
+/**
+ * One condition over sibling values — the route-predicate shape (20 §10).
+ * A settings-form field's gate, not the action-level **enabled-when** of
+ * `predicates.ts` (which reads the session's published values and carries a
+ * `reason`); the two share the shape, not the document.
+ * @experimental
+ */
 export interface ValuePredicate {
     /** Dot path into the sibling value map. */
     path: string;
@@ -34,10 +41,11 @@ export interface ValuePredicate {
     /** Fires when the value is truthy. */
     truthy?: boolean;
 }
-/** Fields every declaration may carry, regardless of kind. */
+/** Fields every declaration may carry, regardless of kind. @experimental */
 export interface ValueCommon {
-    label?: unknown;
-    description?: unknown;
+    /** What a person reads beside the control — a string or a locale map with `en` (R-20). */
+    label?: I18n;
+    description?: I18n;
     /**
      * No shipped default — a config MUST supply this value. Requiredness is
      * what makes "missing" a fact the coverage report can state (24 §7).
@@ -50,25 +58,30 @@ export interface ValueCommon {
 /**
  * A value declaration in single-key form: exactly one key, which is the
  * versioned type id; the payload is that type's own schema.
+ * @experimental
  */
 export type ValueDecl = {
     readonly [definitionId: string]: Record<string, unknown>;
 };
-/** The one key of a declaration — its type id. Throws on malformed decls. */
+/** The one key of a declaration — its type id. Throws on malformed decls. @experimental */
 export declare function valueKind(decl: ValueDecl): string;
+/** @experimental */
 export declare function assertValueTypeId(id: string): void;
+/** @experimental */
 export interface IntegerProps extends ValueCommon {
     min?: number;
     max?: number;
     step?: number;
     default?: number;
 }
+/** @experimental */
 export interface NumberProps extends ValueCommon {
     min?: number;
     max?: number;
     step?: number;
     default?: number;
 }
+/** @experimental */
 export interface WeightsProps extends ValueCommon {
     /** Part name → author-default weight. The parts are the group. */
     parts: Record<string, number>;
@@ -85,6 +98,7 @@ export interface WeightsProps extends ValueCommon {
     /** Which control edits this — presentation, not domain. */
     control?: 'stacked-bar' | 'sliders';
 }
+/** @experimental */
 export interface SelectProps extends ValueCommon {
     /**
      * A closed set. `description` is part of the option because the control
@@ -94,16 +108,18 @@ export interface SelectProps extends ValueCommon {
      */
     options: ReadonlyArray<string | {
         value: string;
-        label?: unknown;
-        description?: unknown;
+        label?: I18n;
+        description?: I18n;
     }>;
     default?: string;
 }
+/** @experimental */
 export interface RankingProps extends ValueCommon {
     /** The orderable set; the value is a permutation of it. */
     options: ReadonlyArray<string>;
     default?: ReadonlyArray<string>;
 }
+/** @experimental */
 export interface TextProps extends ValueCommon {
     minLength?: number;
     maxLength?: number;
@@ -112,12 +128,14 @@ export interface TextProps extends ValueCommon {
     default?: string;
     multiline?: boolean;
 }
+/** @experimental */
 export interface BooleanProps extends ValueCommon {
     default?: boolean;
 }
-/** A prompts-ref slot: the value is a reference to a shipped/named prompt. */
+/** A prompts-ref slot: the value is a reference to a shipped/named prompt. @experimental */
 export interface PromptProps extends ValueCommon {
 }
+/** @experimental */
 export interface ValueToolkit {
     integer(props?: IntegerProps): ValueDecl;
     number(props?: NumberProps): ValueDecl;
@@ -139,41 +157,46 @@ export interface ValueToolkit {
     custom(kind: string, version: number, props: Record<string, unknown>): ValueDecl;
 }
 /**
- * Construct a toolkit. `ns` is the declaring package's namespace — the
- * context-bound form `announce()` hands authors — and prefixes every custom
- * kind. The bare exported `v` has no namespace and mints no custom kinds.
+ * Construct a toolkit. `ns` is the declaring package's namespace — your
+ * plugin's slug — and prefixes every custom kind. The bare exported `v` has no
+ * namespace and mints no custom kinds.
+ * @experimental
  */
 export declare function makeValueToolkit(ns?: string): ValueToolkit;
-/** The bare toolkit: core kinds only, no custom minting. */
+/** The bare toolkit: core kinds only, no custom minting. @experimental */
 export declare const v: ValueToolkit;
 type Validator = (schema: Record<string, unknown>, value: unknown) => string[];
 /**
  * Validators for the shipped kinds, keyed by type id. Kept beside the
  * factories so adding a kind is one edit — the conformance canary refuses a
  * factory output whose kind has no validator here.
+ * @experimental
  */
 export declare const valueValidators: Record<string, Validator>;
 /**
  * Validate one value against its declaration. Unknown type ids refuse —
  * a consumer must never accept a write it cannot check (24 §8).
+ * @experimental
  */
 export declare function validateValue(declaration: ValueDecl, value: unknown): string[];
 /**
  * A deliberate hole (24 §7): type-checks wherever a value goes, so authoring
  * can continue — but the coverage report lists it as a named gap, and
  * validation refuses it like any other unknown.
+ * @experimental
  */
 export declare function todo(note: string): {
     'todo@1': {
         note: string;
     };
 };
+/** @experimental */
 export declare const isTodo: (value: unknown) => value is {
     'todo@1': {
         note: string;
     };
 };
-/** Every kind the bare toolkit can mint — the registry the canary checks. */
+/** Every kind the bare toolkit can mint — the registry the canary checks. @experimental */
 export declare const shippedValueKinds: readonly string[];
 /**
  * The bridge from the settings-schema vocabulary (`{type:'integer', …}` on
@@ -182,6 +205,7 @@ export declare const shippedValueKinds: readonly string[];
  * the value-decl contract while the schemas migrate underneath at their own
  * pace. Unknown entry types map to nothing, and the caller keeps its
  * legacy rendering for them.
+ * @experimental
  */
 export declare function valueDeclOf(entry: unknown): ValueDecl | null;
 export {};

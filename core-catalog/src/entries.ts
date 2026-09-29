@@ -1,5 +1,5 @@
 /**
- * Core's entry types — the three shapes a lorebook row can be.
+ * Core's entry types — the shapes a lorebook row can be.
  *
  * Serene Pub stored these in three near-identical tables with no discriminator
  * column anywhere: **the subtype was the table**. That is what these
@@ -62,7 +62,7 @@ const PARENT = "anchorEntryId"
  */
 const priorityField = {
 	type: "integer",
-	i18n: { en: "Priority" },
+	label: { en: "Priority" },
 	description: {
 		en: "A manual 1–3 boost. Higher wins ties against entries that scored the same."
 	},
@@ -81,6 +81,7 @@ const priorityField = {
  * No anchor: world lore is about the world, so there is nobody it could be
  * private from. That absence is the declaration doing its job — the visibility
  * policy is not "off" here, it is *not asked*.
+ * @experimental
  */
 export const worldLoreEntryType = describeEntryType({
 	id: "core:entry/world-lore@1",
@@ -102,7 +103,7 @@ export const worldLoreEntryType = describeEntryType({
 	fields: {
 		category: {
 			type: "string",
-			i18n: { en: "Category" },
+			label: { en: "Category" },
 			description: {
 				en: "Free text. Used to group entries, and to screen non-people out of the narrative graph."
 			},
@@ -130,6 +131,7 @@ export const worldLoreEntryType = describeEntryType({
  * unanchored row is visible to nobody. Four branches is policy, and policy is
  * named, versioned and implemented by core; the type selects it and never
  * writes it, which is what keeps a declaration from being code.
+ * @experimental
  */
 export const characterLoreEntryType = describeEntryType({
 	id: "core:entry/character-lore@1",
@@ -175,6 +177,7 @@ export const characterLoreEntryType = describeEntryType({
  *    the bonus".
  *  - **no `title`.** A history entry is not named; it is *dated*, and its
  *    heading is the date. That is what `order` carries.
+ * @experimental
  */
 export const historyEntryType = describeEntryType({
 	id: "core:entry/history@1",
@@ -209,7 +212,7 @@ export const historyEntryType = describeEntryType({
 	fields: {
 		year: {
 			type: "integer",
-			i18n: { en: "Year" },
+			label: { en: "Year" },
 			description: { en: "The story year this happened in." },
 			default: 1,
 			required: true,
@@ -222,7 +225,7 @@ export const historyEntryType = describeEntryType({
 		},
 		month: {
 			type: "integer",
-			i18n: { en: "Month" },
+			label: { en: "Month" },
 			description: { en: "Optional. Entries without one sort after those with." },
 			min: 1,
 			max: 12,
@@ -233,7 +236,7 @@ export const historyEntryType = describeEntryType({
 		},
 		day: {
 			type: "integer",
-			i18n: { en: "Day" },
+			label: { en: "Day" },
 			description: { en: "Optional, and only meaningful beside a month." },
 			min: 1,
 			max: 31,
@@ -244,7 +247,7 @@ export const historyEntryType = describeEntryType({
 		},
 		isCompleted: {
 			type: "boolean",
-			i18n: { en: "Completed" },
+			label: { en: "Completed" },
 			description: {
 				en: "The entry has been written up and is no longer being appended to."
 			},
@@ -258,7 +261,7 @@ export const historyEntryType = describeEntryType({
 		},
 		graphed: {
 			type: "boolean",
-			i18n: { en: "Graphed" },
+			label: { en: "Graphed" },
 			description: {
 				en: "The narrative graph has already taken this entry into account."
 			},
@@ -278,13 +281,224 @@ export const historyEntryType = describeEntryType({
 })
 
 /**
- * The three, in the order the tabs read.
+ * A location — a place the story can be in, and can be walked out of (L3,
+ * 2026-09-17).
+ *
+ * World lore's shape, because that is what a place is: agnostic, about the
+ * world, private from nobody, competing in the `worldLore` band and rendered
+ * by the world-lore variable's layout. What earns it a type of its own is not
+ * a field — it is that a *place* is a thing other places are next to, and
+ * "which rows are the map" is a question no reader could ask while a room was
+ * just world lore with the word "room" somewhere in it.
+ *
+ * ## ⚠ There is no `exits` field, and there must not be
+ *
+ * A room's exits are **link rows** — `core:outlet/link-lore-entries@1`, the
+ * same entry-ended edge the lorebook's own graph draws — and not a declared
+ * field, for a reason that is structural rather than tasteful: `fields` is the
+ * settings language, whose values land in a jsonb column and project into
+ * CHECK constraints. It has no reference type. An `exits` field could only
+ * ever hold *names*, with no foreign key, no cascade when the room it names is
+ * deleted, and no second reader — which is precisely the parseable `Exits:`
+ * line this type was declared to replace, moved one column over.
+ *
+ * So a location declares the world's fields and nothing else, and its shape
+ * lives in the edges.
+ *
+ * ## No `exportKey`
+ *
+ * The wire names are `world`, `character` and `history`, and they are what
+ * every lorebook Serene Pub has ever exported carries. A location declares
+ * none: no marker is honest, where a marker no importer reads is a file that
+ * round-trips into the wrong shape. A location exported today is read back as
+ * world lore by any install, which is the correct degrade and the reason the
+ * marker waits for an importer that knows the word.
+ * @experimental
+ */
+export const locationEntryType = describeEntryType({
+	id: "core:entry/location@1",
+	i18n: {
+		// **Places**, not "Locations" (R1, 2026-09-17): the app already calls
+		// the concept places everywhere a person reads it, and one word per
+		// meaning is the rule. The id keeps `location` — a type id is not a
+		// label, and renaming one is a migration.
+		name: { en: "Places" },
+		description: {
+			en: "Places the story happens in — rooms, streets, halls — linked to the places they lead to."
+		}
+	},
+	roles: {
+		title: TITLE,
+		key: KEYS,
+		priority: "priority",
+		// World lore's order, and for its reason: the vectorizer already
+		// concatenates title then content.
+		embedText: [TITLE, CONTENT],
+		parent: PARENT
+	},
+	fields: {
+		category: {
+			type: "string",
+			label: { en: "Category" },
+			description: {
+				en: "Free text. Used to group places — a floor, a district, a wing."
+			},
+			queryable: true,
+			sortable: false,
+			embedded: false,
+			injected: false
+		},
+		priority: priorityField
+	},
+	render: "core:var/world-lore@1",
+	// The band a place competes in. `worldLore` and not a sixth name: the
+	// weight and share maps are total over the five, and a band nobody budgets
+	// is candidates scored against `undefined` and dropped with a green suite.
+	sourceKind: "worldLore",
+	amendMode: "amend"
+})
+
+/**
+ * 🚧 The three supplies an item can have (owner ruling 2026-09-25): one of it
+ * in the world, a limited number, or as many as anybody likes.
+ * @experimental
+ */
+export const ITEM_SUPPLY_MODES = ["unique", "limited", "unlimited"] as const
+
+/** @experimental */
+export type ItemSupplyMode = (typeof ITEM_SUPPLY_MODES)[number]
+
+/**
+ * An item's supply, read: its mode and how many exist (`null` — no bound).
+ * @experimental
+ */
+export interface ItemSupply {
+	mode: ItemSupplyMode
+	limit: number | null
+}
+
+/**
+ * 🚧 An item — a thing in the world that somebody can hold (attributes phase
+ * 3a, 2026-09-26).
+ *
+ * World lore's shape, like a place: agnostic, about the world, in the
+ * `worldLore` band and rendered by the world-lore layout. What earns it a type
+ * is its **supply** — how many of it the world has: `unique` (one), `limited`
+ * (`supplyLimit` of them) or `unlimited`. The other half of the count is on
+ * the holder: a list item that references this entry carries a **held count**
+ * (`{ entryId, count }`, SDK `SlotLoreRef`), so "how many exist" and "how many
+ * she carries" are two facts in two places (owner ruling: both).
+ *
+ * ⚠ **Core never enforces the supply.** A genre pipeline does, reading what
+ * `core:query/item-supply@1` answers (remaining = limit − Σ held across the
+ * session's owners). A host that refused a write over supply would be the
+ * inventory feature the owner ruled out: inventory is an unopinionated list
+ * a genre manages however it likes.
+ *
+ * No `exportKey`, on a place's reasoning: exported, an item reads back as
+ * world lore anywhere that has not heard the word.
+ * @experimental
+ */
+export const itemEntryType = describeEntryType({
+	id: "core:entry/item@1",
+	i18n: {
+		name: { en: "Items" },
+		description: {
+			en: "Things in the world somebody can hold — a key, a sword, a letter — and how many of each exist."
+		}
+	},
+	roles: {
+		title: TITLE,
+		key: KEYS,
+		priority: "priority",
+		embedText: [TITLE, CONTENT],
+		parent: PARENT
+	},
+	fields: {
+		category: {
+			type: "string",
+			label: { en: "Category" },
+			description: {
+				en: "Free text. Used to group items — weapons, keys, letters."
+			},
+			queryable: true,
+			sortable: false,
+			embedded: false,
+			injected: false
+		},
+		priority: priorityField,
+		supply: {
+			type: "enum",
+			of: ITEM_SUPPLY_MODES,
+			label: { en: "Supply" },
+			description: {
+				en: "How many of it the world has: one, a limited number, or as many as anybody likes."
+			},
+			default: "unlimited",
+			// A genre asks "which items are unique"; nobody sorts by it, and a
+			// word contributes nothing to a cosine.
+			queryable: true,
+			sortable: false,
+			embedded: false,
+			injected: false
+		},
+		supplyLimit: {
+			type: "integer",
+			label: { en: "How many exist" },
+			description: {
+				en: "For a limited supply: how many of it the world has. Ignored otherwise."
+			},
+			min: 1,
+			queryable: false,
+			sortable: false,
+			embedded: false,
+			injected: false
+		}
+	},
+	render: "core:var/world-lore@1",
+	sourceKind: "worldLore",
+	amendMode: "amend"
+})
+
+/**
+ * 🚧 An item entry's supply, read off its `fields` — the one reader, so a
+ * pipeline, the host's supply query and a widget never disagree about it.
+ *
+ * `unique` is a limit of one. `limited` without a whole `supplyLimit` of at
+ * least one is not a bound anybody could enforce, so it reads as unlimited
+ * rather than as zero; so does a mode this build does not know.
+ * @experimental
+ */
+export function itemSupplyOf(fields: Record<string, unknown> | null | undefined): ItemSupply {
+	const mode = fields?.supply
+	if (mode === "unique") return { mode: "unique", limit: 1 }
+	const limit = fields?.supplyLimit
+	if (mode === "limited" && typeof limit === "number" && Number.isInteger(limit) && limit >= 1)
+		return { mode: "limited", limit }
+	return { mode: "unlimited", limit: null }
+}
+
+/**
+ * 🚧 How many of an item are left to hand out: its limit less what is held
+ * across every owner, never below zero (over-held reads as none left, not as
+ * debt). `null` for an unlimited supply. Pure — the pipeline decides what a
+ * zero means.
+ * @experimental
+ */
+export const remainingItemSupply = (supply: ItemSupply, held: number): number | null =>
+	supply.limit === null ? null : Math.max(0, supply.limit - held)
+
+/**
+ * The five, in the order the tabs read.
  *
  * A list for the readers that want one; the *registration* happened when this
  * module loaded, which is the same fact-about-the-code route node types take.
+ * @experimental
  */
 export const CORE_ENTRY_TYPES = [
 	worldLoreEntryType,
 	characterLoreEntryType,
-	historyEntryType
+	historyEntryType,
+	locationEntryType,
+	itemEntryType
 ]

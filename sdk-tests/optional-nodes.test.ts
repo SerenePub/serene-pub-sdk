@@ -27,6 +27,7 @@ import {
 	S,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import * as T from './fixtures.js'
 import { world } from './helpers.js'
 
 const flaky = pin(
@@ -51,7 +52,7 @@ const doc = (which: typeof flaky | typeof required) =>
 		spec('test:spec/optional', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('enrich', () => (which as any).v1())
-			.task('after', ($: any) => C.firstJson.v1({ main: $.enrich.main }))
+			.task('after', ($: any) => T.firstJson.v1({ main: $.enrich.main }))
 			.build(),
 	)
 
@@ -64,7 +65,7 @@ const go = async (which: any, hook: any) =>
 		bindings: {
 			'core:inlet/user-message@1': async (i: any) => ok(i),
 			[`${which.id}`]: hook,
-			'core:task/first-json@1': async (i: any) => ok({ main: i?.main ?? null }),
+			'test:task/first-json@1': async (i: any) => ok({ main: i?.main ?? null }),
 		},
 	})
 

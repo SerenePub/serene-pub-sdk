@@ -322,7 +322,7 @@ export async function renderMarkdown(markdown, opts) {
             token.docGraph = await opts.resolvePipeline(pipelineIdOf(token.lang));
         }));
     }
-    const previews = extractPreviews(tokens);
+    const { previews, sectionTexts } = extractPreviews(tokens);
     const body = marked.parser(tokens);
     const banner = opts.banner
         ? `<aside class="doc-banner" role="note">${escapeHtml(opts.banner)}</aside>\n`
@@ -331,6 +331,7 @@ export async function renderMarkdown(markdown, opts) {
         html: banner + body,
         headings,
         previews,
+        sectionTexts,
         links,
         images,
         pipelines,
@@ -393,6 +394,8 @@ function collectImages(tokens, out) {
  * a fenced block cannot invent a section the page does not have — which is the
  * failure the app's line-regex version has.
  */
+/** How much of a section's body the search index carries. */
+const SECTION_TEXT_CHARS = 1200;
 function extractPreviews(tokens) {
     const flat = [];
     const walk = (list) => {
@@ -417,6 +420,7 @@ function extractPreviews(tokens) {
     };
     walk(tokens);
     const previews = {};
+    const sectionTexts = {};
     // Its own slugger, walking the same headings in the same order as the
     // renderer's — so a repeat is numbered identically and the previews stay
     // keyed by the ids the page actually emits.
@@ -429,12 +433,14 @@ function extractPreviews(tokens) {
         const body = [];
         for (let j = i + 1; j < flat.length && !flat[j].heading; j++) {
             body.push(flat[j].raw);
-            if (stripInlineMarkdown(body.join('\n')).length >= 180)
+            if (stripInlineMarkdown(body.join('\n')).length >= SECTION_TEXT_CHARS)
                 break;
         }
-        previews[id] = truncateAtWord(stripInlineMarkdown(body.join('\n')), 180);
+        const text = stripInlineMarkdown(body.join('\n'));
+        previews[id] = truncateAtWord(text, 180);
+        sectionTexts[id] = truncateAtWord(text, SECTION_TEXT_CHARS);
     }
-    return previews;
+    return { previews, sectionTexts };
 }
 /** The app's description rule: first paragraph after the H1, ≤200 chars. */
 function firstParagraph(markdown) {

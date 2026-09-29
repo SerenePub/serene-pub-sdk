@@ -53,6 +53,7 @@
  * Returns the same function object rather than a wrapper: a wrapper would
  * change the identity the executor's binding table holds, and one binding table
  * keyed by identity is how a shared handler is recognised as shared.
+ * @experimental
  */
 export function declaresReads(hook, requires) {
     return Object.assign(hook, { requires });
@@ -92,6 +93,7 @@ export function declaresReads(hook, requires) {
  * shared handler through a per-pin arrow (`(input, ctx) => shared(input, ctx)`)
  * when the two pins read differently, and declare the intersection when they
  * do not. An identical redeclaration is a no-op, on the registry's own terms.
+ * @experimental
  */
 export function reads(hook, requires) {
     const plain = {
@@ -121,7 +123,7 @@ function sameRequires(a, b) {
     const keys = sorted([...Object.keys(ta), ...Object.keys(tb)]);
     return keys.every((k) => ta[k] === tb[k]);
 }
-/** Does this hook carry a read declaration? */
+/** Does this hook carry a read declaration? @internal */
 export function readsOf(hook) {
     const r = hook?.requires;
     if (!r || typeof r !== 'object')
@@ -144,6 +146,7 @@ export function readsOf(hook) {
  * `SlotDecl` is imported for the shape of what is walked; nothing here reads a
  * slot's `kind` except to find the schema, because a schema is a schema
  * whatever the slot is called.
+ * @internal
  */
 export function suppliesOf(contract) {
     const d = descriptorOf(contract);

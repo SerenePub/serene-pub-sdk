@@ -5,8 +5,10 @@
  * shape is assignable to the downstream port's. Shapes are also connection kinds
  * and sampling-config kinds (F17), which is what makes the system modality-agnostic:
  * nothing anywhere switches on "is this an LLM".
+ * @public
  */
 export type ShapeId = string;
+/** @experimental */
 export interface ShapeDef {
     id: ShapeId;
     /** Shapes this one may be assigned to. A stream is assignable to its settled form. */
@@ -14,19 +16,44 @@ export interface ShapeDef {
     /** True if a downstream node may begin consuming before the value settles (F22). */
     streaming?: boolean;
 }
+/** @experimental */
 export declare function defineShape(def: ShapeDef): ShapeId;
+/** @experimental */
 export declare function getShape(id: ShapeId): ShapeDef | undefined;
+/** @experimental */
 export declare function isStreaming(id: ShapeId): boolean;
-/** The permissive sink: anything serializable may flow into a json port. */
+/** The permissive sink: anything serializable may flow into a json port. @internal */
 export declare const JSON_SHAPE = "core:shape/json@1";
-/** Assignability: identical, into json, or declared assignable (transitively). */
+/** Assignability: identical, into json, or declared assignable (transitively). @internal */
 export declare function assignable(from: ShapeId, to: ShapeId, seen?: Set<string>): boolean;
-/** Reset — test isolation only. */
+/** Reset — test isolation only. @internal */
 export declare function _clearShapes(): void;
+/** @public */
 export declare const S: {
     readonly text: string;
     readonly textStream: string;
     readonly sessionScope: string;
+    /**
+     * Transcript rows — what `session-history@1` publishes on `main` and
+     * `messages` and what `process-messages@1` / `prose-transcript@1` read
+     * (declared so since 2026-09-17, U5d review W9; the port had said
+     * `context-candidates@1` since the SDK was vendored while the value was
+     * always rows, and `validate()` never ran over the catalog to say so).
+     *
+     * **Not assignable to `context-candidates@1`** (U5d review R-a, the same
+     * day; W9 had declared it one way). A transcript wired into a candidates
+     * port is a wiring the host silently drops: `concat-candidates` keys a
+     * row that is not a candidate as `undefined:<id>`, the ranker's `select`
+     * excludes it as `excluded_unknown_source`, and `assemble` handed rows
+     * as candidates halts on "no ranking decisions". The transcript's place
+     * in the window rides the **`band`** port — one intent element, which a
+     * spec concatenates in with the lore so the ranker reserves the
+     * conversation's slice — and the rows themselves go to
+     * `process-messages`. `validate()` says so (a warning naming the fix)
+     * rather than refusing, so a document built from the older corpus still
+     * compiles. The reverse was never declared either: a ranked candidates
+     * list is not a transcript, and a port that reads rows is handed rows.
+     */
     readonly messages: string;
     readonly candidates: string;
     readonly renderedBlocks: string;
@@ -145,6 +172,15 @@ export declare const S: {
      */
     readonly participantRef: string;
     /**
+     * An ordered list of participant references, no duplicates (lair pass R3,
+     * 2026-09-28): the inlet's `recipients` — the cast members a press
+     * collected (`CollectedRecipients`). Its own id rather than `json@1` so a
+     * port that wants people is not handed any list. Consumed by
+     * `core:query/resolve-state-changes@1`'s `owners` (R10): the Whisper's
+     * one change, made on each recipient.
+     */
+    readonly participantRefs: string;
+    /**
      * One **session change** (R-15, built 2026-09-16): the payload every
      * built-in write's event carries — `{ event, sessionId, messageId, at,
      * … }` plus what was lost or replaced (`lost` on a delete, `previous` on
@@ -167,6 +203,81 @@ export declare const S: {
      */
     readonly formAddressed: string;
     /**
+     * A **cast change** (PLAN-turn-order §4.1): the payload of
+     * `core:event/cast-changed@1` — `{ event, sessionId, at, cause, ref,
+     * change, value }` (`CastChangePayload`, events.ts). A seated
+     * participant was switched on or off, or its `position` or portrayal moved;
+     * a seat added or removed is `member-added` / `member-removed`, not
+     * this. Its own id for the reason `session-change@1` has.
+     */
+    readonly castChange: string;
+    /**
+     * **Annex changed** (PLAN-turn-order §4.14, R30): the payload of
+     * `core:event/annex-changed@1` — `{ event, sessionId, at, cause, owner }`
+     * (`AnnexChangePayload`, events.ts). Names whose entry moved, never the
+     * value.
+     */
+    readonly annexChange: string;
+    /** What a listener receives for an event a pipeline recorded: the envelope, the author's payload inside. */
+    readonly recordedEvent: string;
+    /**
+     * **Turn order changed** (§4.1): the payload of
+     * `core:event/turn-order-changed@1` — `{ event, sessionId, at, cause,
+     * runId, turnOrder }` (`TurnOrderChangedPayload`, events.ts), the
+     * document as `core:outlet/set-turn-order@1` wrote it. Core-internal:
+     * the auto-advance listener and the `sessions:turnOrder` push read it;
+     * a genre may not bind a spec to it.
+     */
+    readonly turnOrderChanged: string;
+    /**
+     * The session's **turn order** as state (§4.2): `TurnOrderV1` —
+     * `{ v, order, candidates, basedOnAt, computedAt, runId, event,
+     * strategy }`, stored at `sessions.metadata.turnOrder` and written by
+     * `core:outlet/set-turn-order@1` alone. Not the entries alone and not
+     * the candidates alone: the whole answer, with what it answered.
+     */
+    readonly turnOrder: string;
+    /**
+     * **Turn candidates** (§4.2): `TurnCandidateV1[]` — the participants the
+     * pool admitted this run, in pool order. What `core:task/turn-pool@1`
+     * publishes, an orderer rewrites, and a strategy reads. Open objects:
+     * an orderer or a plugin may add keys and core passes them through.
+     */
+    readonly turnCandidates: string;
+    /**
+     * **Turn entries** (§4.2): `TurnEntryV1[]` — prepared turns, each
+     * `{ ref, channel?, subject?, via }`. What a strategy publishes on
+     * `main` and `order`; the shape-based swap list keys a strategy on it,
+     * as it keyed one on `speaker-selection@1` before (that shape stays
+     * until the strategies are re-ported).
+     */
+    readonly turnEntries: string;
+    /**
+     * **Sprite choices** (DESIGN-sprites §5.2): what a line's speaker can show
+     * — `{ characterId, set, defaultSet, labels, last, decidedBy, text }`.
+     * `set` is the sprite set in force for the line (a session override, the
+     * cast member's amendment, or the card's default — `decidedBy` says
+     * which); `labels` are that set's sprite labels with an image; `last` is
+     * the speaker's previous shown sprite, for stickiness. What
+     * `core:query/sprites-for@1` publishes and every sprite picker reads.
+     */
+    readonly spriteChoices: string;
+    /**
+     * **A sprite pick**: `{ set, label, score?, runnerUp?, held? } | null` — the
+     * sprite a picker chose for a line, or null for none. What every sprite
+     * picker publishes on `main`, so the shape-based swap list keys a picker on
+     * it exactly as it keys a turn strategy on `turn-entries@1`.
+     */
+    readonly spritePick: string;
+    /**
+     * The **settings document** (§4.12): `SessionSettingsV1` — every
+     * setting a person can see in session settings, resolved once per run
+     * with the cascade applied (session > genre > core), and handed to the
+     * inlet as `session`. A spec reads `$.input.session.fields.tone` and
+     * never learns which table it came from.
+     */
+    readonly sessionSettings: string;
+    /**
      * A reference to stored media of any kind — the general port type.
      *
      * `image@1` and `audio@1` stay, and are assignable **to** this, so every
@@ -179,9 +290,23 @@ export declare const S: {
     /** An ordered list of media references — what a multimodal request carries
      *  as its attachments. */
     readonly mediaList: string;
+    /**
+     * A reply's **folded sections** (B4; D5, 2026-09-27): `FoldedSectionV1[]`
+     * (widgets.ts) — each `{ kind, label, content }` or `{ kind, label, items }`,
+     * shown collapsed beside the body and never read into the prompt. What the
+     * message outlets' `sections` in-port takes.
+     */
+    readonly foldedSections: string;
     readonly audio: string;
     readonly image: string;
     readonly json: string;
+    /**
+     * What a ranker judged (PLAN-sdk-1.0 §3.9, R64): one `RankingDecisionV1`
+     * per candidate. A node whose out-port carries this shape is RECORDED by
+     * the host — core's rankers and a plugin's alike — into the ranking store.
+     * Reviewed with L1 (PLAN-sdk-1.0 §4 ✓); it carries `S`'s own tag.
+     */
+    readonly decisions: string;
     /**
      * A model reply as an ordered list of typed parts (text, reasoning, media,
      * tool calls) rather than a string — see `OutputPart` in media.ts for why

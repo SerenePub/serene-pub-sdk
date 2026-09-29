@@ -23,6 +23,7 @@ import type { Golden } from '@serene-pub/sdk/testing'
 
 import {
 	PLAYGROUND_MODULES,
+	PLAYGROUND_REPLY,
 	UnknownModuleError,
 	evaluateModule,
 	resolveModule,
@@ -34,7 +35,7 @@ import {
 const EXAMPLES_DIR = join(import.meta.dirname, 'examples')
 const GOLDENS_DIR = join(EXAMPLES_DIR, 'goldens')
 
-const SLUGS = ['echo-reply', 'retrieved-reply', 'spoken-reply']
+const SLUGS = ['echo-reply', 'pictured-reply', 'retrieved-reply']
 
 const sourceOf = (slug: string) => readFile(join(EXAMPLES_DIR, `${slug}.example.ts`), 'utf8')
 
@@ -166,16 +167,16 @@ describe('what the playground says when it cannot run something', () => {
 	test('a bare default export is built, validated and run on the fixture host', async () => {
 		const run = await runSource(
 			[
-				"import { sessionEvents, slot, spec } from '@serene-pub/sdk'",
+				"import { sessionEvents, slot, spec, use } from '@serene-pub/sdk'",
 				"import * as C from '@serene-pub/contracts'",
 				'',
 				"export default spec('example:playground-default', { version: '1.0.0' })",
 				"\t.inlet('input', C.userMessage.v1(), {",
-				"\t\tgenre: 'core:genre/chat',",
+				"\t\tgenre: use('core:genre/chat'),",
 				'\t\tevent: sessionEvents.messageRespond,',
 				'\t})',
 				"\t.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))",
-				"\t.task('prompt', ($) => C.assemble.v2({ candidates: $.history.messages }))",
+				"\t.task('prompt', () => C.assemble.v2())",
 				"\t.oracle('generate', ($) =>",
 				'\t\tC.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),',
 				'\t)',
@@ -191,6 +192,10 @@ describe('what the playground says when it cannot run something', () => {
 			run.receipt!.nodes.map((n) => n.nodeKey),
 			['input', 'history', 'prompt', 'generate', 'save'],
 		)
+		// A reader who ran their own spec came to see what it answered, not that
+		// five nodes returned ok. The summary names the outlet and quotes what
+		// the fixture host gave it to write.
+		assert.ok(run.result.includes(`▸ save wrote: “${PLAYGROUND_REPLY}”`), run.result)
 	})
 
 	test('a spec that does not publish shows its findings instead of running', async () => {

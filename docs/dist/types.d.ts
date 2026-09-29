@@ -25,7 +25,11 @@
 export interface DocsSource {
     /** 'app' | 'sdk' | any id. Recorded per page; drives banners. */
     id: string;
-    /** Nav group heading shown to readers. */
+    /**
+     * Nav group heading shown to readers — the source's ONE group when `order`
+     * is flat, and the heading of the trailing group that catches pages a
+     * grouped `order` does not list.
+     */
     group: string;
     /** Either a directory of markdown files… */
     dir?: string;
@@ -36,8 +40,17 @@ export interface DocsSource {
     }[];
     /** Slug prefix for every page of this source, e.g. 'sdk' → slug 'sdk/pipelines/core_spec_respond'. Omit for none. */
     prefix?: string;
-    /** Explicit reading order of slugs (without prefix). A page absent from it is appended alphabetically AND reported as a warning. */
-    order?: string[];
+    /**
+     * Explicit reading order of slugs (without prefix). A page absent from it is
+     * appended alphabetically AND reported as a warning.
+     *
+     * Either flat — one nav group, headed `group` — or a list of **order
+     * groups**, each its own nav group headed by its own name, so one source
+     * can fill several sections of the nav without its files moving. A grouped
+     * order's unlisted pages land in a trailing group headed `group` (merged
+     * into a declared group of that name, if there is one).
+     */
+    order?: string[] | DocsOrderGroup[];
     /** Prepended to every page of this source as <aside class="doc-banner" role="note">. */
     banner?: string;
     /** Optional repo link and commit shown in the manifest for this source. */
@@ -45,6 +58,17 @@ export interface DocsSource {
         url: string;
         commit?: string;
     };
+}
+/**
+ * One **order group**: a named run of a source's reading order, which becomes
+ * one nav group of its own. Names are unique within a source; a slug belongs
+ * to at most one group.
+ */
+export interface DocsOrderGroup {
+    /** Nav group heading shown to readers. */
+    group: string;
+    /** Slugs (without prefix), in reading order. */
+    pages: string[];
 }
 /**
  * One box in a drawing the compiler lays out but does not understand.
@@ -123,7 +147,11 @@ export interface DocsManifest {
             commit?: string;
         };
     }>;
-    /** Slugs, in reading order. */
+    /**
+     * Nav groups, in reading order; slugs within each, in reading order. A
+     * source with a grouped `order` contributes several consecutive groups,
+     * so `source` is NOT unique here — key a group by `source` + `group`.
+     */
     nav: {
         group: string;
         source: string;
@@ -161,6 +189,8 @@ export interface DocsSearchEntry {
     title: string;
     depth: number;
     preview: string;
+    /** The section's body as plain text, ≤1200 chars — searched, never shown. */
+    text: string;
 }
 export interface CompileDocsReport {
     manifest: DocsManifest;
