@@ -392,7 +392,12 @@ async function resolveAnnouncement(
 		return (await res.json()) as never
 	}
 	if (from) return JSON.parse(await readFile(resolve(from), 'utf8'))
-	const catalog = await import('@serene-pub/core-catalog').catch(() => null)
+	// The specifier is widened to `string` so tsc does not resolve it: core-catalog
+	// depends on the cli, so on a clean build the cli compiles before core-catalog's
+	// types exist (the same pattern as cloneComponent's catalogMeta).
+	const catalog = (await import('@serene-pub/core-catalog' as string).catch(() => null)) as {
+		coreAnnouncement(): { document: import('@serene-pub/sdk').AnnouncementDocument }
+	} | null
 	if (!catalog) {
 		process.stderr.write(
 			`no --from given and @serene-pub/core-catalog is not installed — ` +
