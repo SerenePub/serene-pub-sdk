@@ -10,13 +10,16 @@
 	 * `set-entry-marks` sets a mark. The page answers every ask with its own
 	 * reply, so which answer to show is this widget's: its latest-ask guard.
 	 * A turn that writes the rankings tells it `lore:ranked` (R81), and it
-	 * pages again; so does a mark set anywhere else on an entry it shows
-	 * (`lore:marked`). The refresh button stays.
+	 * pages again; so does a mark set anywhere else on an entry it shows, or
+	 * on any entry while it shows only Pinned or Off (`lore:marked`). The
+	 * refresh button stays.
 	 *
 	 * What goes wrong is said here, in this widget (R77) — never a toast every
 	 * lore widget shows. The book's owner and admins see the entries; anyone
 	 * else is told whose they are, because a widget declaration has no
-	 * visibility field of its own.
+	 * visibility field of its own. So is a mark saved to the entry that a
+	 * dated amendment still decides in this session's story (the answer's
+	 * `heldBy`): the row reads as before, and the line says why.
 	 *
 	 * The markup carries no look (P3d): its elements carry `lore-entries.*`
 	 * widget parts and the default widget stylesheet draws them (STYLE-GUIDE
@@ -68,6 +71,11 @@
 	let readError = $state<string | null>(null)
 	/** Why a mark did not change, this widget's own. */
 	let markError = $state<string | null>(null)
+	/**
+	 * A mark saved to the entry that a dated amendment still decides here
+	 * (`heldBy`): the row reads as before, and this says why.
+	 */
+	let markHeld = $state<string | null>(null)
 
 	/** The filter radios' group name: one per mount, so two copies never share a group (F8). */
 	const filterGroup = `sp-lore-filter-${Math.random().toString(36).slice(2, 10)}`
@@ -114,12 +122,13 @@
 	const refresh = () => untrack(() => ready && ask(askParams()))
 
 	// Each change of the search, sort, filter, page or page size asks again —
-	// and a refused mark's line goes with the view it was said over.
+	// and a mark's line, refused or held, goes with the view it was said over.
 	$effect(() => {
 		if (!ready) return
 		const params = askParams()
 		untrack(() => {
 			markError = null
+			markHeld = null
 			ask(params)
 		})
 	})
@@ -127,12 +136,16 @@
 	// A turn wrote the rankings these entries read (R81): ask again.
 	$effect(() => untrack(() => widget?.current?.on("lore:ranked", refresh)))
 
-	// A mark changed elsewhere — another widget, another tab — on an entry
-	// shown here: ask again, so this list is never the stale one.
+	// A mark changed elsewhere — another widget, another tab, the entry
+	// editor — on an entry shown here: ask again, so this list is never the
+	// stale one. Showing only Pinned or Off, on any entry: the event names the
+	// entry but not how this session reads it now, and it may have joined.
 	$effect(() =>
 		untrack(() =>
 			widget?.current?.on("lore:marked", (e) => {
-				if (e.kind === "lore:marked" && answer?.rows.some((r) => r.id === e.entryId)) refresh()
+				if (e.kind !== "lore:marked") return
+				if (filter === "pinned" || filter === "off" || answer?.rows.some((r) => r.id === e.entryId))
+					refresh()
 			})
 		)
 	)
@@ -146,11 +159,18 @@
 		const ctx = untrack(() => widget?.current)
 		if (!ctx) return
 		markError = null
+		markHeld = null
 		try {
 			const now = await ctx.request("set-entry-marks", {
 				entryId: row.id,
 				...(mark === "off" ? { off: !row.off } : { pinned: !row.pinned })
 			})
+			if (now.heldBy)
+				markHeld = t(
+					now.heldBy.mark === "off"
+						? "Saved to the entry, but an amendment dated {date} still decides whether it is off here."
+						: "Saved to the entry, but an amendment dated {date} still decides whether it is pinned here."
+				).replace("{date}", now.heldBy.date)
 			if (answer)
 				answer = {
 					...answer,
@@ -246,6 +266,9 @@
 		{/if}
 		{#if markError}
 			<p data-widget-part="lore-entries.alert" role="alert">{markError}</p>
+		{/if}
+		{#if markHeld}
+			<p data-widget-part="lore-entries.held" role="status">{markHeld}</p>
 		{/if}
 
 		<ul data-widget-part="lore-entries.entries list" aria-label={t("Lore entries")}>

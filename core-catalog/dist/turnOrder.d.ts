@@ -32,16 +32,17 @@
  *
  * ## One spec per genre (R27, the modder pass, 2026-09-23)
  *
- * `turnOrderSpec()` below is the **public** builder: core calls it six
+ * `turnOrderSpec()` below is the **public** builder: core calls it four
  * times, one per genre (`core:spec/<genre>-turn-order`), and a plugin genre
  * calls the same function. One document serves one genre — the preset check
  * refuses a preset binding a spec whose lock names another genre (24 §4) —
  * so the two shared slugs this file shipped at A6 (`core:spec/turn-order`,
  * `core:spec/turn-order-narrator`) are retired.
  *
- * A cast genre pins round robin; a planner genre (Adventure, the Lair,
- * Whodunit) pins `turn-narrator` with a pool that admits nobody, so it gets
- * exactly one narrator turn per send. What a session may pick instead is
+ * A cast genre pins round robin; a planner genre (Adventure, the Lair)
+ * pins `turn-narrator`, so it gets exactly one narrator turn per send —
+ * Adventure's pool admits nobody; the Lair's admits its delvers, for the
+ * character turns a standing turn plan names. What a session may pick instead is
  * the `strategy` node's `expose.swaps` (R28) — chat lists the other five
  * core strategies; the rest list none, so they render no control.
  */
@@ -52,13 +53,9 @@ export declare const CHAT_TURN_ORDER_SPEC_ID = "core:spec/chat-turn-order";
 /** @experimental */
 export declare const GUIDE_TURN_ORDER_SPEC_ID = "core:spec/guide-turn-order";
 /** @experimental */
-export declare const WRITING_ROOM_TURN_ORDER_SPEC_ID = "core:spec/writing-room-turn-order";
-/** @experimental */
 export declare const ADVENTURE_TURN_ORDER_SPEC_ID = "core:spec/adventure-turn-order";
 /** @experimental */
 export declare const LAIR_TURN_ORDER_SPEC_ID = "core:spec/lair-turn-order";
-/** @experimental */
-export declare const WHODUNIT_TURN_ORDER_SPEC_ID = "core:spec/whodunit-turn-order";
 /** @experimental */
 export declare const TURN_ORDER_VERSION = "1.0.0";
 /**
@@ -138,7 +135,7 @@ export interface TurnPoolParams {
     envoySlugs?: string[];
 }
 /**
- * **The turn-order spec for one genre** (R27). Core's six and every plugin
+ * **The turn-order spec for one genre** (R27). Core's four and every plugin
  * genre's come from this one call:
  *
  * ```ts
@@ -214,16 +211,12 @@ export interface TurnOrderHandle {
 export declare const chatTurnOrder: TurnOrderHandle;
 /** Guide's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
 export declare const guideTurnOrder: TurnOrderHandle;
-/** Writing room's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
-export declare const writingRoomTurnOrder: TurnOrderHandle;
 /** Adventure's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
 export declare const adventureTurnOrder: TurnOrderHandle;
 /** The Lair's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
 export declare const lairTurnOrder: TurnOrderHandle;
-/** Whodunit's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
-export declare const whodunitTurnOrder: TurnOrderHandle;
 /**
- * Core's six (§4.14's table): which genre gets which spec, on which events —
+ * Core's four (§4.14's table): which genre gets which spec, on which events —
  * what the presets bind and what `CORE_SPECS` publishes.
  * @experimental
  */

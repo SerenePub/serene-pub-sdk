@@ -16,7 +16,8 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { compile, validate, type SpecDocument } from '@serene-pub/sdk'
+import { compile, slot, spec, validate, type SpecDocument } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
 import { CORE_SPECS } from '@serene-pub/core-catalog'
 
 const doc = (slug: string): SpecDocument => compile(CORE_SPECS.find((s) => s.slug === slug)!.build())
@@ -42,21 +43,24 @@ describe('B3 · which step streams is declared', () => {
 	// other branch, so the two are never on one execution path.
 	// And 2026-09-28 (lair re-plan R6): the Castellan's Sanctum reply
 	// streams, on the `channel` junction's other arm.
-	// And 2026-09-28 (lair re-plan R8): nothing narrates a turn — the lead
+	// And 2026-09-28 (lair re-plan R8): nothing narrates a turn — the first
 	// delver's line streams, after the Sanctum's beats row; a Narrate press
 	// streams the Castellan's narration, on the `via` junction's own arm.
-	test("the Lair streams the Castellan's narration, its talk, a picked delver or the lead — never the planner", () => {
+	// And 2026-09-30 (party speech, owner ruling): the session's
+	// `partySpeech` streams the Voices call's first line — the picked
+	// delver's on a pick — or the Castellan's lines for the party, on the
+	// `speech` junction's two arms.
+	test("the Lair streams the Castellan's narration, its talk, the party's lines or a character turn — never the planner", () => {
 		assert.deepEqual(streamingOf(doc('core:spec/lair-respond')), [
 			'via.narrate.say',
 			'via.turn.channel.sanctum.say',
-			'via.turn.channel.story.pick.picked.say',
-			'via.turn.channel.story.pick.planned.door.play.lead.speaks.say',
+			'via.turn.channel.story.door.play.speech.castellan.party.speaks.say',
+			'via.turn.channel.story.door.play.speech.each.character.turn.say',
 		])
 	})
 
-	test('Adventure and Whodunit stream their scene, as before', () => {
+	test('Adventure streams its scene, as before', () => {
 		assert.deepEqual(streamingOf(doc('core:spec/adventure-respond')), ['scene'])
-		assert.deepEqual(streamingOf(doc('core:spec/whodunit-respond')), ['scene'])
 	})
 
 	test('the single-step reply specs stream their generate', () => {
@@ -71,7 +75,11 @@ describe('B3 · which step streams is declared', () => {
 	test('a JSON step declared streaming is refused, and the finding names the fix', () => {
 		const lair = doc('core:spec/lair-respond')
 		const bad = marked(
-			marked(lair, 'via.turn.channel.story.pick.planned.door.play.lead.speaks.say', undefined),
+			marked(
+				marked(lair, 'via.turn.channel.story.door.play.speech.each.character.turn.say', undefined),
+				'via.turn.channel.story.door.play.speech.castellan.party.speaks.say',
+				undefined,
+			),
 			'via.turn.channel.story.pick.planned.planWrite',
 			{ stream: true },
 		)
@@ -112,25 +120,68 @@ describe('B3 · which step streams is declared', () => {
  * by one of two oracles in mutually exclusive branches of one junction, so only
  * one of them ever runs. Two steps that can never run in the same execution
  * may each stream; two that can still may not.
+ *
+ * The Writing Room is a showcase plugin now (2026-09-30), so the law is held
+ * here against the smallest document of that shape: a junction on the
+ * trigger's channel, each branch ending on a streaming oracle.
  */
-describe('W2 · one streaming step per execution path', () => {
-	const WR = 'core:spec/writing-room-respond'
+const TWO_BRANCH_REPLY = (): SpecDocument =>
+	plain(compile(
+		spec('demo:spec/two-branch-reply', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.junction('turn', { on: ($: any) => $.input.channel }, (r) =>
+				r
+					.when('manuscript', { equals: 'manuscript' }, (c) =>
+						c.oracle(
+							'write',
+							($: any) =>
+								C.generateText.v1({
+									context: $.input.text,
+									connection: slot.connection(),
+									sampling: slot.sampling(),
+									params: slot.params(),
+								}),
+							{ expose: { stream: true } },
+						),
+					)
+					.otherwise('talk', (c) =>
+						c.oracle(
+							'say',
+							($: any) =>
+								C.generateText.v1({
+									context: $.input.text,
+									connection: slot.connection(),
+									sampling: slot.sampling(),
+									params: slot.params(),
+								}),
+							{ expose: { stream: true } },
+						),
+					),
+			)
+			.build(),
+	))
 
-	test("the Writing Room declares both branches' prose steps, and validates", () => {
-		const d = doc(WR)
+/** A document as data — what a stored one is — so a test may clone and edit it. */
+function plain(d: SpecDocument): SpecDocument {
+	return JSON.parse(JSON.stringify(d)) as SpecDocument
+}
+
+describe('W2 · one streaming step per execution path', () => {
+	test("a two-branch reply declares both branches' prose steps, and validates", () => {
+		const d = TWO_BRANCH_REPLY()
 		assert.deepEqual(streamingOf(d).sort(), ['turn.manuscript.write', 'turn.talk.say'])
 		assert.deepEqual(errors(d), [])
 	})
 
 	test('two `equals` branches on different literals are exclusive — both may stream', () => {
-		const d = structuredClone(doc(WR))
+		const d = structuredClone(TWO_BRANCH_REPLY())
 		const junction = d.clauses.find((c) => c.id === 'turn')! as { branches?: Record<string, unknown> }
 		junction.branches!.talk = { equals: 'main' }
 		assert.deepEqual(errors(d), [])
 	})
 
 	test('two streaming steps on one branch are refused — the same path', () => {
-		const d = structuredClone(doc(WR))
+		const d = structuredClone(TWO_BRANCH_REPLY())
 		const say = d.nodes.find((n) => n.key === 'turn.talk.say')!
 		say.clauseChain = 'manuscript'
 		const found = errors(d)
@@ -144,7 +195,7 @@ describe('W2 · one streaming step per execution path', () => {
 			[{ equals: 'manuscript' }, { equals: 'manuscript' }],
 			[{ path: 'a', equals: 1 }, { path: 'b', equals: 2 }],
 		]) {
-			const d = structuredClone(doc(WR))
+			const d = structuredClone(TWO_BRANCH_REPLY())
 			const junction = d.clauses.find((c) => c.id === 'turn')! as { branches?: Record<string, unknown> }
 			junction.branches!.manuscript = manuscript
 			junction.branches!.talk = talk
@@ -153,7 +204,7 @@ describe('W2 · one streaming step per execution path', () => {
 	})
 
 	test('a spine step and a branch step share a path — refused', () => {
-		const d = structuredClone(doc(WR))
+		const d = structuredClone(TWO_BRANCH_REPLY())
 		const say = d.nodes.find((n) => n.key === 'turn.talk.say')!
 		delete say.clauseId
 		delete say.clauseChain
@@ -171,11 +222,11 @@ describe('B18 · a step declares its status', () => {
 		assert.equal(status('via.turn.channel.story.pick.planned.planWrite'), 'The Castellan is planning the turn')
 		assert.equal(status('keep.played.keeperWrite'), 'Keeping the books')
 		assert.equal(status('via.narrate.say'), 'The Castellan narrates')
-		assert.ok(status('via.turn.channel.story.pick.planned.door.play.lead.speaks.say'))
+		assert.ok(status('via.turn.channel.story.door.play.speech.each.character.turn.say'))
 	})
 
 	test('every model step of a multi-step core reply spec declares one', () => {
-		for (const slug of ['core:spec/lair-respond', 'core:spec/adventure-respond', 'core:spec/whodunit-respond']) {
+		for (const slug of ['core:spec/lair-respond', 'core:spec/adventure-respond']) {
 			const d = doc(slug)
 			for (const n of d.nodes.filter((n) => n.kind === 'oracle'))
 				assert.ok((n.expose as { status?: unknown } | undefined)?.status, `${slug} ${n.key}`)

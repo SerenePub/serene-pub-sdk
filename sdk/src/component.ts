@@ -32,8 +32,10 @@ export type { ComponentContext } from './componentClient.js'
 export type { RequestDeclined } from './componentWire.js'
 export type { RequestDeclineCode } from './surfaces.js'
 export type { HostKeyEventDetail } from './hostElements.js'
-export type { StatusText } from './status.js'
+export type { StatusText, WidgetActionReason } from './status.js'
 export type {
+	AuthorsNoteV1,
+	AuthorsNoteValueV1,
 	FoldedSectionPartDataV1,
 	FoldedSectionV1,
 	LayoutV1,
@@ -48,7 +50,6 @@ export type {
 	SessionStateV1,
 	ViewerV1,
 	WidgetAction,
-	WidgetActionReason,
 	WidgetEvent,
 	WidgetEventKind,
 	WidgetRequestKind,

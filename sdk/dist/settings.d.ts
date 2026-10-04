@@ -205,7 +205,7 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
      */
     required?: boolean;
     /** Who may write it. Admin-only is the right default; display preferences are per-user. */
-    scope?: 'instance' | 'user';
+    scope?: 'pub' | 'user';
     /**
      * `extension` is requestable through the SDK at any time; `component` is fed in at
      * render and arrives through `ctx`. A secret may never be component-side — a
@@ -248,6 +248,18 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
         field: string;
         equals: unknown;
     };
+    /**
+     * The field this one narrows: it may hold a value only while that one
+     * does, as a day narrows a month (the story-time rule, `storyTimeProblem`).
+     * A fact about one stored value, not about a form — so, unlike `showIf`,
+     * an entry type's constraint projection makes it part of the type's
+     * database CHECK. Names another field of the same schema, never itself;
+     * `describeEntryType` refuses either.
+     *
+     * Read by entry types (`Descriptor.entryShape.fields`); unset on plugin
+     * settings and node params.
+     */
+    narrows?: string;
     /**
      * A node `params` field several nodes of one spec hold **in common**, and
      * therefore resolve at ONE owner's address (R-7 P2, one owner per setting

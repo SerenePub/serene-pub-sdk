@@ -50,6 +50,8 @@ export const MESSAGE_HOST_FIELDS = Object.freeze([
     'debugMeta',
     'embedding',
     'embeddingModel',
+    'embeddingSourceHash',
+    'embedTextHash',
     'vectorizedAt',
     'version',
 ]);
@@ -125,6 +127,9 @@ export const WIDGET_REQUEST_ASKERS = Object.freeze({
     'actions-seen': 'core',
     summarize: 'core',
     send: 'core',
+    'attach-files': 'core',
+    'remove-tray-item': 'core',
+    'remove-attachment': 'core',
     draft: 'core',
     'switch-persona': 'core',
     'add-persona': 'core',
@@ -135,6 +140,8 @@ export const WIDGET_REQUEST_ASKERS = Object.freeze({
     'clear-scene-image': 'core',
     'session-entries': Object.freeze({ scope: 'lore' }),
     'set-entry-marks': 'core',
+    'authors-note': 'core',
+    'set-authors-note': 'core',
 });
 /** Every request kind — what a host checks an incoming `request` against. @experimental */
 export const WIDGET_REQUEST_KINDS = Object.freeze(Object.keys(WIDGET_REQUEST_ASKERS));

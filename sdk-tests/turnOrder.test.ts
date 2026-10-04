@@ -68,7 +68,7 @@ describe('A1 · the four events (§4.1)', () => {
 		assert.equal(CORE_EVENTS.turnOrderChanged.payload, S.turnOrderChanged)
 	})
 
-	test('causedBy: message-completed by the three writes; turn-order-changed by set-turn-order; the socket-written two by nothing', () => {
+	test('causedBy: message-completed by the three writes; turn-order-changed by set-turn-order; cast-changed by nothing; session-updated by advance-story-clock (and socket writes)', () => {
 		assert.deepEqual(CORE_EVENTS.messageCompleted.causedBy, [
 			'core:outlet/create-message',
 			'core:outlet/seed-greetings',
@@ -76,7 +76,7 @@ describe('A1 · the four events (§4.1)', () => {
 		])
 		assert.deepEqual(CORE_EVENTS.turnOrderChanged.causedBy, ['core:outlet/set-turn-order'])
 		assert.equal(CORE_EVENTS.castChanged.causedBy, undefined)
-		assert.equal(CORE_EVENTS.sessionUpdated.causedBy, undefined)
+		assert.deepEqual(CORE_EVENTS.sessionUpdated.causedBy, ['core:outlet/advance-story-clock'])
 	})
 
 	test('the registry grew by exactly four — every other event is where it was', () => {

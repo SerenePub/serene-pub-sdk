@@ -62,7 +62,7 @@
  */
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
-import { adventureGenre } from './genres.js';
+import { adventureGenre, POST_HISTORY_TOKEN_TRIGGER } from './genres.js';
 /* ── create ─────────────────────────────────────────────────────────────── */
 /** @internal */
 export const ADVENTURE_CREATE_SPEC_ID = 'core:spec/adventure-create';
@@ -120,7 +120,21 @@ export const adventureCreateSpec = () => compile(spec(ADVENTURE_CREATE_SPEC_ID, 
 /* ── respond ────────────────────────────────────────────────────────────── */
 /** @internal */
 export const ADVENTURE_RESPOND_SPEC_ID = 'core:spec/adventure-respond';
-/** @internal */
+/**
+ * 1.0.0, edited in place (lorebooks C2/C3, 2026-10-02): the vector and entity
+ * arms (R3) on the spine and per voice, the latter with the voice as
+ * `speaker`; a `presences` read and an `eligible` step before each ranker;
+ * the room rule — a `place` step (the room `{{locationEntry}}` shows) wired
+ * into every ranker as `shownElsewhere` — and statuses on the two embeds.
+ * Content-addressed; `specHashes.test.ts` records the move.
+ *
+ * Edited in place again (history window, 2026-10-03): `contextBudget` runs
+ * before the reads and `gather.history.read` takes its `budget` — about twice
+ * the window's worth of the newest rows (never more than 2000) instead of the
+ * newest 100, so the transcript fit decides where the conversation starts.
+ * Content-addressed; `specHashes.test.ts` records the move.
+ * @internal
+ */
 export const ADVENTURE_RESPOND_VERSION = '1.0.0';
 /* ── Why the narrator uses the shipped story string like everybody else ─────
  *
@@ -280,6 +294,27 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     row: $.input.messageId,
 }))
     /**
+     * The window, taken from the step whose prose actually fills it.
+     *
+     * `samplingOf("scene")` rather than a slot of its own, for the
+     * reason the reply pipeline gives: a budget computed against one
+     * window and a prompt sent against another truncates silently. The
+     * planner and the keeper are cheap and short and ride the same
+     * allocation; if an admin points them at a smaller model, the only
+     * cost is a prompt smaller than it had to be.
+     *
+     * Before the reads (history window, 2026-10-03): the history read
+     * is sized by this budget, so it is computed first. It reads only
+     * config, never a step, so moving it changes no value.
+     */
+    .task('contextBudget', ($) => C.contextBudget.v1({
+    sampling: slot.samplingOf('scene'),
+    // The other half of the same pair, for the model's own
+    // window (0114) — see `respond`.
+    connection: slot.connectionOf('scene'),
+    params: slot.params(),
+}))
+    /**
      * One retrieval pass, shared by all four agents.
      *
      * Every branch takes `input.sessionScope` and none reads another's
@@ -289,8 +324,17 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * asking again and getting three slightly different worlds.
      */
     .gather('gather', { mode: 'parallel' }, (b) => b
-    .chain('history', (c) => c.query('read', ($) => C.sessionHistory.v1({
+    .chain('history', (c) => c
+    .query('read', ($) => C.sessionHistory.v1({
     scope: $.input.sessionScope,
+    // Sized by the window (history window, 2026-10-03).
+    budget: $.contextBudget.available,
+    params: slot.params(),
+}))
+    // 🚧 The files those rows show (PLAN-composer-attachments
+    // §3.5). The narrator's and each voice's placement read it.
+    .query('attachments', ($) => C.historyAttachments.v1({
+    messages: $.gather.history.read.messages,
     params: slot.params(),
 })))
     .chain('worldLore', (c) => c.query('read', ($) => C.worldLore.v1({
@@ -316,24 +360,94 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * This is the port the whole genre turns on: three of the
      * four agents read it, and the fourth writes to it.
      */
-    .chain('state', (c) => c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))))
+    .chain('state', (c) => c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope })))
     /**
-     * The window, taken from the step whose prose actually fills it.
+     * **How the cast stand with each other** — the narrative
+     * graph as a retrieval mechanism (the 09-10 ruling, which
+     * Chat has run since; genre plan F6(a), 2026-09-29).
      *
-     * `samplingOf("scene")` rather than a slot of its own, for the
-     * reason the reply pipeline gives: a budget computed against one
-     * window and a prompt sent against another truncates silently. The
-     * planner and the keeper are cheap and short and ride the same
-     * allocation; if an admin points them at a smaller model, the only
-     * cost is a prompt smaller than it had to be.
+     * An Adventure turn is the narrator's entry, so the scope
+     * names nobody and the query takes the **cast-wide read**:
+     * every relationship a cast member holds, their secrets
+     * withheld (the earshot rule, fail closed until the owner
+     * rules — the host's read, not this document). It joins `lore` below and
+     * competes for the window like any band — the preset gives
+     * it a share — and the planner and the scene read what the
+     * ranker admitted (`castRelationships`).
+     *
+     * ⚠ **Never a voice's.** The voices' `pool` does not carry
+     * this band, and the side-character builder has no port for
+     * it: a voice is a cast member speaking, and another member's
+     * secret must not reach it. The keeper ranks against the
+     * same list and renders no tie.
+     *
+     * ⚠ `loreLinks` is off in the preset. A place link belongs to
+     * the place ("From here:", under `{{locationEntry}}` — the
+     * `rooms` listing below), never to a hop into a band no
+     * section renders.
      */
-    .task('contextBudget', ($) => C.contextBudget.v1({
-    sampling: slot.samplingOf('scene'),
-    // The other half of the same pair, for the model's own
-    // window (0114) — see `respond`.
-    connection: slot.connectionOf('scene'),
+    .chain('relationships', (c) => c.query('read', ($) => C.relationshipSearch.v1({
+    scope: $.input.sessionScope,
+    params: slot.params(),
+})))
+    /**
+     * **Every place the world holds**, by listing rather than
+     * by rank (plan A28; the rooms chain the places plan left
+     * Adventure "for later, with no new node", §11): location
+     * entries with their links (the preset), as the Lair reads
+     * its rooms. The planner, the narrator and each voice are
+     * shown the place the scene is in — its body and its ways
+     * on, "From here:" — as `{{locationEntry}}`, and the
+     * planner every place's name as `{{knownLocations}}`, so a
+     * move lands on a place the book holds under the name it
+     * is written with. The listing is the session's place
+     * sight: Off and archived places are not in it.
+     */
+    .chain('rooms', (c) => c.query('read', ($) => C.lorebookEntries.v1({
+    scope: $.input.sessionScope,
+    params: slot.params(),
+})))
+    /**
+     * **The entity mechanism** (R3, 2026-10-02) — entries found
+     * because the scene is naming what they name; no keys, no
+     * embedding model. The narrator's read (the scope names
+     * nobody); each voice runs its own, below, so another
+     * member's private lore never reaches a voice through it.
+     */
+    .chain('entities', (c) => c.query('read', ($) => C.entitySearch.v1({
+    scope: $.input.sessionScope,
+    params: slot.params(),
+})))
+    /**
+     * Who is in the world at the session's moment (R4) — the
+     * presences on its line, for the `eligible` steps.
+     */
+    .chain('presences', (c) => c.query('read', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))))
+    /**
+     * **Retrieval by meaning** (R3, 2026-10-02) — `respond`'s block,
+     * unchanged: a block after `gather` because it reads the history
+     * and the cast, and so the debug preview does not halt at the embed.
+     * Automatic: it searches whenever an embedding model is set up, and
+     * an install without one loses a signal, never a turn. The search
+     * here is the narrator's; the voices search with their own speaker
+     * against the same vectors (one embed per turn, however many voices).
+     */
+    .gather('semantic', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
+    .task('queries', ($) => C.queryWindows.v1({
+    messages: $.gather.history.read.messages,
+    cast: $.gather.cast.read.cast,
+    connection: slot.connectionOf('semantic.arm.embed'),
     params: slot.params(),
 }))
+    .oracle('embed', ($) => C.embedText.v1({
+    texts: $.semantic.arm.queries.current,
+    params: slot.params(),
+}), { expose: { label: 'Embed the recent messages', status: 'Searching by meaning' } })
+    .query('search', ($) => C.vectorSearch.v1({
+    scope: $.input.sessionScope,
+    vectors: $.semantic.arm.embed.vectors,
+    params: slot.params(),
+}))))
     .task('lore', ($) => C.concatCandidates.v1({
     sources: [
         // The conversation's band intent alone — see `respond`'s
@@ -343,11 +457,85 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
         $.gather.worldLore.read.main,
         $.gather.characterLore.read.main,
         $.gather.historyEntries.read.main,
+        // The two arms (R3), after the keyword lanes: concat
+        // keeps the first copy of an entry, so a keyed entry keeps
+        // its keyword signals and gains theirs (`respond`'s order).
+        $.gather.entities.read.main,
+        $.semantic.arm.search.main,
     ],
 }))
-    .task('rank', ($) => C.rankHybrid.v1({
+    /**
+     * **Retrieval by description** (R3) — `respond`'s names block:
+     * *"the captain"* reaching Captain Vell. It may only reorder what
+     * `lore` already holds, never admit.
+     */
+    .gather('names', { mode: 'parallel' }, (b) => b.chain('arm', (c) => c
+    .query('mentions', ($) => C.mentionSpans.v1({
+    scope: $.input.sessionScope,
+    params: slot.params(),
+}))
+    .oracle('embed', ($) => C.embedText.v1({
+    texts: $.names.arm.mentions.texts,
+    // One `enabled` switch for both embed nodes (R-7 P2).
+    params: slot.params({ node: 'semantic.arm.embed' }),
+}), { expose: { label: 'Embed the mentions', status: 'Searching by name' } })
+    .query('link', ($) => C.entityLink.v1({
+    scope: $.input.sessionScope,
     candidates: $.lore.candidates,
+    mentions: $.names.arm.mentions.mentions,
+    vectors: $.names.arm.embed.vectors,
+    params: slot.params(),
+}))))
+    /**
+     * The enriched list first, the raw list behind it — a fallback, as
+     * in `respond` — then the cast's relationships, with their band
+     * intent at the head (F6(a)). No other lane produces a
+     * `relationships` candidate, so nothing collides.
+     */
+    .task('loreLinked', ($) => C.concatCandidates.v1({
+    sources: [
+        $.names.arm.link.main,
+        $.lore.candidates,
+        $.gather.relationships.read.main,
+    ],
+}))
+    /**
+     * The hard gates before the ranker (C2; R2, R4): selective-logic
+     * exclusions from the three keyword lanes, and the presence gate.
+     * The narrator's pool: no speaker, so the reads' own scope decided
+     * every secret (the cast-wide read withholds them).
+     */
+    /**
+     * **The room the place slot shows** (the room rule, 2026-10-02):
+     * the world's `location`, read at `world.location` inside the
+     * session's state (the preset's `path`), resolved against the
+     * places by the one room rule (`undescribed-name@1`, the rule
+     * `{{locationEntry}}` reads by). Every ranker here takes its
+     * `entryId` as `shownElsewhere`, so the room is read once, under
+     * its own slot, and spends no lore budget. A turn whose room only
+     * the planner has named (the world says nothing yet) still ranks
+     * it: the plan comes after the spine's ranker.
+     */
+    .task('place', ($) => C.undescribedName.v1({
+    name: $.gather.state.read.state,
+    locationEntries: $.gather.rooms.read.entries,
+    params: slot.params(),
+}), { expose: { label: 'The current place' } })
+    .task('eligible', ($) => C.eligibility.v1({
+    candidates: $.loreLinked.candidates,
+    exclusions: [
+        $.gather.worldLore.read.exclusions,
+        $.gather.characterLore.read.exclusions,
+        $.gather.historyEntries.read.exclusions,
+    ],
+    presences: $.gather.presences.read.main,
+    at: $.gather.presences.read.at,
+}))
+    .task('rank', ($) => C.rankHybrid.v1({
+    candidates: $.eligible.candidates,
     budget: $.contextBudget.available,
+    // The room the place slot shows (the room rule).
+    shownElsewhere: $.place.entryId,
     params: slot.params(),
 }))
     /* ── plan ───────────────────────────────────────────────────── */
@@ -355,6 +543,11 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     cast: $.gather.cast.read.cast,
     state: $.gather.state.read.state,
     fields: $.input.fields,
+    // The places, always in view (A28).
+    locationEntries: $.gather.rooms.read.entries,
+    // What the ranker admitted of the cast's relationships
+    // (F6(a)): `{{castRelationships}}`.
+    castRelationships: $.rank.candidates,
     prompts: slot.prompts(),
     variables: slot.variables(),
 }))
@@ -423,13 +616,22 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     params: slot.params(),
     // No `prompts` on the generating steps — see `respond.ts`
     // (culled 2026-09-16, R-12).
-}), { expose: { status: 'Planning the turn' } })
+}), {
+    expose: {
+        status: 'Planning the turn',
+        label: 'Planner',
+        purpose: 'Decides what happens next and who speaks. It writes no prose, so a small, fast model is enough.',
+    },
+})
     /* ── narrate ────────────────────────────────────────────────── */
     .task('sceneContext', ($) => C.buildSceneContext.v1({
     cast: $.gather.cast.read.cast,
     state: $.gather.state.read.state,
     plan: $.planWrite.json,
     fields: $.input.fields,
+    locationEntries: $.gather.rooms.read.entries,
+    // The same admitted band the planner reads (F6(a)).
+    castRelationships: $.rank.candidates,
     prompts: slot.prompts(),
     variables: slot.variables(),
 }))
@@ -449,12 +651,23 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     templateContext: $.sceneContext.templateContext,
     seedName: $.sceneContext.seedName,
 }))
+    /**
+     * 🚧 The narrator's attachments, placed (PLAN-composer-attachments
+     * §3.5), judged on `scene`'s pair. The planner gets none: it reads
+     * a prose transcript and writes no reply.
+     */
+    .task('sceneAttached', ($) => C.placeAttachments.v1({
+    messages: $.sceneLines.messages,
+    attachments: $.gather.history.attachments.attachments,
+    connection: slot.connectionOf('scene'),
+    params: slot.params(),
+}))
     .task('scenePrompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
     budget: $.contextBudget.available,
-    messages: $.sceneLines.messages,
+    messages: $.sceneAttached.messages,
     templateContext: $.sceneContext.templateContext,
     template: slot.template(),
     prompts: slot.prompts({ node: 'sceneContext' }),
@@ -467,7 +680,14 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}), { expose: { stream: true, status: 'Narrating the scene' } })
+}), {
+    expose: {
+        stream: true,
+        status: 'Narrating the scene',
+        label: 'Narrator',
+        purpose: 'Writes the scene from the plan, in the third person. This is the text you watch appear.',
+    },
+})
     /* ── voices ─────────────────────────────────────────────────── */
     /**
      * One generate per speaker the planner named, in parallel.
@@ -500,6 +720,10 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     // transcript suggested.
     state: $.gather.state.read.state,
     plan: $.planWrite.json,
+    // The place it stands in (A28). A voice reads
+    // that place's stats and no other's (the host's
+    // place sight for a voice).
+    locationEntries: $.gather.rooms.read.entries,
     prompts: slot.prompts(),
     variables: slot.variables(),
 }))
@@ -543,13 +767,70 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * deliberately NOT among them: that is the narrator's
      * band, and handing it to a voice is the leak.
      */
+    /**
+     * **This voice's own arms** (R3, 2026-10-02): the
+     * search by meaning and the search by name, each with
+     * the voice as `speaker` (the C3 leak guard) — the
+     * narrator's hits carry every member's private lore, so
+     * they are never this pool's. The meaning search reuses
+     * the turn's one embed; nothing here calls a model.
+     * Their own settings, at the declared defaults: no
+     * field on either is `shared`, so a reference to the
+     * spine's would resolve nothing.
+     */
+    .query('search', ($) => C.vectorSearch.v1({
+    scope: $.input.sessionScope,
+    vectors: $.semantic.arm.embed.vectors,
+    speaker: $.voices.item.context.speaker,
+    params: slot.params(),
+}))
+    .query('entities', ($) => C.entitySearch.v1({
+    scope: $.input.sessionScope,
+    speaker: $.voices.item.context.speaker,
+    params: slot.params(),
+}))
     .task('pool', ($) => C.concatCandidates.v1({
     sources: [
         $.gather.history.read.band,
         $.gather.worldLore.read.main,
         $.gather.historyEntries.read.main,
         $.voices.item.lore.main,
+        $.voices.item.entities.main,
+        $.voices.item.search.main,
     ],
+}))
+    /**
+     * The turn's descriptions, linked against this voice's
+     * pool and only what the voice may read (`speaker`).
+     */
+    .query('link', ($) => C.entityLink.v1({
+    scope: $.input.sessionScope,
+    candidates: $.voices.item.pool.candidates,
+    mentions: $.names.arm.mentions.mentions,
+    vectors: $.names.arm.embed.vectors,
+    speaker: $.voices.item.context.speaker,
+    params: slot.params(),
+}))
+    .task('poolLinked', ($) => C.concatCandidates.v1({
+    sources: [
+        $.voices.item.link.main,
+        $.voices.item.pool.candidates,
+    ],
+}))
+    /**
+     * The hard gates for THIS voice (C2): the keyword
+     * lanes' exclusions, and the presence gate.
+     */
+    .task('eligible', ($) => C.eligibility.v1({
+    candidates: $.voices.item.poolLinked.candidates,
+    exclusions: [
+        $.gather.worldLore.read.exclusions,
+        $.gather.historyEntries.read.exclusions,
+        $.voices.item.lore.exclusions,
+    ],
+    speaker: $.voices.item.context.speaker,
+    presences: $.gather.presences.read.main,
+    at: $.gather.presences.read.at,
 }))
     /**
      * Ranked per voice, because the pool is per voice.
@@ -564,8 +845,9 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
      * reference.
      */
     .task('rank', ($) => C.rankHybrid.v1({
-    candidates: $.voices.item.pool.candidates,
+    candidates: $.voices.item.eligible.candidates,
     budget: $.contextBudget.available,
+    shownElsewhere: $.place.entryId,
     params: slot.params(),
 }))
     .task('lines', ($) => C.processMessages.v1({
@@ -574,12 +856,19 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     templateContext: $.voices.item.context.templateContext,
     seedName: $.voices.item.context.seedName,
 }))
+    // 🚧 Each voice's attachments, on its own pair (§3.5).
+    .task('attached', ($) => C.placeAttachments.v1({
+    messages: $.voices.item.lines.messages,
+    attachments: $.gather.history.attachments.attachments,
+    connection: slot.connectionOf('voices.item.say'),
+    params: slot.params(),
+}))
     .task('prompt', ($) => C.assemble.v2({
     candidates: $.voices.item.rank.candidates,
     decisions: $.voices.item.rank.decisions,
     groups: $.voices.item.rank.groups,
     budget: $.contextBudget.available,
-    messages: $.voices.item.lines.messages,
+    messages: $.voices.item.attached.messages,
     templateContext: $.voices.item.context.templateContext,
     template: slot.template(),
     prompts: slot.prompts({
@@ -594,12 +883,18 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}), { expose: { status: 'Voicing the party' } }))
+}), {
+    expose: {
+        status: 'Voicing the party',
+        label: 'Voices',
+        purpose: 'Gives each character the planner names their own line, knowing only what that character knows.',
+    },
+}))
     /* ── assemble ───────────────────────────────────────────────── */
     .task('voiceLines', ($) => C.joinText.v1({
     items: $.voices.values,
     params: slot.params(),
-}))
+}), { expose: { label: 'Join the voices' } })
     /**
      * The reply: the scene, then the voices.
      *
@@ -611,7 +906,7 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     .task('reply', ($) => C.joinText.v1({
     items: [{ text: $.scene.text }, { text: $.voiceLines.text }],
     params: slot.params(),
-}))
+}), { expose: { label: 'Join the reply' } })
     /** The reply row, filled — see `placeholder`. */
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,
@@ -671,7 +966,13 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     connection: slot.connection(),
     sampling: slot.sampling(),
     params: slot.params(),
-}), { expose: { status: 'Keeping the record' } })
+}), {
+    expose: {
+        status: 'Keeping the record',
+        label: 'State-keeper',
+        purpose: 'Reads the finished reply and records what it made true: health, mood, items, the place. Trust the narrator applies it without asking.',
+    },
+})
     /**
      * 🚧 How many of each item are held and left (phase 3b), so a
      * unique item already in somebody's pack is not handed out again.
@@ -734,13 +1035,13 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     scope: $.input.sessionScope,
     base: $.gather.state.read.version,
     params: slot.params(),
-})))
+}), { expose: { label: 'Apply the changes' } }))
     .otherwise('reviewed', (c) => c.task('propose', ($) => C.setState.v1({
     changes: $.keeperResolve.changes,
     scope: $.input.sessionScope,
     base: $.gather.state.read.version,
     params: slot.params(),
-}))))
+}), { expose: { label: 'Propose the changes' } })))
     /**
      * What the pipeline ships with, and the only place its authored
      * values live.
@@ -792,6 +1093,32 @@ export const adventureRespondSpec = () => compile(spec(ADVENTURE_RESPOND_SPEC_ID
     // Narrator first, then the voices, separated by a blank
     // line — the reply layout, as the one parameter it is.
     .params('reply', { separator: '\n\n' })
+    // The post-history reminder's trigger, at every step that
+    // assembles a prompt (`POST_HISTORY_TOKEN_TRIGGER`).
+    .params('planPrompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+    .params('scenePrompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+    .params('voices.item.prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+    .params('keeperPrompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+    // The cast's relationships on (F6(a), 2026-09-29): a share
+    // of the window, where Chat's ships at 0 — the number the
+    // 09-10 status recommended — and no lore-link hop: a place
+    // link belongs to the place, not to this band. ⚠ A preset
+    // value on a new node reaches an install that already wrote
+    // this config only through a re-projection (the `0122`
+    // precedent).
+    .params('gather.relationships.read', { share: 0.1, loreLinks: false })
+    // The places (A28): location entries, each with its ways on
+    // said from the place. A preset value on a new node, so it
+    // reaches an install through a re-projection too.
+    .params('gather.rooms.read', {
+    entryTypes: ['core:entry/location'],
+    withLinks: true,
+})
+    // The room the place slot shows (the room rule): the
+    // world's location, inside the session's state. A preset
+    // value on a new node, so it reaches an install through the
+    // room-rule re-projection.
+    .params('place', { path: 'world.location' })
     // The two steps nobody reads run on Background, which
     // is the row that exists to say "this output is read by
     // the next node and by nobody else": low temperature, a

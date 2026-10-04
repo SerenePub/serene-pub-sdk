@@ -34,11 +34,28 @@
  *     and nothing else — **or the play**:
  *     - the **beats row** in the Sanctum, first, whole (a list, nothing to
  *       stream), so the master reads the plan while the party speak;
- *     - the **lead delver's** line, streamed — the run's live row, opened
- *       only now, so nothing streams before it;
- *     - the rest of the party, complete rows in the planner's order;
- *  3. the **keeper** keeps the books: the world's changes filed at the beats
- *     row (`set-state`'s declared `worldRow`), a delver's at their own line.
+ *     - the **party**, in the session's **party speech** (`partySpeech`,
+ *       owner ruling 2026-09-30): while each delver speaks, the beats row
+ *       is the **plan row** and carries the turns it plans (`turnPlan`) —
+ *       nobody speaks in this run; while the Castellan speaks for the
+ *       party, one streamed call writes every named delver's lines;
+ *  3. the **keeper** keeps the **world's** books — and, while the Castellan
+ *     speaks for the party, the books of the delvers it voiced: whoever
+ *     writes a delver's line keeps that delver's stats. Its changes are
+ *     filed at the beats row (`set-state`'s declared `worldRow`).
+ *
+ * ## Each delver's line is a character turn (owner ruling 2026-09-30)
+ *
+ * "They are character turns, not first delver, later delver." Each delver
+ * the plan names takes a **character turn**: a run of this same spec whose
+ * subject is that delver (`input.characterId`), fired off the session's
+ * turn order. The Lair's turn-order strategy reads the standing plan off the
+ * history and prepares one entry per turn not yet taken (`via: 'plan'`);
+ * auto-advance fires them one after another. Each streams the delver's line
+ * into their own row, reads only that delver's private lore and the stats
+ * of their own place, and keeps only that delver's books. Every character
+ * turn runs on ONE set of settings (the **Character turn** group): there is
+ * no first and no later. Pick who speaks fires the same turn.
  *
  * **Narrate** (`core#narrate`, `via: 'narrate'`) is the other thing the
  * Castellan does: one streamed narration on `main`, whichever composer
@@ -48,22 +65,25 @@
  * ## One live row per execution path (F7, amended 2026-09-28)
  *
  * Each branch opens the row it fills where it needs it — the Castellan's
- * narration, its Sanctum talk, the picked delver, the knock, the lead
- * delver — and at most one of them runs in any execution. The voices after
- * the lead are ordinary complete writes on its channel, written after the
- * lead's row is finished (the live-row law, W1).
+ * narration, its Sanctum talk, the knock, a character turn's line, the
+ * Castellan's lines for the party — and at most one of them runs in any
+ * execution. A character turn is its own run, so every delver's line is
+ * that run's live row and streams.
  *
  * ## Pick who speaks (B15, owner D2a 2026-09-27)
  *
- * A turn that names a delver — the `core#pick` turn control — takes the `pick.picked` branch: that delver answers alone, in
- * their own row, streamed, with no planner, no beats and no keeper. The
- * same branch re-voices a delver's row on a regenerate or swipe.
+ * A run whose subject is a delver — the `core#pick` turn control, a planned
+ * character turn — takes the `pick.picked` branch: no planner, so no beats
+ * and no Castellan keeper, and that delver is the one speaker the play hands
+ * to the party speech — their character turn, or the Castellan asked for
+ * their line alone — into their own row, streamed. The same branch re-voices
+ * a delver's row on a regenerate or swipe.
  *
  * ## What folds
  *
  * The beats are the Sanctum row's BODY (the B5 Plan fold is retired, R8);
  * the delvers' rows carry only their lines; a narration keeps its
- * **Thinking**. The planner's and keeper's traces stay on the receipt.
+ * **Reasoning**. The planner's and keeper's traces stay on the receipt.
  *
  * ## Sanctum talk steers the story, when the person says so (R13)
  *
@@ -138,7 +158,23 @@ export declare const LAIR_CREATE_VERSION = "1.0.0";
 export declare const lairCreateSpec: () => import("@serene-pub/sdk").SpecDocument;
 /** @internal */
 export declare const LAIR_RESPOND_SPEC_ID = "core:spec/lair-respond";
-/** @internal */
+/**
+ * 1.0.0, edited in place (lorebooks C2/C3, 2026-10-02): the vector and entity
+ * arms (R3) on the spine, per delver turn (the delver as `speaker`) and on
+ * the party call (the Castellan as `speaker`: no member's private lore); a
+ * `presences` read and an `eligible` step before every ranker; the room rule
+ * — a `place` step (the room `{{locationEntry}}` shows) wired into every
+ * ranker as `shownElsewhere` — and statuses on the two embeds.
+ * Content-addressed; `specHashes.test.ts` records the move.
+ *
+ * Edited in place again (history window, 2026-10-03): `contextBudget` runs
+ * before the reads; `gather.history.read` and the Sanctum's `talk` take its
+ * `budget`, so the transcript fit, not the newest 100 rows, decides where
+ * each conversation starts. The story's background rows, the unplayed talk
+ * and the room check keep their counts. Content-addressed;
+ * `specHashes.test.ts` records the move.
+ * @internal
+ */
 export declare const LAIR_RESPOND_VERSION = "1.0.0";
 /**
  * What the planner answers with.

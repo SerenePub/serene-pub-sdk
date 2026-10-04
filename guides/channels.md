@@ -1,11 +1,13 @@
 # Channels
 
-A session's messages live on **channels**, and a genre declares which ones it has. Every session
-has `main`. A genre adds more by slug — `manuscript`, `board`, `phone` — and each slug is a
-bucket the genre's pipelines write to and read from on purpose. Nothing about a channel is
-inferred from its name.
+A session's messages live on **channels**. Every session has `main`; a genre can declare more by
+slug (`manuscript`, `board`, `phone`). A channel is a bucket your genre's pipelines write to and
+read from on purpose. Nothing about a channel is guessed from its name.
 
 ## Declaring one
+
+This is how [Writing Room](https://github.com/SerenePub/serene-pub-plugin-writing-room) gives a
+session a talk channel and a manuscript:
 
 ```ts
 import { genre } from '@serene-pub/sdk'
@@ -27,54 +29,55 @@ export const writingRoom = genre('acme.words:genre/writing-room', {
 ```
 
 A bare string is the whole declaration for an ordinary channel. The long form adds three
-things, each optional:
+options:
 
-- **`role`** — how the channel's messages enter a prompt. `conversation` (the default) is turns
+- **`role`**: how the channel's messages go into a prompt. `conversation` (the default) is turns
   with speakers. `folio` is one block of text with no speaker names, placed before the
-  conversation, so the model reads a manuscript as a manuscript and the chat as a chat.
-- **`voice`** — whose name a turn *triggered on this channel* seeds under. `character` and
-  `narrator` mean what they mean elsewhere; `none` means no seed line at all, which is the
-  posture of a continuation.
-- **`messageVerbs`** — per-channel availability of the verbs a message offers. Declared keys
-  win over the genre's; the floors (stop, branch, edit) cannot be switched off here either.
+  conversation, so the model reads a manuscript as a manuscript and the talk as talk.
+- **`voice`**: whose name a reply to a message on this channel is written under. `character`
+  and `narrator` mean what they mean elsewhere; `none` means no name at all, which is what a
+  continuation of the manuscript wants.
+- **`messageVerbs`**: which message actions (retry, delete, swipe and the others) this channel's
+  messages offer. They override the genre's. Stop, branch and edit are always offered.
 
-`main` may only be a conversation. A channel is declared by its slug alone: lanes under it
-(`phone:3`) are runtime, allocated by the genre's pipelines, and no lane count is declared
-anywhere.
+`main` can only be a conversation.
 
-## Where a turn lands
+A channel can also have **lanes**: `phone:2`, `phone:3`, for several private conversations
+under one slug. Lanes are not declared. Your pipelines create them by writing to them, and keep
+track of them. `phone` on its own is lane 1.
 
-The channel the triggering message was sent on travels with the run. Your respond pipeline reads
-it as `$.input.channel` and can branch on it:
+## Where a reply lands
 
-```ts nocheck builder fragment: continues a spec chain, and its branch bodies are placeholders
+The channel the person wrote on travels with the run. Your reply pipeline reads it as
+`$.input.channel` and can branch on it:
+
+```ts nocheck a fragment of a spec chain, with placeholder branch bodies
 .junction('turn', { on: ($) => $.input.channel }, (r) => r
 	.when('manuscript', { equals: 'manuscript' }, /* a continuation */)
 	.otherwise('talk', /* a reply */))
 ```
 
-The reply row is created once, on the spine, with `channel: $.input.channel`, so the answer
-lands where the question was asked and the branches decide only what it says. A lane
-(`manuscript:2`) is not equal to its slug; if your genre allocates lanes, branch on the parsed
-slug.
+Create the reply message once, outside the branches, with `channel: $.input.channel`. The answer
+then lands where the question was asked, and the branches decide only what it says. A lane
+(`manuscript:2`) does not equal its slug: if your genre uses lanes, branch on the slug part.
 
-## One live row per run
+## One reply message per run
 
-A pipeline may write as often as it likes — a reply, the annex, a lore entry, a message on
-another channel — and writes may sit inside clauses; in a parallel one they still land in the order
-you declared them, whichever chain finishes first. What a run has only one of is its **live
-row**: the reply row it opens with `create-message`, the one a stream lands in and Stop finalises.
-It may not sit inside an `each` or `loop` (that would be one reply row per pass), and a second
-message on the **live row's channel** is refused — at publish when the channel is a literal, by
-the host when it is wired. So a game whose opponent talks on `main` may post the board as a bare
-message on `board` in the same run, or attach it to the opponent's line as blocks; what it may
-not do is put two rows on `main`. Reading is not limited:
-the history query takes a `channel` parameter and a frame panel subscribes to whichever channels
-it names.
+A pipeline may write as often as it likes: a reply, the annex, a lore entry, a message on
+another channel. Writes inside parallel branches still land in the order you declared them.
 
-## What a frame sees
+What a run has only one of is its **live row**: the reply message it opens with
+`create-message`, the one a stream fills and Stop ends. It may not sit inside a loop (that would
+be one reply per pass), and a second message on the live row's channel is refused, at build when
+the channel is written out and at run time when it is wired. So a game whose opponent talks on
+`main` may post the board as a separate message on `board` in the same run, or attach the board
+to the opponent's line as blocks. It may not put two messages on `main`.
 
-A panel is a view onto the channels it declares. That makes the rule for hidden state simple:
-**what a frame sees is what the client may see.** Anything a session must keep from the player —
-an opponent's fleet, a secret entry — must never be written to a channel at all. See
-[Frames](frames) and [Storage](storage).
+Reading is not limited: the history query takes a `channel` option, and a widget declares the
+channels it shows (`widget({ …, channels: ['board'] })`).
+
+## Channels are not private
+
+A channel's messages are sent to the people in the session like any other message. So anything
+the player must not see (an opponent's fleet, the answer to a riddle) must never be written to a
+channel at all. Keep it in your plugin's [storage](storage.md).

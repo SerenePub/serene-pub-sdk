@@ -50,7 +50,7 @@ test('foldedSectionsOf reads the row, then each alternative', () => {
 })
 
 test('withFoldedSections replaces the shown alternative whole, and leaves the others', () => {
-	assert.deepEqual(withFoldedSections({ thinking: 't' }, [plan]), { thinking: 't', sections: [plan] })
+	assert.deepEqual(withFoldedSections({ reasoning: 't' }, [plan]), { reasoning: 't', sections: [plan] })
 	assert.deepEqual(withFoldedSections({ sections: [plan] }, []), {})
 	const before = { sections: [plan], swipes: { currentIdx: 1, history: ['a', 'b'] } }
 	const after = withFoldedSections(before, [notes])

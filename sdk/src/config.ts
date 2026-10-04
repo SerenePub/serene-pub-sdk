@@ -387,15 +387,14 @@ export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedC
  * @internal
  */
 export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
-	// `session` added 2026-08-26 so a session may point at its own connection —
-	// the per-session connection 0.5 had. Still admin-only in practice:
-	// `visibleTo` shows the slot to admins alone and `resolveWriteScope`
-	// refuses a non-admin every non-prompt write, so "credentials and compute
-	// stay under admin control" holds by a different gate than the matrix.
+	// A session names no connection (ruled 2026-09-30): the pair a step runs
+	// on is the pipeline configuration's, or the instance default, so the
+	// only scope that may write it is `config` — an admin's edit to the
+	// configuration itself. What a session tunes is `sampling` and `prompts`.
 	// ⚠ An AUTHOR preset (12 §3a, `PresetBuilder`) still may not carry a
 	// connection — it does not export — which is F20's actual concern; that
 	// refusal is `PresetBuilder`'s deliberate absence of `.connection()`.
-	connection: ['session', 'config'],
+	connection: ['config'],
 	sampling: ['session', 'config'],
 	template: ['config'],
 	// How a context variable is presented is a property of the instance's
@@ -426,7 +425,9 @@ export function assertWritable(slot: string, scope: ScopeKind): void {
 			`scope '${scope}' may not write slot '${slot}'. ` +
 				`Allowed: ${(WRITE_MATRIX[slot] ?? ['(none)']).join(', ')}. ` +
 				(slot === 'connection'
-					? 'Connections are admin-only so credentials and compute stay under admin control (12 §4).'
+					? scope === 'session'
+						? 'A session never picks its own connection: it runs on the pair its pipeline configuration names, or the pub default. Change it in Pipelines.'
+						: 'Connections are admin-only so credentials and compute stay under admin control (12 §4).'
 					: ''),
 		)
 	}

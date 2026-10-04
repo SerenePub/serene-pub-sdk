@@ -32,35 +32,32 @@
  *
  * ## One spec per genre (R27, the modder pass, 2026-09-23)
  *
- * `turnOrderSpec()` below is the **public** builder: core calls it six
+ * `turnOrderSpec()` below is the **public** builder: core calls it four
  * times, one per genre (`core:spec/<genre>-turn-order`), and a plugin genre
  * calls the same function. One document serves one genre — the preset check
  * refuses a preset binding a spec whose lock names another genre (24 §4) —
  * so the two shared slugs this file shipped at A6 (`core:spec/turn-order`,
  * `core:spec/turn-order-narrator`) are retired.
  *
- * A cast genre pins round robin; a planner genre (Adventure, the Lair,
- * Whodunit) pins `turn-narrator` with a pool that admits nobody, so it gets
- * exactly one narrator turn per send. What a session may pick instead is
+ * A cast genre pins round robin; a planner genre (Adventure, the Lair)
+ * pins `turn-narrator`, so it gets exactly one narrator turn per send —
+ * Adventure's pool admits nobody; the Lair's admits its delvers, for the
+ * character turns a standing turn plan names. What a session may pick instead is
  * the `strategy` node's `expose.swaps` (R28) — chat lists the other five
  * core strategies; the rest list none, so they render no control.
  */
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
-import { chatGenre, guideGenre, writingRoomGenre } from './genres.js';
-import { adventureGenre, lairGenre, whodunitGenre } from './genres.js';
+import { chatGenre, guideGenre } from './genres.js';
+import { adventureGenre, lairGenre } from './genres.js';
 /** @experimental */
 export const CHAT_TURN_ORDER_SPEC_ID = 'core:spec/chat-turn-order';
 /** @experimental */
 export const GUIDE_TURN_ORDER_SPEC_ID = 'core:spec/guide-turn-order';
 /** @experimental */
-export const WRITING_ROOM_TURN_ORDER_SPEC_ID = 'core:spec/writing-room-turn-order';
-/** @experimental */
 export const ADVENTURE_TURN_ORDER_SPEC_ID = 'core:spec/adventure-turn-order';
 /** @experimental */
 export const LAIR_TURN_ORDER_SPEC_ID = 'core:spec/lair-turn-order';
-/** @experimental */
-export const WHODUNIT_TURN_ORDER_SPEC_ID = 'core:spec/whodunit-turn-order';
 /** @experimental */
 export const TURN_ORDER_VERSION = '1.0.0';
 /**
@@ -108,7 +105,7 @@ const adviseNode = (advise, config) => ({ __node: true, descriptor: advise.descr
 /** The node a strategy pin seats, whatever its type version. */
 const strategyNode = (strategy, config) => ({ __node: true, descriptor: strategy.descriptor, config });
 /**
- * **The turn-order spec for one genre** (R27). Core's six and every plugin
+ * **The turn-order spec for one genre** (R27). Core's four and every plugin
  * genre's come from this one call:
  *
  * ```ts
@@ -211,10 +208,18 @@ const once = (build) => {
 };
 /** Every core turn strategy but round robin, in the order chat's control lists them. */
 const CHAT_SWAPS = [C.turnUserSplit, C.turnRandom, C.turnScripted, C.turnManual, C.turnNarrator];
-/** Guide and writing room: their one in-turn envoy is the whole order. */
+/** Guide: its one in-turn envoy is the whole order. */
 const ENVOY_ONLY = { characters: 'none', envoys: 'in-turn' };
 /** The planner genres: nobody is seated — the one entry is the pipeline's own voice. */
 const NOBODY = { characters: 'none', envoys: 'none' };
+/**
+ * 🚧 The Lair: its active delvers are seated (owner ruling 2026-09-30, "they
+ * are character turns"). The narrator strategy still seats nobody by rule;
+ * what the pool admits is who a standing turn plan may prepare a character
+ * turn for, since an entry naming somebody the pool did not admit is dropped
+ * at the write. Envoys stay out: the Castellan's turns are the null entry's.
+ */
+const PARTY = { characters: 'active', envoys: 'none' };
 /** Chat's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
 export const chatTurnOrder = {
     genre: chatGenre,
@@ -245,20 +250,6 @@ export const guideTurnOrder = {
     })),
     strategyNode: turnStrategyNode({}),
 };
-/** Writing room's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
-export const writingRoomTurnOrder = {
-    genre: writingRoomGenre,
-    spec: WRITING_ROOM_TURN_ORDER_SPEC_ID,
-    events: TURN_ORDER_EVENTS,
-    build: once(() => turnOrderSpec({
-        id: WRITING_ROOM_TURN_ORDER_SPEC_ID,
-        genre: writingRoomGenre,
-        events: TURN_ORDER_EVENTS,
-        strategy: C.turnRoundRobin,
-        pool: ENVOY_ONLY,
-    })),
-    strategyNode: turnStrategyNode({}),
-};
 /** Adventure's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
 export const adventureTurnOrder = {
     genre: adventureGenre,
@@ -283,38 +274,23 @@ export const lairTurnOrder = {
         genre: lairGenre,
         events: TURN_ORDER_NARRATOR_EVENTS,
         strategy: C.turnNarrator,
-        pool: NOBODY,
+        // The delvers its plans name take character turns.
+        pool: PARTY,
         // Every channel (R6): a line on the Sanctum prepares the
         // Castellan's reply there, as a line on `main` prepares its turn.
         historyChannel: '*',
     })),
     strategyNode: turnStrategyNode({}),
 };
-/** Whodunit's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
-export const whodunitTurnOrder = {
-    genre: whodunitGenre,
-    spec: WHODUNIT_TURN_ORDER_SPEC_ID,
-    events: TURN_ORDER_NARRATOR_EVENTS,
-    build: once(() => turnOrderSpec({
-        id: WHODUNIT_TURN_ORDER_SPEC_ID,
-        genre: whodunitGenre,
-        events: TURN_ORDER_NARRATOR_EVENTS,
-        strategy: C.turnNarrator,
-        pool: NOBODY,
-    })),
-    strategyNode: turnStrategyNode({}),
-};
 /**
- * Core's six (§4.14's table): which genre gets which spec, on which events —
+ * Core's four (§4.14's table): which genre gets which spec, on which events —
  * what the presets bind and what `CORE_SPECS` publishes.
  * @experimental
  */
 export const TURN_ORDER_BY_GENRE = [
     chatTurnOrder,
     guideTurnOrder,
-    writingRoomTurnOrder,
     adventureTurnOrder,
     lairTurnOrder,
-    whodunitTurnOrder,
 ];
 //# sourceMappingURL=turnOrder.js.map

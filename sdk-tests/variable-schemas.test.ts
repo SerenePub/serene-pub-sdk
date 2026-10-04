@@ -44,14 +44,20 @@ describe('core declarations', () => {
 		assert.deepEqual(legacy, [])
 	})
 
-	// The two lies, pinned. Both were wrong in the direction that hurts: they
-	// named a field an author could write and get nothing back from, and empty
-	// is indistinguishable from "this character has no bound lore".
-	test('a character card names "extra lore", not "lore"', () => {
+	// A card is the character as written: lore bound to a cast member is
+	// Assemble's `characterLore`, which a template places itself.
+	test('a character card carries no lore field', () => {
 		const fields = (getVariable('core:var/characters@1')!.scope.characters as VarField).of!
 			.fields!
-		assert.ok(fields['extra lore'], 'the key attachCharacterLoreToCharacters actually writes')
-		assert.equal(fields.lore, undefined, 'never written by anything')
+		assert.equal(fields['extra lore'], undefined)
+		assert.equal(fields.lore, undefined)
+	})
+
+	test('characterLore is a list of entries, each naming its cast member', () => {
+		const entry = (getVariable('core:var/character-lore@1')!.scope.characterLore as VarField).of!
+		assert.equal(entry.type, 'object')
+		assert.deepEqual(Object.keys(entry.fields!), ['title', 'castMember', 'content'])
+		assert.equal(entry.fields!.castMember!.optional, true)
 	})
 
 	test('a character card does not claim an exampleDialogue field', () => {

@@ -331,7 +331,7 @@ describe('slot.prompts({ envoy }) — configuration at envoy:<key>', () => {
 describe('the shipped guide genre', () => {
 	test('one envoy, default, in-turn; characters max 0; the reply reads its prompts by reference', async () => {
 		const { guideGenre, guideRespondSpec, createGuideSpec, GUIDE_MASCOT_KEY } = await import(
-			'@serene-pub/core-catalog'
+			'../core-catalog/src/index.js'
 		)
 		assert.equal(guideGenre.shape?.characters?.max, 0)
 		assert.equal(guideGenre.envoys?.length, 1)
@@ -345,6 +345,36 @@ describe('the shipped guide genre', () => {
 		// The create spec carries the envoys on the row for the host to read.
 		const create = createGuideSpec()
 		assert.equal((create.genre as any)?.envoys?.[0]?.key, 'mascot')
+	})
+
+	test('the envoy is Serene: the mascot as her face, and her greeting opens every new session on main', async () => {
+		const { guideGenre, createGuideSpec } = await import('../core-catalog/src/index.js')
+		const serene = guideGenre.envoys![0]!
+		assert.equal(i18nText(serene.name, 'en'), 'Serene')
+		// A raster the conversation box takes as it is — never an SVG it must redraw.
+		assert.match(serene.image ?? '', /^data:image\/webp;base64,[A-Za-z0-9+/]+={0,2}$/)
+		const greeting = i18nText(serene.greeting!.text, 'en') ?? ''
+		assert.match(greeting, /I'm \{\{char\}\}/)
+		assert.match(greeting, /What would you like to talk about\?/)
+		assert.equal(serene.greeting!.channel ?? 'main', 'main')
+		// The persona is warm and calm, and still answers from the docs alone.
+		const prompt = String(serene.prompts?.systemPrompt)
+		assert.match(prompt, /^You are Serene, Serene Pub's guide/)
+		assert.match(prompt, /I couldn't find that in the docs/)
+		assert.doesNotMatch(prompt, /Serenity/)
+
+		// The create spec reads that greeting and writes it under the envoy, with no model call.
+		const doc = createGuideSpec()
+		const welcome = doc.nodes.find((n: any) => n.key === 'welcome')!
+		assert.equal(welcome.definitionId, 'core:query/envoy-greeting')
+		const write = doc.nodes.find((n: any) => n.key === 'greet.greets.write')!
+		assert.equal(write.definitionId, 'core:outlet/create-message')
+		assert.equal((write.config as any).channel, 'main')
+		assert.equal((write.config as any).speaker, 'envoy:mascot')
+		assert.ok(doc.edges.some((e: any) => e.from === 'welcome' && e.to === 'greet.greets.write'))
+		const params = (doc.presets ?? []).flatMap((p: any) => p.values ?? []).find((v: any) => v.nodeKey === 'welcome')
+		assert.deepEqual(params?.value, { envoy: 'mascot' })
+		assert.ok(!doc.nodes.some((n: any) => n.kind === 'oracle'))
 	})
 })
 
@@ -424,17 +454,15 @@ describe('the fallback envoy — a line nobody claims still has a name', () => {
 describe('core genres name their unclaimed lines', () => {
 	// And 2026-09-28 (lair re-plan R6): the Lair's own voice is the
 	// Castellan, its fallback envoy.
-	test('the Guide, the Writing Room and the Lair mark their envoy the fallback; the other narrator genres declare none', async () => {
-		const cat = await import('@serene-pub/core-catalog')
+	test('the Guide and the Lair mark their envoy the fallback; the other genres declare none', async () => {
+		const cat = await import('../core-catalog/src/index.js')
 		assert.equal(genreFallbackEnvoy(cat.guideGenre)?.key, cat.GUIDE_MASCOT_KEY)
-		assert.equal(i18nText(genreFallbackEnvoy(cat.guideGenre)!.name, 'en'), 'Guide')
-		assert.equal(genreFallbackEnvoy(cat.writingRoomGenre)?.key, cat.WRITING_ROOM_SCRIBE_KEY)
-		assert.equal(i18nText(genreFallbackEnvoy(cat.writingRoomGenre)!.name, 'en'), 'Scribe')
+		assert.equal(i18nText(genreFallbackEnvoy(cat.guideGenre)!.name, 'en'), 'Serene')
 		assert.equal(genreFallbackEnvoy(cat.lairGenre)?.key, cat.LAIR_CASTELLAN_KEY)
 		assert.equal(i18nText(genreFallbackEnvoy(cat.lairGenre)!.name, 'en'), 'Castellan')
 		// "The narrator is `voice`, not an envoy" (genres.ts): these fall to
 		// the session's narrator name, then UNCLAIMED_LINE_NAME, at the host.
-		for (const g of [cat.chatGenre, cat.adventureGenre, cat.whodunitGenre])
+		for (const g of [cat.chatGenre, cat.adventureGenre])
 			assert.equal(genreFallbackEnvoy(g), undefined, g.id)
 	})
 })

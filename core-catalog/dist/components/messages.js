@@ -1,6 +1,6 @@
 import {
   refuseUnlessIdentical
-} from "./shared-YMXNAZGX.js";
+} from "./shared-RJDGOAVC.js";
 import {
   CORE_ACTION_SPEC_ID,
   WIDGET_CONTEXT_KEY,
@@ -35,6 +35,7 @@ import {
   proxy,
   push,
   remove_input_defaults,
+  replay_events,
   reset,
   scopeNotGranted,
   set,
@@ -61,7 +62,7 @@ import {
   user_derived,
   user_effect,
   widgetRefFromComponent
-} from "./shared-BECW7NYS.js";
+} from "./shared-UAQVMZZK.js";
 
 // ../sdk/dist/predicates.js
 var truthy = (v) => !!v && !(Array.isArray(v) && v.length === 0);
@@ -137,14 +138,14 @@ var roles = new Set(PARTICIPANT_ROLES);
 function parseParticipantRef(raw) {
   if (typeof raw !== "string")
     throw new Error(`a participant reference is a string \u2014 got ${raw === null ? "null" : typeof raw}`);
-  const text2 = raw.trim();
-  if (roles.has(text2))
-    return { kind: text2 };
-  const cut = text2.indexOf(":");
+  const text3 = raw.trim();
+  if (roles.has(text3))
+    return { kind: text3 };
+  const cut = text3.indexOf(":");
   if (cut === -1)
     throw new Error(`'${raw}' is not a participant reference \u2014 expected one of ${PARTICIPANT_ROLES.join(", ")}, or user:<id>, character:<id>, envoy:<slug>`);
-  const kind = text2.slice(0, cut);
-  const rest = text2.slice(cut + 1);
+  const kind = text3.slice(0, cut);
+  const rest = text3.slice(cut + 1);
   switch (kind) {
     case "user":
     case "character":
@@ -179,6 +180,15 @@ var ENABLED_FIELD = Object.freeze({
   label: { en: "Use this source" },
   description: {
     en: "Off skips the step entirely rather than fetching and discarding it \u2014 cheaper than starving it with a zero share."
+  }
+});
+var ENABLED_STEP_FIELD = Object.freeze({
+  type: "boolean",
+  default: true,
+  quick: true,
+  label: { en: "Run this step" },
+  description: {
+    en: "Off skips the step entirely: nothing is called or charged, and the steps after it go on without what it would have made."
   }
 });
 
@@ -682,9 +692,9 @@ var CORE_ACTIONS = Object.freeze([
 
 // ../sdk/dist/status.js
 var VAR_PATTERN = /\{([A-Za-z_][A-Za-z0-9_]*)\}/g;
-function renderStatusText(text2, language = "en") {
-  const template = i18nText(text2.i18n, language) ?? "";
-  const vars = text2.vars ?? {};
+function renderStatusText(text3, language = "en") {
+  const template = i18nText(text3.i18n, language) ?? "";
+  const vars = text3.vars ?? {};
   const withoutUnfilledSpeaker = !("speaker" in vars) && template.startsWith("{speaker} ") ? template.slice("{speaker} ".length) : template;
   return withoutUnfilledSpeaker.replace(VAR_PATTERN, (whole, name) => name in vars ? String(vars[name]) : whole);
 }
@@ -825,10 +835,10 @@ var NO_LINE = {
 };
 
 // dist/ui/sessions/conversation/formAnswer.js
-var rowId = (text2) => {
-  if (!/^\d{1,10}$/.test(text2))
+var rowId = (text3) => {
+  if (!/^\d{1,10}$/.test(text3))
     return null;
-  const n = Number(text2);
+  const n = Number(text3);
   return Number.isSafeInteger(n) && n > 0 ? n : null;
 };
 function canAnswerForm(addressee, viewer, session) {
@@ -1086,12 +1096,12 @@ function exactSlashCommand(actions, draft) {
   return action ? { action, argument: parsed.argument } : void 0;
 }
 function slashArgumentHint(a) {
-  const text2 = a.collects?.text;
-  if (!text2)
+  const text3 = a.collects?.text;
+  if (!text3)
     return void 0;
-  const label2 = text2.label.trim().replace(/[.?!:…]+$/u, "");
+  const label2 = text3.label.trim().replace(/[.?!:…]+$/u, "");
   const word = label2 ? label2.charAt(0).toLowerCase() + label2.slice(1) : "text";
-  return text2.need === "optional" ? `[<${word}>]` : `<${word}>`;
+  return text3.need === "optional" ? `[<${word}>]` : `<${word}>`;
 }
 function slashArgumentRefusal(a, argument) {
   if (!argument?.trim() || a.collects?.text)
@@ -1147,12 +1157,124 @@ function paletteRowState(a, opts) {
     return { disabled: true, reason: VERB_REASONS.generating };
   return { disabled: false };
 }
-function stepHighlight(current, count, delta) {
-  if (count <= 0)
+function stepHighlight(current, count2, delta) {
+  if (count2 <= 0)
     return -1;
   if (current < 0)
-    return delta === 1 ? 0 : count - 1;
-  return (current + delta + count) % count;
+    return delta === 1 ? 0 : count2 - 1;
+  return (current + delta + count2) % count2;
+}
+
+// dist/ui/sessions/conversation/composerTray.js
+var ATTACHMENT_KINDS_V1 = ["image", "text", "pdf"];
+var KIND_PLURAL = {
+  image: "images",
+  text: "text files",
+  pdf: "PDFs"
+};
+var KIND_NAME = {
+  image: "Images",
+  text: "Text files",
+  pdf: "PDFs"
+};
+var KIND_ONE = {
+  image: "An image",
+  text: "A text file",
+  pdf: "A PDF"
+};
+var KIND_FORMATS = {
+  image: "PNG, JPEG, WebP, GIF",
+  text: ".txt, .md",
+  pdf: ".pdf"
+};
+function kindList(kinds) {
+  return ATTACHMENT_KINDS_V1.filter((k) => kinds.includes(k)).map((k) => KIND_PLURAL[k]).join(" \xB7 ");
+}
+function readableKinds(readers) {
+  if (!readers)
+    return [];
+  return ATTACHMENT_KINDS_V1.filter((k) => readers.kinds[k]?.allowed);
+}
+function readersSummary(readers) {
+  if (!readers)
+    return null;
+  const kinds = readableKinds(readers);
+  if (!kinds.length)
+    return "This reply reads no attachments.";
+  return `${readers.calls.length > 1 ? "Can read" : "This reply can read"}: ${kindList(kinds)}`;
+}
+function readerCallLines(readers) {
+  if (!readers)
+    return [];
+  return readers.calls.map((c) => {
+    const who = c.model ? `${c.label} (${c.model})` : c.label;
+    const reads = ATTACHMENT_KINDS_V1.filter((k) => c.reads.includes(k)).map((k) => KIND_PLURAL[k]);
+    const named = ATTACHMENT_KINDS_V1.filter((k) => c.placeholderFor.includes(k)).map((k) => KIND_PLURAL[k]);
+    return `${who}: ${reads.join(", ") || "nothing"}` + (named.length ? ` (${named.join(" and ")} appear to it as a name)` : "");
+  });
+}
+var MiB = 1024 * 1024;
+var formatCap = (bytes) => `${Math.round(bytes / MiB)} MB`;
+var SVG_REFUSAL = "An SVG can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md) or a PDF.";
+var TYPE_REFUSAL = "That file type can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md) or a PDF.";
+var startsWith = (head, sig, at = 0) => sig.every((b, i) => head[at + i] === b);
+function sniffAttachmentKind(head, filename, type = "") {
+  if (startsWith(head, [137, 80, 78, 71]))
+    return "image";
+  if (startsWith(head, [255, 216, 255]))
+    return "image";
+  if (startsWith(head, [71, 73, 70, 56]))
+    return "image";
+  if (startsWith(head, [82, 73, 70, 70]) && startsWith(head, [87, 69, 66, 80], 8))
+    return "image";
+  if (startsWith(head, [37, 80, 68, 70]))
+    return "pdf";
+  if (/\.svgz?$/i.test(filename) || type === "image/svg+xml")
+    return "svg";
+  const textual = /\.(txt|md|markdown)$/i.test(filename) || type === "text/plain" || type === "text/markdown";
+  if (!textual)
+    return null;
+  for (const b of head)
+    if (b === 0 || b < 9 || b > 13 && b < 32 && b !== 27)
+      return null;
+  const start = new TextDecoder("utf-8", { fatal: false }).decode(head.subarray(0, 512)).trimStart();
+  if (/^(<\?xml[^>]*>\s*)?(<!--[\s\S]*?-->\s*)*(<!DOCTYPE[^>]*>\s*)?<svg[\s>/]/i.test(start))
+    return "svg";
+  return "text";
+}
+function preCheckFiles(files, tray, readers) {
+  const accept = [];
+  const refusals = [];
+  const cap = readers?.filesPerMessage ?? 10;
+  let room = cap - tray.filter((t) => t.status !== "refused").length;
+  files.forEach((f, i) => {
+    const refuse = (reason) => refusals.push({ filename: f.name, reason });
+    if (f.kind === "svg")
+      return refuse(SVG_REFUSAL);
+    if (!f.kind)
+      return refuse(TYPE_REFUSAL);
+    const verdict = readers?.kinds[f.kind];
+    if (readers && !verdict?.allowed)
+      return refuse(verdict?.reason ?? `Nothing in this reply reads ${KIND_PLURAL[f.kind]}.`);
+    if (f.size <= 0)
+      return refuse("That file is empty.");
+    const limit = readers?.bytesPerKind[f.kind];
+    if (limit && f.size > limit)
+      return refuse(`${KIND_ONE[f.kind]} can be at most ${formatCap(limit)}.`);
+    if (room <= 0)
+      return refuse(`A message can carry at most ${cap} files.`);
+    room--;
+    accept.push(i);
+  });
+  return { accept, refusals };
+}
+function uploadingNote(tray) {
+  const live = tray.filter((t) => t.status !== "refused");
+  const uploading = live.filter((t) => t.status === "uploading").length;
+  return uploading ? `Uploading ${uploading} of ${live.length}\u2026` : null;
+}
+function sendableTrayIds(tray) {
+  return tray.filter((t) => t.status === "ready").map((t) => t.id);
 }
 
 // components/sessions/messages/MessageComposer.svelte
@@ -1294,9 +1416,9 @@ function MessageComposer($$anchor, $$props) {
         {
           var consequent_4 = ($$anchor4) => {
             var span_5 = root_3();
-            var text2 = child(span_5, true);
+            var text3 = child(span_5, true);
             reset(span_5);
-            template_effect(() => set_text(text2, get(tab).title));
+            template_effect(() => set_text(text3, get(tab).title));
             append($$anchor4, span_5);
           };
           if_block(node_7, ($$render) => {
@@ -1808,12 +1930,12 @@ function createConversation(widget) {
     }
     summaryEnded = n;
   });
-  function invoke(key, subject, payload, text2) {
+  function invoke(key, subject, payload, text3) {
     try {
       ctx().invoke(key, {
         messageId: subject?.id,
         payload,
-        ...text2 !== void 0 ? { text: text2 } : {}
+        ...text3 !== void 0 ? { text: text3 } : {}
       });
     } catch (e) {
       warn(key)(e);
@@ -2096,7 +2218,7 @@ function MessageControls($$anchor, $$props) {
     template_effect(() => set_custom_element_data(sp_icon_2, "name", get(iconName)));
     set_custom_element_data(sp_icon_2, "size", "16");
     var span = sibling(sp_icon_2, 2);
-    var text2 = child(span, true);
+    var text3 = child(span, true);
     reset(span);
     reset(button_1);
     var node_1 = sibling(button_1, 2);
@@ -2125,7 +2247,7 @@ function MessageControls($$anchor, $$props) {
         set_attribute(button_1, "aria-pressed", action().key === "hide" ? !!$$props.msg.isHidden : void 0);
         set_attribute(button_1, "aria-disabled", state2().disabled);
         set_attribute(button_1, "aria-describedby", $1);
-        set_text(text2, $2);
+        set_text(text3, $2);
       },
       [
         () => titleOf(action(), state2().reason),
@@ -2372,13 +2494,13 @@ function MessageBlocksView_1($$anchor, $$props) {
         each(dl, 21, () => get(block).rows ?? [], index, ($$anchor4, row) => {
           var fragment_1 = root_17();
           var dt = first_child(fragment_1);
-          var text2 = child(dt, true);
+          var text3 = child(dt, true);
           reset(dt);
           var dd = sibling(dt, 2);
           var text_1 = child(dd, true);
           reset(dd);
           template_effect(() => {
-            set_text(text2, get(row).label);
+            set_text(text3, get(row).label);
             set_text(text_1, get(row).value);
           });
           append($$anchor4, fragment_1);
@@ -2833,9 +2955,7 @@ var root_34 = from_html(`<sp-message-body></sp-message-body>`, 2);
 var root_44 = from_html(`<div data-widget-part="messages.part-disclosure"><button type="button" data-widget-part="messages.part-disclosure-toggle"><!> <span> </span> <sp-icon></sp-icon></button> <div data-widget-part="messages.part-disclosure-track"><div data-widget-part="messages.part-disclosure-clip"><div data-widget-part="messages.part-disclosure-panel messages.prose"><!></div></div></div></div>`, 2);
 var root_54 = from_html(`<hr data-widget-part="messages.part-step-divider"/>`);
 var root_64 = from_html(`<div data-widget-part="messages.part-markdown messages.prose"><sp-message-body></sp-message-body></div>`, 2);
-var root_74 = from_html(`<button type="button" data-widget-part="messages.part-image" aria-label="Open image attachment"><img data-widget-part="messages.part-image-img"/></button>`);
-var root_84 = from_html(`<a data-widget-part="messages.part-file"><sp-icon></sp-icon> </a>`, 2);
-var root_94 = from_html(`<!> <!>`, 1);
+var root_74 = from_html(`<!> <!>`, 1);
 function MessagePartsView($$anchor, $$props) {
   push($$props, true);
   const collapsible = ($$anchor2, part = noop, title = noop, icon = noop, body = noop, items = noop) => {
@@ -2875,7 +2995,7 @@ function MessagePartsView($$anchor, $$props) {
       });
     }
     var span = sibling(node, 2);
-    var text2 = child(span, true);
+    var text3 = child(span, true);
     reset(span);
     var sp_icon_4 = sibling(span, 2);
     set_custom_element_data(sp_icon_4, "name", "chevron-down");
@@ -2917,7 +3037,7 @@ function MessagePartsView($$anchor, $$props) {
       set_attribute(button, "title", expanded[part().id] ? `Collapse ${title()}` : `Expand ${title()}`);
       set_attribute(button, "aria-expanded", !!expanded[part().id]);
       set_attribute(button, "aria-controls", `part-${$$props.messageId ?? ""}-${part().id ?? ""}`);
-      set_text(text2, title());
+      set_text(text3, title());
       set_attribute(div_1, "id", `part-${$$props.messageId ?? ""}-${part().id ?? ""}`);
       set_attribute(div_1, "data-expanded", expanded[part().id] ? "" : void 0);
     });
@@ -2940,7 +3060,7 @@ function MessagePartsView($$anchor, $$props) {
     return Array.isArray(items) && items.every((i) => typeof i === "string") ? items : void 0;
   }
   function sectionIcon(part) {
-    return part.data?.kind === "thinking" ? "brain" : "notebook";
+    return part.data?.kind === "reasoning" ? "brain" : "notebook";
   }
   function unknownBody(part) {
     if (part.content) return part.content;
@@ -2953,7 +3073,7 @@ function MessagePartsView($$anchor, $$props) {
   var fragment = comment();
   var node_2 = first_child(fragment);
   each(node_2, 18, () => get(steps), (step) => step, ($$anchor2, step, i) => {
-    var fragment_1 = root_94();
+    var fragment_1 = root_74();
     var node_3 = first_child(fragment_1);
     {
       var consequent_4 = ($$anchor3) => {
@@ -2978,7 +3098,7 @@ function MessagePartsView($$anchor, $$props) {
           append($$anchor4, div_4);
         };
         var consequent_6 = ($$anchor4) => {
-          collapsible($$anchor4, () => get(part), () => "Thinking", () => "brain", () => get(part).content ?? "");
+          collapsible($$anchor4, () => get(part), () => "Reasoning", () => "brain", () => get(part).content ?? "");
         };
         var consequent_7 = ($$anchor4) => {
           {
@@ -3001,31 +3121,8 @@ function MessagePartsView($$anchor, $$props) {
           }
         };
         var consequent_10 = ($$anchor4) => {
-          var button_1 = root_74();
-          var img = child(button_1);
-          reset(button_1);
-          template_effect(() => {
-            set_attribute(img, "src", `/session-assets/${get(part).data.assetId ?? ""}`);
-            set_attribute(img, "alt", get(part).data?.alt ?? "attachment");
-          });
-          delegated("click", button_1, () => $$props.onOpenImage?.(`/session-assets/${get(part).data.assetId}`));
-          append($$anchor4, button_1);
         };
         var consequent_11 = ($$anchor4) => {
-          var a_1 = root_84();
-          var sp_icon_5 = child(a_1);
-          set_custom_element_data(sp_icon_5, "name", "paperclip");
-          set_custom_element_data(sp_icon_5, "size", "14");
-          var text_2 = sibling(sp_icon_5);
-          reset(a_1);
-          template_effect(() => {
-            set_attribute(a_1, "href", `/session-assets/${get(part).data.assetId ?? ""}`);
-            set_attribute(a_1, "download", get(part).data?.name ?? true);
-            set_text(text_2, ` ${get(part).data?.name ?? "attachment" ?? ""}`);
-          });
-          append($$anchor4, a_1);
-        };
-        var consequent_12 = ($$anchor4) => {
           MessageBlocksView_1($$anchor4, {
             get blocks() {
               return get(part).data.blocks;
@@ -3053,13 +3150,12 @@ function MessagePartsView($$anchor, $$props) {
         };
         if_block(node_5, ($$render) => {
           if (get(part).type === "core:markdown") $$render(consequent_5);
-          else if (get(part).type === "core:thinking") $$render(consequent_6, 1);
+          else if (get(part).type === "core:reasoning") $$render(consequent_6, 1);
           else if (get(part).type === "core:tool-call") $$render(consequent_7, 2);
           else if (get(part).type === "core:tool-result") $$render(consequent_8, 3);
           else if (get(part).type === "core:section") $$render(consequent_9, 4);
-          else if (get(part).type === "core:image" && get(part).data?.assetId) $$render(consequent_10, 5);
-          else if (get(part).type === "core:file" && get(part).data?.assetId) $$render(consequent_11, 6);
-          else if (get(d)) $$render(consequent_12, 7);
+          else if (get(part).type === "core:image" || get(part).type === "core:file") $$render(consequent_10, 5);
+          else if (get(d)) $$render(consequent_11, 6);
           else $$render(alternate_2, -1);
         });
       }
@@ -3072,10 +3168,270 @@ function MessagePartsView($$anchor, $$props) {
 }
 delegate(["click"]);
 
+// components/sessions/messages/mediaStrip.ts
+var MEDIA_STRIP_MAX_TILES = 6;
+var text2 = (v) => typeof v === "string" && v.trim() ? v.trim() : null;
+var count = (v) => typeof v === "number" && Number.isFinite(v) && v > 0 ? v : null;
+function mediaStripItems(parts, activeRevisions) {
+  if (!parts?.length) return [];
+  const active = activeRevisions ?? {};
+  return parts.filter(
+    (p) => (p.type === "core:image" || p.type === "core:file") && p.revision === (active[String(p.step)] ?? 0) && count(p.data?.assetId) !== null
+  ).sort((a, b) => a.step - b.step || a.ordinal - b.ordinal).map((p) => {
+    const d = p.data ?? {};
+    const kind = p.type === "core:image" ? "image" : "file";
+    const name = text2(d.filename) ?? text2(d.name);
+    return {
+      partId: p.id,
+      kind,
+      assetId: d.assetId,
+      label: text2(d.alt) ?? name ?? (kind === "image" ? "Image" : "File"),
+      name,
+      width: count(d.width),
+      height: count(d.height),
+      mime: text2(d.mime),
+      bytes: count(d.bytes)
+    };
+  });
+}
+function mediaSrc(assetId, variant) {
+  return variant ? `/media/${assetId}?v=${variant}` : `/media/${assetId}`;
+}
+function mediaDownloadHref(assetId) {
+  return `/media/${assetId}?download=1`;
+}
+function formatBytes(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+function fileIcon(mime) {
+  if (!mime) return "file";
+  if (mime.startsWith("text/") || mime === "application/pdf") return "file-text";
+  return "file";
+}
+function viewImageParams(images, index2) {
+  const srcs = images.map((i) => mediaSrc(i.assetId));
+  return {
+    src: srcs[index2],
+    gallery: { srcs, index: index2, captions: images.map((i) => i.label) }
+  };
+}
+
+// components/sessions/messages/MessageMediaStrip.svelte
+var gone = ($$anchor, item = noop) => {
+  var div = root_111();
+  var sp_icon_1 = child(div);
+  set_custom_element_data(sp_icon_1, "name", "image-off");
+  set_custom_element_data(sp_icon_1, "size", "20");
+  next(2);
+  reset(div);
+  template_effect(() => set_attribute(div, "aria-label", `${item().label ?? ""}: file no longer available`));
+  append($$anchor, div);
+};
+var root5 = from_html(`<button type="button" data-widget-part="messages.media-remove"><sp-icon></sp-icon></button>`, 2);
+var root_111 = from_html(`<div data-widget-part="messages.media-missing" role="img"><sp-icon></sp-icon> <span data-widget-part="messages.media-missing-text">File no longer available</span></div>`, 2);
+var root_210 = from_html(`<button type="button" data-widget-part="messages.media-tile"><img data-widget-part="messages.media-tile-img" loading="lazy" decoding="async"/></button>`);
+var root_35 = from_html(`<div data-widget-part="messages.media-item"><!> <!></div>`);
+var root_45 = from_html(`<button type="button" data-widget-part="messages.media-more"> </button>`);
+var root_55 = from_html(`<div data-widget-part="messages.media-images"><!> <!></div>`);
+var root_65 = from_html(`<span data-widget-part="messages.media-file-size"> </span>`);
+var root_75 = from_html(`<li data-widget-part="messages.media-item"><a data-widget-part="messages.media-file"><sp-icon></sp-icon> <span data-widget-part="messages.media-file-name"> </span> <!> <sp-icon></sp-icon></a> <!></li>`, 2);
+var root_84 = from_html(`<ul data-widget-part="messages.media-files"></ul>`);
+var root_94 = from_html(`<div data-widget-part="messages.media-strip" role="group"><!> <!></div>`);
+function MessageMediaStrip($$anchor, $$props) {
+  push($$props, true);
+  const removeButton = ($$anchor2, item = noop) => {
+    var fragment = comment();
+    var node = first_child(fragment);
+    {
+      var consequent = ($$anchor3) => {
+        var button = root5();
+        var sp_icon = child(button);
+        set_custom_element_data(sp_icon, "name", "x");
+        set_custom_element_data(sp_icon, "size", "14");
+        reset(button);
+        template_effect(() => {
+          set_attribute(button, "aria-label", `Remove ${item().label ?? ""}`);
+          set_attribute(button, "title", `Remove ${item().label ?? ""}`);
+        });
+        delegated("click", button, () => $$props.onRemove?.(item()));
+        append($$anchor3, button);
+      };
+      if_block(node, ($$render) => {
+        if (get(removable)) $$render(consequent);
+      });
+    }
+    append($$anchor2, fragment);
+  };
+  let editing = prop($$props, "editing", 3, false);
+  const missing = new SvelteSet();
+  const images = user_derived(() => $$props.items.filter((i) => i.kind === "image"));
+  const files = user_derived(() => $$props.items.filter((i) => i.kind === "file"));
+  const openable = user_derived(() => get(images).filter((i) => !missing.has(i.partId)));
+  const folds = user_derived(() => get(images).length > MEDIA_STRIP_MAX_TILES);
+  const shown = user_derived(() => get(folds) ? get(images).slice(0, MEDIA_STRIP_MAX_TILES - 1) : get(images));
+  const hidden = user_derived(() => get(images).length - get(shown).length);
+  const removable = user_derived(() => editing() && !!$$props.onRemove);
+  function open(item) {
+    const index2 = get(openable).findIndex((i) => i.partId === item.partId);
+    if (index2 >= 0) $$props.onOpen?.(get(openable), index2);
+  }
+  function openFolded() {
+    const first = get(images).slice(get(shown).length).find((i) => !missing.has(i.partId));
+    if (first) open(first);
+  }
+  function openLabel(item) {
+    const at = get(openable).findIndex((i) => i.partId === item.partId);
+    return get(openable).length > 1 ? `Open image ${item.label}, ${at + 1} of ${get(openable).length}` : `Open image ${item.label}`;
+  }
+  var fragment_1 = comment();
+  var node_1 = first_child(fragment_1);
+  {
+    var consequent_6 = ($$anchor2) => {
+      var div_1 = root_94();
+      var node_2 = child(div_1);
+      {
+        var consequent_3 = ($$anchor3) => {
+          var div_2 = root_55();
+          var node_3 = child(div_2);
+          each(node_3, 17, () => get(shown), (item) => item.partId, ($$anchor4, item) => {
+            var div_3 = root_35();
+            var node_4 = child(div_3);
+            {
+              var consequent_1 = ($$anchor5) => {
+                gone($$anchor5, () => get(item));
+              };
+              var d = user_derived(() => missing.has(get(item).partId));
+              var alternate = ($$anchor5) => {
+                var button_1 = root_210();
+                var img = child(button_1);
+                reset(button_1);
+                template_effect(
+                  ($0, $1) => {
+                    set_attribute(button_1, "aria-label", $0);
+                    set_attribute(img, "src", $1);
+                    set_attribute(img, "alt", get(item).label);
+                  },
+                  [
+                    () => openLabel(get(item)),
+                    () => mediaSrc(get(item).assetId, "thumb")
+                  ]
+                );
+                delegated("click", button_1, () => open(get(item)));
+                event("error", img, () => missing.add(get(item).partId));
+                replay_events(img);
+                append($$anchor5, button_1);
+              };
+              if_block(node_4, ($$render) => {
+                if (get(d)) $$render(consequent_1);
+                else $$render(alternate, -1);
+              });
+            }
+            var node_5 = sibling(node_4, 2);
+            removeButton(node_5, () => get(item));
+            reset(div_3);
+            append($$anchor4, div_3);
+          });
+          var node_6 = sibling(node_3, 2);
+          {
+            var consequent_2 = ($$anchor4) => {
+              var button_2 = root_45();
+              var text3 = child(button_2);
+              reset(button_2);
+              template_effect(() => {
+                set_attribute(button_2, "aria-label", `Show ${get(hidden) ?? ""} more ${get(hidden) === 1 ? "image" : "images"}`);
+                set_text(text3, `+${get(hidden) ?? ""}`);
+              });
+              delegated("click", button_2, openFolded);
+              append($$anchor4, button_2);
+            };
+            if_block(node_6, ($$render) => {
+              if (get(folds)) $$render(consequent_2);
+            });
+          }
+          reset(div_2);
+          append($$anchor3, div_2);
+        };
+        if_block(node_2, ($$render) => {
+          if (get(images).length) $$render(consequent_3);
+        });
+      }
+      var node_7 = sibling(node_2, 2);
+      {
+        var consequent_5 = ($$anchor3) => {
+          var ul = root_84();
+          each(ul, 21, () => get(files), (item) => item.partId, ($$anchor4, item) => {
+            var li = root_75();
+            var a = child(li);
+            var sp_icon_2 = child(a);
+            template_effect(($0) => set_custom_element_data(sp_icon_2, "name", $0), [() => fileIcon(get(item).mime)]);
+            set_custom_element_data(sp_icon_2, "size", "20");
+            var span = sibling(sp_icon_2, 2);
+            var text_1 = child(span, true);
+            reset(span);
+            var node_8 = sibling(span, 2);
+            {
+              var consequent_4 = ($$anchor5) => {
+                var span_1 = root_65();
+                var text_2 = child(span_1, true);
+                reset(span_1);
+                template_effect(($0) => set_text(text_2, $0), [() => formatBytes(get(item).bytes)]);
+                append($$anchor5, span_1);
+              };
+              if_block(node_8, ($$render) => {
+                if (get(item).bytes) $$render(consequent_4);
+              });
+            }
+            var sp_icon_3 = sibling(node_8, 2);
+            set_custom_element_data(sp_icon_3, "name", "download");
+            set_custom_element_data(sp_icon_3, "size", "14");
+            reset(a);
+            var node_9 = sibling(a, 2);
+            removeButton(node_9, () => get(item));
+            reset(li);
+            template_effect(
+              ($0, $1) => {
+                set_attribute(a, "href", $0);
+                set_attribute(a, "download", get(item).name ?? void 0);
+                set_attribute(a, "title", get(item).label);
+                set_attribute(a, "aria-label", `Download ${get(item).label ?? ""}${$1 ?? ""}`);
+                set_text(text_1, get(item).label);
+              },
+              [
+                () => mediaDownloadHref(get(item).assetId),
+                () => get(item).bytes ? `, ${formatBytes(get(item).bytes)}` : ""
+              ]
+            );
+            append($$anchor4, li);
+          });
+          reset(ul);
+          append($$anchor3, ul);
+        };
+        if_block(node_7, ($$render) => {
+          if (get(files).length) $$render(consequent_5);
+        });
+      }
+      reset(div_1);
+      template_effect(() => {
+        set_attribute(div_1, "data-editing", get(removable) ? "" : void 0);
+        set_attribute(div_1, "aria-label", $$props.items.length === 1 ? "Attachment" : `${$$props.items.length} attachments`);
+      });
+      append($$anchor2, div_1);
+    };
+    if_block(node_1, ($$render) => {
+      if ($$props.items.length) $$render(consequent_6);
+    });
+  }
+  append($$anchor, fragment_1);
+  pop();
+}
+delegate(["click"]);
+
 // components/sessions/messages/StateProposalList.svelte
-var root5 = from_html(`<div data-widget-part="messages.proposal" data-superseded="true"><sp-icon></sp-icon> <span data-widget-part="messages.proposal-text"> <span data-widget-part="messages.proposal-note"> </span></span></div>`, 2);
-var root_111 = from_html(`<span data-widget-part="messages.proposal-anchor"> </span>`);
-var root_210 = from_html(`<div data-widget-part="messages.proposal"><sp-icon></sp-icon> <span data-widget-part="messages.proposal-text"> <!></span> <span data-widget-part="messages.proposal-note">proposed</span> <button data-widget-part="messages.proposal-decide messages.proposal-accept">Accept</button> <button data-widget-part="messages.proposal-decide messages.proposal-reject">Reject</button></div>`, 2);
+var root6 = from_html(`<div data-widget-part="messages.proposal" data-superseded="true"><sp-icon></sp-icon> <span data-widget-part="messages.proposal-text"> <span data-widget-part="messages.proposal-note"> </span></span></div>`, 2);
+var root_113 = from_html(`<span data-widget-part="messages.proposal-anchor"> </span>`);
+var root_211 = from_html(`<div data-widget-part="messages.proposal"><sp-icon></sp-icon> <span data-widget-part="messages.proposal-text"> <!></span> <span data-widget-part="messages.proposal-note">proposed</span> <button data-widget-part="messages.proposal-decide messages.proposal-accept">Accept</button> <button data-widget-part="messages.proposal-decide messages.proposal-reject">Reject</button></div>`, 2);
 function StateProposalList($$anchor, $$props) {
   push($$props, true);
   let showAnchor = prop($$props, "showAnchor", 3, false);
@@ -3091,13 +3447,13 @@ function StateProposalList($$anchor, $$props) {
     var node_1 = first_child(fragment_1);
     {
       var consequent = ($$anchor3) => {
-        var div = root5();
+        var div = root6();
         var sp_icon = child(div);
         set_custom_element_data(sp_icon, "name", "history");
         set_custom_element_data(sp_icon, "size", "11");
         var span = sibling(sp_icon, 2);
-        var text2 = child(span);
-        var span_1 = sibling(text2);
+        var text3 = child(span);
+        var span_1 = sibling(text3);
         var text_1 = child(span_1);
         reset(span_1);
         reset(span);
@@ -3105,7 +3461,7 @@ function StateProposalList($$anchor, $$props) {
         template_effect(
           ($0, $1) => {
             set_attribute(div, "data-proposal-id", get(row).id);
-            set_text(text2, `${$0 ?? ""} `);
+            set_text(text3, `${$0 ?? ""} `);
             set_text(text_1, `\xB7 ${$1 ?? ""}`);
           },
           [
@@ -3116,7 +3472,7 @@ function StateProposalList($$anchor, $$props) {
         append($$anchor3, div);
       };
       var alternate = ($$anchor3) => {
-        var div_1 = root_210();
+        var div_1 = root_211();
         var sp_icon_1 = child(div_1);
         set_custom_element_data(sp_icon_1, "name", "sparkles");
         set_custom_element_data(sp_icon_1, "size", "11");
@@ -3125,7 +3481,7 @@ function StateProposalList($$anchor, $$props) {
         var node_2 = sibling(text_2);
         {
           var consequent_1 = ($$anchor4) => {
-            var span_3 = root_111();
+            var span_3 = root_113();
             var text_3 = child(span_3);
             reset(span_3);
             template_effect(() => set_text(text_3, `on message ${get(row).messageId ?? ""}`));
@@ -3165,15 +3521,15 @@ function StateProposalList($$anchor, $$props) {
 delegate(["click"]);
 
 // components/sessions/messages/MessageStateLedger.svelte
-var root6 = from_html(`<span data-widget-part="messages.ledger-separator">\xB7</span>`);
-var root_113 = from_html(`<!> <span data-widget-part="messages.ledger-change"> </span>`, 1);
-var root_211 = from_html(`<p data-widget-part="messages.ledger-line"><span data-widget-part="messages.ledger-owner"> </span> <!></p>`);
-var root_35 = from_html(
+var root7 = from_html(`<span data-widget-part="messages.ledger-separator">\xB7</span>`);
+var root_114 = from_html(`<!> <span data-widget-part="messages.ledger-change"> </span>`, 1);
+var root_212 = from_html(`<p data-widget-part="messages.ledger-line"><span data-widget-part="messages.ledger-owner"> </span> <!></p>`);
+var root_36 = from_html(
   `<sp-popover><button slot="trigger" type="button" data-widget-part="messages.ledger-review"><sp-icon></sp-icon> <span> </span></button> <div data-widget-part="messages.ledger-review-panel"><header data-widget-part="messages.ledger-review-title"><sp-icon></sp-icon> <span>Waiting for you</span></header> <p data-widget-part="messages.ledger-review-note">The AI asked for these. Nothing changes until
 								you accept one.</p> <!></div></sp-popover>`,
   2
 );
-var root_45 = from_html(`<div data-widget-part="messages.ledger"><!> <!> <!></div>`);
+var root_46 = from_html(`<div data-widget-part="messages.ledger"><!> <!> <!></div>`);
 function MessageStateLedger($$anchor, $$props) {
   push($$props, true);
   const conv = useConversation();
@@ -3185,20 +3541,20 @@ function MessageStateLedger($$anchor, $$props) {
   var node = first_child(fragment);
   {
     var consequent_3 = ($$anchor2) => {
-      var div = root_45();
+      var div = root_46();
       var node_1 = child(div);
       each(node_1, 17, () => get(groups), (group) => group.ownerKey, ($$anchor3, group) => {
-        var p = root_211();
+        var p = root_212();
         var span = child(p);
-        var text2 = child(span, true);
+        var text3 = child(span, true);
         reset(span);
         var node_2 = sibling(span, 2);
         each(node_2, 19, () => get(group).lines, (line) => line.key, ($$anchor4, line, i) => {
-          var fragment_1 = root_113();
+          var fragment_1 = root_114();
           var node_3 = first_child(fragment_1);
           {
             var consequent = ($$anchor5) => {
-              var span_1 = root6();
+              var span_1 = root7();
               append($$anchor5, span_1);
             };
             if_block(node_3, ($$render) => {
@@ -3217,7 +3573,7 @@ function MessageStateLedger($$anchor, $$props) {
         reset(p);
         template_effect(() => {
           set_attribute(p, "data-owner-key", get(group).ownerKey);
-          set_text(text2, get(group).ownerLabel);
+          set_text(text3, get(group).ownerLabel);
         });
         append($$anchor3, p);
       });
@@ -3237,7 +3593,7 @@ function MessageStateLedger($$anchor, $$props) {
       var node_5 = sibling(node_4, 2);
       {
         var consequent_2 = ($$anchor3) => {
-          var sp_popover = root_35();
+          var sp_popover = root_36();
           set_custom_element_data(sp_popover, "placement", "bottom-start");
           set_custom_element_data(sp_popover, "label", "Waiting for you");
           template_effect(() => set_custom_element_data(sp_popover, "open", get(reviewOpen)));
@@ -3287,18 +3643,18 @@ function MessageStateLedger($$anchor, $$props) {
 }
 
 // components/sessions/messages/SessionMessage.svelte
-var root7 = from_html(`<span data-widget-part="messages.message-avatar-glyph" aria-hidden="true"><sp-icon></sp-icon></span>`, 2);
-var root_114 = from_html(`<img data-widget-part="messages.message-avatar-img"/>`);
-var root_212 = from_html(`<span data-widget-part="messages.message-avatar-glyph" aria-hidden="true"> </span>`);
-var root_36 = from_html(`<button data-widget-part="messages.message-avatar-button"><!></button>`);
-var root_46 = from_html(`<span data-widget-part="messages.message-name"> </span>`);
-var root_55 = from_html(`<button data-widget-part="messages.message-name"> </button>`);
-var root_65 = from_html(`<span data-widget-part="messages.message-member"> </span>`);
-var root_75 = from_html(`<span data-widget-part="messages.message-badge" role="img" aria-label="Greeting message"><sp-icon></sp-icon></span>`, 2);
+var root8 = from_html(`<span data-widget-part="messages.message-avatar-glyph" aria-hidden="true"><sp-icon></sp-icon></span>`, 2);
+var root_115 = from_html(`<img data-widget-part="messages.message-avatar-img"/>`);
+var root_213 = from_html(`<span data-widget-part="messages.message-avatar-glyph" aria-hidden="true"> </span>`);
+var root_37 = from_html(`<button data-widget-part="messages.message-avatar-button"><!></button>`);
+var root_47 = from_html(`<span data-widget-part="messages.message-name"> </span>`);
+var root_56 = from_html(`<button data-widget-part="messages.message-name"> </button>`);
+var root_66 = from_html(`<span data-widget-part="messages.message-member"> </span>`);
+var root_76 = from_html(`<span data-widget-part="messages.message-badge" role="img" aria-label="Greeting message"><sp-icon></sp-icon></span>`, 2);
 var root_85 = from_html(`<span data-widget-part="messages.message-badge" role="img" aria-label="Hidden from the model"><sp-icon></sp-icon></span>`, 2);
 var root_95 = from_html(`<span data-widget-part="messages.message-badge messages.message-badge-scene"><sp-icon></sp-icon> <span data-widget-part="messages.message-badge-label">In scene:</span> <span data-widget-part="messages.message-badge-text"> </span></span>`, 2);
 var root_103 = from_html(`<span data-widget-part="messages.message-vectors" data-vectors="current" title="Vectors up to date" aria-label="Vectors up to date"><sp-icon></sp-icon></span>`, 2);
-var root_115 = from_html(`<span data-widget-part="messages.message-vectors" data-vectors="stale" title="Vectors stale \u2014 model changed" aria-label="Vectors stale \u2014 model changed"><sp-icon></sp-icon></span>`, 2);
+var root_116 = from_html(`<span data-widget-part="messages.message-vectors" data-vectors="stale" title="Vectors stale \u2014 model changed" aria-label="Vectors stale \u2014 model changed"><sp-icon></sp-icon></span>`, 2);
 var root_123 = from_html(`<span data-widget-part="messages.message-status"><span data-widget-part="messages.message-ember" aria-hidden="true"></span> </span>`);
 var root_133 = from_html(`<span data-widget-part="messages.message-status">Editing</span>`);
 var root_143 = from_html(`<span data-widget-part="messages.message-status" title="This reply was stopped before it finished">Stopped</span>`);
@@ -3308,7 +3664,7 @@ var root_173 = from_html(`<button data-widget-part="messages.message-swipe-previ
 var root_182 = from_html(`<div data-widget-part="messages.message-swipes"><!> <button data-widget-part="messages.message-swipe-next messages.message-icon-button" aria-label="Next swipe"><sp-icon></sp-icon></button></div>`, 2);
 var root_192 = from_html(`<button data-widget-part="messages.message-action messages.message-icon-button"><sp-icon></sp-icon></button>`, 2);
 var root_202 = from_html(`<div data-widget-part="messages.message-actions" role="group" aria-label="Message actions"></div>`);
-var root_213 = from_html(`<span data-widget-part="messages.message-in-scene messages.message-selection-button" title="Already captured in a scene" aria-label="Already captured in a scene"><sp-icon></sp-icon> <span data-widget-part="messages.message-selection-label">In Scene</span></span>`, 2);
+var root_214 = from_html(`<span data-widget-part="messages.message-in-scene messages.message-selection-button" title="Already captured in a scene" aria-label="Already captured in a scene"><sp-icon></sp-icon> <span data-widget-part="messages.message-selection-label">In Scene</span></span>`, 2);
 var root_223 = from_html(`<button data-widget-part="messages.message-select messages.message-selection-button"><sp-icon></sp-icon> <span data-widget-part="messages.message-selection-label"> </span></button> <button data-widget-part="messages.message-select-above messages.message-selection-button" title="Select all above up to nearest selected" aria-label="Select all above up to nearest selected"><sp-icon></sp-icon> <span data-widget-part="messages.message-selection-label">Select all above</span></button> <button data-widget-part="messages.message-select-below messages.message-selection-button" title="Select all below up to nearest selected" aria-label="Select all below up to nearest selected"><sp-icon></sp-icon> <span data-widget-part="messages.message-selection-label">Select all below</span></button>`, 3);
 var root_233 = from_html(`<div data-widget-part="messages.message-selection" role="group" aria-label="Selection controls"><!></div>`);
 var root_242 = from_html(`<button data-widget-part="messages.message-stop"><sp-icon></sp-icon> Stop</button>`, 2);
@@ -3318,16 +3674,16 @@ var root_272 = from_html(`<li> </li>`);
 var root_282 = from_html(`<ul data-widget-part="messages.fold-list"></ul>`);
 var root_292 = from_html(`<sp-message-body></sp-message-body>`, 2);
 var root_30 = from_html(`<div data-widget-part="messages.message-disclosure"><button type="button" data-widget-part="messages.message-disclosure-toggle"><sp-icon></sp-icon> <span> </span> <sp-icon></sp-icon></button> <div data-widget-part="messages.message-disclosure-track"><div data-widget-part="messages.message-disclosure-clip"><div data-widget-part="messages.message-disclosure-panel messages.prose"><!></div></div></div></div>`, 2);
-var root_31 = from_html(`<div data-widget-part="messages.message-disclosure"><button data-widget-part="messages.message-disclosure-toggle"><sp-icon></sp-icon> <span>Thinking</span> <sp-icon></sp-icon></button> <div data-widget-part="messages.message-disclosure-track"><div data-widget-part="messages.message-disclosure-clip"><div data-widget-part="messages.message-disclosure-panel messages.prose"><sp-message-body></sp-message-body></div></div></div></div>`, 2);
+var root_31 = from_html(`<div data-widget-part="messages.message-disclosure"><button data-widget-part="messages.message-disclosure-toggle"><sp-icon></sp-icon> <span>Reasoning</span> <sp-icon></sp-icon></button> <div data-widget-part="messages.message-disclosure-track"><div data-widget-part="messages.message-disclosure-clip"><div data-widget-part="messages.message-disclosure-panel messages.prose"><sp-message-body></sp-message-body></div></div></div></div>`, 2);
 var root_322 = from_html(`<div data-widget-part="messages.message-disclosures"><!> <!> <!></div>`);
 var root_332 = from_html(`<div data-widget-part="messages.message-partial messages.prose"><sp-message-body></sp-message-body></div>`, 2);
 var root_342 = from_html(`<p data-widget-part="messages.message-error-detail"> </p>`);
 var root_352 = from_html(`<div data-widget-part="messages.message-failure"><!> <div data-widget-part="messages.message-error"><p data-widget-part="messages.message-error-line"><sp-icon></sp-icon> <span> <!></span></p> <!> <button data-widget-part="messages.message-retry">Retry</button></div></div>`, 2);
 var root_362 = from_html(`<span data-widget-part="messages.edit-unsaved">Unsaved changes</span>`);
-var root_37 = from_html(`<div data-widget-part="messages.edit-surface"><!> <div data-widget-part="messages.edit-hint"><span><kbd data-widget-part="messages.edit-key">Ctrl</kbd> + <kbd data-widget-part="messages.edit-key">Enter</kbd> to save</span> <span aria-hidden="true" data-widget-part="messages.edit-hint-separator">\xB7</span> <span><kbd data-widget-part="messages.edit-key">Esc</kbd> to cancel</span> <!></div></div>`);
+var root_372 = from_html(`<div data-widget-part="messages.edit-surface"><!> <div data-widget-part="messages.edit-hint"><span><kbd data-widget-part="messages.edit-key">Ctrl</kbd> + <kbd data-widget-part="messages.edit-key">Enter</kbd> to save</span> <span aria-hidden="true" data-widget-part="messages.edit-hint-separator">\xB7</span> <span><kbd data-widget-part="messages.edit-key">Esc</kbd> to cancel</span> <!></div></div>`);
 var root_38 = from_html(`<div data-widget-part="messages.message-parts"><!></div>`);
 var root_39 = from_html(`<div data-widget-part="messages.message-text messages.prose"><sp-message-body></sp-message-body></div>`, 2);
-var root_40 = from_html(`<div data-widget-part="messages.message" tabindex="-1" role="article"><span data-widget-part="messages.message-avatar"><!></span> <div data-widget-part="messages.message-identity"><!> <!> <span data-widget-part="messages.message-badges"><!> <!> <!> <!></span> <!></div> <div data-widget-part="messages.message-controls"><!></div> <div data-widget-part="messages.message-content"><!> <div data-widget-part="messages.message-sizer"><div data-widget-part="messages.message-body"><!></div></div> <!></div></div>`);
+var root_40 = from_html(`<div data-widget-part="messages.message" tabindex="-1" role="article"><span data-widget-part="messages.message-avatar"><!></span> <div data-widget-part="messages.message-identity"><!> <!> <span data-widget-part="messages.message-badges"><!> <!> <!> <!></span> <!></div> <div data-widget-part="messages.message-controls"><!></div> <div data-widget-part="messages.message-content"><!> <div data-widget-part="messages.message-sizer"><div data-widget-part="messages.message-body"><!></div></div> <!></div> <!></div>`);
 function SessionMessage($$anchor, $$props) {
   push($$props, true);
   let sceneName = prop($$props, "sceneName", 3, null);
@@ -3373,11 +3729,11 @@ function SessionMessage($$anchor, $$props) {
       ...verdictOf(listed)
     });
   });
-  const thinkingContent = user_derived(() => $$props.msg.metadata?.thinking || "");
-  const hasThinking = user_derived(() => get(thinkingContent).trim().length > 0);
+  const reasoningContent = user_derived(() => $$props.msg.metadata?.reasoning || "");
+  const hasReasoning = user_derived(() => get(reasoningContent).trim().length > 0);
   const narratorInstructionsContent = user_derived(() => $$props.msg.metadata?.narratorInstructions || "");
   const hasNarratorInstructions = user_derived(() => get(narratorInstructionsContent).trim().length > 0);
-  let isThinkingExpanded = state(false);
+  let isReasoningExpanded = state(false);
   let isNarratorInstructionsExpanded = state(false);
   const foldedSections = user_derived(() => foldedSectionsOf($$props.msg.metadata));
   let expandedSections = proxy({});
@@ -3421,19 +3777,20 @@ function SessionMessage($$anchor, $$props) {
     if (!get(canSaveEdit)) return;
     conv.edit.save($$props.msg, get(editContent));
   }
-  function toggleThinking() {
-    set(isThinkingExpanded, !get(isThinkingExpanded));
+  function toggleReasoning() {
+    set(isReasoningExpanded, !get(isReasoningExpanded));
   }
   function toggleNarratorInstructions() {
     set(isNarratorInstructionsExpanded, !get(isNarratorInstructionsExpanded));
   }
+  const mediaItems = user_derived(() => mediaStripItems($$props.msg.parts, $$props.msg.activeRevisions ?? { "0": 0 }));
   const openImage = (e) => void conv.request("view-image", { src: e.detail.src });
   var div = root_40();
   var span = child(div);
   var node = child(span);
   {
     var consequent = ($$anchor2) => {
-      var span_1 = root7();
+      var span_1 = root8();
       var sp_icon = child(span_1);
       set_custom_element_data(sp_icon, "name", "cloud-sun");
       set_custom_element_data(sp_icon, "size", "1.25em");
@@ -3442,11 +3799,11 @@ function SessionMessage($$anchor, $$props) {
       append($$anchor2, span_1);
     };
     var alternate_1 = ($$anchor2) => {
-      var button = root_36();
+      var button = root_37();
       var node_1 = child(button);
       {
         var consequent_1 = ($$anchor3) => {
-          var img = root_114();
+          var img = root_115();
           template_effect(() => {
             set_attribute(img, "src", get(faceSrc));
             set_attribute(img, "alt", get(displayName));
@@ -3454,10 +3811,10 @@ function SessionMessage($$anchor, $$props) {
           append($$anchor3, img);
         };
         var alternate = ($$anchor3) => {
-          var span_2 = root_212();
-          var text2 = child(span_2, true);
+          var span_2 = root_213();
+          var text3 = child(span_2, true);
           reset(span_2);
-          template_effect(() => set_text(text2, get(avatarInitial)));
+          template_effect(() => set_text(text3, get(avatarInitial)));
           append($$anchor3, span_2);
         };
         if_block(node_1, ($$render) => {
@@ -3480,7 +3837,7 @@ function SessionMessage($$anchor, $$props) {
   var node_2 = child(div_1);
   {
     var consequent_2 = ($$anchor2) => {
-      var span_3 = root_46();
+      var span_3 = root_47();
       var text_1 = child(span_3, true);
       reset(span_3);
       template_effect(() => {
@@ -3490,7 +3847,7 @@ function SessionMessage($$anchor, $$props) {
       append($$anchor2, span_3);
     };
     var consequent_3 = ($$anchor2) => {
-      var span_4 = root_46();
+      var span_4 = root_47();
       var text_2 = child(span_4, true);
       reset(span_4);
       template_effect(() => {
@@ -3500,7 +3857,7 @@ function SessionMessage($$anchor, $$props) {
       append($$anchor2, span_4);
     };
     var alternate_2 = ($$anchor2) => {
-      var button_1 = root_55();
+      var button_1 = root_56();
       var text_3 = child(button_1, true);
       reset(button_1);
       template_effect(() => {
@@ -3522,7 +3879,7 @@ function SessionMessage($$anchor, $$props) {
   var node_3 = sibling(node_2, 2);
   {
     var consequent_4 = ($$anchor2) => {
-      var span_5 = root_65();
+      var span_5 = root_66();
       var text_4 = child(span_5);
       reset(span_5);
       template_effect(() => set_text(text_4, `\xB7 ${get(speakerMember) ?? ""}`));
@@ -3536,7 +3893,7 @@ function SessionMessage($$anchor, $$props) {
   var node_4 = child(span_6);
   {
     var consequent_5 = ($$anchor2) => {
-      var span_7 = root_75();
+      var span_7 = root_76();
       var sp_icon_1 = child(span_7);
       set_custom_element_data(sp_icon_1, "name", "handshake");
       set_custom_element_data(sp_icon_1, "size", "14");
@@ -3590,7 +3947,7 @@ function SessionMessage($$anchor, $$props) {
       append($$anchor2, span_11);
     };
     var consequent_9 = ($$anchor2) => {
-      var span_12 = root_115();
+      var span_12 = root_116();
       var sp_icon_5 = child(span_12);
       set_custom_element_data(sp_icon_5, "name", "refresh-cw");
       set_custom_element_data(sp_icon_5, "size", "12");
@@ -3735,7 +4092,7 @@ function SessionMessage($$anchor, $$props) {
           var node_15 = child(div_6);
           {
             var consequent_18 = ($$anchor4) => {
-              var span_18 = root_213();
+              var span_18 = root_214();
               var sp_icon_9 = child(span_18);
               set_custom_element_data(sp_icon_9, "name", "film");
               next(2);
@@ -3864,7 +4221,7 @@ function SessionMessage($$anchor, $$props) {
         var div_13 = root_30();
         var button_12 = child(div_13);
         var sp_icon_16 = child(button_12);
-        template_effect(() => set_custom_element_data(sp_icon_16, "name", get(section).kind === "thinking" ? "brain-circuit" : "notebook-pen"));
+        template_effect(() => set_custom_element_data(sp_icon_16, "name", get(section).kind === "reasoning" ? "brain-circuit" : "notebook-pen"));
         set_custom_element_data(sp_icon_16, "size", "14");
         var span_20 = sibling(sp_icon_16, 2);
         var text_10 = child(span_20, true);
@@ -3930,29 +4287,29 @@ function SessionMessage($$anchor, $$props) {
           var div_19 = child(div_18);
           var div_20 = child(div_19);
           var sp_message_body_2 = child(div_20);
-          template_effect(() => set_custom_element_data(sp_message_body_2, "text", get(thinkingContent)));
+          template_effect(() => set_custom_element_data(sp_message_body_2, "text", get(reasoningContent)));
           reset(div_20);
           reset(div_19);
           reset(div_18);
           reset(div_17);
           template_effect(() => {
-            set_attribute(button_13, "aria-expanded", get(isThinkingExpanded));
-            set_attribute(button_13, "aria-controls", `thinking-${$$props.msg.id ?? ""}`);
-            set_attribute(div_18, "id", `thinking-${$$props.msg.id ?? ""}`);
-            set_attribute(div_18, "data-expanded", get(isThinkingExpanded) ? "" : void 0);
+            set_attribute(button_13, "aria-expanded", get(isReasoningExpanded));
+            set_attribute(button_13, "aria-controls", `reasoning-${$$props.msg.id ?? ""}`);
+            set_attribute(div_18, "id", `reasoning-${$$props.msg.id ?? ""}`);
+            set_attribute(div_18, "data-expanded", get(isReasoningExpanded) ? "" : void 0);
           });
-          delegated("click", button_13, toggleThinking);
+          delegated("click", button_13, toggleReasoning);
           append($$anchor3, div_17);
         };
         if_block(node_21, ($$render) => {
-          if (get(hasThinking)) $$render(consequent_23);
+          if (get(hasReasoning)) $$render(consequent_23);
         });
       }
       reset(div_8);
       append($$anchor2, div_8);
     };
     if_block(node_17, ($$render) => {
-      if ((get(hasNarratorInstructions) || get(hasThinking) || get(foldedSections).length) && !get(partsNative)) $$render(consequent_24);
+      if ((get(hasNarratorInstructions) || get(hasReasoning) || get(foldedSections).length) && !get(partsNative)) $$render(consequent_24);
     });
   }
   var div_21 = sibling(node_17, 2);
@@ -4024,7 +4381,7 @@ function SessionMessage($$anchor, $$props) {
       append($$anchor2, div_23);
     };
     var consequent_30 = ($$anchor2) => {
-      var div_26 = root_37();
+      var div_26 = root_372();
       var node_26 = child(div_26);
       MessageComposer(node_26, {
         onSend: handleMessageUpdate,
@@ -4108,6 +4465,23 @@ function SessionMessage($$anchor, $$props) {
     }
   });
   reset(div_7);
+  var node_30 = sibling(div_7, 2);
+  {
+    let $0 = user_derived(() => get(isEditing) && get(canControl));
+    let $1 = user_derived(() => get(canControl) ? (item) => void conv.request("remove-attachment", { messageId: $$props.msg.id, partId: item.partId }) : void 0);
+    MessageMediaStrip(node_30, {
+      get items() {
+        return get(mediaItems);
+      },
+      get editing() {
+        return get($0);
+      },
+      onOpen: (images, index2) => void conv.request("view-image", viewImageParams(images, index2)),
+      get onRemove() {
+        return get($1);
+      }
+    });
+  }
   reset(div);
   template_effect(
     ($0) => {
@@ -4130,18 +4504,18 @@ function SessionMessage($$anchor, $$props) {
 delegate(["click"]);
 
 // components/sessions/messages/SessionContainer.svelte
-var root8 = from_html(`<div data-widget-part="messages.log-note messages.log-floor" role="status" data-scope-not-granted="session:full"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text"> </span></div>`, 2);
-var root_116 = from_html(`<div data-widget-part="messages.log-loading messages.log-floor"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text">Loading session\u2026</span></div>`, 2);
-var root_214 = from_html(`<div data-widget-part="messages.log-empty messages.log-floor empty"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text">Send a message to start</span></div>`, 2);
+var root9 = from_html(`<div data-widget-part="messages.log-note messages.log-floor" role="status" data-scope-not-granted="session:full"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text"> </span></div>`, 2);
+var root_117 = from_html(`<div data-widget-part="messages.log-loading messages.log-floor"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text">Loading session\u2026</span></div>`, 2);
+var root_215 = from_html(`<div data-widget-part="messages.log-empty messages.log-floor empty"><sp-icon></sp-icon> <span data-widget-part="messages.log-floor-text">Send a message to start</span></div>`, 2);
 var root_310 = from_html(`<div data-widget-part="messages.older-loading"><div data-widget-part="messages.older-loading-body"><sp-icon></sp-icon> Loading older messages...</div></div>`, 2);
-var root_47 = from_html(`<button data-widget-part="messages.history-marker" title="Open history entry in lorebook"><sp-icon></sp-icon> </button>`, 2);
-var root_56 = from_html(`<span data-widget-part="messages.history-marker"><sp-icon></sp-icon> </span>`, 2);
-var root_66 = from_html(`<li data-widget-part="messages.log-item" role="presentation"><!></li>`);
-var root_76 = from_html(`<span data-widget-part="messages.scene-title-state">open</span>`);
+var root_48 = from_html(`<button data-widget-part="messages.history-marker" title="Open history entry in lorebook"><sp-icon></sp-icon> </button>`, 2);
+var root_57 = from_html(`<span data-widget-part="messages.history-marker"><sp-icon></sp-icon> </span>`, 2);
+var root_67 = from_html(`<li data-widget-part="messages.log-item" role="presentation"><!></li>`);
+var root_77 = from_html(`<span data-widget-part="messages.scene-title-state">open</span>`);
 var root_86 = from_html(`<li data-widget-part="messages.log-item" role="presentation"><button data-widget-part="messages.scene-title" title="Open scene in lorebook"><sp-icon></sp-icon> <!></button></li>`, 2);
 var root_96 = from_html(`<button data-widget-part="messages.history-marker" title="Open next history entry in lorebook"><sp-icon></sp-icon> </button>`, 2);
 var root_104 = from_html(`<button data-widget-part="messages.history-marker messages.history-start" title="Start a new history entry"><sp-icon></sp-icon> Start a new entry</button>`, 2);
-var root_117 = from_html(`<!> <!> <li data-widget-part="messages.message-row"><!></li> <!>`, 1);
+var root_118 = from_html(`<!> <!> <li data-widget-part="messages.message-row"><!></li> <!>`, 1);
 var root_124 = from_html(`<!> <ul data-widget-part="messages.message-list list" role="group"></ul> <!>`, 1);
 var root_134 = from_html(`<div data-widget-part="messages.log-body"><sp-scroll><div id="session-history" data-widget-part="messages.stage" role="log" aria-live="polite" aria-atomic="false"><div data-widget-part="messages.stage-body"><!></div></div></sp-scroll></div>`, 2);
 function SessionContainer($$anchor, $$props) {
@@ -4294,22 +4668,22 @@ function SessionContainer($$anchor, $$props) {
   var node = child(div_2);
   {
     var consequent = ($$anchor2) => {
-      var div_3 = root8();
+      var div_3 = root9();
       var sp_icon = child(div_3);
       set_custom_element_data(sp_icon, "name", "lock");
       set_custom_element_data(sp_icon, "size", "28");
       set_custom_element_data(sp_icon, "data-widget-part", "messages.log-floor-icon");
       var span = sibling(sp_icon, 2);
-      var text2 = child(span, true);
+      var text3 = child(span, true);
       reset(span);
       reset(div_3);
-      template_effect(($0) => set_text(text2, $0), [
+      template_effect(($0) => set_text(text3, $0), [
         () => conv.t("This widget has not been granted the whole conversation. An administrator can grant it in the extension's permissions.")
       ]);
       append($$anchor2, div_3);
     };
     var consequent_1 = ($$anchor2) => {
-      var div_4 = root_116();
+      var div_4 = root_117();
       var sp_icon_1 = child(div_4);
       set_custom_element_data(sp_icon_1, "name", "loader-2");
       set_custom_element_data(sp_icon_1, "size", "28");
@@ -4319,7 +4693,7 @@ function SessionContainer($$anchor, $$props) {
       append($$anchor2, div_4);
     };
     var consequent_2 = ($$anchor2) => {
-      var div_5 = root_214();
+      var div_5 = root_215();
       var sp_icon_2 = child(div_5);
       set_custom_element_data(sp_icon_2, "name", "message-square-text");
       set_custom_element_data(sp_icon_2, "size", "28");
@@ -4368,15 +4742,15 @@ function SessionContainer($$anchor, $$props) {
         const onThisChannel = user_derived(() => (get(msg).channel || "main") === conv.lane.current);
         const si = user_derived(() => get(msgSceneMap).get(get(msg).id));
         const color = user_derived(() => get(si) ? SCENE_COLORS[get(si).colorIndex] : null);
-        var fragment_3 = root_117();
+        var fragment_3 = root_118();
         var node_3 = first_child(fragment_3);
         {
           var consequent_6 = ($$anchor4) => {
-            var li = root_66();
+            var li = root_67();
             var node_4 = child(li);
             {
               var consequent_5 = ($$anchor5) => {
-                var button = root_47();
+                var button = root_48();
                 var sp_icon_4 = child(button);
                 set_custom_element_data(sp_icon_4, "name", "calendar");
                 set_custom_element_data(sp_icon_4, "size", "12");
@@ -4391,7 +4765,7 @@ function SessionContainer($$anchor, $$props) {
                 append($$anchor5, button);
               };
               var alternate = ($$anchor5) => {
-                var span_1 = root_56();
+                var span_1 = root_57();
                 var sp_icon_5 = child(span_1);
                 set_custom_element_data(sp_icon_5, "name", "calendar");
                 set_custom_element_data(sp_icon_5, "size", "12");
@@ -4424,7 +4798,7 @@ function SessionContainer($$anchor, $$props) {
             var node_6 = sibling(text_3);
             {
               var consequent_7 = ($$anchor5) => {
-                var span_2 = root_76();
+                var span_2 = root_77();
                 append($$anchor5, span_2);
               };
               if_block(node_6, ($$render) => {
@@ -4472,7 +4846,7 @@ function SessionContainer($$anchor, $$props) {
         var node_8 = sibling(li_2, 2);
         {
           var consequent_10 = ($$anchor4) => {
-            var li_3 = root_66();
+            var li_3 = root_67();
             var node_9 = child(li_3);
             {
               var consequent_9 = ($$anchor5) => {
@@ -4561,46 +4935,61 @@ function SessionContainer($$anchor, $$props) {
 delegate(["click"]);
 
 // components/sessions/messages/SessionComposer.svelte
-var root9 = from_html(`<div data-widget-part="messages.join"><div data-widget-part="messages.join-text"><sp-icon></sp-icon> <h3 data-widget-part="messages.join-title">Join the conversation</h3> <p data-widget-part="messages.join-note">Add a persona to this session to send messages.</p></div> <button data-widget-part="messages.join-button"><sp-icon></sp-icon> Add your persona</button></div>`, 2);
-var root_118 = from_html(`<button type="button" data-widget-part="messages.composer-actions-toggle"><span>Actions</span> <sp-icon></sp-icon></button>`, 2);
-var root_215 = from_html(`<div data-widget-part="messages.composer-notice"><sp-host-view></sp-host-view></div>`, 2);
+var root10 = from_html(`<div data-widget-part="messages.join"><div data-widget-part="messages.join-text"><sp-icon></sp-icon> <h3 data-widget-part="messages.join-title">Join the conversation</h3> <p data-widget-part="messages.join-note">Add a persona to this session to send messages.</p></div> <button data-widget-part="messages.join-button"><sp-icon></sp-icon> Add your persona</button></div>`, 2);
+var root_119 = from_html(`<button type="button" data-widget-part="messages.composer-actions-toggle"><span>Actions</span> <sp-icon></sp-icon></button>`, 2);
+var root_216 = from_html(`<div data-widget-part="messages.composer-notice"><sp-host-view></sp-host-view></div>`, 2);
 var root_311 = from_html(`<sp-host-view></sp-host-view>`, 2);
-var root_48 = from_html(`<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>`);
-var root_57 = from_html(`<span data-widget-part="messages.composer-overflow-note"> </span>`);
-var root_67 = from_html(`<span data-widget-part="messages.composer-new">New</span>`);
-var root_77 = from_html(`<sp-menu-item><sp-icon></sp-icon> <span> <span data-widget-part="messages.composer-overflow-slash"> </span> <!></span> <!></sp-menu-item>`, 2);
+var root_49 = from_html(`<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>`);
+var root_58 = from_html(`<span data-widget-part="messages.composer-overflow-note"> </span>`);
+var root_68 = from_html(`<span data-widget-part="messages.composer-new">New</span>`);
+var root_78 = from_html(`<sp-menu-item><sp-icon></sp-icon> <span> <span data-widget-part="messages.composer-overflow-slash"> </span> <!></span> <!></sp-menu-item>`, 2);
 var root_87 = from_html(`<sp-menu><button slot="trigger" type="button" data-widget-part="messages.composer-more-actions" title="More actions"><sp-icon></sp-icon> More <!></button> <!></sp-menu>`, 2);
-var root_97 = from_html(`<div data-widget-part="messages.composer-actions messages.composer-chips"><!> <!></div>`);
-var root_105 = from_html(`<div data-widget-part="messages.composer-turn-controls messages.composer-chips"><sp-host-view></sp-host-view></div>`, 2);
-var root_119 = from_html(`<div data-widget-part="messages.composer-actions-row" role="group" aria-label="Session actions"><!> <!></div>`);
-var root_125 = from_html(`<div data-widget-part="messages.composer-meter" role="progressbar" aria-label="Context window used"><div data-widget-part="messages.composer-meter-fill"></div></div>`);
-var root_135 = from_html(`<button type="button" data-widget-part="messages.composer-back"><sp-icon></sp-icon> Back to compose</button>`, 2);
-var root_144 = from_html(`<div data-widget-part="messages.composer-pane-head"><span data-widget-part="messages.composer-pane-title"> </span> <!></div> <div role="region"><sp-host-view></sp-host-view></div>`, 3);
-var root_154 = from_html(`<div data-widget-part="messages.composer-preview" role="region" aria-label="Message preview"><sp-message-body></sp-message-body></div>`, 2);
-var root_164 = from_html(`<span data-widget-part="messages.composer-palette-argument"> </span>`);
-var root_174 = from_html(`<span data-widget-part="messages.composer-palette-note"> </span>`);
-var root_183 = from_html(`<li role="option" data-widget-part="messages.composer-palette-row"><button type="button" data-widget-part="messages.composer-palette-button" tabindex="-1"><sp-icon></sp-icon> <span data-widget-part="messages.composer-palette-slash"> </span> <!> <span data-widget-part="messages.composer-palette-label"> </span> <!> <!></button></li>`, 2);
-var root_193 = from_html(`<ul data-widget-part="messages.composer-palette" role="listbox" aria-label="Slash commands"></ul>`);
-var root_203 = from_html(`<!>  <sp-composer-field></sp-composer-field>`, 3);
-var root_216 = from_html(`<button type="button" data-widget-part="messages.composer-channel"> </button>`);
-var root_224 = from_html(`<div data-widget-part="messages.composer-channels" role="group" aria-label="Which channel you are writing on"></div>`);
-var root_234 = from_html(`<button type="button" data-widget-part="messages.composer-persona-option"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-option-name"> </span></button>`, 2);
-var root_243 = from_html(`<sp-popover><button slot="trigger" type="button" data-widget-part="messages.composer-persona" title="Switch persona"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-name"> </span> <sp-icon></sp-icon></button> <div data-widget-part="messages.composer-persona-menu"><p data-widget-part="messages.composer-persona-menu-title">Write as</p> <!></div></sp-popover>`, 2);
-var root_253 = from_html(`<span data-widget-part="messages.composer-persona"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-name"> </span></span>`, 2);
-var root_263 = from_html(`<button type="button" data-widget-part="messages.composer-preview-toggle messages.composer-icon-button" title="Preview" aria-label="Preview the formatted draft"><sp-icon></sp-icon></button>`, 2);
-var root_273 = from_html(`<button type="button" data-widget-part="messages.composer-pane-option"><sp-icon></sp-icon> <span> </span></button>`, 2);
-var root_283 = from_html(`<sp-popover><button slot="trigger" type="button" data-widget-part="messages.composer-more messages.composer-icon-button" title="More" aria-label="More composer panels"><sp-icon></sp-icon></button> <div data-widget-part="messages.composer-panes"><header data-widget-part="messages.composer-panes-title"><sp-icon></sp-icon> <p>More</p></header> <div data-widget-part="messages.composer-panes-list"></div></div></sp-popover>`, 2);
-var root_293 = from_html(`<button type="button" data-widget-part="messages.composer-stop" title="Stop" aria-label="Stop generating"><sp-icon></sp-icon> <span>Stop</span></button>`, 2);
-var root_302 = from_html(`<button type="button" data-widget-part="messages.composer-send" title="Send" aria-label="Send message"><sp-icon></sp-icon> <span>Send</span></button>`, 2);
-var root_312 = from_html(`<p data-widget-part="messages.composer-warning" role="alert">This draft pushes the prompt past the context limit. Older turns
+var root_97 = from_html(`<div data-widget-part="messages.composer-actions-row" role="group" aria-label="Session actions"><div data-widget-part="messages.composer-actions messages.composer-chips"><!> <!> <!></div></div>`);
+var root_105 = from_html(`<div data-widget-part="messages.composer-meter" role="progressbar" aria-label="Context window used"><div data-widget-part="messages.composer-meter-fill"></div></div>`);
+var root_1110 = from_html(`<button type="button" data-widget-part="messages.composer-back"><sp-icon></sp-icon> Back to compose</button>`, 2);
+var root_125 = from_html(`<div data-widget-part="messages.composer-pane-head"><span data-widget-part="messages.composer-pane-title"> </span> <!></div> <div role="region"><sp-host-view></sp-host-view></div>`, 3);
+var root_135 = from_html(`<div data-widget-part="messages.composer-preview" role="region" aria-label="Message preview"><sp-message-body></sp-message-body></div>`, 2);
+var root_144 = from_html(`<span data-widget-part="messages.composer-palette-argument"> </span>`);
+var root_154 = from_html(`<span data-widget-part="messages.composer-palette-note"> </span>`);
+var root_164 = from_html(`<li role="option" data-widget-part="messages.composer-palette-row"><button type="button" data-widget-part="messages.composer-palette-button" tabindex="-1"><sp-icon></sp-icon> <span data-widget-part="messages.composer-palette-slash"> </span> <!> <span data-widget-part="messages.composer-palette-label"> </span> <!> <!></button></li>`, 2);
+var root_174 = from_html(`<ul data-widget-part="messages.composer-palette" role="listbox" aria-label="Slash commands"></ul>`);
+var root_183 = from_html(`<!>  <sp-composer-field></sp-composer-field>`, 3);
+var root_193 = from_html(`<img data-widget-part="messages.composer-tray-thumb" alt="" loading="lazy" decoding="async"/>`);
+var root_203 = from_html(`<sp-icon></sp-icon>`, 2);
+var root_217 = from_html(`<span data-widget-part="messages.composer-tray-progress" role="progressbar"></span>`);
+var root_224 = from_html(`<span data-widget-part="messages.composer-tray-refusal"> </span>`);
+var root_234 = from_html(`<li data-widget-part="messages.composer-tray-item"><!> <span data-widget-part="messages.composer-tray-name"> </span> <!> <button type="button" data-widget-part="messages.composer-tray-remove" title="Remove"><sp-icon></sp-icon></button></li>`, 2);
+var root_243 = from_html(`<li data-widget-part="messages.composer-tray-item" data-status="refused"><sp-icon></sp-icon> <span data-widget-part="messages.composer-tray-name"> </span> <span data-widget-part="messages.composer-tray-refusal"> </span></li>`, 2);
+var root_253 = from_html(`<ul data-widget-part="messages.composer-tray" aria-label="Attachments"><!> <!></ul>`);
+var root_263 = from_html(`<button type="button" data-widget-part="messages.composer-channel"> </button>`);
+var root_273 = from_html(`<div data-widget-part="messages.composer-channels" role="group" aria-label="Which channel you are writing on"></div>`);
+var root_283 = from_html(`<button type="button" data-widget-part="messages.composer-persona-option"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-option-name"> </span></button>`, 2);
+var root_293 = from_html(`<sp-popover><button slot="trigger" type="button" data-widget-part="messages.composer-persona" title="Switch persona"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-name"> </span> <sp-icon></sp-icon></button> <div data-widget-part="messages.composer-persona-menu"><p data-widget-part="messages.composer-persona-menu-title">Write as</p> <!></div></sp-popover>`, 2);
+var root_302 = from_html(`<span data-widget-part="messages.composer-persona"><sp-avatar></sp-avatar> <span data-widget-part="messages.composer-persona-name"> </span></span>`, 2);
+var root_312 = from_html(`<sp-file-picker><button type="button" data-widget-part="messages.composer-attach-button messages.composer-icon-button" aria-label="Attach files"><sp-icon></sp-icon></button></sp-file-picker>`, 2);
+var root_323 = from_html(`<button type="button" data-widget-part="messages.composer-preview-toggle messages.composer-icon-button" title="Preview" aria-label="Preview the formatted draft"><sp-icon></sp-icon></button>`, 2);
+var root_333 = from_html(`<button type="button" data-widget-part="messages.composer-pane-option"><sp-icon></sp-icon> <span> </span></button>`, 2);
+var root_343 = from_html(`<button type="button" data-widget-part="messages.composer-pane-option messages.composer-readers-button"><sp-icon></sp-icon> <span>What can be attached</span></button>`, 2);
+var root_353 = from_html(`<sp-popover><button slot="trigger" type="button" data-widget-part="messages.composer-more messages.composer-icon-button" title="More" aria-label="More"><sp-icon></sp-icon></button> <div data-widget-part="messages.composer-panes"><header data-widget-part="messages.composer-panes-title"><sp-icon></sp-icon> <p>More</p></header> <div data-widget-part="messages.composer-panes-list"><!> <!></div></div></sp-popover>`, 2);
+var root_363 = from_html(`<button type="button" data-widget-part="messages.composer-stop" title="Stop" aria-label="Stop generating"><sp-icon></sp-icon> <span>Stop</span></button>`, 2);
+var root_373 = from_html(`<button type="button" data-widget-part="messages.composer-send" title="Send" aria-label="Send message"><sp-icon></sp-icon> <span>Send</span></button>`, 2);
+var root_382 = from_html(`<p data-widget-part="messages.composer-announce" aria-live="polite"> </p>`);
+var root_392 = from_html(`<span>\u2014 can be attached</span>`);
+var root_402 = from_html(`<span data-widget-part="messages.composer-readers-reason"> </span>`);
+var root_41 = from_html(`<li data-widget-part="messages.composer-readers-kind"><strong> </strong> <span> </span> <!></li>`);
+var root_422 = from_html(`<li> </li>`);
+var root_432 = from_html(`<ul data-widget-part="messages.composer-readers-calls" aria-label="Each model call"></ul>`);
+var root_442 = from_html(`<sp-dialog><span slot="title">What can be attached</span> <div data-widget-part="messages.composer-readers"><p data-widget-part="messages.composer-readers-line"> </p> <ul data-widget-part="messages.composer-readers-kinds" aria-label="Kinds of file"></ul> <!></div></sp-dialog>`, 2);
+var root_452 = from_html(`<p data-widget-part="messages.composer-hint" aria-live="polite"> </p>`);
+var root_462 = from_html(`<p data-widget-part="messages.composer-warning" role="alert">This draft pushes the prompt past the context limit. Older turns
 				will be trimmed.</p>`);
-var root_323 = from_html(`highlights the first \xB7 <kbd data-widget-part="messages.composer-key">\u2191</kbd> <kbd data-widget-part="messages.composer-key">\u2193</kbd> to choose`, 1);
-var root_333 = from_html(`<p data-widget-part="messages.composer-hint" aria-live="polite"><kbd data-widget-part="messages.composer-key">Enter</kbd> <!> \xB7 <kbd data-widget-part="messages.composer-key">Esc</kbd> closes.</p>`);
-var root_343 = from_html(`<kbd data-widget-part="messages.composer-key"> </kbd> `, 1);
-var root_353 = from_html(`<p data-widget-part="messages.composer-hint" aria-live="polite"><!></p>`);
-var root_363 = from_html(`<p data-widget-part="messages.composer-hint"><kbd data-widget-part="messages.composer-key">Enter</kbd> sends. <kbd data-widget-part="messages.composer-key">Shift</kbd> <kbd data-widget-part="messages.composer-key">Enter</kbd> for a new line.</p>`);
-var root_372 = from_html(`<sp-host-view></sp-host-view> <div data-widget-part="messages.composer-disclosure"><div data-widget-part="messages.composer-disclosure-bar"><!> <!></div> <!></div> <div data-widget-part="messages.composer-card"><!> <div data-widget-part="messages.composer-body"><!></div> <div data-widget-part="messages.composer-footer"><!> <!> <div data-widget-part="messages.composer-footer-end"><!> <!> <!></div></div></div> <!> <!>`, 3);
-var root_382 = from_html(`<div data-widget-part="messages.composer" role="group" aria-label="Compose"><!></div>`);
+var root_472 = from_html(`highlights the first \xB7 <kbd data-widget-part="messages.composer-key">\u2191</kbd> <kbd data-widget-part="messages.composer-key">\u2193</kbd> to choose`, 1);
+var root_482 = from_html(`<p data-widget-part="messages.composer-hint" aria-live="polite"><kbd data-widget-part="messages.composer-key">Enter</kbd> <!> \xB7 <kbd data-widget-part="messages.composer-key">Esc</kbd> closes.</p>`);
+var root_492 = from_html(`<kbd data-widget-part="messages.composer-key"> </kbd> `, 1);
+var root_50 = from_html(`<p data-widget-part="messages.composer-hint" aria-live="polite"><!></p>`);
+var root_51 = from_html(`<p data-widget-part="messages.composer-hint"><kbd data-widget-part="messages.composer-key">Enter</kbd> sends. <kbd data-widget-part="messages.composer-key">Shift</kbd> <kbd data-widget-part="messages.composer-key">Enter</kbd> for a new line.</p>`);
+var root_522 = from_html(`<sp-host-view></sp-host-view> <div data-widget-part="messages.composer-disclosure"><div data-widget-part="messages.composer-disclosure-bar"><!> <!></div> <!></div> <sp-drop-zone><div data-widget-part="messages.composer-card"><!> <div data-widget-part="messages.composer-body"><!></div> <!> <div data-widget-part="messages.composer-footer"><!> <!> <div data-widget-part="messages.composer-footer-end"><!> <!> <!> <!></div></div></div></sp-drop-zone> <!> <!> <!> <!> <!>`, 3);
+var root_532 = from_html(`<div data-widget-part="messages.composer" role="group" aria-label="Compose"><!></div>`);
 function SessionComposer($$anchor, $$props) {
   const uid = props_id();
   push($$props, true);
@@ -4633,9 +5022,9 @@ function SessionComposer($$anchor, $$props) {
   });
   let fieldValue = state("");
   let fieldWrites = state(0);
-  function setField(text2) {
-    set(draft, text2, true);
-    set(fieldValue, text2, true);
+  function setField(text3) {
+    set(draft, text3, true);
+    set(fieldValue, text3, true);
     update(fieldWrites);
   }
   const writeField = (el) => {
@@ -4646,16 +5035,23 @@ function SessionComposer($$anchor, $$props) {
   };
   function send() {
     const content = get(draft);
-    if (!content.trim()) return;
-    const command = exactSlashCommand(get(paletteActions), content);
+    const trayItemIds = sendableTrayIds(get(tray));
+    if (!content.trim() && !trayItemIds.length && !get(uploading)) return;
+    const command = content.trim() ? exactSlashCommand(get(paletteActions), content) : void 0;
     if (command) {
       invokePalette(command.action, command.argument);
       return;
     }
+    if (get(uploading)) {
+      set(sendWaiting, true);
+      return;
+    }
+    set(sendWaiting, false);
     conv.ctx.request("send", {
       content,
       personaId: get(c)?.personaId ?? null,
-      channel: conv.lane.current
+      channel: conv.lane.current,
+      ...trayItemIds.length ? { trayItemIds } : {}
     }).then(
       () => {
         if (get(draft) === content) setField("");
@@ -4665,6 +5061,56 @@ function SessionComposer($$anchor, $$props) {
     set(paletteDismissed, null);
     set(paletteHighlight, -1);
   }
+  const tray = user_derived(() => get(c)?.tray ?? []);
+  const readers = user_derived(() => get(c)?.attachments ?? null);
+  const offersAttachments = user_derived(() => get(c)?.tray !== void 0 && !get(hideCompose));
+  const readersLine = user_derived(() => readersSummary(get(readers)));
+  const readerLines = user_derived(() => readerCallLines(get(readers)));
+  const readersOffered = user_derived(() => get(offersAttachments) && !!get(readersLine));
+  const uploading = user_derived(() => uploadingNote(get(tray)));
+  const hasAttachments = user_derived(() => get(tray).some((t) => t.status !== "refused"));
+  let readersOpen = state(false);
+  let sendWaiting = state(false);
+  user_effect(() => {
+    if (get(sendWaiting) && !get(uploading)) untrack(() => send());
+  });
+  let refusedHere = state(proxy([]));
+  let refusalSeq = 0;
+  let announcement = state("");
+  async function attachFiles(files) {
+    if (!files.length) return;
+    const sniffed = await Promise.all(files.map(async (f) => ({
+      name: f.name,
+      size: f.size,
+      kind: sniffAttachmentKind(new Uint8Array(await f.slice(0, 512).arrayBuffer()), f.name, f.type)
+    })));
+    const { accept, refusals } = preCheckFiles(sniffed, get(tray), get(readers));
+    for (const r of refusals) {
+      const key = ++refusalSeq;
+      set(refusedHere, [...get(refusedHere), { ...r, key }], true);
+      setTimeout(() => set(refusedHere, get(refusedHere).filter((x) => x.key !== key), true), 6e3);
+    }
+    if (refusals.length) set(announcement, refusals.map((r) => `Can't attach ${r.filename}: ${r.reason}`).join(" "), true);
+    if (accept.length) conv.ctx.request("attach-files", { files: accept.map((i) => files[i]) }).catch((e) => set(announcement, e.message, true));
+  }
+  function removeTrayItem(item) {
+    void conv.ctx.request("remove-tray-item", { trayItemId: item.id }).catch(() => {
+    });
+    set(announcement, `${item.filename} removed`);
+  }
+  const heard = /* @__PURE__ */ new Map();
+  user_effect(() => {
+    for (const t of get(tray)) {
+      const was = heard.get(t.id);
+      if (was === t.status) continue;
+      heard.set(t.id, t.status);
+      if (was === void 0 && t.status === "uploading") continue;
+      if (t.status === "ready") untrack(() => set(announcement, `${t.filename} attached`));
+      if (t.status === "refused") untrack(() => set(announcement, `Can't attach ${t.filename}: ${t.refusal ?? ""}`));
+    }
+  });
+  const pickerAccept = user_derived(() => get(readers)?.accept ?? "");
+  const progressOf = (t) => Math.round(Math.min(Math.max(t.progress, 0), 1) * 100);
   const channelLabel = (slug) => conv.channelName(slug);
   const inputId = `composer-input-${uid}`;
   const warningId = `composer-warning-${uid}`;
@@ -4814,6 +5260,10 @@ function SessionComposer($$anchor, $$props) {
     set(previewOpen, false);
     set(moreMenuOpen, false);
   }
+  function openReaders() {
+    set(moreMenuOpen, false);
+    set(readersOpen, true);
+  }
   function backToCompose() {
     set(activePaneValue, null);
   }
@@ -4824,11 +5274,11 @@ function SessionComposer($$anchor, $$props) {
   function handleKeyDown(e) {
     if (e.key === "Escape" && get(actionsOpen) && !get(overflowOpen)) set(actionsOpen, false);
   }
-  var div = root_382();
+  var div = root_532();
   var node = child(div);
   {
     var consequent = ($$anchor2) => {
-      var div_1 = root9();
+      var div_1 = root10();
       var div_2 = child(div_1);
       var sp_icon = child(div_2);
       set_custom_element_data(sp_icon, "name", "user-plus");
@@ -4846,8 +5296,8 @@ function SessionComposer($$anchor, $$props) {
       delegated("click", button, () => void conv.request("add-persona", {}));
       append($$anchor2, div_1);
     };
-    var alternate_4 = ($$anchor2) => {
-      var fragment = root_372();
+    var alternate_6 = ($$anchor2) => {
+      var fragment = root_522();
       var sp_host_view = first_child(fragment);
       set_custom_element_data(sp_host_view, "name", "run-progress");
       var div_3 = sibling(sp_host_view, 2);
@@ -4855,7 +5305,7 @@ function SessionComposer($$anchor, $$props) {
       var node_1 = child(div_4);
       {
         var consequent_1 = ($$anchor3) => {
-          var button_1 = root_118();
+          var button_1 = root_119();
           var sp_icon_2 = sibling(child(button_1), 2);
           set_custom_element_data(sp_icon_2, "name", "chevron-down");
           set_custom_element_data(sp_icon_2, "size", "12");
@@ -4875,7 +5325,7 @@ function SessionComposer($$anchor, $$props) {
       var node_2 = sibling(node_1, 2);
       {
         var consequent_2 = ($$anchor3) => {
-          var div_5 = root_215();
+          var div_5 = root_216();
           var sp_host_view_1 = child(div_5);
           set_custom_element_data(sp_host_view_1, "name", "retrieval-notice");
           reset(div_5);
@@ -4888,176 +5338,169 @@ function SessionComposer($$anchor, $$props) {
       reset(div_4);
       var node_3 = sibling(div_4, 2);
       {
-        var consequent_10 = ($$anchor3) => {
-          var div_6 = root_119();
-          var node_4 = child(div_6);
+        var consequent_9 = ($$anchor3) => {
+          var div_6 = root_97();
+          var div_7 = child(div_6);
+          var node_4 = child(div_7);
           {
-            var consequent_8 = ($$anchor4) => {
-              var div_7 = root_97();
-              var node_5 = child(div_7);
-              {
-                var consequent_3 = ($$anchor5) => {
-                  var sp_host_view_2 = root_311();
-                  set_custom_element_data(sp_host_view_2, "name", "session-actions");
-                  template_effect(() => set_custom_element_data(sp_host_view_2, "channel", conv.lane.current));
-                  append($$anchor5, sp_host_view_2);
-                };
-                if_block(node_5, ($$render) => {
-                  if (get(actionsListed)) $$render(consequent_3);
-                });
-              }
-              var node_6 = sibling(node_5, 2);
-              {
-                var consequent_7 = ($$anchor5) => {
-                  var sp_menu = root_87();
-                  set_custom_element_data(sp_menu, "placement", "top-start");
-                  set_custom_element_data(sp_menu, "label", "More actions");
-                  template_effect(() => set_custom_element_data(sp_menu, "open", get(overflowOpen)));
-                  var button_2 = child(sp_menu);
-                  var sp_icon_3 = child(button_2);
-                  set_custom_element_data(sp_icon_3, "name", "ellipsis");
-                  set_custom_element_data(sp_icon_3, "size", "14");
-                  var node_7 = sibling(sp_icon_3, 2);
-                  {
-                    var consequent_4 = ($$anchor6) => {
-                      var span = root_48();
-                      append($$anchor6, span);
-                    };
-                    if_block(node_7, ($$render) => {
-                      if (get(overflowNew).length) $$render(consequent_4);
-                    });
-                  }
-                  reset(button_2);
-                  var node_8 = sibling(button_2, 2);
-                  each(node_8, 17, () => get(overflowActions), (a) => actionIdentity(a), ($$anchor6, a) => {
-                    const iconName = user_derived(() => get(a).icon || "play");
-                    const row = user_derived(() => paletteRowState(overflowRow(get(a)), { generating: get(isGenerating), newest: get(newestItem) }));
-                    var sp_menu_item = root_77();
-                    template_effect(($0) => set_custom_element_data(sp_menu_item, "value", $0), [() => actionIdentity(get(a))]);
-                    template_effect(() => set_custom_element_data(sp_menu_item, "disabled", get(row).disabled));
-                    set_custom_element_data(sp_menu_item, "data-widget-part", "messages.composer-overflow-item");
-                    var sp_icon_4 = child(sp_menu_item);
-                    template_effect(() => set_custom_element_data(sp_icon_4, "name", get(iconName)));
-                    set_custom_element_data(sp_icon_4, "size", "12");
-                    var span_1 = sibling(sp_icon_4, 2);
-                    var text_1 = child(span_1);
-                    var span_2 = sibling(text_1);
-                    var text_2 = child(span_2);
-                    reset(span_2);
-                    var node_9 = sibling(span_2, 2);
-                    {
-                      var consequent_5 = ($$anchor7) => {
-                        var span_3 = root_57();
-                        var text_3 = child(span_3, true);
-                        reset(span_3);
-                        template_effect(() => set_text(text_3, get(row).reason));
-                        append($$anchor7, span_3);
-                      };
-                      if_block(node_9, ($$render) => {
-                        if (get(row).reason) $$render(consequent_5);
-                      });
-                    }
-                    reset(span_1);
-                    var node_10 = sibling(span_1, 2);
-                    {
-                      var consequent_6 = ($$anchor7) => {
-                        var span_4 = root_67();
-                        append($$anchor7, span_4);
-                      };
-                      if_block(node_10, ($$render) => {
-                        if (get(a).isNew) $$render(consequent_6);
-                      });
-                    }
-                    reset(sp_menu_item);
-                    template_effect(() => {
-                      set_attribute(span_1, "title", get(a).description);
-                      set_text(text_1, `${get(a).name ?? ""} `);
-                      set_text(text_2, `/${get(a).slash ?? ""}`);
-                    });
-                    append($$anchor6, sp_menu_item);
-                  });
-                  reset(sp_menu);
-                  template_effect(() => set_attribute(button_2, "aria-label", get(overflowNew).length ? `More actions (${get(overflowNew).length} new)` : "More actions"));
-                  event("open-change", sp_menu, (e) => handleOverflowOpen(e.detail.open));
-                  event("select", sp_menu, (e) => {
-                    const a = get(overflowActions).find((x) => actionIdentity(x) === e.detail.value);
-                    if (a) conv.invoke(actionIdentity(a));
-                  });
-                  append($$anchor5, sp_menu);
-                };
-                if_block(node_6, ($$render) => {
-                  if (get(overflowActions).length) $$render(consequent_7);
-                });
-              }
-              reset(div_7);
-              append($$anchor4, div_7);
+            var consequent_3 = ($$anchor4) => {
+              var sp_host_view_2 = root_311();
+              set_custom_element_data(sp_host_view_2, "name", "session-controls");
+              template_effect(() => set_custom_element_data(sp_host_view_2, "channel", conv.lane.current));
+              append($$anchor4, sp_host_view_2);
             };
             if_block(node_4, ($$render) => {
-              if (get(actionsListed) || get(overflowActions).length) $$render(consequent_8);
+              if (get(turnControls)) $$render(consequent_3);
             });
           }
-          var node_11 = sibling(node_4, 2);
+          var node_5 = sibling(node_4, 2);
           {
-            var consequent_9 = ($$anchor4) => {
-              var div_8 = root_105();
-              var sp_host_view_3 = child(div_8);
-              set_custom_element_data(sp_host_view_3, "name", "session-controls");
+            var consequent_4 = ($$anchor4) => {
+              var sp_host_view_3 = root_311();
+              set_custom_element_data(sp_host_view_3, "name", "session-actions");
               template_effect(() => set_custom_element_data(sp_host_view_3, "channel", conv.lane.current));
-              reset(div_8);
-              append($$anchor4, div_8);
+              append($$anchor4, sp_host_view_3);
             };
-            if_block(node_11, ($$render) => {
-              if (get(turnControls)) $$render(consequent_9);
+            if_block(node_5, ($$render) => {
+              if (get(actionsListed)) $$render(consequent_4);
             });
           }
+          var node_6 = sibling(node_5, 2);
+          {
+            var consequent_8 = ($$anchor4) => {
+              var sp_menu = root_87();
+              set_custom_element_data(sp_menu, "placement", "top-start");
+              set_custom_element_data(sp_menu, "label", "More actions");
+              template_effect(() => set_custom_element_data(sp_menu, "open", get(overflowOpen)));
+              var button_2 = child(sp_menu);
+              var sp_icon_3 = child(button_2);
+              set_custom_element_data(sp_icon_3, "name", "ellipsis");
+              set_custom_element_data(sp_icon_3, "size", "14");
+              var node_7 = sibling(sp_icon_3, 2);
+              {
+                var consequent_5 = ($$anchor5) => {
+                  var span = root_49();
+                  append($$anchor5, span);
+                };
+                if_block(node_7, ($$render) => {
+                  if (get(overflowNew).length) $$render(consequent_5);
+                });
+              }
+              reset(button_2);
+              var node_8 = sibling(button_2, 2);
+              each(node_8, 17, () => get(overflowActions), (a) => actionIdentity(a), ($$anchor5, a) => {
+                const iconName = user_derived(() => get(a).icon || "play");
+                const row = user_derived(() => paletteRowState(overflowRow(get(a)), { generating: get(isGenerating), newest: get(newestItem) }));
+                var sp_menu_item = root_78();
+                template_effect(($0) => set_custom_element_data(sp_menu_item, "value", $0), [() => actionIdentity(get(a))]);
+                template_effect(() => set_custom_element_data(sp_menu_item, "disabled", get(row).disabled));
+                set_custom_element_data(sp_menu_item, "data-widget-part", "messages.composer-overflow-item");
+                var sp_icon_4 = child(sp_menu_item);
+                template_effect(() => set_custom_element_data(sp_icon_4, "name", get(iconName)));
+                set_custom_element_data(sp_icon_4, "size", "12");
+                var span_1 = sibling(sp_icon_4, 2);
+                var text_1 = child(span_1);
+                var span_2 = sibling(text_1);
+                var text_2 = child(span_2);
+                reset(span_2);
+                var node_9 = sibling(span_2, 2);
+                {
+                  var consequent_6 = ($$anchor6) => {
+                    var span_3 = root_58();
+                    var text_3 = child(span_3, true);
+                    reset(span_3);
+                    template_effect(() => set_text(text_3, get(row).reason));
+                    append($$anchor6, span_3);
+                  };
+                  if_block(node_9, ($$render) => {
+                    if (get(row).reason) $$render(consequent_6);
+                  });
+                }
+                reset(span_1);
+                var node_10 = sibling(span_1, 2);
+                {
+                  var consequent_7 = ($$anchor6) => {
+                    var span_4 = root_68();
+                    append($$anchor6, span_4);
+                  };
+                  if_block(node_10, ($$render) => {
+                    if (get(a).isNew) $$render(consequent_7);
+                  });
+                }
+                reset(sp_menu_item);
+                template_effect(() => {
+                  set_attribute(span_1, "title", get(a).description);
+                  set_text(text_1, `${get(a).name ?? ""} `);
+                  set_text(text_2, `/${get(a).slash ?? ""}`);
+                });
+                append($$anchor5, sp_menu_item);
+              });
+              reset(sp_menu);
+              template_effect(() => set_attribute(button_2, "aria-label", get(overflowNew).length ? `More actions (${get(overflowNew).length} new)` : "More actions"));
+              event("open-change", sp_menu, (e) => handleOverflowOpen(e.detail.open));
+              event("select", sp_menu, (e) => {
+                const a = get(overflowActions).find((x) => actionIdentity(x) === e.detail.value);
+                if (a) conv.invoke(actionIdentity(a));
+              });
+              append($$anchor4, sp_menu);
+            };
+            if_block(node_6, ($$render) => {
+              if (get(overflowActions).length) $$render(consequent_8);
+            });
+          }
+          reset(div_7);
           reset(div_6);
           template_effect(() => set_attribute(div_6, "id", actionsId));
           append($$anchor3, div_6);
         };
         if_block(node_3, ($$render) => {
-          if (get(actionsLabelShown) && get(actionsOpen)) $$render(consequent_10);
+          if (get(actionsLabelShown) && get(actionsOpen)) $$render(consequent_9);
         });
       }
       reset(div_3);
-      var div_9 = sibling(div_3, 2);
-      var node_12 = child(div_9);
+      var sp_drop_zone = sibling(div_3, 2);
+      set_custom_element_data(sp_drop_zone, "data-widget-part", "messages.composer-drop");
+      set_custom_element_data(sp_drop_zone, "label", "Drop to attach");
+      template_effect(() => set_custom_element_data(sp_drop_zone, "disabled", !get(offersAttachments)));
+      var div_8 = child(sp_drop_zone);
+      var node_11 = child(div_8);
       {
-        var consequent_11 = ($$anchor3) => {
-          var div_10 = root_125();
-          set_attribute(div_10, "aria-valuemin", 0);
-          set_attribute(div_10, "aria-valuemax", 100);
-          var div_11 = child(div_10);
-          reset(div_10);
+        var consequent_10 = ($$anchor3) => {
+          var div_9 = root_105();
+          set_attribute(div_9, "aria-valuemin", 0);
+          set_attribute(div_9, "aria-valuemax", 100);
+          var div_10 = child(div_9);
+          reset(div_9);
           template_effect(
             ($0, $1) => {
-              set_attribute(div_10, "aria-valuenow", $0);
-              set_attribute(div_11, "data-high", get(usageRatio) > 0.9 ? "" : void 0);
-              set_style(div_11, `--sp-fill: ${$1 ?? ""}%`);
+              set_attribute(div_9, "aria-valuenow", $0);
+              set_attribute(div_10, "data-high", get(usageRatio) > 0.9 ? "" : void 0);
+              set_style(div_10, `--sp-fill: ${$1 ?? ""}%`);
             },
             [
               () => Math.round(get(usageRatio) * 100),
               () => (get(usageRatio) * 100).toFixed(1)
             ]
           );
-          append($$anchor3, div_10);
+          append($$anchor3, div_9);
         };
-        if_block(node_12, ($$render) => {
-          if (get(usageRatio) !== null) $$render(consequent_11);
+        if_block(node_11, ($$render) => {
+          if (get(usageRatio) !== null) $$render(consequent_10);
         });
       }
-      var div_12 = sibling(node_12, 2);
-      var node_13 = child(div_12);
+      var div_11 = sibling(node_11, 2);
+      var node_12 = child(div_11);
       {
-        var consequent_13 = ($$anchor3) => {
-          var fragment_1 = root_144();
-          var div_13 = first_child(fragment_1);
-          var span_5 = child(div_13);
+        var consequent_12 = ($$anchor3) => {
+          var fragment_1 = root_125();
+          var div_12 = first_child(fragment_1);
+          var span_5 = child(div_12);
           var text_4 = child(span_5, true);
           reset(span_5);
-          var node_14 = sibling(span_5, 2);
+          var node_13 = sibling(span_5, 2);
           {
-            var consequent_12 = ($$anchor4) => {
-              var button_3 = root_135();
+            var consequent_11 = ($$anchor4) => {
+              var button_3 = root_1110();
               var sp_icon_5 = child(button_3);
               set_custom_element_data(sp_icon_5, "name", "arrow-left");
               set_custom_element_data(sp_icon_5, "size", "14");
@@ -5066,39 +5509,39 @@ function SessionComposer($$anchor, $$props) {
               delegated("click", button_3, backToCompose);
               append($$anchor4, button_3);
             };
-            if_block(node_14, ($$render) => {
-              if (!get(hideCompose)) $$render(consequent_12);
+            if_block(node_13, ($$render) => {
+              if (!get(hideCompose)) $$render(consequent_11);
             });
           }
-          reset(div_13);
-          var div_14 = sibling(div_13, 2);
-          var sp_host_view_4 = child(div_14);
+          reset(div_12);
+          var div_13 = sibling(div_12, 2);
+          var sp_host_view_4 = child(div_13);
           template_effect(() => set_custom_element_data(sp_host_view_4, "name", get(activePane).view));
-          reset(div_14);
+          reset(div_13);
           template_effect(() => {
             set_text(text_4, get(activePane).title);
-            set_attribute(div_14, "aria-label", `${get(activePane).title ?? ""} panel`);
+            set_attribute(div_13, "aria-label", `${get(activePane).title ?? ""} panel`);
           });
           append($$anchor3, fragment_1);
         };
-        var consequent_14 = ($$anchor3) => {
-          var div_15 = root_154();
-          var sp_message_body = child(div_15);
+        var consequent_13 = ($$anchor3) => {
+          var div_14 = root_135();
+          var sp_message_body = child(div_14);
           template_effect(() => set_custom_element_data(sp_message_body, "text", get(draft)));
-          reset(div_15);
-          append($$anchor3, div_15);
+          reset(div_14);
+          append($$anchor3, div_14);
         };
-        var consequent_19 = ($$anchor3) => {
-          var fragment_2 = root_203();
-          var node_15 = first_child(fragment_2);
+        var consequent_18 = ($$anchor3) => {
+          var fragment_2 = root_183();
+          var node_14 = first_child(fragment_2);
           {
-            var consequent_18 = ($$anchor4) => {
-              var ul = root_193();
+            var consequent_17 = ($$anchor4) => {
+              var ul = root_174();
               each(ul, 23, () => get(paletteRows), (a) => a.slash, ($$anchor5, a, i) => {
                 const iconName = user_derived(() => get(a).icon || "play");
                 const rowState = user_derived(() => paletteRowState(get(a), { generating: get(isGenerating), newest: get(newestItem) }));
                 const argHint = user_derived(() => slashArgumentHint(get(a)));
-                var li = root_183();
+                var li = root_164();
                 var button_4 = child(li);
                 var sp_icon_6 = child(button_4);
                 template_effect(() => set_custom_element_data(sp_icon_6, "name", get(iconName)));
@@ -5106,43 +5549,43 @@ function SessionComposer($$anchor, $$props) {
                 var span_6 = sibling(sp_icon_6, 2);
                 var text_5 = child(span_6);
                 reset(span_6);
-                var node_16 = sibling(span_6, 2);
+                var node_15 = sibling(span_6, 2);
                 {
-                  var consequent_15 = ($$anchor6) => {
-                    var span_7 = root_164();
+                  var consequent_14 = ($$anchor6) => {
+                    var span_7 = root_144();
                     var text_6 = child(span_7, true);
                     reset(span_7);
                     template_effect(() => set_text(text_6, get(argHint)));
                     append($$anchor6, span_7);
                   };
-                  if_block(node_16, ($$render) => {
-                    if (get(argHint)) $$render(consequent_15);
+                  if_block(node_15, ($$render) => {
+                    if (get(argHint)) $$render(consequent_14);
                   });
                 }
-                var span_8 = sibling(node_16, 2);
+                var span_8 = sibling(node_15, 2);
                 var text_7 = child(span_8, true);
                 reset(span_8);
-                var node_17 = sibling(span_8, 2);
+                var node_16 = sibling(span_8, 2);
                 {
-                  var consequent_16 = ($$anchor6) => {
-                    var span_9 = root_67();
+                  var consequent_15 = ($$anchor6) => {
+                    var span_9 = root_68();
                     append($$anchor6, span_9);
                   };
-                  if_block(node_17, ($$render) => {
-                    if (get(a).isNew) $$render(consequent_16);
+                  if_block(node_16, ($$render) => {
+                    if (get(a).isNew) $$render(consequent_15);
                   });
                 }
-                var node_18 = sibling(node_17, 2);
+                var node_17 = sibling(node_16, 2);
                 {
-                  var consequent_17 = ($$anchor6) => {
-                    var span_10 = root_174();
+                  var consequent_16 = ($$anchor6) => {
+                    var span_10 = root_154();
                     var text_8 = child(span_10, true);
                     reset(span_10);
                     template_effect(() => set_text(text_8, get(rowState).reason));
                     append($$anchor6, span_10);
                   };
-                  if_block(node_18, ($$render) => {
-                    if (get(rowState).reason) $$render(consequent_17);
+                  if_block(node_17, ($$render) => {
+                    if (get(rowState).reason) $$render(consequent_16);
                   });
                 }
                 reset(button_4);
@@ -5167,11 +5610,11 @@ function SessionComposer($$anchor, $$props) {
               template_effect(() => set_attribute(ul, "id", paletteId));
               append($$anchor4, ul);
             };
-            if_block(node_15, ($$render) => {
-              if (get(paletteOpen)) $$render(consequent_18);
+            if_block(node_14, ($$render) => {
+              if (get(paletteOpen)) $$render(consequent_17);
             });
           }
-          var sp_composer_field = sibling(node_15, 2);
+          var sp_composer_field = sibling(node_14, 2);
           set_custom_element_data(sp_composer_field, "data-widget-part", "messages.composer-field");
           set_custom_element_data(sp_composer_field, "rows", "1");
           set_custom_element_data(sp_composer_field, "label", "Write a message");
@@ -5196,303 +5639,548 @@ function SessionComposer($$anchor, $$props) {
           event("focus", sp_composer_field, handleFieldFocus);
           append($$anchor3, fragment_2);
         };
-        if_block(node_13, ($$render) => {
-          if (get(activePane)) $$render(consequent_13);
-          else if (get(previewOpen)) $$render(consequent_14, 1);
-          else if (!get(hideCompose)) $$render(consequent_19, 2);
+        if_block(node_12, ($$render) => {
+          if (get(activePane)) $$render(consequent_12);
+          else if (get(previewOpen)) $$render(consequent_13, 1);
+          else if (!get(hideCompose)) $$render(consequent_18, 2);
         });
       }
-      reset(div_12);
-      var div_16 = sibling(div_12, 2);
-      var node_19 = child(div_16);
+      reset(div_11);
+      var node_18 = sibling(div_11, 2);
       {
-        var consequent_20 = ($$anchor3) => {
-          var div_17 = root_224();
-          each(div_17, 20, () => get(channels), (slug) => slug, ($$anchor4, slug) => {
-            var button_5 = root_216();
-            var text_9 = child(button_5, true);
+        var consequent_22 = ($$anchor3) => {
+          var ul_1 = root_253();
+          var node_19 = child(ul_1);
+          each(node_19, 17, () => get(tray), (t) => t.id, ($$anchor4, t) => {
+            var li_1 = root_234();
+            var node_20 = child(li_1);
+            {
+              var consequent_19 = ($$anchor5) => {
+                var img = root_193();
+                template_effect(() => set_attribute(img, "src", get(t).thumbSrc));
+                append($$anchor5, img);
+              };
+              var alternate = ($$anchor5) => {
+                var sp_icon_7 = root_203();
+                set_custom_element_data(sp_icon_7, "data-widget-part", "messages.composer-tray-icon");
+                template_effect(() => set_custom_element_data(sp_icon_7, "name", get(t).kind === "image" ? "image" : "file-text"));
+                set_custom_element_data(sp_icon_7, "size", "20");
+                append($$anchor5, sp_icon_7);
+              };
+              if_block(node_20, ($$render) => {
+                if (get(t).thumbSrc) $$render(consequent_19);
+                else $$render(alternate, -1);
+              });
+            }
+            var span_11 = sibling(node_20, 2);
+            var text_9 = child(span_11, true);
+            reset(span_11);
+            var node_21 = sibling(span_11, 2);
+            {
+              var consequent_20 = ($$anchor5) => {
+                var span_12 = root_217();
+                set_attribute(span_12, "aria-valuemin", 0);
+                set_attribute(span_12, "aria-valuemax", 100);
+                template_effect(
+                  ($0, $1) => {
+                    set_attribute(span_12, "aria-label", `Uploading ${get(t).filename ?? ""}`);
+                    set_attribute(span_12, "aria-valuenow", $0);
+                    set_style(span_12, `--sp-fill: ${$1 ?? ""}%`);
+                  },
+                  [() => progressOf(get(t)), () => progressOf(get(t))]
+                );
+                append($$anchor5, span_12);
+              };
+              var consequent_21 = ($$anchor5) => {
+                var span_13 = root_224();
+                var text_10 = child(span_13, true);
+                reset(span_13);
+                template_effect(() => set_text(text_10, get(t).refusal ?? "Not attached."));
+                append($$anchor5, span_13);
+              };
+              if_block(node_21, ($$render) => {
+                if (get(t).status === "uploading") $$render(consequent_20);
+                else if (get(t).status === "refused") $$render(consequent_21, 1);
+              });
+            }
+            var button_5 = sibling(node_21, 2);
+            var sp_icon_8 = child(button_5);
+            set_custom_element_data(sp_icon_8, "name", "x");
+            set_custom_element_data(sp_icon_8, "size", "12");
             reset(button_5);
+            reset(li_1);
+            template_effect(() => {
+              set_attribute(li_1, "data-status", get(t).status);
+              set_attribute(li_1, "data-kind", get(t).kind ?? void 0);
+              set_attribute(span_11, "title", get(t).filename);
+              set_text(text_9, get(t).filename);
+              set_attribute(button_5, "aria-label", `Remove ${get(t).filename ?? ""}`);
+            });
+            delegated("click", button_5, () => removeTrayItem(get(t)));
+            append($$anchor4, li_1);
+          });
+          var node_22 = sibling(node_19, 2);
+          each(node_22, 17, () => get(refusedHere), (r) => r.key, ($$anchor4, r) => {
+            var li_2 = root_243();
+            var sp_icon_9 = child(li_2);
+            set_custom_element_data(sp_icon_9, "data-widget-part", "messages.composer-tray-icon");
+            set_custom_element_data(sp_icon_9, "name", "ban");
+            set_custom_element_data(sp_icon_9, "size", "20");
+            var span_14 = sibling(sp_icon_9, 2);
+            var text_11 = child(span_14, true);
+            reset(span_14);
+            var span_15 = sibling(span_14, 2);
+            var text_12 = child(span_15, true);
+            reset(span_15);
+            reset(li_2);
+            template_effect(() => {
+              set_attribute(span_14, "title", get(r).filename);
+              set_text(text_11, get(r).filename);
+              set_text(text_12, get(r).reason);
+            });
+            append($$anchor4, li_2);
+          });
+          reset(ul_1);
+          append($$anchor3, ul_1);
+        };
+        if_block(node_18, ($$render) => {
+          if (get(offersAttachments) && (get(tray).length || get(refusedHere).length)) $$render(consequent_22);
+        });
+      }
+      var div_15 = sibling(node_18, 2);
+      var node_23 = child(div_15);
+      {
+        var consequent_23 = ($$anchor3) => {
+          var div_16 = root_273();
+          each(div_16, 20, () => get(channels), (slug) => slug, ($$anchor4, slug) => {
+            var button_6 = root_263();
+            var text_13 = child(button_6, true);
+            reset(button_6);
             template_effect(
               ($0, $1) => {
-                set_attribute(button_5, "aria-pressed", slug === conv.lane.current);
-                set_attribute(button_5, "title", `Write on ${$0 ?? ""}`);
-                set_text(text_9, $1);
+                set_attribute(button_6, "aria-pressed", slug === conv.lane.current);
+                set_attribute(button_6, "title", `Write on ${$0 ?? ""}`);
+                set_text(text_13, $1);
               },
               [() => channelLabel(slug), () => channelLabel(slug)]
             );
-            delegated("click", button_5, () => conv.lane.set(slug));
-            append($$anchor4, button_5);
+            delegated("click", button_6, () => conv.lane.set(slug));
+            append($$anchor4, button_6);
           });
-          reset(div_17);
-          append($$anchor3, div_17);
-        };
-        if_block(node_19, ($$render) => {
-          if (get(channels).length > 1) $$render(consequent_20);
-        });
-      }
-      var node_20 = sibling(node_19, 2);
-      {
-        var consequent_22 = ($$anchor3) => {
-          var fragment_3 = comment();
-          var node_21 = first_child(fragment_3);
-          {
-            var consequent_21 = ($$anchor4) => {
-              var sp_popover = root_243();
-              set_custom_element_data(sp_popover, "placement", "top-start");
-              template_effect(() => set_custom_element_data(sp_popover, "open", get(personaSwitcherOpen)));
-              var button_6 = child(sp_popover);
-              var sp_avatar = child(button_6);
-              template_effect(() => set_custom_element_data(sp_avatar, "ref", `character:${get(activePersona).personaId}`));
-              set_custom_element_data(sp_avatar, "size", "sm");
-              var span_11 = sibling(sp_avatar, 2);
-              var text_10 = child(span_11, true);
-              reset(span_11);
-              var sp_icon_7 = sibling(span_11, 2);
-              set_custom_element_data(sp_icon_7, "name", "chevron-down");
-              set_custom_element_data(sp_icon_7, "size", "14");
-              reset(button_6);
-              var div_18 = sibling(button_6, 2);
-              var node_22 = sibling(child(div_18), 2);
-              each(node_22, 17, () => get(c)?.personas ?? [], (p) => p.personaId, ($$anchor5, p) => {
-                var button_7 = root_234();
-                var sp_avatar_1 = child(button_7);
-                template_effect(() => set_custom_element_data(sp_avatar_1, "ref", `character:${get(p).personaId}`));
-                set_custom_element_data(sp_avatar_1, "size", "sm");
-                var span_12 = sibling(sp_avatar_1, 2);
-                var text_11 = child(span_12, true);
-                reset(span_12);
-                reset(button_7);
-                template_effect(() => {
-                  set_attribute(button_7, "aria-current", get(p).personaId === get(c)?.personaId ? "true" : void 0);
-                  set_text(text_11, get(p).name);
-                });
-                delegated("click", button_7, () => {
-                  void conv.request("switch-persona", { personaId: get(p).personaId });
-                  set(personaSwitcherOpen, false);
-                });
-                append($$anchor5, button_7);
-              });
-              reset(div_18);
-              reset(sp_popover);
-              template_effect(() => {
-                set_attribute(button_6, "aria-label", `Switch persona (currently ${get(activePersona).name ?? ""})`);
-                set_text(text_10, get(activePersona).name);
-              });
-              event("open-change", sp_popover, (e) => set(personaSwitcherOpen, e.detail.open, true));
-              append($$anchor4, sp_popover);
-            };
-            var alternate = ($$anchor4) => {
-              var span_13 = root_253();
-              var sp_avatar_2 = child(span_13);
-              template_effect(() => set_custom_element_data(sp_avatar_2, "ref", `character:${get(activePersona).personaId}`));
-              set_custom_element_data(sp_avatar_2, "size", "sm");
-              var span_14 = sibling(sp_avatar_2, 2);
-              var text_12 = child(span_14, true);
-              reset(span_14);
-              reset(span_13);
-              template_effect(() => set_text(text_12, get(activePersona).name));
-              append($$anchor4, span_13);
-            };
-            if_block(node_21, ($$render) => {
-              if (get(personaCount) > 1) $$render(consequent_21);
-              else $$render(alternate, -1);
-            });
-          }
-          append($$anchor3, fragment_3);
-        };
-        if_block(node_20, ($$render) => {
-          if (get(activePersona)) $$render(consequent_22);
-        });
-      }
-      var div_19 = sibling(node_20, 2);
-      var node_23 = child(div_19);
-      {
-        var consequent_23 = ($$anchor3) => {
-          var button_8 = root_263();
-          var sp_icon_8 = child(button_8);
-          set_custom_element_data(sp_icon_8, "name", "eye");
-          set_custom_element_data(sp_icon_8, "size", "16");
-          reset(button_8);
-          template_effect(() => set_attribute(button_8, "aria-pressed", get(previewOpen)));
-          delegated("click", button_8, togglePreview);
-          append($$anchor3, button_8);
+          reset(div_16);
+          append($$anchor3, div_16);
         };
         if_block(node_23, ($$render) => {
-          if (!get(hideCompose)) $$render(consequent_23);
+          if (get(channels).length > 1) $$render(consequent_23);
         });
       }
       var node_24 = sibling(node_23, 2);
       {
-        var consequent_24 = ($$anchor3) => {
-          var sp_popover_1 = root_283();
-          set_custom_element_data(sp_popover_1, "placement", "top-end");
-          template_effect(() => set_custom_element_data(sp_popover_1, "open", get(moreMenuOpen)));
-          var button_9 = child(sp_popover_1);
-          var sp_icon_9 = child(button_9);
-          set_custom_element_data(sp_icon_9, "name", "ellipsis-vertical");
-          set_custom_element_data(sp_icon_9, "size", "16");
-          reset(button_9);
-          var div_20 = sibling(button_9, 2);
-          var header = child(div_20);
-          var sp_icon_10 = child(header);
-          set_custom_element_data(sp_icon_10, "name", "ellipsis-vertical");
-          set_custom_element_data(sp_icon_10, "size", "16");
-          next(2);
-          reset(header);
-          var div_21 = sibling(header, 2);
-          each(div_21, 21, () => get(morePanes), (pane) => pane.view, ($$anchor4, pane) => {
-            var button_10 = root_273();
-            var sp_icon_11 = child(button_10);
-            template_effect(() => set_custom_element_data(sp_icon_11, "name", get(pane).icon));
-            set_custom_element_data(sp_icon_11, "size", "12");
-            var span_15 = sibling(sp_icon_11, 2);
-            var text_13 = child(span_15, true);
-            reset(span_15);
-            reset(button_10);
-            template_effect(() => {
-              set_attribute(button_10, "data-current", get(activePaneValue) === get(pane).view ? "" : void 0);
-              set_text(text_13, get(pane).title);
-            });
-            delegated("click", button_10, () => openPane(get(pane).view));
-            append($$anchor4, button_10);
-          });
-          reset(div_21);
-          reset(div_20);
-          reset(sp_popover_1);
-          template_effect(() => set_attribute(button_9, "data-active", get(activePane) ? "" : void 0));
-          event("open-change", sp_popover_1, (e) => set(moreMenuOpen, e.detail.open, true));
-          append($$anchor3, sp_popover_1);
-        };
-        if_block(node_24, ($$render) => {
-          if (get(morePanes).length > 0) $$render(consequent_24);
-        });
-      }
-      var node_25 = sibling(node_24, 2);
-      {
-        var consequent_26 = ($$anchor3) => {
-          var fragment_4 = comment();
-          var node_26 = first_child(fragment_4);
+        var consequent_25 = ($$anchor3) => {
+          var fragment_3 = comment();
+          var node_25 = first_child(fragment_3);
           {
-            var consequent_25 = ($$anchor4) => {
-              var button_11 = root_293();
-              var sp_icon_12 = child(button_11);
-              set_custom_element_data(sp_icon_12, "name", "square");
-              next(2);
-              reset(button_11);
-              delegated("click", button_11, () => conv.invoke("stop"));
-              append($$anchor4, button_11);
+            var consequent_24 = ($$anchor4) => {
+              var sp_popover = root_293();
+              set_custom_element_data(sp_popover, "placement", "top-start");
+              template_effect(() => set_custom_element_data(sp_popover, "open", get(personaSwitcherOpen)));
+              var button_7 = child(sp_popover);
+              var sp_avatar = child(button_7);
+              template_effect(() => set_custom_element_data(sp_avatar, "ref", `character:${get(activePersona).personaId}`));
+              set_custom_element_data(sp_avatar, "size", "sm");
+              var span_16 = sibling(sp_avatar, 2);
+              var text_14 = child(span_16, true);
+              reset(span_16);
+              var sp_icon_10 = sibling(span_16, 2);
+              set_custom_element_data(sp_icon_10, "name", "chevron-down");
+              set_custom_element_data(sp_icon_10, "size", "14");
+              reset(button_7);
+              var div_17 = sibling(button_7, 2);
+              var node_26 = sibling(child(div_17), 2);
+              each(node_26, 17, () => get(c)?.personas ?? [], (p) => p.personaId, ($$anchor5, p) => {
+                var button_8 = root_283();
+                var sp_avatar_1 = child(button_8);
+                template_effect(() => set_custom_element_data(sp_avatar_1, "ref", `character:${get(p).personaId}`));
+                set_custom_element_data(sp_avatar_1, "size", "sm");
+                var span_17 = sibling(sp_avatar_1, 2);
+                var text_15 = child(span_17, true);
+                reset(span_17);
+                reset(button_8);
+                template_effect(() => {
+                  set_attribute(button_8, "aria-current", get(p).personaId === get(c)?.personaId ? "true" : void 0);
+                  set_text(text_15, get(p).name);
+                });
+                delegated("click", button_8, () => {
+                  void conv.request("switch-persona", { personaId: get(p).personaId });
+                  set(personaSwitcherOpen, false);
+                });
+                append($$anchor5, button_8);
+              });
+              reset(div_17);
+              reset(sp_popover);
+              template_effect(() => {
+                set_attribute(button_7, "aria-label", `Switch persona (currently ${get(activePersona).name ?? ""})`);
+                set_text(text_14, get(activePersona).name);
+              });
+              event("open-change", sp_popover, (e) => set(personaSwitcherOpen, e.detail.open, true));
+              append($$anchor4, sp_popover);
             };
             var alternate_1 = ($$anchor4) => {
-              var button_12 = root_302();
-              var sp_icon_13 = child(button_12);
-              set_custom_element_data(sp_icon_13, "name", "send");
-              next(2);
-              reset(button_12);
-              template_effect(
-                ($0) => {
-                  set_attribute(button_12, "data-someone-due", get(sendTonal) ? "" : void 0);
-                  button_12.disabled = $0;
-                },
-                [() => !get(draft).trim()]
-              );
-              delegated("click", button_12, send);
-              append($$anchor4, button_12);
+              var span_18 = root_302();
+              var sp_avatar_2 = child(span_18);
+              template_effect(() => set_custom_element_data(sp_avatar_2, "ref", `character:${get(activePersona).personaId}`));
+              set_custom_element_data(sp_avatar_2, "size", "sm");
+              var span_19 = sibling(sp_avatar_2, 2);
+              var text_16 = child(span_19, true);
+              reset(span_19);
+              reset(span_18);
+              template_effect(() => set_text(text_16, get(activePersona).name));
+              append($$anchor4, span_18);
             };
-            if_block(node_26, ($$render) => {
-              if (get(isGenerating)) $$render(consequent_25);
+            if_block(node_25, ($$render) => {
+              if (get(personaCount) > 1) $$render(consequent_24);
               else $$render(alternate_1, -1);
             });
           }
-          append($$anchor3, fragment_4);
+          append($$anchor3, fragment_3);
         };
-        if_block(node_25, ($$render) => {
-          if (!get(hideCompose)) $$render(consequent_26);
+        if_block(node_24, ($$render) => {
+          if (get(activePersona)) $$render(consequent_25);
         });
       }
-      reset(div_19);
-      reset(div_16);
-      reset(div_9);
-      var node_27 = sibling(div_9, 2);
+      var div_18 = sibling(node_24, 2);
+      var node_27 = child(div_18);
       {
-        var consequent_27 = ($$anchor3) => {
-          var p_1 = root_312();
-          template_effect(() => set_attribute(p_1, "id", warningId));
-          append($$anchor3, p_1);
+        var consequent_26 = ($$anchor3) => {
+          var sp_file_picker = root_312();
+          set_custom_element_data(sp_file_picker, "data-widget-part", "messages.composer-attach");
+          template_effect(() => set_custom_element_data(sp_file_picker, "accept", get(pickerAccept) || void 0));
+          set_custom_element_data(sp_file_picker, "multiple", true);
+          var button_9 = child(sp_file_picker);
+          var sp_icon_11 = child(button_9);
+          set_custom_element_data(sp_icon_11, "name", "paperclip");
+          set_custom_element_data(sp_icon_11, "size", "16");
+          reset(button_9);
+          reset(sp_file_picker);
+          template_effect(() => set_attribute(button_9, "title", get(readersLine) ? `Attach files. ${get(readersLine)}` : "Attach files"));
+          event("files", sp_file_picker, (e) => void attachFiles(e.detail.files));
+          append($$anchor3, sp_file_picker);
         };
         if_block(node_27, ($$render) => {
-          if (get(contextExceeded)) $$render(consequent_27);
+          if (get(offersAttachments)) $$render(consequent_26);
         });
       }
       var node_28 = sibling(node_27, 2);
       {
+        var consequent_27 = ($$anchor3) => {
+          var button_10 = root_323();
+          var sp_icon_12 = child(button_10);
+          set_custom_element_data(sp_icon_12, "name", "eye");
+          set_custom_element_data(sp_icon_12, "size", "16");
+          reset(button_10);
+          template_effect(() => set_attribute(button_10, "aria-pressed", get(previewOpen)));
+          delegated("click", button_10, togglePreview);
+          append($$anchor3, button_10);
+        };
+        if_block(node_28, ($$render) => {
+          if (!get(hideCompose)) $$render(consequent_27);
+        });
+      }
+      var node_29 = sibling(node_28, 2);
+      {
         var consequent_29 = ($$anchor3) => {
-          var p_2 = root_333();
-          var node_29 = sibling(child(p_2), 2);
+          var sp_popover_1 = root_353();
+          set_custom_element_data(sp_popover_1, "placement", "top-end");
+          template_effect(() => set_custom_element_data(sp_popover_1, "open", get(moreMenuOpen)));
+          var button_11 = child(sp_popover_1);
+          var sp_icon_13 = child(button_11);
+          set_custom_element_data(sp_icon_13, "name", "ellipsis-vertical");
+          set_custom_element_data(sp_icon_13, "size", "16");
+          reset(button_11);
+          var div_19 = sibling(button_11, 2);
+          var header = child(div_19);
+          var sp_icon_14 = child(header);
+          set_custom_element_data(sp_icon_14, "name", "ellipsis-vertical");
+          set_custom_element_data(sp_icon_14, "size", "16");
+          next(2);
+          reset(header);
+          var div_20 = sibling(header, 2);
+          var node_30 = child(div_20);
+          each(node_30, 17, () => get(morePanes), (pane) => pane.view, ($$anchor4, pane) => {
+            var button_12 = root_333();
+            var sp_icon_15 = child(button_12);
+            template_effect(() => set_custom_element_data(sp_icon_15, "name", get(pane).icon));
+            set_custom_element_data(sp_icon_15, "size", "12");
+            var span_20 = sibling(sp_icon_15, 2);
+            var text_17 = child(span_20, true);
+            reset(span_20);
+            reset(button_12);
+            template_effect(() => {
+              set_attribute(button_12, "data-current", get(activePaneValue) === get(pane).view ? "" : void 0);
+              set_text(text_17, get(pane).title);
+            });
+            delegated("click", button_12, () => openPane(get(pane).view));
+            append($$anchor4, button_12);
+          });
+          var node_31 = sibling(node_30, 2);
           {
             var consequent_28 = ($$anchor4) => {
-              var text_14 = text();
-              template_effect(() => set_text(text_14, `runs /${get(paletteEnterPick).slash ?? ""}`));
-              append($$anchor4, text_14);
+              var button_13 = root_343();
+              var sp_icon_16 = child(button_13);
+              set_custom_element_data(sp_icon_16, "name", "paperclip");
+              set_custom_element_data(sp_icon_16, "size", "12");
+              next(2);
+              reset(button_13);
+              delegated("click", button_13, openReaders);
+              append($$anchor4, button_13);
+            };
+            if_block(node_31, ($$render) => {
+              if (get(readersOffered)) $$render(consequent_28);
+            });
+          }
+          reset(div_20);
+          reset(div_19);
+          reset(sp_popover_1);
+          template_effect(() => set_attribute(button_11, "data-active", get(activePane) ? "" : void 0));
+          event("open-change", sp_popover_1, (e) => set(moreMenuOpen, e.detail.open, true));
+          append($$anchor3, sp_popover_1);
+        };
+        if_block(node_29, ($$render) => {
+          if (get(morePanes).length > 0 || get(readersOffered)) $$render(consequent_29);
+        });
+      }
+      var node_32 = sibling(node_29, 2);
+      {
+        var consequent_31 = ($$anchor3) => {
+          var fragment_4 = comment();
+          var node_33 = first_child(fragment_4);
+          {
+            var consequent_30 = ($$anchor4) => {
+              var button_14 = root_363();
+              var sp_icon_17 = child(button_14);
+              set_custom_element_data(sp_icon_17, "name", "square");
+              next(2);
+              reset(button_14);
+              delegated("click", button_14, () => conv.invoke("stop"));
+              append($$anchor4, button_14);
             };
             var alternate_2 = ($$anchor4) => {
-              var fragment_6 = root_323();
-              next(4);
-              append($$anchor4, fragment_6);
+              var button_15 = root_373();
+              var sp_icon_18 = child(button_15);
+              set_custom_element_data(sp_icon_18, "name", "send");
+              next(2);
+              reset(button_15);
+              template_effect(
+                ($0) => {
+                  set_attribute(button_15, "data-someone-due", get(sendTonal) ? "" : void 0);
+                  button_15.disabled = $0;
+                },
+                [() => !get(draft).trim() && !get(hasAttachments)]
+              );
+              delegated("click", button_15, send);
+              append($$anchor4, button_15);
             };
-            if_block(node_29, ($$render) => {
-              if (get(paletteEnterPick)) $$render(consequent_28);
+            if_block(node_33, ($$render) => {
+              if (get(isGenerating)) $$render(consequent_30);
               else $$render(alternate_2, -1);
             });
           }
-          next(3);
-          reset(p_2);
-          append($$anchor3, p_2);
+          append($$anchor3, fragment_4);
         };
-        var consequent_31 = ($$anchor3) => {
-          var p_3 = root_353();
-          var node_30 = child(p_3);
+        if_block(node_32, ($$render) => {
+          if (!get(hideCompose)) $$render(consequent_31);
+        });
+      }
+      reset(div_18);
+      reset(div_15);
+      reset(div_8);
+      reset(sp_drop_zone);
+      var node_34 = sibling(sp_drop_zone, 2);
+      {
+        var consequent_32 = ($$anchor3) => {
+          var p_1 = root_382();
+          var text_18 = child(p_1, true);
+          reset(p_1);
+          template_effect(() => set_text(text_18, get(announcement)));
+          append($$anchor3, p_1);
+        };
+        if_block(node_34, ($$render) => {
+          if (get(offersAttachments)) $$render(consequent_32);
+        });
+      }
+      var node_35 = sibling(node_34, 2);
+      {
+        var consequent_35 = ($$anchor3) => {
+          var sp_dialog = root_442();
+          set_custom_element_data(sp_dialog, "label", "What can be attached");
+          template_effect(() => set_custom_element_data(sp_dialog, "open", get(readersOpen)));
+          var div_21 = sibling(child(sp_dialog), 2);
+          var p_2 = child(div_21);
+          var text_19 = child(p_2, true);
+          reset(p_2);
+          var ul_2 = sibling(p_2, 2);
+          each(ul_2, 20, () => ATTACHMENT_KINDS_V1, (k) => k, ($$anchor4, k) => {
+            const v = user_derived(() => get(readers)?.kinds[k]);
+            var li_3 = root_41();
+            var strong = child(li_3);
+            var text_20 = child(strong, true);
+            reset(strong);
+            var span_21 = sibling(strong, 2);
+            var text_21 = child(span_21);
+            reset(span_21);
+            var node_36 = sibling(span_21, 2);
+            {
+              var consequent_33 = ($$anchor5) => {
+                var span_22 = root_392();
+                append($$anchor5, span_22);
+              };
+              var alternate_3 = ($$anchor5) => {
+                var span_23 = root_402();
+                var text_22 = child(span_23);
+                reset(span_23);
+                template_effect(() => set_text(text_22, `\u2014 can't be attached. ${get(v)?.reason ?? "" ?? ""}`));
+                append($$anchor5, span_23);
+              };
+              if_block(node_36, ($$render) => {
+                if (get(v)?.allowed) $$render(consequent_33);
+                else $$render(alternate_3, -1);
+              });
+            }
+            reset(li_3);
+            template_effect(() => {
+              set_attribute(li_3, "data-allowed", get(v)?.allowed ? "" : void 0);
+              set_text(text_20, KIND_NAME[k]);
+              set_text(text_21, `(${KIND_FORMATS[k] ?? ""})`);
+            });
+            append($$anchor4, li_3);
+          });
+          reset(ul_2);
+          var node_37 = sibling(ul_2, 2);
           {
-            var consequent_30 = ($$anchor4) => {
-              var text_15 = text();
-              template_effect(() => set_text(text_15, `${get(slashRefusal) ?? ""}.`));
-              append($$anchor4, text_15);
+            var consequent_34 = ($$anchor4) => {
+              var ul_3 = root_432();
+              each(ul_3, 20, () => get(readerLines), (line) => line, ($$anchor5, line) => {
+                var li_4 = root_422();
+                var text_23 = child(li_4, true);
+                reset(li_4);
+                template_effect(() => set_text(text_23, line));
+                append($$anchor5, li_4);
+              });
+              reset(ul_3);
+              append($$anchor4, ul_3);
             };
-            var alternate_3 = ($$anchor4) => {
-              var fragment_8 = root_343();
+            if_block(node_37, ($$render) => {
+              if (get(readerLines).length) $$render(consequent_34);
+            });
+          }
+          reset(div_21);
+          reset(sp_dialog);
+          template_effect(() => set_text(text_19, get(readersLine)));
+          event("open-change", sp_dialog, (e) => set(readersOpen, e.detail.open, true));
+          append($$anchor3, sp_dialog);
+        };
+        if_block(node_35, ($$render) => {
+          if (get(readersOffered)) $$render(consequent_35);
+        });
+      }
+      var node_38 = sibling(node_35, 2);
+      {
+        var consequent_36 = ($$anchor3) => {
+          var p_3 = root_452();
+          var text_24 = child(p_3);
+          reset(p_3);
+          template_effect(() => set_text(text_24, `${get(uploading) ?? ""} Sends when done.`));
+          append($$anchor3, p_3);
+        };
+        if_block(node_38, ($$render) => {
+          if (get(sendWaiting) && get(uploading)) $$render(consequent_36);
+        });
+      }
+      var node_39 = sibling(node_38, 2);
+      {
+        var consequent_37 = ($$anchor3) => {
+          var p_4 = root_462();
+          template_effect(() => set_attribute(p_4, "id", warningId));
+          append($$anchor3, p_4);
+        };
+        if_block(node_39, ($$render) => {
+          if (get(contextExceeded)) $$render(consequent_37);
+        });
+      }
+      var node_40 = sibling(node_39, 2);
+      {
+        var consequent_39 = ($$anchor3) => {
+          var p_5 = root_482();
+          var node_41 = sibling(child(p_5), 2);
+          {
+            var consequent_38 = ($$anchor4) => {
+              var text_25 = text();
+              template_effect(() => set_text(text_25, `runs /${get(paletteEnterPick).slash ?? ""}`));
+              append($$anchor4, text_25);
+            };
+            var alternate_4 = ($$anchor4) => {
+              var fragment_6 = root_472();
+              next(4);
+              append($$anchor4, fragment_6);
+            };
+            if_block(node_41, ($$render) => {
+              if (get(paletteEnterPick)) $$render(consequent_38);
+              else $$render(alternate_4, -1);
+            });
+          }
+          next(3);
+          reset(p_5);
+          append($$anchor3, p_5);
+        };
+        var consequent_41 = ($$anchor3) => {
+          var p_6 = root_50();
+          var node_42 = child(p_6);
+          {
+            var consequent_40 = ($$anchor4) => {
+              var text_26 = text();
+              template_effect(() => set_text(text_26, `${get(slashRefusal) ?? ""}.`));
+              append($$anchor4, text_26);
+            };
+            var alternate_5 = ($$anchor4) => {
+              var fragment_8 = root_492();
               var kbd = first_child(fragment_8);
-              var text_16 = child(kbd, true);
+              var text_27 = child(kbd, true);
               reset(kbd);
-              var text_17 = sibling(kbd);
+              var text_28 = sibling(kbd);
               template_effect(() => {
-                set_text(text_16, get(submitOnEnter) ? "Enter" : "Send");
-                set_text(text_17, ` runs /${get(slashCommand).action.slash ?? ""} with your text.`);
+                set_text(text_27, get(submitOnEnter) ? "Enter" : "Send");
+                set_text(text_28, ` runs /${get(slashCommand).action.slash ?? ""} with your text.`);
               });
               append($$anchor4, fragment_8);
             };
-            if_block(node_30, ($$render) => {
-              if (get(slashRefusal)) $$render(consequent_30);
-              else $$render(alternate_3, -1);
+            if_block(node_42, ($$render) => {
+              if (get(slashRefusal)) $$render(consequent_40);
+              else $$render(alternate_5, -1);
             });
           }
-          reset(p_3);
-          template_effect(() => set_attribute(p_3, "data-refused", get(slashRefusal) ? "" : void 0));
-          append($$anchor3, p_3);
+          reset(p_6);
+          template_effect(() => set_attribute(p_6, "data-refused", get(slashRefusal) ? "" : void 0));
+          append($$anchor3, p_6);
         };
-        var consequent_32 = ($$anchor3) => {
-          var p_4 = root_363();
-          append($$anchor3, p_4);
+        var consequent_42 = ($$anchor3) => {
+          var p_7 = root_51();
+          append($$anchor3, p_7);
         };
-        if_block(node_28, ($$render) => {
-          if (get(paletteOpen)) $$render(consequent_29);
-          else if (get(slashCommand)) $$render(consequent_31, 1);
-          else if (get(hintVisible) && get(submitOnEnter)) $$render(consequent_32, 2);
+        if_block(node_40, ($$render) => {
+          if (get(paletteOpen)) $$render(consequent_39);
+          else if (get(slashCommand)) $$render(consequent_41, 1);
+          else if (get(hintVisible) && get(submitOnEnter)) $$render(consequent_42, 2);
         });
       }
+      event("files", sp_drop_zone, (e) => {
+        if (e.target !== e.currentTarget) return;
+        void attachFiles(e.detail.files);
+      });
       append($$anchor2, fragment);
     };
     if_block(node, ($$render) => {
       if (get(c)?.addPersona) $$render(consequent);
-      else $$render(alternate_4, -1);
+      else $$render(alternate_6, -1);
     });
   }
   reset(div);
@@ -5507,13 +6195,13 @@ function SessionComposer($$anchor, $$props) {
 delegate(["keydown", "click", "mousedown", "input"]);
 
 // components/sessions/messages/NextCharacterBlock.svelte
-var root10 = from_html(`<div data-widget-part="messages.next-up-waiting"><span data-widget-part="messages.next-up-text">Waiting for a message \u2014 or pick who speaks next</span> <button type="button" data-widget-part="messages.next-up-pick"><sp-icon></sp-icon> <span>Pick</span></button></div>`, 2);
+var root11 = from_html(`<div data-widget-part="messages.next-up-waiting"><span data-widget-part="messages.next-up-text">Waiting for a message \u2014 or pick who speaks next</span> <button type="button" data-widget-part="messages.next-up-pick"><sp-icon></sp-icon> <span>Pick</span></button></div>`, 2);
 var root_120 = from_html(`<sp-avatar></sp-avatar>`, 2);
-var root_217 = from_html(`<sp-icon></sp-icon>`, 2);
+var root_218 = from_html(`<sp-icon></sp-icon>`, 2);
 var root_313 = from_html(`<button type="button" data-widget-part="messages.next-up-pick" title="Someone else" aria-label="Pick someone else to continue"><sp-icon></sp-icon> <span data-widget-part="messages.next-up-pick-label">Someone else</span></button>`, 2);
-var root_49 = from_html(`<button type="button" data-widget-part="messages.next-up-continue" title="Continue"><sp-icon></sp-icon> <span>Continue</span></button>`, 2);
-var root_58 = from_html(`<p data-widget-part="messages.next-up-after"> </p>`);
-var root_68 = from_html(`<div data-widget-part="messages.next-up-head"><div data-widget-part="messages.next-up-line"><!> <span data-widget-part="messages.next-up-text"> </span> <div data-widget-part="messages.next-up-controls"><!> <!></div></div> <!></div>`);
+var root_410 = from_html(`<button type="button" data-widget-part="messages.next-up-continue" title="Continue"><sp-icon></sp-icon> <span>Continue</span></button>`, 2);
+var root_59 = from_html(`<p data-widget-part="messages.next-up-after"> </p>`);
+var root_69 = from_html(`<div data-widget-part="messages.next-up-head"><div data-widget-part="messages.next-up-line"><!> <span data-widget-part="messages.next-up-text"> </span> <div data-widget-part="messages.next-up-controls"><!> <!></div></div> <!></div>`);
 function NextCharacterBlock($$anchor, $$props) {
   push($$props, true);
   let canChooseSomeoneElse = prop($$props, "canChooseSomeoneElse", 3, true), viewerUserId = prop($$props, "viewerUserId", 3, null);
@@ -5539,7 +6227,7 @@ function NextCharacterBlock($$anchor, $$props) {
   var node = first_child(fragment);
   {
     var consequent = ($$anchor2) => {
-      var div = root10();
+      var div = root11();
       var button = sibling(child(div), 2);
       var sp_icon = child(button);
       set_custom_element_data(sp_icon, "name", "users");
@@ -5553,7 +6241,7 @@ function NextCharacterBlock($$anchor, $$props) {
       append($$anchor2, div);
     };
     var consequent_6 = ($$anchor2) => {
-      var div_1 = root_68();
+      var div_1 = root_69();
       var div_2 = child(div_1);
       var node_1 = child(div_2);
       {
@@ -5564,7 +6252,7 @@ function NextCharacterBlock($$anchor, $$props) {
           append($$anchor3, sp_avatar);
         };
         var consequent_2 = ($$anchor3) => {
-          var sp_icon_1 = root_217();
+          var sp_icon_1 = root_218();
           set_custom_element_data(sp_icon_1, "name", "book-open-text");
           set_custom_element_data(sp_icon_1, "size", "18");
           set_custom_element_data(sp_icon_1, "data-widget-part", "messages.next-up-narrator");
@@ -5576,7 +6264,7 @@ function NextCharacterBlock($$anchor, $$props) {
         });
       }
       var span = sibling(node_1, 2);
-      var text2 = child(span, true);
+      var text3 = child(span, true);
       reset(span);
       var div_3 = sibling(span, 2);
       var node_2 = child(div_3);
@@ -5600,7 +6288,7 @@ function NextCharacterBlock($$anchor, $$props) {
       var node_3 = sibling(node_2, 2);
       {
         var consequent_4 = ($$anchor3) => {
-          var button_2 = root_49();
+          var button_2 = root_410();
           var sp_icon_3 = child(button_2);
           set_custom_element_data(sp_icon_3, "name", "play");
           next(2);
@@ -5618,7 +6306,7 @@ function NextCharacterBlock($$anchor, $$props) {
       var node_4 = sibling(div_2, 2);
       {
         var consequent_5 = ($$anchor3) => {
-          var p = root_58();
+          var p = root_59();
           var text_1 = child(p);
           reset(p);
           template_effect(($0) => set_text(text_1, `Then ${$0 ?? ""}`), [() => get(after).map((e) => nameOf(e.ref)).join(", ")]);
@@ -5629,7 +6317,7 @@ function NextCharacterBlock($$anchor, $$props) {
         });
       }
       reset(div_1);
-      template_effect(() => set_text(text2, get(line)));
+      template_effect(() => set_text(text3, get(line)));
       append($$anchor2, div_1);
     };
     if_block(node, ($$render) => {
@@ -5668,7 +6356,7 @@ function readConversationSettings(raw) {
   const d = CONVERSATION_DEFAULTS;
   return {
     order: pickEnum(v.order, ["oldest-first", "newest-first"], d.order),
-    composerSkin: pickEnum(v.composer, ["classic", "minimal", "writer"], d.composerSkin),
+    composerSkin: pickEnum(v.composer, ["classic", "minimal", "writer", "quill"], d.composerSkin),
     composerPosition: pickEnum(v.composerPosition, ["bottom", "top"], d.composerPosition),
     lineWidth: pickEnum(v.lineWidth, ["full", "comfortable"], d.lineWidth),
     showMessages: pickBool(v.showMessages, d.showMessages),
@@ -5682,14 +6370,14 @@ function readConversationSettings(raw) {
     channel: typeof v.channel === "string" && v.channel.trim() ? v.channel.trim() : d.channel
   };
 }
-var root11 = from_html(`<header data-widget-part="messages.channel-head"><sp-icon></sp-icon> <h2 data-widget-part="messages.channel-title"> </h2></header>`, 2);
+var root12 = from_html(`<header data-widget-part="messages.channel-head"><sp-icon></sp-icon> <h2 data-widget-part="messages.channel-title"> </h2></header>`, 2);
 var root_121 = from_html(`<div data-widget-part="messages.log"><!></div>`);
-var root_218 = from_html(`<button data-widget-part="messages.summarize-scene messages.selection-button" title="Scene"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Scene</span></button>`, 2);
+var root_219 = from_html(`<button data-widget-part="messages.summarize-scene messages.selection-button" title="Scene"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Scene</span></button>`, 2);
 var root_314 = from_html(`<div data-widget-part="messages.compose"><div data-widget-part="messages.compose-area"><div data-widget-part="messages.selection-bar toolbar"><span data-widget-part="messages.selection-count"> </span> <div data-widget-part="messages.selection-bulk"><button data-widget-part="messages.select-all messages.selection-button" title="Select all"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Select all</span></button> <button data-widget-part="messages.select-none messages.selection-button" title="Select none"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Select none</span></button></div> <div data-widget-part="messages.selection-finish"><button data-widget-part="messages.selection-cancel messages.selection-button" title="Cancel"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Cancel</span></button> <!> <button data-widget-part="messages.summarize-world messages.selection-button" title="World lore"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">World lore</span></button> <button data-widget-part="messages.summarize-character messages.selection-button" title="Character lore"><sp-icon></sp-icon> <span data-widget-part="messages.selection-button-label">Character lore</span></button></div></div></div></div>`, 2);
-var root_410 = from_html(`<div data-widget-part="messages.next-up"><!></div>`);
-var root_59 = from_html(`<div data-widget-part="messages.read-only" role="status"><sp-icon></sp-icon> <div data-widget-part="messages.read-only-text"><p data-widget-part="messages.read-only-title">This session is read-only.</p> <p> </p></div></div>`, 2);
-var root_69 = from_html(`<div data-widget-part="messages.compose"><sp-host-view></sp-host-view> <!> <div data-widget-part="messages.compose-area"><!></div></div>`, 2);
-var root_78 = from_html(`<div data-widget-part="messages.root"><!> <!> <!></div>`);
+var root_411 = from_html(`<div data-widget-part="messages.next-up"><!></div>`);
+var root_510 = from_html(`<div data-widget-part="messages.read-only" role="status"><sp-icon></sp-icon> <div data-widget-part="messages.read-only-text"><p data-widget-part="messages.read-only-title">This session is read-only.</p> <p> </p></div></div>`, 2);
+var root_610 = from_html(`<div data-widget-part="messages.compose"><sp-host-view></sp-host-view> <!> <div data-widget-part="messages.compose-area"><!></div></div>`, 2);
+var root_79 = from_html(`<div data-widget-part="messages.root"><!> <!> <!></div>`);
 function MessagesWidget($$anchor, $$props) {
   push($$props, true);
   const ctx = useWidgetContext();
@@ -5707,7 +6395,6 @@ function MessagesWidget($$anchor, $$props) {
     return (conversation?.rows ?? []).map((m) => m.id).filter((id) => !taken.has(id));
   });
   let settings = user_derived(() => readConversationSettings(ctx?.current.settings.v1));
-  let hasBackdrop = user_derived(() => !!conversation?.dossier?.backdrop);
   let lastSettingsKey = null;
   user_effect(() => {
     const next2 = get(settings);
@@ -5716,20 +6403,20 @@ function MessagesWidget($$anchor, $$props) {
     lastSettingsKey = key;
     $$props.onSettings?.(next2);
   });
-  var div = root_78();
+  var div = root_79();
   var node = child(div);
   {
     var consequent = ($$anchor2) => {
-      var header = root11();
+      var header = root12();
       var sp_icon = child(header);
       set_custom_element_data(sp_icon, "name", "messages-square");
       set_custom_element_data(sp_icon, "size", "16");
       set_custom_element_data(sp_icon, "data-widget-part", "messages.channel-icon");
       var h2 = sibling(sp_icon, 2);
-      var text2 = child(h2, true);
+      var text3 = child(h2, true);
       reset(h2);
       reset(header);
-      template_effect(($0) => set_text(text2, $0), [() => conversation.channelName(get(settings).channel)]);
+      template_effect(($0) => set_text(text3, $0), [() => conversation.channelName(get(settings).channel)]);
       append($$anchor2, header);
     };
     if_block(node, ($$render) => {
@@ -5796,7 +6483,7 @@ function MessagesWidget($$anchor, $$props) {
       var node_4 = sibling(button_2, 2);
       {
         var consequent_3 = ($$anchor3) => {
-          var button_3 = root_218();
+          var button_3 = root_219();
           var sp_icon_4 = child(button_3);
           set_custom_element_data(sp_icon_4, "name", "film");
           set_custom_element_data(sp_icon_4, "size", "16");
@@ -5841,13 +6528,13 @@ function MessagesWidget($$anchor, $$props) {
     };
     var consequent_7 = ($$anchor2) => {
       const dossier = user_derived(() => conversation.dossier);
-      var div_7 = root_69();
+      var div_7 = root_610();
       var sp_host_view = child(div_7);
       set_custom_element_data(sp_host_view, "name", "session-banners");
       var node_5 = sibling(sp_host_view, 2);
       {
         var consequent_5 = ($$anchor3) => {
-          var div_8 = root_410();
+          var div_8 = root_411();
           var node_6 = child(div_8);
           {
             let $0 = user_derived(() => get(dossier).turn.show && conversation.edit.id === null);
@@ -5886,7 +6573,7 @@ function MessagesWidget($$anchor, $$props) {
       var node_7 = child(div_9);
       {
         var consequent_6 = ($$anchor3) => {
-          var div_10 = root_59();
+          var div_10 = root_510();
           var sp_icon_7 = child(div_10);
           set_custom_element_data(sp_icon_7, "name", "lock");
           set_custom_element_data(sp_icon_7, "size", "20");
@@ -5935,7 +6622,6 @@ function MessagesWidget($$anchor, $$props) {
     set_attribute(div, "data-show-avatars", get(settings).showAvatars);
     set_attribute(div, "data-show-timestamps", get(settings).showTimestamps);
     set_attribute(div, "data-show-scene-markers", get(settings).showSceneMarkers);
-    set_attribute(div, "data-backdrop", get(hasBackdrop) ? "" : void 0);
     set_attribute(div, "data-channel", get(settings).channel ?? void 0);
   });
   append($$anchor, div);

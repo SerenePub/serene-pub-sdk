@@ -13,12 +13,22 @@
  *     show.spritePick  (task, REBINDABLE)    the sprite picker
  *     show.spriteShow  (outlet show-sprite)  record it on the line
  *
- * The vectors come from the LOCAL embedding lane inside `sprites-for` (as
- * `entity-link` embeds names), never from a connection, so the
- * one-model-call-per-turn rule holds — and no `embed-text` node is placed,
- * which would add a connection control to every reply spec that nothing
- * reads. With no embedding model loaded the vectors are null and the default
- * picker picks nothing, which leaves the line showing the speaker's last face.
+ * The vectors come from the install's embedding model inside `sprites-for`
+ * (as `entity-link` embeds names) — no `embed-text` node is placed, which
+ * would add a connection control to every reply spec that nothing reads.
+ * With no embedding model loaded the vectors are null and the default picker
+ * picks nothing, which leaves the line showing the speaker's last face.
+ *
+ * ⚠ **Not free in API mode** (corrected 2026-09-29, genre uplift C3). This
+ * once said "the local embedding lane … so the one-model-call-per-turn rule
+ * holds", and that is true only of a local ONNX model. The host embeds
+ * through the same `batchEmbed` retrieval uses, and with an API embedding
+ * connection starred that is a **provider call**: one per reply whose
+ * speaker has sprites, after the reply is saved (so it never delays it). A
+ * speaker with no sprites costs nothing — `has` is false before anything is
+ * embedded. Turning sprites off is the picker's `enabled`, which sits after
+ * `sprites-for`; the host reads that parameter for the run and makes no embed
+ * when it is off, so "Choose sprites" off costs nothing either.
  *
  * ## Why a tail and not a spec of its own
  *

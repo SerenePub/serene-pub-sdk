@@ -111,8 +111,8 @@ export interface NodeReceipt {
 export interface NodeSwap {
     /** The pin the spec names, `id@version`. */
     pin: string;
-    /** Whose swap: a session's choice, or the instance's. */
-    by: 'session' | 'instance';
+    /** Whose swap: a session's choice, or the pub's. */
+    by: 'session' | 'pub';
 }
 /**
  * How the host reached the spec it ran, when that is worth saying — today,

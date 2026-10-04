@@ -62,6 +62,7 @@ export * from './personGate.js';
 export * from './annexFields.js';
 export * from './surfaces.js';
 export * from './layout.js';
+export * from './sessionLayout.js';
 export * from './hostElements.js';
 export * from './componentBuild.js';
 export * from './receiverRules.js';

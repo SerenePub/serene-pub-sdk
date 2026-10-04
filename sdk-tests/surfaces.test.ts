@@ -19,23 +19,19 @@ import {
 	AnnouncementError,
 	component,
 	defineExtension,
-	genre,
 	isServableEntry,
 	isServablePanelId,
 	previewManifest,
-	sessionEvents,
-	spec,
 	ENTRY_CANDIDATES,
 	FRAME_PROTOCOL,
-	panelToWidgetDecl,
 	parsePluginWidgetId,
 	pluginWidgetId,
 	WIDGET_PROTOCOL,
+	widget,
 	type FrameHostMessage,
 	type HostFrameMessage,
 	type WidgetEvent,
 } from '@serene-pub/sdk'
-import * as C from '@serene-pub/contracts'
 
 const dice = () => announce({ ns: 'acme.dice', author: 'acme', title: 'Dice Tray' })
 
@@ -43,18 +39,13 @@ const withSurfaces = () =>
 	dice().surfaces({
 		'session-view': { entry: 'ui/session.html', title: 'Crawl view' },
 		page: { entry: 'ui/index.html', title: 'Dashboard' },
-		panels: [
-			{ id: 'tray', entry: 'ui/tray.html', title: 'Dice tray', channels: ['dice'] },
-			{ id: 'log', entry: 'ui/log.html', title: 'Roll log' },
-		],
 	})
 
 describe('announce().surfaces (20 §12, 21 §7)', () => {
 	test('frame surfaces ride the announcement document', () => {
 		const { document } = withSurfaces().build()
 		assert.equal(document.surfaces?.['session-view']?.entry, 'ui/session.html')
-		assert.equal(document.surfaces?.panels?.length, 2)
-		assert.deepEqual(document.surfaces?.panels?.[0]?.channels, ['dice'])
+		assert.equal(document.surfaces?.page?.entry, 'ui/index.html')
 	})
 
 	test('the keys are spelled the way the instance reads them', () => {
@@ -64,11 +55,7 @@ describe('announce().surfaces (20 §12, 21 §7)', () => {
 		// announcement IS the manifest (24 §6) there is no layer in between to
 		// translate. If this test fails, check `surfacesOf` before changing it.
 		const { document } = withSurfaces().build()
-		assert.deepEqual(Object.keys(document.surfaces ?? {}).sort(), [
-			'page',
-			'panels',
-			'session-view',
-		])
+		assert.deepEqual(Object.keys(document.surfaces ?? {}).sort(), ['page', 'session-view'])
 		assert.equal((document.surfaces as Record<string, unknown>).sessionView, undefined)
 	})
 
@@ -78,19 +65,26 @@ describe('announce().surfaces (20 §12, 21 §7)', () => {
 		assert.deepEqual(document.components, [])
 	})
 
-	test('two panels with one id refuse — the id is the layout key', () => {
+	test('a `surfaces.panels` list is refused and pointed at component widgets', () => {
 		assert.throws(
 			() =>
 				dice()
-					.surfaces({
-						panels: [
-							{ id: 'tray', entry: 'a.html' },
-							{ id: 'tray', entry: 'b.html' },
-						],
-					})
+					.surfaces({ panels: [{ id: 'tray', entry: 'a.html' }] } as never)
+					.build(),
+			(e: unknown) => e instanceof AnnouncementError && /surfaces\.panels is gone/.test(e.message),
+		)
+	})
+
+	test('a frame surface declaring settings is refused — no frame is handed them', () => {
+		// Retired 2026-10-02: core's `surfacesOf` keeps `{entry, title}` only,
+		// so a declared schema on a page or session-view reached nothing.
+		assert.throws(
+			() =>
+				dice()
+					.surfaces({ page: { entry: 'ui/index.html', settings: { a: { type: 'string' } } } } as never)
 					.build(),
 			(e: unknown) =>
-				e instanceof AnnouncementError && /duplicate panel id 'tray'/.test(e.message),
+				e instanceof AnnouncementError && /surfaces\.page\.settings is gone/.test(e.message),
 		)
 	})
 
@@ -101,13 +95,6 @@ describe('announce().surfaces (20 §12, 21 §7)', () => {
 					.surfaces({ page: { entry: '' } })
 					.build(),
 			/surfaces.page has no entry document/,
-		)
-		assert.throws(
-			() =>
-				dice()
-					.surfaces({ panels: [{ id: 'x', entry: '' }] })
-					.build(),
-			/surfaces.panels\[0\] has no entry document/,
 		)
 	})
 
@@ -143,7 +130,32 @@ describe('previewManifest — what the harness renders', () => {
 		assert.equal(m.title, 'Dice Tray')
 		assert.deepEqual(
 			m.targets.map((t) => t.id),
-			['session-view', 'page', 'panel-tray', 'panel-log'],
+			['session-view', 'page'],
+		)
+		assert.deepEqual(m.problems, [])
+	})
+
+	test("a package's widgets are never frame targets — a document goes inside a component", () => {
+		const m = previewManifest(
+			defineExtension({
+				slug: 'acme.dice',
+				name: 'Dice Tray',
+				version: '1.0.0',
+				surfaces: {
+					'session-view': { entry: 'ui/session.html', title: 'Crawl view' },
+					page: { entry: 'ui/index.html', title: 'Dashboard' },
+				},
+				components: [component({ slug: 'tray', label: 'Dice tray', framework: 'vanilla', entry: 'components/tray.js' })],
+				widgets: [widget({ id: 'tray', title: 'Dice tray', component: 'tray', channels: ['dice'] })],
+			}),
+		)
+		assert.deepEqual(
+			m.targets.map((t) => [t.id, t.kind, t.source]),
+			[
+				['session-view', 'frame', 'surfaces'],
+				['page', 'frame', 'surfaces'],
+				['tray', 'component', 'components'],
+			],
 		)
 		assert.deepEqual(m.problems, [])
 	})
@@ -152,15 +164,6 @@ describe('previewManifest — what the harness renders', () => {
 		const built = previewManifest(withSurfaces().build().document)
 		const fromBuilder = previewManifest(withSurfaces())
 		assert.deepEqual(built.targets, fromBuilder.targets)
-	})
-
-	test('a panel carries its id and its lanes, because the host scopes on them', () => {
-		const tray = previewManifest(withSurfaces()).targets.find((t) => t.id === 'panel-tray')
-		assert.equal(tray?.kind, 'frame')
-		assert.equal(tray?.point, 'panel')
-		assert.equal(tray?.panelId, 'tray')
-		assert.deepEqual(tray?.channels, ['dice'])
-		assert.equal(tray?.source, 'surfaces')
 	})
 
 	test('components come through with their point and framework', () => {
@@ -207,39 +210,6 @@ describe('previewManifest — what the harness renders', () => {
 		assert.equal(m.version, '1.2.0')
 		assert.equal(m.targets[0]?.framework, 'vanilla')
 	})
-
-	test('a frame panel declared by a genre shape is a surface too (21 §6)', () => {
-		const g = genre('acme.dice:genre/crawl', {
-			name: { en: 'Crawl' },
-			family: 'chat',
-			shape: {
-				panels: [
-					{
-						id: 'map',
-						title: 'Map',
-						surface: { kind: 'frame', pluginId: 'acme.dice', entry: 'ui/map.html' },
-						channels: ['map'],
-					},
-				],
-			},
-		})
-		const built = dice()
-			.genres({ crawl: g })
-			.pipelines(
-				spec('acme.dice:spec/create', { version: '1.0.0' })
-					.inlet('input', C.userMessage.v1(), {
-						genre: g,
-						event: sessionEvents.sessionCreated,
-					})
-					.build(),
-			)
-		const m = previewManifest(built)
-		assert.deepEqual(
-			m.targets.map((t) => [t.id, t.source, t.entry]),
-			[['panel-map', 'genre-shape', 'ui/map.html']],
-		)
-		assert.deepEqual(m.targets[0]?.channels, ['map'])
-	})
 })
 
 describe('previewManifest reads tolerantly', () => {
@@ -251,24 +221,23 @@ describe('previewManifest reads tolerantly', () => {
 			schemaVersion: 1,
 			identity: { ns: 'acme.dice', title: 'Dice' },
 			genres: [],
-			components: [{ slug: 'no-entry', label: 'x', framework: 'svelte' }],
-			surfaces: {
-				page: {},
-				panels: [{ entry: 'ui/a.html' }, { id: 'ok', entry: 'ui/b.html' }],
-			},
+			components: [
+				{ slug: 'no-entry', label: 'x', framework: 'svelte' },
+				{ slug: 'ok', label: 'OK', framework: 'vanilla', entry: 'components/ok.js' },
+			],
+			surfaces: { page: {} },
 		})
 		assert.deepEqual(
 			m.targets.map((t) => t.id),
-			['panel-ok'],
+			['ok'],
 		)
-		assert.equal(m.problems.length, 3)
+		assert.equal(m.problems.length, 2)
 		assert.match(m.problems.join('\n'), /surfaces.page: no entry/)
-		assert.match(m.problems.join('\n'), /surfaces.panels\[0\]: no id/)
 		assert.match(m.problems.join('\n'), /components\[0\]: no entry/)
 	})
 
 	test('an announcement that refuses to build still opens the harness', () => {
-		const m = previewManifest(dice().surfaces({ panels: [{ id: 'a', entry: '' }] }))
+		const m = previewManifest(dice().surfaces({ page: { entry: '' } }))
 		assert.deepEqual(m.targets, [])
 		assert.equal(m.id, 'acme.dice')
 		assert.match(m.problems[0] ?? '', /announcement refused/)
@@ -284,12 +253,12 @@ describe('previewManifest reads tolerantly', () => {
 			schemaVersion: 1,
 			identity: { ns: 'acme.dice', title: 'Dice' },
 			genres: [null, { id: 'acme.dice:genre/x', shape: { panels: [null] } }],
-			components: [null],
-			surfaces: { panels: [null, { id: 'ok', entry: 'ui/ok.html' }] },
+			components: [null, { slug: 'ok', label: 'OK', framework: 'vanilla', entry: 'components/ok.js' }],
+			widgets: [null],
 		})
 		assert.deepEqual(
 			m.targets.map((t) => t.id),
-			['panel-ok'],
+			['ok'],
 		)
 	})
 
@@ -306,17 +275,14 @@ describe('previewManifest reads tolerantly', () => {
 			schemaVersion: 1,
 			identity: { ns: 'acme.dice', title: 'Dice' },
 			genres: [],
-			components: [],
-			surfaces: {
-				panels: [
-					{ id: 'tray-x', entry: 'a.html' },
-					{ id: 'tray_x', entry: 'b.html' },
-				],
-			},
+			components: [
+				{ slug: 'tray-x', label: 'A', framework: 'vanilla', entry: 'a.js' },
+				{ slug: 'tray_x', label: 'B', framework: 'vanilla', entry: 'b.js' },
+			],
 		})
 		assert.deepEqual(
 			m.targets.map((t) => t.id),
-			['panel-tray-x', 'panel-tray-x-2'],
+			['tray-x', 'tray-x-2'],
 		)
 	})
 
@@ -331,23 +297,12 @@ describe('previewManifest reads tolerantly', () => {
 			identity: { ns: 'acme.dice', title: 'Dice' },
 			genres: [],
 			components: [],
-			surfaces: {
-				page: { entry: '/absolute.html' },
-				panels: [
-					{ id: 'ok', entry: 'ui/fine.html' },
-					{ id: 'Shouty', entry: 'ui/a.html' },
-					{ id: 'escape', entry: '../outside.html' },
-				],
-			},
+			surfaces: { page: { entry: '/absolute.html' }, 'session-view': { entry: '../outside.html' } },
 		})
-		assert.deepEqual(
-			m.targets.map((t) => t.id),
-			['panel-ok'],
-		)
+		assert.deepEqual(m.targets, [])
 		const said = m.problems.join('\n')
-		assert.match(said, /'\/absolute\.html' is not a path an instance will serve/)
-		assert.match(said, /panel id 'Shouty' is not one an instance accepts/)
-		assert.match(said, /'\.\.\/outside\.html' is not a path an instance will serve/)
+		assert.match(said, /'\/absolute\.html' is not a path a pub will serve/)
+		assert.match(said, /'\.\.\/outside\.html' is not a path a pub will serve/)
 	})
 
 	test('the grammar is exported so a packager can ask the same question', () => {
@@ -382,53 +337,12 @@ describe('one toolchain, one set of conventions', () => {
 	})
 })
 
-describe('a panel IS a widget (panelToWidgetDecl)', () => {
-	test('every field a panel declares has a home on the widget declaration', () => {
-		const decl = panelToWidgetDecl('acme.dice', {
-			id: 'tray',
-			entry: 'ui/tray.html',
-			title: 'Dice tray',
-			channels: ['dice'],
-			settings: { sides: { type: 'number', default: 6 } },
-		})
-		assert.deepEqual(decl, {
-			id: 'tray',
-			title: 'Dice tray',
-			role: 'secondary',
-			surface: { kind: 'frame', pluginId: 'acme.dice', entry: 'ui/tray.html' },
-			channels: ['dice'],
-			settings: { sides: { type: 'number', default: 6 } },
-		})
-	})
-
-	test('an untitled panel is titled by its id, and declares no keys it was not given', () => {
-		const decl = panelToWidgetDecl('acme.dice', { id: 'tray', entry: 'ui/tray.html' })
-		assert.equal(decl.title, 'tray')
-		// Absent, not empty: a host reading `channels` must be able to tell
-		// "every lane" from "the lanes this panel named", and `[]` says the
-		// second while meaning the first.
-		assert.equal('channels' in decl, false)
-		assert.equal('settings' in decl, false)
-	})
-
-	test('the declared channels are copied, never shared', () => {
-		const channels = ['dice']
-		const decl = panelToWidgetDecl('acme.dice', {
-			id: 'tray',
-			entry: 'ui/tray.html',
-			channels,
-		})
-		channels.push('main')
-		assert.deepEqual(decl.channels, ['dice'])
-	})
-})
-
 describe('a plugin widget id is namespaced (pluginWidgetId / parsePluginWidgetId)', () => {
-	test("the projection's bare id is the package's, the seated id is namespaced", () => {
-		const decl = panelToWidgetDecl('acme.dice', { id: 'tray', entry: 'ui/tray.html' })
-		// The two halves of the contract, in one test: the SDK projects what
-		// the package wrote, and the host seats it under an id no other
-		// package can also have written.
+	test("the declared id is the package's, the seated id is namespaced", () => {
+		const decl = widget({ id: 'tray', title: 'Dice tray', component: 'tray' })
+		// The two halves of the contract, in one test: the package declares
+		// its own id, and the host seats it under an id no other package can
+		// also have written.
 		assert.equal(decl.id, 'tray')
 		assert.equal(pluginWidgetId('acme.dice', decl.id), 'acme.dice:tray')
 	})
@@ -500,8 +414,6 @@ describe('the frame protocol is one union, exhaustively', () => {
 				case 'props':
 				case 'settings':
 					return `${m.t}:${Object.keys(m.t === 'props' ? m.props : m.settings).length}`
-				case 'style':
-					return `style:${m.css.length}`
 				case 'layout':
 					return `layout:${m.layout.tier}`
 				case 'event':

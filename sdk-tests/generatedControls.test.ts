@@ -1,7 +1,7 @@
 /**
- * Generated controls: the path from a declared surface to an editor.
+ * Generated controls: the path from a declared settings schema to an editor.
  *
- * A surface declares a `SettingsSchema`; the host renders forms from schemas;
+ * A component or widget declares a `SettingsSchema`; the host renders forms from schemas;
  * so the editor is derived rather than written. That only holds if the whole
  * field vocabulary lands somewhere — every `FieldType` must reach either a
  * value type with a control, or a fallback the form renderer states out loud.
@@ -155,7 +155,7 @@ describe('the field vocabulary reaches a control (24 §8 · 12 §6)', () => {
 	})
 })
 
-describe('a surface declares its props, and the harness reads them', () => {
+describe('a component declares its settings, and the harness reads them', () => {
 	const schema: SettingsSchema = {
 		sides: { type: 'integer', label: 'Sides', default: 20, min: 2 },
 		style: { type: 'enum', label: 'Style', of: ['pips', 'numerals'], default: 'pips' },
@@ -171,7 +171,7 @@ describe('a surface declares its props, and the harness reads them', () => {
 		announce({ ns: 'acme.dice', author: 'acme', title: 'Dice' })
 			.surfaces({
 				page: { entry: 'ui/index.html', title: 'Dash' },
-				panels: [{ id: 'tray', entry: 'ui/tray.html', title: 'Tray', settings: schema }],
+				'session-view': { entry: 'ui/session.html', title: 'Board' },
 			})
 			.components(
 				component({
@@ -179,24 +179,20 @@ describe('a surface declares its props, and the harness reads them', () => {
 					label: 'Dice settings',
 					framework: 'svelte',
 					entry: 'src/Settings.svelte',
-					settings: { loud: { type: 'boolean', label: 'Loud' } },
+					settings: schema,
 				}),
 			)
 
-	test('declared props ride the announcement and reach the preview target', () => {
+	test('declared settings ride the announcement and reach the preview target', () => {
 		const { document } = pkg().build()
-		assert.equal(document.surfaces?.panels?.[0]?.settings?.sides?.type, 'integer')
+		assert.equal(document.components?.[0]?.settings?.sides?.type, 'integer')
 
 		const m = previewManifest(pkg())
-		const tray = m.targets.find((t) => t.id === 'panel-tray')
-		assert.equal(tray?.settings?.style?.type, 'enum')
-		// A surface that declares nothing carries nothing — `undefined`, not
-		// an empty object, so "declares no props" is a question with an answer.
+		assert.equal(m.targets.find((t) => t.id === 'dice-settings')?.settings?.style?.type, 'enum')
+		// A frame is handed no declared values, so its target carries none —
+		// `undefined`, not an empty object.
 		assert.equal(m.targets.find((t) => t.id === 'page')?.settings, undefined)
-		assert.equal(
-			m.targets.find((t) => t.id === 'dice-settings')?.settings?.loud?.type,
-			'boolean',
-		)
+		assert.equal(m.targets.find((t) => t.id === 'session-view')?.settings, undefined)
 	})
 
 	test('the generated form groups, orders and hides exactly as the SDK says', () => {

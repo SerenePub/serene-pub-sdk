@@ -21,13 +21,17 @@ import {
 	checkEntryTypes,
 	describeEntryType,
 	snapshotRegistry,
+	storyTimeProblem,
+	STORY_TIME_PART_RANGES,
 	type EntryShape,
+	type StoryCalendar,
 } from '@serene-pub/sdk'
 import {
 	CORE_ENTRY_TYPES,
 	worldLoreEntryType,
 	characterLoreEntryType,
 	historyEntryType,
+	locationEntryType,
 } from '@serene-pub/core-catalog'
 
 /** A declaration as data — never registered, so a doctored one claims no id. */
@@ -64,12 +68,11 @@ describe('the shapes a lorebook row can be', () => {
 	})
 
 	test('the wire names stay short — a type id is never written into a file', () => {
-		// A place and an item declare none: no marker is honest, where a
-		// marker no importer reads round-trips into the wrong shape. Both
-		// export as world lore and read back as world lore.
+		// Every core type has one: a place written as world lore reads back
+		// without its links' meaning or its stats (lorebooks plan A26).
 		assert.deepEqual(
 			allEntryTypes().map((t) => t.entryShape.exportKey),
-			['world', 'character', 'history', undefined, undefined],
+			['world', 'character', 'history', 'location', 'item'],
 		)
 		for (const t of allEntryTypes())
 			if (t.entryShape.exportKey !== undefined)
@@ -86,6 +89,25 @@ describe('the shapes a lorebook row can be', () => {
 		assert.ok(
 			ENTRY_ANCHOR_POLICIES.includes(characterLoreEntryType.entryShape.roles.anchor!.policy),
 		)
+	})
+
+	test('a place is never filed under anything — it declares no parent (2026-09-29)', () => {
+		// Owner ruling: places join other places by relationships, never by
+		// nesting. The app asks the field role, never the type id, so the
+		// absence here IS the refusal — the editor's Part of, the server's
+		// re-parent and the import all read it.
+		assert.equal(locationEntryType.entryShape.roles.parent, undefined)
+		// Every other core type still nests ("most lore can still be nested"),
+		// history aside (next test).
+		for (const t of allEntryTypes())
+			if (t.id !== 'core:entry/location@1' && t.id !== 'core:entry/history@1')
+				assert.equal(t.entryShape.roles.parent, 'anchorEntryId', t.id)
+	})
+
+	test('history is never filed under anything — it declares no parent (2026-10-02)', () => {
+		// Owner: history is always top level relative to other lore, scoped
+		// only by its line and its date. Lore may still be filed under it.
+		assert.equal(historyEntryType.entryShape.roles.parent, undefined)
 	})
 
 	test('history declares no priority — absent means no bonus, not a default of 1', () => {
@@ -110,14 +132,53 @@ describe('the shapes a lorebook row can be', () => {
 			assert.notEqual(typeof t.entryShape.roles.order, 'string', t.id)
 	})
 
-	test('render is a variable id or a destination, and both are closed', () => {
+	test("history's date takes every date the story calendar allows (A15)", () => {
+		// The declared range is projected into a database CHECK, so a bound
+		// narrower than the calendar rule is a date the author was allowed to
+		// write and the INSERT then refused: day 32 of a free-form book (the
+		// next date after day 31), month 13 of a thirteen-month calendar, the
+		// last day of a 1000-day month.
+		const { month, day } = historyEntryType.entryShape.fields!
+		const admits = (decl: { min?: number; max?: number }, v: number) =>
+			(decl.min === undefined || v >= decl.min) && (decl.max === undefined || v <= decl.max)
+		const long: StoryCalendar = {
+			months: Array.from({ length: 13 }, (_, i) => ({ name: `M${i + 1}`, days: 1000 })),
+		}
+		for (const [date, calendar] of [
+			[{ year: 3, month: 1, day: 32 }, null],
+			[{ year: 3, month: 1, day: 250 }, null],
+			[{ year: 3, month: 40, day: 9 }, null],
+			[{ year: 3, month: 13, day: 1000 }, long],
+		] as const) {
+			assert.equal(storyTimeProblem(date, calendar), null, JSON.stringify(date))
+			assert.ok(admits(month!, date.month), `month ${date.month}`)
+			assert.ok(admits(day!, date.day), `day ${date.day}`)
+		}
+		// What the rule refuses on every rung, the declaration refuses too.
+		assert.notEqual(storyTimeProblem({ year: 3, month: 0 }, null), null)
+		assert.ok(!admits(month!, 0))
+		assert.notEqual(storyTimeProblem({ year: 3, month: 1, day: 0 }, null), null)
+		assert.ok(!admits(day!, 0))
+		// Read from the rule, never a second copy of it (NOMENCLATURE R1/R5).
+		assert.deepEqual([month!.min, month!.max], [STORY_TIME_PART_RANGES.month.min, undefined])
+		assert.deepEqual([day!.min, day!.max], [STORY_TIME_PART_RANGES.day.min, undefined])
+	})
+
+	test("history's day narrows its month — the rule the database projects (A15)", () => {
+		// "A day needs a month" is the story-time rule on every rung; declared
+		// here, the entry projection makes it the history CHECK too, so a
+		// write past every app layer cannot store a day with no month.
+		const { month, day } = historyEntryType.entryShape.fields!
+		assert.equal(day!.narrows, 'month')
+		assert.equal(month!.narrows, undefined)
+		assert.equal(storyTimeProblem({ year: 3, day: 5 }, null), 'A day needs a month.')
+	})
+
+	test('render is a variable id: each type’s rows reach a template through a variable', () => {
 		assert.equal(worldLoreEntryType.entryShape.render, 'core:var/world-lore@1')
 		assert.equal(historyEntryType.entryShape.render, 'core:var/history@1')
-		// Character lore renders into the bound character's own object rather
-		// than as a variable of its own, which is why no layout exists for it.
-		assert.deepEqual(characterLoreEntryType.entryShape.render, {
-			into: 'character-card',
-		})
+		// Character lore is a variable a template places, never folded into a card.
+		assert.equal(characterLoreEntryType.entryShape.render, 'core:var/character-lore@1')
 	})
 
 	test('the four field flags are four decisions, not one', () => {
@@ -240,6 +301,27 @@ describe('what a declaration is refused for', () => {
 		)
 	})
 
+	test('a field that narrows one the type does not declare, or itself', () => {
+		refuses(
+			{
+				id: 'core:entry/refused-narrows@1',
+				roles: { title: 'title' },
+				sourceKind: 'history',
+				fields: { day: { type: 'integer', narrows: 'mnth' } },
+			},
+			/'day' narrows 'mnth', which core:entry\/refused-narrows@1 does not declare/,
+		)
+		refuses(
+			{
+				id: 'core:entry/refused-narrows-self@1',
+				roles: { title: 'title' },
+				sourceKind: 'history',
+				fields: { day: { type: 'integer', narrows: 'day' } },
+			},
+			/'day' narrows itself/,
+		)
+	})
+
 	test('a visibility policy core does not implement', () => {
 		refuses(
 			{
@@ -251,15 +333,15 @@ describe('what a declaration is refused for', () => {
 		)
 	})
 
-	test('a render destination that is neither a variable nor a known target', () => {
+	test('a render that is not a variable id — no type folds into another value', () => {
 		refuses(
 			{
 				id: 'core:entry/refused-render@1',
 				roles: { title: 'title' },
-				render: { into: 'sidebar' },
+				render: { into: 'character-card' } as never,
 				sourceKind: 'worldLore',
 			},
-			/not a destination/,
+			/not a variable id/,
 		)
 		refuses(
 			{

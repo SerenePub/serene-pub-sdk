@@ -115,9 +115,18 @@ export const NARRATE_SPEC_ID = 'core:spec/narrate'
 // it, so every way the name mechanism can produce nothing lands on exactly the
 // list the ranker would have seen without it.
 //
-// All three ship **off** — `entity-search`'s two caps, `vector-search.maxEntries`
-// and `mention-spans.maxMentions` all default to 0 — so an upgraded install
+// Two of the three ship **off** — `entity-search`'s two caps and
+// `mention-spans.maxMentions` default to 0 — so for those an upgraded install
 // retrieves exactly what it retrieved before until somebody raises one. The
+// semantic arm does **not**: its switch, `query-windows.searchByMeaning` (the
+// chain's first node, so an arm that does not search embeds nothing), ships
+// **Automatic** since F1 (2026-09-29), which searches whenever an embedding
+// model is starred — local or a service alike (owner, 2026-09-30; for one day
+// it searched only with a model on this machine). So an install with an
+// embedding model starred retrieves by meaning in narrator mode where it did
+// not before; one with none is unchanged. (Before F1 it was a
+// boolean shipping false, and before C3 the switch was
+// `vector-search.maxEntries = 0`, a ceiling now that ships at 5.) The
 // version does not move (the 0.6 freeze), so `drizzle/0100` deletes the
 // published `pipeline_spec_versions` row for this pin and boot republishes it;
 // `specHashes.test.ts` records the moved hash in the same change. Neither half
@@ -159,6 +168,26 @@ export const NARRATE_SPEC_ID = 'core:spec/narrate'
 // `drizzle/0111_reply_slots_and_relationship_cap.sql` deletes this pin so boot
 // republishes it, and `specHashes.test.ts` records the moved hash in the same
 // change; neither half is optional.
+//
+// ⚠ **1.11.0, edited in place a FIFTH time (genre uplift C2, 2026-09-29).**
+//
+// The action declares `collects.text` (optional, _What should happen next?_)
+// and `context` takes `turnDirection: $.input.text`. The direction a person
+// typed was stored beside the row and handed to nothing that renders a
+// prompt, so 0.5.3's _Additional focus for this response_ reached no model;
+// the shipped narrator row now renders it inside `{{#if turnDirection}}`.
+// Content addressing (2026-09-10) republishes the edited document on boot —
+// no migration — and `specHashes.test.ts` records the moved hash.
+//
+// ⚠ **1.11.0, edited in place a SIXTH time (lorebooks C2, 2026-10-02).** A
+// `presences` read and an `eligible` step between `poolLinked` and `rank`
+// (`core:task/eligibility@1`): selective-logic exclusions from `lore` and the
+// presence gate. Content-addressed; `specHashes.test.ts` records the move.
+// ⚠ Edited in place (2026-10-03, history window) — content-addressed;
+// `specHashes.test.ts` records the move. `contextBudget` runs before the
+// reads and the history read takes its `budget`: about twice the window's
+// worth of the newest rows (never more than 2000) instead of the newest 100,
+// so the transcript fit decides where the conversation starts.
 /** @internal */
 export const NARRATE_VERSION = '1.11.0'
 
@@ -187,6 +216,24 @@ export const narrateSpec = () =>
 						icon: 'book-open-text',
 						label: { en: 'Narrate' },
 						description: { en: 'Ask the narrator to describe what happens next.' },
+						/**
+						 * What should happen next, if the person has an idea
+						 * (genre uplift C2, 2026-09-29) — the direction 0.5.3
+						 * called _Extra instructions_. A press still opens the
+						 * narrator modal, whose first step is who speaks; the
+						 * declaration is what lets `/narrate the storm breaks`
+						 * fire at once, and what the legend and the palette
+						 * hint say. It reaches the prompt as `turnDirection`
+						 * (`context` below).
+						 */
+						collects: {
+							text: {
+								need: 'optional',
+								label: { en: 'What should happen next?' },
+								placeholder: { en: 'The storm breaks over the harbour.' },
+								ifEmpty: { en: 'The narrator decides.' },
+							},
+						},
 					},
 				],
 			},
@@ -216,6 +263,35 @@ export const narrateSpec = () =>
 					row: $.input.messageId,
 				}),
 			)
+			/**
+			 * How much room the context has, from the window itself.
+			 *
+			 * ⚠ Absent until 1.11.0, and the absence was not a missing nicety:
+			 * `rank` below takes a `budget` in-port and nothing supplied it, so
+			 * the ranker selected against zero tokens and excluded every
+			 * candidate it was handed. A narrator describing a place got none of
+			 * the lore about that place — the thing this spec's own header says
+			 * it deliberately keeps.
+			 *
+			 * `samplingOf("generate")` rather than its own slot, exactly as the
+			 * reply pipeline: a budget computed against one window and a prompt
+			 * sent against another is wrong in the direction that truncates,
+			 * silently, and sharing the reference makes the two impossible to
+			 * point apart.
+			 *
+			 * Before the reads (history window, 2026-10-03): the history read
+			 * is sized by this budget, so it is computed first. It reads only
+			 * config, never a step, so moving it changes no value.
+			 */
+			.task('contextBudget', ($) =>
+				C.contextBudget.v1({
+					sampling: slot.samplingOf('generate'),
+					// The other half of the same pair, for the model's own
+					// window (0114) — see `respond`.
+					connection: slot.connectionOf('generate'),
+					params: slot.params(),
+				}),
+			)
 			// ⚠ `params` is wired for the same reason it is on `lore` below,
 			// and it was missing here too: an unnamed slot is never resolved, so
 			// `limit` arrived as `undefined` and the binding fell through to a
@@ -224,6 +300,16 @@ export const narrateSpec = () =>
 			.query('history', ($) =>
 				C.sessionHistory.v1({
 					scope: $.input.sessionScope,
+					// Sized by the window, not by `limit` (history window,
+					// 2026-10-03): the transcript fit decides the first line.
+					budget: $.contextBudget.available,
+					params: slot.params(),
+				}),
+			)
+			// 🚧 The files those rows show (PLAN-composer-attachments §3.5).
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.history.messages,
 					params: slot.params(),
 				}),
 			)
@@ -239,6 +325,8 @@ export const narrateSpec = () =>
 				}),
 			)
 			.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
 			/**
 			 * The entity mechanism (design §13.5) — rows found because the scene
 			 * is *naming* what they name. No keys, no embedding model.
@@ -266,7 +354,12 @@ export const narrateSpec = () =>
 			 * reads `history` and `cast` above, which is the whole reason this
 			 * is not a fourth chain inside somebody else's parallel block.
 			 *
-			 * ⚠ It ships **off** — `vector-search.maxEntries` defaults to 0 —
+			 * ⚠ It ships **Automatic** — `queries`' `searchByMeaning` defaults
+			 * to `auto`, on the chain's first node: it searches whenever an
+			 * embedding model is set up (`embed`'s connection resolves), local
+			 * or a service alike, and otherwise `embed` is handed no texts and
+			 * makes no call; `search`'s
+			 * `maxEntries` is only a ceiling —
 			 * and an install with no embedding model is not a broken install:
 			 * `embed` yields no vectors under its `auto` setting, `search`
 			 * returns empty with the reason on the receipt, and the turn loses
@@ -279,6 +372,10 @@ export const narrateSpec = () =>
 							C.queryWindows.v1({
 								messages: $.history.messages,
 								cast: $.cast.cast,
+								// The embed step's connection, for whether one is
+								// set up: `searchByMeaning`'s Automatic searches
+								// whenever it is, wherever the model runs.
+								connection: slot.connectionOf('semantic.arm.embed'),
 								params: slot.params(),
 							}),
 						)
@@ -287,6 +384,7 @@ export const narrateSpec = () =>
 								texts: $.semantic.arm.queries.current,
 								params: slot.params(),
 							}),
+							{ expose: { label: 'Embed the recent messages' } },
 						)
 						.query('search', ($) =>
 							C.vectorSearch.v1({
@@ -344,9 +442,10 @@ export const narrateSpec = () =>
 			 * inside a fixed budget; constrained to reordering it costs a
 			 * position and a receipt line naming it.
 			 *
-			 * Ships **off** on the first node of the chain — `mention-spans`'
-			 * `maxMentions` is 0 — so nothing is read and nothing is embedded
-			 * until somebody raises it.
+			 * The switch is the first node of the chain — `mention-spans`'
+			 * `maxMentions`, on by default since retrieval-on-by-default
+			 * (R5, 2026-10-02) — so at 0 nothing is read and nothing is
+			 * embedded.
 			 */
 			.gather('names', { mode: 'parallel' }, (b) =>
 				b.chain('arm', (c) =>
@@ -364,6 +463,7 @@ export const narrateSpec = () =>
 								// semantic mechanism's embed owns it, this one reads it.
 								params: slot.params({ node: 'semantic.arm.embed' }),
 							}),
+							{ expose: { label: 'Embed the mentions' } },
 						)
 						.query('link', ($) =>
 							C.entityLink.v1({
@@ -396,33 +496,17 @@ export const narrateSpec = () =>
 			.task('context', ($) =>
 				C.buildNarratorContext.v1({
 					cast: $.cast.cast,
+					/**
+					 * What the person asked this narration to do — the same
+					 * `$.input.text` the placeholder stores beside the row,
+					 * and until 2026-09-29 (genre uplift C2) the only thing
+					 * that read it. `{{turnDirection}}` in the shipped row;
+					 * absent when blank, so an undirected narration renders
+					 * what it always did.
+					 */
+					turnDirection: $.input.text,
 					prompts: slot.prompts(),
 					variables: slot.variables(),
-				}),
-			)
-			/**
-			 * How much room the context has, from the window itself.
-			 *
-			 * ⚠ Absent until 1.11.0, and the absence was not a missing nicety:
-			 * `rank` below takes a `budget` in-port and nothing supplied it, so
-			 * the ranker selected against zero tokens and excluded every
-			 * candidate it was handed. A narrator describing a place got none of
-			 * the lore about that place — the thing this spec's own header says
-			 * it deliberately keeps.
-			 *
-			 * `samplingOf("generate")` rather than its own slot, exactly as the
-			 * reply pipeline: a budget computed against one window and a prompt
-			 * sent against another is wrong in the direction that truncates,
-			 * silently, and sharing the reference makes the two impossible to
-			 * point apart.
-			 */
-			.task('contextBudget', ($) =>
-				C.contextBudget.v1({
-					sampling: slot.samplingOf('generate'),
-					// The other half of the same pair, for the model's own
-					// window (0114) — see `respond`.
-					connection: slot.connectionOf('generate'),
-					params: slot.params(),
 				}),
 			)
 			// Every mechanism's output, not just the keyword scan's. Wiring
@@ -430,9 +514,24 @@ export const narrateSpec = () =>
 			// has no lore from that mechanism in it and nothing anywhere says
 			// so, which is how this pipeline came to render four retrieval
 			// controls that reached nothing.
+			/**
+			 * The hard gates before the ranker (C2; R2, R4): the entries the
+			 * keyword scan ruled out on their own selective logic stay out
+			 * whichever mechanism brought them back, and a member not in the
+			 * world at the session's moment has their lore gated. No speaker:
+			 * the narrator is nobody's voice, and the reads already decided.
+			 */
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.poolLinked.candidates,
+					exclusions: $.lore.exclusions,
+					presences: $.presences.main,
+					at: $.presences.at,
+				}),
+			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.poolLinked.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
 					params: slot.params(),
 				}),
@@ -443,6 +542,15 @@ export const narrateSpec = () =>
 					cast: $.cast.cast,
 					templateContext: $.context.templateContext,
 					seedName: $.context.seedName,
+				}),
+			)
+			// 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+			.task('attached', ($) =>
+				C.placeAttachments.v1({
+					messages: $.lines.messages,
+					attachments: $.attachments.attachments,
+					connection: slot.connectionOf('generate'),
+					params: slot.params(),
 				}),
 			)
 			.task('prompt', ($) =>
@@ -457,7 +565,7 @@ export const narrateSpec = () =>
 					// allocation on the receipt describes the window this
 					// prompt is going to. It read 0 while nothing supplied it.
 					budget: $.contextBudget.available,
-					messages: $.lines.messages,
+					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
 					// The context builder's authored text, by reference — one
@@ -515,7 +623,7 @@ export const narrateSpec = () =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
 					text: $.generate.text,
-					thinking: $.generate.thinking,
+					reasoning: $.generate.reasoning,
 				}),
 			)
 			.build(),

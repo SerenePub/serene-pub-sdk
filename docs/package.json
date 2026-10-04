@@ -1,12 +1,26 @@
 {
 	"name": "@serene-pub/docs",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "The docs compiler: markdown sources plus rendered announcement pages in, a manifest, a search index and one HTML file per page out.",
+	"version": "0.6.0-pr-1",
+	"description": "Serene Pub's docs compiler: markdown sources plus rendered announcement pages in, a manifest, a search index and one HTML file per page out.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/docs#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "docs"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"files": [
 		"dist",
-		"README.md"
+		"!dist/**/*.map",
+		"README.md",
+		"NOTICE"
 	],
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -37,7 +51,7 @@
 		"shiki": "^4.4.3"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"peerDependenciesMeta": {
 		"@serene-pub/sdk": {
@@ -45,6 +59,10 @@
 		}
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0"
+		"@serene-pub/sdk": "0.6.0-pr-1"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

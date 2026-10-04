@@ -17,7 +17,8 @@
  * (`widgetRef`): core's bare (`stats`), a plugin's under its package
  * (`acme.dice:tray`, the `pluginWidgetId` grammar).
  */
-import type { LayoutPreset, WidgetDecl } from './layout.js'
+import type { WidgetDecl } from './layout.js'
+import { validateSessionLayout, type SessionLayoutV1 } from './sessionLayout.js'
 import { i18nFindings, type I18n } from './i18n.js'
 import { WIDGET_BASE_SECTIONS, isWidgetScopedSectionName, type WidgetBaseSection } from './widgets.js'
 
@@ -126,8 +127,13 @@ export function widget(d: WidgetInput): WidgetDecl {
 	if (!WIDGET_ID.test(d.id ?? ''))
 		problems.push(`'${d.id}' is not a widget id — lowercase letters, digits and '-' (the package supplies the namespace)`)
 	problems.push(...i18nFindings(d.title, `widget '${d.id}' title`, { required: true }))
-	if (d.component && d.surface) problems.push(`widget '${d.id}' names a component and a surface — name the component`)
+	if (typeof d.component !== 'string' || !d.component)
+		problems.push(`widget '${d.id}' names no component — give \`component\`, the slug of a component this package declares`)
+	if ((d as { surface?: unknown }).surface !== undefined)
+		problems.push(`widget '${d.id}': \`surface\` is gone — name a component, and place an \`sp-frame\` inside it for a document`)
 	problems.push(...widgetReadsFindings(d.reads, `widget '${d.id}' reads`))
+	if (d.maxInstances !== undefined && !(Number.isInteger(d.maxInstances) && d.maxInstances > 0))
+		problems.push(`widget '${d.id}' maxInstances: a positive whole number, or leave it out for no cap`)
 	const genres = d.genres?.map((g) => g?.id)
 	if (genres?.some((g) => typeof g !== 'string' || !g))
 		problems.push(`widget '${d.id}' genres: each is a genre value (or use('<id>')), never a bare string`)
@@ -136,52 +142,36 @@ export function widget(d: WidgetInput): WidgetDecl {
 	return Object.freeze({ ...rest, ...(genres?.length ? { genres: [...new Set(genres)] } : {}) }) as WidgetDecl
 }
 
-/** A layout a genre ships (R71): a `LayoutPreset` under a slug and a name. The first is the genre's default. @experimental */
+/**
+ * A layout a genre ships (R71): a **session layout** under a slug and a name.
+ * The first is the genre's default — its **genre default layout**.
+ * @experimental
+ */
 export interface GenreLayoutDecl {
 	/** Unique within the genre; `default` for the first. */
 	slug: string
 	name: I18n
 	description?: I18n
 	/**
-	 * The document and what came with it. Units name widgets by the id the
-	 * page knows them by — `someWidget.id` for one of this package's,
-	 * `coreWidgets.x.id` for core's; the packager puts a plugin's own under
-	 * its namespace.
+	 * The session layout, with the widget settings and style pins that come
+	 * with it. It places widgets by the id the page knows them by —
+	 * `someWidget.id` for one of this package's, `coreWidgets.x.id` for core's
+	 * — or a copy of one (`messages#sanctum`); the packager puts a plugin's own
+	 * widget ids under its namespace.
 	 */
-	preset: LayoutPreset
+	preset: SessionLayoutV1
 }
 
 const LAYOUT_SLUG = /^[a-z][a-z0-9-]*$/
 
-/** Declare a layout a genre ships. @experimental */
+/** Declare a layout a genre ships. Refused unless `validateSessionLayout` finds no error in it. @experimental */
 export function layout(d: GenreLayoutDecl): GenreLayoutDecl {
 	const problems: string[] = []
 	if (!LAYOUT_SLUG.test(d.slug ?? '')) problems.push(`'${d.slug}' is not a layout slug — lowercase letters, digits and '-'`)
 	problems.push(...i18nFindings(d.name, `layout '${d.slug}' name`, { required: true }))
 	problems.push(...i18nFindings(d.description, `layout '${d.slug}' description`))
-	if (d.preset?.layout?.version !== 2 || !d.preset.layout.zones?.middle)
-		problems.push(`layout '${d.slug}' preset is not a layout document (version 2, with a middle zone)`)
+	const verdict = validateSessionLayout(d.preset)
+	for (const e of verdict.errors) problems.push(`layout '${d.slug}' preset: ${e}`)
 	if (problems.length) throw new Error(problems.join('\n'))
 	return Object.freeze({ ...d })
-}
-
-/** Every widget a layout document places, by the id it names. @experimental */
-export function layoutWidgetIds(preset: LayoutPreset): string[] {
-	const out: string[] = []
-	const zones = [preset.layout.zones, ...Object.values(preset.layout.variants ?? {})]
-	for (const z of zones)
-		for (const zone of Object.values(z ?? {}))
-			for (const u of (zone as { units?: Array<{ kind: string; widget?: string; members?: Array<{ widget: string }> }> })?.units ?? [])
-				if (u.kind === 'widget' && u.widget) out.push(u.widget)
-				else if (u.kind === 'group') for (const m of u.members ?? []) out.push(m.widget)
-	return out
-}
-
-/** The widgets placed in a layout's middle zone (its base document). @experimental */
-export function middleWidgetIds(preset: LayoutPreset): string[] {
-	const out: string[] = []
-	for (const u of (preset.layout.zones.middle as { units?: Array<{ kind: string; widget?: string; members?: Array<{ widget: string }> }> }).units ?? [])
-		if (u.kind === 'widget' && u.widget) out.push(u.widget)
-		else if (u.kind === 'group') for (const m of u.members ?? []) out.push(m.widget)
-	return out
 }

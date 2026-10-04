@@ -55,7 +55,9 @@ export declare function validate(doc: SpecDocument, options?: ValidateOptions): 
  *    into the same row;
  *  · **an oracle** — only an oracle has a model's tokens to stream.
  *
- * A step status is display text (R-20).
+ * A step status, step label and step purpose are display text (R-20), and a
+ * step purpose sits only on a model call — an oracle whose definition declares
+ * a `connection` slot (`isModelCall`; law `step purpose`, 2026-09-30).
  * @internal
  */
 export declare function streamingStepFindings(doc: SpecDocument): Finding[];

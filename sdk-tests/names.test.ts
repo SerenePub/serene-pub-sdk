@@ -172,12 +172,13 @@ describe('passageNaming', () => {
 describe('core:task/undescribed-name@1 (the definition)', () => {
 	const d = getDefinition('core:task/undescribed-name@1') as any
 
-	test('is a task with the four in-ports and five out-ports R7 names', () => {
+	test('is a task with the four in-ports R7 names, A27\'s fallback, and five out-ports', () => {
 		assert.ok(C.undescribedName, 'not exported by contracts')
 		assert.ok(d, 'not registered')
 		assert.equal(d.kind, 'task')
 		assert.deepEqual(Object.keys(d.ports.in).sort(), [
 			'entries',
+			'fallbackName',
 			'locationEntries',
 			'messages',
 			'name',

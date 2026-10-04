@@ -31,6 +31,7 @@ import { main } from '@serene-pub/cli/bin'
 import {
 	compilePlugin,
 	declaredFrameEntries,
+	frameEntriesIn,
 	matchesGlob,
 	renderExampleDocs,
 	renderFindings,
@@ -103,7 +104,7 @@ async function compileScaffolded(dir: string): Promise<CompileResult> {
 	}
 	const extension = mod.default
 	const frameDocuments = await Promise.all(
-		declaredFrameEntries(extension.surfaces).map(async (entry) => ({
+		[...new Set([...declaredFrameEntries(extension.surfaces), ...frameEntriesIn(sources)])].map(async (entry) => ({
 			path: entry,
 			text: await readFile(join(dir, entry), 'utf8'),
 		})),
@@ -174,7 +175,7 @@ describe('105 · scaffold plugin writes a package the packager accepts', () => {
 			'src/specs/respond.ts',
 		])
 		assert.deepEqual(await added('action'), ['src/specs/answer.ts', 'src/specs/ask.ts'])
-		assert.deepEqual(await added('panel'), ['ui/panel.html', 'ui/panel.js'])
+		assert.deepEqual(await added('panel'), ['components/panel.ts', 'ui/panel.html', 'ui/panel.js'])
 		assert.deepEqual(await added('storage'), ['src/storage.ts'])
 	})
 })
@@ -187,7 +188,7 @@ describe('105 · what the built manifest carries', () => {
 
 		// `bundle.js` beside them: the scaffold declares handlers, so the build
 		// packages the code that implements them (D-6b).
-		assert.deepEqual((await readdir(out)).sort(), ['bundle.js', 'manifest.json', 'pipelines'])
+		assert.deepEqual((await readdir(out)).sort(), ['bundle.js', 'components', 'manifest.json', 'pipelines'])
 		const m = JSON.parse(await readFile(join(out, 'manifest.json'), 'utf8'))
 
 		// the code half
@@ -214,9 +215,11 @@ describe('105 · what the built manifest carries', () => {
 			m.prompts.map((p: { slug: string }) => p.slug),
 			['whole-default'],
 		)
-		assert.deepEqual(m.surfaces.panels, [
-			{ id: 'panel', entry: 'ui/panel.html', title: 'Whole', channels: ['main'] },
-		])
+		assert.deepEqual(m.widgets, [{ id: 'panel', title: 'Whole', component: 'panel', channels: ['main'] }])
+		assert.deepEqual(
+			m.components.map((c: { slug: string; entry: string }) => [c.slug, c.entry]),
+			[['panel', 'dist/plugin/components/panel.js']],
+		)
 		// A quota is declared, because no call site carries one.
 		assert.ok(m.permissions.includes('storage:1048576'))
 		// The inlet lock is the only subscription a pipeline has, and it is a

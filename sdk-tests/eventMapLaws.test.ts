@@ -7,7 +7,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { defineEvent, sessionEvents, uncausedGenreEvents, unterminatedCycles } from '@serene-pub/sdk'
 
-test('the seven declared roots are caused by nobody and still pass C28', () => {
+test('the six declared roots are caused by nobody and still pass C28', () => {
 	const roots = [
 		sessionEvents.sessionCreated,
 		sessionEvents.messageRespond,
@@ -15,7 +15,6 @@ test('the seven declared roots are caused by nobody and still pass C28', () => {
 		sessionEvents.memberAdded,
 		sessionEvents.memberRemoved,
 		sessionEvents.castChanged,
-		sessionEvents.sessionUpdated,
 	]
 	const events = Object.fromEntries(roots.map((e) => [e, {}]))
 	assert.deepEqual(uncausedGenreEvents({ id: 'test:genre/roots', events }), [])

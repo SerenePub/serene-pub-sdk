@@ -111,8 +111,8 @@ export const trustSlot = defineAttributeSlot("core:slot/trust@1", {
  * characters in different places.").
  *
  * It attaches to the world AND the cast, and a genre's sheet says which one
- * carries it (`SheetSlotEntry.appliesTo`): Adventure, Lair and Whodunit put it
- * on the world, where the scene is; a genre whose characters split up puts it
+ * carries it (`SheetSlotEntry.appliesTo`): Adventure and Lair put it on the
+ * world, where the scene is; a genre whose characters split up puts it
  * on each cast member. Nothing in core reads a location the sheet did not
  * declare.
  *
@@ -306,8 +306,9 @@ export const directionSlot = defineAttributeSlot("core:slot/direction@1", {
  * host builds each prompt from the state as that prompt's speaker may hear
  * it: the whispered delver's own voice reads it, and no other prompt does —
  * not another delver's voice, not the planner, the scene or the state-keeper.
- * The stats widget still shows it to the person: a person's view follows the
- * data audience, not earshot.
+ * A person's view follows the data audience, not earshot: the stats widget
+ * shows it to the session's owner and to whoever plays the whispered
+ * character, and to nobody else.
  * @internal
  */
 export const whisperSlot = defineAttributeSlot("core:slot/whisper@1", {
@@ -351,106 +352,4 @@ export const LAIR_SHEET = defineAttributeSheet("core:sheet/lair@1", {
 		en: "What a delving party is carrying through a dungeon, and what the dungeon's master has told them."
 	},
 	slots: LAIR_SLOTS.map((slot) => onTheWorld(slot.id))
-})
-
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────────────
- *
- * A mystery's ledger is small on purpose. Adventure's bars are absent and their
- * absence is the design: a suspect has no health, a drawing room has no
- * weather, and a genre that declared them would draw four chips nothing in a
- * conversation can move. What a detective actually tracks is who they doubt,
- * how much they have found, and whether the case is still open.
- */
-
-/**
- * How far the detective doubts one suspect, 0 to 10.
- *
- * ⚠ **It is the detective's reading, not the fiction's fact.** Nothing in this
- * genre couples suspicion to guilt — the culprit may end the case at 1 and an
- * innocent at 9 — and the state keeper is told to move it from what the scene
- * showed, never from what it knows. A slot that tracked guilt would be the
- * answer on a bar.
- * @internal
- */
-export const suspicionSlot = defineAttributeSlot("core:slot/suspicion@1", {
-	shape: numberStatShape.id,
-	label: { en: "Suspicion" },
-	description: { en: "How far the detective doubts this person, from cleared to all but certain." },
-	descriptor:
-		"How far the detective doubts them, from 0 (nothing points this way) through 5 (they have questions to answer) to 10 (all but named). It moves on what the scene actually showed — a contradiction, an alibi that held, something they were not supposed to know — and never on a hunch.",
-	appliesTo: ["cast"],
-	config: { min: 0, max: 10 },
-	default: 0
-})
-
-/**
- * How much of the case the detective has turned up — the Search action's own
- * counter, raised by the state keeper when a search actually finds something.
- * @internal
- */
-export const cluesFoundSlot = defineAttributeSlot("core:slot/clues-found@1", {
-	shape: numberStatShape.id,
-	label: { en: "Clues found" },
-	description: { en: "How many pieces of the case the detective has turned up." },
-	descriptor:
-		"How many pieces of the case the detective has turned up so far. It rises by one when a scene genuinely produces something new — a letter, a contradiction, a witness who changes their story — and never for a search that came up empty.",
-	appliesTo: ["world"],
-	config: { min: 0 },
-	default: 0
-})
-
-/**
- * Whether the case is still open — **the one slot the state keeper may not
- * touch.**
- *
- * `open` until somebody accuses, then `solved` or `failed` for good. Only
- * `core:spec/whodunit-verdict` writes it, and it writes it once: a keeper that
- * could set this would be a model ending the game between two messages, and
- * *Accuse*'s `enabledWhen` reads it precisely so the button goes quiet the
- * moment a verdict lands.
- *
- * ⚠ **The bare noun, and it is deliberate** (R3 asks for a qualifier). The
- * values are what make it read — *the case is open*, *the case is solved* —
- * and `case-status` would name the column rather than the thing. It is
- * declared once, in one genre, and the enum is its whole vocabulary. Ruled
- * 2026-09-17, in the same breath as the genre's `difficulty` → `candour`
- * rename: the bare noun is accepted **here**, on the strength of the enum, and
- * that ruling is about this slot and nothing else.
- * @internal
- */
-export const caseSlot = defineAttributeSlot("core:slot/case@1", {
-	shape: choiceStatShape.id,
-	label: { en: "Case" },
-	description: { en: "Whether the case is still open, solved, or lost." },
-	descriptor:
-		"Whether the case is still open, solved or failed. It is open until the detective names somebody, and after that it is over: nothing in a scene changes it, and nobody in the scene decides it.",
-	appliesTo: ["world"],
-	config: { of: ["open", "solved", "failed"] },
-	default: "open"
-})
-
-/**
- * Whodunit's four: the suspects' suspicion, then the scene, the count and the
- * verdict.
- *
- * `location` is Adventure's, reused verbatim — a mystery moves between the
- * study and the terrace exactly as an adventure moves between towns, and every
- * prompt in this genre renders `{{location}}`, which is read off this slot
- * before it falls back to the planner's hint.
- * @internal
- */
-export const WHODUNIT_SLOTS = [
-	suspicionSlot,
-	locationSlot,
-	cluesFoundSlot,
-	caseSlot
-] as const
-
-/** The same four as one named bundle — `ADVENTURE_SHEET`'s reasoning, applied. @internal */
-export const WHODUNIT_SHEET = defineAttributeSheet("core:sheet/whodunit@1", {
-	label: { en: "Whodunit" },
-	description: {
-		en: "What the detective doubts, what they have found, and whether the case is still open."
-	},
-	slots: WHODUNIT_SLOTS.map((slot) => onTheWorld(slot.id))
 })

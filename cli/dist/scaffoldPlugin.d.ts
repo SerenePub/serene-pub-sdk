@@ -11,7 +11,7 @@
  *
  * Everything it writes is drawn from the two showcase plugins — Twenty
  * Questions for the genre, the create/reply pair, the contributed action and
- * the frame panel; Battleship for the keyed `ctx.storage` handlers — with the
+ * the Tally panel; Battleship for the keyed `ctx.storage` handlers — with the
  * game taken out. **There is no logic in any template.** Every file carries a
  * short `✎ CHANGE:` line saying what to put in its place, because a scaffold
  * that guessed at behaviour would be a scaffold an author has to read before
@@ -20,7 +20,8 @@
  * The flags compose. The base is a package that registers one Task and runs it
  * in an executed example; `--genre` adds the genre, its two pipelines, a preset
  * and a shipped prompt row; `--action` adds a contributed action that asks a
- * question and the spec that answers it; `--panel` adds a frame panel;
+ * question and the spec that answers it; `--panel` adds a panel widget (a
+ * component holding one document as an `sp-frame`);
  * `--storage` adds a keyed store and the grant it needs. Each flag adds files
  * and fields and takes nothing away, so any combination is a package that
  * passes `serene-pub check` with no findings and `serene-pub build` without a
@@ -39,7 +40,7 @@ export interface ScaffoldPluginOptions {
     genre?: boolean;
     /** A contributed action that asks a question, and the spec that answers it. */
     action?: boolean;
-    /** A frame panel: one document, one script file, protocol 2. */
+    /** A panel widget: a component placing one document (`sp-frame`), its script file, protocol 2. */
     panel?: boolean;
     /** A keyed `ctx.storage` handler pair and the grant it declares. */
     storage?: boolean;

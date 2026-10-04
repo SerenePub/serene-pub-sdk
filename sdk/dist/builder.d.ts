@@ -180,12 +180,30 @@ export interface BuiltNode {
      *    string or a locale map (R-20), `{speaker}` filled by the host. It
      *    wins over any status the node's own handler sets, for this node
      *    only.
+     *
+     * `label` and `purpose` (config grouping, ruled 2026-09-30) are what the
+     * settings call this step:
+     *
+     *  · `label` — **the step label**: this step's own name wherever the
+     *    settings name it — the heading of the group a model call leads, and
+     *    its legend among Advanced settings. Wins over the step status and the
+     *    node definition's name. Any node may carry one.
+     *  · `purpose` — **the step purpose**: one or two plain sentences under
+     *    that group's heading, saying what this model call is for. Only on a
+     *    model call — an oracle whose definition declares a `connection` slot
+     *    (`isModelCall`); no other step heads a group, so a purpose anywhere
+     *    else would never be read.
+     *
+     * Display text (R-20), hashed with the document like `status`: a spec that
+     * sets neither hashes as it always did.
      */
     expose?: {
         session?: boolean;
         swaps?: string[];
         stream?: true;
         status?: I18n;
+        label?: I18n;
+        purpose?: I18n;
     };
 }
 /**
@@ -375,8 +393,27 @@ export interface NodeOpts {
         stream?: true;
         /** The step status shown while this node runs — see `BuiltNode.expose` (B18, D5). */
         status?: I18n;
+        /** The step label: this step's name in settings — see `BuiltNode.expose`. */
+        label?: I18n;
+        /** The step purpose: what this model call is for, under its settings heading — see `BuiltNode.expose`. */
+        purpose?: I18n;
     };
 }
+/**
+ * Whether a definition is a **model call**: an oracle that declares a
+ * `connection` slot — the only step a step purpose may sit on (see
+ * `BuiltNode.expose`). An assemble's `connection` slot says which model the
+ * prompt is formatted for; it calls none, so it does not count.
+ * @internal
+ */
+export declare function isModelCall(def: {
+    kind: string;
+    slots?: Readonly<Record<string, {
+        kind: string;
+    }>>;
+}): boolean;
+/** The one sentence a misplaced step purpose is refused with, at construction and at `validate()`. @internal */
+export declare const stepPurposeRefusal: (key: string, definitionId: string) => string;
 /**
  * A pinned constructor of a given kind. Constraining each method to its own kind makes
  * `.query('x', C.generateText())` a **compile** error rather than a throw — 04 §4a said

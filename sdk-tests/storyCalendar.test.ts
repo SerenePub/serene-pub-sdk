@@ -12,6 +12,7 @@ import {
 	nextStoryTime,
 	parseStoryCalendar,
 	STORY_CALENDAR_PRESETS,
+	STORY_TIME_PART_RANGES,
 	storyCalendarProblems,
 	storyDayIndex,
 	storyDaysInMonth,
@@ -80,6 +81,29 @@ describe('story calendar — validation of a date', () => {
 		assert.match(storyTimeProblem({ year: 3, month: 1, day: 31 }, THAW)!, /Thaw/)
 		// A day needs a month to be a day OF.
 		assert.match(storyTimeProblem({ year: 3, day: 2 }, THAW)!, /month/i)
+	})
+
+	// One rule for every dated writer (A15 review, 2026-09-30): history took a
+	// day with no month in a free-form book while amendments, fork dates,
+	// placements and clocks each refused it with their own sentence.
+	test('a day needs a month on every rung, free-form included', () => {
+		const needs = 'A day needs a month.'
+		assert.equal(storyTimeProblem({ year: 3, day: 5 }, null), needs)
+		assert.equal(storyTimeProblem({ year: 3, day: 5 }, THAW), needs)
+		assert.equal(storyTimeProblem({ year: 3, month: 1, day: 5 }, null), null)
+	})
+
+	test('a time of day is held to STORY_TIME_PART_RANGES, on every rung', () => {
+		const { hour, minute } = STORY_TIME_PART_RANGES
+		const at = (h: number | null, m?: number | null) => ({ year: 3, month: 1, day: 1, hour: h, minute: m })
+		assert.equal(storyTimeProblem(at(hour.min, minute.min), null), null)
+		assert.equal(storyTimeProblem(at(hour.max, minute.max), THAW), null)
+		assert.equal(storyTimeProblem(at(hour.max + 1), null), `An hour is a whole number, ${hour.min} to ${hour.max}.`)
+		assert.equal(storyTimeProblem(at(hour.min - 1), THAW), `An hour is a whole number, ${hour.min} to ${hour.max}.`)
+		assert.equal(storyTimeProblem(at(1.5), null), `An hour is a whole number, ${hour.min} to ${hour.max}.`)
+		assert.equal(storyTimeProblem(at(5, minute.max + 1), null), `A minute is a whole number, ${minute.min} to ${minute.max}.`)
+		assert.equal(storyTimeProblem(at(5, 0.5), null), `A minute is a whole number, ${minute.min} to ${minute.max}.`)
+		assert.equal(storyTimeProblem(at(null, 5), null), 'A minute needs an hour.')
 	})
 
 	test('the leap rule adds its day only in a leap year', () => {

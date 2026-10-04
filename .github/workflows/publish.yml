@@ -1,0 +1,112 @@
+# Publishes the SDK packages to npm. RELEASING.md is the walkthrough.
+#
+#   push a tag v<version>         build, test, publish every package at <version>
+#   Run workflow (dry run on)     the same, ending in `npm publish --dry-run`
+#   Run workflow (dry run off)    publish — only when run on a tag ("Use workflow from")
+#
+# Re-running is safe: a package whose version npm already has is skipped, so a
+# run that failed half-way finishes the rest.
+#
+# Auth: npm trusted publishing (OIDC — no stored secret) once each package is
+# configured for it on npmjs.com. Trusted publishing can only be configured on a
+# package that already exists, so the very first publish uses the NPM_TOKEN
+# secret instead; delete that secret once trusted publishing is set up.
+name: Publish SDK packages
+
+on:
+    push:
+        tags:
+            - 'v*'
+    workflow_dispatch:
+        inputs:
+            dry_run:
+                description: 'Dry run: build, test and pack, but publish nothing'
+                type: boolean
+                default: true
+
+permissions:
+    contents: read
+    id-token: write # trusted publishing and provenance both sign with the run's OIDC token
+
+concurrency:
+    group: publish-${{ github.ref }}
+    cancel-in-progress: false
+
+jobs:
+    publish:
+        runs-on: ubuntu-latest
+        timeout-minutes: 60
+        env:
+            DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        steps:
+            - name: Refuse a real publish from a branch
+              if: github.event_name == 'workflow_dispatch' && !inputs.dry_run && github.ref_type != 'tag'
+              run: |
+                  echo "::error::A real publish runs on a tag. Pick the tag under 'Use workflow from', or push it."
+                  exit 1
+
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Set up Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: '24'
+                  registry-url: 'https://registry.npmjs.org'
+
+            # Trusted publishing needs npm 11.5.1 or later; Node 24's bundled npm may be older.
+            - name: Update npm
+              run: npm install -g npm@^11.5.1 && npm --version
+
+            - name: Check versions and package metadata
+              env:
+                  REF_TYPE: ${{ github.ref_type }}
+                  REF_NAME: ${{ github.ref_name }}
+              run: |
+                  if [ "$REF_TYPE" = "tag" ]; then
+                      node scripts/release.mjs check --tag "$REF_NAME"
+                  else
+                      node scripts/release.mjs check
+                  fi
+
+            # No `npm ci`: the lockfile is not the source of truth for every platform.
+            - name: Install
+              run: |
+                  for i in 1 2 3; do npm install --no-audit --no-fund && break || sleep 15; done
+
+            # dist is tracked in git and tsc never deletes a module whose source is gone,
+            # so the published build starts from nothing.
+            - name: Build
+              run: |
+                  node scripts/release.mjs clean
+                  npm run build
+
+            # Tests that read the app repo (../serene-pub) skip themselves when it is absent,
+            # as it is here.
+            - name: Test
+              run: npm test --prefix sdk-tests
+
+            - name: Stage LICENSE and NOTICE
+              run: node scripts/release.mjs stage
+
+            - name: Show package contents
+              run: |
+                  for dir in $(node scripts/release.mjs order); do
+                      echo "::group::$dir"
+                      npm pack --dry-run --workspace "$dir" 2>&1 | sed -n '/Tarball Contents/,/Tarball Details/p'
+                      echo "::endgroup::"
+                  done
+
+            - name: Publish
+              env:
+                  # First publish only; empty once trusted publishing is configured, and
+                  # npm prefers the OIDC exchange whenever a trusted publisher matches.
+                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+                  # npm refuses provenance from a private repository.
+                  PROVENANCE: ${{ !github.event.repository.private }}
+              run: |
+                  if [ "$DRY_RUN" = "true" ]; then
+                      node scripts/release.mjs publish --dry-run
+                  else
+                      node scripts/release.mjs publish
+                  fi

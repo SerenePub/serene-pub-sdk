@@ -129,19 +129,14 @@ export function pluginVariableFindings(slug, raw, at = 'variables') {
 /**
  * One character card, as `compileCharacter` actually builds it.
  *
- * ⚠ Two of the six field names this variable declared before schemas existed
- * were wrong, and both were wrong in the direction that hurts: they named
- * fields a layout author could write and get nothing back from.
+ * ⚠ `exampleDialogue` is not on the card. It is a top-level variable
+ * (`core:var/example-dialogue@1`) resolved from the *speaking* character, and
+ * `compileCharacter` never puts it on a card.
  *
- * - **`lore` does not exist. The key is `"extra lore"`, with the space.**
- *   `attachCharacterLoreToCharacters` spreads the card and adds that literal
- *   key; nothing anywhere writes `lore`. A layout reaching for `this.lore`
- *   rendered empty, and empty is indistinguishable from "this character has no
- *   bound lore" — so the bug looked like data every time.
- * - **`exampleDialogue` is not on the card at all.** It is a top-level variable
- *   (`core:var/example-dialogue@1`) resolved from the *speaking* character, and
- *   `compileCharacter` never puts it on a card. Declaring it here promised a
- *   per-character field that has never existed.
+ * Nor is lore. Lore bound to a cast member that fit the budget is Assemble's
+ * `characterLore` (`core:var/character-lore@1`), a variable of its own that a
+ * context template places where it wants it — the card is the character as
+ * written, and nothing folds retrieved text into it.
  *
  * Everything but `name` is optional because `compileCharacter` deletes any key
  * that came back null or undefined — deliberately, since these cards are
@@ -169,14 +164,6 @@ const CHARACTER_CARD = {
             optional: true,
             description: { en: 'How they behave. Absent for a non-speaker when the session shows brief character detail.' },
         },
-        'extra lore': {
-            type: 'record',
-            of: { type: 'string' },
-            optional: true,
-            description: {
-                en: 'Lore bound to this character that fit the budget, keyed by entry name. Write it as {{ this.[extra lore] }} — the key has a space in it.',
-            },
-        },
     },
 };
 const ash = {
@@ -184,9 +171,8 @@ const ash = {
     nickname: 'Ash',
     description: 'A rider who patrols the ash wastes.',
     personality: 'Terse, loyal, slow to trust.',
-    'extra lore': { 'The Ashguard brand': 'Carries a brand from the Ashguard.' },
 };
-// No nickname, no bound lore. A sample where every row is fully populated
+// No nickname. A sample where every row is fully populated
 // teaches an author that every row will be, and the optional fields here are
 // the ones a real cast drops most often.
 const brannoc = {
@@ -212,7 +198,7 @@ export const varCharacters = defineVariable({
     id: 'core:var/characters@1',
     i18n: { name: { en: 'Characters' } },
     description: {
-        en: 'Everyone in the scene except the user, with their descriptions and any lore attached to them.',
+        en: 'Everyone in the scene except the user, with their descriptions.',
     },
     scope: { characters: { type: 'list', of: CHARACTER_CARD } },
     sample: [ash, brannoc],
@@ -221,10 +207,8 @@ export const varCharacters = defineVariable({
 export const varPersonas = defineVariable({
     id: 'core:var/personas@1',
     i18n: { name: { en: 'Personas' } },
-    // Two fields, and that is not an oversight — see the note in
-    // templateContext.ts. Persona lore never attaches on any live path, so a
-    // template promising `{{ this.[extra lore] }}` here would render nothing and
-    // read as a template bug rather than as the upstream one it is.
+    // Two fields. A persona's private lore is Assemble's `characterLore`, like
+    // every cast member's, never a field of this card.
     //
     // `description` is optional for a different reason than a character's is:
     // personas are built by hand in `resolveContextInput` and never go through
@@ -297,18 +281,14 @@ export const varPersonaNames = defineVariable({
 });
 // ── Produced during assembly ────────────────────────────────────────────────
 //
-// These three come out the other side of the budget, so what reaches a layout
+// These come out the other side of the budget, so what reaches a layout
 // is what actually *fit* — the entries allocation kept, not everything
 // retrieval found. That is the reason they are declared at Assemble rather than
 // alongside the cast: no earlier node knows the answer.
 //
-// `characterLore` is a top-level value on the assembly context and no shipped
-// template renders it: qualifying entries are folded into their bound
-// character's own object under an `"extra lore"` key inside `characters`
-// (docs/context-configs.md is explicit about it). It has a variable now
-// (`varCharacterLore`, below) only because it is a declared band like its two
-// siblings (typed templates P2) — Assemble exposes it raw, with no layout,
-// because a layout for it would be a setting that changes nothing.
+// `characterLore` is one of them: lore bound to a cast member, placed by the
+// context template like world lore. It reaches the prompt only where a
+// template writes `{{{characterLore}}}` — the shipped template does.
 /** @experimental */
 export const varWorldLore = defineVariable({
     id: 'core:var/world-lore@1',
@@ -413,25 +393,46 @@ export const varRecalledLines = defineVariable({
     ],
 });
 /**
- * Lore bound to a character that fit the budget — the band Assemble exposes
- * as `characterLore`, the list of each entry's text.
+ * One admitted character-lore entry: its title, whose it is, and its text.
  *
- * Declared so the band has a variable like its two siblings (typed templates
- * P2), and deliberately **not laid out**: Assemble's `variables` slot names it
- * `raw` (`rendersBands.raw`), because it has always reached a template as the
- * raw list — and no shipped template renders it at all, since qualifying
- * entries are folded into their character's card under `"extra lore"`. A
- * layout for it would be a setting that changes nothing.
+ * `castMember` is the member the entry is bound to, named as the session's
+ * reading has them (a card's name, nickname first, else the member's own).
+ * Absent for an entry bound to nobody — the world's knowledge, which only the
+ * narrator reads.
+ */
+const CHARACTER_LORE_ENTRY = {
+    type: 'object',
+    fields: {
+        title: { type: 'string', description: { en: 'The entry’s title.' } },
+        castMember: {
+            type: 'string',
+            optional: true,
+            description: { en: 'Whose lore it is. Absent when the entry is bound to nobody.' },
+        },
+        content: { type: 'string', description: { en: 'What the entry says.' } },
+    },
+};
+/**
+ * Lore bound to a cast member that fit the budget — Assemble's
+ * `characterLore`, one entry per admitted row in the order they were ranked.
+ *
+ * Privacy is decided before this: the lore read gives a speaker only the
+ * entries that speaker may see (`core:policy/binding-visibility@1`) — their
+ * own and the personas'; for the narrator, the background members' and the
+ * entries bound to nobody. A template renders it where it wants it,
+ * typically beside the character cards.
  * @experimental
  */
 export const varCharacterLore = defineVariable({
     id: 'core:var/character-lore@1',
     i18n: { name: { en: 'Character lore' } },
     description: {
-        en: 'The text of each lore entry bound to a character that fit the budget, as a list.',
+        en: 'Lore bound to a cast member that fit the budget: each entry’s title, whose it is, and its text.',
     },
-    scope: { characterLore: { type: 'list', of: { type: 'string' } } },
-    sample: ['Carries a brand from the Ashguard.'],
+    scope: { characterLore: { type: 'list', of: CHARACTER_LORE_ENTRY } },
+    sample: [
+        { title: 'The Ashguard brand', castMember: 'Ash', content: 'Carries a brand from the Ashguard.' },
+    ],
 });
 /** One relationship as the prompt sees it — `relEntry` in graphContextFormatter. */
 const RELATIONSHIP = {

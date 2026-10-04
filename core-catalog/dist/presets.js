@@ -17,17 +17,9 @@ import { narrateSpec } from "./narrate.js";
 import { adventureCreateSpec, adventureRespondSpec } from "./adventure.js";
 import { adventureAdvanceTimeSpec, adventureAnswerSpec, adventureAskSpec, adventureLookSpec, adventureRestSpec } from "./adventureActions.js";
 import { answerFormAdventureSpec, answerFormChatSpec, answerFormGuideSpec } from "./answerForm.js";
-import { answerFormLairSpec, answerFormWhodunitSpec, answerFormWritingRoomSpec } from "./answerForm.js";
+import { answerFormLairSpec } from "./answerForm.js";
 import { lairCreateSpec, lairRespondSpec } from "./lair.js";
-/* ── Writing Room (plans/genres §2; U2) ──────────────────────────────── */
-import { writingRoomGenre } from "./genres.js";
-import { writingRoomCreateSpec, writingRoomRespondSpec } from "./writingRoom.js";
-import { writingRoomAddToBibleSpec, writingRoomBrainstormSpec, writingRoomContinueSpec, writingRoomCritiqueSpec, writingRoomExpandSpec, writingRoomExportSpec, writingRoomRewriteSpec, writingRoomTightenSpec } from "./writingRoomActions.js";
 import { lairBuildRoomSpec, lairFileRoomSpec, lairNudgeSpec, lairRevealSpec, lairRoomAnswerSpec, lairTrapSpec, lairWhisperSpec } from "./lairActions.js";
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────── */
-import { whodunitGenre } from "./genres.js";
-import { whodunitCreateSpec, whodunitRespondSpec } from "./whodunit.js";
-import { whodunitAccuseSpec, whodunitAnswerSpec, whodunitQuestionSpec, whodunitSearchSpec, whodunitVerdictSpec } from "./whodunitActions.js";
 import { TURN_ORDER_BY_GENRE } from "./turnOrder.js";
 /** A genre's turn-order spec, as a value (R27, R48). */
 const turnOrderFor = (genre) => TURN_ORDER_BY_GENRE.find((t) => t.genre === genre).build();
@@ -36,7 +28,7 @@ const turnOrderFor = (genre) => TURN_ORDER_BY_GENRE.find((t) => t.genre === genr
  * answers, so a genre's turn-order spec — locked over the events it
  * recomputes on — is one entry like any other. One document serves one
  * genre: the preset check refuses a spec whose lock names another genre
- * (plans/24 §4), which is why there are six turn-order specs.
+ * (plans/24 §4), which is why there are four turn-order specs.
  */
 const chatDefaultPreset = () => ({
     slug: "chat-default",
@@ -195,152 +187,6 @@ const lairDefaultPreset = () => ({
     },
     enabled: true
 });
-/* ── Writing Room (plans/genres §2; U2) ──────────────────────────────────── */
-/**
- * The Writing Room's shipped preset.
- *
- * ## It ships ENABLED, on Adventure's condition
- *
- * Creating a session publishes the create pipeline and writes nothing — no
- * greeting, no model call, no cast to seed — so the create path runs end to end
- * with nothing to fail. The turn itself needs a connection like every other
- * turn does.
- *
- * ## `form-addressed` is declared AND bound, though nothing reaches it yet
- *
- * Every form this genre puts up today is addressed to the **owner**: *Add to
- * bible* is held at the review gate, which is the author's to answer. It binds
- * `answer-form-writing-room` regardless (ruled 2026-09-17), because the scribe
- * is an **envoy the AI portrays** and a genre cannot promise that no pipeline —
- * its own, one a person attaches, or a plugin's — will ever put a question to
- * it. An unbound event there is a form nobody can answer, which is a stuck
- * session; a bound one nothing reaches costs a published spec that never
- * runs.
- *
- * ## What `defaults` says
- *
- * The four fields' opening values, restated here rather than left to the
- * declaration for the reason Adventure restates its own: a preset is what a
- * person starts from, and the answers that shape every line of prose the
- * session writes should be visible in the thing that decided them. The author's
- * note starts empty — it is the author's, and a preset that filled it in would
- * be writing their book for them.
- *
- * No `lorebookId`: the bible is optional and this preset has no opinion about
- * which book it is, and naming one would name a row that exists on the machine
- * it was written on.
- */
-const writingRoomDefaultPreset = () => ({
-    slug: "writing-room-default",
-    genre: writingRoomGenre,
-    label: "Writing Room",
-    description: "Write a story with a companion — talk it through on one channel, and grow the manuscript itself on the other.",
-    bindings: [
-        writingRoomCreateSpec(),
-        writingRoomRespondSpec(),
-        turnOrderFor(writingRoomGenre),
-        // Every form this genre ships today is the author's own, and it binds
-        // an answer pipeline anyway (ruled 2026-09-17): the scribe is an envoy
-        // the AI portrays, so a question put to it resolves to the AI, and a
-        // form nobody can answer is a stuck session.
-        answerFormWritingRoomSpec(),
-    ],
-    actions: {
-        include: [
-            { spec: writingRoomContinueSpec(), key: "continue-manuscript" },
-            { spec: writingRoomRewriteSpec(), key: "rewrite" },
-            { spec: writingRoomExpandSpec(), key: "expand" },
-            { spec: writingRoomTightenSpec(), key: "tighten" },
-            { spec: writingRoomBrainstormSpec(), key: "brainstorm" },
-            { spec: writingRoomCritiqueSpec(), key: "critique" },
-            { spec: writingRoomAddToBibleSpec(), key: "add-to-bible" },
-            { spec: writingRoomExportSpec(), key: "export" }
-        ]
-    },
-    defaults: {
-        genreFields: {
-            pov: "close-third",
-            tense: "past",
-            chunkLength: 300,
-            authorsNote: ""
-        }
-    },
-    enabled: true
-});
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────────── */
-/**
- * The Whodunit genre's shipped preset.
- *
- * ## It ships ENABLED, on Adventure's condition
- *
- * Creating a Whodunit session publishes the create spec, seeds whatever
- * greetings the suspects carry and resolves the genre's four attribute slots,
- * with no model call anywhere in it. The turn itself needs a connection like
- * every other turn does.
- *
- * ## `form-addressed` is declared AND bound, though nothing reaches it yet
- *
- * Every form this genre puts up today is addressed to the **owner**: *who do
- * you want to question* and *who do you say did it* are the detective's to
- * answer. It binds `answer-form-whodunit` regardless (ruled 2026-09-17), and
- * this is the genre with the clearest use for it: a narrator putting a yes/no
- * to a **suspect** is a form addressed to somebody the AI portrays, and every
- * suspect here is. An unanswerable form is a stuck session. The Writing Room
- * ships the same way and for the same reason.
- *
- * ## The two form actions are named here
- *
- * `whodunit-answer#answer` and `whodunit-verdict#verdict` appear in no listing
- * — the `form` venue is the one nothing offers — and are declared here anyway,
- * so the blocks that carry them have an identity the host can hold a press to.
- * That is exactly what Lair's preset does with the knock's answer.
- *
- * ## What `defaults` says
- *
- * The three fields' opening values, restated here rather than left to the
- * declaration for the reason Adventure restates its own: a preset is what a
- * person starts from, and the answer to "does the model get to move my
- * suspicion scores without asking" should be visible in the thing that decided
- * it.
- *
- * No `lorebookId`: the genre requires a case and has no opinion about which,
- * and a preset naming one would name a row that exists on the machine it was
- * written on.
- */
-const whodunitDefaultPreset = () => ({
-    slug: "whodunit-default",
-    genre: whodunitGenre,
-    label: "Whodunit",
-    description: "A case, a room of suspects and one detective. Question them, search the scene, and name the culprit when you are sure.",
-    bindings: [
-        whodunitCreateSpec(),
-        whodunitRespondSpec(),
-        turnOrderFor(whodunitGenre),
-        // The detective answers every form the genre ships today — *Question*,
-        // *Accuse* — and it binds an answer pipeline anyway (ruled
-        // 2026-09-17): a narrator putting a yes/no to a **suspect** is a form
-        // addressed to somebody the AI portrays, and that must be answerable.
-        answerFormWhodunitSpec(),
-    ],
-    actions: {
-        include: [
-            { spec: whodunitQuestionSpec(), key: "question" },
-            { spec: whodunitSearchSpec(), key: "search" },
-            { spec: whodunitAccuseSpec(), key: "accuse" },
-            // In no listing (the `form` venue) — see the note above.
-            { spec: whodunitAnswerSpec(), key: "answer" },
-            { spec: whodunitVerdictSpec(), key: "verdict" }
-        ]
-    },
-    defaults: {
-        genreFields: {
-            tone: "grounded",
-            candour: "open",
-            trustNarrator: false
-        }
-    },
-    enabled: true
-});
 /** Built on first use: a preset binds spec values, and core's specs compile lazily. */
 const once = (build) => {
     let value;
@@ -351,9 +197,7 @@ export const corePresetInputs = once(() => [
     chatDefaultPreset(),
     adventureDefaultPreset(),
     guideDefaultPreset(),
-    lairDefaultPreset(),
-    writingRoomDefaultPreset(),
-    whodunitDefaultPreset()
+    lairDefaultPreset()
 ]);
 /** Core's presets in their stored form, every reference read down to its id. @experimental */
 export const corePresets = once(() => corePresetInputs().map(preset));
@@ -392,9 +236,7 @@ export const corePresetSeeds = once(() => {
         /** Offered, not assumed — the same footing as Adventure. */
         seedOf(stored("guide-default"), "core-guide-default", false),
         /** The same footing again: Lair is offered in the picker, never assumed. */
-        seedOf(stored("lair-default"), "core-lair-default", false),
-        /** And the Writing Room: offered, never assumed. */
-        seedOf(stored("writing-room-default"), "core-writing-room-default", false)
+        seedOf(stored("lair-default"), "core-lair-default", false)
     ];
 });
 //# sourceMappingURL=presets.js.map

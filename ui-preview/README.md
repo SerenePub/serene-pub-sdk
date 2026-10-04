@@ -52,33 +52,28 @@ uses: a Svelte default export, or a `{ mount, update, destroy }` module.
 
 ## Generated controls
 
-A surface declares its props in the SDK's settings vocabulary, and the harness
-renders the editor for them — you never write one:
+A component declares its settings in the SDK's settings vocabulary, and the
+harness renders the editor for them — you never write one:
 
 ```ts
-panels: [{
-	id: 'tray',
-	entry: 'ui/tray.html',
-	title: 'Dice tray',
+component({
+	slug: 'tray',
+	label: 'Dice tray',
+	framework: 'svelte',
+	entry: 'src/Tray.svelte',
 	settings: {
 		sides:  { type: 'integer', label: 'Sides', default: 20, min: 2, max: 100 },
 		style:  { type: 'enum',    label: 'Style', of: ['pips', 'numerals'], default: 'pips' },
 		bias:   { type: 'number',  label: 'Bias',  group: 'Advanced',
 		          showIf: { field: 'style', equals: 'numerals' } },
 	},
-}]
+})
 ```
 
-Edits go down the pipe the design specifies — `{ t: 'props', props }` to a
-frame, `ctx.settings` to a component — so you can build and see your surface
-against real values.
+Edits reach the component as `ctx.settings`, the pipe an instance uses, so you
+can build and see it against real values. A page or session-view frame is handed
+no declared values, so it has no settings pane — only fixtures.
 
-> **Core does not deliver declared props yet.** `frameHost.surfacesOf` narrows a
-> stored surface to `{entry, title}` and drops `settings`, and `Panel.svelte`
-> posts a hardcoded `{panelId, title}`; nothing persists a value an admin might
-> set. Read props defensively and keep your own defaults until that path exists.
-> The harness posts them so the surface can be written now, not because an
-> instance will.
 Grouping, ordering and `showIf` behave exactly as they will in an instance,
 because they come from the SDK's own `formLayout`/`isVisible`.
 

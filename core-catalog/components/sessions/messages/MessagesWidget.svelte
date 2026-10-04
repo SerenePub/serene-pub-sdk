@@ -2,7 +2,7 @@
 	import type { MessageOrder } from "@serene-pub/core-catalog/conversation"
 
 	/** How the composer's field is drawn. */
-	export type ComposerSkin = "classic" | "minimal" | "writer"
+	export type ComposerSkin = "classic" | "minimal" | "writer" | "quill"
 
 	/** Which end of the widget the composer sits at. */
 	export type ComposerPosition = "bottom" | "top"
@@ -93,7 +93,7 @@
 			order: pickEnum(v.order, ["oldest-first", "newest-first"], d.order),
 			composerSkin: pickEnum(
 				v.composer,
-				["classic", "minimal", "writer"],
+				["classic", "minimal", "writer", "quill"],
 				d.composerSkin
 			),
 			composerPosition: pickEnum(
@@ -178,13 +178,6 @@
 		)
 	)
 
-	/**
-	 * A backdrop image is the user's, not the session's: when one is painted
-	 * behind the shell, the conversation gets a glass panel so the text keeps
-	 * its contrast against whatever the picture is doing underneath.
-	 */
-	let hasBackdrop = $derived(!!conversation?.dossier?.backdrop)
-
 	// Compared by value, the way `WidgetHost` compares its layout: the widget
 	// context re-projects on every message that lands, and the settings on it
 	// are the same object nearly every time.
@@ -211,7 +204,6 @@
 	data-show-avatars={settings.showAvatars}
 	data-show-timestamps={settings.showTimestamps}
 	data-show-scene-markers={settings.showSceneMarkers}
-	data-backdrop={hasBackdrop ? "" : undefined}
 	data-channel={settings.channel ?? undefined}
 >
 	{#if settings.channel && conversation}

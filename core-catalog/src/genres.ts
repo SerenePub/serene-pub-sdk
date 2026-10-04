@@ -9,16 +9,15 @@
  */
 import { genre, layout, sessionEvents } from "@serene-pub/sdk"
 import {
-	ADVENTURE_LAYOUT_V2,
-	LAIR_LAYOUT_V2,
-	WHODUNIT_LAYOUT_V2,
-	WRITING_ROOM_LAYOUT_V2
+	ADVENTURE_LAYOUT,
+	CHAT_LAYOUT,
+	LAIR_LAYOUT
 } from "./ui/sessions/layouts.js"
 import type { AttributeSlotDecl, FieldDecl } from "@serene-pub/sdk"
 import { ADVENTURE_SHEET, ADVENTURE_SLOTS } from "./slots.js"
 import { LAIR_SHEET, LAIR_SLOTS } from "./slots.js"
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────── */
-import { WHODUNIT_SHEET, WHODUNIT_SLOTS } from "./slots.js"
+import { GUIDE_MASCOT_IMAGE } from "./guideMascotImage.js"
+import { coreWidgets } from "./ui/sessions/widgets.js"
 
 /**
  * Auto-advance (PLAN-turn-order §4.6, R16): whether the head turn fires by
@@ -109,6 +108,82 @@ export const CHARACTER_DETAIL_FIELD: FieldDecl = {
 	}
 }
 
+/**
+ * 🚧 The **author's note** (2026-10-02, AN1; Chat only, owner ruling) — the
+ * person's own steering text for one session: what is true now, where the
+ * story should lean. Placed in the conversation like an inject script —
+ * `depth` messages back from the reply — and repeated every `interval`-th
+ * reply, with **no** token trigger.
+ *
+ * **At the end by default** (owner ruling 2026-10-03): `depth` 0, right after
+ * the newest message and before the reply — the same place the post-history
+ * reminder defaults to, on both wires (folded into the newest user line on a
+ * `midSystem: 'fold'` connection). It was 4. The end is also what keeps a
+ * prompt an exact extension of the last one: a note four messages up moves
+ * four messages' worth of the prompt every turn. A session that stored a depth
+ * keeps it; only the default moved.
+ *
+ * ⚠ Not the **post-history reminder**: that is the pipeline's and the card's
+ * "how to respond", gated by `postHistoryTokenTrigger` and placed by
+ * `postHistoryDepth`. The two are separate blocks; at one index the note
+ * renders first, then inject scripts, then the reminder (closest to the
+ * reply). Not the Writing Room plugin's `authorsNote` either, which is a
+ * plain text field its own prompts interpolate — core's resolution reads an
+ * object only.
+ *
+ * ONE `FieldDecl`, like auto-advance: stored in `sessions.genre_fields`,
+ * drawn by the settings form, supplied to a run by the inlet's `fields`. A
+ * genre opts in by declaring it; core resolves it generically (the context
+ * builder carries it, Assemble places it, the template renders it).
+ * @experimental
+ */
+export const AUTHORS_NOTE_FIELD: FieldDecl = {
+	type: "object",
+	label: { en: "Author's note" },
+	description: {
+		en: "Your own note to the model for this session — what is true now, or where the story should go. It is placed right before the reply unless you move it, every reply or every few."
+	},
+	fields: {
+		text: {
+			type: "text",
+			label: { en: "Note" },
+			default: ""
+		},
+		depth: {
+			type: "integer",
+			label: { en: "Messages from the end" },
+			description: {
+				en: "How many messages before the reply the note goes. 0, the default, puts it right after the newest message."
+			},
+			min: 0,
+			max: 1000,
+			default: 0
+		},
+		interval: {
+			type: "integer",
+			label: { en: "Every how many replies" },
+			description: {
+				en: "1 adds it to every reply; 3 adds it to every third."
+			},
+			min: 1,
+			max: 1000,
+			default: 1
+		},
+		role: {
+			type: "enum",
+			label: { en: "Sent as" },
+			members: [
+				{ key: "system", label: { en: "System" } },
+				{ key: "user", label: { en: "User" } },
+				{ key: "assistant", label: { en: "Assistant" } }
+			],
+			default: "system",
+			group: "Advanced"
+		}
+	},
+	default: { text: "", depth: 0, interval: 1, role: "system" }
+}
+
 /** The one id every default session carries (was the create spec's slug). @experimental */
 export const CHAT_GENRE_ID = "core:genre/chat"
 
@@ -149,7 +224,9 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 			autoAdvance: { ...AUTO_ADVANCE_FIELD, default: "round" },
 			// Chat's turn order has the model path (R41, M4): rules by default.
 			turnMode: TURN_MODE_FIELD,
-			characterDetail: CHARACTER_DETAIL_FIELD
+			characterDetail: CHARACTER_DETAIL_FIELD,
+			// Chat only (owner ruling 2026-10-02): the person's own note.
+			authorsNote: AUTHORS_NOTE_FIELD
 		}
 	},
 	/**
@@ -176,7 +253,12 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 		[sessionEvents.memberRemoved]: {},
 		/** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
 		[sessionEvents.formAddressed]: {}
-	}
+	},
+	/**
+	 * The layout this genre ships (R71): its default — the conversation, and
+	 * the Author's note tucked in the right rail (owner ruling 2026-10-03).
+	 */
+	layouts: [layout({ slug: "default", name: { en: "Chat" }, preset: CHAT_LAYOUT })]
 })
 
 /* ── Adventure ──────────────────────────────────────────────────────────── */
@@ -323,7 +405,9 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/** The layout this genre ships (R71): its default. */
-	layouts: [layout({ slug: "default", name: { en: "Adventure" }, preset: ADVENTURE_LAYOUT_V2 })],
+	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
+	omitWidgets: [coreWidgets.authorsNote],
+	layouts: [layout({ slug: "default", name: { en: "Adventure" }, preset: ADVENTURE_LAYOUT })],
 })
 
 /* ── Guide ──────────────────────────────────────────────────────────────── */
@@ -331,35 +415,21 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
 /**
  * The **pure user/assistant session type** (plans/29 R-18; 09-B B10; built
  * 2026-09-16 as U5g): one envoy, no characters, at most one persona. A
- * person talks; Serene Pub's guide answers about the app and its docs. It
+ * person talks; Serene, Serene Pub's guide, answers about the app and its docs. It
  * is the structural successor of the deprecated *Assistant Chat*, whose code
  * is not reused — an envoy is a cast member, so the reply road, the turn
  * strategies, the resolver and the inspector all work unchanged.
  *
- * ⏳ The mascot is named plainly "Guide" and wears a placeholder glyph: its
- * name and art are the project owner's to set. Neither is load-bearing —
- * the key `mascot` is the address, and the name and image are display text.
+ * The envoy is **Serene**, Serene Pub's mascot (owner, 2026-10-01): the
+ * genre is the Guide, and Serene is who speaks in it. Neither her name nor
+ * her face is load-bearing — the key `mascot` is the address, and the name
+ * and image are display text.
  * @experimental
  */
 export const GUIDE_GENRE_ID = "core:genre/guide"
 
 /** The guide's key — the slug `envoy:mascot` and the config address `envoy:mascot`. @internal */
 export const GUIDE_MASCOT_KEY = "mascot"
-
-/**
- * A placeholder glyph, inline. No package ships binary assets today
- * (`EnvoyDecl.image`), so the placeholder is a data: URI the client renders
- * as an `<img>` — a compass rose on a plain disc, deliberately generic.
- */
-const GUIDE_MASCOT_IMAGE =
-	"data:image/svg+xml;utf8," +
-	encodeURIComponent(
-		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
-			'<circle cx="32" cy="32" r="30" fill="#e8e4f3" stroke="#6b5cb8" stroke-width="2"/>' +
-			'<polygon points="32,8 37,27 56,32 37,37 32,56 27,37 8,32 27,27" fill="#6b5cb8"/>' +
-			'<circle cx="32" cy="32" r="5" fill="#e8e4f3"/>' +
-			"</svg>"
-	)
 
 /**
  * The guide's instructions.
@@ -376,19 +446,29 @@ const GUIDE_MASCOT_IMAGE =
  * @internal
  */
 export const GUIDE_MASCOT_SYSTEM_PROMPT = [
-	"You are the Guide, Serene Pub's built-in helper. You help the person you are talking to use Serene Pub: setting up connections to AI services, creating characters and personas, writing lorebooks, starting and tuning sessions, writing plugins, and understanding what the app is doing.",
+	"You are Serene, Serene Pub's guide. You help the person you are talking with use Serene Pub: setting up connections to AI services, creating characters and personas, writing lorebooks, starting and tuning sessions, writing plugins, and understanding what the app is doing.",
+	"Your manner is calm and warm. You are patient with every question, never hurried, and gently reassuring when something has gone wrong. Your kindness shows in clear, careful answers, not in filler or flattery.",
 	"You cannot browse, search or open the documentation yourself. What you have instead is a set of documentation excerpts retrieved for the person's latest question and supplied with this conversation, each headed by its page and section and starting with the page's path. Those excerpts are the only thing you know about Serene Pub; your general knowledge of other apps does not apply to it. If you are asked what you can access, say exactly this.",
 	"Answer only from the excerpts. After the answer, name the page you used by copying its path exactly as the excerpt gives it, as \"See: \" followed by the path. Never write a page, path, file name, command, code, API or quotation that does not appear in an excerpt, and never quote an excerpt you were not given.",
-	"When the excerpts do not answer the question, or none were supplied, say plainly: \"I couldn't find that in the docs.\" Then suggest rephrasing the question, or browsing the documentation at /docs. Do not fill the gap with a guess. If the person questions an earlier answer, check it against the excerpts and correct it when they do not support it.",
-	"Answer plainly and briefly. Ask one clarifying question when the request is ambiguous. You are not a character in a story: do not roleplay and do not narrate."
+	"When the excerpts do not answer the question, or none were supplied, say so honestly and kindly: \"I couldn't find that in the docs.\" Then offer to look again if they put the question another way, or point them to the documentation at /docs. Do not fill the gap with a guess. If the person questions an earlier answer, check it against the excerpts and correct it when they do not support it.",
+	"Keep your answers short and plain. Ask one clarifying question when the request is ambiguous. You are not a character in a story: do not roleplay and do not narrate."
 ].join("\n\n")
+
+/**
+ * Serene's greeting: the first line of every new Guide session, on `main`.
+ * Declared, not generated (`EnvoyDecl.greeting`), so a new session opens
+ * instantly with no model call. `{{char}}` is Serene.
+ * @internal
+ */
+export const GUIDE_MASCOT_GREETING =
+	"Hi, I'm {{char}}, your guide to Serene Pub. What would you like to talk about? How can I help you?"
 
 /** @experimental */
 export const guideGenre = genre(GUIDE_GENRE_ID, {
 	name: { en: "Guide" },
 	family: "assistant",
 	description: {
-		en: "Talk to Serene Pub's guide about the app itself — no characters, no story; just questions and answers grounded in the docs."
+		en: "Talk to Serene, Serene Pub's guide, about the app itself — no characters, no story; just questions and answers grounded in the docs."
 	},
 	shape: {
 		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
@@ -412,23 +492,27 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		 * which is the whole point of declaring writes.
 		 */
 		writes: { lore: false, scenes: false },
-		/** Nothing to greet with — no character carries a greeting here. */
+		/**
+		 * The cards' greetings are off — no character sits here. Serene's own
+		 * opening line is her envoy greeting (`EnvoyDecl.greeting`).
+		 */
 		greeting: { enabled: false },
 		// No turn-order swaps: one in-turn envoy and no characters, nothing to choose between.
 	},
 	envoys: [
 		{
 			key: GUIDE_MASCOT_KEY,
-			name: { en: "Guide" },
+			name: { en: "Serene" },
 			description: {
-				en: "Serene Pub's built-in helper. Answers questions about using the app from the documentation excerpts it is given."
+				en: "Serene Pub's mascot and guide. Calm and warm, she answers questions about using the app from the documentation excerpts she is given."
 			},
 			image: GUIDE_MASCOT_IMAGE,
 			prompts: { systemPrompt: GUIDE_MASCOT_SYSTEM_PROMPT },
 			default: true,
 			// A line nobody claims here is this envoy's (ruled 2026-09-26).
 			fallback: true,
-			speaks: "in-turn"
+			speaks: "in-turn",
+			greeting: { text: { en: GUIDE_MASCOT_GREETING } }
 		}
 	],
 	events: {
@@ -450,7 +534,9 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		[sessionEvents.memberRemoved]: {},
 		/** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
 		[sessionEvents.formAddressed]: {}
-	}
+	},
+	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
+	omitWidgets: [coreWidgets.authorsNote]
 })
 
 /* ── Lair ───────────────────────────────────────────────────────────────── */
@@ -490,6 +576,21 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
  * @experimental
  */
 export const LAIR_GENRE_ID = "core:genre/lair"
+
+/**
+ * The post-history reminder's token trigger core ships on every assemble step
+ * whose prompt renders the session's growing history as prose: each genre's
+ * respond pipeline, and the prose actions (narrate-character, Adventure's
+ * Look, the Lair's Trap and Reveal). Below
+ * this many tokens of history a session gets no reminder, because a
+ * reinforcement note two messages after the system prompt is noise. The
+ * declaration's own default is 0 (always add it), which is what the short
+ * structured calls keep: their reminder is the output format, and it belongs
+ * at the end of every prompt. `narrate` keeps it too, as 0.5.3's narrator
+ * did: its reminder carries the press's direction beside the seed. 3000 is
+ * what 0.5.3 seeded on every prompt config. @internal
+ */
+export const POST_HISTORY_TOKEN_TRIGGER = 3000
 
 /** The Lair envoy's key — the address `envoy:castellan` (R6). @internal */
 export const LAIR_CASTELLAN_KEY = "castellan"
@@ -650,11 +751,10 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		// No turn-order swaps: the planner decides who speaks — see Adventure's note.
 		fields: {
 			/**
-			 * The Lair's own levers. It has no turn-style field any more (R12,
-			 * owner 2026-09-28): the Lair is cast only, so every turn runs one
-			 * voice call per character the planner named. A stored
-			 * `turnStyle` from before is an undeclared key, and undeclared
-			 * keys are not fields.
+			 * The Lair's own levers. It has no turn-style field (R12, owner
+			 * 2026-09-28): the Lair is cast only, so the party speak every
+			 * turn — how, is `partySpeech`. A stored `turnStyle` is an
+			 * undeclared key, and undeclared keys are not fields.
 			 */
 			tone: {
 				type: "enum",
@@ -670,6 +770,38 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 					{ key: "whimsical", label: { en: "Whimsical" } }
 				],
 				default: "grounded",
+				quick: true
+			},
+			/**
+			 * **How the party speak** (owner ruling 2026-09-30) — the
+			 * Lair's party speech, read by `lair-respond`'s `speech`
+			 * junction:
+			 *
+			 *  · `each` (the default) — each delver speaks: every delver
+			 *    the plan names takes a **character turn** of their own, in
+			 *    the plan's order — a run each, fired off the turn order,
+			 *    streaming their line, reading only their own private lore
+			 *    and keeping only their own stats. Pick who speaks gives the
+			 *    picked delver that same turn.
+			 *  · `castellan` — the Castellan speaks for the party: one call
+			 *    writes every named delver's lines for the turn, reading
+			 *    only lore everyone may know and hearing no whisper. Pick
+			 *    who speaks asks it for that delver's line alone.
+			 *
+			 * Nobody leads: the planner's order is the order they speak in.
+			 */
+			partySpeech: {
+				type: "enum",
+				label: { en: "How the party speak" },
+				description: {
+					en: "Each delver speaks: every delver the Castellan plans to speak takes a turn of their own, in their own voice, knowing only what they know. Castellan speaks for the party: one call writes the whole party's lines, knowing only what everyone may know — fewer calls, one voice."
+				},
+				of: ["each", "castellan"],
+				members: [
+					{ key: "each", label: { en: "Each delver speaks" } },
+					{ key: "castellan", label: { en: "Castellan speaks for the party" } }
+				],
+				default: "each",
 				quick: true
 			},
 			/**
@@ -771,425 +903,7 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/** The layout this genre ships (R71): its default. */
-	layouts: [layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT_V2 })],
-})
-
-/* ── Writing Room ───────────────────────────────────────────────────────── */
-
-/**
- * The **co-writing session** (plans/genres §2): two channels with different
- * prompt roles, which is the one lever no other genre has.
- *
- * `main` is the conversation with the companion — what to write next, what is
- * wrong with the last page, who this character really is. `manuscript` is the
- * story itself: a `folio` channel, so its rows fold into ONE block of text in
- * time order with no speaker names, placed ahead of the conversation, and a
- * turn triggered there carries `voice: 'none'` — no seed line at all, which is
- * the extend-prefill posture a manuscript wants. A page has no speaker to
- * announce.
- *
- * `messageVerbs: { delete: false }` on the manuscript and nowhere else: losing
- * a paragraph of the conversation costs a question, losing a paragraph of the
- * book costs the book. Edit is the floor and stays the main verb; a swipe is an
- * alternate continuation and a branch is a draft.
- *
- * ## The scribe, and the character who replaces it
- *
- * `characters: { min: 0, max: 1 }` with one envoy. Both, deliberately: with no
- * card seated the companion is the `scribe` envoy — a plain writing partner
- * with no fiction of its own — and seating a library character makes the
- * companion *that* person, whose card, voice and example dialogue the reply
- * pipeline compiles exactly as any speaker's. The envoy is `default: true`, so
- * a session with no card still has somebody to answer; the turn's speaker is
- * the trigger's pick, and a seated character is the pick the moment there is
- * one.
- *
- * ⏳ The scribe is named plainly "Scribe" and wears a placeholder glyph, on the
- * same terms as the guide's mascot: its name and art are the project owner's to
- * set, and neither is load-bearing — the key `scribe` is the address.
- *
- * ## Why it may write lore
- *
- * `writes: { lore: true, scenes: false }` (R-B). The story bible IS a lorebook,
- * and *Add to bible* is the action that grows it — a genre whose loop writes
- * lore has to declare it or the write site refuses it. Scenes are off: a
- * manuscript is one text, and a scene break is a paragraph rather than a row in
- * another table.
- * @experimental
- */
-export const WRITING_ROOM_GENRE_ID = "core:genre/writing-room"
-
-/** The companion's key — the slug `envoy:scribe` and the config address `envoy:scribe`. @internal */
-export const WRITING_ROOM_SCRIBE_KEY = "scribe"
-
-/** The manuscript's channel slug — the folio this genre is built around. @internal */
-export const MANUSCRIPT_CHANNEL = "manuscript"
-
-/**
- * A placeholder glyph, inline — a nib on a plain disc, on the same terms and
- * in the same palette as the guide's compass rose. No package ships binary
- * assets today (`EnvoyDecl.image`), so it is a data: URI the client renders as
- * an `<img>`.
- */
-const WRITING_ROOM_SCRIBE_IMAGE =
-	"data:image/svg+xml;utf8," +
-	encodeURIComponent(
-		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
-			'<circle cx="32" cy="32" r="30" fill="#e8e4f3" stroke="#6b5cb8" stroke-width="2"/>' +
-			'<path d="M20 46 L30 22 L34 22 L44 46 L40 46 L37 38 L27 38 L24 46 Z" fill="#6b5cb8"/>' +
-			'<path d="M28.5 34 L32 24 L35.5 34 Z" fill="#e8e4f3"/>' +
-			'<rect x="20" y="49" width="24" height="3" rx="1.5" fill="#6b5cb8"/>' +
-			"</svg>"
-	)
-
-/** @internal */
-export const WRITING_ROOM_SCRIBE_SYSTEM_PROMPT = [
-	"You are the writer's companion in a writing room. The person you are talking to is the author; the manuscript is theirs, and your job is to help them write it.",
-	"When the manuscript is provided with the conversation, read it before you answer: continuity, voice and the promises the last page made are your responsibility to notice. Refer to what is actually on the page rather than to what you would have written.",
-	"Answer plainly and briefly. Offer options rather than verdicts, ask one question when the request is ambiguous, and do not rewrite the manuscript in the conversation — the author asks for prose on the manuscript, not here."
-].join("\n\n")
-
-/** @experimental */
-export const writingRoomGenre = genre(WRITING_ROOM_GENRE_ID, {
-	name: { en: "Writing Room" },
-	/**
-	 * A family of its own. `chat`, `adventure` and `assistant` each name what a
-	 * session *is*, and a co-writing room is none of the three: nobody is
-	 * playing anybody, there is no world to adventure in, and the companion is
-	 * not answering questions about the app. The value is an open string read
-	 * only for grouping in the picker (24 §3).
-	 */
-	family: "writing",
-	description: {
-		en: "Write a story with a companion — talk it through on one channel, and grow the manuscript itself on the other."
-	},
-	shape: {
-		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
-		scenario: false,
-		tags: true,
-		/**
-		 * At most one, and none is fine. None means the `scribe` envoy answers;
-		 * one means that card does, in its own voice. Two would be a writers'
-		 * room rather than a writing room — a second companion has nothing to
-		 * do on a turn the first one took.
-		 */
-		characters: { min: 0, max: 1 },
-		/**
-		 * **Nobody plays a person here.** The author is the author: what they
-		 * type on `main` is direction and what they type on `manuscript` is
-		 * prose, and a persona would put them in a story they are writing
-		 * rather than living.
-		 */
-		personas: { min: 0, max: 0 },
-		/** The story bible — places, people, rules, the things that must stay true. */
-		lorebook: "optional",
-		/**
-		 * Written on purpose (R-B): *Add to bible* adds a lore entry, which is
-		 * the whole point of attaching one here. Scenes are off — a manuscript
-		 * is one text in chunks, and this genre opens none.
-		 */
-		writes: { lore: true, scenes: false },
-		composer: "text",
-		/** The companion speaks under its own name on `main`; the manuscript overrides it. */
-		voice: "character",
-		/** Nothing to greet with: a blank page does not welcome anybody. */
-		greeting: { enabled: false },
-		// No turn-order swaps: at most one companion and the scribe behind it, nothing to choose between.
-		channels: [
-			"main",
-			{
-				slug: MANUSCRIPT_CHANNEL,
-				role: "folio",
-				voice: "none",
-				messageVerbs: { delete: false }
-			}
-		],
-		fields: {
-			pov: {
-				type: "enum",
-				label: { en: "Point of view" },
-				description: {
-					en: "Whose eyes the manuscript is written through. Interpolated into the manuscript's own instructions."
-				},
-				of: ["first", "close-third", "omniscient"],
-				members: [
-					{ key: "first", label: { en: "First person" } },
-					{ key: "close-third", label: { en: "Close third person" } },
-					{ key: "omniscient", label: { en: "Omniscient" } }
-				],
-				default: "close-third",
-				quick: true
-			},
-			tense: {
-				type: "enum",
-				label: { en: "Tense" },
-				description: {
-					en: "Whether the manuscript is written in the past or the present."
-				},
-				of: ["past", "present"],
-				members: [
-					{ key: "past", label: { en: "Past" } },
-					{ key: "present", label: { en: "Present" } }
-				],
-				default: "past",
-				quick: true
-			},
-			chunkLength: {
-				type: "integer",
-				label: { en: "Chunk length" },
-				description: {
-					en: "Roughly how many words a continuation adds. A chunk is what you read before you decide, so a short one is usually a better one."
-				},
-				min: 50,
-				max: 2000,
-				default: 300,
-				quick: true
-			},
-			authorsNote: {
-				type: "text",
-				label: { en: "Author's note" },
-				description: {
-					en: "Standing instructions for the manuscript — tone, what to avoid, where this chapter is going. Read on every turn, so keep it short."
-				},
-				default: "",
-				quick: true
-			}
-		}
-	},
-	envoys: [
-		{
-			key: WRITING_ROOM_SCRIBE_KEY,
-			name: { en: "Scribe" },
-			description: {
-				en: "The writer's companion. Reads the manuscript, talks the next page through, and writes when you ask it to."
-			},
-			image: WRITING_ROOM_SCRIBE_IMAGE,
-			prompts: { systemPrompt: WRITING_ROOM_SCRIBE_SYSTEM_PROMPT },
-			default: true,
-			// A line nobody claims here is this envoy's (ruled 2026-09-26).
-			fallback: true,
-			speaks: "in-turn"
-		}
-	],
-	events: {
-		/**
-		 * The turn-order events (PLAN-turn-order §4.5): a genre that binds
-		 * its turn-order spec (`core:spec/<genre>-turn-order`) lists every event it binds it to, all
-		 * optional. Nine here — anything that can change whose turn it is.
-		 */
-		[sessionEvents.messageCompleted]: {},
-		[sessionEvents.messageEdited]: {},
-		[sessionEvents.messageDeleted]: {},
-		[sessionEvents.messageHidden]: {},
-		[sessionEvents.castChanged]: {},
-		[sessionEvents.sessionUpdated]: {},
-		[sessionEvents.sessionBranched]: {},
-		[sessionEvents.messageRespond]: { required: true },
-		[sessionEvents.sessionAction]: { open: true },
-		[sessionEvents.memberAdded]: {},
-		[sessionEvents.memberRemoved]: {},
-		/**
-		 * Optional on the surface and **bound by the shipped preset** (ruled
-		 * 2026-09-17). Every form this genre ships today is addressed to the
-		 * **owner** — the review gate on *Add to bible* is the author's, not a
-		 * character's — but the scribe is an envoy the AI portrays, and no
-		 * genre can promise that no pipeline will ever put a question to a
-		 * participant the AI answers for. A declared event nothing answers is
-		 * a form that waits for ever.
-		 */
-		[sessionEvents.formAddressed]: {}
-	},
-	/** The layout this genre ships (R71): its default. */
-	layouts: [layout({ slug: "default", name: { en: "Writing Room" }, preset: WRITING_ROOM_LAYOUT_V2 })],
-})
-
-/* ── Whodunit ───────────────────────────────────────────────────────────── */
-
-/**
- * The **mystery** (plans/genres §4): a case, a room of suspects, and one
- * detective — the person at the keyboard — who questions them, searches the
- * scene and eventually names somebody.
- *
- * ## What this genre proves, and what it costs
- *
- * Adventure gives every voice its own call; Whodunit asks what those calls are
- * *allowed to know*. A suspect who answers out of the whole case file is not a
- * suspect, and the genre lives or dies on that — which is why its respond
- * pipeline is the one multi-agent turn in core that wires **no character-lore
- * lane at all** (`whodunit.ts`, "What a voice may know"). The private half of
- * the case reaches exactly one prompt in the whole genre: the judge's, at the
- * accusation.
- *
- * ## The detective is a persona, and exactly one
- *
- * `personas: { min: 1, max: 1 }` — unlike every other genre here, the person IS
- * in the scene, and they are the only one who is. Two detectives would be two
- * people the suspects have to be addressed by, and none would leave the
- * questions unasked. `characters: { min: 2 }` because a room with one suspect
- * has no mystery in it: the answer is the only name on the list.
- *
- * ## The narrator is `voice`, not an envoy
- *
- * Declared exactly as Adventure's and Lair's are — `voice: 'narrator'` is the
- * whole declaration, and the narrator's instructions live in the
- * `core:task/build-scene-context@1` prompt row this genre ships. An envoy is a
- * cast member with a card and a turn; the narrator here is whose name the reply
- * is written under.
- *
- * ## It writes scenes and never lore
- *
- * `writes: { lore: false, scenes: true }` (R-B). The case file is a *reference*
- * — the author wrote it before the first turn and nothing in the loop may add
- * to it, because a pipeline that could write the lorebook could write itself an
- * alibi. Scenes are on: a mystery moves from the library to the terrace.
- * @experimental
- */
-export const WHODUNIT_GENRE_ID = "core:genre/whodunit"
-
-/** @experimental */
-export const whodunitGenre = genre(WHODUNIT_GENRE_ID, {
-	name: { en: "Whodunit" },
-	/**
-	 * Adventure's family: a narrated world with a cast who act on their own and
-	 * a ledger that moves is what this is, and the picker groups it there. The
-	 * value is an open string read only for grouping (24 §3).
-	 */
-	family: "adventure",
-	description: {
-		en: "A case, a room of suspects and one detective. Question them, search the scene, and name the culprit when you are sure — each suspect answers from what they alone know."
-	},
-	shape: {
-		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
-		scenario: true,
-		tags: true,
-		/** The suspects. One suspect is not a mystery; it is an arrest. */
-		characters: { min: 2 },
-		/**
-		 * The detective, and there is exactly one. The only genre in core that
-		 * *requires* a persona and caps it at one: the whole session is one
-		 * person asking questions, and a second would be a second interrogator
-		 * the cast have to keep track of.
-		 */
-		personas: { min: 1, max: 1 },
-		/**
-		 * Required, and it is the case: the scene, the timeline, the
-		 * statements, and one private entry per suspect saying what that
-		 * person knows and will not volunteer. A Whodunit with no lorebook is
-		 * a room of strangers with nothing to be guilty of.
-		 */
-		lorebook: "required",
-		/**
-		 * Written on purpose in one half only (R-B). The case file is authored
-		 * before the first turn and the loop never adds to it — a genre whose
-		 * pipelines could write lore could write an alibi into evidence — while
-		 * scenes are ordinary: an interview moves to the study.
-		 */
-		writes: { lore: false, scenes: true },
-		composer: "text",
-		/** The seed line carries the narrator; the suspects get their own calls. */
-		voice: "narrator",
-		/** Adventure's: a case opens with whatever the cast greet the detective with. */
-		greeting: { enabled: true, channel: "main" },
-		// No turn-order swaps: the planner decides who reacts — see Adventure's note.
-		fields: {
-			tone: {
-				type: "enum",
-				label: { en: "Tone" },
-				description: {
-					en: "How the narrator writes. Interpolated into the narrator's own instructions."
-				},
-				of: ["grounded", "pulpy", "grim", "whimsical"],
-				members: [
-					{ key: "grounded", label: { en: "Grounded" } },
-					{ key: "pulpy", label: { en: "Pulpy" } },
-					{ key: "grim", label: { en: "Grim" } },
-					{ key: "whimsical", label: { en: "Whimsical" } }
-				],
-				default: "grounded",
-				quick: true
-			},
-			/**
-			 * The genre's own lever: **how much a suspect volunteers**.
-			 *
-			 * `open` — a suspect answers what they were actually asked, and a
-			 * direct question about something they know gets a direct answer
-			 * unless they have a reason to lie. `guarded` — they answer the
-			 * narrowest reading of the question and volunteer nothing, so the
-			 * detective has to know what to ask.
-			 *
-			 * ⚠ **It was `difficulty` until 2026-09-17, and that was one word
-			 * for two things** (R1). Adventure owns `difficulty` over
-			 * `story | normal | hard` — how hard the world pushes back — and
-			 * nothing collides at run time, because a genre field is read out
-			 * of the session's own `fields` bag; what collided was the reading.
-			 * How forthcoming a suspect is is not how hard a session is, and a
-			 * person who has met Adventure's field arrives here expecting the
-			 * world to push back. `candour` names what the lever actually
-			 * moves, and the values say it in the suspect's own terms.
-			 */
-			candour: {
-				type: "enum",
-				label: { en: "Candour" },
-				description: {
-					en: "How much a suspect volunteers. When they are open they answer what you asked; when they are guarded they answer the narrowest reading of it and nothing more."
-				},
-				of: ["open", "guarded"],
-				members: [
-					{ key: "open", label: { en: "Open" } },
-					{ key: "guarded", label: { en: "Guarded" } }
-				],
-				default: "open",
-				quick: true
-			},
-			/**
-			 * Adventure's, restated rather than dropped: the two genres should
-			 * behave the same way about a model that can set a number, and a
-			 * detective who is not asked to accept a suspicion score is a
-			 * detective whose notes a model rewrote between two messages.
-			 */
-			trustNarrator: {
-				type: "boolean",
-				label: { en: "Trust the narrator" },
-				description: {
-					en: "Apply the state-keeper's changes as they are made, instead of holding each one for you to accept. Off is the safe default: a model that can set a number silently can rewrite the fiction between two messages."
-				},
-				default: false,
-				quick: true
-			}
-		}
-	},
-	/** Suspicion per suspect, and the scene, the count and the verdict. */
-	slots: WHODUNIT_SLOTS as unknown as AttributeSlotDecl[],
-	sheets: [WHODUNIT_SHEET],
-	// Its sessions may carry in their world's attributes and add their own.
-	customAttributes: 'allow',
-	events: {
-		/**
-		 * The turn-order events (§4.5). Four, not nine: this genre's order
-		 * is one narrator entry or none, decided by whether the newest
-		 * visible row is a person's, so only a row landing or leaving
-		 * (deleted, hidden, shown) and a branch move it. A cast change or a
-		 * settings save cannot (lair pass B9).
-		 */
-		[sessionEvents.messageCompleted]: {},
-		[sessionEvents.messageDeleted]: {},
-		[sessionEvents.messageHidden]: {},
-		[sessionEvents.sessionBranched]: {},
-		[sessionEvents.messageRespond]: { required: true },
-		[sessionEvents.sessionAction]: { open: true },
-		[sessionEvents.memberAdded]: {},
-		[sessionEvents.memberRemoved]: {},
-		/**
-		 * Optional on the surface and **bound by the shipped preset**, on the
-		 * Writing Room's terms (ruled 2026-09-17). Every form this genre ships
-		 * today is addressed to the **owner** — the detective is the one
-		 * choosing who to question and who to accuse — but a narrator putting
-		 * a yes/no to a *suspect* is a form addressed to somebody the AI
-		 * portrays, and every suspect here is. A declared event nothing
-		 * answers is a form that waits for ever.
-		 */
-		[sessionEvents.formAddressed]: {}
-	},
-	/** The layout this genre ships (R71): its default. */
-	layouts: [layout({ slug: "default", name: { en: "Whodunit" }, preset: WHODUNIT_LAYOUT_V2 })],
+	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
+	omitWidgets: [coreWidgets.authorsNote],
+	layouts: [layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT })],
 })

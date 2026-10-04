@@ -1,7 +1,7 @@
 /**
  * A package that is BOTH halves at once — the acceptance fixture for D-1.
  *
- * A genre, a frame panel, a preset, two configs, a prompt, two pipelines, one
+ * A genre, a panel widget (a component placing a document), a preset, two configs, a prompt, two pipelines, one
  * node definition with the handler that implements it, and a storage grant,
  * from one `defineExtension` and one default export. Before D-1 this package
  * could not exist: the genre and the surface were sayable only through
@@ -18,6 +18,7 @@
  */
 
 import {
+	component,
 	config,
 	defineExtension,
 	describeTaskDefinition,
@@ -29,6 +30,7 @@ import {
 	sessionEvents,
 	spec,
 	use,
+	widget,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
@@ -99,9 +101,15 @@ export const extension = defineExtension({
 	handlers: [handler(tallyDefinition, tallyHandler)],
 	pipelines: [createSession, respond],
 	genres: [tallyGenre],
-	surfaces: {
-		panels: [{ id: TALLY_PANEL_ID, entry: 'ui/tally.html', title: 'Tally', channels: ['main'] }],
-	},
+	widgets: [
+		widget({
+			id: TALLY_PANEL_ID,
+			title: 'Tally',
+			component: TALLY_PANEL_ID,
+			channels: ['main'],
+		}),
+	],
+	components: [component({ slug: TALLY_PANEL_ID, label: 'Tally', entry: 'components/tally.ts', framework: 'vanilla' })],
 	configs: [
 		tallyDefault,
 		// A config over somebody else's spec: legitimate, and the one thing in

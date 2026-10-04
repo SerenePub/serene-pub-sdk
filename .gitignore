@@ -5,3 +5,7 @@ node_modules
 plans
 docs/generated/
 playground/dist/
+# `node scripts/release.mjs stage` copies the root LICENSE and NOTICE into each
+# published package before packing; the root copies are the only tracked ones.
+/*/LICENSE
+/*/NOTICE

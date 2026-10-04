@@ -174,11 +174,12 @@ describe("P2 · core's three are declared bands", () => {
 		assert.equal(getVariable('core:var/character-lore@1'), varCharacterLore)
 	})
 
-	test("Assemble's variables slot is open, and renders characterLore raw", () => {
-		assert.deepEqual(C.assemble.descriptor.slots?.variables?.rendersBands, {
-			from: 'candidates',
-			raw: ['characterLore'],
-		})
+	test("Assemble's variables slot is open, and lays characterLore out like its siblings", () => {
+		assert.deepEqual(C.assemble.descriptor.slots?.variables?.rendersBands, { from: 'candidates' })
+		assert.equal(
+			C.assemble.descriptor.slots?.variables?.renders?.characterLore,
+			'core:var/character-lore@1',
+		)
 	})
 })
 
@@ -211,6 +212,7 @@ describe('P2 · Assemble’s renders is open', () => {
 		const renders = rendersAt(doc, 'prompt', C.assemble.descriptor.slots!.variables!)
 		assert.deepEqual(renders, {
 			worldLore: 'core:var/world-lore@1',
+			characterLore: 'core:var/character-lore@1',
 			history: 'core:var/history@1',
 			currentDate: 'core:var/current-date@1',
 			clue: 'bandtest:var/clue@1',

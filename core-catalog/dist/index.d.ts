@@ -32,11 +32,14 @@ export * from './slots.js';
  * fact-about-the-code route node types take — so this re-export is what puts
  * them in `allDefinitions()` for the boot sync.
  *
- * ⚠ That makes this module the one in the package with a load-bearing side
- * effect, and the package says `sideEffects: false`. `./dist/entries.js` is
- * listed as the exception in package.json, because nothing imports these by
- * value: without it a bundler is entitled to drop the module, and a dropped
- * declaration is three missing registry rows with nothing to report them.
+ * ⚠ A load-bearing side effect. package.json's `sideEffects` names this
+ * module, every other module that registers on import (stat shapes, slots,
+ * genres, annex fields, core's widgets) — and this entry itself, because core
+ * reaches all of them with a bare `import "@serene-pub/core-catalog"`. A pure
+ * entry let a release build drop that import, and the server booted with every
+ * entry type "declared by no module in this build". `sdk-tests/
+ * coreCatalogSideEffects.test.ts` fails when a registering module is missing
+ * from the list.
  */
 export * from './entries.js';
 export * from './prompts.js';
@@ -47,16 +50,11 @@ export * from './adventure.js';
 export * from './adventureActions.js';
 export * from './lair.js';
 export * from './lairActions.js';
-export * from './writingRoom.js';
-export * from './writingRoomActions.js';
-export * from './whodunit.js';
-export * from './whodunitActions.js';
 export * from './answerForm.js';
 export * from './respond.js';
 export * from './turnOrder.js';
 export * from './narrate.js';
 export * from './narrateCharacter.js';
-export * from './echo.js';
 export * from './annexField.js';
 export * from './builtins.js';
 export * from './sprites.js';
@@ -65,7 +63,6 @@ export * from './generateImage.js';
 export * from './graphBuild.js';
 export * from './summarize.js';
 export * from './ui/sessions/widgets.js';
-export * from './ui/sessions/looks.js';
 export * from './ui/sessions/layouts.js';
 /** @experimental */
 export interface CoreSpec {

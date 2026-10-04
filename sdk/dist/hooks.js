@@ -15,7 +15,7 @@
  * The moments a lifecycle callback may be registered against:
  *
  * - `startup` — at boot, before the ready-gate opens.
- * - `load` — declared, and not called yet (guides/extending.md, Gaps).
+ * - `load` — declared, and not called yet (INTEGRATING.md §5c, Gaps).
  * - `enable` — after the plugin is switched on.
  * - `disable` — before it is switched off. Bounded; a failure never stops the switch.
  * - `update` — once, after a reinstall replaced its bundle, on the new bundle's
@@ -93,9 +93,9 @@ const FORBIDDEN_ON_ANY_HOOK = [
 export function assertHookSurface(kind, surface) {
     const keys = new Set(Object.keys(surface));
     const found = FORBIDDEN_ON_ANY_HOOK.filter((k) => keys.has(k));
-    // Kind-specific, so it cannot live in the list above: a lifecycle callback gets
-    // scoped core *reads* and nothing else (13 §7c), so a `writeCore` beside its
-    // `readCore` is the same regression one level down.
+    // Kind-specific, so it cannot live in the list above: a lifecycle callback runs
+    // at core's own moments (boot, enable, uninstall), where a write to core's
+    // tables would be a migration nobody reviewed (13 §7c).
     if (kind === 'lifecycle' && keys.has('writeCore'))
         found.push('writeCore');
     return found.length ? { ok: false, found } : { ok: true };

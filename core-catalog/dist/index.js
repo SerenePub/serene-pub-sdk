@@ -19,26 +19,17 @@ import { CORE_PROMPTS } from './prompts.js';
 import { corePresetInputs } from './presets.js';
 import { adventureGenre, chatGenre, guideGenre } from './genres.js';
 import { lairGenre } from './genres.js';
-/* ── Writing Room (plans/genres §2; U2) ──────────────────────────────── */
-import { writingRoomGenre } from './genres.js';
-import { WRITING_ROOM_CREATE_SPEC_ID, WRITING_ROOM_RESPOND_SPEC_ID, writingRoomCreateSpec, writingRoomRespondSpec, } from './writingRoom.js';
-import { WRITING_ROOM_ADD_TO_BIBLE_SPEC_ID, WRITING_ROOM_BRAINSTORM_SPEC_ID, WRITING_ROOM_CONTINUE_SPEC_ID, WRITING_ROOM_CRITIQUE_SPEC_ID, WRITING_ROOM_EXPAND_SPEC_ID, WRITING_ROOM_EXPORT_SPEC_ID, WRITING_ROOM_REWRITE_SPEC_ID, WRITING_ROOM_TIGHTEN_SPEC_ID, writingRoomAddToBibleSpec, writingRoomBrainstormSpec, writingRoomContinueSpec, writingRoomCritiqueSpec, writingRoomExpandSpec, writingRoomExportSpec, writingRoomRewriteSpec, writingRoomTightenSpec, } from './writingRoomActions.js';
 import { CREATE_CHAT_SPEC_ID, createChatSpec } from './createChat.js';
 import { CREATE_GUIDE_SPEC_ID, createGuideSpec, GUIDE_RESPOND_SPEC_ID, guideRespondSpec, } from './guide.js';
 import { ADVENTURE_CREATE_SPEC_ID, ADVENTURE_RESPOND_SPEC_ID, adventureCreateSpec, adventureRespondSpec, } from './adventure.js';
 import { ADVENTURE_ADVANCE_TIME_SPEC_ID, ADVENTURE_ANSWER_SPEC_ID, ADVENTURE_ASK_SPEC_ID, ADVENTURE_LOOK_SPEC_ID, ADVENTURE_REST_SPEC_ID, adventureAdvanceTimeSpec, adventureAnswerSpec, adventureAskSpec, adventureLookSpec, adventureRestSpec, } from './adventureActions.js';
-import { ANSWER_FORM_ADVENTURE_SPEC_ID, ANSWER_FORM_CHAT_SPEC_ID, ANSWER_FORM_GUIDE_SPEC_ID, ANSWER_FORM_LAIR_SPEC_ID, ANSWER_FORM_WHODUNIT_SPEC_ID, ANSWER_FORM_WRITING_ROOM_SPEC_ID, answerFormAdventureSpec, answerFormChatSpec, answerFormGuideSpec, answerFormLairSpec, answerFormWhodunitSpec, answerFormWritingRoomSpec, } from './answerForm.js';
+import { ANSWER_FORM_ADVENTURE_SPEC_ID, ANSWER_FORM_CHAT_SPEC_ID, ANSWER_FORM_GUIDE_SPEC_ID, ANSWER_FORM_LAIR_SPEC_ID, answerFormAdventureSpec, answerFormChatSpec, answerFormGuideSpec, answerFormLairSpec, } from './answerForm.js';
 import { LAIR_CREATE_SPEC_ID, LAIR_RESPOND_SPEC_ID, lairCreateSpec, lairRespondSpec, } from './lair.js';
 import { LAIR_BUILD_ROOM_SPEC_ID, LAIR_FILE_ROOM_SPEC_ID, LAIR_NUDGE_SPEC_ID, LAIR_REVEAL_SPEC_ID, LAIR_ROOM_ANSWER_SPEC_ID, LAIR_TRAP_SPEC_ID, LAIR_WHISPER_SPEC_ID, lairBuildRoomSpec, lairFileRoomSpec, lairNudgeSpec, lairRevealSpec, lairRoomAnswerSpec, lairTrapSpec, lairWhisperSpec, } from './lairActions.js';
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────── */
-import { whodunitGenre } from './genres.js';
-import { WHODUNIT_CREATE_SPEC_ID, WHODUNIT_RESPOND_SPEC_ID, whodunitCreateSpec, whodunitRespondSpec, } from './whodunit.js';
-import { WHODUNIT_ACCUSE_SPEC_ID, WHODUNIT_ANSWER_SPEC_ID, WHODUNIT_QUESTION_SPEC_ID, WHODUNIT_SEARCH_SPEC_ID, WHODUNIT_VERDICT_SPEC_ID, whodunitAccuseSpec, whodunitAnswerSpec, whodunitQuestionSpec, whodunitSearchSpec, whodunitVerdictSpec, } from './whodunitActions.js';
 import { RESPOND_SPEC_ID, respondSpec } from './respond.js';
 import { TURN_ORDER_BY_GENRE } from './turnOrder.js';
 import { NARRATE_SPEC_ID, narrateSpec } from './narrate.js';
 import { NARRATE_CHARACTER_SPEC_ID, narrateCharacterSpec } from './narrateCharacter.js';
-import { ECHO_SPEC_ID, echoSpec } from './echo.js';
 import { CORE_ANNEX_FIELDS, SET_ANNEX_FIELD_SPEC_ID, setAnnexFieldSpec } from './annexField.js';
 import { BUILTIN_BRANCH_SPEC_ID, BUILTIN_DELETE_SPEC_ID, BUILTIN_EDIT_SPEC_ID, BUILTIN_HIDE_SPEC_ID, BUILTIN_SWIPE_SPEC_ID, builtinBranchSpec, builtinDeleteSpec, builtinEditSpec, builtinHideSpec, builtinSwipeSpec, } from './builtins.js';
 import { TOOL_LOOP_SPEC_ID, toolLoopSpec } from './toolLoop.js';
@@ -63,11 +54,14 @@ export * from './slots.js';
  * fact-about-the-code route node types take — so this re-export is what puts
  * them in `allDefinitions()` for the boot sync.
  *
- * ⚠ That makes this module the one in the package with a load-bearing side
- * effect, and the package says `sideEffects: false`. `./dist/entries.js` is
- * listed as the exception in package.json, because nothing imports these by
- * value: without it a bundler is entitled to drop the module, and a dropped
- * declaration is three missing registry rows with nothing to report them.
+ * ⚠ A load-bearing side effect. package.json's `sideEffects` names this
+ * module, every other module that registers on import (stat shapes, slots,
+ * genres, annex fields, core's widgets) — and this entry itself, because core
+ * reaches all of them with a bare `import "@serene-pub/core-catalog"`. A pure
+ * entry let a release build drop that import, and the server booted with every
+ * entry type "declared by no module in this build". `sdk-tests/
+ * coreCatalogSideEffects.test.ts` fails when a registering module is missing
+ * from the list.
  */
 export * from './entries.js';
 export * from './prompts.js';
@@ -78,17 +72,11 @@ export * from './adventure.js';
 export * from './adventureActions.js';
 export * from './lair.js';
 export * from './lairActions.js';
-export * from './writingRoom.js';
-export * from './writingRoomActions.js';
-/* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────── */
-export * from './whodunit.js';
-export * from './whodunitActions.js';
 export * from './answerForm.js';
 export * from './respond.js';
 export * from './turnOrder.js';
 export * from './narrate.js';
 export * from './narrateCharacter.js';
-export * from './echo.js';
 export * from './annexField.js';
 export * from './builtins.js';
 export * from './sprites.js';
@@ -97,7 +85,6 @@ export * from './generateImage.js';
 export * from './graphBuild.js';
 export * from './summarize.js';
 export * from './ui/sessions/widgets.js';
-export * from './ui/sessions/looks.js';
 export * from './ui/sessions/layouts.js';
 /**
  * The pipelines core ships — one registry rather than a list of builders
@@ -152,38 +139,6 @@ export const CORE_SPECS = [
     { slug: LAIR_TRAP_SPEC_ID, name: 'Trigger trap', build: lairTrapSpec },
     { slug: LAIR_REVEAL_SPEC_ID, name: 'Reveal', build: lairRevealSpec },
     /**
-     * The Writing Room (plans/genres §2; U2), create first for the reason
-     * above. Its one reply serves both channels — a junction on the trigger's
-     * channel decides whether the turn is a page of the book or a line of the
-     * conversation about it.
-     */
-    {
-        slug: WRITING_ROOM_CREATE_SPEC_ID,
-        name: 'Create writing room',
-        build: writingRoomCreateSpec,
-    },
-    {
-        slug: WRITING_ROOM_RESPOND_SPEC_ID,
-        name: 'Writing room turn',
-        build: writingRoomRespondSpec,
-    },
-    { slug: WRITING_ROOM_CONTINUE_SPEC_ID, name: 'Continue', build: writingRoomContinueSpec },
-    { slug: WRITING_ROOM_REWRITE_SPEC_ID, name: 'Rewrite', build: writingRoomRewriteSpec },
-    { slug: WRITING_ROOM_EXPAND_SPEC_ID, name: 'Expand', build: writingRoomExpandSpec },
-    { slug: WRITING_ROOM_TIGHTEN_SPEC_ID, name: 'Tighten', build: writingRoomTightenSpec },
-    { slug: WRITING_ROOM_BRAINSTORM_SPEC_ID, name: 'Brainstorm', build: writingRoomBrainstormSpec },
-    {
-        slug: WRITING_ROOM_CRITIQUE_SPEC_ID,
-        name: 'Critique this passage',
-        build: writingRoomCritiqueSpec,
-    },
-    {
-        slug: WRITING_ROOM_ADD_TO_BIBLE_SPEC_ID,
-        name: 'Add to bible',
-        build: writingRoomAddToBibleSpec,
-    },
-    { slug: WRITING_ROOM_EXPORT_SPEC_ID, name: 'Export manuscript', build: writingRoomExportSpec },
-    /**
      * The guide genre (R-18, U5g): create first, for the reason above; its
      * reply answers as the genre's envoy.
      */
@@ -203,16 +158,6 @@ export const CORE_SPECS = [
     },
     { slug: ANSWER_FORM_GUIDE_SPEC_ID, name: 'Answer a form (guide)', build: answerFormGuideSpec },
     { slug: ANSWER_FORM_LAIR_SPEC_ID, name: 'Answer a form (lair)', build: answerFormLairSpec },
-    {
-        slug: ANSWER_FORM_WRITING_ROOM_SPEC_ID,
-        name: 'Answer a form (writing room)',
-        build: answerFormWritingRoomSpec,
-    },
-    {
-        slug: ANSWER_FORM_WHODUNIT_SPEC_ID,
-        name: 'Answer a form (whodunit)',
-        build: answerFormWhodunitSpec,
-    },
     { slug: NARRATE_SPEC_ID, name: 'World narration', build: narrateSpec },
     // The other half of the narrator split (ruling 2026-09-07). A NEW spec,
     // not a bump: the 0.6 freeze forbids moving an existing semver and says
@@ -222,7 +167,6 @@ export const CORE_SPECS = [
         name: 'Side character narration',
         build: narrateCharacterSpec,
     },
-    { slug: ECHO_SPEC_ID, name: 'Echo', build: echoSpec },
     /** Every annex field's write (2026-09-26) — contributes no action; the host's door runs it. */
     { slug: SET_ANNEX_FIELD_SPEC_ID, name: 'Set annex field', build: setAnnexFieldSpec },
     /**
@@ -282,25 +226,6 @@ export const CORE_SPECS = [
         name: 'Narrative graph build',
         build: graphBuildSpec,
     },
-    /* ── Whodunit (plans/genres §4; U4) ──────────────────────────────────
-     *
-     * Create first, for the reason the Lair block states: the genre's
-     * declaration rides `meta.genre` on the create spec's version row, so
-     * nothing that declares itself for the genre can be published before the
-     * genre exists.
-     *
-     * The two pairs are listed together — the picker and what its options fire
-     * — because neither half means anything alone. `whodunit-answer` and
-     * `whodunit-verdict` are in no listing (the `form` venue); they are here so
-     * the blocks that carry them have an identity the host can hold a press to.
-     */
-    { slug: WHODUNIT_CREATE_SPEC_ID, name: 'Create whodunit', build: whodunitCreateSpec },
-    { slug: WHODUNIT_RESPOND_SPEC_ID, name: 'Whodunit turn', build: whodunitRespondSpec },
-    { slug: WHODUNIT_QUESTION_SPEC_ID, name: 'Question', build: whodunitQuestionSpec },
-    { slug: WHODUNIT_ANSWER_SPEC_ID, name: 'Answer a question', build: whodunitAnswerSpec },
-    { slug: WHODUNIT_SEARCH_SPEC_ID, name: 'Search', build: whodunitSearchSpec },
-    { slug: WHODUNIT_ACCUSE_SPEC_ID, name: 'Accuse', build: whodunitAccuseSpec },
-    { slug: WHODUNIT_VERDICT_SPEC_ID, name: 'Verdict', build: whodunitVerdictSpec },
     /**
      * Turn order as state (PLAN-turn-order §4.5), one spec per genre (R27,
      * §4.14): built by the public `turnOrderSpec()`, the same call a plugin
@@ -353,7 +278,7 @@ export const coreExtension = () => defineExtension({
     description: 'The genres and pipelines Serene Pub ships.',
     author: 'Serene Pub',
     repo: 'https://github.com/doolijb/serene-pub',
-    genres: [chatGenre, adventureGenre, guideGenre, lairGenre, writingRoomGenre, whodunitGenre],
+    genres: [chatGenre, adventureGenre, guideGenre, lairGenre],
     pipelines: CORE_SPECS.map((s) => s.build()),
     prompts: CORE_PROMPTS.map((p) => ({
         nodeType: p.nodeType,

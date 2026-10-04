@@ -173,9 +173,9 @@ export function checkInstall(input) {
                     severity: 'error',
                     code: 'E_UNKNOWN_TYPE',
                     where: `${doc.id} · ${n.key}`,
-                    message: `pins ${pin}, which this instance does not have`,
+                    message: `pins ${pin}, which this pub does not have`,
                     fix: known
-                        ? `this instance has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
+                        ? `this pub has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
                         : `no version of ${n.definitionId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
                 });
                 continue;
@@ -200,7 +200,7 @@ export function checkInstall(input) {
                     severity: 'warning',
                     code: 'W_NEWER_VERSION',
                     where: `${doc.id} · ${n.key}`,
-                    message: `pins ${pin}; this instance also has @${newest}`,
+                    message: `pins ${pin}; this pub also has @${newest}`,
                     fix: `nothing is required — the pin resolves and runs. Upgrade deliberately if you want the newer behaviour.`,
                 });
         }
@@ -219,7 +219,7 @@ export function checkInstall(input) {
                     severity: 'error',
                     code: 'E_SHAPE_DRIFT',
                     where: `${doc.id} · ${e.from}.${e.fromPort} → ${e.to}.${e.toPort}`,
-                    message: `compiled against ${e.shape}; this instance publishes ${now}`,
+                    message: `compiled against ${e.shape}; this pub publishes ${now}`,
                     fix: `rebuild the plugin against this release. This is the failure a version number ` +
                         `alone would not have caught: the id resolved, so nothing looked wrong until the ` +
                         `value reached a node that could not read it.`,

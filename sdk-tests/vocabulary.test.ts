@@ -195,6 +195,8 @@ describe('guides/your-first-plugin.md keeps to the vocabulary', () => {
 		let text = prose.text
 		for (const word of [...vocabWords].sort((a, b) => b.length - a.length))
 			text = text.replace(termPattern(word), (m) => ' '.repeat(m.length))
+		// The product's name is not the canon's `pub` (one installation).
+		text = text.replace(/Serene Pub/g, (m) => ' '.repeat(m.length))
 		const inLink = (at: number) => prose.links.some(([s, e]) => at >= s && at < e)
 		const unlinked: string[] = []
 		for (const term of [...readCanonTerms(canon)].sort((a, b) => b.length - a.length)) {

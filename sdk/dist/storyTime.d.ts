@@ -39,6 +39,49 @@ export interface StoryTime {
     minute?: number | null;
 }
 /**
+ * The range each part of a story time takes on EVERY rung of the calendar —
+ * the free-form rule, and the one validity definition for a stored date.
+ *
+ * A declared calendar only ever narrows it (month count, month lengths, the
+ * leap day — `storyTimeProblem`); nothing widens it. `parseStoryTime`,
+ * `storyTimeProblem` and core's history entry type all read these, and the
+ * entry type's declared range is projected into the database's CHECK — so a
+ * date a book's calendar allows is a date the database holds (A15, 2026-09-30:
+ * a copied 1–12 / 1–31 once refused month 13 of a thirteen-month calendar and
+ * the day after a free-form day 31).
+ *
+ * ⚠ **Month and day have a floor and no ceiling, on purpose.** A free-form
+ * book numbers days of the year ("Year 3, day 250") and may count as many
+ * months as it likes; a declared calendar may have any number of months of up
+ * to 1000 days each. Those are facts about ONE book, checked against its
+ * calendar at entry — never a bound on every book. Zero is refused because it
+ * is what an absent part packs to. The year has no range at all: it is one
+ * signed count, negative before year 1.
+ *
+ * Not the calendar's own limits (`storyCalendarProblems`: a month's LENGTH is
+ * 1–1000 days) — those bound a calendar's shape, not a date. And ranges only:
+ * the narrowing rule (a day needs a month, a minute needs an hour) is
+ * `storyTimeProblem`'s, which reads these for every part and is the check
+ * every dated writer answers with.
+ * @experimental
+ */
+export declare const STORY_TIME_PART_RANGES: {
+    readonly month: {
+        readonly min: 1;
+    };
+    readonly day: {
+        readonly min: 1;
+    };
+    readonly hour: {
+        readonly min: 0;
+        readonly max: 23;
+    };
+    readonly minute: {
+        readonly min: 0;
+        readonly max: 59;
+    };
+};
+/**
  * The story time a stored value spells, or `null` when it spells none.
  *
  * A number is a bare year (the oldest spelling a birthdate was ever typed
@@ -162,8 +205,14 @@ export declare function parseStoryCalendar(value: unknown): StoryCalendar | null
  */
 export declare function storyDaysInMonth(year: number, month: number, calendar: StoryCalendar): number;
 /**
- * Why a date does not land in a calendar, or `null` when it does. Free-form
- * (`null` calendar) takes any positive parts.
+ * Why a date does not land in a calendar, or `null` when it does.
+ *
+ * **Every rung** holds a story time to `STORY_TIME_PART_RANGES` and to the
+ * narrowing rule — a day needs a month, a minute needs an hour — so free-form
+ * (`null` calendar) takes any whole parts in range and no more. A declared
+ * calendar then narrows further: its month count, its month lengths, the leap
+ * day. This is the one check every dated writer answers with (history,
+ * amendments, fork dates, placements, clocks): one rule, one sentence.
  * @experimental
  */
 export declare function storyTimeProblem(time: StoryTime, calendar: StoryCalendar | null | undefined): string | null;

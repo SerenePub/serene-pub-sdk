@@ -26,7 +26,7 @@
 /**
  * Bare specifiers a component may import. A trailing `/*` admits subpaths.
  *
- * The last six are experimental (C6 P1, owner ruling 2026-09-25 Q4): the
+ * The last seven are experimental (C6 P1, owner ruling 2026-09-25 Q4): the
  * SDK's component subpath and core's UI kit — the helpers core's own
  * components are written against — so a clone of a core component compiles
  * in-app from its source, and a CLI modder has the same kit. Each names ONE
@@ -45,6 +45,9 @@ export const COMPONENT_IMPORTS = [
 	'@serene-pub/core-catalog/scene-portraits',
 	'@serene-pub/core-catalog/session-state',
 	'@serene-pub/core-catalog/widgets',
+	// 🚧 2026-10-02 (AN1): the author's note widget's plain half — appended,
+	// so the list only grows.
+	'@serene-pub/core-catalog/authors-note',
 ] as const
 
 /**

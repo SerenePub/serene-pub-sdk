@@ -8,13 +8,12 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { channelDecls } from '@serene-pub/sdk'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
-import { lairGenre, LAIR_GENRE_ID } from '../core-catalog/src/genres.js'
-import { coreLayoutPreset } from '../core-catalog/src/ui/sessions/layouts.js'
+import { lairGenre } from '../core-catalog/src/genres.js'
 
 const SANCTUM = 'messages#sanctum'
 
 test("the Lair's live layout places a Sanctum copy of the conversation in its right column", () => {
-	const layout = coreLayoutPreset(LAIR_GENRE_ID)!.layout as any
+	const layout = lairGenre.layouts![0]!.preset as any
 	assert.deepEqual(layout.zoneLayout.zones.right.widgets, ['world-state', SANCTUM])
 	const right = layout.arrangedGrid.right.items as Array<{ id: string; y: number; h: number }>
 	assert.deepEqual(
@@ -32,7 +31,7 @@ test("the Lair's live layout places a Sanctum copy of the conversation in its ri
 })
 
 test('the copy is a copy of a widget core has, claiming a channel the Lair declares by label', () => {
-	const layout = coreLayoutPreset(LAIR_GENRE_ID)!.layout as any
+	const layout = lairGenre.layouts![0]!.preset as any
 	const [widget] = SANCTUM.split('#')
 	const messages = CORE_WIDGETS.find((w) => w.id === widget)
 	assert.ok(messages, 'the copy names a core widget')

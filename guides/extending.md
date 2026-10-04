@@ -1,86 +1,291 @@
-# What you can extend
+# What a plugin can do
 
-This page is the map of every place a package can plug into Serene Pub. Each place is a
-**seam**: an extension point the SDK declares, with at least one implementation that ships
-today. The table below lists each seam with:
+A plugin is one `defineExtension({ … })` call. Every part it adds is one field of that call.
+This page is the map: what each part is for, what it may and may not do, and a small example.
+Each section links to the guide with the details.
 
-- its **stability**, which is the TSDoc tag on the symbols that declare it. A `@public` symbol is
-  frozen for SDK 1.0. An `@experimental` one can still change.
-- the **shipped implementations**: what core, the app or the CLI provides for that seam today.
-- the **tests** that run each implementation, given as a file and a test name. `sdk-tests/…`
-  paths are in this repository. `serene-pub/…` paths are in the app.
+## At a glance
 
-The rule behind the table (R37): a seam either has a working implementation, or it is tagged
-`@experimental`. No seam is frozen while it is still empty. Anything that falls short of this
-rule is listed under [Gaps](#gaps) below.
-
-`sdk-tests/extendingCensus.test.ts` reads this table. It fails if a named test file is
-missing, or if the file no longer contains the named test, so the census cannot quietly go
-stale. If you rename a test, update its row here in the same change.
-
-## The pipeline surface
-
-| Seam | Stability | Shipped implementations | Tests that run them |
+| You want to… | The part | Where you declare it | Details |
 | --- | --- | --- | --- |
-| **Node kinds**: `inlet` · `query` · `task` · `oracle` · `outlet`, and `entry` for entry types | `handler()` @public · `Kind` @experimental | Core's catalog ships definitions of every kind. A package's `task`, `query`, `oracle` and `outlet` definitions run through `handler()` in the sandbox. Only core ships inlets and entry types | *task*: `sdk-tests/pluginHarness.test.ts` › `a task is pure: neither storage nor fetch` · *query, outlet*: `sdk-tests/pluginHarness.test.ts` › `a query and an outlet get the extension’s own rows, and no network` · *oracle*: `sdk-tests/pluginHarness.test.ts` › `an oracle is the one kind that calls out` · *inlet*: `sdk-tests/messageVerbs.test.ts` › `each compiles clean, under its declared id, as one inlet straight into one outlet` · *entry*: `sdk-tests/entries.test.ts` › `an entry type is a registry row like any other, with kind entry` |
-| **Provisional node definitions**: `core:oracle/speak@1` · `core:oracle/mcp-tool@1` · `core:oracle/mcp-resource@1` | `C.speak`, `C.mcpTool`, `C.mcpResource` @experimental, with `provisional: true` | **None.** They are declared and have no handler. `validate()` refuses a document that places one, and none of them can be a swap | `sdk-tests/rulings.test.ts` › `the three core definitions plans 14 and 28 own carry the flag, and no other core one does` · `sdk-tests/rulings.test.ts` › `a document that reached the executor anyway halts on the law, not on "no binding registered"` · `sdk-tests/modderPass.test.ts` › `a provisional definition cannot be a swap — it has no handler` |
-| **Specs** (pipelines) | `spec()`, `pin()`, `slot()`, `use()` @public | Core's catalog specs. A package's own, under `pipelines` | *core*: `sdk-tests/coreCatalog.test.ts` › `the announcement builds — genres, pipelines, hooks validated as one package` · *package*: `sdk-tests/plugin.test.ts` › `it produces a manifest and the pipeline documents` |
-| **Genres** | `genre()`, `GenreDecl` @public | Chat, Adventure, Guide, Lair, Writing Room and Whodunit. A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `nobody plays a person, and the dungeon is required` · *Whodunit*: `sdk-tests/whodunit.test.ts` › `two suspects at least, one detective exactly, and a required case` · *Writing Room*: `sdk-tests/writingRoom.test.ts` › `the manuscript is a folio with no voice and no delete; main is an ordinary conversation` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |
-| **Presets** | `PresetInput` @experimental | Core's presets, one per genre. A package's own presets | `sdk-tests/presets.test.ts` › `three presets, one default, addressed by node key` · `sdk-tests/announce.test.ts` › `a preset leaving a required slot unbound refuses, and coverage says MISSING` |
-| **Turn strategies** | `TurnStrategyPin`, `turnOrderSpec` @public · the pins (`C.turnRoundRobin`, …) @experimental | Round robin, round robin by user (`turn-user-split`), random, scripted, manual and narrator, plus the model path's advise oracle (`turn-advise`). A package's own strategy | *round robin*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `lists everyone who has not spoken since the person did, in candidate order` · *by user*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrows to the last sender's own candidates` · *random*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `prepares exactly one entry, and the same one for the same seed` · *scripted*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `takes the chain's order, marking what it changed` · *manual*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `manual prepares nothing, whatever the history` · *narrator*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrator prepares one entry in nobody's name after a person's line` · *advise*: `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `turnMode model: the model's order stands, via model, and the receipt names the oracle` · *package*: `sdk-tests/packageConformance.test.ts` › `C32 and C33 pass on a strategy that fits core’s chat turn order and behaves as a hook` |
-| **Swaps**: definitions a person may put in a node's place | `expose.swaps`, `SwapContribution` @experimental | Chat's five turn-strategy swaps. A package's swap contributions onto another package's spec | `sdk-tests/modderPass.test.ts` › `swaps land on the built node and in the document as definition ids, pin never repeated` · `sdk-tests/modderPass.test.ts` › `announce().swaps() lands on the document, the definition as its id` · `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `the order names the strategy that ran — an instance-scope swap included (A7r)` |
-| **Event listeners** | `eventListener()` @public · `EventListenerDecl` @experimental | The app's event host fans each core event out to the plugins listening for it | `serene-pub/src/lib/server/plugins/eventHost.test.ts` › `runs every subscriber of an event, in dispatch order` · `serene-pub/src/lib/server/plugins/eventHost.test.ts` › `keeps a thrown subscriber from touching its sibling's result` |
-| **Package events** | `defineSessionEvent`, `ExtensionDecl.events` @experimental | A package's own session events, recorded by its pipelines and heard through the session-event inlet | `sdk-tests/customEvents.test.ts` › `registers it, so a lock may name it; core ids and bad ids are refused` · `sdk-tests/customEvents.test.ts` › `the receipt names the event the write caused; a write that wrote nothing causes nothing` |
-| **Lifecycle callbacks** | `lifecycleCallback()`, `LIFECYCLE_MOMENTS`, `LifecycleMoment`, `LifecycleUpdateInput` @experimental | The host calls `startup` at boot, `enable` after a switch on, `disable` before a switch off, `update` on a replaced bundle's first run, `uninstall` before removal and `shutdown` during graceful shutdown. `load` has no caller (see [Gaps](#gaps)). The compiler refuses `sidecarSpawn` and `scheduled` as not supported yet | `serene-pub/src/lib/server/plugins/SandboxManager.test.ts` › `calls a lifecycle hook as (input, ctx) on both backends` · `serene-pub/src/lib/server/plugins/SandboxManager.test.ts` › `lifecycle calls bypass the ready-gate and record as lifecycle` · *enable*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `enable fires once, after the switch, with an empty input` · *disable*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `disable fires once, before the switch, while still registered` · *update*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `update fires once, on the replaced bundle's first enable, with both versions` · *uninstall*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `uninstall fires once, before the row is removed` · *shutdown*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `shutdown fires once per registered plugin, then the manager is torn down` · *bounds*: `serene-pub/src/lib/server/plugins/lifecycle.int.test.ts` › `enable and disable still switch; uninstall still removes; shutdown still returns` · *dropped moments*: `sdk-tests/plugin.test.ts` › `a lifecycle callback for sidecarSpawn or scheduled is refused as not supported yet` |
-| **Script kinds and hooks** | `defineScriptKind`, `ExtensionDecl.hooks` @experimental | Core's script kinds (`text/transform`, `candidates/filter`, …). A plugin's chain links, run through the one dispatch | `sdk-tests/scripts.test.ts` › `all eight are registered, and nothing else is` · `sdk-tests/scriptPoints.test.ts` › `a point declaring candidates/filter is offered to the applier as exactly that` · `serene-pub/src/lib/server/plugins/hookDispatch.test.ts` › `resolves owner + hook and forwards a success as a ScriptRunResult` |
-| **Template engines** | `defineEngine` @experimental; a plugin's sandboxed engine is `templateEngines` on `defineExtension` @experimental | `plain` and `jinja2`. A package's own engine | *plain*: `sdk-tests/presets.test.ts` › `plain text is trivially exact — the reference implementation` · *jinja2*: `sdk-tests/presets.test.ts` › `jinja2 separates fixed literals from per-iteration literals` · *package*: `sdk-tests/presets.test.ts` › `an extension registers its own compiler and it renders` · `serene-pub/src/lib/server/plugins/engineHost.int.test.ts` › `registers at sync and renders through the sandbox` |
-| **Plugin settings** | `defineSettings` @public | The generated settings form, and the host's settings store | `sdk-tests/settings.test.ts` › `the form layout groups in declaration order` · `serene-pub/src/lib/server/plugins/settingsHost.test.ts` › `encrypts a secret at rest and resolves plaintext only for the hook` |
-| **Field controls** | `CONTROL_REGISTRY` @experimental | Boolean, number, text, select, ranking, weights, and the unknown-field fallback | `sdk-tests/generatedControls.test.ts` › `every FieldType either bridges to a value type or is handled by name` |
-| **Declared permissions**: storage and network | `DeclaredPermissions` @experimental | The host's storage, which enforces the quota, and the host's fetch, which enforces the allowlist | *storage*: `serene-pub/src/lib/server/plugins/storageHost.test.ts` › `enforces the quota` · *network*: `serene-pub/src/lib/server/plugins/fetchHost.test.ts` › `matches an exact host on the default web ports only` · `sdk-tests/pluginHarness.test.ts` › `an oracle that declared no hosts is refused by name` |
-| **Conformance package cases** C28–C33 | `conformPackage`, `manifestSeams` @experimental | C28 (event map), C29 (loops), C30 (clone parity), C31 (mounts), C32 (swap fit) and C33 (binding probe) | *C28, C29*: `sdk-tests/conformance.test.ts` › `95d · the six laws the showcase lanes hit each fail on a host that gets them wrong` · *C28*: `sdk-tests/eventMapLaws.test.ts` › `C28 refuses an uncaused event that is not a root, and an undeclared one` · *C29*: `sdk-tests/eventMapLaws.test.ts` › `C29: a loop needs one member with a termination policy; a chain needs none` · *C30*: `sdk-tests/packageConformance.test.ts` › `C30 parity passes on core’s messages widget against a clone, editing through the page’s field` · *C31*: `sdk-tests/packageConformance.test.ts` › `C31 mounts every listed module in a plugin’s box — clean modules pass, with the grants each names` · *C32, C33*: `sdk-tests/packageConformance.test.ts` › `C32 fails on a misfit, a node the host does not seat, and a definition the package does not declare` · `sdk-tests/packageConformance.test.ts` › `C33 fails on a strategy that returns a bare value, and on one with no handler, naming the probe` · `sdk-tests/packageConformance.test.ts` › `conformPackage runs the package cases only, and refuses a host case by name` |
+| Add a step a pipeline can run: roll dice, keep score, call a web API | a **node definition** and its **handler** | `handlers` | [Node kinds](#node-kinds-what-each-step-may-do) |
+| Decide what happens when something happens in a session | a **pipeline** (a spec) | `pipelines` | [Pipelines](#pipelines) |
+| Add a new kind of session: a game, a writing room | a **genre** | `genres` | [Genres](#genres) |
+| Add a button, a menu item or a slash command | an **action** | on a spec, `contributes.actions` | [Actions](#actions) |
+| Ask a question inside a message | a **choices** or **form** block | a step in a pipeline | [Forms](forms-and-effects.md) |
+| Show your own interface in the session | a **widget** and its **component** | `widgets`, `components` | [Widgets](widgets.md) |
+| Show a whole HTML document: a page, a charting library | a **frame** | `surfaces`, or an `sp-frame` inside a widget's component | [Frames](frames.md) |
+| Tell the rest of the session that something happened | a **session event** | `events` | [Events](events.md) |
+| Run code when an event happens, or when your plugin is installed or switched on | an **event listener**, a **lifecycle callback** | `handlers` | [Listeners](#event-listeners-and-lifecycle-callbacks) |
+| Keep data between runs | **storage**: your own rows and files | `permissions.storage` | [Storage](storage.md) |
+| Let a widget save a small value in the session | an **annex field** | `annexFields` | [Storage](storage.md#a-value-a-widget-saves-annex-fields) |
+| Let an admin, or each person, configure your plugin | **settings** | `settings` | [Your first plugin](your-first-plugin.md#declaring-the-plugin) |
+| Offer a different rule for who speaks next | a **turn strategy**, offered as a **swap** | `handlers`, `swaps` | [Your first plugin](your-first-plugin.md#a-turn-strategy-of-your-own) |
 
-## The UI surface
+Every name on this page is defined in the [vocabulary](vocabulary.md).
 
-| Seam | Stability | Shipped implementations | Tests that run them |
+## What a plugin cannot do
+
+These limits hold whatever you declare. Plan around them from the start.
+
+- **It never calls a model or reads a connection.** Model calls are core's steps
+  (`generate-text` and the like). Your pipeline places them, and an admin decides which model
+  answers. You shape the call with your own prompts and settings.
+- **It never writes Serene Pub's data from code.** Messages, the session annex, lore entries and
+  events are written by core's write steps, which your pipeline places. Your own code writes only
+  your own storage.
+- **It never reads Serene Pub's tables from code.** Session data (the history, the cast, the
+  lorebook) reaches your step on its input ports, wired from one of core's read steps upstream.
+- **It never starts a pipeline from code.** A pipeline starts when an event happens or a person
+  presses an action. To cause one, a pipeline records an event with core's `record-event` step.
+- **Widgets and frames have no network and no storage.** They draw what the session sends them,
+  and they press actions. Anything else goes through your pipelines.
+
+## Pipelines
+
+A **pipeline** is a graph of steps that runs when something happens in a session: a message
+arrives, a button is pressed, an event is recorded. You build one with `spec()` and ship it under
+`pipelines`. Serene Pub installs the compiled document, never your builder code.
+
+<!-- prelude:
+import { sessionEvents, slot, spec, use } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+-->
+```ts
+const reply = spec('acme.greeter:reply', { version: '1.0.0' })
+	.inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.messageRespond })
+	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+	.task('prompt', () => C.assemble.v2())
+	.oracle('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
+	.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
+```
+
+[Your first plugin](your-first-plugin.md) builds this one step by step and runs it in the page.
+The [catalog](/docs/sdk/index) lists every core step you can place, with its options.
+
+## Node kinds: what each step may do
+
+Every step in a pipeline is a **node**, and every node has one of five **kinds**. The kind says
+what the step is allowed to do. Your own node definitions can be any kind but the inlet.
+
+| Kind | Its job | What your handler is handed, beyond `random`, `now`, `log` and `signal` | A core example |
 | --- | --- | --- | --- |
-| **Components** | `component()` @public · `ComponentDecl` @experimental | The components of core's widgets. A package's own components | `sdk-tests/hostElements.test.ts` › `a component declares slug, label, entry and framework — and no surface point (R25)` · `sdk-tests/hostElements.test.ts` › `a package's widget must name a component the package declares` |
-| **Component frameworks** | `COMPONENT_FRAMEWORKS` @experimental · `svelteComponent` @public | `svelte` and `vanilla` (plain DOM) | *svelte*: `sdk-tests/componentCompile.test.ts` › `a scaffolded Svelte component compiles in-app from memory, with no renderer in it` · `sdk-tests/frozenArtifacts.test.ts` › `a frozen Svelte widget still reads its sections, asks a request, hears an event and invokes` · *vanilla*: `sdk-tests/componentBundle.test.ts` › `a vanilla scaffold builds too` · `sdk-tests/frozenArtifacts.test.ts` › `a frozen vanilla widget still restores its saved state, counts and saves` |
-| **Renderer** (R23: out of sight behind the component client) | `guardedConnection` @experimental | Remote DOM: the UI worker's runtime, and the page's guarded receiver | `sdk-tests/guardedConnection.test.ts` › `records built with Remote DOM's own constants are judged and applied` · `serene-pub/src/lib/client/components/host/componentMount.dom.test.ts` › `core's own module edits unasked, its press relayed off the worker channel` |
-| **Component mount points** | `WidgetDecl.component`, via `widget()` @experimental | `widget` only. The `page` mount point is not built (see [Gaps](#gaps)) | *widget*: `serene-pub/src/lib/client/components/host/componentMount.dom.test.ts` › `core's other modules are widgets: their ids are their box's and they paint inside it, as a plugin's (F8)` · `serene-pub/src/lib/client/components/surfaces/panel.dom.test.svelte.ts` › `is posted its granted section by the table's name` |
-| **Widgets** | `widget()`, `WidgetDecl` @experimental · `coreWidgets` @public | Core's messages, Stats, World State, scene portraits and Lore entries widgets. A package's own widgets | *all core*: `sdk-tests/widgetSections.test.ts` › `each names a component and resolves to core's remote — no switch, no native` · *messages*: `sdk-tests/coreConversationComponent.test.ts` › `core's conversation component renders, streams and edits` · *World State*: `sdk-tests/coreStateWidgets.test.ts` › `draws the world, one control per slot type, in core vocabulary` · *Stats*: `sdk-tests/coreStateWidgets.test.ts` › `scene: a card per cast member in play, a retired slot greyed and not editable` · *scene portraits*: `sdk-tests/coreScenePortraitsComponent.test.ts` › `core's scene portraits: the cast, its bars, the sprite-set menu only where allowed, the viewer's persona` · *Lore entries*: `sdk-tests/coreLoreEntriesComponent.test.ts` › `core's Lore entries pages the book through 'session-entries' and draws what the page answered` · *package*: `sdk-tests/widgetDecls.test.ts` › `a package widget names a component the package declares, once` |
-| **Host elements** (`sp-*` and the plain elements a component may place) | `SP_HOST_ELEMENTS` @experimental | The app's `sp-*` implementations, and the receiver's element policy | `serene-pub/src/lib/client/components/hostElements/registry.test.ts` › `every sp element in SP_HOST_ELEMENTS is implemented, and nothing else is` · `sdk-tests/componentHarness.test.ts` › `an sp element event carries its declared detail; the locale arrives on ctx` |
-| **Frame points** | `FramePoint`, `SurfacesDecl` @experimental | `session-view`, `page`, and a frame widget (`panel` point). All three are also mounted live, sandboxed, by the app's C7 gate spec `frames` (`scripts/c7Gate/specs/frames.ts`), which the census cannot name because it is not a test | *declarations*: `serene-pub/src/lib/server/plugins/frameHost.int.test.ts` › `reads session-view, page, and panels tolerantly` · *frame widget*: `serene-pub/src/lib/client/components/frames/pluginFrame.dom.test.ts` › `only the sections it reads are posted into its document` · *protocol*: `sdk-tests/framePort.test.ts` › `protocol 2, and the surface point — not a hardcoded 1` |
-| **Preview-harness targets** | `PreviewTarget`, `previewManifest` @experimental | Frame targets (`session-view`, `page`, `panel`) and component targets (`widget`), drawn by `ui-preview` and, for authored components, by the in-app component preview | *frame*: `sdk-tests/surfaces.test.ts` › `a panel carries its id and its lanes, because the host scopes on them` · *component*: `sdk-tests/surfaces.test.ts` › `components come through with their point and framework` · *in-app preview*: `serene-pub/src/lib/server/sockets/components.int.test.ts` › `mints a capability URL served only to its minter while it lives` |
-| **Component test harness** | `mountComponent` @public | `@serene-pub/cli/testing` | `sdk-tests/componentHarness.test.ts` › `a scaffolded Svelte component renders its canned context, and hears a change` |
-| **Widget request kinds and their askers** | `WIDGET_REQUEST_ASKERS`, `WIDGET_REQUEST_KINDS` @experimental | 22 request kinds, each asked by `any` widget, by `core` only, or by a widget granted a `{ scope }`. The session page answers each one through its own module under `sessionPage/requests/`, which declines with a sentence | *askers*: `sdk-tests/widgetSections.test.ts` › `every kind says who may ask it — the five R21 kinds among them` · `serene-pub/src/lib/client/components/sessionPage/requests/askers.test.ts` › `a plugin's widget asking a core-only kind is refused, and the page's answer never runs` · *session-entries*: `serene-pub/src/lib/client/components/sessionPage/requests/sessionEntries.test.ts` › `asks for the page's own session, with titleOrKey as the socket's query` · *set-attribute-value*: `serene-pub/src/lib/client/components/sessionPage/requests/setAttributeValue.test.ts` › `writes one owner's value through the store, owning its error` · *set-entry-marks*: `serene-pub/src/lib/client/components/sessionPage/requests/setEntryMarks.test.ts` › `sends only the marks asked for, and resolves with both as they now stand` · *set-sprite-set*: `serene-pub/src/lib/client/components/sessionPage/requests/setSpriteSet.test.ts` › `writes the switch for the page's own session, and back to the card's own with null` · *clear-scene-image*: `serene-pub/src/lib/client/components/sessionPage/requests/clearSceneImage.test.ts` › `clears the page's pin on that side, and the projection the widget reads follows` · *messages*: `serene-pub/src/lib/client/components/sessionPage/requests/messages.test.ts` › `answers with the page's older page, ignoring the request's cursor` · *open-character*: `serene-pub/src/lib/client/components/sessionPage/requests/openCharacter.test.ts` › `opens the panel, then points it at the character` · *view-avatar*: `serene-pub/src/lib/client/components/sessionPage/requests/viewAvatar.test.ts` › `refuses a ref naming no one, in words` · *view-image*: `serene-pub/src/lib/client/components/sessionPage/requests/viewImage.test.ts` › `anyone may ask: the guard passes a plugin's widget on, and the answer holds it to the app's media` · *open-lore*: `serene-pub/src/lib/client/components/sessionPage/requests/openLore.test.ts` › `points the panel at the target, then opens it` · *prompt-details*: `serene-pub/src/lib/client/components/sessionPage/requests/promptDetails.test.ts` › `shows the line's recorded prompt` · *inspect-run*: `serene-pub/src/lib/client/components/sessionPage/requests/inspectRun.test.ts` › `refuses a viewer who is not an admin, in words, before looking anything up` · *pick-turn*: `serene-pub/src/lib/client/components/sessionPage/requests/pickTurn.test.ts` › `opens the turn picker, whatever the params` · *change-sprite*: `serene-pub/src/lib/client/components/sessionPage/requests/changeSprite.test.ts` › `anyone may ask: the guard passes a plugin's widget on; the control rule is the answer's` · *actions-seen*: `serene-pub/src/lib/client/components/sessionPage/requests/actionsSeen.test.ts` › `core only: a plugin's widget is refused in words and no mark is cleared` · *summarize*: `serene-pub/src/lib/client/components/sessionPage/requests/summarize.test.ts` › `core only: a plugin's widget is refused in words before anything is selected` · *send*: `serene-pub/src/lib/client/components/sessionPage/requests/send.test.ts` › `core only: a plugin's widget is refused in words and nothing is drafted` · *draft*: `serene-pub/src/lib/client/components/sessionPage/requests/draft.test.ts` › `core only: a plugin's widget is refused in words and the draft is untouched` · *switch-persona*: `serene-pub/src/lib/client/components/sessionPage/requests/switchPersona.test.ts` › `core only: a plugin's widget is refused in words and no persona changes` · *add-persona*: `serene-pub/src/lib/client/components/sessionPage/requests/addPersona.test.ts` › `core only: a plugin's widget is refused in words and no modal opens` · *fire-turn*: `serene-pub/src/lib/client/components/sessionPage/requests/fireTurn.test.ts` › `core only: a plugin's widget is refused in words and no turn fires` · *decide-proposal*: `serene-pub/src/lib/client/components/sessionPage/requests/decideProposal.test.ts` › `core only: a plugin's widget is refused in words and nothing is decided` · *harness*: `sdk-tests/componentHarness.test.ts` › `the test answers a component's requests as the page would, and every ask is logged` |
-| **Scoped sections and grants** | `WIDGET_SCOPED_SECTIONS` @experimental | `session:full`, `session:state`, `persona`, `characters` and `lore`, each posted only to a box granted it | `sdk-tests/widgetSections.test.ts` › `names each scope and the section it is posted as — session:state among them (R72)` · `sdk-tests/componentHarness.test.ts` › `a plugin's box is posted only the scoped sections its grants cover; core's box every one` · `sdk-tests/componentHarness.test.ts` › `a component is told which of its scopes were granted: not granted is said, never left as loading` · `serene-pub/src/lib/client/components/surfaces/panel.dom.test.svelte.ts` › `is posted its granted section by the table's name` |
-| **Person-press gate** | `PERSON_GATED_CORE_VERBS`, `PERSON_PRESS_WINDOW_MS` @experimental | One table, read by both the page and the harness | `sdk-tests/componentHarnessPage.test.ts` › `a plugin box's unprompted invoke of a gated verb is refused; a clicked one passes` · `sdk-tests/componentHarnessKeys.test.ts` › `a person's Enter on a keyed input opens the box's invoke gate, as on the page; a raised key alone never does` · `serene-pub/src/lib/client/components/host/componentMount.dom.test.ts` › `a plugin's press is judged by its gate — no person behind it, no edit` |
-| **builtAgainst compatibility** | `ComponentBuiltAgainst`, `componentBuiltAgainstFinding` @experimental | `serene-pub build` records it. The host checks it for package components and for authored components | `sdk-tests/componentBuiltAgainst.test.ts` › `serene-pub build records builtAgainst on every component entry` · `sdk-tests/componentBuiltAgainst.test.ts` › `a vocabulary major the host lacks is refused; a newer minor mounts` · `sdk-tests/componentBuiltAgainst.test.ts` › `the harness refuses to mount a component built for a protocol this host does not speak` · *package*: `serene-pub/src/lib/server/components/compat.test.ts` › `today's record and no record mount; another protocol or an unreadable record is refused by name` · *authored*: `serene-pub/src/lib/server/components/compat.test.ts` › `judged off the stored fingerprint; one from before the record mounts` |
-| **Clone and drift** | `cloneCoreComponent`, `driftReport` @experimental · `ComponentDecl.basedOn` @experimental | `serene-pub clone`, `serene-pub drift`, and the in-app clone with its core-changed banner | *clone*: `sdk-tests/cliClone.test.ts` › `writes every source file under components/<as>/ with its path kept, and a based-on.json` · *drift*: `sdk-tests/cliClone.test.ts` › `behind: lists the files core changed, added and removed, and flags the ones edited here too` · *in-app clone*: `serene-pub/src/lib/server/sockets/components.int.test.ts` › `a clone is a NEW widget: its own owner, basedOn the core source, core's declaration copied, compiled, off and unreviewed` · *in-app drift*: `serene-pub/src/lib/client/components/componentEditor/componentEditor.test.ts` › `shows only when core's source hash moved since the clone` |
-| **Authored components** (written in the app) | 🚧 app-side. They reuse `ComponentDecl` and add no SDK symbol of their own | The Components admin page: the store, the compile service, `/authored-ui/`, the component preview and the component share file | `serene-pub/src/lib/server/components/authoredComponents.int.test.ts` › `create → get → list → update → delete, with the owner's own id` · `serene-pub/src/lib/server/components/compileService.int.test.ts` › `a compile gives the module, its SHA-256 and the toolchain fingerprint — deterministically` · `serene-pub/src/lib/client/components/host/componentMount.dom.test.ts` › `an authored component (C6) is never core's: its own worker, its presses gated, its ids its box's — whatever module it names` · `serene-pub/src/lib/server/components/authoredArtifact.dom.test.ts` › `core's Stats, compiled by the service from its source.json and read back from the cache, mounts as an authored owner and draws what core's draws` |
-| **Venues**: where an action appears | `VENUE_KINDS` @experimental | `composer`, `message`, `extra`, `widget` and `form` are drawn. `session-settings`, `pipelines`, `admin` and `review` are declared but not drawn (see [Gaps](#gaps)) | *the closed set*: `sdk-tests/actions.test.ts` › `a venue kind core does not offer is refused, with the list` · *composer*: `serene-pub/src/lib/server/sockets/sessions.actions.int.test.ts` › `quick → primary, else overflow; the floors are always present` · *message, extra*: `sdk-tests/actions.test.ts` › `every core verb lives at the message venue, retry also at extra; the turn control advance at extra alone (B7)` · *widget*: `serene-pub/src/lib/shared/widgets/context.test.ts` › `a contributed action goes to the host's OWN fire, with the subject, the values and the block` · *form*: `sdk-tests/coreConversationComponent.test.ts` › `a live form shows its buttons` |
+| **inlet** | Where a run starts. Exactly one per pipeline, first. It ties the pipeline to one genre and one event. | Only core ships inlets. You place one of core's. | `user-message`, `session-event` |
+| **query** | Reads. | `storage`: your plugin's own rows and files. | `session-history` |
+| **task** | Computes. Data in, data out, nothing else. | Nothing more. A task gets no storage and no network. | `assemble` |
+| **oracle** | Calls out to something outside the run. | `storage`, and `fetch` for the hosts your plugin declares. | `generate-text` |
+| **outlet** | Writes. | `storage`. A plugin's outlet declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets do the writing to the session. | `create-message`, `set-session-annex`, `record-event` |
 
-## Gaps
+A handler takes `(input, ctx)` and returns `ok({ <port>: value })`, or `err('a sentence')`. A
+thrown error or a bare value is not a result. Declaring the wrong kind is the mistake everyone
+makes once: a task that reads `ctx.storage` finds nothing there. `serene-pub check` catches it
+before you install.
 
-These seams do not yet meet R37. None of them is `@public`, so the freeze does not cover
-them. Each one needs to be built once, or to stay `@experimental` until it is.
+A small query of your own, reading a row your plugin wrote earlier:
 
-- **Component mount point `page`.** It is promised in prose only (`ComponentDecl`'s doc
-  comment, and `PreviewTarget.point`: "a page mount point comes later, R25"). No type or code
-  declares it, and nothing mounts a component outside a widget. A package that needs a page
-  today uses the `page` frame point instead.
-- **Provisional node definitions** (`speak`, `mcp-tool`, `mcp-resource`). They are declared with
-  no handler, on purpose (R-2), and are tagged `@experimental`. The tests prove that they are
-  refused, not that they run.
-- **Lifecycle moment `load`.** The host calls every other moment in `LIFECYCLE_MOMENTS`, but
-  nothing in the app calls a `load` callback, so one declared for it never runs.
-- **Venues.** `session-settings`, `pipelines`, `admin` and `review` are in `VENUE_KINDS`, but
-  the app draws no list for them. An action placed only there appears nowhere.
-- **Frame points `session-view` and `page`.** The tests read their declarations, but no test
-  mounts either one. Only the frame widget (`panel` point) is mounted under test. The app's live
-  gate does mount both: its `frames` spec (`GATE_SPECS=frames`) installs a fixture plugin and
-  checks each frame's sandbox, CSP and what it is posted against a running instance. The gate
-  is a script, not a test, so this seam stays listed until a test mounts them.
-- **Preview harness.** `ui-preview`, the dev harness that draws frame targets and package
-  component targets, has no test of its own. `previewManifest` is tested, and so is the in-app
-  component preview, but the harness page that draws the targets is not.
+<!-- prelude:
+import type { PluginHandlerContext } from '@serene-pub/sdk/testing'
+-->
+```ts
+import { describeQueryDefinition, handler, ok, pin, S } from '@serene-pub/sdk'
+
+const lastRoll = pin(
+	describeQueryDefinition({
+		id: 'acme.dice:query/last-roll@1',
+		i18n: { name: 'Last roll' },
+		timeoutMs: 500,
+		ports: { in: { sessionId: S.rowIds }, out: { main: S.text } },
+	}),
+)
+
+export const lastRollHandler = handler(lastRoll, async (input: { sessionId: unknown }, ctx: PluginHandlerContext) => {
+	const text = await ctx.storage?.get<string>(`s:${input.sessionId}:last-roll`)
+	return ok({ main: text ?? 'No roll yet.' })
+})
+```
+
+The exact `ctx` each kind is handed, and the rules every kind shares, are in
+[What a plugin may do](plugin-permissions.md).
+
+## Genres
+
+A **genre** is a kind of session: Chat, Adventure, Guide and the Lair are core's. A plugin genre says how
+many characters a session needs, whether it has a composer, which channels it has, which widgets
+it leaves out and how its screen is laid out. It owns the pipelines its sessions run.
+
+```ts
+import { genre } from '@serene-pub/sdk'
+
+export const duel = genre('acme.duel:genre/duel', {
+	name: 'Duel',
+	family: 'game',
+	shape: { characters: { min: 1, max: 1 }, composer: 'text' },
+})
+```
+
+A genre ships with a pipeline that creates its sessions, one that answers each turn, and a
+**preset**: which pipelines a new session of the genre runs. Four plugins show the whole thing,
+and each one builds and tests on its own:
+
+- [Twenty Questions](https://github.com/SerenePub/serene-pub-plugin-twenty-questions): the smallest
+  complete genre. Its own event, three widgets, an annex field, no storage.
+- [Writing Room](https://github.com/SerenePub/serene-pub-plugin-writing-room): two
+  [channels](channels.md) that play different parts in a prompt, built from core's steps alone.
+- [Whodunit](https://github.com/SerenePub/serene-pub-plugin-whodunit): suspects who each know only
+  their own part, and a verdict decided by a comparison rather than by a model.
+- [Battleship](https://github.com/SerenePub/serene-pub-plugin-battleship): hidden state in the
+  plugin's own storage, a board widget that stands in for the conversation, and a `page` frame.
+
+## Actions
+
+An **action** is anything a person can press: a composer button, a message-menu item, a slash
+command, a button in your widget. It is declared on the pipeline that answers it. It says where
+it appears (its **venue**) and, in one plain sentence, what it does.
+
+<!-- prelude:
+import { sessionEvents, spec, use } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+-->
+```ts
+const roll = spec('acme.dice:spec/roll', {
+	version: '1.0.0',
+	contributes: {
+		actions: [
+			{
+				key: 'roll',
+				venue: { kind: 'composer' },
+				label: 'Roll',
+				description: 'Roll the dice and post the result.',
+				slash: 'acme.dice.roll',
+			},
+		],
+	},
+}).inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.sessionAction })
+```
+
+The venues drawn today are `composer`, `message` (a message's menu), `extra` (the turn controls
+beside the composer), `widget` (your widget's own buttons) and `form` (a button in a form block).
+An action that changes something outside the story, such as a lore entry, may only appear where
+the session owner presses it. See [Forms, and the effects line](forms-and-effects.md).
+
+## Widgets and frames
+
+Your interface in a session is a **widget**: a box a person places in their session layout.
+There are two ways to draw one.
+
+- **A component** is the usual way: Svelte or plain DOM code that runs in the page's worker and
+  places plain HTML and the app's own `sp-*` elements, so it looks like the rest of the app. See
+  [Widgets](widgets.md).
+- **A frame** is a whole HTML document in a sandboxed iframe, for the one region that needs a
+  real DOM: a charting library, a rich-text editor. A frame can also be a standalone page outside
+  any session. See [Frames](frames.md).
+
+```ts
+import { component, widget } from '@serene-pub/sdk'
+
+export const tally = widget({ id: 'tally', title: 'Tally', component: 'tally' })
+export const tallyComponent = component({ slug: 'tally', label: 'Tally', entry: 'components/tally.ts', framework: 'svelte' })
+```
+
+Neither one has network access or storage. A widget reads what the session sends it (messages,
+its settings, the session's annex, and any extra data an admin granted it) and presses actions.
+
+## Events
+
+A **session event** is something that happened, and everything in the session hears it. Core
+records its own. A plugin declares its own, records them from a pipeline with core's
+`record-event` step, and answers them with another pipeline, a listener or a widget.
+
+```ts
+import { defineSessionEvent, S } from '@serene-pub/sdk'
+
+export const rolled = defineSessionEvent<{ total: number }>({
+	id: 'acme.dice:event/rolled@1',
+	payload: S.json,
+	name: 'Dice rolled',
+	description: 'Someone rolled the dice.',
+})
+```
+
+An event never carries a secret, because everyone in the session hears it. See
+[Events](events.md).
+
+## Event listeners and lifecycle callbacks
+
+Not all of your code is a step in a pipeline. Two other kinds of handler go in `handlers`:
+
+- An **event listener** runs when an event happens: one of core's, or one a package declared.
+  It is told what happened and may use your storage. It returns `ok({})`, or `err(…)` to record a
+  failure; nothing else reads what it returns.
+- A **lifecycle callback** runs at a moment in your plugin's life: `startup`, `enable`,
+  `disable`, `update` (the first run after a new version is installed), `uninstall` (your last
+  chance to clean up) and `shutdown`. It may use your storage.
+
+<!-- prelude:
+import type { SessionEventDecl } from '@serene-pub/sdk'
+declare const rolled: SessionEventDecl<{ total: number }>
+-->
+```ts
+import { eventListener, lifecycleCallback, ok } from '@serene-pub/sdk'
+
+export const handlers = [
+	eventListener(rolled, async (e, ctx) => {
+		await ctx.storage.put('last-total', (e.payload as { total: number }).total)
+		return ok({})
+	}),
+	lifecycleCallback('uninstall', async (_input, ctx) => {
+		await ctx.storage.deleteAll()
+		return ok({})
+	}),
+]
+```
+
+Neither one gets the network, and neither can call a model or start a pipeline.
+
+To run on a schedule, listen to `core:event/schedule-tick@1` (`SCHEDULED_WORK_PATH.instead`).
+Serene Pub sends it once an hour, on the hour, with `{ cadence: 'hourly', scheduledFor, scope:
+'pub' }`, to every enabled plugin that listens and was granted the event. For work less often
+than hourly, keep the last time you ran in your storage and compare:
+
+<!-- prelude:
+import { eventListener, ok, SCHEDULED_WORK_PATH } from '@serene-pub/sdk'
+-->
+```ts
+const nightly = eventListener(SCHEDULED_WORK_PATH.instead, async (e, ctx) => {
+	const { scheduledFor } = e.payload as { scheduledFor: string }
+	const day = scheduledFor.slice(0, 10)
+	if ((await ctx.storage.get<string>('last-day')) === day) return ok({})
+	await ctx.storage.put('last-day', day)
+	return ok({})
+})
+```
+
+## Storage, settings and permissions
+
+- **Storage.** Your plugin's own rows and files, under a quota it asks for. Only your own
+  queries, oracles, outlets, listeners and lifecycle callbacks reach them. Nothing else does, so
+  storage is where hidden state lives: an opponent's fleet, an answer the player must guess. See
+  [Storage](storage.md).
+- **Annex fields.** A small value a widget can save in the session and read back, such as the
+  last roll or a toggle. It is session state that people see, never a secret. See
+  [Storage](storage.md#a-value-a-widget-saves-annex-fields).
+- **Settings.** Fields an admin fills in, or each person fills in for themselves. A `secret`
+  setting (an API key) reaches your code as a handle that only `ctx.fetch` can spend. See
+  [Your first plugin](your-first-plugin.md#keys-and-other-secrets).
+- **Permissions.** Storage and network are asked for, never assumed:
+  `permissions: { storage: { quotaBytes }, network: { hosts: ['api.example.com'] } }`. An admin
+  reviews each request and may refuse it. See [What a plugin may do](plugin-permissions.md).
+
+## Less common parts
+
+- **Swaps.** A node definition of yours that a person may put in place of a step in another
+  package's pipeline, such as a different turn strategy. It must be public. See
+  [Where values come from](where-values-come-from.md).
+- **Template engines.** A template language of your own, declared under `templateEngines`. It
+  renders in the sandbox, as a pure function.
+- **Configs and presets.** Named settings for your pipelines, and which pipelines a session of a
+  genre runs. See [Where values come from](where-values-come-from.md).
+
+The [API reference](https://serenepub.com/docs/sdk/api/index) on the Serene Pub website lists
+every export with its stability: `@public` is stable for SDK 1.0, and `@experimental` may still
+change. (The help built into the app leaves the reference out, to keep the app small.)

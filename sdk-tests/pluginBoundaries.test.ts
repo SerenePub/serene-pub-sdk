@@ -71,8 +71,8 @@ describe('R62 and R53 at build: a swap contribution is judged where it is writte
 
 describe('R63 · a secret reaches plugin code as a handle', () => {
 	const schema = {
-		apiKey: { type: 'secret', scope: 'instance', side: 'extension' },
-		shared: { type: 'secret', scope: 'instance', side: 'extension', lend: true },
+		apiKey: { type: 'secret', scope: 'pub', side: 'extension' },
+		shared: { type: 'secret', scope: 'pub', side: 'extension', lend: true },
 		region: { type: 'string', default: 'eu' },
 	} as const
 	test('the hook gets handles; the host keeps the values and knows what is lent', () => {
@@ -95,7 +95,7 @@ describe('R63 · a secret reaches plugin code as a handle', () => {
 	})
 
 	test('a secret is named so a handle can carry it', () => {
-		const f = checkSchema({ 'api key!': { type: 'secret', scope: 'instance', side: 'extension' } } as never)
+		const f = checkSchema({ 'api key!': { type: 'secret', scope: 'pub', side: 'extension' } } as never)
 		assert.match(f.find((x) => x.field === 'api key!')!.message, /a handle cannot carry/)
 	})
 

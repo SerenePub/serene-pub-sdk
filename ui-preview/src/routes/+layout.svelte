@@ -26,7 +26,7 @@
 
 	const frames = $derived(manifest.targets.filter((t) => t.kind === 'frame'))
 	const components = $derived(manifest.targets.filter((t) => t.kind === 'component'))
-	const withSettings = $derived(manifest.targets.filter((t) => t.settings).length)
+	const withSettings = $derived(components.filter((t) => t.settings).length)
 	const current = $derived(page.params.id)
 </script>
 
@@ -69,7 +69,7 @@
 				>
 					<span class="text-sm">{t.label}</span>
 					<span class="text-surface-600-400 block text-xs">
-						{t.point}{t.settings ? ' · props' : ''}
+						{t.point}
 					</span>
 				</a>
 			{/each}
@@ -106,7 +106,7 @@
 		<div class="mt-auto flex flex-col gap-2 pt-4">
 			{#if withSettings === 0}
 				<p class="text-surface-600-400 text-xs">
-					No surface declares settings yet, so there are no generated controls to
+					No component declares settings yet, so there are no generated controls to
 					preview. The sandbox still shows every control.
 				</p>
 			{/if}

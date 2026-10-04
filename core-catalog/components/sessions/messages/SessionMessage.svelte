@@ -9,6 +9,8 @@
 	} from "@serene-pub/core-catalog/conversation"
 	import { actionIdentity, foldedSectionsOf } from "@serene-pub/sdk/component"
 	import MessagePartsView from "./MessagePartsView.svelte"
+	import MessageMediaStrip from "./MessageMediaStrip.svelte"
+	import { mediaStripItems, viewImageParams } from "./mediaStrip"
 	import MessageStateLedger from "./MessageStateLedger.svelte"
 	import { useWidgetContext } from "../shared/context"
 	import { staleOf } from "@serene-pub/core-catalog/conversation"
@@ -193,11 +195,13 @@
 			...verdictOf(listed)
 		})
 	})
-	// Native model thinking (from Ollama think: true, etc.) — `thinking` is
-	// written into the row's metadata by the narrate spec's placeholder outlet,
-	// for the active swipe.
-	const thinkingContent = $derived(msg.metadata?.thinking || "")
-	const hasThinking = $derived(thinkingContent.trim().length > 0)
+	// The model's reasoning, for the active swipe — native (Ollama's
+	// `message.thinking`, a `reasoning_content` field) or lifted out of the
+	// text by the host. It streams in as it arrives: the host's live row
+	// writes it beside the body on every frame, so the fold fills while the
+	// reply is still reasoning.
+	const reasoningContent = $derived(msg.metadata?.reasoning || "")
+	const hasReasoning = $derived(reasoningContent.trim().length > 0)
 
 	// Optional per-trigger focus note for a Narrator response (e.g. "Focus on
 	// the weather turning stormy") — set once at trigger time, see sessions.ts's
@@ -209,7 +213,7 @@
 		narratorInstructionsContent.trim().length > 0
 	)
 
-	let isThinkingExpanded = $state(false)
+	let isReasoningExpanded = $state(false)
 	let isNarratorInstructionsExpanded = $state(false)
 
 	// The shown alternative's folded sections (B4) — for a row that arrives
@@ -226,7 +230,7 @@
 		if (isEditing) editContent = untrack(() => msg.content)
 	})
 	// Parts-native rendering (20 §13 phase 2): when the server attached the
-	// message's typed parts and the message is settled, the body — thinking
+	// message's typed parts and the message is settled, the body — reasoning
 	// and section collapsibles included — renders from them. Streaming,
 	// errors, and unenriched broadcasts fall back to the legacy fields, which
 	// are parity-identical by construction.
@@ -267,7 +271,8 @@
 	/**
 	 * What the ember dot beside the name says while a reply is being made:
 	 * the run's own status (R-19) — *Jasmine is thinking*, *Jasmine is
-	 * typing*, *loading the model* — resolved in the reader's language. A
+	 * reasoning* while the model's trace streams, *Jasmine is typing*,
+	 * *loading the model* — resolved in the reader's language. A
 	 * row with none says *working* until its run's first status lands.
 	 */
 	const generatingStatus = $derived(
@@ -330,13 +335,23 @@
 		conv.edit.save(msg, editContent)
 	}
 
-	function toggleThinking() {
-		isThinkingExpanded = !isThinkingExpanded
+	function toggleReasoning() {
+		isReasoningExpanded = !isReasoningExpanded
 	}
 
 	function toggleNarratorInstructions() {
 		isNarratorInstructionsExpanded = !isNarratorInstructionsExpanded
 	}
+
+	/**
+	 * The media strip's files (composer attachments plan §3.4): read off the
+	 * row's parts in EVERY state — settled, legacy text, editing, generating —
+	 * so an attachment never disappears while its line is edited or a reply
+	 * streams beside it. The parts view no longer draws them inline.
+	 */
+	const mediaItems = $derived(
+		mediaStripItems(msg.parts, msg.activeRevisions ?? { "0": 0 })
+	)
 
 	// An image inside the rendered text is the host's markup; `sp-message-body`
 	// raises `open-image` with its address.
@@ -350,7 +365,8 @@
      semantics. The role="article" below is what carries the semantics.
 
      The four cells are the style packs' contract: avatar, identity, controls,
-     content, plus the `data-msg-*` attributes a pack keys its look off. Every
+     content — plus the media strip, a fifth cell under content when the
+     message has files — and the `data-msg-*` attributes a pack keys its look off. Every
      element is a widget part (`messages.message-*`, STYLE-GUIDE §6.16): no look
      here; the default widget stylesheet draws them, and a pack restyles them. -->
 <div
@@ -652,9 +668,9 @@
 	<div data-widget-part="messages.message-content">
 		<!-- The collapsibles a reply can carry: the Narrator's per-trigger
 		     focus note, its folded sections (a Plan, B4) and the model's own
-		     thinking. All are suppressed when parts render — the section and
-		     thinking parts carry them there, in the same order. -->
-		{#if (hasNarratorInstructions || hasThinking || foldedSections.length) && !partsNative}
+		     reasoning. All are suppressed when parts render — the section and
+		     reasoning parts carry them there, in the same order. -->
+		{#if (hasNarratorInstructions || hasReasoning || foldedSections.length) && !partsNative}
 			<div data-widget-part="messages.message-disclosures">
 				{#if hasNarratorInstructions}
 					<div data-widget-part="messages.message-disclosure">
@@ -703,7 +719,7 @@
 							aria-controls="folded-section-{msg.id}-{i}"
 						>
 							<sp-icon
-								name={section.kind === "thinking" ? "brain-circuit" : "notebook-pen"}
+								name={section.kind === "reasoning" ? "brain-circuit" : "notebook-pen"}
 								size="14"
 							></sp-icon>
 							<span>{section.label}</span>
@@ -734,29 +750,29 @@
 					</div>
 				{/each}
 
-				{#if hasThinking}
+				{#if hasReasoning}
 					<div data-widget-part="messages.message-disclosure">
 						<button
 							data-widget-part="messages.message-disclosure-toggle"
-							onclick={toggleThinking}
-							aria-expanded={isThinkingExpanded}
-							aria-controls="thinking-{msg.id}"
+							onclick={toggleReasoning}
+							aria-expanded={isReasoningExpanded}
+							aria-controls="reasoning-{msg.id}"
 						>
 							<sp-icon name="brain-circuit" size="14"></sp-icon>
-							<span>Thinking</span>
+							<span>Reasoning</span>
 							<sp-icon name="chevron-down" size="14"></sp-icon>
 						</button>
 						<!-- See the block above for why this is a grid track. -->
 						<div
-							id="thinking-{msg.id}"
+							id="reasoning-{msg.id}"
 							data-widget-part="messages.message-disclosure-track"
-							data-expanded={isThinkingExpanded ? "" : undefined}
+							data-expanded={isReasoningExpanded ? "" : undefined}
 						>
 							<div data-widget-part="messages.message-disclosure-clip">
 								<div
 									data-widget-part="messages.message-disclosure-panel messages.prose"
 								>
-									<sp-message-body text={thinkingContent}></sp-message-body>
+									<sp-message-body text={reasoningContent}></sp-message-body>
 								</div>
 							</div>
 						</div>
@@ -863,7 +879,7 @@
 						</div>
 					</div>
 				{:else if partsNative}
-					<!-- The parts-native body (20 §2): markdown, thinking,
+					<!-- The parts-native body (20 §2): markdown, reasoning,
 				     sections, steps — everything typed renders from parts. -->
 					<div data-widget-part="messages.message-parts">
 						<MessagePartsView
@@ -903,4 +919,19 @@
 		     must not look like the body re-rendering. -->
 		<MessageStateLedger messageId={msg.id} />
 	</div>
+
+	<!-- The media strip: attachments and generated images as square tiles,
+	     in every state of the row — a cell of its own under the content, so
+	     it sits BELOW a pack's card, never inside it (next-pass note 40,
+	     2026-10-03; the base sheet places it on the row after `content`). -->
+	<MessageMediaStrip
+		items={mediaItems}
+		editing={isEditing && canControl}
+		onOpen={(images, index) =>
+			void conv.request("view-image", viewImageParams(images, index))}
+		onRemove={canControl
+			? (item) =>
+					void conv.request("remove-attachment", { messageId: msg.id, partId: item.partId })
+			: undefined}
+	/>
 </div>

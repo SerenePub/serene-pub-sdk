@@ -47,26 +47,27 @@ export declare const LAIR_BUILD_ROOM_SPEC_ID = "core:spec/lair-build-room";
 /** @internal */
 export declare const LAIR_BUILD_ROOM_VERSION = "1.0.0";
 /**
- * The exits line every room's content carries, and the reason it is still
- * prose.
+ * The layout a drafted room's body takes — its `Exits:` line among it — and
+ * why that line is still prose beside the graph.
  *
- * A location entry should point at the rooms it opens onto, and lore **links**
- * are that shape: typed edges between entries, and since contracts batch 2
- * (L2/L3, 2026-09-17) `core:outlet/create-lore-entry@1` takes a `links` port
- * that writes them in the same transaction as the row. The write end exists.
+ * **The ways between rooms are relationships now** (places plan, 2026-09-29):
+ * one `narrative_relationships` row per way, read both ways when it has a
+ * reverse wording, drawn on the Places lens or in a place's own Links, and
+ * written by a pipeline through `core:outlet/link-lore-entries@1`. The Lair's
+ * rooms listing asks for them (`withLinks`), so `{{locationEntry}}` says a
+ * room's ways out under its body as "From here:" — that, not this line, is
+ * what the planner reads the ways on from. *Answer the door* links the room it
+ * writes to the room the party stand in (B6).
  *
- * ⚠ **What does not exist is the step in between.** The exits arrive as a line
- * of prose inside a drafted room — `Exits: north → Hall` — and nothing in the
- * bound catalogue turns text into a list of names: `parse-json@1` reads a
- * document a model wrote as JSON, `read-answer@1` reads a form's own values,
- * and neither is handed one here. Wiring `links` would mean either a new pure
- * task (a parser) or a room drafted as JSON, which would take the review gate's
- * editable `content` with it — both are decisions above this file's pay grade.
- *
- * So the exits stay in the content, in a fixed line a reader and a parser can
- * both take apart, and the rooms are `core:entry/location` entries with no
- * edges between them yet: the map's nodes, waiting on the step that reads this
- * line.
+ * ⚠ **The drafted `Exits:` line stays** (plan §11; how the map should grow is
+ * the owner's open Q4). A draft names ways out to rooms that may not exist
+ * yet, and nothing in the bound catalogue turns a line of prose into a list
+ * of names; parsing it at write time, with stub rooms for the names nothing
+ * answers, would change what a knock means. So the line is the room's own
+ * words — a reader still reads it, and an older room has only it — and the
+ * master turns it into links by hand, or with the place editor's *Read links
+ * from the Exits line* (B7). It stays a fixed line so a parser can take it
+ * apart.
  * @internal
  */
 export declare const LAIR_ROOM_CONTENT_SHAPE: string;
@@ -75,7 +76,11 @@ export declare const LAIR_ROOM_CONTENT_SHAPE: string;
  *
  * The collected text (R3) is the room's **name** — the one thing a person always
  * knows when they press this — and the model writes the body against the lore,
- * the party's position and the fixed layout above. The write then parks at the
+ * the party's position and the fixed layout above. The name reaches the draft
+ * as `{{turnDirection}}`, and every room the dungeon already has as
+ * `{{knownLocations}}` (the rooms listing, plan A28) — the prompt's "name only
+ * rooms this dungeon already has" with the rooms in front of it. The world
+ * lore it reads carries no private entries. The write then parks at the
  * review gate: `core:outlet/create-lore-entry@1` declares
  * `review: { fields: ['name', 'content'] }`, and the preset below turns the
  * gate ON — without that line `resolvePosition` defaults an undeclared position
@@ -86,9 +91,9 @@ export declare const LAIR_ROOM_CONTENT_SHAPE: string;
  * **The entry is a location** (L3, contracts batch 2, 2026-09-17): the preset
  * sets `entryType: 'core:entry/location'`, so a room files as a place rather
  * than as world lore whose content happens to be laid out, and "which rows are
- * the map" becomes a question a reader can ask. Its exits are still the prose
- * line above rather than link rows — see `LAIR_ROOM_CONTENT_SHAPE` for what is
- * missing between the two.
+ * the map" becomes a question a reader can ask. It is written with no links:
+ * a room built ahead of the party stands nowhere yet, and its drafted `Exits:`
+ * line is prose the master links by hand — see `LAIR_ROOM_CONTENT_SHAPE`.
  *
  * ⚠ **`effects: 'world'`** (R-15 *The line*): the result is lorebook data, so
  * this action is the owner's, lives in the composer, and no message block may
@@ -146,6 +151,27 @@ export declare const LAIR_ROOM_ANSWER_VERSION = "1.0.0";
  * which is why the action is present only while a knock is open (W-GATE D3,
  * `presentWhen`), and a composer press while it is open is addressed to that
  * knock by the host.
+ *
+ * **The new room joins the room the party stand in** (places plan B6,
+ * 2026-09-29). The party knocked from somewhere: the world's `location` stat,
+ * else the room the knock's planner named (the block's `vantage`, plan A27).
+ * `here` resolves it against the rooms the dungeon lists — the Lair's name
+ * rule, `undescribed-name@1` reading the name at `world.location` inside the
+ * session's state (a location set to a place entry is that entry, by id) —
+ * and, once the room has landed, the `link` junction writes ONE relationship
+ * from the new room to that one, `leads to` both ways
+ * (`core:outlet/link-lore-entries@1`). The next turn's planner reads it under
+ * the room as "From here:".
+ *
+ * ⚠ **Invariant: the door never fails because the party's location names no
+ * room** (plan §3 #11). The location is usually words, and `create-lore-entry`'s
+ * own `links` refuses a name nothing answers to inside the entry's transaction
+ * — which would fail the room with it. So the link is its own write, after the
+ * room's, in a junction that fires only when `here` found a room: otherwise
+ * the room is saved unlinked. A rejected draft ends the run before either. The
+ * link is not gated (the master judged the room; the way back to where the
+ * party stand is not a second question) and the outlet is idempotent, so a
+ * repeat stacks nothing.
  *
  * **Then the story goes on.** Once the room lands, the master's own line —
  * *The party go on into The Drowned Hall* — is written under their name, the

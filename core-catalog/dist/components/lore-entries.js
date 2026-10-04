@@ -31,7 +31,7 @@ import {
   user_derived,
   user_effect,
   widgetRefFromComponent
-} from "./shared-BECW7NYS.js";
+} from "./shared-UAQVMZZK.js";
 
 // dist/ui/sessions/lore-entries/index.js
 var LORE_ENTRIES_FILTERS = Object.freeze([
@@ -110,12 +110,13 @@ var root = from_html(`<p data-widget-part="lore-entries.note"> </p>`);
 var root_1 = from_html(`<label data-widget-part="lore-entries.filter chip"><input type="radio" data-widget-part="lore-entries.filter-input"/> </label>`);
 var root_2 = from_html(`<sp-option> </sp-option>`, 2);
 var root_3 = from_html(`<p data-widget-part="lore-entries.alert" role="alert"> </p>`);
-var root_4 = from_html(`<span data-widget-part="lore-entries.entry-keys"> </span>`);
-var root_5 = from_html(`<li data-widget-part="lore-entries.entry row"><span data-widget-part="lore-entries.entry-text"><span data-widget-part="lore-entries.entry-title label"> </span> <!> <span data-widget-part="lore-entries.entry-read"> </span></span> <span data-widget-part="lore-entries.marks"><button type="button" data-widget-part="lore-entries.pin"><sp-icon></sp-icon></button> <button type="button" data-widget-part="lore-entries.off"><sp-icon></sp-icon></button></span></li>`, 2);
-var root_6 = from_html(`<li data-widget-part="lore-entries.empty empty"> </li>`);
-var root_7 = from_html(`<div data-widget-part="lore-entries.pager"><button type="button" data-widget-part="lore-entries.previous"> </button> <span data-widget-part="lore-entries.page-count"> </span> <button type="button" data-widget-part="lore-entries.next"> </button></div>`);
-var root_8 = from_html(`<div data-widget-part="lore-entries.search-bar toolbar"><label data-widget-part="lore-entries.search"><span data-widget-part="lore-entries.search-label"> </span> <span data-widget-part="lore-entries.search-icon"><sp-icon></sp-icon></span> <input type="text" data-widget-part="lore-entries.search-input"/></label> <button type="button" data-widget-part="lore-entries.refresh"><sp-icon></sp-icon></button></div> <div data-widget-part="lore-entries.filter-bar toolbar"><div data-widget-part="lore-entries.filters" role="radiogroup"></div> <span data-widget-part="lore-entries.sort"><sp-combobox></sp-combobox></span></div> <!> <!> <ul data-widget-part="lore-entries.entries list"></ul> <!>`, 3);
-var root_9 = from_html(`<div data-widget-part="lore-entries.root" data-widget="lore-entries"><!></div>`);
+var root_4 = from_html(`<p data-widget-part="lore-entries.held" role="status"> </p>`);
+var root_5 = from_html(`<span data-widget-part="lore-entries.entry-keys"> </span>`);
+var root_6 = from_html(`<li data-widget-part="lore-entries.entry row"><span data-widget-part="lore-entries.entry-text"><span data-widget-part="lore-entries.entry-title label"> </span> <!> <span data-widget-part="lore-entries.entry-read"> </span></span> <span data-widget-part="lore-entries.marks"><button type="button" data-widget-part="lore-entries.pin"><sp-icon></sp-icon></button> <button type="button" data-widget-part="lore-entries.off"><sp-icon></sp-icon></button></span></li>`, 2);
+var root_7 = from_html(`<li data-widget-part="lore-entries.empty empty"> </li>`);
+var root_8 = from_html(`<div data-widget-part="lore-entries.pager"><button type="button" data-widget-part="lore-entries.previous"> </button> <span data-widget-part="lore-entries.page-count"> </span> <button type="button" data-widget-part="lore-entries.next"> </button></div>`);
+var root_9 = from_html(`<div data-widget-part="lore-entries.search-bar toolbar"><label data-widget-part="lore-entries.search"><span data-widget-part="lore-entries.search-label"> </span> <span data-widget-part="lore-entries.search-icon"><sp-icon></sp-icon></span> <input type="text" data-widget-part="lore-entries.search-input"/></label> <button type="button" data-widget-part="lore-entries.refresh"><sp-icon></sp-icon></button></div> <div data-widget-part="lore-entries.filter-bar toolbar"><div data-widget-part="lore-entries.filters" role="radiogroup"></div> <span data-widget-part="lore-entries.sort"><sp-combobox></sp-combobox></span></div> <!> <!> <!> <ul data-widget-part="lore-entries.entries list"></ul> <!>`, 3);
+var root_10 = from_html(`<div data-widget-part="lore-entries.root" data-widget="lore-entries"><!></div>`);
 function LoreEntriesWidget($$anchor, $$props) {
   push($$props, true);
   let ready = prop($$props, "ready", 3, true);
@@ -131,6 +132,7 @@ function LoreEntriesWidget($$anchor, $$props) {
   let answer = state(null);
   let readError = state(null);
   let markError = state(null);
+  let markHeld = state(null);
   const filterGroup = `sp-lore-filter-${Math.random().toString(36).slice(2, 10)}`;
   const latest = createLatestAsk();
   const reason = (e) => e instanceof Error ? e.message : String(e);
@@ -170,12 +172,14 @@ function LoreEntriesWidget($$anchor, $$props) {
     const params = askParams();
     untrack(() => {
       set(markError, null);
+      set(markHeld, null);
       ask(params);
     });
   });
   user_effect(() => untrack(() => widget?.current?.on("lore:ranked", refresh)));
   user_effect(() => untrack(() => widget?.current?.on("lore:marked", (e) => {
-    if (e.kind === "lore:marked" && get(answer)?.rows.some((r) => r.id === e.entryId)) refresh();
+    if (e.kind !== "lore:marked") return;
+    if (get(filter) === "pinned" || get(filter) === "off" || get(answer)?.rows.some((r) => r.id === e.entryId)) refresh();
   })));
   function setFilter(value) {
     set(filter, value, true);
@@ -185,11 +189,17 @@ function LoreEntriesWidget($$anchor, $$props) {
     const ctx = untrack(() => widget?.current);
     if (!ctx) return;
     set(markError, null);
+    set(markHeld, null);
     try {
       const now = await ctx.request("set-entry-marks", {
         entryId: row.id,
         ...mark === "off" ? { off: !row.off } : { pinned: !row.pinned }
       });
+      if (now.heldBy) set(
+        markHeld,
+        t(now.heldBy.mark === "off" ? "Saved to the entry, but an amendment dated {date} still decides whether it is off here." : "Saved to the entry, but an amendment dated {date} still decides whether it is pinned here.").replace("{date}", now.heldBy.date),
+        true
+      );
       if (get(answer)) set(
         answer,
         {
@@ -205,7 +215,7 @@ function LoreEntriesWidget($$anchor, $$props) {
   }
   const span = user_derived(() => get(answer) ? loreEntriesSpan(get(offset), get(pageSize), get(answer).total) : null);
   const readLine = (r) => loreEntryReadLine(r, Date.now(), t);
-  var div = root_9();
+  var div = root_10();
   var node = child(div);
   {
     var consequent = ($$anchor2) => {
@@ -223,7 +233,7 @@ function LoreEntriesWidget($$anchor, $$props) {
       append($$anchor2, p_1);
     };
     var alternate = ($$anchor2) => {
-      var fragment = root_8();
+      var fragment = root_9();
       var div_1 = first_child(fragment);
       var label = child(div_1);
       var span_1 = child(label);
@@ -306,33 +316,46 @@ function LoreEntriesWidget($$anchor, $$props) {
           if (get(markError)) $$render(consequent_3);
         });
       }
-      var ul = sibling(node_2, 2);
+      var node_3 = sibling(node_2, 2);
+      {
+        var consequent_4 = ($$anchor3) => {
+          var p_4 = root_4();
+          var text_7 = child(p_4, true);
+          reset(p_4);
+          template_effect(() => set_text(text_7, get(markHeld)));
+          append($$anchor3, p_4);
+        };
+        if_block(node_3, ($$render) => {
+          if (get(markHeld)) $$render(consequent_4);
+        });
+      }
+      var ul = sibling(node_3, 2);
       each(
         ul,
         21,
         () => get(answer)?.rows ?? [],
         (r) => r.id,
         ($$anchor3, r) => {
-          var li = root_5();
+          var li = root_6();
           var span_4 = child(li);
           var span_5 = child(span_4);
-          var text_7 = child(span_5, true);
+          var text_8 = child(span_5, true);
           reset(span_5);
-          var node_3 = sibling(span_5, 2);
+          var node_4 = sibling(span_5, 2);
           {
-            var consequent_4 = ($$anchor4) => {
-              var span_6 = root_4();
-              var text_8 = child(span_6, true);
+            var consequent_5 = ($$anchor4) => {
+              var span_6 = root_5();
+              var text_9 = child(span_6, true);
               reset(span_6);
-              template_effect(($0) => set_text(text_8, $0), [() => get(r).keys.join(t(", "))]);
+              template_effect(($0) => set_text(text_9, $0), [() => get(r).keys.join(t(", "))]);
               append($$anchor4, span_6);
             };
-            if_block(node_3, ($$render) => {
-              if (get(r).keys.length) $$render(consequent_4);
+            if_block(node_4, ($$render) => {
+              if (get(r).keys.length) $$render(consequent_5);
             });
           }
-          var span_7 = sibling(node_3, 2);
-          var text_9 = child(span_7, true);
+          var span_7 = sibling(node_4, 2);
+          var text_10 = child(span_7, true);
           reset(span_7);
           reset(span_4);
           var span_8 = sibling(span_4, 2);
@@ -352,8 +375,8 @@ function LoreEntriesWidget($$anchor, $$props) {
             ($0, $1, $2, $3, $4, $5) => {
               set_attribute(li, "data-entry-id", get(r).id);
               set_attribute(li, "data-off", get(r).off ? "" : void 0);
-              set_text(text_7, $0);
-              set_text(text_9, $1);
+              set_text(text_8, $0);
+              set_text(text_10, $1);
               set_attribute(button_1, "aria-pressed", get(r).pinned);
               set_attribute(button_1, "aria-label", $2);
               set_attribute(button_1, "title", $3);
@@ -376,44 +399,44 @@ function LoreEntriesWidget($$anchor, $$props) {
         },
         ($$anchor3) => {
           var fragment_1 = comment();
-          var node_4 = first_child(fragment_1);
+          var node_5 = first_child(fragment_1);
           {
-            var consequent_5 = ($$anchor4) => {
-              var li_1 = root_6();
-              var text_10 = child(li_1, true);
+            var consequent_6 = ($$anchor4) => {
+              var li_1 = root_7();
+              var text_11 = child(li_1, true);
               reset(li_1);
-              template_effect(($0) => set_text(text_10, $0), [() => loreEntriesEmptyLine(get(query), get(filter), t)]);
+              template_effect(($0) => set_text(text_11, $0), [() => loreEntriesEmptyLine(get(query), get(filter), t)]);
               append($$anchor4, li_1);
             };
-            if_block(node_4, ($$render) => {
-              if (get(answer)) $$render(consequent_5);
+            if_block(node_5, ($$render) => {
+              if (get(answer)) $$render(consequent_6);
             });
           }
           append($$anchor3, fragment_1);
         }
       );
       reset(ul);
-      var node_5 = sibling(ul, 2);
+      var node_6 = sibling(ul, 2);
       {
-        var consequent_6 = ($$anchor3) => {
-          var div_4 = root_7();
+        var consequent_7 = ($$anchor3) => {
+          var div_4 = root_8();
           var button_3 = child(div_4);
-          var text_11 = child(button_3, true);
+          var text_12 = child(button_3, true);
           reset(button_3);
           var span_9 = sibling(button_3, 2);
-          var text_12 = child(span_9, true);
+          var text_13 = child(span_9, true);
           reset(span_9);
           var button_4 = sibling(span_9, 2);
-          var text_13 = child(button_4, true);
+          var text_14 = child(button_4, true);
           reset(button_4);
           reset(div_4);
           template_effect(
             ($0, $1, $2) => {
               button_3.disabled = !get(span).hasPrevious;
-              set_text(text_11, $0);
-              set_text(text_12, $1);
+              set_text(text_12, $0);
+              set_text(text_13, $1);
               button_4.disabled = !get(span).hasNext;
-              set_text(text_13, $2);
+              set_text(text_14, $2);
             },
             [
               () => t("Previous"),
@@ -425,8 +448,8 @@ function LoreEntriesWidget($$anchor, $$props) {
           delegated("click", button_4, () => set(offset, get(span).nextOffset, true));
           append($$anchor3, div_4);
         };
-        if_block(node_5, ($$render) => {
-          if (get(span)?.paged) $$render(consequent_6);
+        if_block(node_6, ($$render) => {
+          if (get(span)?.paged) $$render(consequent_7);
         });
       }
       template_effect(

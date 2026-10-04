@@ -28,6 +28,6 @@ export type { ComponentContext } from './componentClient.js';
 export type { RequestDeclined } from './componentWire.js';
 export type { RequestDeclineCode } from './surfaces.js';
 export type { HostKeyEventDetail } from './hostElements.js';
-export type { StatusText } from './status.js';
-export type { FoldedSectionPartDataV1, FoldedSectionV1, LayoutV1, MessageErrorConnectionV1, MessageErrorV1, MessageMetadataV1, MessagePartV1, MessageSwipesV1, MessageV1, SessionCharactersV1, SessionEntryV1, SessionStateV1, ViewerV1, WidgetAction, WidgetActionReason, WidgetEvent, WidgetEventKind, WidgetRequestKind, WidgetRequests, } from './widgets.js';
+export type { StatusText, WidgetActionReason } from './status.js';
+export type { AuthorsNoteV1, AuthorsNoteValueV1, FoldedSectionPartDataV1, FoldedSectionV1, LayoutV1, MessageErrorConnectionV1, MessageErrorV1, MessageMetadataV1, MessagePartV1, MessageSwipesV1, MessageV1, SessionCharactersV1, SessionEntryV1, SessionStateV1, ViewerV1, WidgetAction, WidgetEvent, WidgetEventKind, WidgetRequestKind, WidgetRequests, } from './widgets.js';
 //# sourceMappingURL=component.d.ts.map

@@ -293,24 +293,21 @@ export declare const varRecalledLines: VariableDecl & {
     };
 };
 /**
- * Lore bound to a character that fit the budget — the band Assemble exposes
- * as `characterLore`, the list of each entry's text.
+ * Lore bound to a cast member that fit the budget — Assemble's
+ * `characterLore`, one entry per admitted row in the order they were ranked.
  *
- * Declared so the band has a variable like its two siblings (typed templates
- * P2), and deliberately **not laid out**: Assemble's `variables` slot names it
- * `raw` (`rendersBands.raw`), because it has always reached a template as the
- * raw list — and no shipped template renders it at all, since qualifying
- * entries are folded into their character's card under `"extra lore"`. A
- * layout for it would be a setting that changes nothing.
+ * Privacy is decided before this: the lore read gives a speaker only the
+ * entries that speaker may see (`core:policy/binding-visibility@1`) — their
+ * own and the personas'; for the narrator, the background members' and the
+ * entries bound to nobody. A template renders it where it wants it,
+ * typically beside the character cards.
  * @experimental
  */
 export declare const varCharacterLore: VariableDecl & {
     scope: {
         characterLore: {
             type: "list";
-            of: {
-                type: "string";
-            };
+            of: VarField;
         };
     };
 };

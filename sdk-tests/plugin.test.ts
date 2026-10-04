@@ -27,6 +27,7 @@ import {
 	lifecycleCallback,
 	eventListener,
 	component,
+	widget,
 	bindingsOf,
 	handlersOf,
 	ExtensionError,
@@ -67,7 +68,7 @@ const rollDice = C.roll
 
 const settings = defineSettings({
 	defaultNotation: { type: 'string', default: '1d20', scope: 'user', label: 'Default roll' },
-	apiKey: { type: 'secret', scope: 'instance', side: 'extension' },
+	apiKey: { type: 'secret', scope: 'pub', side: 'extension' },
 })
 
 const dicePipeline = spec('chariot.dice-tray:roll-turn', { version: '1.2.0' })
@@ -942,7 +943,10 @@ describe('104 · defineExtension carries what only announce() could', () => {
 			],
 			pipelines: [create, respond],
 			genres: [g],
-			surfaces: { panels: [{ id: 'tally', entry: 'ui/tally.html', title: 'Tally' }] },
+			widgets: [
+				widget({ id: 'tally', title: 'Tally', component: 'tally' }),
+			],
+			components: [component({ slug: 'tally', label: 'Tally', entry: 'components/tally.ts', framework: 'vanilla' })],
 			configs: [shipped],
 			prompts: [
 				{
@@ -964,7 +968,7 @@ describe('104 · defineExtension carries what only announce() could', () => {
 			permissions: { storage: { quotaBytes: 4 * 1024 * 1024 } },
 		})
 		assert.equal(e.genres?.[0]?.id, `${ns}:genre/tally`)
-		assert.equal(e.surfaces?.panels?.[0]?.entry, 'ui/tally.html')
+		assert.equal(e.widgets?.[0]?.component, 'tally')
 		assert.equal(e.presets?.[0]?.slug, 'tally')
 		assert.equal(e.permissions?.storage?.quotaBytes, 4 * 1024 * 1024)
 	})
@@ -988,19 +992,38 @@ describe('104 · defineExtension carries what only announce() could', () => {
 		)
 	})
 
-	test('a surface an instance would drop silently is refused where the author is', () => {
+	test('a widget still spelling the retired `surface` is refused where the author is', () => {
 		assert.throws(
 			() =>
 				defineExtension({
 					slug: 'demo.d1-surface',
 					name: 'Surface',
 					version: '1.0.0',
-					surfaces: { panels: [{ id: 'Tally', entry: '../escape.html' }] },
+					widgets: [
+						{
+							id: 'tally',
+							title: 'Tally',
+							surface: { kind: 'frame', pluginId: 'demo.d1-surface', entry: 'ui/tally.html' },
+						} as never,
+					],
 				}),
 			(e: Error) =>
 				e instanceof ExtensionError &&
-				/panel id 'Tally' is not one an instance accepts/.test(e.message) &&
-				/is not a path an instance will serve/.test(e.message),
+				/`surface` is gone/.test(e.message) &&
+				/names no component/.test(e.message),
+		)
+	})
+
+	test('a `surfaces.panels` list is refused and pointed at component widgets', () => {
+		assert.throws(
+			() =>
+				defineExtension({
+					slug: 'demo.d1-panels',
+					name: 'Panels',
+					version: '1.0.0',
+					surfaces: { panels: [{ id: 'tally', entry: 'ui/tally.html' }] } as never,
+				}),
+			(e: Error) => e instanceof ExtensionError && /surfaces\.panels is gone/.test(e.message),
 		)
 	})
 
@@ -1070,7 +1093,8 @@ describe('104 · serene-pub build emits one artifact', () => {
 		const files = (await readdir(out)).sort()
 		// `bundle.js` is the other half of the artifact (D-6b): the manifest is
 		// what the package declares, the bundle is what the sandbox runs.
-		assert.deepEqual(files, ['bundle.js', 'manifest.json', 'pipelines'])
+		// `components/` holds the panel's built component module.
+		assert.deepEqual(files, ['bundle.js', 'components', 'manifest.json', 'pipelines'])
 		// One artifact: the announcement's half rides in the manifest, because the
 		// manifest is what an instance stores and every reader it has reads that.
 		assert.equal(files.includes('announcement.json'), false)
@@ -1088,7 +1112,7 @@ describe('104 · serene-pub build emits one artifact', () => {
 			m.genres.map((g: { id: string }) => g.id),
 			['demo.unified:genre/tally'],
 		)
-		assert.equal(m.surfaces.panels[0].entry, 'ui/tally.html')
+		assert.equal(m.widgets[0].component, 'tally')
 		assert.deepEqual(
 			m.presets.map((p: { slug: string }) => p.slug),
 			['tally'],
@@ -1519,7 +1543,13 @@ describe('105 · what a frame document cannot mount', () => {
 	})
 
 	test('both halves name the same documents, so `check` and `build` agree', async () => {
-		const sources = await fixtureSource('bad-frames')
+		const sources = [
+			...(await fixtureSource('bad-frames')),
+			{
+				path: 'components/board.ts',
+				text: await readFile(join(FIXTURES, 'bad-frames', 'components', 'board.ts'), 'utf8'),
+			},
+		]
 		const mod = await import(
 			pathToFileURL(join(FIXTURES, 'bad-frames', 'src', 'index.ts')).href
 		)
@@ -1529,19 +1559,19 @@ describe('105 · what a frame document cannot mount', () => {
 			'ui/panel.html',
 			'ui/ok.html',
 		])
-		assert.deepEqual(
-			declaredFrameEntries(mod.default.surfaces).sort(),
-			frameEntriesIn(sources).sort(),
-		)
+		// The evaluated `surfaces` name theirs; a component's `sp-frame`
+		// documents are the lexical pass's, and both feed the one compile.
+		assert.deepEqual(declaredFrameEntries(mod.default.surfaces), ['ui/view.html', 'ui/page.html'])
 	})
 
 	test('`check` reads the documents the source names, without evaluating it', async () => {
 		const dir = join(FIXTURES, 'bad-frames')
 		const { sources } = await sourcesIn(dir)
 		const documents = await frameDocumentsIn(dir, frameEntriesIn(sources))
+		// Walk order: the board component's documents, then the entry's.
 		assert.deepEqual(
 			documents.map((d) => d.path),
-			['ui/view.html', 'ui/page.html', 'ui/panel.html', 'ui/ok.html'],
+			['ui/panel.html', 'ui/ok.html', 'ui/view.html', 'ui/page.html'],
 		)
 		assert.deepEqual(
 			[...new Set(documents.flatMap((d) => scanFrameDocument(d)).map((f) => f.code))].sort(),
@@ -1565,7 +1595,7 @@ describe('105 · what a frame document cannot mount', () => {
 	})
 
 	test('a declared document that is not on disk is not this pass’s finding', async () => {
-		// `unified-plugin` declares `ui/tally.html` and ships no such file. The
+		// `unified-plugin`'s component places `ui/tally.html` and ships no such file. The
 		// shape of an entry is `surfaceFindings`'s business and a missing file is
 		// the instance's; a third opinion here would refuse a package mid-move.
 		const r = await cli(['check', join(FIXTURES, 'unified-plugin')])

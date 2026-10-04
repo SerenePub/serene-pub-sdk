@@ -93,19 +93,49 @@ export const graphBuildSpec = () =>
 				(m) =>
 					m
 						.oracle("prefilter", ($: any) =>
-							C.graphPreFilter.v1(step($))
+							C.graphPreFilter.v1(step($)),
+							{
+								expose: {
+									label: 'Pre-filter',
+									purpose: 'Drops what in each scene is not worth graphing, before the costlier steps run.',
+								},
+							},
 						)
 						.oracle("resolution", ($: any) =>
-							C.graphNodeResolution.v1(step($))
+							C.graphNodeResolution.v1(step($)),
+							{
+								expose: {
+									label: 'Node resolver',
+									purpose: 'Decides whether each name a scene mentions is someone already in the graph or someone new.',
+								},
+							},
 						)
 						.oracle("perspective", ($: any) =>
-							C.graphPerspective.v1(step($))
+							C.graphPerspective.v1(step($)),
+							{
+								expose: {
+									label: 'Perspectives',
+									purpose: 'Works out whose account of the scene this is.',
+								},
+							},
 						)
 						.oracle("describe", ($: any) =>
-							C.graphNodeDescription.v1(step($))
+							C.graphNodeDescription.v1(step($)),
+							{
+								expose: {
+									label: 'Describer',
+									purpose: 'Writes a short introduction for each newly found character.',
+								},
+							},
 						)
 						.oracle("state", ($: any) =>
-							C.graphStateDetection.v1(step($))
+							C.graphStateDetection.v1(step($)),
+							{
+								expose: {
+									label: 'State changes',
+									purpose: 'Notices when a character dies, goes missing or leaves the story during a scene.',
+								},
+							},
 						)
 			)
 			.outlet("propose", ($: any) =>

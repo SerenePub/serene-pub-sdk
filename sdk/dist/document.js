@@ -262,7 +262,7 @@ export function exportDocument(doc, opts = {}) {
             if (v.slot === 'connection') {
                 omitted.push({
                     what: `${p.slug} → ${v.nodeKey}.connection`,
-                    reason: 'connection details never leave an instance',
+                    reason: 'connection details never leave a pub',
                 });
                 continue;
             }

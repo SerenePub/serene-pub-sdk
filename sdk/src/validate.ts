@@ -30,6 +30,7 @@ import { actionDocumentFindingsByLaw } from './actions.js'
 import { templateLawFindings, type TemplateChecking } from './templateFit.js'
 import { isSlotRef, type SlotRef } from './refs.js'
 import { assignable, isStreaming, JSON_SHAPE } from './shapes.js'
+import { isModelCall, stepPurposeRefusal } from './builder.js'
 import {
 	capabilityLabel,
 	FEATURES,
@@ -989,7 +990,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 				severity: 'warning',
 				nodeKey: n.key,
 				message: `type '${n.definitionId}@${n.definitionVersion}' declares no timeout`,
-				fix: 'declare timeoutMs on the descriptor; the instance ceiling applies regardless, but an explicit default is what stops a stuck hook running to the ceiling',
+				fix: 'declare timeoutMs on the descriptor; the pub ceiling applies regardless, but an explicit default is what stops a stuck hook running to the ceiling',
 			})
 		}
 	}
@@ -1030,7 +1031,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 					severity: 'error',
 					nodeKey: v.nodeKey,
 					message: `preset '${p.slug}' sets a connection`,
-					fix: 'an author preset may not pin compute or credentials — the admin cascade works because connection has no writable scope below instance. Ship the behaviour (prompts, params, template) and let the admin choose the connection',
+					fix: 'an author preset may not pin compute or credentials — the admin cascade works because connection has no writable scope below the pub. Ship the behaviour (prompts, params, template) and let the admin choose the connection',
 				})
 			}
 			// A template value carries its own engine, so a bare string is ambiguous the
@@ -1185,7 +1186,9 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
  *    into the same row;
  *  · **an oracle** — only an oracle has a model's tokens to stream.
  *
- * A step status is display text (R-20).
+ * A step status, step label and step purpose are display text (R-20), and a
+ * step purpose sits only on a model call — an oracle whose definition declares
+ * a `connection` slot (`isModelCall`; law `step purpose`, 2026-09-30).
  * @internal
  */
 export function streamingStepFindings(doc: SpecDocument): Finding[] {
@@ -1266,16 +1269,27 @@ export function streamingStepFindings(doc: SpecDocument): Finding[] {
 			})
 		}
 
+	const FIX = {
+		status: "write the step status a person reads while it runs — a string ('Planning the turn') or a locale map with 'en'",
+		label: "write the step's name as the settings show it — a string ('Planner') or a locale map with 'en'",
+		purpose: "write what this model call is for, in one or two plain sentences — a string or a locale map with 'en'",
+	} as const
 	for (const n of doc.nodes) {
-		const status = n.expose?.status
-		if (status === undefined) continue
-		for (const message of i18nFindings(status, `'${n.key}' expose.status`))
+		for (const field of ['status', 'label', 'purpose'] as const) {
+			const text = n.expose?.[field]
+			if (text === undefined) continue
+			for (const message of i18nFindings(text, `'${n.key}' expose.${field}`))
+				f.push({ law: 'R-20', severity: 'error', nodeKey: n.key, message, fix: FIX[field] })
+		}
+		if (n.expose?.purpose === undefined) continue
+		const def = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
+		if (def && !isModelCall(def))
 			f.push({
-				law: 'R-20',
+				law: 'step purpose',
 				severity: 'error',
 				nodeKey: n.key,
-				message,
-				fix: "write the step status a person reads while it runs — a string ('Planning the turn') or a locale map with 'en'",
+				message: stepPurposeRefusal(n.key, def.id),
+				fix: 'move `expose: { purpose }` to the oracle whose model this step feeds',
 			})
 	}
 	return f

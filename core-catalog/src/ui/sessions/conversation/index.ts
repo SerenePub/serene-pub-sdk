@@ -20,3 +20,4 @@ export * from './text.js'
 // The context alone, as this subpath always carried it: the section table
 // and its shapes are the neutral `…/widgets` subpath's.
 export { WIDGET_CONTEXT_KEY, type WidgetContext, type WidgetContextRef } from '../widgetContext.js'
+export * from './composerTray.js'

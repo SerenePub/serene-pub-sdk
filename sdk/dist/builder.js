@@ -32,17 +32,24 @@ function exposeOf(key, pinned, expose) {
     if (expose.session === false && expose.swaps?.length)
         throw new Error(`node '${key}': expose.swaps offers a choice in session settings, so it cannot be combined with session: false`);
     const swaps = swapIds(key, pinned, expose.swaps);
-    if (expose.status !== undefined) {
-        const bad = i18nFindings(expose.status, `node '${key}': expose.status`);
+    for (const field of ['status', 'label', 'purpose']) {
+        if (expose[field] === undefined)
+            continue;
+        const bad = i18nFindings(expose[field], `node '${key}': expose.${field}`);
         if (bad.length)
             throw new Error(bad[0]);
     }
-    // What the node shows while it runs (B3/B18) rides beside the session
-    // mark; the streaming step's laws are `validate()`'s, which sees the
-    // whole document (one per execution path, never JSON, never in a repeat).
+    if (expose.purpose !== undefined && !isModelCall(pinned))
+        throw new Error(stepPurposeRefusal(key, pinned.id));
+    // What the node shows while it runs (B3/B18), and what the settings call
+    // it, ride beside the session mark; the streaming step's laws are
+    // `validate()`'s, which sees the whole document (one per execution path,
+    // never JSON, never in a repeat).
     const shown = {
         ...(expose.stream === true ? { stream: true } : {}),
         ...(expose.status !== undefined ? { status: expose.status } : {}),
+        ...(expose.label !== undefined ? { label: expose.label } : {}),
+        ...(expose.purpose !== undefined ? { purpose: expose.purpose } : {}),
     };
     if (swaps.length)
         return { session: true, swaps, ...shown };
@@ -50,6 +57,19 @@ function exposeOf(key, pinned, expose) {
         return { session: true, ...shown };
     return Object.keys(shown).length ? shown : undefined;
 }
+/**
+ * Whether a definition is a **model call**: an oracle that declares a
+ * `connection` slot — the only step a step purpose may sit on (see
+ * `BuiltNode.expose`). An assemble's `connection` slot says which model the
+ * prompt is formatted for; it calls none, so it does not count.
+ * @internal
+ */
+export function isModelCall(def) {
+    return def.kind === 'oracle' && Object.values(def.slots ?? {}).some((s) => s.kind === 'connection');
+}
+/** The one sentence a misplaced step purpose is refused with, at construction and at `validate()`. @internal */
+export const stepPurposeRefusal = (key, definitionId) => `node '${key}': expose.purpose says what a model call is for, but ${definitionId} calls no model — ` +
+    `put the purpose on the oracle that does, or give this step a label instead`;
 /**
  * The swap list a node declares, refused where it cannot work (R28, R26):
  * a swap that does not fit would seat a node the spec's edges and config

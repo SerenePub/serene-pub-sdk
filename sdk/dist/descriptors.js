@@ -988,22 +988,14 @@ export function widgetDeclsFindings(raw, where) {
         out.push(...settingsSchemaFindings(decl.settings, `${at}.settings`));
         // The base sections it reads (R75): a name outside them is refused here.
         out.push(...widgetReadsFindings(decl.reads, `${at}.reads`));
-        // What renders inside: `component` (R25) or the deprecated `surface`
-        // alias (R24) — exactly one, and a written `remote` is refused.
-        const hasComponent = decl.component !== undefined;
-        const surface = decl.surface;
-        if (hasComponent && surface !== undefined)
-            out.push(`${at}: give \`component\` or the deprecated \`surface\`, not both`);
-        else if (!hasComponent && surface === undefined)
+        // What renders inside: `component` (R25), a component's slug — the
+        // one way. The `surface` shortcut is gone (2026-10-02).
+        if (decl.surface !== undefined)
+            out.push(`${at}.surface: gone — give \`component\`, and place an \`sp-frame\` inside it for a document`);
+        else if (decl.component === undefined)
             out.push(`${at}: names nothing to render — give \`component\`, a component's slug`);
-        else if (hasComponent && (typeof decl.component !== 'string' || !decl.component))
+        else if (typeof decl.component !== 'string' || !decl.component)
             out.push(`${at}.component: a component's slug`);
-        else if (surface !== undefined && surface?.kind !== 'frame')
-            out.push(surface?.kind === 'remote'
-                ? `${at}.surface: a remote is not written — give \`component\`, the component's slug (R25)`
-                : surface?.kind === 'native'
-                    ? `${at}.surface: 'native' is retired (R79) — give \`component\`, the component's slug`
-                    : `${at}.surface.kind: 'frame' (deprecated — give \`component\`)`);
     });
     return out;
 }
@@ -1144,13 +1136,16 @@ export const ENTRY_SOURCE_KINDS = [
  * The short name this type's rows carry on the wire — `extensions.serenepub`
  * in a character-card book.
  *
- * Closed to the three names already written into exported files. A type outside
- * them simply declares nothing here: no marker is honest, where a marker no
- * importer reads is a file that round-trips into the wrong shape. Widening the
- * list is a deliberate act with an importer change beside it.
+ * Closed to the names the importer reads: the three every file has carried,
+ * plus `location` and `item`, which the app's importer restores as a place and
+ * an item (lorebooks plan A26 — written as world lore, a place reads back
+ * without its links' meaning or its stats). A type outside them declares
+ * nothing here: no marker is honest, where a marker no importer reads is a
+ * file that round-trips into the wrong shape. Widening the list is a
+ * deliberate act with an importer change beside it.
  * @experimental
  */
-export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history'];
+export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history', 'location', 'item'];
 /**
  * Visibility policies a type may select for its anchor.
  *
@@ -1162,18 +1157,6 @@ export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history'];
  * @experimental
  */
 export const ENTRY_ANCHOR_POLICIES = ['core:policy/binding-visibility@1'];
-/**
- * Where a type's rows land when they are not rendered as a variable of their
- * own — a closed vocabulary of destinations, not a free string.
- *
- * `character-card` is today's character lore: qualifying entries are folded
- * into their bound character's own object under an "extra lore" key rather than
- * reaching a template as a list. One member, because one destination exists;
- * the point of the closed list is that the second one is a decision somebody
- * makes here rather than a string somebody types in a catalog.
- * @experimental
- */
-export const ENTRY_RENDER_DESTINATIONS = ['character-card'];
 const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$/;
 /**
  * Declare an entry type.
@@ -1237,6 +1220,17 @@ function assertEntryShape(id, shape) {
             `behaviour reads. The field roles are ${ENTRY_ROLES.join(', ')} — a new *behaviour* ` +
             `may add one, a new *type* may not, or the vocabulary is just a second name ` +
             `for the field.`);
+    for (const [field, decl] of Object.entries(shape.fields ?? {})) {
+        const narrowed = decl?.narrows;
+        if (narrowed === undefined)
+            continue;
+        if (narrowed === field)
+            throw new Error(`${id} declares that '${field}' narrows itself. A field narrows another ` +
+                `field of its own type, as a day narrows a month.`);
+        if (!Object.prototype.hasOwnProperty.call(shape.fields, narrowed))
+            throw new Error(`'${field}' narrows '${narrowed}', which ${id} does not declare. A field ` +
+                `narrows another field of its own type, as a day narrows a month.`);
+    }
     if (!ENTRY_SOURCE_KINDS.includes(shape.sourceKind))
         throw new Error(`${id} declares sourceKind '${shape.sourceKind}', which is not a budget band. ` +
             `Pick one of ${ENTRY_SOURCE_KINDS.join(', ')} — the weight and share maps are ` +
@@ -1252,14 +1246,9 @@ function assertEntryShape(id, shape) {
             `one of ${ENTRY_ANCHOR_POLICIES.join(', ')}. Types select policies; they ` +
             `never author them, which is what keeps a declaration from being code.`);
     const render = shape.render;
-    if (typeof render === 'object' && !ENTRY_RENDER_DESTINATIONS.includes(render.into))
-        throw new Error(`${id} renders into '${render.into}', which is not a destination. The ` +
-            `destinations are ${ENTRY_RENDER_DESTINATIONS.join(', ')}; a variable id ` +
-            `('core:var/world-lore@1') is the other legal value.`);
-    if (typeof render === 'string' && !/^[a-z0-9][a-z0-9.-]*:var\/[a-z0-9-]+@\d+$/.test(render))
+    if (render !== undefined && !/^[a-z0-9][a-z0-9.-]*:var\/[a-z0-9-]+@\d+$/.test(render))
         throw new Error(`${id} renders as '${render}', which is not a variable id. Name the variable ` +
-            `whose layout renders these rows — 'core:var/world-lore@1' — or fold them ` +
-            `into a destination with { into: … }.`);
+            `whose layout renders these rows — 'core:var/world-lore@1'.`);
 }
 const unknownRoles = (shape) => Object.keys(shape.roles ?? {}).filter((r) => !ENTRY_ROLES.includes(r));
 /**

@@ -39,6 +39,14 @@ export declare const SETTINGS_SLOT: 'settings';
  */
 export declare const ENABLED_FIELD: FieldDecl;
 /**
+ * `enabled` on an optional node that is not a source — a model call such as
+ * the planner or the state keeper, or a task. The same switch at the same
+ * address; only the words differ, because *Use this source* over a model call
+ * says something untrue about it.
+ * @experimental
+ */
+export declare const ENABLED_STEP_FIELD: FieldDecl;
+/**
  * `review` — the gate's position on a node whose `effects` gate (01 §7).
  *
  * Declared per gated node from its `reviewDefault`, which an author may set
@@ -54,12 +62,14 @@ export declare function reviewField(reviewDefault: ReviewPosition | undefined): 
  * The substrate's `settings` slot for a definition, or nothing when the
  * definition has no switch to declare.
  *
- * `enabled` when the node is `optional`; `review` when its `effects` gate. A
+ * `enabled` when the node is `optional` — worded as a source for a query, as a
+ * step for anything else; `review` when its `effects` gate. A
  * node that is both (`embed-text`, `generate-json`) carries both fields on
  * the one slot — one address prefix, as the executor has always read it.
  * @experimental
  */
 export declare function settingsSlotFor(d: {
+    kind?: string;
     optional?: boolean;
     effects?: string;
     reviewDefault?: ReviewPosition;

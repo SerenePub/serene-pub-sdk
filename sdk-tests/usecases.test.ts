@@ -531,11 +531,20 @@ describe('13 · configuration resolves per slot through four layers', () => {
 		// scope a host may write at.
 		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
 		assert.equal(mayWrite('connection', 'defaults'), false)
-		assert.equal(mayWrite('connection', 'session'), true)
 		assert.equal(mayWrite('connection', 'config'), true)
 		assert.equal(mayWrite('prompts', 'session'), true)
 		assert.equal(mayWrite('template', 'session'), false)
 		assert.throws(() => assertWritable('connection', 'defaults'), /admin-only/)
+	})
+
+	test('a session names no connection; its sampling is its own (ruled 2026-09-30)', () => {
+		assert.equal(mayWrite('connection', 'session'), false)
+		assert.throws(
+			() => assertWritable('connection', 'session'),
+			/A session never picks its own connection/,
+		)
+		assert.equal(mayWrite('sampling', 'session'), true)
+		assert.doesNotThrow(() => assertWritable('sampling', 'session'))
 	})
 
 	test('resolution reports which layer won, and agrees with the plain resolver', () => {

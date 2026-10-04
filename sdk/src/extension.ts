@@ -269,7 +269,7 @@ export function permissionFindings(p: DeclaredPermissions | undefined): string[]
 		)
 			out.push(
 				`permissions.storage.quotaBytes must be ${MIN_STORAGE_QUOTA}…${MAX_STORAGE_QUOTA}. ` +
-					`An instance clamps whatever it is handed, so a number outside the band is not a ` +
+					`A pub clamps whatever it is handed, so a number outside the band is not a ` +
 					`bigger grant — it is a declaration that says something other than what you get.`,
 			)
 	}

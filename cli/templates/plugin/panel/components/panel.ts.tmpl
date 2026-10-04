@@ -1,0 +1,35 @@
+import { defineComponent } from '@serene-pub/component-client'
+
+/**
+ * The panel's component. A widget always names a component; this one is a
+ * thin shell around one real document (`{{panelEntry}}`), placed as an
+ * `sp-frame`. It runs in the page's UI worker, reads the channel it was given,
+ * and hands the document only what the document draws — as `props`.
+ *
+ * A press inside the document arrives here as the frame's `invoke` event, and
+ * goes on through `ctx.invoke`, so it meets this widget's actions and gate.
+ *
+ * ✎ CHANGE: what `propsOf` hands the document. Read blocks, never prose.
+ */
+export default defineComponent((root, ctx) => {
+	const frame = document.createElement('sp-frame')
+	frame.setAttribute('src', '{{panelEntry}}')
+	frame.setAttribute('title', '{{displayName}}')
+	frame.setAttribute('class', 'block h-full w-full')
+	frame.addEventListener('invoke', (e) => {
+		const d = (e as CustomEvent).detail as {
+			key?: unknown
+			messageId?: number
+			payload?: Record<string, unknown>
+			blockId?: string
+		}
+		if (typeof d?.key === 'string') ctx.invoke(d.key, { messageId: d.messageId, payload: d.payload, blockId: d.blockId })
+	})
+	root.append(frame)
+	const propsOf = () => ({ messages: (ctx.channels.main ?? ctx.messages ?? []).length })
+	const draw = () => frame.setAttribute('props', JSON.stringify(propsOf()))
+	draw()
+	return ctx.subscribe((section) => {
+		if (section === 'channels' || section === 'messages') draw()
+	})
+})

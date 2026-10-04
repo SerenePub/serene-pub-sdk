@@ -1,7 +1,7 @@
 /**
  * The seam census (R37, F1) cannot rot.
  *
- * `guides/extending.md` lists every extension point with the tests that run
+ * `INTEGRATING.md` §5 lists every extension point with the tests that run
  * its implementations, each as `` `file` › `test name` ``. This suite reads
  * those tables and holds each reference to the file it names: the file
  * exists, and a `test(`, `it(` or `describe(` in it carries that exact title.
@@ -23,7 +23,7 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 
 const SDK_ROOT = resolve(import.meta.dirname, '..')
-const GUIDE = join(SDK_ROOT, 'guides', 'extending.md')
+const GUIDE = join(SDK_ROOT, 'INTEGRATING.md')
 const APP_ROOT = resolve(process.env.SERENE_PUB_APP ?? join(SDK_ROOT, '..', 'serene-pub'))
 const APP_PRESENT = existsSync(join(APP_ROOT, 'src'))
 
@@ -83,7 +83,7 @@ function declaresTest(source: string, name: string): boolean {
 
 const census = readCensus()
 
-describe('the seam census (guides/extending.md)', () => {
+describe('the seam census (INTEGRATING.md §5)', () => {
 	test('has rows, and every row names at least one test', () => {
 		assert.ok(census.length >= 20, `only ${census.length} census rows were read — did the table format change?`)
 		for (const row of census) assert.ok(row.tests.length, `seam '${row.seam}' names no test`)
@@ -130,7 +130,7 @@ for (const row of census) {
 				assert.ok(existsSync(path), `${ref.file} does not exist (seam '${row.seam}')`)
 				assert.ok(
 					declaresTest(readFileSync(path, 'utf8'), ref.name),
-					`${ref.file} has no test named '${ref.name}' (seam '${row.seam}') — update guides/extending.md with the test's new name`,
+					`${ref.file} has no test named '${ref.name}' (seam '${row.seam}') — update INTEGRATING.md §5 with the test's new name`,
 				)
 			})
 		}

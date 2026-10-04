@@ -54,7 +54,8 @@ const USAGE = `serene-pub <command>
                                placeholders and comments, no logic. Compose
                                --genre (a genre, its create/reply pair, a preset
                                and a prompt row) · --action (a question and the
-                               spec that answers it) · --panel (a frame panel) ·
+                               spec that answers it) · --panel (a widget whose
+                               component holds one document) ·
                                --storage (a keyed ctx.storage pair and its grant)
   docs               render an announcement into markdown reference pages —
                      one per genre and pipeline, plus the package index
@@ -64,7 +65,7 @@ const USAGE = `serene-pub <command>
   types              generate typed use() handles from an announcement, so
                      config() autocompletes the target's whole option space
   ui [dir]           run the surface harness: a dev server that renders the UI
-                     surfaces this package announces — frame panels in the same
+                     surfaces this package announces — frames in the same
                      opaque-origin sandbox core mounts them in, components in
                      the host document — with hot reload. (alias: preview)
 
@@ -248,7 +249,7 @@ async function buildSandboxBundle(dir, entry, extension) {
         return {
             problem: `this package declares ${bindings.length} hook(s) and the bundler is not ` +
                 `installed, so its code cannot be packaged: install esbuild ` +
-                `(npm i -D esbuild). Without dist/plugin/bundle.js an instance installs ` +
+                `(npm i -D esbuild). Without dist/plugin/bundle.js a pub installs ` +
                 `the declarations and none of the handlers.`,
         };
     }

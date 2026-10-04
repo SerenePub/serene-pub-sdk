@@ -1,8 +1,8 @@
 /**
  * The component contract (§3.5, C1): the host-element vocabulary a remote
  * may place, the imports a component may make, `ComponentDecl` as the one
- * unit of custom UI and `WidgetDecl.component` naming it (R25), with the
- * deprecated `surface` alias still read (R24).
+ * unit of custom UI and `WidgetDecl.component` naming it (R25) — the one
+ * way; the `surface` shortcut is refused (retired 2026-10-02).
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -22,6 +22,7 @@ import {
 	resolveWidgetSurface,
 	widgetDeclsFindings,
 	component,
+	widget,
 	type HostElementSpec,
 } from '@serene-pub/sdk'
 
@@ -196,6 +197,7 @@ test('a component imports svelte, the component client and controls — never th
 		'@serene-pub/core-catalog/scene-portraits',
 		'@serene-pub/core-catalog/session-state',
 		'@serene-pub/core-catalog/widgets',
+		'@serene-pub/core-catalog/authors-note',
 	])
 	assert.equal(componentImportFinding('@serene-pub/component-client/svelte'), undefined)
 	assert.equal(componentImportFinding('svelte'), undefined)
@@ -218,49 +220,41 @@ test('a component declares slug, label, entry and framework — and no surface p
 	assert.deepEqual(componentFindings([ok]), [])
 	const old = { ...ok, surface: 'core:surface/chat-message@1' } as never
 	assert.match(componentFindings([old]).join(' '), /a component has none now/)
-	assert.match(componentFindings([{ ...ok, entry: '../escape.js' }]).join(' '), /not a path an instance will serve/)
+	assert.match(componentFindings([{ ...ok, entry: '../escape.js' }]).join(' '), /not a path a pub will serve/)
 	assert.match(componentFindings([{ ...ok, label: '' }]).join(' '), /label/)
 	assert.match(componentFindings([{ ...ok, framework: 'react' as never }]).join(' '), /after SDK 1\.0/)
 	assert.match(componentFindings([ok, ok]).join(' '), /duplicate component slug/)
 })
 
-test('a widget names a component, or the deprecated surface — exactly one', () => {
+test('a widget names a component — the one way; a written `surface` is refused', () => {
 	const w = (extra: object) => [{ id: 'w', title: 'W', ...extra }]
 	assert.deepEqual(widgetDeclsFindings(w({ component: 'who-next' }), 'x'), [])
-	assert.deepEqual(widgetDeclsFindings(w({ surface: { kind: 'frame', pluginId: 'p', entry: 'ui/a.html' } }), 'x'), [])
 	assert.match(widgetDeclsFindings(w({}), 'x').join(' '), /names nothing to render/)
-	assert.match(
-		widgetDeclsFindings(w({ component: 'a', surface: { kind: 'frame', pluginId: 'p', entry: 'ui/a.html' } }), 'x').join(' '),
-		/not both/,
+	assert.match(widgetDeclsFindings(w({ component: '' }), 'x').join(' '), /a component's slug/)
+	// The retired shortcut, whatever kind it spelled: refused and pointed at a component.
+	for (const surface of [
+		{ kind: 'frame', pluginId: 'p', entry: 'ui/a.html' },
+		{ kind: 'native', component: 'messages' },
+		{ kind: 'remote', component: 'a' },
+	])
+		assert.match(widgetDeclsFindings(w({ component: 'a', surface }), 'x').join(' '), /surface: gone — give `component`/)
+	assert.throws(
+		() => widget({ id: 'w', title: 'W', component: 'a', surface: { kind: 'frame' } } as never),
+		/`surface` is gone/,
 	)
-	// `native` is retired (R79): named, never mounted.
-	assert.match(
-		widgetDeclsFindings(w({ surface: { kind: 'native', component: 'messages' } as never }), 'x').join(' '),
-		/'native' is retired/,
-	)
-	assert.match(
-		widgetDeclsFindings(w({ surface: { kind: 'remote', component: 'a' } }), 'x').join(' '),
-		/a remote is not written/,
-	)
+	assert.throws(() => widget({ id: 'w', title: 'W' } as never), /names no component/)
 })
 
-test("a component resolves to its owner's remote, core's too (R79); the frame alias still resolves", () => {
+test("a component resolves to its owner's remote, core's too (R79)", () => {
 	assert.deepEqual(resolveWidgetSurface({ component: 'messages' }, 'core'), { kind: 'remote', owner: 'core', component: 'messages' })
 	assert.deepEqual(resolveWidgetSurface({ component: 'who-next' }, 'showcase.twenty'), {
 		kind: 'remote',
 		owner: 'showcase.twenty',
 		component: 'who-next',
 	})
-	assert.deepEqual(resolveWidgetSurface({ surface: { kind: 'frame', pluginId: 'p', entry: 'ui/a.html' } }, 'p'), {
-		kind: 'frame',
-		pluginId: 'p',
-		entry: 'ui/a.html',
-	})
-	assert.equal(resolveWidgetSurface({}, 'core'), null)
-	// `native` is retired (R79) — for core too; a frame is the plugin's own (R25).
-	assert.equal(resolveWidgetSurface({ surface: { kind: 'native', component: 'messages' } as never }, 'core'), null)
-	assert.equal(resolveWidgetSurface({ surface: { kind: 'native', component: 'messages' } as never }, 'acme.game'), null)
-	assert.equal(resolveWidgetSurface({ surface: { kind: 'frame', pluginId: 'other', entry: 'ui/a.html' } }, 'acme.game'), null)
+	assert.equal(resolveWidgetSurface({} as never, 'core'), null)
+	// The retired shortcut resolves to nothing — the host offers no such widget.
+	assert.equal(resolveWidgetSurface({ surface: { kind: 'frame', pluginId: 'p', entry: 'ui/a.html' } } as never, 'p'), null)
 })
 
 test("a package's widget must name a component the package declares", () => {
@@ -278,6 +272,4 @@ test("a package's widget must name a component the package declares", () => {
 		components: [component({ slug: 'who-next', label: 'Who', entry: 'dist/who.js', framework: 'vanilla' })],
 	}).errors
 	assert.doesNotMatch(declared.join(' '), /does not declare/)
-	const aliased = { ...(genre as object), shape: { panels: [{ id: 'm', title: 'M', surface: { kind: 'native', component: 'messages' } }] } } as never
-	assert.match(declarationFindings({ ns: 'acme.game', genres: [aliased], components: [] }).errors.join(' '), /surface 'native', which is retired/)
 })

@@ -198,6 +198,12 @@ export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
 			return ok({ main: row.id })
 		},
 
+		// 🚧 The attachment prompt path (PLAN-composer-attachments §3.5): no
+		// files in a fixture transcript, and placement passes its lines through.
+		'core:query/history-attachments@1': async () => ok({ main: {}, attachments: {} }),
+		'core:task/place-attachments@1': async (i: any) =>
+			ok({ main: i?.messages ?? [], messages: i?.messages ?? [], notes: [] }),
+
 		'core:task/assemble@2': async (i: any) => {
 			const budget = i.budget ?? i.params?.budget ?? 4096
 			const raw = i.candidates ?? []

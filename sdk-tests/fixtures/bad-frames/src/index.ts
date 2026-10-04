@@ -12,7 +12,7 @@
  * all the same things the legal way must produce no finding at all.
  */
 
-import { defineExtension } from '@serene-pub/sdk'
+import { component, defineExtension, widget } from '@serene-pub/sdk'
 
 export const PLUGIN_SLUG = 'demo.bad-frames'
 
@@ -24,9 +24,8 @@ export default defineExtension({
 	surfaces: {
 		'session-view': { entry: 'ui/view.html', title: 'Board' },
 		page: { entry: 'ui/page.html', title: 'Records' },
-		panels: [
-			{ id: 'tally', entry: 'ui/panel.html', title: 'Tally' },
-			{ id: 'fine', entry: 'ui/ok.html', title: 'Fine' },
-		],
 	},
+	// The board component places `ui/panel.html` and `ui/ok.html` as `sp-frame`s.
+	components: [component({ slug: 'board', label: 'Board', entry: 'components/board.ts', framework: 'vanilla' })],
+	widgets: [widget({ id: 'board', title: 'Board', component: 'board' })],
 })

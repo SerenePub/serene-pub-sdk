@@ -58,6 +58,10 @@ export declare const characterLoreEntryType: import("@serene-pub/sdk").EntryDesc
  *    the bonus".
  *  - **no `title`.** A history entry is not named; it is *dated*, and its
  *    heading is the date. That is what `order` carries.
+ *  - **no `parent`.** History is never filed under another entry (owner,
+ *    2026-10-02): it is always top level relative to other lore, scoped by
+ *    its line and its date. Other lore may still be filed under it, and its
+ *    scenes hang off it by their own column.
  * @experimental
  */
 export declare const historyEntryType: import("@serene-pub/sdk").EntryDescriptor<"core:entry/history@1">;
@@ -72,28 +76,38 @@ export declare const historyEntryType: import("@serene-pub/sdk").EntryDescriptor
  * "which rows are the map" is a question no reader could ask while a room was
  * just world lore with the word "room" somewhere in it.
  *
+ * ## Never filed under anything; its shape is its relationships
+ *
+ * A place declares **no `parent`** field role (places plan B2, owner ruling
+ * 2026-09-29): it is never filed under another entry (Part of), because places
+ * join by **relationships** — a door between two rooms, a road between two
+ * towns, "is inside" / "holds" between a room and its tavern — each one row
+ * with its own name and its wording from both ends. Containment is words, not
+ * a tree: a place may be inside two things, and deleting one takes nothing
+ * with it. A way big enough to stand in (a long road, a bridge with a toll
+ * house on it) is a place of its own, joined to the places at its ends by two
+ * relationships.
+ *
  * ## ⚠ There is no `exits` field, and there must not be
  *
- * A room's exits are **link rows** — `core:outlet/link-lore-entries@1`, the
- * same entry-ended edge the lorebook's own graph draws — and not a declared
- * field, for a reason that is structural rather than tasteful: `fields` is the
- * settings language, whose values land in a jsonb column and project into
- * CHECK constraints. It has no reference type. An `exits` field could only
- * ever hold *names*, with no foreign key, no cascade when the room it names is
- * deleted, and no second reader — which is precisely the parseable `Exits:`
- * line this type was declared to replace, moved one column over.
+ * A room's ways out are **lore links** — `core:outlet/link-lore-entries@1`,
+ * the same entry-ended relationship the lorebook's own graph draws — and not a
+ * declared field, for a reason that is structural rather than tasteful:
+ * `fields` is the settings language, whose values land in a jsonb column and
+ * project into CHECK constraints. It has no reference type. An `exits` field
+ * could only ever hold *names*, with no foreign key, no cascade when the room
+ * it names is deleted, and no second reader — which is precisely the parseable
+ * `Exits:` line this type was declared to replace, moved one column over.
  *
  * So a location declares the world's fields and nothing else, and its shape
- * lives in the edges.
+ * lives in its relationships.
  *
- * ## No `exportKey`
+ * ## `exportKey: "location"`
  *
- * The wire names are `world`, `character` and `history`, and they are what
- * every lorebook Serene Pub has ever exported carries. A location declares
- * none: no marker is honest, where a marker no importer reads is a file that
- * round-trips into the wrong shape. A location exported today is read back as
- * world lore by any install, which is the correct degrade and the reason the
- * marker waits for an importer that knows the word.
+ * A place travels as a place (lorebooks plan A26). Written as world lore, it
+ * reads back as world lore, without the rooms listing, its stats or the
+ * meaning of its links. An install that does not know the word reads it back
+ * as world lore, which is still the correct degrade.
  * @experimental
  */
 export declare const locationEntryType: import("@serene-pub/sdk").EntryDescriptor<"core:entry/location@1">;
@@ -131,8 +145,9 @@ export interface ItemSupply {
  * inventory feature the owner ruled out: inventory is an unopinionated list
  * a genre manages however it likes.
  *
- * No `exportKey`, on a place's reasoning: exported, an item reads back as
- * world lore anywhere that has not heard the word.
+ * `exportKey: "item"`, on a place's reasoning: an item travels as an item,
+ * supply and all, and reads back as world lore anywhere that has not heard
+ * the word.
  * @experimental
  */
 export declare const itemEntryType: import("@serene-pub/sdk").EntryDescriptor<"core:entry/item@1">;

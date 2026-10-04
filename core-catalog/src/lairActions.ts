@@ -45,36 +45,61 @@
 
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { LAIR_CASTELLAN_KEY, SANCTUM_CHANNEL, lairGenre } from './genres.js'
+import { LAIR_CASTELLAN_KEY, POST_HISTORY_TOKEN_TRIGGER, SANCTUM_CHANNEL, lairGenre } from './genres.js'
+
+/**
+ * The Castellan's reference — who says a room is already filed.
+ *
+ * ⚠ **A room draft reads the book's public half and nothing else** (plan
+ * A28): the world-lore and history lanes, never character lore. A room entry
+ * is public lore — every delver's voice reads it, and so does every session
+ * on the book. Character lore is private whoever reads it: read with no
+ * speaker it is the omniscient narrator's (a background member's entries and
+ * every unbound one), and read as anybody it still carries the private lore
+ * of a persona someone plays in the session, which every voice of that
+ * session may read. Either way a secret keyed on the conversation could be
+ * drafted into a room anybody reads, so the drafts read no character lore
+ * at all. *Build room* reads world lore alone.
+ */
+const CASTELLAN = `envoy:${LAIR_CASTELLAN_KEY}` as const
 
 /* ── Build room ─────────────────────────────────────────────────────────── */
 
 /** @internal */
 export const LAIR_BUILD_ROOM_SPEC_ID = 'core:spec/lair-build-room'
+// ⚠ Every Lair action that ranks (build room, answer the door, file as a
+// room, and the Castellan's whisper/trap/reveal builder), edited in place
+// (lorebooks C2, 2026-10-02): a `presences` read and an `eligible` step
+// (`core:task/eligibility@1`) between `lore` and `rank`; and Build room,
+// Answer the door and File as a room, which show the party's room under
+// `{{locationEntry}}`, take the room rule — a `place` step wired into `rank`
+// as `shownElsewhere`. Content-addressed; `specHashes.test.ts` records the
+// moves.
 /** @internal */
 export const LAIR_BUILD_ROOM_VERSION = '1.0.0'
 
 /**
- * The exits line every room's content carries, and the reason it is still
- * prose.
+ * The layout a drafted room's body takes — its `Exits:` line among it — and
+ * why that line is still prose beside the graph.
  *
- * A location entry should point at the rooms it opens onto, and lore **links**
- * are that shape: typed edges between entries, and since contracts batch 2
- * (L2/L3, 2026-09-17) `core:outlet/create-lore-entry@1` takes a `links` port
- * that writes them in the same transaction as the row. The write end exists.
+ * **The ways between rooms are relationships now** (places plan, 2026-09-29):
+ * one `narrative_relationships` row per way, read both ways when it has a
+ * reverse wording, drawn on the Places lens or in a place's own Links, and
+ * written by a pipeline through `core:outlet/link-lore-entries@1`. The Lair's
+ * rooms listing asks for them (`withLinks`), so `{{locationEntry}}` says a
+ * room's ways out under its body as "From here:" — that, not this line, is
+ * what the planner reads the ways on from. *Answer the door* links the room it
+ * writes to the room the party stand in (B6).
  *
- * ⚠ **What does not exist is the step in between.** The exits arrive as a line
- * of prose inside a drafted room — `Exits: north → Hall` — and nothing in the
- * bound catalogue turns text into a list of names: `parse-json@1` reads a
- * document a model wrote as JSON, `read-answer@1` reads a form's own values,
- * and neither is handed one here. Wiring `links` would mean either a new pure
- * task (a parser) or a room drafted as JSON, which would take the review gate's
- * editable `content` with it — both are decisions above this file's pay grade.
- *
- * So the exits stay in the content, in a fixed line a reader and a parser can
- * both take apart, and the rooms are `core:entry/location` entries with no
- * edges between them yet: the map's nodes, waiting on the step that reads this
- * line.
+ * ⚠ **The drafted `Exits:` line stays** (plan §11; how the map should grow is
+ * the owner's open Q4). A draft names ways out to rooms that may not exist
+ * yet, and nothing in the bound catalogue turns a line of prose into a list
+ * of names; parsing it at write time, with stub rooms for the names nothing
+ * answers, would change what a knock means. So the line is the room's own
+ * words — a reader still reads it, and an older room has only it — and the
+ * master turns it into links by hand, or with the place editor's *Read links
+ * from the Exits line* (B7). It stays a fixed line so a parser can take it
+ * apart.
  * @internal
  */
 export const LAIR_ROOM_CONTENT_SHAPE = [
@@ -89,7 +114,11 @@ export const LAIR_ROOM_CONTENT_SHAPE = [
  *
  * The collected text (R3) is the room's **name** — the one thing a person always
  * knows when they press this — and the model writes the body against the lore,
- * the party's position and the fixed layout above. The write then parks at the
+ * the party's position and the fixed layout above. The name reaches the draft
+ * as `{{turnDirection}}`, and every room the dungeon already has as
+ * `{{knownLocations}}` (the rooms listing, plan A28) — the prompt's "name only
+ * rooms this dungeon already has" with the rooms in front of it. The world
+ * lore it reads carries no private entries. The write then parks at the
  * review gate: `core:outlet/create-lore-entry@1` declares
  * `review: { fields: ['name', 'content'] }`, and the preset below turns the
  * gate ON — without that line `resolvePosition` defaults an undeclared position
@@ -100,9 +129,9 @@ export const LAIR_ROOM_CONTENT_SHAPE = [
  * **The entry is a location** (L3, contracts batch 2, 2026-09-17): the preset
  * sets `entryType: 'core:entry/location'`, so a room files as a place rather
  * than as world lore whose content happens to be laid out, and "which rows are
- * the map" becomes a question a reader can ask. Its exits are still the prose
- * line above rather than link rows — see `LAIR_ROOM_CONTENT_SHAPE` for what is
- * missing between the two.
+ * the map" becomes a question a reader can ask. It is written with no links:
+ * a room built ahead of the party stands nowhere yet, and its drafted `Exits:`
+ * line is prose the master links by hand — see `LAIR_ROOM_CONTENT_SHAPE`.
  *
  * ⚠ **`effects: 'world'`** (R-15 *The line*): the result is lorebook data, so
  * this action is the owner's, lives in the composer, and no message block may
@@ -148,7 +177,7 @@ export const lairBuildRoomSpec = () =>
 							}),
 						),
 					)
-					/** The rooms that already exist — what this one has to join onto. */
+					/** The world as the lore tells it, ranked against the conversation. */
 					.chain('lore', (c) =>
 						c.query('read', ($) =>
 							C.worldLore.v1({
@@ -162,6 +191,20 @@ export const lairBuildRoomSpec = () =>
 					)
 					.chain('state', (c) =>
 						c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope })),
+					)
+					/**
+					 * Every room the dungeon holds (location entries, the
+					 * preset), by listing rather than by rank — what this room
+					 * has to join onto, named to the draft whatever the
+					 * ranker admitted.
+					 */
+					.chain('rooms', (c) =>
+						c.query('read', ($) =>
+							C.lorebookEntries.v1({
+								scope: $.input.sessionScope,
+								params: slot.params(),
+							}),
+						),
 					),
 			)
 			.task('contextBudget', ($) =>
@@ -176,10 +219,34 @@ export const lairBuildRoomSpec = () =>
 					sources: [$.gather.history.read.band, $.gather.lore.read.main] as any,
 				}),
 			)
+			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
+			// the world's location at `world.location` (the preset's `path`),
+			// by the one room rule; the ranker leaves it out of the lore.
+			.task('place', ($: any) =>
+				C.undescribedName.v1({
+					name: $.gather.state.read.state,
+					locationEntries: $.gather.rooms.read.entries,
+					params: slot.params(),
+				}),
+				{ expose: { label: 'The current place' } },
+			)
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
+			// The hard gates before the ranker (C2; R2, R4): selective-logic
+			// exclusions from the keyword lanes, and the presence gate.
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.lore.candidates,
+					exclusions: $.gather.lore.read.exclusions,
+					presences: $.presences.main,
+					at: $.presences.at,
+				}),
+			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.lore.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
+					shownElsewhere: $.place.entryId,
 					params: slot.params(),
 				}),
 			)
@@ -187,6 +254,9 @@ export const lairBuildRoomSpec = () =>
 				C.buildTemplateContext.v1({
 					cast: $.gather.cast.read.cast,
 					state: $.gather.state.read.state,
+					locationEntries: $.gather.rooms.read.entries,
+					// The room's name, as the master typed it.
+					turnDirection: $.input.text,
 					prompts: slot.prompts(),
 					variables: slot.variables(),
 				}),
@@ -199,13 +269,34 @@ export const lairBuildRoomSpec = () =>
 					templateContext: $.context.templateContext,
 				}),
 			)
+			/**
+			 * 🚧 **The transcript's files, placed** (attachments follow-ups, owner
+			 * ruling 2026-10-03) — `respond`'s two steps: the files the rows show,
+			 * then per line what `write` receives (an image it can read rides its
+			 * own turn; otherwise its name). A transcript with no files passes
+			 * through untouched, so the prompt is byte for byte what it was.
+			 */
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.gather.history.read.messages,
+					params: slot.params(),
+				}),
+			)
+			.task('attached', ($) =>
+				C.placeAttachments.v1({
+					messages: $.lines.messages,
+					attachments: $.attachments.attachments,
+					connection: slot.connectionOf('write'),
+					params: slot.params(),
+				}),
+			)
 			.task('prompt', ($) =>
 				C.assemble.v2({
 					candidates: $.rank.candidates,
 					decisions: $.rank.decisions,
 					groups: $.rank.groups,
 					budget: $.contextBudget.available,
-					messages: $.lines.messages,
+					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
 					prompts: slot.prompts({ node: 'context' }),
@@ -234,9 +325,9 @@ export const lairBuildRoomSpec = () =>
 					content: $.write.text,
 					// Named so the entry-kind setting is live rather than
 					// rendered and unread (L3); the preset below sets it to a
-					// location. `links` is left unwired — the exits are a line
-					// of prose and nothing in core parses one (see
-					// `LAIR_ROOM_CONTENT_SHAPE`).
+					// location. `links` is left unwired: a room built ahead of
+					// the party joins nothing yet, and its drafted exits are
+					// prose the master links (see `LAIR_ROOM_CONTENT_SHAPE`).
 					params: slot.params(),
 				}),
 			)
@@ -252,7 +343,11 @@ export const lairBuildRoomSpec = () =>
 					.settings('save', { review: 'on' })
 					// A room is a place (L3) — bare id, the way a listing spells
 					// them; the version is the row's own column.
-					.params('save', { entryType: 'core:entry/location' }),
+					.params('save', { entryType: 'core:entry/location' })
+					// The rooms the draft is shown: the dungeon's places.
+					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
+					// The room the place slot shows (the room rule).
+					.params('place', { path: 'world.location' }),
 			)
 			.build(),
 	)
@@ -311,6 +406,27 @@ export const LAIR_ROOM_ANSWER_VERSION = '1.0.0'
  * which is why the action is present only while a knock is open (W-GATE D3,
  * `presentWhen`), and a composer press while it is open is addressed to that
  * knock by the host.
+ *
+ * **The new room joins the room the party stand in** (places plan B6,
+ * 2026-09-29). The party knocked from somewhere: the world's `location` stat,
+ * else the room the knock's planner named (the block's `vantage`, plan A27).
+ * `here` resolves it against the rooms the dungeon lists — the Lair's name
+ * rule, `undescribed-name@1` reading the name at `world.location` inside the
+ * session's state (a location set to a place entry is that entry, by id) —
+ * and, once the room has landed, the `link` junction writes ONE relationship
+ * from the new room to that one, `leads to` both ways
+ * (`core:outlet/link-lore-entries@1`). The next turn's planner reads it under
+ * the room as "From here:".
+ *
+ * ⚠ **Invariant: the door never fails because the party's location names no
+ * room** (plan §3 #11). The location is usually words, and `create-lore-entry`'s
+ * own `links` refuses a name nothing answers to inside the entry's transaction
+ * — which would fail the room with it. So the link is its own write, after the
+ * room's, in a junction that fires only when `here` found a room: otherwise
+ * the room is saved unlinked. A rejected draft ends the run before either. The
+ * link is not gated (the master judged the room; the way back to where the
+ * party stand is not a second question) and the outlet is idempotent, so a
+ * repeat stacks nothing.
  *
  * **Then the story goes on.** Once the room lands, the master's own line —
  * *The party go on into The Drowned Hall* — is written under their name, the
@@ -410,11 +526,20 @@ export const lairRoomAnswerSpec = () =>
 							}),
 						),
 					)
-					.chain('lore', (c) =>
+					/** The book's public half — world lore and history, never character lore (see the note on `CASTELLAN`). */
+					.chain('worldLore', (c) =>
 						c.query('read', ($) =>
-							C.lorebookTriggers.v1({
+							C.worldLore.v1({
 								scope: $.input.sessionScope,
 								params: slot.params(),
+							}),
+						),
+					)
+					.chain('historyEntries', (c) =>
+						c.query('read', ($) =>
+							C.historyEntries.v1({
+								scope: $.input.sessionScope,
+								params: slot.params({ node: 'gather.worldLore.read' }),
 							}),
 						),
 					)
@@ -423,6 +548,20 @@ export const lairRoomAnswerSpec = () =>
 					)
 					.chain('state', (c) =>
 						c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope })),
+					)
+					/**
+					 * The rooms the dungeon holds (location entries, the
+					 * preset) — what `here` resolves the party's location
+					 * against (B6), and what the draft is told already exists
+					 * (plan A28).
+					 */
+					.chain('rooms', (c) =>
+						c.query('read', ($) =>
+							C.lorebookEntries.v1({
+								scope: $.input.sessionScope,
+								params: slot.params(),
+							}),
+						),
 					),
 			)
 			.task('contextBudget', ($) =>
@@ -434,13 +573,54 @@ export const lairRoomAnswerSpec = () =>
 			)
 			.task('lore', ($) =>
 				C.concatCandidates.v1({
-					sources: [$.gather.history.read.band, $.gather.lore.read.main] as any,
+					sources: [
+						$.gather.history.read.band,
+						$.gather.worldLore.read.main,
+						$.gather.historyEntries.read.main,
+					] as any,
+				}),
+			)
+			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
+			// the world's location at `world.location` (the preset's `path`),
+			// by the one room rule; the ranker leaves it out of the lore.
+			.task('place', ($: any) =>
+				C.undescribedName.v1({
+					name: $.gather.state.read.state,
+					locationEntries: $.gather.rooms.read.entries,
+					params: slot.params(),
+				}),
+				{ expose: { label: 'The current place' } },
+			)
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
+			// The hard gates before the ranker (C2; R2, R4): selective-logic
+			// exclusions from the keyword lanes, and the presence gate.
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.lore.candidates,
+					exclusions: [$.gather.worldLore.read.exclusions, $.gather.historyEntries.read.exclusions] as any,
+					presences: $.presences.main,
+					at: $.presences.at,
 				}),
 			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.lore.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
+					shownElsewhere: $.place.entryId,
+					params: slot.params(),
+				}),
+			)
+			/**
+			 * 🚧 **The files those rows show** (attachments follow-ups, owner
+			 * ruling 2026-10-03), read once on the spine; the drafting arm below
+			 * places them for `room.drafted.write` — an image it can read rides its own
+			 * turn, otherwise its name. No files, and the arm's prompt is byte for
+			 * byte what it was.
+			 */
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.gather.history.read.messages,
 					params: slot.params(),
 				}),
 			)
@@ -451,9 +631,10 @@ export const lairRoomAnswerSpec = () =>
 			 * preset below, exactly as *Build room* files one — named after
 			 * the door the party knocked at (the block's `referent`).
 			 *
-			 * `links` is unwired for the reason `LAIR_ROOM_CONTENT_SHAPE`
-			 * gives: the exits are prose and nothing in core parses a line
-			 * into names.
+			 * `links` is unwired on purpose: it would fail the room with a
+			 * name nothing answers to. The way back to where the party stand
+			 * is the `link` junction below, after the room (B6); the drafted
+			 * `Exits:` line stays prose (`LAIR_ROOM_CONTENT_SHAPE`).
 			 */
 			.junction('room', { on: ($: any) => $.input.text }, (r) =>
 				r
@@ -465,6 +646,7 @@ export const lairRoomAnswerSpec = () =>
 								content: $.input.text,
 								params: slot.params(),
 							}),
+							{ expose: { label: 'Save the room as typed' } },
 						),
 					)
 					/**
@@ -479,6 +661,7 @@ export const lairRoomAnswerSpec = () =>
 								C.buildTemplateContext.v1({
 									cast: $.gather.cast.read.cast,
 									state: $.gather.state.read.state,
+									locationEntries: $.gather.rooms.read.entries,
 									prompts: slot.prompts(),
 									variables: slot.variables(),
 								}),
@@ -490,13 +673,21 @@ export const lairRoomAnswerSpec = () =>
 									templateContext: $.room.drafted.context.templateContext,
 								}),
 							)
+							.task('attached', ($: any) =>
+								C.placeAttachments.v1({
+									messages: $.room.drafted.lines.messages,
+									attachments: $.attachments.attachments,
+									connection: slot.connectionOf('room.drafted.write'),
+									params: slot.params(),
+								}),
+							)
 							.task('prompt', ($: any) =>
 								C.assemble.v2({
 									candidates: $.rank.candidates,
 									decisions: $.rank.decisions,
 									groups: $.rank.groups,
 									budget: $.contextBudget.available,
-									messages: $.room.drafted.lines.messages,
+									messages: $.room.drafted.attached.messages,
 									templateContext: $.room.drafted.context.templateContext,
 									template: slot.template(),
 									prompts: slot.prompts({ node: 'room.drafted.context' }),
@@ -520,8 +711,47 @@ export const lairRoomAnswerSpec = () =>
 									content: $.room.drafted.write.text,
 									params: slot.params(),
 								}),
+								{ expose: { label: 'Save the drafted room' } },
 							),
 					),
+			)
+			/**
+			 * **Where the party stand** (B6): the world's `location`, read at
+			 * `world.location` inside the session's state (the preset's
+			 * `path`), else the knock's `vantage` — the room its planner said
+			 * the party stood in (A27) — resolved against the rooms by the
+			 * Lair's name rule. The world's value first and the plan's hint
+			 * second is the order `{{locationEntry}}` reads them in on a play
+			 * turn; the hint here is the knock turn's own, which no prompt in
+			 * that turn showed. A location set to a place entry is that entry.
+			 * `entryId` is the room, or null when nothing the dungeon lists
+			 * answers — words naming no room, or neither a location nor a hint.
+			 */
+			.task('here', ($: any) =>
+				C.undescribedName.v1({
+					name: $.gather.state.read.state,
+					fallbackName: $.answer.vantage,
+					locationEntries: $.gather.rooms.read.entries,
+					params: slot.params(),
+				}),
+			)
+			/**
+			 * **The way between them** (B6): one relationship from the room
+			 * just written to the room the party stand in, `leads to` both
+			 * ways (the preset) — only when `here` found one. The junction
+			 * publishes whichever `save` ran as `room.entryId`. Nothing fires
+			 * otherwise: the room stays saved, unlinked, and the story goes on.
+			 */
+			.junction('link', { on: ($: any) => $.here.entryId }, (r) =>
+				r.when('resolved', { truthy: true }, (c) =>
+					c.outlet('write', ($: any) =>
+						C.linkLoreEntries.v1({
+							from: $.room.entryId,
+							to: $.here.entryId,
+							params: slot.params(),
+						}),
+					),
+				),
 			)
 			/**
 			 * The master's line that sends the party on (B12) — after the
@@ -560,7 +790,15 @@ export const lairRoomAnswerSpec = () =>
 					.params('room.typed.save', { entryType: 'core:entry/location' })
 					.params('room.drafted.save', { entryType: 'core:entry/location' })
 					// Plain names, one sentence (B12).
-					.params('onward', { path: '', separator: ' ' }),
+					.params('onward', { path: '', separator: ' ' })
+					// B6: the rooms, where the party stand, and the way
+					// between — one row, read the same from either end.
+					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
+					.params('here', { path: 'world.location' })
+					// The room the place slot shows (the room rule) — the world's
+					// location alone, where `here` also falls back to the vantage.
+					.params('place', { path: 'world.location' })
+					.params('link.resolved.write', { linkType: 'leads to', reverseLinkType: 'leads to' }),
 			)
 			.build(),
 	)
@@ -571,9 +809,6 @@ export const lairRoomAnswerSpec = () =>
 export const LAIR_FILE_ROOM_SPEC_ID = 'core:spec/lair-file-room'
 /** @internal */
 export const LAIR_FILE_ROOM_VERSION = '1.0.0'
-
-/** The Castellan's reference — who says a room is already filed. */
-const CASTELLAN = `envoy:${LAIR_CASTELLAN_KEY}` as const
 
 /**
  * **File as a room** — a room described in a message reaches the lorebook
@@ -679,11 +914,20 @@ export const lairFileRoomSpec = () =>
 							}),
 						),
 					)
-					.chain('lore', (c) =>
+					/** The book's public half — world lore and history, never character lore (see the note on `CASTELLAN`). */
+					.chain('worldLore', (c) =>
 						c.query('read', ($) =>
-							C.lorebookTriggers.v1({
+							C.worldLore.v1({
 								scope: $.input.sessionScope,
 								params: slot.params(),
+							}),
+						),
+					)
+					.chain('historyEntries', (c) =>
+						c.query('read', ($) =>
+							C.historyEntries.v1({
+								scope: $.input.sessionScope,
+								params: slot.params({ node: 'gather.worldLore.read' }),
 							}),
 						),
 					)
@@ -694,6 +938,7 @@ export const lairFileRoomSpec = () =>
 								scope: $.input.sessionScope,
 								params: slot.params(),
 							}),
+							{ expose: { label: 'Rooms' } },
 						),
 					)
 					/** The whole book, any entry type — a room is filed when ANY entry answers to its name (R7). */
@@ -735,13 +980,54 @@ export const lairFileRoomSpec = () =>
 			)
 			.task('lore', ($) =>
 				C.concatCandidates.v1({
-					sources: [$.gather.row.read.band, $.gather.lore.read.main] as any,
+					sources: [
+						$.gather.row.read.band,
+						$.gather.worldLore.read.main,
+						$.gather.historyEntries.read.main,
+					] as any,
+				}),
+			)
+			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
+			// the world's location at `world.location` (the preset's `path`),
+			// by the one room rule; the ranker leaves it out of the lore.
+			.task('place', ($: any) =>
+				C.undescribedName.v1({
+					name: $.gather.state.read.state,
+					locationEntries: $.gather.rooms.read.entries,
+					params: slot.params(),
+				}),
+				{ expose: { label: 'The current place' } },
+			)
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
+			// The hard gates before the ranker (C2; R2, R4): selective-logic
+			// exclusions from the keyword lanes, and the presence gate.
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.lore.candidates,
+					exclusions: [$.gather.worldLore.read.exclusions, $.gather.historyEntries.read.exclusions] as any,
+					presences: $.presences.main,
+					at: $.presences.at,
 				}),
 			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.lore.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
+					shownElsewhere: $.place.entryId,
+					params: slot.params(),
+				}),
+			)
+			/**
+			 * 🚧 **The files those rows show** (attachments follow-ups, owner
+			 * ruling 2026-10-03), read once on the spine; the drafting arm below
+			 * places them for `room.new.write` — an image it can read rides its own
+			 * turn, otherwise its name. No files, and the arm's prompt is byte for
+			 * byte what it was.
+			 */
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.gather.row.read.messages,
 					params: slot.params(),
 				}),
 			)
@@ -773,13 +1059,21 @@ export const lairFileRoomSpec = () =>
 									templateContext: $.room.new.context.templateContext,
 								}),
 							)
+							.task('attached', ($: any) =>
+								C.placeAttachments.v1({
+									messages: $.room.new.lines.messages,
+									attachments: $.attachments.attachments,
+									connection: slot.connectionOf('room.new.write'),
+									params: slot.params(),
+								}),
+							)
 							.task('prompt', ($: any) =>
 								C.assemble.v2({
 									candidates: $.rank.candidates,
 									decisions: $.rank.decisions,
 									groups: $.rank.groups,
 									budget: $.contextBudget.available,
-									messages: $.room.new.lines.messages,
+									messages: $.room.new.attached.messages,
 									templateContext: $.room.new.context.templateContext,
 									template: slot.template(),
 									prompts: slot.prompts({ node: 'room.new.context' }),
@@ -840,7 +1134,9 @@ export const lairFileRoomSpec = () =>
 					.settings('room.new.save', { review: 'on' })
 					.params('room.new.save', { entryType: 'core:entry/location' })
 					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
-					.params('room.exists.note', { path: '', separator: ' ' }),
+					.params('room.exists.note', { path: '', separator: ' ' })
+					// The room the place slot shows (the room rule).
+					.params('place', { path: 'world.location' }),
 			)
 			.build(),
 	)
@@ -1090,12 +1386,24 @@ const castellanAction = (
 					instructions: $.input.text,
 				}),
 			)
+			// Before the reads (history window, 2026-10-03): the history read
+			// is sized by this budget, so it is computed first. It reads only
+			// config, never a step, so moving it changes no value.
+			.task('contextBudget', ($) =>
+				C.contextBudget.v1({
+					sampling: slot.samplingOf('write'),
+					connection: slot.connectionOf('write'),
+					params: slot.params(),
+				}),
+			)
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
 						c.query('read', ($) =>
 							C.sessionHistory.v1({
 								scope: $.input.sessionScope,
+								// Sized by the window (history window, 2026-10-03).
+								budget: $.contextBudget.available,
 								params: slot.params(),
 							}),
 						),
@@ -1115,21 +1423,26 @@ const castellanAction = (
 						c.query('read', ($) => C.sessionState.v1({ scope: $.input.sessionScope })),
 					),
 			)
-			.task('contextBudget', ($) =>
-				C.contextBudget.v1({
-					sampling: slot.samplingOf('write'),
-					connection: slot.connectionOf('write'),
-					params: slot.params(),
-				}),
-			)
 			.task('lore', ($) =>
 				C.concatCandidates.v1({
 					sources: [$.gather.history.read.band, $.gather.lore.read.main] as any,
 				}),
 			)
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
+			// The hard gates before the ranker (C2; R2, R4): selective-logic
+			// exclusions from the keyword lanes, and the presence gate.
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.lore.candidates,
+					exclusions: $.gather.lore.read.exclusions,
+					presences: $.presences.main,
+					at: $.presences.at,
+				}),
+			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.lore.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
 					params: slot.params(),
 				}),
@@ -1163,13 +1476,34 @@ const castellanAction = (
 					seedName: $.context.seedName,
 				}),
 			)
+			/**
+			 * 🚧 **The transcript's files, placed** (attachments follow-ups, owner
+			 * ruling 2026-10-03) — `respond`'s two steps: the files the rows show,
+			 * then per line what `write` receives (an image it can read rides its
+			 * own turn; otherwise its name). A transcript with no files passes
+			 * through untouched, so the prompt is byte for byte what it was.
+			 */
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.gather.history.read.messages,
+					params: slot.params(),
+				}),
+			)
+			.task('attached', ($) =>
+				C.placeAttachments.v1({
+					messages: $.lines.messages,
+					attachments: $.attachments.attachments,
+					connection: slot.connectionOf('write'),
+					params: slot.params(),
+				}),
+			)
 			.task('prompt', ($) =>
 				C.assemble.v2({
 					candidates: $.rank.candidates,
 					decisions: $.rank.decisions,
 					groups: $.rank.groups,
 					budget: $.contextBudget.available,
-					messages: $.lines.messages,
+					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
 					prompts: slot.prompts({ node: 'context' }),
@@ -1189,19 +1523,33 @@ const castellanAction = (
 			)
 			/**
 			 * The placeholder, finished: the prose, and the Castellan's
-			 * reasoning folded as the row's Thinking (the B5 pattern — absent
+			 * reasoning folded as the row's Reasoning (the B5 pattern — absent
 			 * when the model gave none, and the port is skipped).
 			 */
 			.outlet('save', ($) =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
 					text: $.write.text,
-					thinking: $.write.thinking,
+					reasoning: $.write.reasoning,
 				}),
+			)
+			/**
+			 * What this step ships with: the post-history reminder's trigger
+			 * (`POST_HISTORY_TOKEN_TRIGGER`), because the prompt renders the
+			 * session's growing history and the reminder only earns its place
+			 * once there is enough of it to drift from.
+			 */
+			.preset('default', { label: 'Default', default: true }, (p) =>
+				p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
 			)
 			.build(),
 	)
 
+// ⚠ Trap and Reveal, edited in place (history window, 2026-10-03) —
+// content-addressed; `specHashes.test.ts` records the move. The shared
+// `castellanAction` computes `contextBudget` before the reads and its history
+// read takes the `budget`, so the transcript fit, not the newest 100 rows,
+// decides where the conversation starts.
 /** @internal */
 export const LAIR_TRAP_SPEC_ID = 'core:spec/lair-trap'
 /** @internal */

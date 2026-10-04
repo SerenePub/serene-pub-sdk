@@ -25,31 +25,42 @@
  *    the address `envoy:mascot`, an administrator tunes them in the Pipelines
  *    panel as deviations, and `assemble` reads the same text by reference —
  *    one authored text, one place to edit it, no second schema.
- *  - **The docs are its only knowledge.** `core:query/docs-search@1` ranks
+ *  - **The docs are its knowledge.** `core:query/docs-search@1` ranks
  *    the compiled documentation's sections — the app's guides and the SDK's —
  *    against the person's latest questions and publishes the relevant ones in
  *    its own declared band, `docsExcerpts`, which the ranker budgets and the
  *    guide's own template (`GUIDE_RESPOND_TEMPLATE`, the spec's default
  *    preset) places under a heading that says what they are — or, when
- *    nothing matched, says that instead. Three lore lanes, four graph reads
- *    and two embedding arms are not here because a guide session has no
- *    lorebook and no cast to bind one to; a person who attaches one gets it
- *    on `respond`, not here.
+ *    nothing matched, says that instead.
+ *  - **And the lorebook, when the session has one.** The genre declares an
+ *    optional lorebook as "the documentation it answers out of … read every
+ *    turn and never added to" (`guideGenre`), so the reply reads it every
+ *    turn: `core:query/world-lore@1`, by keyword, in its own `worldLore`
+ *    band, which the template frames as the person's own reference notes.
+ *    World lore only — a guide session seats no character, so there is no
+ *    private lore to read and no timeline to place — and no graph reads or
+ *    embedding arms: a keyword read costs no model call, and nothing here is
+ *    capped at one call per turn the way Chat's reply is.
  */
 import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { withSpriteTail } from './sprites.js';
-import { GUIDE_MASCOT_KEY, guideGenre } from './genres.js';
+import { GUIDE_MASCOT_KEY, guideGenre, POST_HISTORY_TOKEN_TRIGGER } from './genres.js';
+/** Where Serene's greeting lands: the channel her declaration names. */
+const SERENE_GREETING_CHANNEL = guideGenre.envoys?.find((e) => e.key === GUIDE_MASCOT_KEY)?.greeting?.channel ?? 'main';
 /** @internal */
 export const CREATE_GUIDE_SPEC_ID = 'core:spec/create-guide';
 /** @internal */
-export const CREATE_GUIDE_VERSION = '1.0.0';
+export const CREATE_GUIDE_VERSION = '1.1.0';
 /**
  * The guide's create pipeline — the genre's one required member (24 §3).
  *
- * The same two nodes as `create-chat`, and with no characters to greet with
- * they write nothing: creation is still a run, with a receipt saying so, and
- * a genre that later seats a greeting-bearing envoy has the node to do it in.
+ * The same two nodes as `create-chat` — which, with no characters to greet
+ * with, write nothing — then Serene's declared greeting (`EnvoyDecl.greeting`),
+ * read through `core:query/envoy-greeting@1` and interpolated for this
+ * session, written on `main` under her name: only when it has text, which it
+ * lacks when she is not seated. No model call: a person is waiting on a
+ * create, so the welcome is declared, instant and translatable.
  * The genre's declaration — envoys included — rides `meta.genre` on the
  * version row, which is where the host reads "which speakers does this genre
  * bring" from (`listSessionGenres`).
@@ -76,6 +87,14 @@ export const createGuideSpec = () => compile(spec(CREATE_GUIDE_SPEC_ID, {
     greetings: $.collect.greetings,
     channel: guideGenre.shape?.greeting?.channel ?? 'main',
 }))
+    /** Serene's greeting, interpolated — empty when she is not seated. */
+    .query('welcome', ($) => C.envoyGreeting.v1({ scope: $.input.sessionScope, params: slot.params() }))
+    .junction('greet', { on: ($) => $.welcome.text }, (g) => g.when('greets', { truthy: true }, (c) => c.outlet('write', ($) => C.createMessage.v1({
+    text: $.welcome.text,
+    channel: SERENE_GREETING_CHANNEL,
+    speaker: `envoy:${GUIDE_MASCOT_KEY}`,
+}))))
+    .preset('guide', { label: 'Guide', default: true }, (p) => p.params('welcome', { envoy: GUIDE_MASCOT_KEY }))
     .build());
 /** @internal */
 export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond';
@@ -85,21 +104,37 @@ export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond';
 // — the docs arrive in their declared `docsExcerpts` band, framed as the only
 // source of truth, with an explicit line for a turn nothing matched. The
 // shared Default template rendered them as anonymous `worldLore` JSON.
+// 1.2.0, edited in place (lorebooks C2, 2026-10-02): an `eligible` step
+// (`core:task/eligibility@1`) between `lore` and `rank`. Content-addressed;
+// `specHashes.test.ts` records the move.
+// ⚠ Edited in place (2026-10-03, history window) — content-addressed;
+// `specHashes.test.ts` records the move. `contextBudget` runs before the
+// reads and the history read takes its `budget`: about twice the window's
+// worth of the newest rows (never more than 2000) instead of the newest 100,
+// so the transcript fit decides where the conversation starts.
 /** @internal */
 export const GUIDE_RESPOND_VERSION = '1.2.0';
 /**
  * The guide's context template (2026-09-27).
  *
  * Structure plus the one sentence each branch of the docs band needs, and
- * nothing a story template carries: no scenario, no lore, no relationships —
- * a guide session has none. The transcript loop is the shipped Default's,
- * unchanged, so injections, the post-history reminder and the envoy's open
- * seed line render exactly as they do in any other reply.
+ * nothing a story template carries: no scenario, no relationships — a guide
+ * session has none. The transcript loop is the shipped Default's, unchanged,
+ * so injections, the post-history reminder and the envoy's open seed line
+ * render exactly as they do in any other reply.
  *
  * `{{#if docsExcerpts}} … {{else}} … {{/if}}` is the grounding: an excerpt
  * turn says the excerpts are the only documentation the model has and asks
  * for the path it used; an empty turn says nothing matched, in so many words,
  * so a model is never left to decide for itself whether it was given docs.
+ * The session's lorebook (`{{{worldLore}}}`, when an entry matched) comes
+ * after, framed as the person's own notes: an answer may come from it, and
+ * names the entry rather than a docs path it does not have.
+ *
+ * Each line renders its placed files after its text (`{{{attachments}}}`,
+ * 2026-10-03). The `attached` step has placed them since phase 4, but this
+ * template never rendered the key, so the guide's model received none of
+ * them — not even their names. Empty on a line with no files.
  * @internal
  */
 export const GUIDE_RESPOND_TEMPLATE = `{{#systemBlock}}
@@ -118,9 +153,16 @@ export const GUIDE_RESPOND_TEMPLATE = `{{#systemBlock}}
 {{#if docsExcerpts}}
 Documentation excerpts retrieved for the person's latest question. These are the only Serene Pub documentation you have. Each key is the page and section; each value starts with the page's path.
 {{{docsExcerpts}}}
-Answer only from these excerpts, and end with the path of the page you used, copied exactly. If they do not answer the question, say "I couldn't find that in the docs."
+Answer only from these excerpts{{#if worldLore}} and the lorebook entries below{{/if}}, and end with the path of the page you used, copied exactly. If they do not answer the question, say "I couldn't find that in the docs."
+{{else if worldLore}}
+No documentation excerpts matched the person's latest question. Answer only from the lorebook entries below; if they do not answer it either, say "I couldn't find that in the docs." and suggest rephrasing the question or browsing /docs. Do not answer from memory.
 {{else}}
 No documentation excerpts matched the person's latest question. You have no documentation for it: say "I couldn't find that in the docs." and suggest rephrasing the question or browsing /docs. Do not answer from memory.
+{{/if}}
+{{#if worldLore}}
+
+From the lorebook attached to this session: reference notes the person keeps, retrieved for their latest question. Each key is the entry's name. When you answer from one, say which entry you used.
+{{{worldLore}}}
 {{/if}}
 {{/systemBlock}}
 
@@ -160,12 +202,12 @@ Character reminder:
 {{/with}}
 {{#if (eq role "assistant")}}
 {{#assistantBlock}}
-{{{name}}}: {{{message}}}
+{{{name}}}: {{{message}}}{{{attachments}}}
 {{/assistantBlock}}
 {{/if}}
 {{#if (eq role "user")}}
 {{#userBlock}}
-{{{name}}}: {{{message}}}
+{{{name}}}: {{{message}}}{{{attachments}}}
 {{/userBlock}}
 {{/if}}
 {{/each}}`;
@@ -202,9 +244,25 @@ withSpriteTail(spec(GUIDE_RESPOND_SPEC_ID, {
     speaker: $.input.speaker,
     row: $.input.messageId,
 }))
+    // Before the reads (history window, 2026-10-03): the history read
+    // is sized by this budget, so it is computed first. It reads only
+    // config, never a step, so moving it changes no value.
+    .task('contextBudget', ($) => C.contextBudget.v1({
+    sampling: slot.samplingOf('generate'),
+    connection: slot.connectionOf('generate'),
+    params: slot.params(),
+}))
     .gather('gather', { mode: 'parallel' }, (b) => b
-    .chain('history', (c) => c.query('read', ($) => C.sessionHistory.v1({
+    .chain('history', (c) => c
+    .query('read', ($) => C.sessionHistory.v1({
     scope: $.input.sessionScope,
+    // Sized by the window (history window, 2026-10-03).
+    budget: $.contextBudget.available,
+    params: slot.params(),
+}))
+    // 🚧 The files those rows show (PLAN-composer-attachments §3.5).
+    .query('attachments', ($) => C.historyAttachments.v1({
+    messages: $.gather.history.read.messages,
     params: slot.params(),
 })))
     .chain('cast', (c) => c.query('read', ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
@@ -219,23 +277,41 @@ withSpriteTail(spec(GUIDE_RESPOND_SPEC_ID, {
     .chain('docs', (c) => c.query('read', ($) => C.docsSearch.v1({
     scope: $.input.sessionScope,
     params: slot.params(),
-}))))
-    .task('contextBudget', ($) => C.contextBudget.v1({
-    sampling: slot.samplingOf('generate'),
-    connection: slot.connectionOf('generate'),
-    params: slot.params(),
-}))
+})))
     /**
-     * The pool: the conversation's band intent first, then the docs.
-     * `concat` keeps the intents at the head, which is what lets the
-     * ranker reserve the transcript's slice before the docs divide the
-     * rest.
+     * The session's lorebook, which the genre declares as the
+     * documentation it answers out of, read every turn: world
+     * lore by keyword. A session with no book reads none.
+     */
+    .chain('worldLore', (c) => c.query('read', ($) => C.worldLore.v1({
+    scope: $.input.sessionScope,
+    params: slot.params(),
+}))))
+    /**
+     * The pool: the conversation's band intent first, then the docs,
+     * then the lorebook. `concat` keeps the intents at the head, which
+     * is what lets the ranker reserve the transcript's slice before the
+     * docs and the book divide the rest.
      */
     .task('lore', ($) => C.concatCandidates.v1({
-    sources: [$.gather.history.read.band, $.gather.docs.read.main],
+    sources: [
+        $.gather.history.read.band,
+        $.gather.docs.read.main,
+        $.gather.worldLore.read.main,
+    ],
+}))
+    /**
+     * The hard gates before the ranker (C2, R2) — every spec that ranks
+     * passes its pool through one. Here only the book's own selective
+     * logic can rule an entry out; the guide reads no cast, so no
+     * presence or secrecy rule has anything to judge.
+     */
+    .task('eligible', ($) => C.eligibility.v1({
+    candidates: $.lore.candidates,
+    exclusions: $.gather.worldLore.read.exclusions,
 }))
     .task('rank', ($) => C.rankHybrid.v1({
-    candidates: $.lore.candidates,
+    candidates: $.eligible.candidates,
     budget: $.contextBudget.available,
     params: slot.params(),
 }))
@@ -258,12 +334,19 @@ withSpriteTail(spec(GUIDE_RESPOND_SPEC_ID, {
     seedName: $.context.seedName,
     continuationPrefill: $.input.continuationPrefill,
 }))
+    // 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+    .task('attached', ($) => C.placeAttachments.v1({
+    messages: $.lines.messages,
+    attachments: $.gather.history.attachments.attachments,
+    connection: slot.connectionOf('generate'),
+    params: slot.params(),
+}))
     .task('prompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
     decisions: $.rank.decisions,
     groups: $.rank.groups,
     budget: $.contextBudget.available,
-    messages: $.lines.messages,
+    messages: $.attached.messages,
     templateContext: $.context.templateContext,
     template: slot.template(),
     // The same construction `respond` uses — and NOT how the
@@ -290,12 +373,14 @@ withSpriteTail(spec(GUIDE_RESPOND_SPEC_ID, {
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,
     text: $.generate.text,
-    thinking: $.generate.thinking,
+    reasoning: $.generate.reasoning,
 })))
     /** The guide's own template (1.2.0) — see `GUIDE_RESPOND_TEMPLATE`. */
-    .preset('guide', { label: 'Guide', default: true }, (p) => p.template('prompt', {
+    .preset('guide', { label: 'Guide', default: true }, (p) => p
+    .template('prompt', {
     source: GUIDE_RESPOND_TEMPLATE,
     engine: handlebars.id,
-}))
+})
+    .params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }))
     .build());
 //# sourceMappingURL=guide.js.map

@@ -226,6 +226,76 @@ export interface ConversationComposerV1 {
 	newest: unknown | null
 	/** Someone is due next: Send takes the quieter look. */
 	sendTonal: boolean
+	/**
+	 * 🚧 The viewer's **tray** (composer attachments §3.3): the files they
+	 * added to this composer and have not sent yet, in tray order — uploading,
+	 * ready or refused. The host keeps it; the composer draws the tiles and
+	 * asks (`attach-files`, `remove-tray-item`). Absent, the host
+	 * offers no attachments and the composer draws no Attach button.
+	 */
+	tray?: TrayItemV1[]
+	/**
+	 * 🚧 What this session's reply can read (**attachment readers**, §3.2):
+	 * per attachment kind whether it may be attached and why not, and per
+	 * model call what it reads. Null until the host has asked.
+	 */
+	attachments?: AttachmentReadersV1 | null
+}
+
+/**
+ * 🚧 What kind of attachment a file is (composer attachments D5) — an
+ * **attachment kind**. Decided from the file's bytes, never its name.
+ * @experimental
+ */
+export type AttachmentKindV1 = 'image' | 'text' | 'pdf'
+
+/**
+ * 🚧 One **tray item** as the composer draws it: a file uploaded into the
+ * session's composer and not yet sent. ⚠ Not a held import.
+ * @experimental
+ */
+export interface TrayItemV1 {
+	id: string
+	/** `uploading` (with `progress`), `ready`, or `refused` (with `refusal`). */
+	status: 'uploading' | 'ready' | 'refused'
+	/** 0–1 while uploading. */
+	progress: number
+	/** The sentence a refused tile shows. */
+	refusal: string | null
+	filename: string
+	bytes: number
+	/** Null until the server has sniffed it. */
+	kind: AttachmentKindV1 | null
+	/** The square thumbnail (`/media/<id>?v=thumb`) of a stored image, else null. */
+	thumbSrc: string | null
+}
+
+/**
+ * 🚧 The session's **attachment readers** as the composer reads them (§3.2).
+ * @experimental
+ */
+export interface AttachmentReadersV1 {
+	/** Per kind: may it be attached (the union over reading calls, D1), and why not. */
+	kinds: Record<AttachmentKindV1, { allowed: boolean; reason?: string }>
+	/**
+	 * Each **reading call** — a model call of the reply that is handed
+	 * attachments — with what it reads and what it gets as a placeholder
+	 * (`[image: cat.png]`, D3). `model` names its model for an administrator
+	 * only.
+	 */
+	calls: Array<{
+		key: string
+		label: string
+		reads: AttachmentKindV1[]
+		placeholderFor: AttachmentKindV1[]
+		model?: string
+	}>
+	/** The file picker's filter for every kind that may be attached (`image/png,.md`). */
+	accept: string
+	/** Files one message may carry (D6). */
+	filesPerMessage: number
+	/** The byte cap per kind (D6), so a file is refused before it uploads. */
+	bytesPerKind: Record<AttachmentKindV1, number>
 }
 
 /**

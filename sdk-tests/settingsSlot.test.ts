@@ -70,6 +70,25 @@ describe('R-9 · the substrate declares the settings slot', () => {
 		assert.equal(settingsSlotFor({ effects: 'write' })!.schema?.review?.default, 'off')
 	})
 
+	test('the switch reads by what it turns off: a source, or a step that calls a model', () => {
+		const en = (t: unknown) => (t as { en?: string } | undefined)?.en
+		// A query is a source the turn can do without.
+		assert.equal(en(settingsSlotFor(C.worldLore.descriptor)!.schema?.enabled?.label), 'Use this source')
+		// The planner and the state keeper are model calls, not sources: the
+		// switch says the step does not run.
+		const call = settingsSlotFor(C.generateJson.descriptor)!.schema?.enabled
+		assert.ok(call)
+		assert.equal(en(call.label), 'Run this step')
+		assert.equal(call.default, true)
+		assert.equal(call.quick, true)
+		assert.doesNotMatch(String(en(call.description)), /fetch/)
+		assert.equal(settingsSlotFor(C.embedText.descriptor)!.schema?.enabled, call)
+		assert.ok(Object.isFrozen(call))
+		// Only the words differ: the address and the value are the same switch.
+		assert.equal(settingsSlotFor({ kind: 'task', optional: true })!.schema?.enabled, call)
+		assert.equal(settingsSlotFor({ optional: true })!.schema?.enabled, call)
+	})
+
 	test('a definition that is both optional and gated carries both on one slot', () => {
 		const both = settingsSlotFor(C.embedText.descriptor)!
 		assert.deepEqual(Object.keys(both.schema ?? {}), ['enabled', 'review'])

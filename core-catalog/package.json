@@ -1,16 +1,36 @@
 {
 	"name": "@serene-pub/core-catalog",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "Core's announcement (24 §9): the genres, pipelines and hook declarations Serene Pub ships. SP boot-seeds from this package; conformance consumes it as fixtures; modders import it for typed references.",
+	"version": "0.6.0-pr-1",
+	"description": "The genres, pipelines, hook declarations and core components Serene Pub ships. Serene Pub seeds from it at boot, conformance uses it as fixtures, and plugin authors import it for typed references.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/core-catalog#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "core-catalog"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"sideEffects": [
-		"./dist/entries.js"
+		"./dist/index.js",
+		"./dist/entries.js",
+		"./dist/statShapes.js",
+		"./dist/slots.js",
+		"./dist/genres.js",
+		"./dist/annexField.js",
+		"./dist/ui/sessions/widgets.js"
 	],
 	"files": [
 		"dist",
+		"!dist/**/*.map",
 		"components",
-		"README.md"
+		"README.md",
+		"NOTICE"
 	],
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -31,9 +51,17 @@
 			"types": "./dist/ui/sessions/widgetContext.d.ts",
 			"import": "./dist/ui/sessions/widgetContext.js"
 		},
+		"./core-widgets": {
+			"types": "./dist/ui/sessions/coreWidgetsEntry.d.ts",
+			"import": "./dist/ui/sessions/coreWidgetsEntry.js"
+		},
 		"./lore-entries": {
 			"types": "./dist/ui/sessions/lore-entries/index.d.ts",
 			"import": "./dist/ui/sessions/lore-entries/index.js"
+		},
+		"./authors-note": {
+			"types": "./dist/ui/sessions/authors-note/index.d.ts",
+			"import": "./dist/ui/sessions/authors-note/index.js"
 		},
 		"./scene-portraits": {
 			"types": "./dist/ui/sessions/scene-portraits/index.d.ts",
@@ -43,17 +71,31 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0",
-		"@serene-pub/contracts": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1",
+		"@serene-pub/contracts": "^0.6.0-pr-1",
+		"@serene-pub/component-client": "^0.6.0-pr-1",
+		"svelte": ">=5"
+	},
+	"peerDependenciesMeta": {
+		"@serene-pub/component-client": {
+			"optional": true
+		},
+		"svelte": {
+			"optional": true
+		}
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json && node scripts/buildComponents.mjs"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0",
-		"@serene-pub/contracts": "0.6.0-preview.0",
-		"@serene-pub/cli": "0.6.0-preview.0",
-		"@serene-pub/component-client": "0.6.0-preview.0",
+		"@serene-pub/sdk": "0.6.0-pr-1",
+		"@serene-pub/contracts": "0.6.0-pr-1",
+		"@serene-pub/cli": "0.6.0-pr-1",
+		"@serene-pub/component-client": "0.6.0-pr-1",
 		"svelte": "^5.56.0"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

@@ -168,7 +168,7 @@ describe('P3 · every shipped core template slot has a scope, with zero findings
 		assert.equal(field(scope, 'sessionMessages').of?.fields?.role?.type, 'string')
 		assert.equal(field(scope, 'postHistory').fields?.targetIndex?.type, 'number')
 		assert.equal(field(scope, 'injectionsByIndex').type, 'record')
-		assert.equal(field(scope, 'characterLore').type, 'list')
+		assert.equal(field(scope, 'characterLore').type, 'string')
 		// Names render() never supplies are gone.
 		assert.equal(scope.blocks, undefined)
 		assert.equal(scope.prompts, undefined)

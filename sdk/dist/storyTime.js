@@ -28,9 +28,42 @@
  * which is the bug the host's `compareDates` was rewritten to fix. The host's
  * lorebook dates delegate here, so one calendar has one comparator.
  */
+/**
+ * The range each part of a story time takes on EVERY rung of the calendar —
+ * the free-form rule, and the one validity definition for a stored date.
+ *
+ * A declared calendar only ever narrows it (month count, month lengths, the
+ * leap day — `storyTimeProblem`); nothing widens it. `parseStoryTime`,
+ * `storyTimeProblem` and core's history entry type all read these, and the
+ * entry type's declared range is projected into the database's CHECK — so a
+ * date a book's calendar allows is a date the database holds (A15, 2026-09-30:
+ * a copied 1–12 / 1–31 once refused month 13 of a thirteen-month calendar and
+ * the day after a free-form day 31).
+ *
+ * ⚠ **Month and day have a floor and no ceiling, on purpose.** A free-form
+ * book numbers days of the year ("Year 3, day 250") and may count as many
+ * months as it likes; a declared calendar may have any number of months of up
+ * to 1000 days each. Those are facts about ONE book, checked against its
+ * calendar at entry — never a bound on every book. Zero is refused because it
+ * is what an absent part packs to. The year has no range at all: it is one
+ * signed count, negative before year 1.
+ *
+ * Not the calendar's own limits (`storyCalendarProblems`: a month's LENGTH is
+ * 1–1000 days) — those bound a calendar's shape, not a date. And ranges only:
+ * the narrowing rule (a day needs a month, a minute needs an hour) is
+ * `storyTimeProblem`'s, which reads these for every part and is the check
+ * every dated writer answers with.
+ * @experimental
+ */
+export const STORY_TIME_PART_RANGES = {
+    month: { min: 1 },
+    day: { min: 1 },
+    hour: { min: 0, max: 23 },
+    minute: { min: 0, max: 59 },
+};
+const RANGE = STORY_TIME_PART_RANGES;
 // `-12-03-05 06:30`: a signed year, then month and day, then an optional time.
-// Month and day are unbounded above on purpose — free-form books number days
-// of the year — and only refused at zero, which is what "absent" packs to.
+// Month and day are unbounded above on purpose (`STORY_TIME_PART_RANGES`).
 const STORY_TIME = /^\s*(-?\d+)(?:-(\d+))?(?:-(\d+))?(?:[ T](\d{1,2}):(\d{2}))?\s*$/;
 /**
  * The story time a stored value spells, or `null` when it spells none.
@@ -51,20 +84,20 @@ export function parseStoryTime(value) {
     const out = { year: Number(m[1]) };
     if (m[2] !== undefined) {
         const month = Number(m[2]);
-        if (month < 1)
+        if (month < RANGE.month.min)
             return null;
         out.month = month;
     }
     if (m[3] !== undefined) {
         const day = Number(m[3]);
-        if (day < 1)
+        if (day < RANGE.day.min)
             return null;
         out.day = day;
     }
     if (m[4] !== undefined) {
         const hour = Number(m[4]);
         const minute = Number(m[5]);
-        if (hour > 23 || minute > 59)
+        if (hour > RANGE.hour.max || minute > RANGE.minute.max)
             return null;
         out.hour = hour;
         out.minute = minute;
@@ -246,21 +279,35 @@ export function storyDaysInMonth(year, month, calendar) {
     return base + (calendar.leap?.month === month && isLeapYear(year, calendar) ? 1 : 0);
 }
 /**
- * Why a date does not land in a calendar, or `null` when it does. Free-form
- * (`null` calendar) takes any positive parts.
+ * Why a date does not land in a calendar, or `null` when it does.
+ *
+ * **Every rung** holds a story time to `STORY_TIME_PART_RANGES` and to the
+ * narrowing rule — a day needs a month, a minute needs an hour — so free-form
+ * (`null` calendar) takes any whole parts in range and no more. A declared
+ * calendar then narrows further: its month count, its month lengths, the leap
+ * day. This is the one check every dated writer answers with (history,
+ * amendments, fork dates, placements, clocks): one rule, one sentence.
  * @experimental
  */
 export function storyTimeProblem(time, calendar) {
     if (!isInt(time.year))
         return 'A date needs a whole year.';
-    if (has(time.month) && (!isInt(time.month) || time.month < 1))
-        return 'A month is a whole number, 1 or more.';
-    if (has(time.day) && (!isInt(time.day) || time.day < 1))
-        return 'A day is a whole number, 1 or more.';
+    if (has(time.month) && (!isInt(time.month) || time.month < RANGE.month.min))
+        return `A month is a whole number, ${RANGE.month.min} or more.`;
+    if (has(time.day) && (!isInt(time.day) || time.day < RANGE.day.min))
+        return `A day is a whole number, ${RANGE.day.min} or more.`;
+    if (has(time.day) && !has(time.month))
+        return 'A day needs a month.';
+    if (has(time.hour) && (!isInt(time.hour) || time.hour < RANGE.hour.min || time.hour > RANGE.hour.max))
+        return `An hour is a whole number, ${RANGE.hour.min} to ${RANGE.hour.max}.`;
+    if (has(time.minute)) {
+        if (!has(time.hour))
+            return 'A minute needs an hour.';
+        if (!isInt(time.minute) || time.minute < RANGE.minute.min || time.minute > RANGE.minute.max)
+            return `A minute is a whole number, ${RANGE.minute.min} to ${RANGE.minute.max}.`;
+    }
     if (!calendar)
         return null;
-    if (has(time.day) && !has(time.month))
-        return 'A day needs a month in this calendar.';
     if (has(time.month) && time.month > calendar.months.length)
         return `There is no month ${time.month}: this calendar has ${calendar.months.length}.`;
     if (has(time.day) && has(time.month)) {

@@ -192,8 +192,24 @@ export interface BuiltNode {
 	 *    string or a locale map (R-20), `{speaker}` filled by the host. It
 	 *    wins over any status the node's own handler sets, for this node
 	 *    only.
+	 *
+	 * `label` and `purpose` (config grouping, ruled 2026-09-30) are what the
+	 * settings call this step:
+	 *
+	 *  · `label` — **the step label**: this step's own name wherever the
+	 *    settings name it — the heading of the group a model call leads, and
+	 *    its legend among Advanced settings. Wins over the step status and the
+	 *    node definition's name. Any node may carry one.
+	 *  · `purpose` — **the step purpose**: one or two plain sentences under
+	 *    that group's heading, saying what this model call is for. Only on a
+	 *    model call — an oracle whose definition declares a `connection` slot
+	 *    (`isModelCall`); no other step heads a group, so a purpose anywhere
+	 *    else would never be read.
+	 *
+	 * Display text (R-20), hashed with the document like `status`: a spec that
+	 * sets neither hashes as it always did.
 	 */
-	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n }
+	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n; label?: I18n; purpose?: I18n }
 }
 
 /**
@@ -375,6 +391,10 @@ export interface NodeOpts {
 		stream?: true
 		/** The step status shown while this node runs — see `BuiltNode.expose` (B18, D5). */
 		status?: I18n
+		/** The step label: this step's name in settings — see `BuiltNode.expose`. */
+		label?: I18n
+		/** The step purpose: what this model call is for, under its settings heading — see `BuiltNode.expose`. */
+		purpose?: I18n
 	}
 }
 
@@ -394,21 +414,43 @@ function exposeOf(
 			`node '${key}': expose.swaps offers a choice in session settings, so it cannot be combined with session: false`,
 		)
 	const swaps = swapIds(key, pinned, expose.swaps)
-	if (expose.status !== undefined) {
-		const bad = i18nFindings(expose.status, `node '${key}': expose.status`)
+	for (const field of ['status', 'label', 'purpose'] as const) {
+		if (expose[field] === undefined) continue
+		const bad = i18nFindings(expose[field], `node '${key}': expose.${field}`)
 		if (bad.length) throw new Error(bad[0])
 	}
-	// What the node shows while it runs (B3/B18) rides beside the session
-	// mark; the streaming step's laws are `validate()`'s, which sees the
-	// whole document (one per execution path, never JSON, never in a repeat).
+	if (expose.purpose !== undefined && !isModelCall(pinned))
+		throw new Error(stepPurposeRefusal(key, pinned.id))
+	// What the node shows while it runs (B3/B18), and what the settings call
+	// it, ride beside the session mark; the streaming step's laws are
+	// `validate()`'s, which sees the whole document (one per execution path,
+	// never JSON, never in a repeat).
 	const shown = {
 		...(expose.stream === true ? { stream: true as const } : {}),
 		...(expose.status !== undefined ? { status: expose.status } : {}),
+		...(expose.label !== undefined ? { label: expose.label } : {}),
+		...(expose.purpose !== undefined ? { purpose: expose.purpose } : {}),
 	}
 	if (swaps.length) return { session: true, swaps, ...shown }
 	if (expose.session === true) return { session: true, ...shown }
 	return Object.keys(shown).length ? shown : undefined
 }
+
+/**
+ * Whether a definition is a **model call**: an oracle that declares a
+ * `connection` slot — the only step a step purpose may sit on (see
+ * `BuiltNode.expose`). An assemble's `connection` slot says which model the
+ * prompt is formatted for; it calls none, so it does not count.
+ * @internal
+ */
+export function isModelCall(def: { kind: string; slots?: Readonly<Record<string, { kind: string }>> }): boolean {
+	return def.kind === 'oracle' && Object.values(def.slots ?? {}).some((s) => s.kind === 'connection')
+}
+
+/** The one sentence a misplaced step purpose is refused with, at construction and at `validate()`. @internal */
+export const stepPurposeRefusal = (key: string, definitionId: string): string =>
+	`node '${key}': expose.purpose says what a model call is for, but ${definitionId} calls no model — ` +
+	`put the purpose on the oracle that does, or give this step a label instead`
 
 /**
  * The swap list a node declares, refused where it cannot work (R28, R26):

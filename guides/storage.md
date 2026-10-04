@@ -1,16 +1,23 @@
 # Storage
 
-A plugin can keep its own rows and files. They live under the plugin's id, count against the
-quota its manifest declares, and are reachable from exactly one place: **the plugin's own node
-handlers, running inside its sandbox.** No core node reads them, no frame sees them, and no
-message carries them unless a handler puts them there.
+A plugin can keep two kinds of data, and they answer different needs:
+
+- **Storage**: your plugin's own rows and files. Only your own code reads them, so this is where
+  hidden state lives: an opponent's fleet, the answer the player must guess.
+- **Annex fields**: small values kept in the session itself, which your widgets can save and
+  read back and which the people in the session may see: the last roll, a note, a toggle.
+
+## Your plugin's own rows and files
+
+Ask for a quota in your plugin's declaration. An admin reviews the request, and the pub may
+lower it.
 
 <!-- prelude:
 import { defineExtension } from '@serene-pub/sdk'
 -->
 ```ts
 export default defineExtension({
-	slug: 'chariot.battleship',
+	slug: 'showcase.battleship',
 	name: 'Battleship',
 	version: '1.0.0',
 	// ...
@@ -18,32 +25,26 @@ export default defineExtension({
 })
 ```
 
-## Who is granted what
+Your rows and files are reachable from exactly one place: **your own handlers, running in your
+plugin's sandbox.** No core step reads them, no widget or frame sees them, and no message carries
+them unless a handler puts one there.
 
-A handler's context depends on the **kind** of node it implements. This is the grant table the
-app enforces and the SDK harness mirrors as `hookCtxGrants`:
+### Which handlers get storage
 
-| kind | `ctx` members |
-| --- | --- |
-| task | `random`, `now`, `log`, `signal` — a task is pure, and gets no storage and no network |
-| query | the above plus `storage` |
-| outlet, `effects: 'emit'` | the same as a query |
-| oracle | the above plus `fetch`, when the manifest declares a host — the one kind that may cross the network |
-| outlet, `effects: 'write'` | **not available to a plugin** — nothing in the sandbox can commit a core row |
+`ctx.storage` is handed to your queries, oracles, outlets, event listeners and lifecycle
+callbacks. A **task** never gets it: a task is pure. So a step that reads your rows is a
+**query**, a step that writes them is an **outlet** (declared `effects: 'emit'`, and it may sit
+anywhere in a pipeline), and a step that touches neither is a task. Declaring a storage step as
+a task is the mistake everyone makes once; `serene-pub check` catches it. The full table is in
+[What a plugin may do](plugin-permissions.md).
 
-So a node that reads rows is a **query**, a node that writes rows is an **emit-class outlet**
-(which may sit mid-pipeline; the one-live-row law counts only the reply row a run opens),
-a node that reaches the network is an **oracle**, and a node that touches none of these is a task. Declaring a storage-touching node as a task is the
-mistake everyone makes once: at install it receives no `storage` and halts. `serene-pub check`
-refuses it before that.
+Your handler cannot read Serene Pub's own tables. Anything from the session (the cast, the
+history, the lorebook) arrives on your step's **input ports**, wired from one of core's queries
+upstream.
 
-There is no `read`, `call` or `commit` on a plugin handler's context. A plugin query does not
-read Serene Pub's tables; it reads its own rows. Anything from the session — the cast, the
-history, the lorebook — arrives on the node's **input ports**, wired from a core query upstream.
+### Keeping state per session
 
-## Per-session state
-
-Rows are keyed per plugin, not per session. Compose the key from the run's session id:
+Rows belong to your plugin, not to a session. Put the session id in the key:
 
 <!-- prelude:
 import type { PluginHandlerContext } from '@serene-pub/sdk/testing'
@@ -68,40 +69,40 @@ async function aiFleet(sessionId: number, ctx: PluginHandlerContext) {
 }
 ```
 
-`ctx.storage` is typed optional because a kind that is not granted it has no `storage` member at
-all. The rows half is `get`, `put`, `delete`, `keys(prefix?)`, `query({ prefix, since, until,
-limit, cursor, order })` and `deleteAll(prefix?)`; `usage()` answers the quota at any time, and
-`files` is the same shape for bytes (`list`, `stat`, `read`, `write`, `delete`, `deleteAll`).
-Rows and files count against the one quota. A value must survive JSON, since that is how it is
-stored.
+`ctx.storage` is typed optional because a kind that is not granted it has no `storage` at all.
 
-A write past the quota does not throw: `put` (like `delete` and `files.write`) returns a `Result`
-whose `ok` value is a `WriteReceipt` (`deltaBytes` plus the current `usage`), and a refused write
-comes back as `err` with the refusal as its reason and nothing partially applied. A handler can
-publish that sentence, or prune and retry. A key that is empty or longer than 512 characters,
-or a value JSON cannot carry, is a programming error and does throw.
+| Rows | Files (`ctx.storage.files`) |
+| --- | --- |
+| `get(key)`, `put(key, value)`, `delete(key)` | `read(path)`, `write(path, bytes)`, `delete(path)` |
+| `keys(prefix?)`, `query({ prefix, since, until, limit, cursor, order })` | `list(prefix?)`, `stat(path)` |
+| `deleteAll(prefix?)` | `deleteAll(prefix?)` |
 
-Give hidden state a lifetime. Battleship publishes the opponent's fleet onto the board when the
-last ship goes down and deletes the row (`ctx.storage.delete(key(sessionId, 'ai-fleet'))`); a
-secret that outlives its game is a leak waiting for a records page.
+`usage()` tells you how much of the quota is used. Rows and files share one quota, and rows have
+a budget within it: an eighth of the quota, at least 64 KiB and at most 1 MiB (`rowQuotaFor`
+in `@serene-pub/sdk/testing` works it out). A row's value must survive JSON.
+
+**A full quota does not throw.** `put`, `delete` and `files.write` return a result: `ok` with
+the bytes it changed and the usage now, or `err` with the reason, and nothing half-written. Your
+handler can pass the sentence on, or prune and retry. An empty key, a key longer than 512
+characters, or a value JSON cannot hold is a programming error, and that does throw.
+
+**Give hidden state a lifetime.** Battleship shows the opponent's fleet on the board when the
+last ship goes down, and deletes the row (`ctx.storage.delete(key(sessionId, 'ai-fleet'))`). A
+secret that outlives its game is a leak waiting to happen. Clean up the rest in an `uninstall`
+[lifecycle callback](extending.md#event-listeners-and-lifecycle-callbacks).
+
+### Never on a channel
+
+Anything written to a message, on any channel, reaches the people in the session. So the rule for
+something the player must not see is not "keep it out of the widget": it is **never write it to
+a message at all**. Battleship's board is drawn from messages; the opponent's fleet is a row in
+its storage, and nothing draws it. See [Channels](channels.md).
 
 ## A value a widget saves: annex fields
 
-*Experimental.* Rows are private to your handlers. A value your **widget** should save and read back —
-the last roll, a note, a toggle — belongs in the session's annex instead, and you do not need a
-pipeline per value for it. Declare an **annex field**: a key in your package's annex document, the
-shape its value must have, who may see it (`see`, a data audience; empty is pipelines only) and
-who may set it (`act`). A field with `act` is **settable**: the host lists one action for it under
-the `widget` venue, and core's one pipeline (`core:spec/set-annex-field`) writes it through the same
-annex write a `set-session-annex` node uses — the receipt, `annex-changed`, every viewer's view
-re-sent. A field without `act` is written by your pipelines only; a press of it is refused.
-
-Your `annexFields` list is your package's whole **annex declaration**, the single source of truth
-for its annex document: every key your own `set-session-annex` steps write must be in it. A step
-naming another key is refused by `defineExtension()` and `validate()` when the keys are written
-out, and by the host at every write. The audience stored with a value is the field's `see`. A
-value is held to its shape at every write. `annexSchemaOf('<slug>')` returns the declared shapes, and
-`annexVarFieldOf('<slug>')` the same as a template variable.
+*Experimental.* A value your **widget** saves and reads back belongs in the session's
+**annex**, and you do not need a pipeline for each one. Declare an **annex field**: its key, the
+shape its value must have, who may see it (`see`) and who may set it (`act`).
 
 <!-- prelude:
 import type { ComponentContext } from '@serene-pub/component-client'
@@ -131,23 +132,26 @@ export const lastRoll = (ctx: ComponentContext) =>
 	(ctx.annex?.['acme.dice'] as { 'last-roll'?: number } | undefined)?.['last-roll']
 ```
 
-A press is refused, with a sentence, for a key your package did not declare, a value the shape
-refuses (the validator's own words), a presser outside `act`, and any field while plugins are
-switched off. A field for one genre's sessions only says so (`annexField({ …, genre: myGenre })`);
-its owner is still your package. The annex never holds credentials or personal data: a shape with a
-`secret` anywhere in it is refused when you declare it.
+- **`see`** says who may read the value: `person` (every human in the session), `ai` (the model's
+  prompt), `participant` (both), `owner`, `admin`, or one character (`character:12`). Empty means
+  only your pipelines.
+- **`act`** says who may set it from a widget. A field with `act` gets one action, which your
+  widget presses with `annexFieldAction(slug, key)`, and core writes the value. A field without
+  `act` is written only by your pipelines, with core's `set-session-annex` step.
+- **`genre`** limits the field to one genre's sessions: `annexField({ …, genre: myGenre })`.
 
-## What a frame sees is what the client may see
+Your `annexFields` list is the whole of your package's annex: a `set-session-annex` step of yours
+may write only keys declared there, and every value is checked against its shape when it is
+written. A press is refused, with a sentence, for an undeclared key, a value the shape refuses,
+and a person outside `act`.
 
-A frame subscribes to channels. So the rule for anything the player must not see is not "keep
-it out of the frame", it is **never write it to a channel or a message at all**. The board is a
-message on the `board` channel and the frame draws it; the opponent's fleet is a row and nothing
-draws it. See [Frames](frames) and [Channels](channels).
+The annex is session state that people see. Never put credentials or personal data in it: a
+shape with a `secret` anywhere in it is refused when you declare it.
 
-## Testing against the real surface
+## Testing against the real sandbox
 
-The SDK harness endows a plugin handler with the sandbox's context, not the executor's, so a
-test fails the way an install would:
+The SDK's harness hands a handler the same `ctx` the sandbox would, so a test fails the way an
+install would:
 
 <!-- prelude:
 import type { Bindings, Result } from '@serene-pub/sdk'
@@ -164,19 +168,17 @@ import { memoryStorage, pluginHandlerContext, pluginNodeBindings } from '@serene
 const storage = memoryStorage({ quotaBytes: 64 * 1024, seed: { 's:1:ai-fleet': fleet } })
 
 // One handler, one context, exactly the members its kind is granted.
-const ctx = pluginHandlerContext({ pluginId: 'chariot.battleship', kind: 'outlet', storage })
+const ctx = pluginHandlerContext({ pluginId: 'showcase.battleship', kind: 'outlet', storage })
 await seedBoards(input, ctx)
 
-// Or bind every handler for a fixture-host run of a whole pipeline. `handlers` maps
+// Or bind every handler for a run of a whole pipeline on the fixture host. `handlers` maps
 // 'definitionId@version' to its (input, ctx) handler; every handler shares `storage`.
 // `bindings()` is the core fixtures in your scaffold's `examples/fixtures.ts`.
-const all = { ...bindings(), ...pluginNodeBindings({ pluginId: 'chariot.battleship', storage, handlers }) }
+const all = { ...bindings(), ...pluginNodeBindings({ pluginId: 'showcase.battleship', storage, handlers }) }
 ```
 
-`memoryStorage` is a full `ExtensionStorage` plus two test aids: `snapshot()` (every row, key-sorted)
-and `writes` (how many times `put` was called). Its other options are `rowQuotaBytes` (the row
-sub-cap, derived from `quotaBytes` by default) and `now` (the clock that stamps `updatedAt`). It
-refuses with the app's own sentences (`storage: the row budget is full`,
-`storage: quota exceeded`), applies the same row budget the app derives from the grant, and
-isolates plugins from one another. A plugin query's `ctx.read` is `undefined` under the harness,
-which is the point.
+`memoryStorage` behaves like the app's storage: the same quota and row budget, the same refusal
+sentences (`storage: the row budget is full`, `storage: quota exceeded`), and each plugin kept
+apart from the others. It adds two test aids: `snapshot()` (every row, sorted by key) and
+`writes` (how many times `put` was called). Its other options are `rowQuotaBytes` and `now` (the
+clock that stamps `updatedAt`).

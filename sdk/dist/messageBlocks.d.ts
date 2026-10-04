@@ -111,6 +111,15 @@ export interface FormBlockFields {
      */
     referent?: string;
     /**
+     * Where the question was asked **from**, by name — carried beside
+     * `referent` from the run that asked to the run the press fires (plan
+     * A27, 2026-09-30). The Lair's knock stamps the room its planner said the
+     * party stood in, and *Answer the door* links the new room to it when the
+     * world's `location` names nowhere. Plain text, shown to nobody and
+     * trusted for nothing, like `referent`; absent on most questions.
+     */
+    vantage?: string;
+    /**
      * The answer, once given (U5d review, W7) — stamped on the stored block
      * by the host when the action's run landed, never written by a spec. A
      * form is answered **once**: a second press is refused naming who

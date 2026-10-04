@@ -127,6 +127,45 @@ describe('26 · sync parks before the binding runs', () => {
 	})
 })
 
+// ── 26b · a dry run never asks a reviewer ───────────────────────────────────
+// A gated outlet ahead of the preview halt (respond's `placeholder`) used to
+// park a card on every debounced token-count preview — several review prompts
+// for one turn (owner note 16, 2026-10-02). A dry run commits nothing, so the
+// gate is recorded and never consulted.
+test('26b · a preview passes a gated outlet without asking the reviewer', async () => {
+	const placeheld = () =>
+		spec('demo:gate-placeholder@1', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.outlet('placeholder', () => C.createMessage.v1({ generating: true }))
+			.oracle('generate', C.generateText.v1({ connection: slot.connection() }))
+	let asked = 0
+	const r = await run(publish(placeheld()), {
+		input: {},
+		preview: true,
+		world: {
+			...world,
+			overrides: [
+				{
+					nodeKey: 'placeholder',
+					slot: 'settings',
+					path: 'review',
+					value: 'sync',
+					scopeKind: 'session' as const,
+				},
+			],
+		},
+		reviewer: async () => {
+			asked++
+			return { action: 'approve', by: 'jody', at: 1 }
+		},
+		bindings: bindings(),
+	})
+	assert.equal(asked, 0, 'a dry run must not park on a reviewer')
+	const rec = r.reviews?.find((x) => x.nodeKey === 'placeholder')
+	assert.equal(rec?.by, 'system:dry-run')
+	assert.equal(rec?.action, 'approve')
+})
+
 // ── 27 · the binding cannot tell an edit from an approval (F14) ─────────────
 test('27 · an edited payload is indistinguishable to the binding', async () => {
 	const seen: unknown[] = []

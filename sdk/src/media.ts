@@ -88,6 +88,47 @@ export interface MediaRef {
 }
 
 /**
+ * 🚧 One file attached to one history message (PLAN-composer-attachments §3.5)
+ * — an entry of `core:shape/media-by-message@1`, which
+ * `core:query/history-attachments@1` publishes keyed by message id.
+ *
+ * A {@link MediaRef} plus the two facts placement needs and a reference does
+ * not carry: which **attachment kind** the file is (`image`, `text`, `pdf`, or
+ * `null` for a file no model is offered — an EPUB an outlet posted), and, for
+ * a text file, its **body**, because a text file reaches every model as text
+ * and a pure placement step cannot read a disk.
+ * @experimental
+ */
+export interface HistoryAttachmentV1 extends MediaRef {
+	/** `image` / `text` / `pdf`, decided from the stored mime; `null` for any
+	 *  other file, which every call is shown as a name. */
+	attachmentKind: 'image' | 'text' | 'pdf' | null
+	/** A text file's body, read up to the query's cap. Absent for other files. */
+	body?: string
+	/** True when `body` stopped at the query's cap rather than at the file's end. */
+	bodyTruncated?: boolean
+}
+
+/**
+ * 🚧 What the pair behind a connection slot reads (PLAN-composer-attachments
+ * §5.2) — `metadata.reads` on a resolved connection descriptor, computed by the
+ * host's ONE reading predicate (the same answer the composer's readers line
+ * shows). A placement step reads it the way `assemble` reads
+ * `metadata.promptFormat`, so it stays pure.
+ * @experimental
+ */
+export interface ConnectionReadsV1 {
+	/** The pair sends images to its model on its wire mode. */
+	image: boolean
+	/** The pair sends PDFs to its model on its wire mode. */
+	pdf: boolean
+	/** Why not, per kind — a sentence that names no connection. */
+	why?: { image?: string; pdf?: string }
+	/** Estimated prompt tokens one placed image costs. An estimate, never a cap. */
+	tokensPerImage?: number
+}
+
+/**
  * What a node, provider or connection will handle.
  *
  * Both directions are declared because they are genuinely independent: a vision

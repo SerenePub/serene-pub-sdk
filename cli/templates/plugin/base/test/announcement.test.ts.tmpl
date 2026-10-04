@@ -36,10 +36,11 @@ describe('the package', () => {
 {{/storage}}
 {{#panel}}
 
-	it('declares the frame panel, a view onto one channel', () => {
-		expect(extension.surfaces?.panels).toEqual([
-			{ id: '{{panelId}}', entry: '{{panelEntry}}', title: '{{displayName}}', channels: ['main'] },
+	it('declares the panel, a component widget viewing one channel', () => {
+		expect(extension.widgets).toEqual([
+			{ id: '{{panelId}}', title: '{{displayName}}', component: '{{panelId}}', channels: ['main'] },
 		])
+		expect(extension.components?.map((c) => c.slug)).toEqual(['{{panelId}}'])
 	})
 {{/panel}}
 })

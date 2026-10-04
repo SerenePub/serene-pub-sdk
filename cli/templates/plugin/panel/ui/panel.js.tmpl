@@ -1,15 +1,16 @@
 /**
- * The panel's whole client. Frame protocol 2.
+ * The document's whole client. Frame protocol 2.
  *
  * It sends exactly two messages — `ready` once, and `invoke` when the button is
  * pressed, naming the action by its identity (`<spec slug>#<key>`) — and
- * ignores every host message it does not recognise, which is what lets a v2
- * host and a v1 host both talk to it.
+ * ignores every host message it does not recognise, which is what lets a newer
+ * host talk to it.
  *
  * It asks for nothing: no `request`, no `save-state`, no storage. What it draws
- * is already in the channel it was given.
+ * is what its component sent as `props`. The `invoke` goes to the component
+ * (`components/{{panelId}}.ts`), which passes it on to the widget's actions.
  *
- * ✎ CHANGE: `count()` — what this panel reads off the messages — and the
+ * ✎ CHANGE: `draw()` — what this document reads off its props — and the
  *   action identity the button fires.
  */
 
@@ -19,14 +20,9 @@ const ACTION_KEY = '{{askSpecId}}#{{askActionKey}}'
 let port = null
 const count = document.getElementById('count')
 
-/**
- * ✎ CHANGE: everything this panel knows, it reads here.
- *
- * A message carries its parts, and a part's `data.blocks` is the block tree a
- * pipeline's outlet wrote. Read those; never parse prose.
- */
-function draw(messages) {
-	const lines = (messages || []).length
+/** ✎ CHANGE: everything this document knows, it reads here — its component's props. */
+function draw(props) {
+	const lines = (props && props.messages) || 0
 	count.textContent = lines === 1 ? '1 message' : `${lines} messages`
 }
 
@@ -38,10 +34,7 @@ addEventListener('message', (e) => {
 	if (e.data?.t !== 'init' || !e.ports[0]) return
 	port = e.ports[0]
 	port.onmessage = (m) => {
-		// `channel` when the host scopes this panel to its declared lanes;
-		// `messages` when it posts the whole log. Both mean the same thing here.
-		if (m.data?.t === 'channel' && m.data.channel === 'main') draw(m.data.messages)
-		else if (m.data?.t === 'messages') draw(m.data.messages)
+		if (m.data?.t === 'props') draw(m.data.props)
 	}
 	port.postMessage({ t: 'ready' })
 })

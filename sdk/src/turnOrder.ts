@@ -46,7 +46,12 @@ export interface TurnEntryV1 {
 	channel?: string
 	/** What to fire: an event id or an action id. Absent = core:event/message-respond@1. */
 	subject?: string
-	/** How decided. Open string; core: strategy | script | voice, and pick on an entry a person fires. */
+	/**
+	 * How decided. Open string; core: strategy | script | voice, pick on an
+	 * entry a person fires, and 🚧 `plan` — a turn a standing turn plan named
+	 * (a Lair character turn): the rest of a turn already taken, which
+	 * auto-advance fires on any run's cause but a stopped one.
+	 */
 	via: string
 	[k: string]: unknown
 }

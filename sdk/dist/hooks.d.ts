@@ -24,30 +24,6 @@ import type { ExtensionStorage } from './storage.js';
  */
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
 /**
- * Scoped reads of core tables.
- *
- * Typed as a query rather than `unknown` so a host can validate it, and
- * paginated because the previous signature had no answer at all for a table
- * with a hundred thousand rows — an extension either got everything or wrote
- * its own windowing on top of a call that could not window.
- * @experimental
- */
-export interface CoreQuery {
-    /** Column filters, ANDed. Values are compared for equality. */
-    where?: Record<string, unknown>;
-    limit?: number;
-    cursor?: string;
-    order?: {
-        column: string;
-        direction?: 'asc' | 'desc';
-    };
-}
-/** @experimental */
-export interface CorePage<T = unknown> {
-    rows: T[];
-    nextCursor?: string;
-}
-/**
  * Data in, expected shape out; the executor is the only caller. Private = only the
  * owning extension's specs may pin it. Public = any spec may, which is how peer
  * composition happens — as a node on the spine, never a peer call mid-run (F10).
@@ -147,43 +123,53 @@ export interface EventListenerInput<T = unknown> {
      */
     payload: T;
 }
-/** @experimental */
+/**
+ * What an event listener finds on `ctx`: exactly the members the grant table
+ * (`hookGrants.ts`) gives the `event` kind — the base four and storage. No
+ * network: `ctx.fetch` is an oracle's alone, and a listener that needs the
+ * network asks an oracle to do it as a node.
+ * @experimental
+ */
 export interface EventListenerSurface {
+    /** A deterministic stream per call. `Math.random` is frozen in the SES
+     *  sandbox, so this is the only randomness a listener has. */
+    random(): number;
+    /** The fan-out's pinned clock: every listener of one occurrence reads the
+     *  same instant. Use it instead of `Date.now()`. */
+    now(): number;
+    log(level: LogLevel, message: string, detail?: unknown): void;
     /** The extension's own rows and files — query, write, delete, and ask how
      *  much room is left. See storage.ts for why all four are needed. */
     storage: ExtensionStorage;
-    log(level: LogLevel, message: string, detail?: unknown): void;
     signal: AbortSignal;
-    /** Host-scoped network access — present in the type, but only usable for the
-     *  hosts the manifest declared and an admin left granted, and only on the SES
-     *  backend. See the section docblock above for the grant and its refusals. */
-    fetch(url: string, init?: HookFetchInit): Promise<HookFetchResponse>;
 }
 /**
- * Scoped core reads, plus read/write on the extension's own namespaced rows. Nothing
- * else (13 §7c).
+ * What a lifecycle callback finds on `ctx`: exactly the members the grant table
+ * (`hookGrants.ts`) gives the `lifecycle` kind — the base four and storage, the
+ * same as an event listener's.
  *
- * Two absences, and they are the same absence for the same reason. A lifecycle callback
- * may not call a Provider and may not trigger a pipeline, so **scheduled model work
- * subscribes to `core:event/schedule-tick@1` instead** — which gets it a receipt, a
- * budget and the review gate, and puts it on the consent screen. A lifecycle callback
- * doing that work would have had none of the four.
+ * Absent, and for one reason: a lifecycle callback may not call a Provider and
+ * may not trigger a pipeline, so **scheduled model work subscribes to
+ * `core:event/schedule-tick@1` instead** — which gets it a receipt, a budget and
+ * the review gate, and puts it on the consent screen. A lifecycle callback doing
+ * that work would have had none of the four.
  * @experimental
  */
 export interface LifecycleCallbackSurface {
-    readCore<T = unknown>(table: string, q?: CoreQuery): Promise<CorePage<T>>;
-    storage: ExtensionStorage;
+    /** A deterministic stream per call — see {@link EventListenerSurface.random}. */
+    random(): number;
+    /** The call's pinned clock — see {@link EventListenerSurface.now}. */
+    now(): number;
     log(level: LogLevel, message: string, detail?: unknown): void;
+    /** The extension's own rows and files. */
+    storage: ExtensionStorage;
     signal: AbortSignal;
-    /** Host-scoped network access — same grant, same refusals, same SES-only
-     *  restriction as the event surface's. See the section docblock above. */
-    fetch(url: string, init?: HookFetchInit): Promise<HookFetchResponse>;
 }
 /**
  * The moments a lifecycle callback may be registered against:
  *
  * - `startup` — at boot, before the ready-gate opens.
- * - `load` — declared, and not called yet (guides/extending.md, Gaps).
+ * - `load` — declared, and not called yet (INTEGRATING.md §5c, Gaps).
  * - `enable` — after the plugin is switched on.
  * - `disable` — before it is switched off. Bounded; a failure never stops the switch.
  * - `update` — once, after a reinstall replaced its bundle, on the new bundle's

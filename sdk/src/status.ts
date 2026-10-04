@@ -35,6 +35,22 @@ export interface StatusText {
 }
 
 /**
+ * A grey widget action's reason, as the host lists it (`WidgetAction.reason`):
+ * a locale map, never a bare string.
+ *
+ * Declared here beside `StatusText` rather than in `widgets.ts` beside
+ * `WidgetAction`, because the API reference's anchor for the property
+ * `WidgetAction.reason` and for an interface named `WidgetActionReason` on the
+ * same page are one slug (`widgetactionreason`) — TypeDoc then links this type
+ * as `#widgetactionreason-1`, which is no heading, and the docs site refuses
+ * the dead link.
+ * @experimental
+ */
+export interface WidgetActionReason extends StatusText {
+	i18n: LocaleMap
+}
+
+/**
  * The receipt's one record of a status — the last one set, and the node that
  * set it — present only when the run ended `halt`, `err` or `cancelled`
  * (R-21, "optional, taken"). Never on an `ok` receipt, and never a node row.

@@ -1,9 +1,21 @@
 {
 	"name": "@serene-pub/controls",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "Value-declaration control components (24 \u00a79): one Svelte editor per value-type id plus the schema form renderer \u2014 the render leg of the four-way registry. Shipped as raw source; the consuming app's Svelte compiles it.",
+	"version": "0.6.0-pr-1",
+	"description": "Svelte controls for Serene Pub value types: one editor per value-type id plus a schema form renderer. Shipped as source; the consuming app's Svelte compiles it.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/controls#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "controls"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"svelte": "./src/index.ts",
 	"types": "./src/index.ts",
 	"exports": {
@@ -20,10 +32,10 @@
 	},
 	"peerDependencies": {
 		"svelte": ">=5",
-		"@serene-pub/sdk": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"scripts": {
-		"build": "echo 'raw-source svelte library \u2014 nothing to build'"
+		"build": "echo 'raw-source svelte library — nothing to build'"
 	},
 	"peerDependenciesMeta": {
 		"svelte": {
@@ -32,6 +44,11 @@
 	},
 	"files": [
 		"src",
-		"README.md"
-	]
+		"README.md",
+		"NOTICE"
+	],
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
+	}
 }

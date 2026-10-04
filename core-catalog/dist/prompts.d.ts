@@ -1,11 +1,11 @@
 /**
  * Core's shipped prompts (24 T6b) — the catalog is the system of record.
  *
- * The prose was extracted byte-exact from what `db/defaults.ts` shipped
- * through the legacy tables (the extraction ran against a seeded database,
- * never retyped). The app's seed pass reads THIS list now; the deprecated
- * legacy seeds must byte-match it until they are deleted, and the drift
- * canary in SP (`seedPrompts.int.test.ts`) refuses a divergence.
+ * The prose is byte-exact what 0.5.3 shipped (extracted from a seeded
+ * database, never retyped), and this list is its only record: the app's seed
+ * pass reads it, and SP's `seedPrompts.int.test.ts` pins the wording — save
+ * one difference it pins by its exact bytes: the narrator's direction clause,
+ * which 0.5.3 wrote in code (see the narrator row).
  *
  * ## One row per (node type, slot) pool — not one row per pipeline
  *
@@ -24,10 +24,8 @@
  * identical rows with disambiguated names would be the bundle habit surviving
  * the refactor.
  *
- * `seedKey` is the idempotence key. Its spelling changed exactly once, with the
- * migration that recreated the table (0180) — that migration leaves no rows to
- * re-match, which is the only reason the change was safe. From here it must
- * never change again, or every install re-seeds a duplicate.
+ * `seedKey` is the idempotence key. It must never change, or every install
+ * re-seeds a duplicate.
  */
 /** @internal */
 export interface CorePromptSeed {
@@ -47,7 +45,7 @@ export interface CorePromptSeed {
      * A list rather than a boolean because a pool serves several specs at once:
      * one `summarize-batch` pool holds the world, character and scene drafting
      * prompts, and the scene row is where both `summarize-scene` and
-     * `summarize-history` begin. Empty for the eleven alternative reply prompts
+     * `summarize-history` begin. Empty for the twelve alternative reply prompts
      * — offered, but not where anyone starts.
      */
     defaultForSpecs: string[];

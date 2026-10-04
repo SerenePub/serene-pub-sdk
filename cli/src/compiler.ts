@@ -26,7 +26,7 @@
  * every reader it has reads that.
  */
 
-import type { AnnexFieldDecl, Extension, Descriptor, I18n, LayoutPreset, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
+import type { AnnexFieldDecl, Extension, Descriptor, I18n, SessionLayoutV1, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import {
 	compile,
@@ -39,6 +39,7 @@ import {
 	templateLawFindings,
 	templateSeedFindings,
 	variablesOf,
+	widgetOfInstance,
 } from '@serene-pub/sdk'
 import { checkTemplateSourceReport } from '@serene-pub/sdk/template-check'
 import type {
@@ -296,10 +297,11 @@ export interface Manifest {
 	variables?: VariableDecl[]
 	/**
 	 * The layouts this package's genres ship (R71), one entry per layout with
-	 * its genre, the package's own widget ids already under its namespace — the
-	 * shape the instance's layout reconciler reads.
+	 * its genre, each a **session layout** with the package's own widget ids
+	 * already under its namespace — the shape the instance's layout reconciler
+	 * reads.
 	 */
-	layouts?: Array<{ genreId: string; slug: string; name: unknown; description?: unknown; preset: LayoutPreset }>
+	layouts?: Array<{ genreId: string; slug: string; name: unknown; description?: unknown; preset: SessionLayoutV1 }>
 	surfaces?: SurfacesDecl
 	presets?: PresetDecl[]
 	configs?: ConfigDecl[]
@@ -1039,13 +1041,15 @@ export function scanFrameDocument(doc: { path: string; text: string }): CompileF
 	return findings
 }
 
-/** @internal The documents a `surfaces` declaration names, in declaration order. */
+/**
+ * @internal The documents a package's `surfaces` name, in declaration order
+ * (session view, page). A document inside a component (`sp-frame`) is found
+ * by the lexical pass, {@link frameEntriesIn}.
+ */
 export function declaredFrameEntries(surfaces: SurfacesDecl | undefined): string[] {
-	return [
-		surfaces?.['session-view']?.entry,
-		surfaces?.page?.entry,
-		...(surfaces?.panels ?? []).map((p) => p?.entry),
-	].filter((e): e is string => typeof e === 'string' && e.length > 0)
+	return [surfaces?.['session-view']?.entry, surfaces?.page?.entry].filter(
+		(e): e is string => typeof e === 'string' && e.length > 0,
+	)
 }
 
 /**
@@ -1394,6 +1398,23 @@ export function compilePlugin(input: CompileInput): CompileResult {
 				`terms, where nobody can see the line that wrote it`,
 		})
 	}
+	// A shipped layout that draws, but not as written: an id placed and never
+	// drawn, two items on one cell, a widget over its `maxInstances`. Warned
+	// here because nothing refuses it and no one else reads the layout before
+	// a session draws it.
+	for (const finding of declared.warnings) {
+		const at = locate(input.sources, 'layout(')
+		findings.push({
+			severity: 'warning',
+			file: at.file,
+			line: at.line,
+			code: 'W_LAYOUT_DRAWS_OTHERWISE',
+			message: finding,
+			fix:
+				`change the layout so it draws what it says — a session copies the layout as shipped, ` +
+				`and a reader drops or draws over what the message names`,
+		})
+	}
 
 	// Typed templates P5 (2026-09-27): the package's templates fit where they are
 	// rendered. Law T1 over each compiled spec — a preset's or a node's template
@@ -1535,60 +1556,73 @@ export function compilePlugin(input: CompileInput): CompileResult {
 }
 
 /**
- * The layouts a package's genres ship, as manifest entries (R71): the
- * package's own widgets named under its namespace (`<slug>:<id>`), instance
- * keys and per-instance maps with them, and everyone else's ids as written.
+ * The layouts a package's genres ship, as manifest entries (R71): each
+ * **session layout** with the package's own widgets named under its namespace
+ * (`<slug>:<id>`) and everyone else's ids as written.
+ *
+ * A widget instance id is namespaced in its WIDGET half only: `map#north`
+ * becomes `acme:map#north`, and a copy of core's widget (`messages#sanctum`)
+ * is left alone. Every place a layout names an instance is rewritten the same
+ * way — the zone lists, the grid, the arranged items and the tab-group ids
+ * built from them, and the `widgetSettings` and `widgetStyles` keys — so the
+ * id stays one string wherever the layout stores it.
  * @internal
  */
 export function genreLayouts(e: Extension): NonNullable<Manifest['layouts']> {
 	const own = new Set((e.widgets ?? []).map((w) => w.id))
-	const q = (id: string) => (own.has(id) ? `${e.slug}:${id}` : id)
+	const q = (id: string): string => (own.has(widgetOfInstance(id)) ? `${e.slug}:${id}` : id)
+	// A tab group's id is `g:` + its members' ids, sorted and joined by `+`
+	// (what the app's layout editor mints); a member renamed renames the group.
+	const group = (g: unknown) =>
+		typeof g === 'string' && g.startsWith('g:') ? `g:${g.slice(2).split('+').map(q).sort().join('+')}` : g
 	const rekey = <T>(m: Record<string, T> | undefined) =>
 		m ? Object.fromEntries(Object.entries(m).map(([k, v]) => [q(k), v])) : undefined
-	const units = (zone: unknown) => {
-		const z = zone as { units?: Array<Record<string, unknown>> } | undefined
-		if (!z?.units) return zone
-		return {
-			...z,
-			units: z.units.map((u) => ({
-				...u,
-				key: q(String(u.key)),
-				...(typeof u.widget === 'string' ? { widget: q(u.widget) } : {}),
-				...(Array.isArray(u.members)
-					? { members: (u.members as Array<{ widget: string; key: string }>).map((m) => ({ widget: q(m.widget), key: q(m.key) })) }
-					: {}),
-			})),
-		}
+	const namespaced = (layout: SessionLayoutV1): SessionLayoutV1 => {
+		const out: SessionLayoutV1 = { ...layout }
+		if (layout.zoneLayout)
+			out.zoneLayout = {
+				...layout.zoneLayout,
+				zones: Object.fromEntries(
+					Object.entries(layout.zoneLayout.zones).map(([k, z]) => [k, { ...z, widgets: z.widgets.map(q) }]),
+				),
+			}
+		if (layout.widgetGrid)
+			out.widgetGrid = {
+				...layout.widgetGrid,
+				widgets: layout.widgetGrid.widgets.map((w) => ({
+					...w,
+					id: q(w.id),
+					...(w.group !== undefined ? { group: group(w.group) as string } : {}),
+				})),
+			}
+		if (layout.arrangedGrid)
+			out.arrangedGrid = Object.fromEntries(
+				Object.entries(layout.arrangedGrid).map(([k, frame]) => [
+					k,
+					frame && {
+						...frame,
+						items: frame.items.map((i) => ({
+							...i,
+							id: q(i.id),
+							...(i.group !== undefined ? { group: group(i.group) as string } : {}),
+						})),
+					},
+				]),
+			)
+		if (layout.widgetSettings) out.widgetSettings = rekey(layout.widgetSettings)
+		if (layout.widgetStyles) out.widgetStyles = rekey(layout.widgetStyles)
+		return out
 	}
-	const zones = (z: Record<string, unknown> | undefined) =>
-		z ? Object.fromEntries(Object.entries(z).map(([k, v]) => [k, units(v)])) : z
 	const out: NonNullable<Manifest['layouts']> = []
 	for (const g of e.genres ?? [])
-		for (const l of g.layouts ?? []) {
-			const doc = l.preset.layout
+		for (const l of g.layouts ?? [])
 			out.push({
 				genreId: g.id,
 				slug: l.slug,
 				name: l.name,
 				...(l.description ? { description: l.description } : {}),
-				preset: {
-					...l.preset,
-					layout: {
-						...doc,
-						zones: zones(doc.zones as unknown as Record<string, unknown>) as unknown as typeof doc.zones,
-						...(doc.variants
-							? {
-									variants: Object.fromEntries(
-										Object.entries(doc.variants).map(([k, v]) => [k, zones(v as Record<string, unknown>)]),
-									) as typeof doc.variants,
-								}
-							: {}),
-					},
-					...(l.preset.widgetSettings ? { widgetSettings: rekey(l.preset.widgetSettings) } : {}),
-					...(l.preset.widgetStyles ? { widgetStyles: rekey(l.preset.widgetStyles) } : {}),
-				},
+				preset: namespaced(l.preset),
 			})
-		}
 	return out
 }
 
@@ -1620,7 +1654,7 @@ export function cannotDo(m: Manifest): string[] {
 	// A widget is shown its session's messages (its channels), so a plugin that
 	// renders anything reads them there — and `widget:<scope>` asks for more.
 	const s = m.surfaces
-	const renders = !!(m.components.length || m.widgets?.length || s?.['session-view'] || s?.page || s?.panels?.length)
+	const renders = !!(m.components.length || m.widgets?.length || s?.['session-view'] || s?.page)
 	if (!has('core:read') && !renders && !m.permissions.some((p) => p.startsWith('widget:')))
 		out.push('cannot read your sessions, characters or messages')
 	if (!has('provider:call') && !network)

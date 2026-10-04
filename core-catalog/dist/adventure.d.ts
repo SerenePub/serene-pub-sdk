@@ -93,7 +93,21 @@ export declare const ADVENTURE_CREATE_VERSION = "1.0.0";
 export declare const adventureCreateSpec: () => import("@serene-pub/sdk").SpecDocument;
 /** @internal */
 export declare const ADVENTURE_RESPOND_SPEC_ID = "core:spec/adventure-respond";
-/** @internal */
+/**
+ * 1.0.0, edited in place (lorebooks C2/C3, 2026-10-02): the vector and entity
+ * arms (R3) on the spine and per voice, the latter with the voice as
+ * `speaker`; a `presences` read and an `eligible` step before each ranker;
+ * the room rule — a `place` step (the room `{{locationEntry}}` shows) wired
+ * into every ranker as `shownElsewhere` — and statuses on the two embeds.
+ * Content-addressed; `specHashes.test.ts` records the move.
+ *
+ * Edited in place again (history window, 2026-10-03): `contextBudget` runs
+ * before the reads and `gather.history.read` takes its `budget` — about twice
+ * the window's worth of the newest rows (never more than 2000) instead of the
+ * newest 100, so the transcript fit decides where the conversation starts.
+ * Content-addressed; `specHashes.test.ts` records the move.
+ * @internal
+ */
 export declare const ADVENTURE_RESPOND_VERSION = "1.0.0";
 /** @internal */
 export declare const ADVENTURE_PLAN_SCHEMA: {

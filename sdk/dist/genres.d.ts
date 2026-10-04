@@ -390,7 +390,7 @@ export declare function genreEnabledWhenFindings(raw: unknown, at?: string): str
  * @experimental
  */
 export declare function genreDisplayTextFindings(props: GenreProps, at: string): string[];
-/** Core's conversation widget — the middle a genre must replace if it withholds it. @internal */
+/** Core's conversation widget — the primary widget a genre must replace if it withholds it. @internal */
 export declare const CONVERSATION_WIDGET_ID = "messages";
 /**
  * Declare a genre. The id is stated in full, under your plugin's slug

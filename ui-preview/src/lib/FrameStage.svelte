@@ -18,10 +18,6 @@
 	 *
 	 *   · `sandbox="allow-scripts"` with **no** `allow-same-origin` — opaque
 	 *     origin, no cookies, no DOM reach into the harness.
-	 *   · channel scoping — a panel that declares `channels` receives only
-	 *     those lanes' messages, one post each, never the whole log. Enforced
-	 *     host-side, here as in core, because a surface must not be able to
-	 *     discover that the harness was lenient about it.
 	 *
 	 * The one thing the harness adds is visibility: every message in both
 	 * directions is logged, because "the frame did nothing" is otherwise
@@ -39,12 +35,10 @@
 		target: PreviewTarget
 		src: string
 		fixtures: Fixtures
-		/** Declared props when the surface declares them; fixtures otherwise. */
-		props: Record<string, unknown>
 		/** Bumped by the harness to force a document reload. */
 		reloadKey: number
 	}
-	let { target, src, fixtures, props, reloadKey }: Props = $props()
+	let { target, src, fixtures, reloadKey }: Props = $props()
 
 	type LogEntry = {
 		dir: 'down' | 'up'
@@ -68,7 +62,6 @@
 	let failure = $state<{ message: string; fatal: boolean } | null>(null)
 
 	const surface = $derived<FramePoint>(target.point as FramePoint)
-	const channels = $derived(target.channels ?? [])
 
 	const stamp = () => new Date().toISOString().slice(11, 23)
 
@@ -141,7 +134,7 @@
 			// pinned without a browser.
 			const reply = answerFrameMessage(e.data, {
 				surfaceId: target.id,
-				source: { messages: $state.snapshot(fixtures.messages), channels },
+				source: { messages: $state.snapshot(fixtures.messages) },
 				state: savedFrameState
 			})
 			if (!reply) return
@@ -163,11 +156,10 @@
 	 * and a harness that fed every frame everything would be teaching a surface
 	 * to depend on data an instance never sends it.
 	 *
-	 * Read off the three real call sites rather than invented:
+	 * Read off the two call sites a package declares rather than invented (a
+	 * document inside a component, `sp-frame`, is previewed with its
+	 * component, never on its own):
 	 *
-	 *   `panel`        Panel.svelte passes session, channels, messages, props —
-	 *                  and the channel-declaring case receives per-lane posts
-	 *                  only, never the whole log.
 	 *   `session-view` sessions/[id] passes session and messages. No props: the
 	 *                  prop is not passed, so PluginFrame's `!== undefined`
 	 *                  guard means `{t:'props'}` is never posted at all.
@@ -187,24 +179,10 @@
 		const isReady = ready
 		if (!port || !isReady) return
 
-		if (surface === 'panel' || surface === 'session-view')
+		if (surface === 'session-view') {
 			post({ t: 'session', session: fixtures.session })
-
-		if (surface === 'panel' && channels.length) {
-			// Panel scoping: only this panel's lanes, one post each. Enforced
-			// host-side here as in core, so a surface cannot discover that the
-			// harness was the lenient one.
-			for (const ch of channels)
-				post({
-					t: 'channel',
-					channel: ch,
-					messages: fixtures.messages.filter((m) => (m.channel ?? 'main') === ch)
-				})
-		} else if (surface === 'panel' || surface === 'session-view') {
 			post({ t: 'messages', messages: fixtures.messages })
 		}
-
-		if (surface === 'panel') post({ t: 'props', props })
 
 		// The active theme, as data (10 §6). A frame is its own document, so it
 		// inherits no custom properties from ours — it applies the id and the
@@ -222,19 +200,18 @@
 	 * what core chose to send it, which is the whole privacy story: it can
 	 * only ever scrape this.
 	 *
-	 * The signature is a deep read, and it has to be. Naming `props` in the
+	 * The signature is a deep read, and it has to be. Naming `fixtures` in the
 	 * effect subscribes to the *reference*, not to the fields inside it, and
 	 * the deep read that does happen — `$state.snapshot` in `post` — is
 	 * specifically designed **not** to create dependencies. Without this, a
-	 * declared prop edited in the generated form changes the form and nothing
-	 * else: the value is right, the frame never hears about it.
+	 * fixture edit changes the editor and nothing else: the value is right,
+	 * the frame never hears about it.
 	 */
 	const signature = $derived.by(() => {
 		try {
 			return JSON.stringify({
 				session: fixtures.session,
 				messages: fixtures.messages,
-				props,
 				surface,
 				theme: theme.current,
 			})
@@ -271,18 +248,6 @@
 		{#if failure}
 			<span class="pill bad" title={failure.message}>
 				{failure.fatal ? 'fatal' : 'error'}: {failure.message}
-			</span>
-		{/if}
-		{#if channels.length}
-			<!-- Stated, not toggled. This was a switch, and the off position
-			     posted `{t:'messages'}` to a channel-declaring panel — a shape
-			     core's scoping path never sends. A control that can only ever
-			     produce a lie about production is worth deleting. -->
-			<span
-				class="pill on"
-				title="Declared channels. This panel receives only these lanes, one post each — never the whole log."
-			>
-				channels: {channels.join(', ')}
 			</span>
 		{/if}
 		<button aria-pressed={suspended} onclick={() => (suspended = !suspended)}>
@@ -341,18 +306,8 @@
 				Read it defensively and keep a default.
 			</li>
 			<li>
-				<strong>Declared props are harness-only.</strong> Core's <code>surfacesOf</code> drops
-				<code>settings</code>, and the panel host posts a fixed
-				<code>{'{ panelId, title }'}</code>. Nothing persists a value an admin sets.
-			</li>
-			<li>
 				<strong><code>{themeCssPath}</code> is harness-only.</strong> Core serves nothing at
 				that URL. Guard the link, or ship your own tokens, until it does.
-			</li>
-			<li>
-				<strong>Declared <code>channels</code> are harness-only for a plugin panel.</strong>
-				<code>surfacesOf</code> narrows a stored surface to <code>{'{ entry, title }'}</code>,
-				so a panel's declared lanes do not survive install today.
 			</li>
 			<li>
 				<strong>Protocol 2 is harness-only, for now.</strong> This host answers

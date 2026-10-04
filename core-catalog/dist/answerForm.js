@@ -22,17 +22,17 @@
  *
  * A spec has one inlet lock and a preset binds a spec whose lock names the
  * preset's genre (24 §4), so the pipeline is declared once here and
- * published once per shipped genre — one each for chat, adventure, guide,
- * lair, writing room and whodunit. Chat and Guide reuse the same authored
- * prompt row; a plugin genre publishes its own through the same builder.
+ * published once per shipped genre — one each for chat, adventure, guide
+ * and lair. Chat and Guide reuse the same authored prompt row; a plugin
+ * genre publishes its own through the same builder, naming its own row.
  *
  * ⚠ **Every shipped genre binds one, whatever its own forms look like**
  * (ruled 2026-09-17). A genre cannot promise that no pipeline — its own, one
  * a person attaches, or a plugin's — will ever put a form to a participant
  * the AI portrays, and a form nobody can answer is a stuck session. So the
  * event is declared optional on every genre and bound on every shipped
- * preset; the three genres whose forms are all owner-addressed today bind
- * this for the day one is not.
+ * preset; a genre whose forms are all owner-addressed today (the Lair)
+ * binds this for the day one is not.
  *
  * ## What it deliberately does not do
  *
@@ -55,7 +55,7 @@
 import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { adventureGenre, chatGenre, guideGenre } from './genres.js';
-import { lairGenre, whodunitGenre, writingRoomGenre } from './genres.js';
+import { lairGenre } from './genres.js';
 /** @internal */
 export const ANSWER_FORM_VERSION = '1.0.0';
 /** The one spec id prefix every answer pipeline core ships shares. @internal */
@@ -68,22 +68,18 @@ export const ANSWER_FORM_ADVENTURE_SPEC_ID = `${ANSWER_FORM_SPEC_PREFIX}adventur
 export const ANSWER_FORM_GUIDE_SPEC_ID = `${ANSWER_FORM_SPEC_PREFIX}guide`;
 /** @internal */
 export const ANSWER_FORM_LAIR_SPEC_ID = `${ANSWER_FORM_SPEC_PREFIX}lair`;
-/** @internal */
-export const ANSWER_FORM_WRITING_ROOM_SPEC_ID = `${ANSWER_FORM_SPEC_PREFIX}writing-room`;
-/** @internal */
-export const ANSWER_FORM_WHODUNIT_SPEC_ID = `${ANSWER_FORM_SPEC_PREFIX}whodunit`;
 /** Every answer pipeline core ships, by the genre it serves. @internal */
 export const ANSWER_FORM_SPEC_IDS = Object.freeze({
     [chatGenre.id]: ANSWER_FORM_CHAT_SPEC_ID,
     [adventureGenre.id]: ANSWER_FORM_ADVENTURE_SPEC_ID,
     [guideGenre.id]: ANSWER_FORM_GUIDE_SPEC_ID,
     [lairGenre.id]: ANSWER_FORM_LAIR_SPEC_ID,
-    [writingRoomGenre.id]: ANSWER_FORM_WRITING_ROOM_SPEC_ID,
-    [whodunitGenre.id]: ANSWER_FORM_WHODUNIT_SPEC_ID,
 });
 /**
  * The assembly template. Triple-stashed like every shipped context template:
- * prose going to a model, not markup going to a browser.
+ * prose going to a model, not markup going to a browser. Each line renders its
+ * placed files after its text (`{{{attachments}}}`, 2026-10-03) — empty on a
+ * line with none, so a transcript without files renders as it always did.
  * @experimental
  */
 export const ANSWER_FORM_TEMPLATE = `{{#systemBlock}}
@@ -107,12 +103,12 @@ export const ANSWER_FORM_TEMPLATE = `{{#systemBlock}}
 {{#each sessionMessages as |sessionMessage msgIndex|}}
 {{#if (eq role "assistant")}}
 {{#assistantBlock}}
-{{{name}}}: {{{message}}}
+{{{name}}}: {{{message}}}{{{attachments}}}
 {{/assistantBlock}}
 {{/if}}
 {{#if (eq role "user")}}
 {{#userBlock}}
-{{{name}}}: {{{message}}}
+{{{name}}}: {{{message}}}{{{attachments}}}
 {{/userBlock}}
 {{/if}}
 {{/each}}
@@ -129,7 +125,7 @@ export const ANSWER_FORM_TEMPLATE = `{{#systemBlock}}
  * answer pipeline from the same graph rather than restating it.
  * @experimental
  */
-export const answerFormSpec = (id, genre) => compile(spec(id, {
+export const answerFormSpec = (id, genre, options = {}) => compile(spec(id, {
     version: ANSWER_FORM_VERSION,
     taxonomy: { role: 'action' },
 })
@@ -170,6 +166,24 @@ export const answerFormSpec = (id, genre) => compile(spec(id, {
     cast: $.gather.cast.read.cast,
     templateContext: $.form.templateContext,
 }))
+    /**
+     * 🚧 **The transcript's files, placed** (attachments follow-ups,
+     * owner ruling 2026-10-03) — `respond`'s two steps: the files the
+     * rows show, then per line what `generate` receives. An image the
+     * call can read rides its own turn; otherwise it is named
+     * (`[image: cat.png]`). A transcript with no files passes through
+     * untouched, so the prompt is byte for byte what it was.
+     */
+    .query('attachments', ($) => C.historyAttachments.v1({
+    messages: $.gather.history.read.messages,
+    params: slot.params(),
+}))
+    .task('attached', ($) => C.placeAttachments.v1({
+    messages: $.lines.messages,
+    attachments: $.attachments.attachments,
+    connection: slot.connectionOf('generate'),
+    params: slot.params(),
+}))
     .task('contextBudget', ($) => C.contextBudget.v1({
     sampling: slot.samplingOf('generate'),
     connection: slot.connectionOf('generate'),
@@ -177,7 +191,7 @@ export const answerFormSpec = (id, genre) => compile(spec(id, {
 }))
     .task('prompt', ($) => C.assemble.v2({
     budget: $.contextBudget.available,
-    messages: $.lines.messages,
+    messages: $.attached.messages,
     templateContext: $.form.templateContext,
     template: slot.template(),
     prompts: slot.prompts({ node: 'context' }),
@@ -200,10 +214,13 @@ export const answerFormSpec = (id, genre) => compile(spec(id, {
     blockId: $.input.blockId,
     addressee: $.input.addressee,
 }))
-    .preset('answer-form', { label: 'Answer a form', default: true }, (p) => p.template('prompt', {
-    source: ANSWER_FORM_TEMPLATE,
-    engine: handlebars.id,
-}))
+    .preset('answer-form', { label: 'Answer a form', default: true }, (p) => {
+    const templated = p.template('prompt', {
+        source: ANSWER_FORM_TEMPLATE,
+        engine: handlebars.id,
+    });
+    return options.prompt ? templated.prompts('context', options.prompt) : templated;
+})
     .build());
 /** @internal */
 export const answerFormChatSpec = () => answerFormSpec(ANSWER_FORM_CHAT_SPEC_ID, chatGenre);
@@ -221,24 +238,4 @@ export const answerFormGuideSpec = () => answerFormSpec(ANSWER_FORM_GUIDE_SPEC_I
  * @internal
  */
 export const answerFormLairSpec = () => answerFormSpec(ANSWER_FORM_LAIR_SPEC_ID, lairGenre);
-/**
- * The Writing Room's, on the same terms (ruled 2026-09-17). Every form the
- * genre ships today is the author's own, but the scribe is an **envoy the AI
- * portrays** — a companion that puts a question to the author's co-writer, or
- * a plugin that puts one to the scribe, resolves to the AI and records
- * `form-addressed`. The binding is what makes that answerable instead of
- * stuck.
- * @internal
- */
-export const answerFormWritingRoomSpec = () => answerFormSpec(ANSWER_FORM_WRITING_ROOM_SPEC_ID, writingRoomGenre);
-/**
- * Whodunit's, and the genre with the most obvious use for it: a narrator
- * putting a yes/no to a **suspect** is a form addressed to somebody the AI
- * portrays, and every suspect in this genre is. The forms it ships today are
- * the detective's — *Question*, *Accuse* — so nothing reaches this pipeline
- * yet; the binding is the promise that the day one does, it is answered
- * rather than left waiting.
- * @internal
- */
-export const answerFormWhodunitSpec = () => answerFormSpec(ANSWER_FORM_WHODUNIT_SPEC_ID, whodunitGenre);
 //# sourceMappingURL=answerForm.js.map

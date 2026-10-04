@@ -1,7 +1,9 @@
 # Your first plugin
 
-This page uses the words in the [vocabulary](vocabulary.md): *plugin*, *spec*, *node*, *pin*
-and the rest. Any other term from the canon is linked the first time it appears.
+This page builds a small plugin: a pipeline that answers a [message], a node of your own, the
+[declaration] that ties them together, and the commands that check and package it. It uses the
+words in the [vocabulary](vocabulary.md). For a map of everything else a plugin can add, see
+[What a plugin can do](extending.md).
 
 A plugin is three things, and only one of them is code Serene Pub [runs][run].
 
@@ -10,14 +12,15 @@ A plugin is three things, and only one of them is code Serene Pub [runs][run].
    it ships. The packager reads this without executing it.
 2. **Documents.** Every spec you write is compiled to a plain document at build time.
    Serene Pub installs the document, never your builder code.
-3. **A [manifest].** Computed from your code: which [permissions][permission] it would need,
-   which events it answers, which ids it owns. You cannot edit it into saying something else.
+3. **A [manifest].** Computed from your code: which [permissions][permission] it would need, which events it
+   answers, which ids it owns. You cannot edit it into saying something else.
 
 That split is the whole security model. Your own build runs your code on your machine.
-Serene Pub, at install time, reads data.
+Serene Pub, at install time, reads data. Your handlers then run in a **[sandbox]**: a separate
+process that hands them only what their kind of node is allowed.
 
 :::note Runnable code
-Every fence on this page marked **Run in [playground]** executes here, in your browser,
+Every example on this page marked **Run in [playground]** executes here, in your browser,
 against the SDK's fixture host. Nothing reaches a model: the `generate-text` node is answered
 by a stand-in with one fixed reply, so the run is the same on every machine. The receipt you
 get is the receipt the test suite gets.
@@ -25,19 +28,27 @@ get is the receipt the test suite gets.
 
 ## Set up
 
+The quickest start is a scaffold: a whole buildable package with stub code and comments.
+
+```bash
+npx @serene-pub/cli scaffold plugin ./acme-dice --slug acme.dice
+```
+
+Or add the packages to a project of your own:
+
 ```bash
 npm install @serene-pub/sdk @serene-pub/contracts
 npm install --save-dev @serene-pub/cli
 npx serene-pub check .
 ```
 
-`@serene-pub/contracts` is versioned by the Serene Pub release you compile against: `0.6.x`
-compiles against 0.6.x. `@serene-pub/sdk` is versioned by the authoring API. They move on
-different clocks on purpose, so bumping one never silently changes the other.
+`@serene-pub/sdk` is the authoring API: `spec()`, `defineExtension()` and the rest.
+`@serene-pub/contracts` holds core's node definitions (`C.createMessage` and the others) for the
+Serene Pub release you build against. `@serene-pub/cli` is the `serene-pub` command.
 
 ## The spec
 
-Start with the smallest spec that answers a [turn]. Five nodes, one of each kind: an inlet,
+Start with the smallest spec that answers a person's message. Five nodes, one of each kind: an inlet,
 a query, a task, an oracle and an outlet, so reading, computing, calling out and writing are
 each visible on the page.
 
@@ -76,8 +87,8 @@ Press Run. The **Result** tab shows each node in order and its outcome; **Docume
 the packager will emit; **Graph** is the same document drawn.
 
 Try breaking it: wire `$.input.text` straight into the oracle's `context` port. The spec
-does not [publish], and the error names the port that produced the value and the port that
-could not take it. That check runs when the spec is published, not at two in the morning.
+does not build, and the error names the port that produced the value and the port that
+could not take it. That check runs when you build, not at two in the morning.
 
 ## Your own node definition
 
@@ -140,8 +151,8 @@ Two things to see here. `declaresRandomness: true` is not decoration: a handler 
 receipt reproducible. And the handler returns `ok({...})` keyed by port name; a thrown
 error or a bare value is not a result.
 
-A label (`i18n.name` here, and every other string a person reads on a
-[declaration]) may be a plain string or a `{ en, … }` [locale map]. `'Roll dice'` is the
+A label (`i18n.name` here, and every other string a person reads) may be a plain string or a
+`{ en, … }` map of languages. `'Roll dice'` is the
 same value as `{ en: 'Roll dice' }`, and a map answers each language it carries with `en` as
 the fallback. Publishing refuses a blank one, or a map with no `en`, naming the field.
 
@@ -179,15 +190,12 @@ export default defineExtension({
 `scope: 'user'` makes `notation` each person's own. An administrator sets the value everyone
 gets, and anyone can change it for themselves in their own settings. Your handler reads it as
 `input.settings.notation`, and when your code runs for someone it gets their value, then the
-administrator's, then the `default`. A field without `scope` is the instance's, and only an
+administrator's, then the `default`. A field without `scope` (or with `scope: 'pub'`) is the [pub]'s, and only an
 administrator can change it.
 
-`engines` names the Serene Pub range, separately from the SDK range — version ranges and
-nothing else. A [template engine] your plugin ships is declared under `templateEngines` instead,
-as `{ '<slug>:template/<name>@1': renderFn }`; the packager writes it to the manifest as
-`templateEngines`, and the function renders in the [sandbox]. The plugin's
-[slug] is the namespace every id above sits under. A node definition registered under someone
-else's slug is refused at `defineExtension`, while you are typing, rather than at install.
+`engines` is the range of Serene Pub releases your plugin supports. The plugin's [slug] is the
+namespace every id above sits under. A node definition registered under someone else's slug is
+refused at `defineExtension`, while you are typing, rather than at install.
 
 A node definition is **private** to your package unless its handler says otherwise:
 `handler(roll, rollHandler, { visibility: 'public' })` lets any package's spec, or one a
@@ -197,18 +205,25 @@ installed, saved and run, so a node definition you may still change is never som
 package builds on. The node definition itself never says `public`; the build refuses it and
 points here.
 
-A plugin's code never touches a [connection] or calls a model: that is core's. So a node that
-uses a connection (a model call) accepts only core's stand-ins as swaps. Shape it with your own
-prompts or a [config] instead of offering a replacement.
+This plugin adds a pipeline to someone else's genre, so it needs no preset. A plugin that
+declares a **genre** must also declare at least one `preset()` for it: a custom pipeline must
+include a default preset, because a genre's pipelines are reached through its presets (it is
+where [sessions][session] start, and where the Pipelines view lists them). `defineExtension` refuses a genre
+with no preset, and so does an install. The first preset you declare for your genre becomes its
+default on a pub that has none.
+
+A plugin's code never touches a [connection] (the model an admin set up) or calls a model: that is
+core's. So a node that calls a model accepts only core's own definitions as swaps. Shape the call
+with your own prompts or settings instead of offering a replacement.
 
 ## A turn strategy of your own
 
-A turn strategy decides who speaks next. Its ports take the [turn candidates][turn candidate]
-and the [messages][message] (`S.turnCandidates`, `S.messages`) and give the prepared entries of
+A turn strategy decides who speaks next. Its ports take the [turn candidates][turn candidate] (everyone who could
+speak) and the messages (`S.turnCandidates`, `S.messages`) and give the prepared entries of
 the turn order (`main` and `order`, both `S.turnEntries`). Core's default is round robin
 (`core:task/turn-round-robin@1`), and it is the pin. Everyone who has not spoken since the
 person last did goes, in the order they came in. When everyone has spoken the turn order is empty,
-and it is the person's turn. A turn strategy with the same ports can be a swap for it.
+and it is the person's [turn]. A turn strategy with the same ports can be a swap for it.
 
 Most turn strategies only change who goes first and fall back to round robin for everyone else.
 Import that fallback rather than writing your own, so your plugin can't drift from core's rule:
@@ -226,7 +241,7 @@ const order = (candidates: TurnCandidateV1[], messages: TurnHistoryMessage[]): T
 
 `countedTurns` is the history the rule counts: it leaves out hidden rows and narration.
 `spokenRefsSince` is the set of references that have already had their turn this round. All
-three are 🚧 `@experimental` while the turn-order words settle.
+three are `@experimental`, so they may still change before SDK 1.0.
 
 ## Keys and other secrets
 
@@ -275,34 +290,30 @@ installs. Serene Pub never runs your build.
 ## Where to go next
 
 - [Where values come from](where-values-come-from.md): which layer answers a node's params, a
-  genre field, or the node definition a [session] seats.
+  genre field, or the node definition a [session] runs.
 - The [laws](/docs/sdk/laws) every host guarantees, rendered from the conformance kit.
 - The [catalog](/docs/sdk/index): every core node definition, its options and defaults, and
   each shipped spec's graph.
-- The [executed examples](/docs/sdk/examples/echo-reply): each one runs on every SDK build
-  and its output is checked against a [golden].
-- `npx serene-pub ui .` draws the UI your plugin announces, in the same opaque-origin
-  [sandbox] the app mounts it in.
+- The [executed examples](/docs/sdk/examples/echo-reply): each one runs on every SDK build,
+  and its output is checked against a stored copy.
+- `npx serene-pub ui .` draws your plugin's widgets and frames, in the same sandbox the app
+  mounts them in.
+- The four showcase plugins, each a complete package that builds and tests on its own:
+  [Twenty Questions](https://github.com/SerenePub/serene-pub-plugin-twenty-questions),
+  [Writing Room](https://github.com/SerenePub/serene-pub-plugin-writing-room),
+  [Whodunit](https://github.com/SerenePub/serene-pub-plugin-whodunit) and
+  [Battleship](https://github.com/SerenePub/serene-pub-plugin-battleship).
 
 [run]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#4-pipeline
 [turn]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#4-pipeline
-[publish]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#5-catalog
 [declaration]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#5-catalog
 [slug]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#5-catalog
-[config]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#6-config
 [message]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session
 [session]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session
 [turn candidate]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session
-[locale map]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session
 [connection]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#10-connections
 [manifest]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#12-extensions
-[permission]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#12-extensions
+[pub]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#26-shell
+[permission]: plugin-permissions.md
 [sandbox]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#12-extensions
-[template engine]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#15-templates-and-assembly
-[golden]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#13-measurement
 [playground]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#27-documentation
-
-:::warning
-Plugin installation arrives in 0.7. Everything above builds and runs today; installing it
-is what the 0.7 pre-releases add.
-:::

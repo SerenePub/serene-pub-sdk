@@ -227,6 +227,17 @@ export declare const SP_HOST_ELEMENTS: {
         readonly events: readonly ["input", "change", "submit", "key", "focus"];
         readonly doc: string;
     };
+    readonly 'sp-file-picker': {
+        readonly attributes: readonly ["accept", "multiple", "disabled", "class"];
+        readonly events: readonly ["files"];
+        readonly doc: string;
+    };
+    readonly 'sp-drop-zone': {
+        readonly attributes: readonly ["disabled", "label", "class"];
+        readonly events: readonly ["files"];
+        readonly parts: readonly ["sp-drop-zone-overlay"];
+        readonly doc: string;
+    };
     readonly 'sp-scroll': {
         readonly attributes: readonly ["stick", "label", "class"];
         readonly events: readonly ["reach-start"];
@@ -432,5 +443,5 @@ export declare function hostElementsDts(): string;
  * componentBuiltAgainst.test.ts`): change the table without bumping this and
  * the suite says which to bump. `doc` strings are not the shape.
  */
-export declare const HOST_ELEMENTS_VERSION: '1.1';
+export declare const HOST_ELEMENTS_VERSION: '1.3';
 //# sourceMappingURL=hostElements.d.ts.map

@@ -83,76 +83,10 @@ export interface FrameSurfaceDecl {
 	/** Path to the document, relative to the package root — `ui/map.html`. */
 	entry: string
 	title?: string
-	/**
-	 * The surface's **declared props** (21 §7's `surface:props`), written in
-	 * the same settings vocabulary a component uses for its component-side
-	 * settings (12 §6). Declaring them is what lets the host *generate* the
-	 * editor — core renders forms from schemas, so a surface that declares its
-	 * props gets one for free and never ships one of its own.
-	 *
-	 * The intended shape: declared values reach a frame as
-	 * `{ t: 'settings', settings }` — the effective `settings.v1`, defaults
-	 * filled in — and a component as `ctx.settings`. One declaration, two
-	 * deliveries; the difference is the boundary, not the vocabulary.
-	 *
-	 * A `surfaces.panels` declaration reaches that path too. Core projects the
-	 * panel (see {@link panelToWidgetDecl}), namespaces its id
-	 * ({@link pluginWidgetId}) and seats the result in every session as an
-	 * ordinary widget, so its declared settings are resolved against the
-	 * instance's stored deviations and posted as `{ t: 'settings' }` exactly as
-	 * a {@link WidgetDecl}'s are. One declaration, two deliveries, no third
-	 * behaviour for the deprecated spelling.
-	 */
-	settings?: SettingsSchema
-}
-
-/**
- * ⏳ A frame panel in the session surface grid. `id` is what a `surface:open`
- * intent and a saved layout row key on.
- *
- * @deprecated Declare a {@link WidgetDecl} with a `frame` surface. A panel was
- * always a widget — one declaration wearing two names, and this is the name
- * that lost: `WidgetDecl` carries everything here plus placement, cells, fold,
- * scopes and styles, and it is the shape the host actually seats. Kept one
- * release for the packages on disk that declare `surfaces.panels`;
- * {@link panelToWidgetDecl} is the translation.
- * @experimental
- */
-export interface FramePanelDecl extends FrameSurfaceDecl {
-	id: string
-	/** The lanes this panel views (20 §4/§7). A panel is a view onto channels. */
-	channels?: string[]
-}
-
-/**
- * A `surfaces.panels` entry read as the one widget declaration.
- *
- * Pure and total: every field a panel can declare has a home on
- * {@link WidgetDecl}, so nothing is dropped and nothing is invented. The host
- * calls this at the boundary where it reads a stored manifest, which is what
- * makes "a panel IS a widget" true of the code rather than only of the prose.
- *
- * `id` is carried through **bare**, because this is the SDK's pure projection
- * of what the package wrote and the package wrote its own id. It is therefore
- * NOT unique across packages: two packages declaring a panel `map` declare the
- * same id here.
- *
- * Reconciling that is the host's, and the host does it by **namespacing** —
- * {@link pluginWidgetId} turns the pair into `<pluginId>:<panelId>`, which is
- * the id a seated instance, a saved layout row, a `widget_settings` row and a
- * `surface:open` intent all carry. A reader that needs the package's own
- * spelling back takes it apart with {@link parsePluginWidgetId}.
- * @internal
- */
-export function panelToWidgetDecl(pluginId: string, panel: FramePanelDecl): WidgetDecl {
-	return {
-		id: panel.id,
-		title: panel.title ?? panel.id,
-		role: 'secondary',
-		surface: { kind: 'frame', pluginId, entry: panel.entry },
-		...(panel.channels ? { channels: [...panel.channels] } : {}),
-		...(panel.settings ? { settings: panel.settings } : {}),
-	}
+	// No `settings`: a page or session-view frame is handed no declared values
+	// (retired 2026-10-02 — core's `surfacesOf` never carried them). A widget's
+	// settings reach its component as `ctx.settings`; a document inside it
+	// (`sp-frame`) gets what the component passes as `props`.
 }
 
 /**
@@ -228,15 +162,6 @@ export interface SurfacesDecl {
 	'session-view'?: FrameSurfaceDecl
 	/** A standalone page under the app's plugin route shell. */
 	page?: FrameSurfaceDecl
-	/**
-	 * ⏳ Panels offered to the session surface grid.
-	 *
-	 * @deprecated Declare widgets instead — a genre's shape carries
-	 * {@link WidgetDecl}s, and a `frame` surface on one is this same panel with
-	 * placement, cells and scopes it can no longer say here. Read one release
-	 * through {@link panelToWidgetDecl}.
-	 */
-	panels?: FramePanelDecl[]
 }
 
 /** The three frame points, spelled as the app spells them. @experimental */
@@ -255,7 +180,14 @@ export type FramePoint = 'session-view' | 'page' | 'panel'
  */
 export type RequestDeclineCode = 'unmounted'
 
-/** host → frame. `init` carries the port; everything after rides it. @experimental */
+/**
+ * host → frame. `init` carries the port; everything after rides it.
+ *
+ * The same union types a component's wire (`componentWire.ts`): a few
+ * members (`settings`, `layout`, `scoped`, `grants`) are widget data that
+ * only a component is sent — a frame never is one.
+ * @experimental
+ */
 export type HostFrameMessage =
 	| { t: 'init'; protocol: FrameProtocolVersion; surface: FramePoint; payload?: unknown }
 	| { t: 'session'; session: SessionV1 }
@@ -265,34 +197,16 @@ export type HostFrameMessage =
 	| { t: 'props'; props: WidgetPayload }
 	/**
 	 * This instance's effective settings — the widget envelope's `settings.v1`,
-	 * every declared field defaulted with the person's deviations over it. The
-	 * in-document analog is `ctx.settings.v1`; a frame is a widget minus the
-	 * iframe, so it receives the same section by push.
-	 *
-	 * Sent only for a surface that IS a widget. A page or session-view frame
-	 * has no instance to resolve settings for and receives none.
+	 * every declared field defaulted with the person's deviations over it,
+	 * read as `ctx.settings`. Sent over a component's wire only: no frame is a
+	 * widget (the `surface` shortcut retired 2026-10-02), so none receives it.
 	 */
 	| { t: 'settings'; settings: WidgetPayload }
 	/**
-	 * The widget skin this frame should wear, already resolved by the host.
-	 *
-	 * A frame widget is skinned identically to a native one; the only
-	 * difference is that its CSS is injected into the frame's OWN document
-	 * rather than a scoped `<style>` in the host's. The frame is expected to
-	 * keep one `<style id="sp-widget-style">`, replaced in place, and to set
-	 * `vars` on its `document.documentElement`.
-	 *
-	 * An EMPTY `css` is still sent: taking a style off has to reach the frame,
-	 * and a host that simply stopped sending would leave the last one applied
-	 * for ever. Widget surfaces only.
-	 */
-	| { t: 'style'; css: string; vars: Record<string, string> }
-	/**
 	 * This widget's placement — the envelope's `layout.v1`, projected by the
 	 * host and detached, so a later host-side move cannot reach into a message
-	 * already sent. Re-sent on every change, and re-sent on reload: a frame
-	 * that replays `ready` gets everything it needs to draw itself without
-	 * having to ask. Widget surfaces only.
+	 * already sent. Re-sent on every change, and re-sent on reload. Sent over
+	 * a component's wire only, never to a frame.
 	 */
 	| { t: 'layout'; layout: LayoutV1 }
 	/** The viewer's view of the session annex (R57), on open and on every change — `annex.v1`. */
@@ -370,7 +284,8 @@ export type HostFrameMessage =
 	 * one table posts it (`WidgetScopedSections`: `session_full`,
 	 * `session_state`, `persona`, `characters`, `lore`), the envelope's
 	 * `<name>.v1` — posted when it changes; `value: null` withdraws it (the
-	 * grant went away). Never posted to a widget not granted it.
+	 * grant went away). Never posted to a widget not granted it. Sent over a
+	 * component's wire only, never to a frame.
 	 */
 	| { t: 'scoped'; section: WidgetScopedSectionName; value: unknown }
 	/**
@@ -380,9 +295,7 @@ export type HostFrameMessage =
 	 * revokes one while it is open). What lets a widget tell a scope that was
 	 * NOT granted (its section will never come: say so) from one whose
 	 * section has not been posted yet (wait): both are an absent `scoped`.
-	 * A host that never sends it leaves the widget unable to tell, as before.
-	 * Additive within protocol 2 — a frame ignores a host message it does
-	 * not recognise.
+	 * Sent over a component's wire only, never to a frame.
 	 */
 	| { t: 'grants'; grants: WidgetSectionScope[] }
 
@@ -487,7 +400,7 @@ export type FrameHostMessage =
  * know what it may send.
  *
  * **2 comprises** everything declared in the two unions above: the widget
- * envelope's sections as pushes (`settings`, `style`, `layout`, `event`,
+ * envelope's sections as pushes (`settings`, `layout`, `event`,
  * `actions`) alongside `session` / `messages` / `message` / `channel` /
  * `props` / `theme` / `suspend` / `resume`, and, frame → host, `invoke`
  * beside `ready` and `action`, plus `error`, `request` and `save-state` with
@@ -497,9 +410,8 @@ export type FrameHostMessage =
  * is not a grant, `save-state` may be capped or dropped, and an `error` may go
  * no further than a log. What 2 promises is that the frame may send them
  * without breaking the wire — never that the host will act on them. A frame
- * that needs an answer must therefore tolerate not getting one, which is the
- * same rule that lets a host push `style` at a frame that has never heard of
- * it.
+ * that needs an answer must therefore tolerate not getting one, just as it
+ * ignores a host message it has never heard of.
  *
  * A v1 frame keeps working unchanged: it never sends the frame → host
  * additions, and it must already ignore host messages it does not recognise. A
@@ -531,14 +443,10 @@ export interface PreviewTarget {
 	entry: string
 	/** Components only: which adapter renders it (10 §7). */
 	framework?: ComponentFramework
-	/** Panels only: the declared panel id `surface:open` keys on. */
-	panelId?: string
-	/** Panels only: the lanes this panel views. */
-	channels?: string[]
-	/** Component-side settings the target reads through `ctx` (12 §6). */
+	/** Components only: settings the target reads through `ctx` (12 §6). */
 	settings?: SettingsSchema
 	/** Where the declaration came from, for the harness's "declared in" line. */
-	source: 'surfaces' | 'genre-shape' | 'components'
+	source: 'surfaces' | 'components'
 }
 
 /** @experimental */
@@ -621,7 +529,6 @@ export function previewManifest(entry: unknown): PreviewManifest {
 		decl: unknown,
 		point: FramePoint,
 		where: string,
-		extra: Partial<PreviewTarget> = {},
 	) => {
 		const entryPath = str((decl as FrameSurfaceDecl | null)?.entry)
 		if (!entryPath) {
@@ -633,100 +540,23 @@ export function previewManifest(entry: unknown): PreviewManifest {
 		// this surface would be showing one that can never exist.
 		if (!isServableEntry(entryPath)) {
 			problems.push(
-				`${where}: '${entryPath}' is not a path an instance will serve, and it drops ` +
+				`${where}: '${entryPath}' is not a path a pub will serve, and it drops ` +
 					`such a surface silently. Use relative segments of letters, digits, '.', ` +
 					`'-' and '_' — no leading slash, no '..'.`,
 			)
 			return
 		}
-		if (extra.panelId && !isServablePanelId(extra.panelId)) {
-			problems.push(
-				`${where}: panel id '${extra.panelId}' is not one an instance accepts ` +
-					`(lowercase letters, digits, '-' and '_'), and it drops such a panel silently.`,
-			)
-			return
-		}
 		push({
-			id: extra.panelId ? `panel-${slugify(extra.panelId)}` : point,
-			label: label((decl as FrameSurfaceDecl).title, extra.panelId ?? point),
+			id: point,
+			label: label((decl as FrameSurfaceDecl).title, point),
 			kind: 'frame',
 			point,
 			entry: entryPath,
-			settings: settingsOf((decl as FrameSurfaceDecl).settings),
-			source: (extra.source ?? 'surfaces') as PreviewTarget['source'],
-			...extra,
+			source: 'surfaces',
 		})
 	}
 	if (s?.['session-view']) frame(s['session-view'], 'session-view', "surfaces['session-view']")
 	if (s?.page) frame(s.page, 'page', 'surfaces.page')
-	for (const [i, p] of (Array.isArray(s?.panels) ? s.panels : []).entries()) {
-		const panelId = str((p as FramePanelDecl | null)?.id)
-		if (!panelId) {
-			problems.push(`surfaces.panels[${i}]: no id — a layout row keys on it`)
-			continue
-		}
-		frame(p, 'panel', `surfaces.panels[${i}]`, {
-			panelId,
-			channels: Array.isArray((p as FramePanelDecl).channels)
-				? (p as FramePanelDecl).channels
-				: undefined,
-		})
-	}
-
-	// ── frames a genre's shape declares (21 §6) ─────────────────────────────
-	// A genre may point a panel at its own package's frame; that panel is a
-	// surface this package ships and the harness must render it.
-	for (const g of source.genres) {
-		// `?.` on every hop, including the element itself. A hand-edited
-		// announcement.json with a null in `genres` or `shape.panels` is
-		// exactly the input this function promises to survive, and `g.shape`
-		// on a null `g` is a TypeError that empties the harness — the one
-		// outcome the whole tolerance contract exists to prevent.
-		const panels = (g as { shape?: { panels?: unknown[] } } | null)?.shape?.panels
-		for (const [i, p] of (Array.isArray(panels) ? panels : []).entries()) {
-			const surface = (p as { surface?: { kind?: string; entry?: string } } | null)?.surface
-			if (surface?.kind !== 'frame') continue
-			const gid = str((g as { id?: unknown } | null)?.id) ?? 'genre'
-			const panelId = str((p as { id?: unknown } | null)?.id)
-			if (!panelId) {
-				problems.push(`${gid}.shape.panels[${i}]: no id`)
-				continue
-			}
-			if (!str(surface.entry)) {
-				problems.push(`${gid}.shape.panels[${i}]: frame surface with no entry`)
-				continue
-			}
-			// Same instance grammar as a `surfaces.panels[]` entry — a panel
-			// declared through a genre's shape is dropped by the same code.
-			if (!isServableEntry(surface.entry!)) {
-				problems.push(
-					`${gid}.shape.panels[${i}]: '${surface.entry}' is not a path an instance ` +
-						`will serve, and it drops such a surface silently`,
-				)
-				continue
-			}
-			if (!isServablePanelId(panelId)) {
-				problems.push(
-					`${gid}.shape.panels[${i}]: panel id '${panelId}' is not one an instance ` +
-						`accepts (lowercase letters, digits, '-' and '_')`,
-				)
-				continue
-			}
-			push({
-				id: `panel-${slugify(panelId)}`,
-				label: label((p as { title?: unknown }).title, panelId),
-				kind: 'frame',
-				point: 'panel',
-				entry: surface.entry!,
-				settings: settingsOf((p as { settings?: unknown }).settings),
-				panelId,
-				channels: Array.isArray((p as { channels?: unknown }).channels)
-					? ((p as { channels?: string[] }).channels as string[])
-					: undefined,
-				source: 'genre-shape',
-			})
-		}
-	}
 
 	// ── components: modules the page's UI worker runs (§3.5, R25) ───────────
 	for (const [i, c] of source.components.entries()) {
@@ -760,6 +590,8 @@ interface Unwrapped {
 	surfaces?: SurfacesDecl
 	genres: unknown[]
 	components: ComponentDecl[]
+	/** The package's own widget declarations. */
+	widgets: unknown[]
 }
 
 /**
@@ -783,6 +615,7 @@ function unwrap(entry: unknown, problems: string[]): Unwrapped {
 				title: str(e.identity.title) ?? e.identity.ns,
 				genres: [],
 				components: [],
+				widgets: [],
 			}
 		}
 	}
@@ -796,6 +629,7 @@ function unwrap(entry: unknown, problems: string[]): Unwrapped {
 			surfaces: e.surfaces,
 			genres: Array.isArray(e.genres) ? e.genres : [],
 			components: Array.isArray(e.components) ? e.components : [],
+			widgets: Array.isArray(e.widgets) ? e.widgets : [],
 		}
 	}
 
@@ -811,6 +645,7 @@ function unwrap(entry: unknown, problems: string[]): Unwrapped {
 			surfaces: e.surfaces,
 			genres: Array.isArray(e.genres) ? e.genres : [],
 			components: Array.isArray(e.components) ? e.components : [],
+			widgets: Array.isArray(e.widgets) ? e.widgets : [],
 		}
 	}
 
@@ -818,5 +653,5 @@ function unwrap(entry: unknown, problems: string[]): Unwrapped {
 		'the entry module has no default export this harness recognises — export ' +
 			'your defineExtension(…) result',
 	)
-	return { id: 'unknown', title: 'unknown package', genres: [], components: [] }
+	return { id: 'unknown', title: 'unknown package', genres: [], components: [], widgets: [] }
 }

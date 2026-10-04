@@ -1,0 +1,175 @@
+{
+	"core:genre/adventure": {
+		"zoneLayout": {
+			"version": 1,
+			"zones": {
+				"left": {
+					"kind": "side",
+					"side": "left",
+					"pinned": false,
+					"widgets": []
+				},
+				"right": {
+					"kind": "side",
+					"side": "right",
+					"pinned": true,
+					"widgets": [
+						"scene-portraits",
+						"stats"
+					]
+				}
+			}
+		},
+		"widgetGrid": {
+			"version": 1,
+			"cell": 44,
+			"widgets": [
+				{
+					"id": "world-state",
+					"zone": "middle",
+					"order": 0,
+					"size": {
+						"w": "grow",
+						"h": "fixed"
+					},
+					"anchor": {
+						"top": true,
+						"left": true,
+						"right": true
+					}
+				},
+				{
+					"id": "messages",
+					"zone": "middle",
+					"order": 1,
+					"size": {
+						"w": "grow",
+						"h": "grow"
+					},
+					"anchor": {
+						"top": true,
+						"bottom": true,
+						"left": true,
+						"right": true
+					},
+					"required": true
+				}
+			]
+		},
+		"widgetSettings": {
+			"scene-portraits": {
+				"source": "scene",
+				"bars": true
+			}
+		},
+		"arrangedGrid": {
+			"right": {
+				"cols": 1,
+				"rows": 12,
+				"items": [
+					{
+						"id": "scene-portraits",
+						"x": 0,
+						"y": 0,
+						"w": 1,
+						"h": 6
+					},
+					{
+						"id": "stats",
+						"x": 0,
+						"y": 6,
+						"w": 1,
+						"h": 6
+					}
+				]
+			}
+		}
+	},
+	"core:genre/lair": {
+		"zoneLayout": {
+			"version": 1,
+			"zones": {
+				"left": {
+					"kind": "side",
+					"side": "left",
+					"pinned": true,
+					"widgets": [
+						"stats"
+					]
+				},
+				"right": {
+					"kind": "side",
+					"side": "right",
+					"pinned": true,
+					"widgets": [
+						"world-state",
+						"messages#sanctum"
+					]
+				}
+			}
+		},
+		"widgetGrid": {
+			"version": 1,
+			"cell": 44,
+			"widgets": [
+				{
+					"id": "messages",
+					"zone": "middle",
+					"order": 0,
+					"size": {
+						"w": "grow",
+						"h": "grow"
+					},
+					"anchor": {
+						"top": true,
+						"bottom": true,
+						"left": true,
+						"right": true
+					},
+					"required": true
+				}
+			]
+		},
+		"arrangedGrid": {
+			"left": {
+				"cols": 1,
+				"rows": 12,
+				"items": [
+					{
+						"id": "stats",
+						"x": 0,
+						"y": 0,
+						"w": 1,
+						"h": 12
+					}
+				]
+			},
+			"right": {
+				"cols": 1,
+				"rows": 12,
+				"items": [
+					{
+						"id": "world-state",
+						"x": 0,
+						"y": 0,
+						"w": 1,
+						"h": 2
+					},
+					{
+						"id": "messages#sanctum",
+						"x": 0,
+						"y": 2,
+						"w": 1,
+						"h": 10
+					}
+				]
+			}
+		},
+		"widgetSettings": {
+			"messages#sanctum": {
+				"channel": "sanctum",
+				"composer": "minimal"
+			}
+		}
+	}
+}

@@ -293,7 +293,7 @@ describe('65a · selective export', () => {
 				resolve: () => ({ anything: true }),
 			})
 			assert.equal(out.presets[0]!.values.length, 0)
-			assert.match(omitted[0]!.reason, /never leave an instance/)
+			assert.match(omitted[0]!.reason, /never leave a pub/)
 		}
 	})
 })

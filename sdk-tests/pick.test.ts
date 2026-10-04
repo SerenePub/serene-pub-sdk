@@ -10,8 +10,8 @@
  *  1. **Deterministic**, in both arguments and in neither's order.
  *  2. **Unbiased** over 3–5 candidates whose keys differ in their last
  *     character — the adversarial case, and the one plain FNV-1a fails at
- *     49%/33% (`sdk-tests/whodunit.test.ts` measures the same thing on the
- *     genre's own copy, which this replaces).
+ *     49%/33% (the Whodunit showcase plugin's suite measured the same thing
+ *     on the genre's own copy, which this replaces).
  *  3. **Displacement ≈ 1/n** when a candidate is added — the property an
  *     index into a shuffled list does not have.
  *  4. **The finalizer is on**: two keys one character apart do not land in

@@ -36,7 +36,7 @@ export function defineEvent(def) {
     const e = { ...def, id: existing?.id ?? nextId, ownerPluginId: null };
     if (existing)
         refuseUnlessIdentical(existing, e, `duplicate event slug '${def.slug}' — slugs are unique because they are the ` +
-            `reference used to sync seeded rows across instances (13 §7g)`);
+            `reference used to sync seeded rows across pubs (13 §7g)`);
     if (def.family === 'action' && def.causedBy?.length) {
         throw new Error(`action event '${def.slug}' declares causedBy. Action events are requests, not ` +
             `consequences of a write — that is what keeps them out of the cycle graph (13 §7)`);
@@ -370,20 +370,27 @@ export const CORE_EVENTS = {
         description: 'A session character, persona or envoy row changed — switched on or off, position or portrayal. The payload names the participant and what moved.',
     }),
     /**
-     * `sessions:update` landed — name, scenario, lorebook, genre fields,
-     * preset, channels, tags. The payload's `changed` lists the fields by
-     * name. No `causedBy`: a socket write. ⚠ Never emitted by
-     * `writeTurnOrder`, which is raw SQL for exactly this reason (§3).
+     * The session row changed. Two origins: a person's settings write
+     * (`sessions:update` and the other settings sockets — name, scenario,
+     * lorebook, genre fields, preset, channels, tags; cause `settings`), and
+     * `core:outlet/advance-story-clock`, which moves the session's story
+     * clock (`changed: ['storyClock']`, cause `run`). The payload's `changed`
+     * lists the fields by name. `causedBy` names the outlet, so the event map
+     * draws the edge a spec bound here that advances the clock would loop
+     * on; it is therefore not a declared root, though a person's write also
+     * starts it (as the auto-advance listener also causes `message-respond`).
+     * ⚠ Never emitted by `writeTurnOrder`, which is raw SQL for exactly this
+     * reason (§3).
      */
     sessionUpdated: defineEvent({
         slug: 'session-updated',
-        declaredRoot: true,
         name: { en: 'Session updated' },
         version: 1,
         family: 'data',
         affectsUser: true,
+        causedBy: ['core:outlet/advance-story-clock'],
         payload: S.sessionChange,
-        description: "The session's settings changed — name, scenario, lorebook, genre fields, preset, channels or tags. The payload lists which.",
+        description: "The session's settings changed — name, scenario, lorebook, genre fields, preset, channels or tags — or a pipeline moved its story clock. The payload lists which.",
     }),
     /**
      * `metadata.turnOrder` was written by `core:outlet/set-turn-order@1`.
@@ -507,6 +514,12 @@ export const CORE_EVENTS = {
      * Its own event rather than `lore-entry-created`: a link is not an entry,
      * nothing about it is created or changed, and a subscriber that wants to
      * redraw a map wants exactly this and none of the writes that make rows.
+     *
+     * ⚠ It declares no payload shape — it rides the run's receipt as caused by
+     * the outlet, and the link itself (its name, its words both ways) is the
+     * outlet's `linkId` row, read where it is needed (places plan B2,
+     * 2026-09-29). An idempotent repeat that found the standing row wrote
+     * nothing, and causes no event (`written: false`).
      */
     loreLinkCreated: defineEvent({
         slug: 'lore-link-created',
@@ -604,7 +617,9 @@ export const CORE_EVENTS = {
      * (F32), and lifecycle callbacks may not trigger pipelines, so nightly
      * summarization subscribes here instead — which also puts it on the consent
      * screen, where a lifecycle callback doing the same work would have been
-     * invisible. ⏳ Nothing emits it yet; `SCHEDULED_WORK_PATH` names it.
+     * invisible. Serene Pub emits it hourly (`cadence: 'hourly'`, `scheduledFor`
+     * the ISO instant it was due, `scope: 'pub'`), only to subscribed,
+     * granted listeners; `SCHEDULED_WORK_PATH` names it.
      */
     scheduleTick: defineEvent({
         slug: 'schedule-tick',

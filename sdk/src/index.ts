@@ -108,11 +108,14 @@ export * from './personGate.js'
 // pipeline — no pipeline per value. Imports participants/settings/i18n only.
 export * from './annexFields.js'
 export * from './surfaces.js'
-// The session layout document (v2) and the widget declarations it places.
-// Beside surfaces because it is the other half of the same story: a surface is
-// where a plugin renders, a layout is where that lands on screen. Imports only
-// `settings.ts`, so `descriptors.ts` can name `WidgetDecl` without a cycle.
+// The widget declarations a layout places. Beside surfaces because it is the
+// other half of the same story: a surface is where a plugin renders, a widget
+// is what lands on screen. Imports only types, so `descriptors.ts` can name
+// `WidgetDecl` without a cycle.
 export * from './layout.js'
+// The session layout (`SessionLayoutV1`): the ONE layout format a genre ships,
+// a person arranges and the screen draws, its id readers and its validator.
+export * from './sessionLayout.js'
 // What a component places and imports (§3.5): the host-element vocabulary the
 // receiver enforces, and the import whitelist the compilers enforce.
 export * from './hostElements.js'

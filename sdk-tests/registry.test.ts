@@ -43,7 +43,7 @@ describe('108 · checkInstall decides from data alone', () => {
 		assert.equal(installable(f), true, renderInstall(f))
 	})
 
-	test('a pin this instance does not have names the version it does have', () => {
+	test('a pin this pub does not have names the version it does have', () => {
 		const registry = coreRegistry().filter(
 			(r) => !(r.id === 'core:task/assemble' && r.version === 2),
 		)
@@ -51,7 +51,7 @@ describe('108 · checkInstall decides from data alone', () => {
 		const f = checkInstall({ declares: [], documents: [doc()], registry })
 		const e = f.find((x) => x.code === 'E_UNKNOWN_TYPE')!
 		assert.ok(e)
-		assert.match(e.fix, /this instance has core:task\/assemble@3/)
+		assert.match(e.fix, /this pub has core:task\/assemble@3/)
 		// Re-pinning silently would be the tempting fix and the wrong one: a pin that
 		// resolves differently on each instance is not a pin.
 		assert.match(e.fix, /rebuilt against this release/)

@@ -13,7 +13,7 @@ serene-pub drift      # has core changed since you cloned? which files?
 ```
 
 `ui` starts a SvelteKit dev server that renders the UI surfaces your package
-**announces** — frame panels in the same opaque-origin sandbox core mounts them
+**announces** — frames in the same opaque-origin sandbox core mounts them
 in, components in the host document — against editable fixtures. It reads the
 announcement, never a directory scan, so a surface you preview is a surface an
 instance would be offered. It needs `@serene-pub/ui-preview`, which is a

@@ -77,6 +77,8 @@ export function checkMessageBlocks(value) {
             f.push(finding(`${p}.question`, 'is missing on an addressed form', 'say what is being asked — the addressee (or the oracle answering for them) needs the question'));
         if (b.referent !== undefined)
             str(b.referent, `${p}.referent`, 'referent');
+        if (b.vantage !== undefined)
+            str(b.vantage, `${p}.vantage`, 'vantage');
         if (b.answered !== undefined && !isFormAnswered(b.answered))
             f.push(finding(`${p}.answered`, 'is not an answer record', "omit it — the host stamps { by, at, choice? } once the form is answered"));
     };

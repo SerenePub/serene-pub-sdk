@@ -27,14 +27,17 @@
 		<div class="none">
 			<p>This package announces no UI surfaces.</p>
 			<p class="muted">Add one to your entry module:</p>
-			<pre><code>{`export default announce({ ns: 'acme.dice', … })
-	.surfaces({
-		panels: [{ id: 'tray', entry: 'ui/tray.html', title: 'Dice tray' }]
-	})`}</code></pre>
+			<pre><code>{`export default defineExtension({
+	slug: 'acme.dice', …
+	surfaces: { page: { entry: 'ui/index.html', title: 'Dice' } },
+	components: [component({ slug: 'tray', label: 'Dice tray', entry: 'components/tray.ts', framework: 'svelte' })],
+	widgets: [widget({ id: 'tray', title: 'Dice tray', component: 'tray' })],
+})`}</code></pre>
 			<p class="muted">
 				A frame surface is a document mounted in an opaque-origin iframe. A component is
 				code the host mounts in its own document — declared with <code>component(…)</code> and
-				passed to <code>.components(…)</code>.
+				named by a widget; it places an <code>sp-frame</code> for any region that needs a real
+				document.
 			</p>
 		</div>
 	{/if}

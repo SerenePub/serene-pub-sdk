@@ -100,9 +100,11 @@ export declare function exactSlashCommand<A extends PaletteAction>(actions: Read
 export declare function slashArgumentHint(a: Pick<PaletteAction, 'collects'>): string | undefined;
 /**
  * Why a slash argument is refused (S2): only an action that collects text
- * takes one — `/advance x` and `/narrator x` (Narrate takes no text) are
- * refused by name, and nothing fires. Null when there is no argument, or
- * the action takes it.
+ * takes one — `/advance x` and `/narrator x` are refused by name, and
+ * nothing fires. `/narrator` is core's Narrate turn control, which a
+ * narrator-voiced genre (Adventure, the Lair) offers and which
+ * takes no text; Chat's `/narrate` collects text and takes one. Null when there is
+ * no argument, or the action takes it.
  * @experimental
  */
 export declare function slashArgumentRefusal(a: Pick<PaletteAction, 'slash' | 'collects'>, argument: string | null | undefined): string | null;

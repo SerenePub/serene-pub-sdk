@@ -425,8 +425,10 @@ export interface AttributeSlotProps {
      *
      * Enforced by the host where state becomes a prompt, never in the state
      * itself: `session-state@1` still carries the value (a run's voices share
-     * one read), and a person's view follows the data audience, not earshot,
-     * so the stats widget still draws it.
+     * one read). A person's view follows the value's data audience, not
+     * earshot: the host gives a `'holder'` value the audience `owner` +
+     * `character:<holder>`, so the stats widget shows it to the session's
+     * owner and to whoever portrays the holder, and to nobody else.
      *
      * `'holder'` is refused unless `appliesTo` is exactly `['cast']` — a world
      * or a place has no voice to hold it. `'all'` is dropped at registration,

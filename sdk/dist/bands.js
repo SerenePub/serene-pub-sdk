@@ -224,7 +224,7 @@ export function bandsReaching(doc, nodeKey, port, describe = defaultDescribe) {
 /**
  * What a `variables` slot renders at one node of a document: its static
  * `renders`, plus — when it declares `rendersBands` — every band declared
- * upstream of that in-port, minus the ones it names `raw`.
+ * upstream of that in-port.
  *
  * A band the static half already renders under the same variable is the same
  * name, not a collision (core's lore queries declare `worldLore`; Assemble
@@ -237,11 +237,8 @@ export function rendersAt(doc, nodeKey, slot, describe) {
     const from = slot.rendersBands?.from;
     if (!from)
         return out;
-    const raw = new Set(slot.rendersBands?.raw ?? []);
     const reaching = bandsReaching(doc, nodeKey, from, describe);
     for (const [band, { variable, declarer }] of Object.entries(reaching)) {
-        if (raw.has(band))
-            continue;
         const own = slot.renders?.[band];
         if (own !== undefined) {
             if (own !== variable)

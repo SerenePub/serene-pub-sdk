@@ -35,7 +35,8 @@ describe('suppliesOf — the runtime twin of InputOf', () => {
 		// `resolveInput` builds one object out of wired edges and resolved slot
 		// refs alike, so a handler cannot tell a port from a slot and neither
 		// does this.
-		assert.deepEqual([...s.ports].sort(), ['params', 'scope', 'vectors'])
+		// `speaker` since C3 (2026-10-02): the leak guard on the arms.
+		assert.deepEqual([...s.ports].sort(), ['params', 'scope', 'speaker', 'vectors'])
 	})
 
 	test('reads the params slot schema, with each field type', () => {
@@ -165,10 +166,10 @@ describe('the two derivations agree', () => {
 	// be made here too.
 	test('session-history', () => {
 		const s = suppliesOf(C.sessionHistory)
-		// `budget` was here until 2026-09-16: an in-port nothing filled and
-		// nothing read, culled under R-12.
-		// `messageId` since 2026-09-28 (lair re-plan R11): one row, by id.
-		assert.deepEqual([...s.ports].sort(), ['messageId', 'params', 'scope'])
+		// `budget` sizes the read by the context window (every shipped reply
+		// wires it); `messageId` reads one row, by id. The compile-time list is
+		// `_historyNames` in nodeInput.assert.ts.
+		assert.deepEqual([...s.ports].sort(), ['budget', 'messageId', 'params', 'scope'])
 		assert.deepEqual(
 			[...s.params].sort(),
 			// `unplayedOnly` 2026-09-28 (lair re-plan R13): the side channel's

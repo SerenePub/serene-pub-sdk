@@ -69,6 +69,14 @@ const SHAPE_AT_VERSION: Record<string, string> = {
 	// 1.1 (lair re-plan S1): `sp-host-view` takes `channel`, the channel the
 	// place is for. Grew only — a 1.0 component still mounts.
 	'1.1': 'c90e51dcc1b384931721957cdab0f81cef19df066a0bf7768733cbec069ce972',
+	// 1.2 (composer attachments, media strip): `img` takes `loading` and
+	// `decoding` and raises `error`, so a strip draws a stand-in for a deleted
+	// file. Grew only.
+	'1.2': '0a2306d3abc5d451a5d37951ac79eca875476ae60ec88a939a2c572b903ed345',
+	// 1.3 (composer attachments §3.3): `sp-file-picker` (the device's picker,
+	// opened by its body's control) and `sp-drop-zone` (files dropped or
+	// pasted), both raising `files`. Grew only.
+	'1.3': '1085b6aa0b3bfed1ea4015dadae1cb6e3e73a32a8325d06685446693958f9fa1',
 }
 
 test('the host-element vocabulary version is pinned to its shape — change the table, bump the version', () => {

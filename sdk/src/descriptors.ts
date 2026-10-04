@@ -24,8 +24,8 @@ import {
 	type EnabledWhen,
 	type EnabledWhenDecl,
 } from './predicates.js'
-// The widget declaration a session mode's `panels` are: it lives with the
-// layout document that places them, and imports nothing from here.
+// The widget declaration a session mode's `panels` are: it lives in
+// `layout.ts`, which imports nothing from here.
 import type { WidgetDecl } from './layout.js'
 import { widgetReadsFindings } from './widgetDecls.js'
 import type { MediaCapability } from './media.js'
@@ -252,17 +252,13 @@ export interface SlotDecl {
 	 * (`Descriptor.bands`). So `renders` is open: a plugin's source adds a
 	 * layout setting here by declaring its band, with no edit to this node.
 	 *
-	 * `raw` names declared bands this node exposes as its own value with no
-	 * layout — Assemble's `characterLore`, which has always reached a template
-	 * as the raw list and which no layout could change.
-	 *
 	 * Followed through any node that takes candidates in (concatenation,
 	 * fusion, ranking); `rendersAt` is the answer for one node of a document.
 	 * **Contract** — hashed with the slot: which bands a node renders is what
 	 * its template may place.
 	 * @experimental
 	 */
-	rendersBands?: { from: string; raw?: readonly string[] }
+	rendersBands?: { from: string }
 }
 
 /**
@@ -770,8 +766,8 @@ export interface SessionShape {
 	// swappable node — see `turnOrderSpec()` in `@serene-pub/core-catalog`.
 	/**
 	 * Does the session settings form offer a **Scenario** field (§4.11,
-	 * R12)? Declared, never assumed: chat, adventure, lair and whodunit say
-	 * `true`; guide and writing-room say `false`. Absent = no field.
+	 * R12)? Declared, never assumed: core's chat, adventure and lair say
+	 * `true`; guide says `false`. Absent = no field.
 	 */
 	scenario?: boolean
 	/**
@@ -926,10 +922,9 @@ export interface SessionShape {
 	 *
 	 * Absent means the default — the standard chat's single primary panel (the
 	 * log + composer). A mode declares extra panels by pushing `WidgetDecl`s; a
-	 * panel points either at a **native** surface (a core-registered component
-	 * key, zero frontend code beyond registering it) or a **frame** (a plugin's
-	 * `surfaces.panels[]` entry, opaque-origin iframe). Both wear identical
-	 * chrome and both are *views onto channels* — a panel renders what a node
+	 * panel names a **component** (`component`, run in the UI worker), which
+	 * places an `sp-frame` for any region that needs a real document. A panel
+	 * is a *view onto channels* — it renders what a node
 	 * writes to the channels it subscribes to. This is the "map / cell phone /
 	 * mission list appears when the action is toggled on" lane: a node emits a
 	 * `surface:open` intent naming a declared panel, and the grid flows it in.
@@ -1323,6 +1318,14 @@ export interface Descriptor<
 	 * F36 — every hook invocation is bounded. **Policy**, both of them: how
 	 * long the host waits is the host's to tune, and a spec's document is
 	 * indifferent to it.
+	 *
+	 * `timeoutKind` says what `timeoutMs` measures. `'wall'` (the default):
+	 * the invocation, start to finish. `'idle'`: the gap between signs of
+	 * progress — every `ctx.pulse()` (and every `CallHandles.pulse` the host
+	 * calls for a request it performs) restarts it, and the pub's ceiling
+	 * bounds the whole. Declare `'idle'` for work whose length is honest but
+	 * unknown — a streamed reply, a model loading — and `'wall'` for work
+	 * that should simply be quick.
 	 */
 	timeoutMs?: number
 	timeoutKind?: 'wall' | 'idle'
@@ -2180,24 +2183,14 @@ export function widgetDeclsFindings(raw: unknown, where: string): string[] {
 		out.push(...settingsSchemaFindings(decl.settings, `${at}.settings`))
 		// The base sections it reads (R75): a name outside them is refused here.
 		out.push(...widgetReadsFindings(decl.reads, `${at}.reads`))
-		// What renders inside: `component` (R25) or the deprecated `surface`
-		// alias (R24) — exactly one, and a written `remote` is refused.
-		const hasComponent = decl.component !== undefined
-		const surface = decl.surface as { kind?: unknown } | undefined
-		if (hasComponent && surface !== undefined)
-			out.push(`${at}: give \`component\` or the deprecated \`surface\`, not both`)
-		else if (!hasComponent && surface === undefined)
+		// What renders inside: `component` (R25), a component's slug — the
+		// one way. The `surface` shortcut is gone (2026-10-02).
+		if ((decl as { surface?: unknown }).surface !== undefined)
+			out.push(`${at}.surface: gone — give \`component\`, and place an \`sp-frame\` inside it for a document`)
+		else if (decl.component === undefined)
 			out.push(`${at}: names nothing to render — give \`component\`, a component's slug`)
-		else if (hasComponent && (typeof decl.component !== 'string' || !decl.component))
+		else if (typeof decl.component !== 'string' || !decl.component)
 			out.push(`${at}.component: a component's slug`)
-		else if (surface !== undefined && surface?.kind !== 'frame')
-			out.push(
-				surface?.kind === 'remote'
-					? `${at}.surface: a remote is not written — give \`component\`, the component's slug (R25)`
-					: surface?.kind === 'native'
-						? `${at}.surface: 'native' is retired (R79) — give \`component\`, the component's slug`
-						: `${at}.surface.kind: 'frame' (deprecated — give \`component\`)`,
-			)
 	})
 	return out
 }
@@ -2409,13 +2402,16 @@ export type EntrySourceKind = (typeof ENTRY_SOURCE_KINDS)[number]
  * The short name this type's rows carry on the wire — `extensions.serenepub`
  * in a character-card book.
  *
- * Closed to the three names already written into exported files. A type outside
- * them simply declares nothing here: no marker is honest, where a marker no
- * importer reads is a file that round-trips into the wrong shape. Widening the
- * list is a deliberate act with an importer change beside it.
+ * Closed to the names the importer reads: the three every file has carried,
+ * plus `location` and `item`, which the app's importer restores as a place and
+ * an item (lorebooks plan A26 — written as world lore, a place reads back
+ * without its links' meaning or its stats). A type outside them declares
+ * nothing here: no marker is honest, where a marker no importer reads is a
+ * file that round-trips into the wrong shape. Widening the list is a
+ * deliberate act with an importer change beside it.
  * @experimental
  */
-export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history'] as const
+export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history', 'location', 'item'] as const
 
 /** @experimental */
 export type EntryExportKey = (typeof ENTRY_EXPORT_KEYS)[number]
@@ -2436,27 +2432,13 @@ export const ENTRY_ANCHOR_POLICIES = ['core:policy/binding-visibility@1'] as con
 export type EntryAnchorPolicy = (typeof ENTRY_ANCHOR_POLICIES)[number]
 
 /**
- * Where a type's rows land when they are not rendered as a variable of their
- * own — a closed vocabulary of destinations, not a free string.
- *
- * `character-card` is today's character lore: qualifying entries are folded
- * into their bound character's own object under an "extra lore" key rather than
- * reaching a template as a list. One member, because one destination exists;
- * the point of the closed list is that the second one is a decision somebody
- * makes here rather than a string somebody types in a catalog.
- * @experimental
- */
-export const ENTRY_RENDER_DESTINATIONS = ['character-card'] as const
-
-/** @experimental */
-export type EntryRenderDestination = (typeof ENTRY_RENDER_DESTINATIONS)[number]
-
-/**
  * How this type reaches a prompt: the id of the variable whose layout renders
- * it (`core:var/world-lore@1`), or a destination it is folded into.
+ * its admitted rows (`core:var/world-lore@1`, `core:var/character-lore@1`).
+ * A context template places that variable; nothing folds a type's rows into
+ * another variable's value.
  * @experimental
  */
-export type EntryRender = string | { into: EntryRenderDestination }
+export type EntryRender = string
 
 /** One key of a sort, in an ordered list. Structured data — never a parsed string. @experimental */
 export interface EntryOrderKey {
@@ -2632,6 +2614,21 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 				`for the field.`,
 		)
 
+	for (const [field, decl] of Object.entries(shape.fields ?? {})) {
+		const narrowed = decl?.narrows
+		if (narrowed === undefined) continue
+		if (narrowed === field)
+			throw new Error(
+				`${id} declares that '${field}' narrows itself. A field narrows another ` +
+					`field of its own type, as a day narrows a month.`,
+			)
+		if (!Object.prototype.hasOwnProperty.call(shape.fields, narrowed))
+			throw new Error(
+				`'${field}' narrows '${narrowed}', which ${id} does not declare. A field ` +
+					`narrows another field of its own type, as a day narrows a month.`,
+			)
+	}
+
 	if (!ENTRY_SOURCE_KINDS.includes(shape.sourceKind as EntrySourceKind))
 		throw new Error(
 			`${id} declares sourceKind '${shape.sourceKind}', which is not a budget band. ` +
@@ -2656,17 +2653,10 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 		)
 
 	const render = shape.render
-	if (typeof render === 'object' && !ENTRY_RENDER_DESTINATIONS.includes(render.into))
-		throw new Error(
-			`${id} renders into '${render.into}', which is not a destination. The ` +
-				`destinations are ${ENTRY_RENDER_DESTINATIONS.join(', ')}; a variable id ` +
-				`('core:var/world-lore@1') is the other legal value.`,
-		)
-	if (typeof render === 'string' && !/^[a-z0-9][a-z0-9.-]*:var\/[a-z0-9-]+@\d+$/.test(render))
+	if (render !== undefined && !/^[a-z0-9][a-z0-9.-]*:var\/[a-z0-9-]+@\d+$/.test(render))
 		throw new Error(
 			`${id} renders as '${render}', which is not a variable id. Name the variable ` +
-				`whose layout renders these rows — 'core:var/world-lore@1' — or fold them ` +
-				`into a destination with { into: … }.`,
+				`whose layout renders these rows — 'core:var/world-lore@1'.`,
 		)
 }
 

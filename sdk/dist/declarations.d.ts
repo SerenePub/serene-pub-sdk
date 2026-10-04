@@ -100,6 +100,8 @@ export declare function swapContributionFindings(swaps: readonly (SwapContributi
 /** What one pass over a package's declarations produces. @experimental */
 export interface DeclarationFindings {
     errors: string[];
+    /** What is declared as written but draws otherwise — a layout over a widget's `maxInstances`. Never refuses. */
+    warnings: string[];
     /** The preset coverage report and the `todo()` holes — useful even on a refusal. */
     coverage: CoverageReport;
     /** Ids referenced but not declared here; the instance enforces these at install. */
@@ -152,6 +154,18 @@ export declare const lockAnswers: (input: {
 } | undefined, event: string) => boolean;
 /** Exactly one create pipeline per declared genre (24 §3). @experimental */
 export declare function createPipelineFindings(genres: readonly GenreDecl[], pipelines: readonly AnnouncedSpec[]): string[];
+/**
+ * **A custom pipeline must include a default preset** (owner ruling,
+ * 2026-10-02, notes 27/28). The Pipelines view is Genre → Preset →
+ * pipelines, and a genre's pipelines are reached only through a session
+ * preset: a package that declares a genre and no preset for it ships
+ * pipelines nobody can start a session on or find under their genre. The
+ * first preset a package declares for its genre is the one an instance makes
+ * that genre's default when it has none (`registrySync`); a package that
+ * contributes to another package's genre needs none of its own.
+ * @experimental
+ */
+export declare function genrePresetFindings(genres: readonly GenreDecl[], presets: readonly PresetDecl[]): string[];
 /**
  * Contributed actions (R-15, U5c): each declaration sound, and one slash name
  * meaning one function across the whole package — the per-document check cannot
@@ -216,6 +230,28 @@ export declare function widgetComponentFindings(genres: readonly GenreDecl[], co
  * @experimental
  */
 export declare function packageWidgetFindings(widgets: readonly WidgetDecl[], components: readonly ComponentDecl[]): string[];
+/**
+ * The layouts a package's genres ship, read as a whole package — what
+ * `genre()` and `layout()` cannot see, since a layout names widgets by id and
+ * only the package holds their declarations:
+ *
+ * - **The primary floor** (an error). A genre that withholds the
+ *   conversation draws, in the layout it ships first, a widget of this
+ *   package declared `role: 'primary'` — the one standing in the
+ *   conversation's place. `genre()` asks only that the layout draws
+ *   something. A widget of another package (a namespaced id) is that
+ *   package's to declare, and is taken as written. Needs the package's
+ *   widgets, so a package that states none is not judged.
+ * - **What draws, but not as written** (warnings): every warning
+ *   `validateSessionLayout` has for a shipped layout — an id placed but never
+ *   drawn, two items on one cell, and one of the package's widgets placed
+ *   more often than its `maxInstances`.
+ * @experimental
+ */
+export declare function genreLayoutFindings(genres: readonly GenreDecl[], widgets: readonly WidgetDecl[] | undefined, ns: string): {
+    errors: string[];
+    warnings: string[];
+};
 /** Deliberate holes: `todo()` sentinels found in config values, with their paths (24 §7). @experimental */
 export declare function todoHoles(configs: readonly ConfigDecl[]): CoverageReport['todos'];
 /**

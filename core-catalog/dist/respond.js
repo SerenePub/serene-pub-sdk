@@ -9,7 +9,7 @@
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk';
 import * as C from '@serene-pub/contracts';
 import { withSpriteTail } from './sprites.js';
-import { chatGenre } from './genres.js';
+import { chatGenre, POST_HISTORY_TOKEN_TRIGGER } from './genres.js';
 /** The spec a session turn runs. @experimental */
 export const RESPOND_SPEC_ID = 'core:spec/respond';
 // 1.1.0: one authored prompt, not three. The context builder owns the
@@ -155,13 +155,31 @@ export const RESPOND_SPEC_ID = 'core:spec/respond';
 // on the spine the preview would halt on a payload that is a list of query
 // strings, which is a correct application of the rule and a useless preview.
 //
-// ⚠ It ships **off**: `vector-search`'s `maxEntries` defaults to 0, the
-// `admitThreshold` / `scoreLedAllocation` convention. One switch, not two — the
-// `signalSemantic` weight it feeds is *not* zero, so raising the cap is the
-// whole of turning it on. And an install with no embedding model loses a signal
-// and nothing else: `embed-text` returns no vectors under `auto` rather than
-// failing the turn, and `vector-search` returns empty with the reason on the
-// receipt. Adding a model may only add matches; removing one may only lose them.
+// ⚠ It ships **Automatic**: `query-windows.searchByMeaning` defaults to `auto`,
+// on the chain's **first** node, which searches whenever an embedding model is
+// set up — local or a service billed per request, alike — and not when there
+// is none. (For one day, 2026-09-29, it skipped a service; the owner,
+// 2026-09-30: "I never said to skip paid services for retrieval, that's what
+// they are there for.") `queries` reads whether one is set up off the embed
+// step's connection (`slot.connectionOf('semantic.arm.embed')`); when it does
+// not search it cuts
+// no probes and `embed-text` makes no call. One switch, not two — the
+// `signalSemantic` weight it feeds is *not* zero, and `vector-search.maxEntries`
+// is a ceiling that ships at 5, so turning the switch on is the whole of
+// turning the mechanism on. And an install with
+// no embedding model loses a signal and nothing else: `embed-text` returns no
+// vectors under `auto` rather than failing the turn, and `vector-search`
+// returns empty with the reason on the receipt. Adding a model may only add
+// matches; removing one may only lose them.
+//
+// ⚠ 2026-09-29 (genre uplift C3): until then the switch was
+// `vector-search.maxEntries = 0`, on the chain's **last** node, so the probes
+// were embedded before it said nothing was wanted — every turn with an
+// embedding model ready, lorebook or not, paid for an embed it threw away, a
+// provider call per turn in API mode. No document edit and no version move:
+// both are definition defaults, which reach an install through the registry
+// sync. F1 (the same day) is a document edit — the `connection` reference on
+// `queries` — at the frozen version; `specHashes.test.ts` records the move.
 // 1.20.0: the **fifth** mechanism — retrieval by *description*. A second named
 // vector space holding one vector per **name** (an entry's title, the aliases
 // its body declares, the bound character's names), queried with the descriptive
@@ -299,6 +317,28 @@ export const RESPOND_SPEC_ID = 'core:spec/respond';
 // spent. A new semver rather than an in-place edit: the node list changed,
 // so a stored 1.20.0 document must stay exactly as it is and this must
 // re-project (§0 rule 3).
+//
+// ⚠ **1.21.0, edited in place (2026-10-02, author's note AN1) —
+// content-addressed, so boot publishes the changed document under its new
+// hash and moves the pointer; `specHashes.test.ts` records the move.** The
+// `context` step wires `fields: $.input.fields`, so a genre that declares the
+// author's note (Chat) gets it on the template context. Every other genre's
+// prompt is the bytes it was: no note, nothing placed.
+//
+// ⚠ **1.21.0, edited in place (2026-10-02, lorebooks C2) — content-addressed;
+// `specHashes.test.ts` records the move.** A `gather.presences` read
+// (`core:query/cast-presences@1`) and an `eligible` step
+// (`core:task/eligibility@1`) between `loreLinked` and `rank`: exclusions from
+// the three keyword lanes, the speaker's secrecy, and presence at the
+// session's moment mark candidates ineligible. A book with no selective logic,
+// no secrets and no presences ranks exactly what it ranked.
+//
+// ⚠ **1.21.0, edited in place (2026-10-03, history window) —
+// content-addressed; `specHashes.test.ts` records the move.**
+// `contextBudget` runs before the reads, and `gather.history.read` takes its
+// `budget`: the read is the newest rows up to about twice the window (never
+// more than 2000) instead of the newest 100, so the transcript fit's held cut
+// decides the prompt's first line once a session passes 100 messages.
 /** @internal */
 export const RESPOND_VERSION = '1.21.0';
 /**
@@ -348,6 +388,28 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     row: $.input.messageId,
 }))
     /**
+     * How much room the context has, from the window itself.
+     *
+     * `samplingOf("generate")` rather than its own slot, and that is
+     * the whole safety of this step: a budget computed against one
+     * window and a prompt sent against another is wrong in the
+     * direction that truncates, silently. Sharing the reference makes
+     * the two impossible to point apart, rather than documenting that
+     * they must agree and hoping.
+     *
+     * Before the reads (history window, 2026-10-03): the history read
+     * is sized by this budget, so it is computed first. It reads only
+     * config, never a step, so moving it changes no value.
+     */
+    .task('contextBudget', ($) => C.contextBudget.v1({
+    sampling: slot.samplingOf('generate'),
+    // The other half of the same pair, for the model's own
+    // window (0114). Shared for the same reason, and read by the
+    // one computation dispatch sizes the request with (R-8).
+    connection: slot.connectionOf('generate'),
+    params: slot.params(),
+}))
+    /**
      * The four reads, run together.
      *
      * Every one of them takes `input.sessionScope` and none consumes
@@ -376,8 +438,22 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     // literal 100, which is why the declared default is 100 now
     // (see `sessionHistory` in the contracts package): the
     // control becomes live without moving anybody's window.
-    .chain('history', (c) => c.query('read', ($) => C.sessionHistory.v1({
+    //
+    // `budget` (history window, 2026-10-03): the read is sized
+    // by the window — about twice what it holds — and `limit`
+    // is not read, so `prompt`'s transcript fit, not a row
+    // count, decides where the conversation starts.
+    .chain('history', (c) => c
+    .query('read', ($) => C.sessionHistory.v1({
     scope: $.input.sessionScope,
+    budget: $.contextBudget.available,
+    params: slot.params(),
+}))
+    // 🚧 The files those rows show (PLAN-composer-attachments
+    // §3.5), one query for the transcript. `attached` below
+    // decides, per line, what the model receives.
+    .query('attachments', ($) => C.historyAttachments.v1({
+    messages: $.gather.history.read.messages,
     params: slot.params(),
 })))
     // Two lore lanes, not one. World lore and character lore
@@ -506,7 +582,12 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     .chain('relationships', (c) => c.query('read', ($) => C.relationshipSearch.v1({
     scope: $.input.sessionScope,
     params: slot.params(),
-}))))
+})))
+    /**
+     * Who is in the world at the session's moment (R4) — the
+     * presences on its line, for `eligible`'s presence rule.
+     */
+    .chain('presences', (c) => c.query('read', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))))
     /**
     /**
      * The fourth mechanism — retrieval by meaning (1.19.0, design phase 2).
@@ -529,7 +610,12 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
      * Nothing between the two blocks reads this, so it is a sibling of
      * the lore lanes in every sense except the source line ordering.
      *
-     * ⚠ It ships **off** — `vector-search.maxEntries` is 0 — and an
+     * ⚠ It ships **Automatic** — `queries`' `searchByMeaning` is
+     * `auto`, on the chain's first node: it searches whenever an
+     * embedding model is set up (`embed`'s connection resolves), local
+     * or a service alike, and otherwise `embed` is handed no texts and
+     * makes no call; `search`'s `maxEntries` is only
+     * a ceiling — and an
      * install with no embedding model is not a broken install: `embed`
      * yields no vectors under its `auto` setting, `search` returns empty
      * with the reason on the receipt, and the turn loses a signal rather
@@ -548,35 +634,21 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     .task('queries', ($) => C.queryWindows.v1({
     messages: $.gather.history.read.messages,
     cast: $.gather.cast.read.cast,
+    // The embed step's connection, for whether one is
+    // set up: `searchByMeaning`'s Automatic searches
+    // whenever it is, wherever the model runs.
+    connection: slot.connectionOf('semantic.arm.embed'),
     params: slot.params(),
 }))
     .oracle('embed', ($) => C.embedText.v1({
     texts: $.semantic.arm.queries.current,
     params: slot.params(),
-}))
+}), { expose: { label: 'Embed the recent messages' } })
     .query('search', ($) => C.vectorSearch.v1({
     scope: $.input.sessionScope,
     vectors: $.semantic.arm.embed.vectors,
     params: slot.params(),
 }))))
-    /**
-     * How much room the context has, from the window itself.
-     *
-     * `samplingOf("generate")` rather than its own slot, and that is
-     * the whole safety of this step: a budget computed against one
-     * window and a prompt sent against another is wrong in the
-     * direction that truncates, silently. Sharing the reference makes
-     * the two impossible to point apart, rather than documenting that
-     * they must agree and hoping.
-     */
-    .task('contextBudget', ($) => C.contextBudget.v1({
-    sampling: slot.samplingOf('generate'),
-    // The other half of the same pair, for the model's own
-    // window (0114). Shared for the same reason, and read by the
-    // one computation dispatch sizes the request with (R-8).
-    connection: slot.connectionOf('generate'),
-    params: slot.params(),
-}))
     // All three lanes reach the ranker, and the count is the point.
     // Wiring `rank` to a subset drops the rest silently — the prompt
     // simply has no character lore, or no history, in it, and nothing
@@ -659,7 +731,7 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     // One `enabled` switch for both embed nodes (R-7 P2): the
     // semantic mechanism's embed owns it, this one reads it.
     params: slot.params({ node: 'semantic.arm.embed' }),
-}))
+}), { expose: { label: 'Embed the mentions' } })
     .query('link', ($) => C.entityLink.v1({
     scope: $.input.sessionScope,
     candidates: $.lore.candidates,
@@ -708,8 +780,28 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
         $.gather.relationships.read.main,
     ],
 }))
-    .task('rank', ($) => C.rankHybrid.v1({
+    /**
+     * **The hard gates, before the ranker** (C2; rulings R2, R4). An
+     * entry an author's own selective logic ruled out stays out
+     * whichever mechanism brought it back (`exclusions`, from the
+     * three keyword lanes); a tie that is someone else's secret is not
+     * this speaker's; a member not in the world at the session's
+     * moment has their lore gated. Nothing is dropped — the ranker
+     * records each as `excluded_ineligible` with the sentence.
+     */
+    .task('eligible', ($) => C.eligibility.v1({
     candidates: $.loreLinked.candidates,
+    exclusions: [
+        $.gather.worldLore.read.exclusions,
+        $.gather.characterLore.read.exclusions,
+        $.gather.historyEntries.read.exclusions,
+    ],
+    speaker: $.input.speaker,
+    presences: $.gather.presences.read.main,
+    at: $.gather.presences.read.at,
+}))
+    .task('rank', ($) => C.rankHybrid.v1({
+    candidates: $.eligible.candidates,
     budget: $.contextBudget.available,
     params: slot.params(),
 }))
@@ -764,6 +856,19 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     },
     prompts: slot.prompts(),
     variables: slot.variables(),
+    /**
+     * 🚧 The session's genre fields (2026-10-02, AN1) — for
+     * the **author's note** a genre may declare
+     * (`AUTHORS_NOTE_FIELD`; Chat does). The builder carries
+     * it to Assemble, which places it, and the template
+     * renders it where it writes `{{#with ../authorsNote}}`.
+     * A genre that declares no note supplies none, and the
+     * prompt is the bytes it was. The other Chat fields
+     * (auto-advance, turn mode, character detail) become
+     * interpolation variables here, as Adventure's do —
+     * nothing shipped writes them.
+     */
+    fields: $.input.fields,
 }))
     .task('lines', ($) => C.processMessages.v1({
     messages: $.gather.history.read.messages,
@@ -786,6 +891,21 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
      * an extend.
      */
     continuationPrefill: $.input.continuationPrefill,
+}))
+    /**
+     * 🚧 **Each line's attachments, placed** (PLAN-composer-attachments
+     * §3.5; D2/D3). An image `generate` can read, within the media
+     * lookback, rides on its own line's turn; a text file is inlined;
+     * the rest are named. Judged on `generate`'s pair — the step that
+     * sends this prompt — through its slot's `metadata.reads`. A
+     * transcript with no files passes through untouched, so the prompt
+     * is byte for byte what it was.
+     */
+    .task('attached', ($) => C.placeAttachments.v1({
+    messages: $.lines.messages,
+    attachments: $.gather.history.attachments.attachments,
+    connection: slot.connectionOf('generate'),
+    params: slot.params(),
 }))
     .task('prompt', ($) => C.assemble.v2({
     candidates: $.rank.candidates,
@@ -813,7 +933,7 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
      */
     groups: $.rank.groups,
     budget: $.contextBudget.available,
-    messages: $.lines.messages,
+    messages: $.attached.messages,
     templateContext: $.context.templateContext,
     template: slot.template(),
     // The context builder's authored text, by reference — one
@@ -905,7 +1025,9 @@ withSpriteTail(spec(RESPOND_SPEC_ID, {
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,
     text: $.generate.text,
-    thinking: $.generate.thinking,
+    reasoning: $.generate.reasoning,
 })))
+    /** What Chat ships with: the reminder's trigger (`POST_HISTORY_TOKEN_TRIGGER`). */
+    .preset('default', { label: 'Default', default: true }, (p) => p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }))
     .build());
 //# sourceMappingURL=respond.js.map

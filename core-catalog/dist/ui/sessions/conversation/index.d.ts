@@ -18,4 +18,5 @@ export * from './messageVerbState.js';
 export * from './slashPalette.js';
 export * from './text.js';
 export { WIDGET_CONTEXT_KEY, type WidgetContext, type WidgetContextRef } from '../widgetContext.js';
+export * from './composerTray.js';
 //# sourceMappingURL=index.d.ts.map

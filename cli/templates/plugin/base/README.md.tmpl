@@ -13,8 +13,8 @@ npm run typecheck  # src, test and examples together
 npm run ui         # the surface harness: this package's frames, in core's own sandbox
 ```
 
-The `@serene-pub/*` dependencies are `file:` links to `../serene-pub-sdk/…`. ✎ CHANGE
-them if the SDK checkout is not a sibling of this directory.
+The `@serene-pub/*` dependencies name the SDK release this CLI shipped with. To build
+against an SDK checkout instead, point them at `file:../serene-pub-sdk/<package>`.
 
 There is no golden yet, so `npm test` fails until you record one:
 `UPDATE_GOLDENS=1 npm test` writes `examples/goldens/first-run.golden.json`. Commit it —
@@ -44,7 +44,7 @@ showcase with three lessons teaches none of them.
 | Actions | **Ask** (composer, quick) → a question addressed to `owner`; **Answer** (the `form` venue) reads what was chosen |
 {{/action}}
 {{#panel}}
-| Surfaces | one frame panel, `{{panelId}}`, viewing `main` |
+| Widgets | one panel, `{{panelId}}`, viewing `main`: a component holding one document (`sp-frame`) |
 {{/panel}}
 | Node definitions | `echo` — a Task. ✎ CHANGE |
 {{#storage}}

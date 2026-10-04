@@ -1,37 +1,35 @@
 /**
- * Shipped session layouts, per genre (PLAN 25) — part of the announcement, the
- * same as the widgets beside them.
+ * The session layouts core's genres ship (PLAN 25) — each genre declares its
+ * own in `genres.ts` (`layouts: [layout({ slug: 'default', … })]`), which is
+ * how they reach the announcement and the instance's reconciler; this file
+ * holds the **session layouts** (`SessionLayoutV1`) those declarations name.
  *
- * SP's boot seeds one default layout preset per genre, keyed
- * `layout:<genreId>:default`. For every genre but one that preset is `{}`, which
- * means "no overrides" — the app's own built-in arrangement — and the preset
- * system stays inert for anybody who never touches it. This file is where a
- * genre says otherwise.
+ * A genre with none of its own (the Guide) ships nothing, and the instance
+ * seeds it an empty **genre default layout**: the app's own floor
+ * arrangement, the conversation in the middle.
  *
  * ## Why it is data here rather than a component decision
  *
- * The blob is stored verbatim and never interpreted by the server: the layout
- * shape belongs to the client (`$lib/client/sessionLayout/schema` and
- * `widgetGrid`), and both halves read it defensively, so a key this build does
+ * A layout is stored verbatim and read defensively, so a key this build does
  * not understand degrades rather than throws. Declaring it in the catalog puts
  * the genre's layout beside the genre's pipelines and prompts — the whole of
  * what "shipping a genre" means is then one package.
  *
  * ## Widgets are named by id, and a missing one is not an error
  *
- * A widget id with no native component renders as a labelled placeholder, by
- * design: uninstalling a plugin or mistyping a key strands nothing. So naming
- * `stats` here is safe whether or not this build has a Stats panel.
+ * A widget id with no component renders as a labelled placeholder, by design:
+ * uninstalling a plugin or mistyping a key strands nothing. So naming `stats`
+ * here is safe whether or not this build has a Stats widget.
  */
-import type { LayoutPreset } from '@serene-pub/sdk';
-/** One genre's shipped layout: what the seed writes into the row. @internal */
-export interface CoreLayoutPreset {
-    genreId: string;
-    /** The preset's display name. `Default` for the empty per-genre floor. */
-    name: string;
-    /** `{ zoneLayout?, widgetGrid?, arrangedGrid? }`, stored verbatim. */
-    layout: Record<string, unknown>;
-}
+import type { SessionLayoutV1 } from '@serene-pub/sdk';
+/**
+ * Chat's (owner ruling 2026-10-03): the conversation in the middle, and the
+ * Author's note tucked in the right column — an icon in the rail, unpinned,
+ * opened when wanted — so the conversation stays the page on a narrow
+ * screen, where the note waits in **Session panels** without arriving open.
+ * @internal
+ */
+export declare const CHAT_LAYOUT: SessionLayoutV1;
 /**
  * Adventure: the world above the conversation, the party down the right, the
  * lore within reach on the left.
@@ -40,8 +38,8 @@ export interface CoreLayoutPreset {
  * time it is, what the sky is doing — because it is the one piece of state that
  * is about the scene rather than about a person, and it belongs where the scene
  * is. `messages` — the log and the field you write into, one widget — fills
- * everything under it, anchored to all four edges. It is `required`, which is
- * the conversation's anchor guarantee: it can be moved and never removed.
+ * everything under it, anchored to all four edges. Placement is free, so a
+ * person may move it to a side; a session always keeps one (the primary floor).
  *
  * **Right, docked and pinned.** Scene Portraits sourced from the SCENE rather
  * than from pinned images, with `bars: true` so each face carries its own health
@@ -57,7 +55,7 @@ export interface CoreLayoutPreset {
  * lands collapsed on the day it exists.
  * @internal
  */
-export declare const ADVENTURE_LAYOUT: Record<string, unknown>;
+export declare const ADVENTURE_LAYOUT: SessionLayoutV1;
 /**
  * Lair: the party down the left, the conversation in the middle, the dungeon
  * down the right.
@@ -91,128 +89,5 @@ export declare const ADVENTURE_LAYOUT: Record<string, unknown>;
  * the right side is a sheet, so the Sanctum is one of its views.
  * @internal
  */
-export declare const LAIR_LAYOUT: Record<string, unknown>;
-/**
- * The genres that ship a layout of their own. A genre absent from this list
- * gets the empty default, which is the app's built-in arrangement.
- */
-/**
- * Writing Room: the log dressed as a page.
- *
- * ## What it does
- *
- * Two settings and one style, and each is doing real work. `composer: "writer"`
- * opens the tall prose field — a chunk of the manuscript is eight lines of
- * typing, not one. The **Novel** pack is the message skin: flowing serif prose
- * at a reading measure, no bubbles and no portraits, which is the nearest thing
- * core ships to a page. Times and scene markers are off, because a manuscript
- * has neither.
- *
- * ## What it deliberately does NOT do, and why
- *
- * The plan asked for the manuscript as a document view in the middle with the
- * conversation as a side panel. It is expressible since S1 — a second copy,
- * `messages#manuscript` with `channel: "manuscript"`, as the Lair places its
- * Sanctum — but not yet shipped: the manuscript wants a document skin (a
- * `folio` channel reads as one block of prose), not the conversation's rows.
- * Until then the two channels share one log, and the composer's channel
- * control is what moves between them.
- *
- * ## And no word-count slot
- *
- * A count would have to be written by the turn that produced the prose, and
- * nothing in core counts words. It is two declarations — a `world` integer slot
- * and a node that counts — not a line in a layout.
- * @internal
- */
-export declare const WRITING_ROOM_LAYOUT: Record<string, unknown>;
-/**
- * Whodunit: the suspects down the left, the interview in the middle, the case
- * down the right.
- *
- * Adventure's arrangement with its two questions swapped. In an adventure the
- * player asks *what shape am I in*, so Stats sits on the right where a reader's
- * eye rests; here the bars belong to somebody else — one suspicion score per
- * suspect, a set of readings the detective WATCHES — so Stats goes left, where
- * a thing being monitored belongs, exactly as Lair puts the party there.
- *
- * The right column is the case: World State shows where this is happening, how
- * many clues have turned up and whether the case is still open, which is the
- * whole of what a detective needs on screen between questions.
- * @internal
- */
-export declare const WHODUNIT_LAYOUT: Record<string, unknown>;
-/** @internal */
-export declare const CORE_LAYOUT_PRESETS: CoreLayoutPreset[];
-/** The shipped layout for a genre, or undefined when it ships none. @internal */
-export declare const coreLayoutPreset: (genreId: string) => CoreLayoutPreset | undefined;
-/**
- * Adventure, as a layout document: the world above the conversation, the party
- * down the right, the lore within reach on the left.
- *
- * **Middle**, two row tracks. `fit` then `grow`: World State is a strip as tall
- * as its content — where you are, what time it is, what the sky is doing — and
- * Messages takes everything under it. The two extents say that in the model
- * rather than in an anchor bitmap, which is the whole difference between this
- * and the arrangement it replaces.
- *
- * **Right**, docked, two `grow` rows sharing the column evenly. Scene
- * Portraits sourced from the SCENE rather than from pinned images, with
- * `bars: true` so each face carries its own health under it. Stats below it.
- * (Inventory sat under Stats until R79 removed that widget for now.)
- *
- * **Left**, unpinned and empty. An unpinned side is an icon rail that pops over
- * the conversation when you click it: the lore is one click away and costs no
- * width until you want it. It carries no widget ids, and that absence is
- * deliberate — core ships no lore widget yet, and naming one would put a
- * labelled placeholder in every Adventure session until it does. The rail is
- * declared so the widget lands collapsed on the day it exists. A zone with no
- * units resolves `hidden`, so today it costs nothing at all.
- * @internal
- */
-export declare const ADVENTURE_LAYOUT_V2: LayoutPreset;
-/**
- * Lair, as a layout document — the same three columns as the blob above, said
- * in the model that replaces it.
- *
- * **Left**, docked: the party's bars, watched rather than owned (see
- * `LAIR_LAYOUT`). **Middle**, one `grow` row: the conversation. **Right**,
- * docked, one `grow` row: the dungeon's own state. (Inventory sat under it
- * until R79 removed that widget for now.)
- *
- * ⚠ The right column's one unit is the **room list's stand-in** — see
- * `LAIR_LAYOUT`. Map widget pending Mermaid.
- * @internal
- */
-export declare const LAIR_LAYOUT_V2: LayoutPreset;
-/**
- * The Writing Room, as a layout document — one zone and one widget, which is
- * the honest shape of it until the log can be pointed at a channel (see
- * `WRITING_ROOM_LAYOUT` for why).
- *
- * The middle is a single `grow` row: the conversation, full height. Both sides
- * are declared, unpinned and empty, so the rails land collapsed on the day a
- * lore widget or a channel-scoped log exists to put in them — a zone with no
- * units resolves `hidden`, so today they cost nothing.
- *
- * The **Novel** pack is not here: a v2 document's `look` is the layout's own
- * declared variables, and a message skin is a widget style row. The legacy
- * blob beside this one carries it, which is what the app's seeder reads today.
- * @internal
- */
-export declare const WRITING_ROOM_LAYOUT_V2: LayoutPreset;
-/**
- * Whodunit, as a layout document — the same three columns as the blob above,
- * said in the model that replaces it.
- *
- * **Left**, docked, one `grow` row: the suspicion scores, watched rather than
- * owned (see `WHODUNIT_LAYOUT`). **Middle**, one `grow` row: the interview.
- * **Right**, docked, one `grow` row: the case — where this is, how many clues
- * have turned up, and whether it is still open.
- *
- * No `widgetSettings`: nothing here deviates from a widget's declared
- * defaults, and an empty bag would say the same thing in more words.
- * @internal
- */
-export declare const WHODUNIT_LAYOUT_V2: LayoutPreset;
+export declare const LAIR_LAYOUT: SessionLayoutV1;
 //# sourceMappingURL=layouts.d.ts.map

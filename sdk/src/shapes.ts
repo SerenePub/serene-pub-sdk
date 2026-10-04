@@ -333,6 +333,15 @@ export const S = {
 	 *  as its attachments. */
 	mediaList: defineShape({ id: 'core:shape/media-refs@1' }),
 	/**
+	 * 🚧 **A transcript's attachments, by message** (PLAN-composer-attachments
+	 * §3.5): `Record<messageId, HistoryAttachmentV1[]>` (media.ts) — each
+	 * message's `core:image` / `core:file` parts, in part order. What
+	 * `core:query/history-attachments@1` publishes and
+	 * `core:task/place-attachments@1` reads, so each line's files travel with
+	 * that line's own turn rather than with the request as a whole.
+	 */
+	mediaByMessage: defineShape({ id: 'core:shape/media-by-message@1' }),
+	/**
 	 * A reply's **folded sections** (B4; D5, 2026-09-27): `FoldedSectionV1[]`
 	 * (widgets.ts) — each `{ kind, label, content }` or `{ kind, label, items }`,
 	 * shown collapsed beside the body and never read into the prompt. What the

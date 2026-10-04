@@ -1,10 +1,22 @@
 {
 	"name": "@serene-pub/ui-preview",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"private": false,
-	"description": "The surface harness (10, 20 \u00a712, 21 \u00a77): a SvelteKit dev server that renders the UI surfaces a package announces \u2014 frame panels in a real opaque-origin sandbox, components in the host document \u2014 with hot reload. Launched by `serene-pub ui`.",
+	"version": "0.6.0-pr-1",
+	"description": "The Serene Pub surface harness: a SvelteKit dev server that renders the UI surfaces a package announces — frame panels in a real opaque-origin sandbox, components in the host document — with hot reload. Launched by `serene-pub ui`.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/ui-preview#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "ui-preview"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
+	"private": false,
 	"files": [
 		"src",
 		"static",
@@ -13,7 +25,8 @@
 		"server.d.ts",
 		"svelte.config.js",
 		"vite.config.ts",
-		"README.md"
+		"README.md",
+		"NOTICE"
 	],
 	"exports": {
 		"./server": {
@@ -24,11 +37,11 @@
 	},
 	"scripts": {
 		"dev": "vite dev",
-		"build": "echo 'dev-only harness \u2014 nothing to build'",
+		"build": "echo 'dev-only harness — nothing to build'",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
-		"@serene-pub/controls": "0.6.0-preview.0",
+		"@serene-pub/controls": "^0.6.0-pr-1",
 		"@skeletonlabs/skeleton": "^5.0.0",
 		"@sveltejs/kit": "^2.22.0",
 		"@sveltejs/vite-plugin-svelte": "^5.1.0",
@@ -39,11 +52,15 @@
 		"vite": "^6.4.0"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0",
+		"@serene-pub/sdk": "0.6.0-pr-1",
 		"svelte-check": "^4.0.0",
 		"typescript": "~5.9.0"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

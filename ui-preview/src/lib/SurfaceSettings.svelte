@@ -1,12 +1,13 @@
 <script lang="ts">
 	/**
-	 * The generated controls for one declared surface.
+	 * The generated controls for one declared component.
 	 *
-	 * A surface declares its props/settings as a `SettingsSchema`; core renders
-	 * forms from schemas; therefore the surface gets an editor without shipping
-	 * one. This panel is that editor, and the values go straight down the same
-	 * pipe an instance uses — `ctx.settings` for a component, `{t:'props'}` for
-	 * a frame — so what a modder edits here is what their surface receives.
+	 * A component declares its settings as a `SettingsSchema`; core renders
+	 * forms from schemas; therefore the component gets an editor without
+	 * shipping one. This panel is that editor, and the values go straight down
+	 * the same pipe an instance uses — `ctx.settings` — so what a modder edits
+	 * here is what their component receives. (A page or session-view frame is
+	 * handed no declared values, so it never gets this panel.)
 	 *
 	 * Schema problems are reported through the SDK's own `checkSchema` rather
 	 * than a second opinion invented here. The one worth naming out loud is a

@@ -22,17 +22,17 @@
  *
  * A spec has one inlet lock and a preset binds a spec whose lock names the
  * preset's genre (24 §4), so the pipeline is declared once here and
- * published once per shipped genre — one each for chat, adventure, guide,
- * lair, writing room and whodunit. Chat and Guide reuse the same authored
- * prompt row; a plugin genre publishes its own through the same builder.
+ * published once per shipped genre — one each for chat, adventure, guide
+ * and lair. Chat and Guide reuse the same authored prompt row; a plugin
+ * genre publishes its own through the same builder, naming its own row.
  *
  * ⚠ **Every shipped genre binds one, whatever its own forms look like**
  * (ruled 2026-09-17). A genre cannot promise that no pipeline — its own, one
  * a person attaches, or a plugin's — will ever put a form to a participant
  * the AI portrays, and a form nobody can answer is a stuck session. So the
  * event is declared optional on every genre and bound on every shipped
- * preset; the three genres whose forms are all owner-addressed today bind
- * this for the day one is not.
+ * preset; a genre whose forms are all owner-addressed today (the Lair)
+ * binds this for the day one is not.
  *
  * ## What it deliberately does not do
  *
@@ -65,24 +65,37 @@ export declare const ANSWER_FORM_ADVENTURE_SPEC_ID = "core:spec/answer-form-adve
 export declare const ANSWER_FORM_GUIDE_SPEC_ID = "core:spec/answer-form-guide";
 /** @internal */
 export declare const ANSWER_FORM_LAIR_SPEC_ID = "core:spec/answer-form-lair";
-/** @internal */
-export declare const ANSWER_FORM_WRITING_ROOM_SPEC_ID = "core:spec/answer-form-writing-room";
-/** @internal */
-export declare const ANSWER_FORM_WHODUNIT_SPEC_ID = "core:spec/answer-form-whodunit";
 /** Every answer pipeline core ships, by the genre it serves. @internal */
 export declare const ANSWER_FORM_SPEC_IDS: Readonly<Record<string, string>>;
 /**
  * The assembly template. Triple-stashed like every shipped context template:
- * prose going to a model, not markup going to a browser.
+ * prose going to a model, not markup going to a browser. Each line renders its
+ * placed files after its text (`{{{attachments}}}`, 2026-10-03) — empty on a
+ * line with none, so a transcript without files renders as it always did.
  * @experimental
  */
-export declare const ANSWER_FORM_TEMPLATE = "{{#systemBlock}}\n{{#if instructions}}\n{{{instructions}}}\n{{/if}}\n\n{{#if characters}}\n{{{characters}}}\n{{/if}}\n\n{{#if personas}}\n{{{personas}}}\n{{/if}}\n\n{{#if scenario}}\n{{{scenario}}}\n{{/if}}\n{{/systemBlock}}\n\n{{#each sessionMessages as |sessionMessage msgIndex|}}\n{{#if (eq role \"assistant\")}}\n{{#assistantBlock}}\n{{{name}}}: {{{message}}}\n{{/assistantBlock}}\n{{/if}}\n{{#if (eq role \"user\")}}\n{{#userBlock}}\n{{{name}}}: {{{message}}}\n{{/userBlock}}\n{{/if}}\n{{/each}}\n\n{{#userBlock}}\n{{{formQuestion}}}\n{{#if formOptions}}\n\n{{{formOptions}}}\n{{/if}}\n{{/userBlock}}";
+export declare const ANSWER_FORM_TEMPLATE = "{{#systemBlock}}\n{{#if instructions}}\n{{{instructions}}}\n{{/if}}\n\n{{#if characters}}\n{{{characters}}}\n{{/if}}\n\n{{#if personas}}\n{{{personas}}}\n{{/if}}\n\n{{#if scenario}}\n{{{scenario}}}\n{{/if}}\n{{/systemBlock}}\n\n{{#each sessionMessages as |sessionMessage msgIndex|}}\n{{#if (eq role \"assistant\")}}\n{{#assistantBlock}}\n{{{name}}}: {{{message}}}{{{attachments}}}\n{{/assistantBlock}}\n{{/if}}\n{{#if (eq role \"user\")}}\n{{#userBlock}}\n{{{name}}}: {{{message}}}{{{attachments}}}\n{{/userBlock}}\n{{/if}}\n{{/each}}\n\n{{#userBlock}}\n{{{formQuestion}}}\n{{#if formOptions}}\n\n{{{formOptions}}}\n{{/if}}\n{{/userBlock}}";
+/**
+ * What a genre may say about its answer pipeline beyond its id and genre.
+ * @experimental
+ */
+export interface AnswerFormOptions {
+    /**
+     * The prompt row the addressee's context step starts on, by template id
+     * (`{ templateId: '<slug>:template/<name>@1' }`, a row the package ships in
+     * `templates`). Absent, the step starts on the pool's shipped default —
+     * core's `answer-form-default` row for core's genres.
+     */
+    prompt?: {
+        templateId: string;
+    };
+}
 /**
  * The pipeline, for one genre. Exported so a plugin genre can publish its own
  * answer pipeline from the same graph rather than restating it.
  * @experimental
  */
-export declare const answerFormSpec: (id: string, genre: GenreDecl) => import("@serene-pub/sdk").SpecDocument;
+export declare const answerFormSpec: (id: string, genre: GenreDecl, options?: AnswerFormOptions) => import("@serene-pub/sdk").SpecDocument;
 /** @internal */
 export declare const answerFormChatSpec: () => import("@serene-pub/sdk").SpecDocument;
 /** @internal */
@@ -99,24 +112,4 @@ export declare const answerFormGuideSpec: () => import("@serene-pub/sdk").SpecDo
  * @internal
  */
 export declare const answerFormLairSpec: () => import("@serene-pub/sdk").SpecDocument;
-/**
- * The Writing Room's, on the same terms (ruled 2026-09-17). Every form the
- * genre ships today is the author's own, but the scribe is an **envoy the AI
- * portrays** — a companion that puts a question to the author's co-writer, or
- * a plugin that puts one to the scribe, resolves to the AI and records
- * `form-addressed`. The binding is what makes that answerable instead of
- * stuck.
- * @internal
- */
-export declare const answerFormWritingRoomSpec: () => import("@serene-pub/sdk").SpecDocument;
-/**
- * Whodunit's, and the genre with the most obvious use for it: a narrator
- * putting a yes/no to a **suspect** is a form addressed to somebody the AI
- * portrays, and every suspect in this genre is. The forms it ships today are
- * the detective's — *Question*, *Accuse* — so nothing reaches this pipeline
- * yet; the binding is the promise that the day one does, it is answered
- * rather than left waiting.
- * @internal
- */
-export declare const answerFormWhodunitSpec: () => import("@serene-pub/sdk").SpecDocument;
 //# sourceMappingURL=answerForm.d.ts.map

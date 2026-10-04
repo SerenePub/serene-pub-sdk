@@ -50,12 +50,12 @@ const kindAnchor = (kind) => `kind-${kind}`;
 /** What each kind's hook is, in a line — the one prose half the grant table cannot say. */
 const KIND_ROLE = {
     task: 'A node that computes: data in, data out.',
-    query: "A node that reads its package's own storage; Serene Pub's own data is read by core's query nodes.",
-    oracle: 'The one node kind that calls out: the network, through the hosts your manifest declares.',
-    outlet: "A node at the end of a pipeline that acts on the run's result.",
-    'chain-link': 'A script link: text in, text out.',
-    event: 'A listener for a session event.',
-    lifecycle: 'Startup, enable, disable, update, uninstall, shutdown.',
+    query: "A node that reads. Yours reads your plugin's own storage; Serene Pub's data reaches it on its input ports, from core's queries.",
+    oracle: 'The one node kind that calls out: the network, through the hosts your plugin declares. Never a model: model calls are core\'s nodes.',
+    outlet: "A node that writes. Yours declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets write to the session.",
+    'chain-link': 'A link in a script chain: text in, text out.',
+    event: 'An event listener: runs when a session event happens.',
+    lifecycle: 'A lifecycle callback: runs at startup, enable, disable, update, uninstall or shutdown.',
 };
 /** Every anchor a refusal may point at — each a heading the guide renders. @experimental */
 export const PLUGIN_RULE_ANCHORS = [
@@ -68,9 +68,11 @@ export function renderPluginPermissionsGuide() {
     const lines = [
         '# What a plugin may do',
         '',
-        'Each kind of hook is handed a `ctx` with exactly these members and nothing else: the table is read ' +
-            "from the one the sandboxes enforce. `random`, `now`, `log` and `signal` are every kind's. A " +
-            'refusal that stems from a row below names the row.',
+        "Your plugin's code runs in a sandbox, and what it may do depends on what kind of handler it is. " +
+            'Each kind is handed a `ctx` with exactly these members and nothing else: `random`, `now`, `log` ' +
+            "and `signal` are every kind's, and storage and network are granted by kind. This page is generated " +
+            'from the table the sandboxes enforce, and a refusal names the section below that explains it. ' +
+            'For what each part of a plugin is for, see [What a plugin can do](extending.md).',
         '',
         '<!-- Generated from the SDK (`renderPluginPermissionsGuide`, sdk/src/pluginPermissions.ts). Do not edit by hand. -->',
         '',
@@ -83,13 +85,13 @@ export function renderPluginPermissionsGuide() {
         const keys = hookCtxKeysFor(k);
         lines.push(
         // GitHub's slug of "Kind: oracle" is `kind-oracle`, the anchor.
-        `## Kind: ${k}`, '', KIND_ROLE[k], '', `- Handed: ${code(keys).join(', ')}.`, `- ${keys.includes('storage') ? "Storage: its own package's rows and files, when its manifest declares the storage permission." : 'No storage.'}`, `- ${keys.includes('fetch') ? 'Network: only the hosts its manifest declares and an admin left allowed.' : 'No network.'}`, '');
+        `## Kind: ${k}`, '', KIND_ROLE[k], '', `- Handed: ${code(keys).join(', ')}.`, `- ${keys.includes('storage') ? "Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`)." : 'No storage.'}`, `- ${keys.includes('fetch') ? 'Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.' : 'No network.'}`, '');
     }
     lines.push('## Rules for every kind', '');
     // Each heading is its anchor in words — "Private nodes" slugs to
     // `private-nodes` — with the rule itself as the first line.
     for (const [anchor, rule] of Object.entries(PLUGIN_RULES))
-        lines.push(`### ${anchor[0].toUpperCase()}${anchor.slice(1).replace(/-/g, ' ')}`, '', `**${rule.title}.** ${rule.text} (${rule.ruling})`, '');
+        lines.push(`### ${anchor[0].toUpperCase()}${anchor.slice(1).replace(/-/g, ' ')}`, '', `**${rule.title}.** ${rule.text}`, '');
     return lines.join('\n');
 }
 //# sourceMappingURL=pluginPermissions.js.map

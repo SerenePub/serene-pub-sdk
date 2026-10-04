@@ -31,9 +31,12 @@ import {
 	canonicalHash,
 	channelDecls,
 	checkFoldedSections,
+	drawnWidgetIds,
+	widgetOfInstance,
 	envoyFindings,
 	evaluateEnabledWhen,
 	genre,
+	getDefinition,
 	ok,
 	resolveTurnControls,
 	run,
@@ -56,7 +59,7 @@ import {
 	LAIR_ROOM_ANSWER_SPEC_ID,
 } from '../core-catalog/src/lairActions.js'
 import { itemValuesOf } from '../core-catalog/src/ui/sessions/conversation/itemValues.js'
-import { coreLayoutPreset } from '../core-catalog/src/ui/sessions/layouts.js'
+import { LAIR_LAYOUT } from '../core-catalog/src/ui/sessions/layouts.js'
 import { bindings, world } from './helpers.js'
 
 /* ── the declaration ────────────────────────────────────────────────────── */
@@ -101,7 +104,7 @@ describe('the Lair genre declares the reverse crawler', () => {
 	test('cast only: no turnStyle field, and Pick has no present-when', () => {
 		assert.equal((lairGenre.shape?.fields as any)?.turnStyle, undefined)
 		// R13 (2026-09-28): `sanctumSteers`, on by default.
-		assert.deepEqual(Object.keys(lairGenre.shape?.fields ?? {}).sort(), ['sanctumSteers', 'tone', 'trustNarrator'])
+		assert.deepEqual(Object.keys(lairGenre.shape?.fields ?? {}).sort(), ['partySpeech', 'sanctumSteers', 'tone', 'trustNarrator'])
 		assert.deepEqual(lairGenre.shape?.turnControls, { advance: true, pick: true, narrate: true, retake: true })
 	})
 
@@ -199,7 +202,16 @@ const PUBLISHED: Record<string, string> = {
 	// its `{{scratchpad}}`. Proven: a copy of sdk, contracts and core-catalog
 	// sources with only R13's edits reverted hashes back to every old pin and
 	// the golden. (was '1bc219796d240b')
-	'core:spec/lair-create': 'cd14c9acfe99c',
+	// Moved 2026-09-30 (party speech, owner ruling): the genre's shape
+	// declares `fields.partySpeech` (_How the party speak_). Proven: a copy of
+	// sdk, contracts and core-catalog sources with only this lane's edits
+	// reverted hashes back to this old pin and lair-respond's. (was 'cd14c9acfe99c')
+	// Moved 2026-09-30 (Lair character turns, owner ruling: "they are
+	// character turns, not first delver, later delver"): the embedded shape's
+	// `partySpeech` description says each delver takes a turn of their own.
+	// Proven: a copy of core-catalog/src with only this lane's edits reverted
+	// (lair.ts, turnOrder.ts, genres.ts) hashes back to every old Lair pin. (was '17398a61457451')
+	'core:spec/lair-create': 'b41ea5ad6054d',
 	// Moved 2026-09-17 (W1): the voices `each` gained a per-speaker
 	// character-lore lane, its own pool and its own rank, so a delver reads
 	// their own private lore instead of the whole party's.
@@ -291,7 +303,74 @@ const PUBLISHED: Record<string, string> = {
 	// never read as a room's description. Proven: a copy of
 	// sdk+contracts+core-catalog with only R10's edits reverted hashes back to
 	// this old pin, lair-whisper's and the golden. (was 'a4efff601d22a')
-	'core:spec/lair-respond': '91b5f45f61cf3',
+	// Moved 2026-09-29 (places plan B6): the rooms read's preset asks
+	// `withLinks: true`, so each room carries its ways out for
+	// `{{locationEntry}}`'s "From here:" block. Proven: a copy of
+	// core-catalog/src with only B6's lair.ts, lairActions.ts and prompts.ts
+	// edits reverted hashes back to this old pin and to lair-room-answer's.
+	// (was '91b5f45f61cf3')
+	// Moved 2026-09-30 (plan A27 P5, the "fall back" default): the knock reads the
+	// planner's `worldHints.location` (`door.knock.vantage`, `parse-json@1`,
+	// its preset path) onto `make-choices@1`'s new `vantage` port. Proven: a
+	// copy of core-catalog/src with only P5's lair.ts and lairActions.ts
+	// edits reverted hashes back to this old pin, to lair-room-answer's and
+	// to the golden. (was '17adaaa371d25')
+	// Moved 2026-09-30 (config grouping, catalog lane): the model calls carry
+	// `expose.label` and `expose.purpose` (the settings group's heading and
+	// the sentence under it), and steps whose headings repeated within one
+	// group carry an `expose.label`. Proven: a copy of core-catalog/src with
+	// only this lane's edits reverted hashes back to this old pin and to the
+	// golden. (was '1280f739cee9f1')
+	// Moved 2026-09-30 (party speech, owner ruling: no lead delver): the
+	// story picks who speaks first (`pick` ends in `split-first@1` on both
+	// branches), the knock-or-play `door` follows it, and the play's
+	// `speech` junction runs each delver as one Voices call (`each.first`
+	// streamed, `each.voices` on its prompt, model and sampling) or the
+	// Castellan for the party (`castellan.party`, the scene surface's new
+	// `partySpeakers` port, its own prompt row named by the preset); the
+	// picked branch's own voice steps are gone. Proven: a copy of sdk,
+	// contracts and core-catalog sources with only this lane's edits
+	// reverted hashes back to this old pin and lair-create's. (was '18c218a4d5c165')
+	// Moved 2026-09-30 (Lair character turns, owner ruling: "they are
+	// character turns, not first delver, later delver"): a planned turn voices
+	// nobody — the plan row hands its turns on (`turns` junction,
+	// `create-message@1`'s `turnPlan`); each delver's line is one character
+	// turn (`speech.each.character.turn`, keyed on `input.characterId`: the
+	// standing plan off `core:query/turn-plan@1`, their own lore, their own
+	// streamed row, and their own books — `resolve-state-changes@1`'s `keeps`
+	// naming them, on the State-keeper's settings); the Castellan's keeper
+	// keeps the world's (`keeps: 'world'`); the Castellan speaking for the
+	// party reads the party's reach (`build-scene-context@1`'s `placeSight`).
+	// Proven: a copy of core-catalog/src with only this lane's edits reverted
+	// (lair.ts, turnOrder.ts, genres.ts) hashes back to every old Lair pin. (was '15357b92b9b0b')
+	// Moved 2026-10-01 (owner ruling: the post-history reminder's trigger ships
+	// at 0.5.3's 3000 in the genre): the default preset sets
+	// `postHistoryTokenTrigger` on every assemble step. Proven: the built
+	// core-catalog with only these preset values stripped hashes back to the
+	// old pin. (was '10ec4773396315')
+	// Moved 2026-10-02 (owner ruling: whoever writes a delver's line keeps
+	// that delver's stats): the party call's `speakers` step, and the
+	// Castellan keeper's `keeps` naming the world and the delvers it voiced.
+	// Proven: a copy of core-catalog/src with only these two edits to lair.ts
+	// reverted hashes back to the old pin. (was '1e50c2c3a93641')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): the vector and entity arms (R3) on the spine and per delver turn (the
+	// delver as `speaker`), a `presences` read and an `eligible` step before
+	// every ranker (C2), the room rule's `place` step and `shownElsewhere`
+	// on every ranker, statuses on the two embeds, and the party call's arms
+	// searching as the Castellan.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '49be755914342')
+	// Moved 2026-10-02 (composer attachments phase 4, PLAN §3.5): a
+	// `history-attachments` read on the gathered history and on the Sanctum
+	// talk, and a `place-attachments` step before each voice's prompt
+	// (Sanctum, narrate, character turn, party) on that voice's own pair.
+	// Measured with other lanes' in-flight edits in the tree. (was '1934de4b58c1bb')
+	// Moved 2026-10-03 (owner note 39): the port `thinking` -> `reasoning` on
+	// generate-text / update-message, so `save` wires `reasoning`. Measured
+	// with other lanes' in-flight core-catalog edits in the tree. (was '1c71b226eaa76a')
+	// Moved 2026-10-03 (history window): every history read in the Lair wires
+	// `budget: $.contextBudget.available`. (was 'a3874a2f8cc28')
+	'core:spec/lair-respond': '13506ae2e7456',
 	// Moved twice on 2026-09-17. First (L3, contracts batch 2): `params:
 	// slot.params()` on the `create-lore-entry` node, which now declares an
 	// `entryType` parameters slot — a slot the spec never NAMES is not a config
@@ -311,7 +390,18 @@ const PUBLISHED: Record<string, string> = {
 	// description says _Name it_ (was _Type its name_). Proven: the built document
 	// with `collects` deleted, `composerText` restored and the old description
 	// hashes back to the old pin. (was '147519b9d27469')
-	'core:spec/lair-build-room': '160737b487903c',
+	// Moved 2026-09-30 (plan A28): the draft is shown the dungeon's rooms —
+	// `gather.rooms` (a location listing, its preset) into `context`'s
+	// `locationEntries` — and the room's name, `input.text` on `turnDirection`.
+	// Proven: a copy of core-catalog/src with only this lane's edits reverted hashes back to the old pin. (was '160737b487903c')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): a `presences` read and an `eligible` step before `rank` (C2), and the
+	// room rule's `place` step (+ preset `path`) wired as `shownElsewhere`.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '1756e1be2ceb54')
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. (was '1f69f3eeb34e18')
+	'core:spec/lair-build-room': '12bcd383afd725',
 	// New 2026-09-28 (lair re-plan R11): File as a room — a message-venue
 	// `world` action that reads its row by id (`session-history@1`
 	// `messageId`), checks the name against the book, and drafts a location
@@ -319,7 +409,30 @@ const PUBLISHED: Record<string, string> = {
 	// Proven: a copy of sdk+contracts+core-catalog with only R11's edits
 	// reverted has no such spec and hashes the golden back to
 	// 'f2b52529af0442f1'; every other Lair pin is unmoved.
-	'core:spec/lair-file-room': '2e1e00db48eec',
+	// Moved 2026-09-30 (plan A28): `gather.lore` reads as the Castellan
+	// (`speaker: 'envoy:castellan'`), never with no speaker. Proven: a copy of core-catalog/src with only this lane's edits reverted hashes back to the old pin.
+	// (was '2e1e00db48eec')
+	// Moved 2026-09-30 (plan A28 review): the draft reads the book's public
+	// half — `gather.worldLore` and `gather.historyEntries` in place of
+	// `gather.lore` (lorebook-triggers as the Castellan) — so no character
+	// lore, a played persona's included, reaches a room. Proven: a copy of
+	// core-catalog/src with only this fix-up's edits (lairActions.ts,
+	// whodunitActions.ts) reverted hashes back to the old pin.
+	// (was 'f93786f4c28b1')
+	// Moved 2026-09-30 (config grouping, catalog lane): the model calls carry
+	// `expose.label` and `expose.purpose` (the settings group's heading and
+	// the sentence under it), and steps whose headings repeated within one
+	// group carry an `expose.label`. Proven: a copy of core-catalog/src with
+	// only this lane's edits reverted hashes back to this old pin and to the
+	// golden. (was '1f779b5c86196a')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): a `presences` read and an `eligible` step before `rank` (C2), and the
+	// room rule's `place` step (+ preset `path`) wired as `shownElsewhere`.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '626f077468ed5')
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. (was 'e7dab423b1f49')
+	'core:spec/lair-file-room': '15e4a1a9fb7c47',
 	// Moved twice on 2026-09-17. First (L1): the knock's options write the
 	// room — the one write-class outlet is `create-lore-entry` (was
 	// `create-message`), the build branch drafts the room's layout, and a preset
@@ -342,7 +455,37 @@ const PUBLISHED: Record<string, string> = {
 	// the typed text, review off) · `room.drafted.*` (the Castellan's draft,
 	// review on); the preset names both saves. Proven with the lair-respond
 	// pin above. (was '18a1fa33f65921')
-	'core:spec/lair-room-answer': '15f936dc559f84',
+	// Moved 2026-09-29 (places plan B6): Answer the door links the new room
+	// to the room the party stand in — `gather.rooms` (a location listing),
+	// `here` (`undescribed-name@1` over `gather.state.read.state` at `path:
+	// 'world.location'`), and the `link` junction on `here.entryId` whose
+	// `resolved` branch is `link-lore-entries@1` from `room.entryId`, `leads
+	// to` both ways; their preset values. Proven with the lair-respond pin
+	// above. (was '15f936dc559f84')
+	// Moved 2026-09-30 (plan A27 P5): `here` takes `fallbackName` from
+	// `answer.vantage`. Proven with the lair-respond pin above.
+	// (was 'ea7e0ac0ac269')
+	// Moved 2026-09-30 (plan A28): `gather.lore` reads as the Castellan, and
+	// the drafted branch's `context` takes `gather.rooms.read.entries` as
+	// `locationEntries`. Proven: a copy of core-catalog/src with only this lane's edits reverted hashes back to the old pin. (was 'acb2d1c54207b')
+	// Moved 2026-09-30 (plan A28 review): the draft reads `gather.worldLore`
+	// and `gather.historyEntries` in place of `gather.lore`, so no character
+	// lore reaches a room. Proven with the lair-file-room pin above.
+	// (was '16343d5b03a3ac')
+	// Moved 2026-09-30 (config grouping, catalog lane): the model calls carry
+	// `expose.label` and `expose.purpose` (the settings group's heading and
+	// the sentence under it), and steps whose headings repeated within one
+	// group carry an `expose.label`. Proven: a copy of core-catalog/src with
+	// only this lane's edits reverted hashes back to this old pin and to the
+	// golden. (was '7ff1efdd3c37a')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): a `presences` read and an `eligible` step before `rank` (C2), and the
+	// room rule's `place` step (+ preset `path`) wired as `shownElsewhere`.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '1688d15ea113ef')
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. (was 'b3f5009baca91')
+	'core:spec/lair-room-answer': 'aeba7feeb1b33',
 	// Moved 2026-09-27 (lair pass B3/B18): the streaming stage and the stage
 	// statuses are declared on `expose` (`stream`, `status`). Proven: with those
 	// two keys stripped, the document hashes back to the old pin. (was '1c2a2e148f7f4e')
@@ -386,7 +529,20 @@ const PUBLISHED: Record<string, string> = {
 	// Moved 2026-09-28 (lair re-plan R8): the row is the Castellan's
 	// (`placeholder.speaker: 'envoy:castellan'`) and the description says the
 	// Castellan tells what it cost. Proven: a copy of sdk, contracts and core-catalog sources with only R8's edits reverted (lair.ts's respond spec restored, lairActions.ts, actions.ts, the contract ports and `split-first@1`, prompts.ts) hashes back to every old pin and the golden. (was '7908780de567e')
-	'core:spec/lair-trap': '5d480cd988aac',
+	// Moved 2026-10-01 (post-history trigger, owner ruling): a default preset ships
+	// `postHistoryTokenTrigger: 3000` on `prompt`. Proven: a copy of core-catalog/src with
+	// only this change reverted hashes back to the old pin. (was '5d480cd988aac')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): a `presences` read and an `eligible` step before `rank` (C2), in the
+	// Castellan's action builder.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '435ec04f9e98')
+	// Moved 2026-10-03 (owner note 39): the port `thinking` -> `reasoning` on
+	// generate-text / update-message, so `save` wires `reasoning`. Measured
+	// with other lanes' in-flight core-catalog edits in the tree. (was 'b0bed56a5f13d')
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. This copy was already stale before the edit (the app's pin read 2cd46fc610e39 — an earlier lane recorded it there only). (was '132d6d7d30e21c')
+	'core:spec/lair-trap': '15e6228b78c851',
 	// Moved 2026-09-27 (lair pass B3/B18): the streaming stage and the stage
 	// statuses are declared on `expose` (`stream`, `status`). Proven: with those
 	// two keys stripped, the document hashes back to the old pin. (was '194ea02b271eb3')
@@ -398,17 +554,37 @@ const PUBLISHED: Record<string, string> = {
 	// room_. Proven the same way. (was '1c5849cac7c2d2')
 	// Moved 2026-09-28 (lair re-plan R8): the row is the Castellan's
 	// (`placeholder.speaker: 'envoy:castellan'`). Proven: a copy of sdk, contracts and core-catalog sources with only R8's edits reverted (lair.ts's respond spec restored, lairActions.ts, actions.ts, the contract ports and `split-first@1`, prompts.ts) hashes back to every old pin and the golden. (was '14a4a433b3e291')
-	'core:spec/lair-reveal': '87fe755438456',
+	// Moved 2026-10-01 (post-history trigger, owner ruling): a default preset ships
+	// `postHistoryTokenTrigger: 3000` on `prompt`. Proven: a copy of core-catalog/src with
+	// only this change reverted hashes back to the old pin. (was '87fe755438456')
+	// Moved 2026-10-02 (lorebooks Wave 8 — C2/C3, the room rule): a `presences` read and an `eligible` step before `rank` (C2), in the
+	// Castellan's action builder.
+	// Measured with other lanes' in-flight core-catalog edits in the tree,
+	// not proven in isolation. (was '53192d1eaa51e')
+	// Moved 2026-10-03 (owner note 39): the port `thinking` -> `reasoning` on
+	// generate-text / update-message, so `save` wires `reasoning`. Measured
+	// with other lanes' in-flight core-catalog edits in the tree. (was '1e20019e4ba718')
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. This copy was already stale before the edit (the app's pin read 177a82bd12699e — an earlier lane recorded it there only). (was '1a79a7dcd1eb46')
+	'core:spec/lair-reveal': '130237fa29fa50',
 	// Moved 2026-09-27 (lair pass B3/B18): the streaming stage and the stage
 	// statuses are declared on `expose` (`stream`, `status`). Proven: with those
 	// two keys stripped, the document hashes back to the old pin. (was '15c9296cf3ab70')
-	'core:spec/answer-form-lair': '1c32eb6a456349',
+	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
+	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
+	// a transcript with no files renders byte for byte as before. Plus `{{{attachments}}}` in ANSWER_FORM_TEMPLATE's message loop. (was '1c32eb6a456349')
+	'core:spec/answer-form-lair': 'd5cd2911aa349',
 	// Its own turn order since the modder pass (R27, 2026-09-23).
 	// Moved 2026-09-27 (lair pass B9): it recomputes on message-deleted and
 	// message-hidden too (was '6bc2842fd6676').
 	// Moved 2026-09-28 (lair re-plan R6): the genre (channels, envoys) and the
 	// history preset `channel: '*'`. Proven with the pins above. (was '1a9cbfafa790bf')
-	'core:spec/lair-turn-order': '1bee84716ce1fa',
+	// Moved 2026-09-30 (Lair character turns): the pool admits the active
+	// delvers (`characters: 'active'`), so the turns a standing plan prepares
+	// are kept at the write. Proven: a copy of core-catalog/src with only this lane's edits reverted
+	// (lair.ts, turnOrder.ts, genres.ts) hashes back to every old Lair pin. (was '1bee84716ce1fa')
+	'core:spec/lair-turn-order': 'c0edd4e6d3d23',
 }
 
 describe('the Lair pipelines', () => {
@@ -440,15 +616,17 @@ describe('the Lair pipelines', () => {
 	/**
 	 * R8 (owner F2/F4, 2026-09-28): one live row per EXECUTION PATH (F7 as
 	 * amended). Each branch opens the row it fills — the Castellan's
-	 * narration, its Sanctum talk, the picked delver, the knock, the lead
-	 * delver after the beats row — and the branches are mutually exclusive.
-	 * The beats row and the rest of the party are COMPLETE rows: never
-	 * generating, never a claimed row.
+	 * narration, its Sanctum talk, the knock, and, after the beats row, the
+	 * party in the session's party speech (owner ruling 2026-09-30): the
+	 * Castellan's lines for the party (the picked delver's row on a pick), or
+	 * a character turn's line — and the branches are mutually exclusive. The
+	 * beats row is a COMPLETE row: never generating, never a claimed row.
 	 */
-	test('one live row per execution path; the beats row and the rest of the party are complete rows', () => {
+	test('one live row per execution path; the beats row is a complete row', () => {
 		const doc = respondDoc()
 		const writes = doc.nodes.filter((n) => n.kind === 'outlet')
-		const STORY = 'via.turn.channel.story.pick'
+		const DOOR = 'via.turn.channel.story.door'
+		const SPEECH = `${DOOR}.play.speech`
 		assert.deepEqual(writes.map((n) => n.key), [
 			'via.narrate.placeholder',
 			'via.narrate.save',
@@ -456,30 +634,28 @@ describe('the Lair pipelines', () => {
 			'via.turn.channel.sanctum.save',
 			// R13: the scratchpad rewrite — an annex write, never a row.
 			'via.turn.channel.sanctum.padKeep.kept.write',
-			`${STORY}.picked.placeholder`,
-			`${STORY}.picked.save`,
-			`${STORY}.planned.door.knock.placeholder`,
-			`${STORY}.planned.door.knock.save`,
-			`${STORY}.planned.door.play.plan.posted.write`,
-			`${STORY}.planned.door.play.lead.speaks.placeholder`,
-			`${STORY}.planned.door.play.lead.speaks.save`,
-			`${STORY}.planned.door.play.voices.item.line`,
+			`${DOOR}.knock.placeholder`,
+			`${DOOR}.knock.save`,
+			`${DOOR}.play.plan.posted.write`,
+			`${SPEECH}.castellan.party.speaks.row.picked.placeholder`,
+			`${SPEECH}.castellan.party.speaks.row.turn.placeholder`,
+			`${SPEECH}.castellan.party.speaks.save`,
+			`${SPEECH}.each.character.turn.placeholder`,
+			`${SPEECH}.each.character.turn.save`,
 		])
 		const fed = (key: string, port: string) =>
 			doc.edges.some((e) => e.to === key && e.toPort.split('.')[0] === port) ||
 			(doc.nodes.find((n) => n.key === key)?.config as any)?.[port] != null
-		for (const complete of [
-			`${STORY}.planned.door.play.plan.posted.write`,
-			`${STORY}.planned.door.play.voices.item.line`,
-		])
-			for (const port of ['generating', 'row']) assert.ok(!fed(complete, port), `${complete}.${port}`)
-		assert.ok(fed(`${STORY}.planned.door.play.voices.item.line`, 'speaker'))
+		for (const port of ['generating', 'row'])
+			assert.ok(!fed(`${DOOR}.play.plan.posted.write`, port), `plan row ${port}`)
 		// The beats row is the Castellan's, on the Sanctum.
-		const beats = doc.nodes.find((n) => n.key === `${STORY}.planned.door.play.plan.posted.write`)!
+		const beats = doc.nodes.find((n) => n.key === `${DOOR}.play.plan.posted.write`)!
 		assert.equal((beats.config as any).channel, 'sanctum')
 		assert.equal((beats.config as any).speaker, 'envoy:castellan')
 		// No narrator scene step, and no Plan fold (R8 retired both).
 		assert.ok(!doc.nodes.some((n) => /scene|planSection|turnText/.test(n.key)))
+		// And no lead (owner ruling 2026-09-30): no step is named for one.
+		assert.ok(!doc.nodes.some((n) => /\blead\b|picked\.say/.test(n.key)))
 	})
 
 	/**
@@ -518,22 +694,19 @@ describe('the Lair pipelines', () => {
 		assert.deepEqual((preset.defaults as any)?.genreFields, { tone: 'grounded', trustNarrator: false })
 	})
 
-	test('the genre ships a layout, and it names only widgets core has', () => {
+	test('the genre ships its layout, and it names only widgets core has', () => {
 		// Core's own list, never a copy: a copy kept `inventory` after R79 removed it.
 		const known = new Set(CORE_WIDGETS.map((w) => w.id))
-		const legacy = coreLayoutPreset(LAIR_GENRE_ID)
-		assert.ok(legacy, 'no shipped layout')
-		const v2 = lairGenre.layouts![0]!
-		const zones = (v2.preset.layout as any).zones as Record<string, any>
-		const placed = Object.values(zones).flatMap((z: any) =>
-			(z.units ?? []).map((u: any) => u.widget),
-		)
+		const [shipped] = lairGenre.layouts!
+		// The genre's default IS the shipped session layout: one format.
+		assert.equal(shipped!.slug, 'default')
+		assert.equal(shipped!.preset, LAIR_LAYOUT)
+		const placed = drawnWidgetIds(shipped!.preset)
 		// The room list is `world-state` until a map widget exists — see the
 		// note in layouts.ts. Naming one core does not ship would put a
 		// labelled placeholder in every Lair session.
-		for (const id of placed) assert.ok(known.has(id), id)
-		assert.ok(placed.includes('messages'))
-		assert.ok(placed.includes('world-state'))
+		for (const id of placed) assert.ok(known.has(widgetOfInstance(id)), id)
+		assert.deepEqual(placed, ['messages', 'stats', 'world-state', 'messages#sanctum'])
 	})
 })
 
@@ -633,9 +806,18 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 		 * is the app binding's and is tested there (`undescribedName.test.ts`).
 		 */
 		'core:task/undescribed-name@1': async (i: any) => {
-			const name = typeof i?.name === 'string' ? i.name.trim() : ''
-			const hit = [...(i?.locationEntries ?? []), ...(i?.entries ?? [])].find((e: any) =>
-				sameName(e?.name, name),
+			// B6: the name at `path` inside `name`; a lore reference is its entry.
+			// A27: naming nothing there, `fallbackName` is read in its place.
+			const held = at(i?.name, i?.params?.path)
+			const names = (v: unknown) =>
+				(!!v && typeof v === 'object' && typeof (v as any).entryId === 'number') ||
+				(typeof v === 'string' && v.trim() !== '')
+			const raw = names(held) ? held : i?.fallbackName
+			const listed = [...(i?.locationEntries ?? []), ...(i?.entries ?? [])]
+			const ref = raw && typeof raw === 'object' ? (raw as any).entryId : undefined
+			const name = typeof raw === 'string' ? raw.trim() : ''
+			const hit = listed.find((e: any) =>
+				ref !== undefined ? e?.id === ref : sameName(e?.name, name),
 			)
 			const undescribed = name && !hit ? name : ''
 			return ok({
@@ -648,6 +830,21 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 		},
 		'core:task/concat-candidates@1': async (i: any) =>
 			ok({ main: i.sources ?? [], candidates: i.sources ?? [] }),
+		/**
+		 * The two arms (R3, 2026-10-02) and the gates before every ranker
+		 * (C2): stand-ins that find nothing and pass every candidate through,
+		 * so what these tests read off a receipt is the genre's own wiring.
+		 * Who each arm searched for is on its `speaker` input; the real
+		 * scoping is the host's and is tested there.
+		 */
+		'core:task/query-windows@1': async () => ok({ main: [], current: [], recent: [] }),
+		'core:query/entity-search@1': async () => ok({ main: [], hits: [], messages: [] }),
+		'core:query/mention-spans@1': async () => ok({ main: [], mentions: [], texts: [] }),
+		'core:query/entity-link@1': async (i: any) =>
+			ok({ main: [], candidates: i?.candidates ?? [], links: [] }),
+		'core:query/cast-presences@1': async () => ok({ main: [], at: null }),
+		'core:task/eligibility@1': async (i: any) =>
+			ok({ main: i?.candidates ?? [], candidates: i?.candidates ?? [], diagnostics: {} }),
 		'core:task/build-planner-context@1': async () =>
 			ok({ main: {}, templateContext: { who: 'planner' }, seedName: '' }),
 		'core:task/build-scene-context@1': async () =>
@@ -736,7 +933,7 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 			const text = items.map((line) => `- ${line}`).join('\n')
 			return ok({ main: sections, sections, text })
 		},
-		// R8: the lead and the rest — the contract's rules, as the host's.
+		// R8: the first and the rest — the contract's rules, as the host's.
 		'core:task/split-first@1': async (i: any) => {
 			const items = Array.isArray(i?.items) ? i.items : i?.items == null ? [] : [i.items]
 			const [first, ...rest] = items
@@ -749,6 +946,9 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 					kind: 'choices',
 					question: i?.json?.question ?? '',
 					...(i?.referent ? { referent: i.referent } : {}),
+					...(typeof i?.vantage === 'string' && i.vantage.trim()
+						? { vantage: i.vantage.trim() }
+						: {}),
 					// The port wins over the document's addressee, by contract.
 					addressee: i?.addressee ?? i?.json?.addressee ?? null,
 					actions: options.map((o) => ({
@@ -815,6 +1015,12 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 			})
 		},
 		'core:outlet/set-session-annex@1': async (i: any) => ok({ main: { ok: true }, annex: i?.value }),
+		/**
+		 * The standing plan a character turn reads back (owner ruling
+		 * 2026-09-30): the plan this turn's stand-in planner answers, as the
+		 * plan row would have stored it. Which row stands is the host's.
+		 */
+		'core:query/turn-plan@1': async () => ok({ main: { plan }, plan }),
 		...over,
 	})
 
@@ -880,14 +1086,22 @@ const SUPPLY = [
 ]
 
 const S = 'via.turn.channel.story.pick'
-const PLAY = `${S}.planned.door.play`
+const DOOR = 'via.turn.channel.story.door'
+const PLAY = `${DOOR}.play`
+/** Each delver speaks: a character turn, on a run whose subject is a delver. */
+const CT = `${PLAY}.speech.each.character.turn`
+/** The Castellan speaks for the party. */
+const PARTY = `${PLAY}.speech.castellan.party.speaks`
 const node = (receipt: any, key: string) => receipt.nodes.find((n: any) => n.nodeKey === key)
+/** Whose books the Castellan's keeper keeps, read flat with its absent items dropped. */
+const kept = (receipt: any) =>
+	[node(receipt, 'keep.played.keeperResolve').input.keeps].flat(Infinity).filter((k: unknown) => k != null)
 const nodes = (receipt: any, key: string) => receipt.nodes.filter((n: any) => n.nodeKey === key)
 const saying = (said: string[]) => ({
 	'core:oracle/generate-text@1': async (i: any) => {
 		const who = i?.context?.who ?? '?'
 		said.push(who)
-		return ok({ main: `<${who}>`, text: `<${who}>`, thinking: `${who} weighs it` })
+		return ok({ main: `<${who}>`, text: `<${who}>`, reasoning: `${who} weighs it` })
 	},
 })
 
@@ -901,55 +1115,37 @@ describe('a Lair turn', () => {
 	})
 
 	/**
-	 * R8 (owner F2/F4, 2026-09-28): a turn is the Castellan's run — the
-	 * planner, the beats row in the Sanctum, the lead delver (streamed), the
-	 * rest of the party, the keeper. Nothing narrates.
+	 * R8, and the owner's ruling of 2026-09-30 ("they are character turns"):
+	 * while each delver speaks, a planned turn is the Castellan's run — the
+	 * planner, the beats row in the Sanctum, the keeper — and NOBODY speaks in
+	 * it. The beats row is the plan row: it carries the turns it hands on, in
+	 * the plan's order, and each named delver then takes a character turn of
+	 * their own. The Castellan's keeper keeps the world's books alone.
 	 */
-	test('a turn: the beats row in the Sanctum, then the lead, then the rest — and no narrator', async () => {
+	test('a planned turn while each delver speaks: the plan row hands on the turns, nobody speaks, and the keeper keeps the world', async () => {
 		const said: string[] = []
 		const receipt = await takeTurn(PLAN, saying(said))
 		assert.equal(receipt.outcome, 'ok')
-		// One call per named speaker — and nobody else.
-		assert.deepEqual(said, ['Verity', 'Brask'])
-		// The beats row: the Castellan's, on the Sanctum, the list as its body.
+		// No voice in the Castellan's run: every line is a character turn.
+		assert.deepEqual(said, [])
+		assert.ok(!ran(receipt, `${CT}.say`))
+		// The beats row: the Castellan's, on the Sanctum, the list as its body —
+		// and the plan it hands on, with the speakers in the plan's order.
 		const beats = node(receipt, `${PLAY}.plan.posted.write`)
 		assert.equal(beats.result, 'ok')
 		assert.deepEqual(
 			[beats.input.channel, beats.input.speaker, beats.input.text],
 			['sanctum', 'envoy:castellan', '- The well shaft opens into the dark.'],
 		)
-		// The lead: their own row, opened after the beats, streamed, finished.
-		const placeholder = node(receipt, `${PLAY}.lead.speaks.placeholder`)
-		assert.deepEqual(
-			[placeholder.input.generating, placeholder.input.channel, placeholder.input.speaker],
-			[true, 'main', 'character:11'],
-		)
-		const leadSave = node(receipt, `${PLAY}.lead.speaks.save`)
-		assert.equal(leadSave.input.text, '<Verity>')
-		assert.equal(leadSave.input.thinking, 'Verity weighs it')
-		// The rest: complete rows, each the delver's — the lead is not among them.
-		const lines = nodes(receipt, `${PLAY}.voices.item.line`)
-		assert.deepEqual(
-			lines.map((n: any) => [n.input.text, n.input.speaker]),
-			[['<Brask>', 'character:12']],
-		)
-		const order = receipt.nodes.map((n: any) => n.nodeKey)
-		const at = (k: string) => order.indexOf(k)
-		assert.ok(at(`${PLAY}.plan.posted.write`) < at(`${PLAY}.lead.speaks.placeholder`))
-		assert.ok(at(`${PLAY}.lead.speaks.save`) < at(`${PLAY}.voices.item.line`))
-		// No live row before the lead's: nothing else opened one.
-		for (const n of receipt.nodes)
-			if (n.input?.generating === true)
-				assert.equal(n.nodeKey, `${PLAY}.lead.speaks.placeholder`)
-		// The keeper ran ONCE, over the beats and every line; the world's
-		// changes are filed at the beats row (`worldRow`).
+		assert.deepEqual(beats.input.turnPlan, { plan: PLAN, locationPassage: '' })
+		// No live row: nothing streamed.
+		for (const n of receipt.nodes) assert.notEqual(n.input?.generating, true, n.nodeKey)
+		// The keeper ran ONCE, over the beats, keeping the world's books only;
+		// its changes are filed at the beats row (`worldRow`).
 		const keeper = nodes(receipt, 'keep.played.keeperContext')
 		assert.equal(keeper.length, 1)
-		assert.equal(
-			keeper[0].input.reply,
-			'- The well shaft opens into the dark.\n\n<Verity>\n\n<Brask>',
-		)
-		assert.equal(nodes(receipt, 'keep.played.keeperWrite').length, 1)
+		assert.equal(keeper[0].input.reply, '- The well shaft opens into the dark.')
+		assert.deepEqual(kept(receipt), ['world'])
 		const propose = node(receipt, 'keep.played.commit.reviewed.propose')
 		assert.deepEqual(propose.input.worldRow, beats.output.messageId)
 		// And neither the pick branch nor the narration ran.
@@ -974,12 +1170,14 @@ describe('a Lair turn', () => {
 			)
 			const save = node(receipt, 'via.narrate.save')
 			assert.equal(save.input.text, '<narrator>')
-			assert.equal(save.input.thinking, 'narrator weighs it')
+			assert.equal(save.input.reasoning, 'narrator weighs it')
 			// Narrate adds no direction.
 			assert.equal(node(receipt, 'via.narrate.context').input.turnDirection, undefined)
 			assert.ok(!receipt.nodes.some((n: any) => String(n.nodeKey).startsWith('via.turn.') && n.result === 'ok'))
 			assert.equal(nodes(receipt, 'keep.played.keeperWrite').length, 1)
 			assert.equal(node(receipt, 'keep.played.keeperContext').input.reply, '<narrator>')
+			// The Castellan's keeper: the world's books, never a delver's.
+			assert.deepEqual(kept(receipt), ['world'])
 		})
 
 	test('Narrate is routed ahead of the channel, and the narration step streams', () => {
@@ -987,30 +1185,197 @@ describe('a Lair turn', () => {
 		const say = doc.nodes.find((n) => n.key === 'via.narrate.say')!
 		assert.equal((say.expose as any)?.stream, true)
 		assert.equal((say.expose as any)?.status, 'The Castellan narrates')
-		const lead = doc.nodes.find((n) => n.key === `${PLAY}.lead.speaks.say`)!
-		assert.equal((lead.expose as any)?.stream, true)
+		const turn = doc.nodes.find((n) => n.key === `${CT}.say`)!
+		assert.equal((turn.expose as any)?.stream, true)
 		const planner = doc.nodes.find((n) => n.key === `${S}.planned.planWrite`)!
 		assert.equal((planner.expose as any)?.status, 'The Castellan is planning the turn')
 		assert.equal((planner.expose as any)?.stream, undefined)
 	})
 
 	/**
-	 * B15 (owner D2a, 2026-09-27): Pick who speaks is a delver-only turn. The
-	 * picked delver answers alone into their own row — no planner, no beats,
-	 * no voices and no keeper.
+	 * **A character turn** (owner ruling 2026-09-30): a run whose subject is
+	 * a delver — fired off the turn order by the standing plan, or by Pick
+	 * who speaks — plays that delver's one turn: no planner, no beats and no
+	 * Castellan keeper. It reads the standing plan, streams the delver's line
+	 * into their own row, reads only their private lore, and keeps only their
+	 * own books.
 	 */
-	test('a pick: the picked delver answers alone, and nothing plans', async () => {
+	test('a character turn: one delver, the standing plan, their own streamed row, their own lore and their own books', async () => {
 		const said: string[] = []
 		const receipt = await takeTurn(PLAN, saying(said), 12)
 		assert.equal(receipt.outcome, 'ok')
 		assert.deepEqual(said, ['Brask'])
-		const save = node(receipt, `${S}.picked.save`)
-		assert.equal(save.result, 'ok')
+		// The plan it plays from, read back — and handed to the voice.
+		const plan = node(receipt, `${CT}.plan`)
+		assert.equal(plan?.definitionId, 'core:query/turn-plan@1')
+		assert.deepEqual(node(receipt, `${CT}.context`).input.plan, PLAN)
+		// Their own row, streamed, finished.
+		const placeholder = node(receipt, `${CT}.placeholder`)
+		assert.deepEqual(
+			[placeholder.input.generating, placeholder.input.channel, placeholder.input.speaker],
+			[true, 'main', 'character:12'],
+		)
+		const save = node(receipt, `${CT}.save`)
 		assert.equal(save.input.text, '<Brask>')
-		assert.equal(save.input.thinking, 'Brask weighs it')
-		assert.equal(node(receipt, `${S}.picked.lore`).input.speaker, 'character:12')
+		assert.equal(save.input.reasoning, 'Brask weighs it')
+		assert.deepEqual(save.input.target, placeholder.output.messageId)
+		// Their own private lore, and nobody else's.
+		assert.equal(node(receipt, `${CT}.lore`).input.speaker, 'character:12')
+		const sources = node(receipt, `${CT}.pool`).input.sources as any[]
+		assert.deepEqual(
+			sources.map((b: any) => b?.sourceKey).filter((k: string) => String(k).startsWith('char:')),
+			['char:character:12'],
+		)
+		// Their own books: the keeper over their line, keeping them alone.
+		assert.equal(node(receipt, `${CT}.keeperContext`).input.reply, '<Brask>')
+		assert.equal(node(receipt, `${CT}.keeperResolve`).input.keeps, 'character:12')
+		assert.ok(ran(receipt, `${CT}.commit.reviewed.propose`))
+		// Nothing planned, and the Castellan kept no books.
+		assert.ok(!receipt.nodes.some((n: any) => String(n.nodeKey).startsWith(`${S}.planned.`) && n.result === 'ok'))
+		assert.ok(!ran(receipt, `${PLAY}.plan.posted.write`))
+		assert.ok(!ran(receipt, 'keep.played.keeperWrite'))
+		// Exactly one live row.
+		assert.deepEqual(
+			receipt.nodes.filter((n: any) => n.input?.generating === true).map((n: any) => n.nodeKey),
+			[`${CT}.placeholder`],
+		)
+	})
+
+	test('a trusted session applies a character turn’s own changes, on the keeper’s apply mode', async () => {
+		const receipt = await takeTurn(PLAN, saying([]), 12, { trustNarrator: true })
+		assert.equal(receipt.outcome, 'ok')
+		assert.equal(node(receipt, `${CT}.commit.trusted.apply`)?.output?.main, 'apply')
+	})
+
+	/**
+	 * **How the party speak** (owner ruling 2026-09-30): the session's
+	 * `partySpeech`. Each delver speaking is a character turn per delver; the
+	 * Castellan speaking for the party is ONE call for them all, as nobody's
+	 * voice.
+	 */
+	test('the party speech is a quick session field: each delver speaks by default, or the Castellan for the party', () => {
+		const field = (lairGenre.shape?.fields as any)?.partySpeech
+		assert.equal(field?.type, 'enum')
+		assert.deepEqual(field?.of, ['each', 'castellan'])
+		assert.equal(field?.default, 'each')
+		assert.equal(field?.quick, true)
+		assert.deepEqual(
+			field?.members?.map((m: any) => m.label.en),
+			['Each delver speaks', 'Castellan speaks for the party'],
+		)
+	})
+
+	for (const fields of [{}, { partySpeech: 'each' }])
+		test(`each delver speaks (${JSON.stringify(fields)}): the plan row hands on every named delver, and no party call`, async () => {
+			const said: string[] = []
+			const receipt = await takeTurn(PLAN, saying(said), null, fields)
+			assert.equal(receipt.outcome, 'ok')
+			assert.deepEqual(said, [])
+			assert.deepEqual(
+				node(receipt, `${PLAY}.plan.posted.write`).input.turnPlan.plan.speakers,
+				PLAN.speakers,
+			)
+			assert.ok(!ran(receipt, `${PARTY}.say`))
+		})
+
+	/**
+	 * No first and no later (owner ruling 2026-09-30): every delver's line is
+	 * the SAME step — one prompt, one model, one sampling, one set of
+	 * everything — and its books run on the state-keeper's settings.
+	 */
+	test('one character turn: no first or later step anywhere, and its books on the state-keeper', () => {
+		const doc = respondDoc()
+		const speech = doc.nodes.filter((n) => n.key.startsWith(`${PLAY}.speech.each.`))
+		assert.ok(speech.length > 0)
+		for (const n of doc.nodes)
+			assert.ok(!/\.first\.|\bvoices\b|\blater\b|\bvoiceLines\b/.test(n.key), n.key)
+		for (const n of doc.nodes) {
+			const label = String((n.expose as any)?.label ?? '')
+			assert.ok(!/\b(first|later|further)\b/i.test(label), `${n.key}: ${label}`)
+		}
+		assert.ok(!doc.clauses.some((c: any) => c.kind === 'each' && String(c.id).startsWith(PLAY)))
+		const nodeAt = (key: string) => doc.nodes.find((n) => n.key === key)!
+		const ref = (key: string, slot: string) => (nodeAt(key).config as any)?.[slot]
+		// One model call for the delver's line, labelled for the turn shape.
+		const says = doc.nodes.filter((n) => n.kind === 'oracle' && n.key.startsWith(`${PLAY}.speech.each.`))
+		assert.deepEqual(says.map((n) => n.key), [`${CT}.say`, `${CT}.keeperWrite`])
+		assert.equal((nodeAt(`${CT}.say`).expose as any)?.label, 'Character turn')
+		assert.match(String((nodeAt(`${CT}.say`).expose as any)?.purpose), /each delver speaks/i)
+		// The books: the state-keeper's prompt, model and sampling, by reference.
+		assert.equal(ref(`${CT}.keeperContext`, 'prompts')?.ofNode, 'keep.played.keeperContext')
+		assert.equal(ref(`${CT}.keeperWrite`, 'connection')?.ofNode, 'keep.played.keeperWrite')
+		assert.equal(ref(`${CT}.keeperWrite`, 'sampling')?.ofNode, 'keep.played.keeperWrite')
+		assert.equal((nodeAt(`${CT}.keeperWrite`).expose as any)?.purpose, undefined)
+	})
+
+	test('the Castellan speaks for the party: ONE streamed call for every named delver, in the Castellan\'s row, with no character lore', async () => {
+		const said: string[] = []
+		const receipt = await takeTurn(PLAN, saying(said), null, { partySpeech: 'castellan' })
+		assert.equal(receipt.outcome, 'ok')
+		assert.deepEqual(said, ['narrator'])
+		assert.ok(!ran(receipt, `${CT}.say`))
+		// No character turns follow: the plan row hands on none.
+		assert.equal(node(receipt, `${PLAY}.plan.posted.write`).input.turnPlan, undefined)
+		// Its row: the Castellan's, on main, opened after the beats.
+		const placeholder = node(receipt, `${PARTY}.row.turn.placeholder`)
+		assert.deepEqual(
+			[placeholder.input.generating, placeholder.input.channel, placeholder.input.speaker],
+			[true, 'main', 'envoy:castellan'],
+		)
+		const order = receipt.nodes.map((n: any) => n.nodeKey)
+		assert.ok(order.indexOf(`${PLAY}.plan.posted.write`) < order.indexOf(`${PARTY}.row.turn.placeholder`))
+		assert.equal(node(receipt, `${PARTY}.save`).input.text, '<narrator>')
+		// Every named delver, in the plan's order — the first, then the rest.
+		assert.deepEqual(node(receipt, `${PARTY}.context`).input.partySpeakers, [
+			PLAN.speakers[0],
+			[PLAN.speakers[1]],
+		])
+		// The party's reach: the room they stand in and the rooms one way on.
+		assert.equal(node(receipt, `${PARTY}.context`).input.placeSight, 'reach')
+		// Lore everyone may know: no character lore lane in its pool.
+		const sources = node(receipt, `${PARTY}.pool`).input.sources as any[]
+		assert.ok(sources.length > 0)
+		assert.ok(!sources.some((b: any) => String(b?.sourceKey ?? '').startsWith('char:')))
+		assert.ok(!receipt.nodes.some((n: any) => n.definitionId === 'core:query/character-lore@1' && String(n.nodeKey).startsWith(PLAY)))
+		// The keeper reads the beats and the party's lines — and keeps the world's
+		// books and those of every delver whose line it wrote.
+		assert.equal(
+			node(receipt, 'keep.played.keeperContext').input.reply,
+			'- The well shaft opens into the dark.\n\n<narrator>',
+		)
+		assert.deepEqual(kept(receipt), ['world', PLAN.speakers[0], PLAN.speakers[1]])
+		const say = respondDoc().nodes.find((n) => n.key === `${PARTY}.say`)!
+		assert.equal((say.expose as any)?.stream, true)
+	})
+
+	test("the Castellan speaks for the party, picked: that delver's line alone, in their own row, and nothing plans", async () => {
+		const said: string[] = []
+		const receipt = await takeTurn(PLAN, saying(said), 12, { partySpeech: 'castellan' })
+		assert.equal(receipt.outcome, 'ok')
+		assert.deepEqual(said, ['narrator'])
+		const placeholder = node(receipt, `${PARTY}.row.picked.placeholder`)
+		assert.deepEqual(
+			[placeholder.input.generating, placeholder.input.characterId],
+			[true, 12],
+		)
+		assert.ok(!ran(receipt, `${PARTY}.row.turn.placeholder`))
+		assert.ok(!ran(receipt, `${CT}.say`))
+		assert.deepEqual(node(receipt, `${PARTY}.context`).input.partySpeakers, [{ characterId: 12 }, []])
+		assert.deepEqual(node(receipt, `${PARTY}.save`).input.target, placeholder.output.messageId)
 		assert.ok(!receipt.nodes.some((n: any) => String(n.nodeKey).startsWith(`${S}.planned.`) && n.result === 'ok'))
 		assert.ok(!ran(receipt, 'keep.played.keeperWrite'))
+	})
+
+	test('the party call starts on its own shipped prompt, which renders whose lines it writes', () => {
+		const preset = (respondDoc().presets ?? []).find((p) => p.default)!
+		const named = preset.values.find((v) => v.nodeKey === `${PARTY}.context` && v.slot === 'prompts')
+		assert.deepEqual(named?.value, {
+			seedKey: 'pipeline-prompt:core:task/build-scene-context:prompts:lair-party',
+		})
+		const row = CORE_PROMPTS.find((p) => p.seedKey === (named?.value as any).seedKey)!
+		assert.equal(row.nodeType, 'core:task/build-scene-context')
+		assert.deepEqual(row.defaultForSpecs, [])
+		assert.match(String(row.fields.systemPrompt), /\{\{partySpeakers\}\}/)
 	})
 
 	/**
@@ -1018,19 +1383,23 @@ describe('a Lair turn', () => {
 	 * that may still carry `turnStyle: 'narrator'` in its fields; nothing reads
 	 * it.
 	 */
-	test("a stored turnStyle: 'narrator' is inert — the party still speak for themselves", async () => {
-		const said: string[] = []
-		const receipt = await takeTurn(PLAN, saying(said), null, { turnStyle: 'narrator' })
+	test("a stored turnStyle: 'narrator' is inert — the party still take their own turns", async () => {
+		const receipt = await takeTurn(PLAN, saying([]), null, { turnStyle: 'narrator' })
 		assert.equal(receipt.outcome, 'ok')
-		assert.deepEqual(said, ['Verity', 'Brask'])
+		assert.deepEqual(
+			node(receipt, `${PLAY}.plan.posted.write`).input.turnPlan.plan.speakers,
+			PLAN.speakers,
+		)
+		assert.ok(!ran(receipt, `${PARTY}.say`))
 	})
 
-	test("B11: the master's line reaches the planner as direction; the lead's row carries the line alone", async () => {
-		const receipt = await takeTurn(PLAN, saying([]))
-		const input = (key: string) => node(receipt, key)?.input
+	test("B11: the master's line reaches the planner as direction; a character turn's row carries the line alone", async () => {
+		const planned = await takeTurn(PLAN, saying([]))
+		const input = (key: string) => node(planned, key)?.input
 		assert.equal(input(`${S}.planned.planContext`)?.turnDirection, 'send them down the shaft')
 		assert.equal(input(`${S}.planned.planContext`)?.direction, undefined)
-		const save = node(receipt, `${PLAY}.lead.speaks.save`)
+		const receipt = await takeTurn(PLAN, saying([]), 11)
+		const save = node(receipt, `${CT}.save`)
 		assert.equal(save.input.sections, undefined)
 		assert.ok(!String(save.input.text).includes('{'))
 		assert.ok(!String(save.input.text).includes('sound the depth'))
@@ -1042,21 +1411,21 @@ describe('a Lair turn', () => {
 		assert.equal(receipt.outcome, 'ok')
 		// No beats, nobody spoke, and nothing was kept.
 		assert.ok(!ran(receipt, `${PLAY}.plan.posted.write`))
-		assert.ok(!ran(receipt, `${PLAY}.lead.speaks.say`))
-		assert.ok(!ran(receipt, `${PLAY}.voices.item.say`))
+		assert.ok(!ran(receipt, `${CT}.say`))
+		assert.ok(!ran(receipt, `${PARTY}.say`))
 		assert.ok(!ran(receipt, 'keep.played.keeperWrite'))
 
-		const placeholder = node(receipt, `${S}.planned.door.knock.placeholder`)
+		const placeholder = node(receipt, `${DOOR}.knock.placeholder`)
 		assert.deepEqual(
 			[placeholder.input.channel, placeholder.input.speaker],
 			['main', 'envoy:castellan'],
 		)
-		const save = node(receipt, `${S}.planned.door.knock.save`)
+		const save = node(receipt, `${DOOR}.knock.save`)
 		assert.equal(save.result, 'ok')
 		assert.equal(save.input.text, KNOCK_PLAN.knockQuestion)
 		// No fold: the Plan is retired, and nobody narrated.
 		assert.equal(save.input.sections, undefined)
-		assert.equal(save.input.thinking, undefined)
+		assert.equal(save.input.reasoning, undefined)
 
 		const block = save.input.blocks[0]
 		assert.equal(block.kind, 'choices')
@@ -1086,8 +1455,17 @@ describe('a Lair turn', () => {
 
 	test('the knock carries the room it asks about as the block referent (B12)', async () => {
 		const receipt = await takeTurn(KNOCK_PLAN)
-		const save = node(receipt, `${S}.planned.door.knock.save`)
+		const save = node(receipt, `${DOOR}.knock.save`)
 		assert.equal(save.input.blocks[0].referent, 'The Drowned Hall')
+	})
+
+	test('the knock carries where the planner says the party stand as the block vantage (A27)', async () => {
+		const receipt = await takeTurn({ ...KNOCK_PLAN, worldHints: { location: 'The Stair' } })
+		const vantage = node(receipt, `${DOOR}.knock.vantage`)
+		assert.equal(vantage?.definitionId, 'core:task/parse-json@1')
+		assert.equal(vantage?.input?.params?.path, 'worldHints.location')
+		const save = node(receipt, `${DOOR}.knock.save`)
+		assert.equal(save.input.blocks[0].vantage, 'The Stair')
 	})
 
 	test('an exit the dungeon already holds never knocks (B13)', async () => {
@@ -1098,19 +1476,35 @@ describe('a Lair turn', () => {
 			knockQuestion: 'Is there a Stair?',
 		})
 		assert.equal(receipt.outcome, 'ok')
-		assert.ok(ran(receipt, `${PLAY}.lead.speaks.say`), 'the turn was not played')
-		assert.ok(!ran(receipt, `${S}.planned.door.knock.save`), 'a known room knocked')
+		assert.ok(ran(receipt, `${PLAY}.plan.posted.write`), 'the turn was not played')
+		assert.ok(!ran(receipt, `${DOOR}.knock.save`), 'a known room knocked')
 	})
 
-	test('the planner and every voice are handed every room, whatever was ranked (B13; R8)', async () => {
+	test('the planner and every character turn are handed every room, whatever was ranked (B13; R8)', async () => {
 		const receipt = await takeTurn(PLAN)
 		const input = (key: string) => node(receipt, key)?.input
 		assert.deepEqual(input(`${S}.planned.planContext`)?.locationEntries, ROOMS)
-		assert.deepEqual(input(`${PLAY}.lead.speaks.context`)?.locationEntries, ROOMS)
-		for (const v of nodes(receipt, `${PLAY}.voices.item.context`))
-			assert.deepEqual(v.input.locationEntries, ROOMS)
+		for (const id of [11, 12]) {
+			const turn = await takeTurn(PLAN, {}, id)
+			assert.deepEqual(node(turn, `${CT}.context`)?.input?.locationEntries, ROOMS)
+		}
 		const rooms = node(receipt, 'gather.rooms.read')
 		assert.deepEqual(rooms?.input?.params?.entryTypes, ['core:entry/location'])
+	})
+
+	/**
+	 * **The rooms come with their ways out** (places plan B6, 2026-09-29): the
+	 * listing asks `withLinks`, so each room carries its lore links said from
+	 * the room, and `{{locationEntry}}` writes them under the room's body as
+	 * "From here:" — the graph, not a typed `Exits:` line, is what the planner
+	 * and the voices read the ways on from.
+	 */
+	test('B6: the rooms read asks for each room’s links', async () => {
+		const receipt = await takeTurn(PLAN)
+		assert.equal(node(receipt, 'gather.rooms.read')?.input?.params?.withLinks, true)
+		// Only the rooms: the whole-book read the knock checks names against
+		// has no use for them.
+		assert.notEqual(node(receipt, 'gather.lorebook.read')?.input?.params?.withLinks, true)
 	})
 
 	test('the exit check reads the rooms, the whole book and the history (R7)', async () => {
@@ -1126,14 +1520,12 @@ describe('a Lair turn', () => {
 
 	/**
 	 * **Each delver reads their own private lore** (W1, ruled 2026-09-17) —
-	 * the lead in its own branch, the rest in the `each`.
+	 * each in their own character turn.
 	 */
-	test('two voices, two lore lanes, two speakers', async () => {
+	test('two character turns, two lore lanes, two speakers', async () => {
+		const lanes: any[] = []
+		for (const id of [11, 12]) lanes.push(...nodes(await takeTurn(PLAN, {}, id), `${CT}.lore`))
 		const receipt = await takeTurn()
-		const lanes = [
-			...nodes(receipt, `${PLAY}.lead.speaks.lore`),
-			...nodes(receipt, `${PLAY}.voices.item.lore`),
-		]
 		assert.equal(lanes.length, PLAN.speakers.length)
 		assert.deepEqual(
 			lanes.map((n: any) => n.input.speaker),
@@ -1147,15 +1539,56 @@ describe('a Lair turn', () => {
 		assert.equal(node(receipt, 'gather.characterLore.read').input.speaker, undefined)
 	})
 
-	test('a plan naming nobody posts its beats and voices nobody', async () => {
+	/**
+	 * C3 (R3, 2026-10-02): each delver's meaning and name arms search as that
+	 * delver — the leak guard, since the spine's own arms carry every
+	 * member's private lore — and the gate before their ranker judges for
+	 * them too.
+	 */
+	test('each character turn searches by meaning and by name as its own delver (C3)', async () => {
+		for (const id of [11, 12]) {
+			const receipt = await takeTurn(PLAN, {}, id)
+			for (const key of ['search', 'entities', 'link', 'eligible'])
+				assert.equal(node(receipt, `${CT}.${key}`).input.speaker, `character:${id}`, key)
+		}
+		const receipt = await takeTurn()
+		// The spine's arms are the run's: no speaker wired.
+		assert.equal(node(receipt, 'semantic.arm.search').input.speaker, undefined)
+		assert.equal(node(receipt, 'gather.entities.read').input.speaker, undefined)
+	})
+
+	test("the party call's arms search as the Castellan: no member's private lore (C3)", async () => {
+		const receipt = await takeTurn(PLAN, {}, null, { partySpeech: 'castellan' })
+		for (const key of ['search', 'entities'])
+			assert.equal(node(receipt, `${PARTY}.${key}`).input.speaker, 'envoy:castellan', key)
+		assert.equal(node(receipt, `${PARTY}.rank`).input.shownElsewhere, 1)
+	})
+
+	/**
+	 * The room rule (2026-10-02): the room `{{locationEntry}}` shows — the
+	 * world's location, by the one room rule — reaches every ranker as
+	 * `shownElsewhere`, so the prompt reads it once.
+	 */
+	test('every ranker is handed the room the place slot shows (the room rule)', async () => {
+		const receipt = await takeTurn(PLAN, {}, 11)
+		const place = node(receipt, 'place')
+		assert.equal(place.input.params.path, 'world.location')
+		assert.equal(place.output.entryId, 1)
+		assert.equal(node(receipt, 'rank').input.shownElsewhere, 1)
+		assert.equal(node(receipt, `${CT}.rank`).input.shownElsewhere, 1)
+	})
+
+	test('a plan naming nobody posts its beats, hands on no turn, and the Castellan keeps the world', async () => {
 		const said: string[] = []
 		const receipt = await takeTurn({ ...PLAN, speakers: [] }, saying(said))
 		assert.equal(receipt.outcome, 'ok')
 		assert.deepEqual(said, [])
-		assert.ok(ran(receipt, `${PLAY}.plan.posted.write`))
-		assert.ok(!ran(receipt, `${PLAY}.lead.speaks.placeholder`))
-		// Nothing was played, so nothing is kept.
-		assert.ok(!ran(receipt, 'keep.played.keeperWrite'))
+		const beats = node(receipt, `${PLAY}.plan.posted.write`)
+		assert.deepEqual(beats.input.turnPlan.plan.speakers, [])
+		assert.ok(!ran(receipt, `${CT}.placeholder`))
+		// The beats were played: the world's books are kept over them.
+		assert.ok(ran(receipt, 'keep.played.keeperWrite'))
+		assert.deepEqual(kept(receipt), ['world'])
 	})
 })
 
@@ -1185,17 +1618,21 @@ describe('R9: a room described in prose — the story or the Sanctum — never k
 		assert.equal(into?.from, `${S}.planned.exitProse`)
 	})
 
-	test('prose-described: the party walk in, and the paragraph reaches every voice', async () => {
+	test('prose-described: the party walk in, the plan row carries the paragraph, and a character turn reads it', async () => {
 		const receipt = await takeTurn(
 			{ ...KNOCK_PLAN, speakers: PLAN.speakers },
 			describedInProse,
 		)
 		assert.equal(receipt.outcome, 'ok')
-		assert.ok(!ran(receipt, `${S}.planned.door.knock.save`), 'a described room knocked')
-		assert.ok(ran(receipt, `${PLAY}.lead.speaks.say`), 'the turn was not played')
-		assert.equal(node(receipt, `${PLAY}.lead.speaks.context`)?.input?.locationPassage, PASSAGE)
-		for (const v of nodes(receipt, `${PLAY}.voices.item.context`))
-			assert.equal(v.input?.locationPassage, PASSAGE)
+		assert.ok(!ran(receipt, `${DOOR}.knock.save`), 'a described room knocked')
+		assert.ok(ran(receipt, `${PLAY}.plan.posted.write`), 'the turn was not played')
+		assert.equal(node(receipt, `${PLAY}.plan.posted.write`).input.turnPlan.locationPassage, PASSAGE)
+		// The character turn reads it back off the standing plan.
+		const turn = await takeTurn(PLAN, {
+			'core:query/turn-plan@1': async () =>
+				ok({ main: {}, plan: PLAN, locationPassage: PASSAGE }),
+		}, 11)
+		assert.equal(node(turn, `${CT}.context`)?.input?.locationPassage, PASSAGE)
 	})
 
 	test('the Lair voice row renders {{locationPassage}}', () => {
@@ -1224,6 +1661,8 @@ describe("the knock's answer writes the room (L1; R9)", () => {
 			[
 				'room.typed.save:core:outlet/create-lore-entry',
 				'room.drafted.save:core:outlet/create-lore-entry',
+				// B6: the way between the new room and the party's room.
+				'link.resolved.write:core:outlet/link-lore-entries',
 				'resume:core:outlet/create-message',
 			],
 		)
@@ -1292,10 +1731,209 @@ describe("the knock's answer writes the room (L1; R9)", () => {
 				'room.typed.save.params',
 				'room.drafted.save.params',
 				'onward.params',
+				// B6: the rooms listed, where the party stand in the state, and
+				// the link's words.
+				'gather.rooms.read.params',
+				'here.params',
+				// The room rule: the room the place slot shows.
+				'place.params',
+				'link.resolved.write.params',
 			],
 		)
 		assert.deepEqual(preset.values[0]!.value, { review: 'off' })
 		assert.deepEqual(preset.values[1]!.value, { review: 'on' })
+		// The link is not gated: the master judged the room, and the way back
+		// to where the party stand is not a second question.
+		assert.ok(
+			!preset.values.some((v) => v.nodeKey === 'link.resolved.write' && v.slot === 'settings'),
+		)
+	})
+})
+
+/* ── Answer the door links the new room (places plan B6, 2026-09-29) ───── */
+
+/**
+ * **The new room joins the room the party stand in, both ways** — but only
+ * when that room resolves (places plan §11, correction #11). The party's
+ * location is the world's `location` stat, which is usually words: a name
+ * nothing in the dungeon answers to must never fail the door, so the room is
+ * then saved unlinked.
+ *
+ * The resolution is the Lair's own name rule, `undescribed-name@1` over the
+ * rooms listed, reading the name at `world.location` inside the session's
+ * state (its `path`); the link is `link-lore-entries@1` in a junction on the
+ * room it found, after the room's own write.
+ */
+describe('Answer the door links the new room to the room the party stand in (B6)', () => {
+	const answerDoc = (): SpecDocument =>
+		CORE_SPECS.find((e) => e.slug === LAIR_ROOM_ANSWER_SPEC_ID)!.build()
+	const into = (doc: SpecDocument, node: string, port: string) =>
+		doc.edges.find((e) => e.to === node && e.toPort === port)
+	const from = (doc: SpecDocument, node: string, port: string) => {
+		const e = into(doc, node, port)
+		return e ? `${e.from}.${e.fromPort}` : undefined
+	}
+	const presetOf = (doc: SpecDocument, key: string, slot = 'params') =>
+		(doc.presets ?? [])
+			.find((p) => p.default)!
+			.values.find((v) => v.nodeKey === key && v.slot === slot)?.value
+
+	test('undescribed-name@1 declares `path`, empty by default', () => {
+		const doc = answerDoc()
+		const here = doc.nodes.find((n) => n.key === 'here')!
+		assert.equal(here.definitionId, 'core:task/undescribed-name')
+		assert.equal((here as any).config?.params?.slot, 'params')
+		const decl = getDefinition('core:task/undescribed-name@1')!
+		const schema = (decl.slots?.params as any)?.schema ?? {}
+		assert.equal(schema.path?.type, 'string')
+		assert.equal(schema.path?.default, '')
+	})
+
+	test('the rooms are listed, and where the party stand is read off the state', () => {
+		const doc = answerDoc()
+		assert.equal(
+			doc.nodes.find((n) => n.key === 'gather.rooms.read')?.definitionId,
+			'core:query/lorebook-entries',
+		)
+		assert.deepEqual(presetOf(doc, 'gather.rooms.read'), { entryTypes: ['core:entry/location'] })
+		assert.equal(from(doc, 'here', 'name'), 'gather.state.read.state')
+		// A27: else the room the knock's planner named, off the block.
+		assert.equal(from(doc, 'here', 'fallbackName'), 'answer.vantage')
+		assert.equal(from(doc, 'here', 'locationEntries'), 'gather.rooms.read.entries')
+		assert.equal(into(doc, 'here', 'entries'), undefined, 'only a room is somewhere the party stand')
+		assert.deepEqual(presetOf(doc, 'here'), { path: 'world.location' })
+	})
+
+	test('one link, both ways, from the room written to the room found — after the write, before the line', () => {
+		const doc = answerDoc()
+		const link = doc.nodes.find((n) => n.key === 'link.resolved.write')!
+		assert.equal(link.definitionId, 'core:outlet/link-lore-entries')
+		assert.equal((link as any).clauseId, 'link')
+		const clause = (doc.clauses as any[]).find((c) => c.id === 'link')
+		assert.equal(clause.kind, 'junction')
+		assert.deepEqual([clause.on.node, clause.on.port], ['here', 'entryId'])
+		// Whichever branch wrote the room: the junction publishes its write.
+		assert.equal(from(doc, 'link.resolved.write', 'from'), 'room.entryId')
+		assert.equal(from(doc, 'link.resolved.write', 'to'), 'here.entryId')
+		assert.deepEqual(presetOf(doc, 'link.resolved.write'), {
+			linkType: 'leads to',
+			reverseLinkType: 'leads to',
+		})
+		const at = (key: string) => doc.nodes.find((n) => n.key === key)!.position
+		assert.ok(at('link.resolved.write') > at('room.drafted.save'))
+		assert.ok(at('link.resolved.write') < at('resume'))
+		// Still not the entry's own `links`: that would fail the room with a
+		// name nothing answers to.
+		for (const save of ['room.typed.save', 'room.drafted.save'])
+			assert.equal(into(doc, save, 'links'), undefined, save)
+		const errors = validate(doc).filter((f) => f.severity === 'error')
+		assert.deepEqual(errors.map((e) => `${e.law} ${e.nodeKey ?? ''} ${e.message}`), [])
+	})
+
+	/**
+	 * Answer the door, executed: a typed room, the party standing at
+	 * `location`, the knock's planner having said `vantage`.
+	 */
+	const answer = async (location: unknown, vantage: unknown = null) => {
+		const doc = answerDoc()
+		const links: any[] = []
+		const state = { world: { location }, cast: {} }
+		const receipt = (await run(doc, {
+			world: { ...world, authorDefaults: authorDefaultsOf(doc) },
+			input: {
+				text: 'A vaulted hall, knee-deep in black water.',
+				payload: { choice: 'describe' },
+				presser: 'user:1',
+				sessionScope: { sessionId: 1 },
+			},
+			seed: 'lair-answer',
+			triggerSource: 'ui',
+			bindings: lairBindings(PLAN, {
+				'core:task/read-answer@1': async (i: any) =>
+					ok({
+						main: i?.payload ?? {},
+						choice: 'describe',
+						referent: 'The Drowned Hall',
+						vantage,
+						values: i?.payload ?? {},
+					}),
+				'core:query/session-state@1': async () => ok({ main: state, state, version: 7 }),
+				'core:outlet/link-lore-entries@1': async (i: any, ctx: any) => {
+					links.push(i)
+					const row = await ctx.commit({ from: i.from, to: i.to })
+					return ok({ main: row.id, linkId: row.id })
+				},
+			}),
+		})) as any
+		return { receipt, links }
+	}
+
+	test('the party’s room resolves: the room is written, then linked to it both ways', async () => {
+		const { receipt, links } = await answer('The Old Well')
+		assert.equal(receipt.outcome, 'ok')
+		assert.ok(ran(receipt, 'room.typed.save'))
+		assert.equal(links.length, 1)
+		const [link] = links
+		assert.equal(link.to, 1, 'the Old Well, by id')
+		assert.equal(link.from?.status, 'committed', 'the room’s own write result')
+		assert.deepEqual(
+			[link.params?.linkType, link.params?.reverseLinkType],
+			['leads to', 'leads to'],
+		)
+		assert.ok(ran(receipt, 'resume'))
+	})
+
+	test('a location naming no room saves the room unlinked, and the story still goes on', async () => {
+		const { receipt, links } = await answer('somewhere in the dark')
+		assert.equal(receipt.outcome, 'ok')
+		assert.ok(ran(receipt, 'room.typed.save'))
+		assert.equal(links.length, 0)
+		assert.ok(!ran(receipt, 'link.resolved.write'))
+		assert.ok(ran(receipt, 'resume'))
+	})
+
+	test('no location at all is no room: unlinked', async () => {
+		const { receipt, links } = await answer(undefined)
+		assert.equal(receipt.outcome, 'ok')
+		assert.equal(links.length, 0)
+		assert.ok(ran(receipt, 'resume'))
+	})
+
+	test('a location set to a place entry is that room, by its id', async () => {
+		const { links } = await answer({ entryId: 2, name: 'The Stair' })
+		assert.equal(links.length, 1)
+		assert.equal(links[0].to, 2)
+	})
+
+	test('no location: the room the knock’s planner named (A27)', async () => {
+		const { receipt, links } = await answer(undefined, 'The Stair')
+		assert.equal(receipt.outcome, 'ok')
+		assert.equal(links.length, 1)
+		assert.equal(links[0].to, 2)
+	})
+
+	test('the world’s location wins over the planner’s hint (A27)', async () => {
+		const { links } = await answer('The Old Well', 'The Stair')
+		assert.equal(links.length, 1)
+		assert.equal(links[0].to, 1)
+	})
+
+	/**
+	 * The planner reads the ways on from the graph: the room's "From here:"
+	 * lines, which `{{locationEntry}}` carries under its body. A room written
+	 * before links has only its `Exits:` line, so that still counts — as the
+	 * room's own words, never as the only source.
+	 */
+	test('the Lair planner reads the ways on from “From here”, and an older room’s exits', () => {
+		const row = CORE_PROMPTS.find((p) => p.name === 'Lair planner')!
+		const text = row.fields.systemPrompt ?? ''
+		assert.match(text, /From here/)
+		assert.doesNotMatch(text, /its exits are the ways on/)
+		// Review round: From here also says what the room is inside, holds
+		// or hides, and a room may have no list at all — the planner is told
+		// both rather than that every line there is a way on.
+		assert.match(text, /inside, holds or hides is not a way out/)
+		assert.match(text, /when it lists From here/)
 	})
 })
 
@@ -1515,10 +2153,10 @@ describe("Trigger trap and Reveal write the Castellan's row, streamed (B17; R8)"
 			assert.equal(placeholder.config.speaker, 'envoy:castellan')
 			const write = d.nodes.find((n) => n.key === 'write') as any
 			assert.deepEqual(write.expose, { stream: true, status: a.status })
-			// The narrator's reasoning folds as Thinking (the B5 pattern).
+			// The narrator's reasoning lands in the row's Reasoning fold (the B5 pattern).
 			assert.ok(
 				d.edges.some(
-					(e: any) => e.to === 'save' && e.toPort === 'thinking' && e.from === 'write',
+					(e: any) => e.to === 'save' && e.toPort === 'reasoning' && e.from === 'write',
 				),
 			)
 		})
@@ -1868,7 +2506,7 @@ describe('Sanctum talk steers the story (R13)', () => {
 		assert.equal(planContext.input.scratchpad, SCRATCHPAD)
 		// The party and the books are wired to neither.
 		for (const n of receipt.nodes.filter((x: any) =>
-			/(lead\.speaks|voices\.item)\.context$|keep\.played\.keeperContext$/.test(x.nodeKey),
+			/(character\.turn|party\.speaks)\.context$|keep\.played\.keeperContext$/.test(x.nodeKey),
 		)) {
 			assert.equal(n.input.sideTalk, undefined, n.nodeKey)
 			assert.equal(n.input.scratchpad, undefined, n.nodeKey)

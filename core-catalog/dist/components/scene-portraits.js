@@ -1,8 +1,8 @@
 import {
   barView,
   slotKind
-} from "./shared-QPC5C2J7.js";
-import "./shared-YMXNAZGX.js";
+} from "./shared-TCQZXBE3.js";
+import "./shared-RJDGOAVC.js";
 import {
   WIDGET_CONTEXT_KEY,
   append,
@@ -34,7 +34,7 @@ import {
   useWidgetContext,
   user_derived,
   widgetRefFromComponent
-} from "./shared-BECW7NYS.js";
+} from "./shared-UAQVMZZK.js";
 
 // dist/ui/sessions/scene-portraits/portraits.js
 var SCENE_PORTRAITS_DEFAULTS = Object.freeze({

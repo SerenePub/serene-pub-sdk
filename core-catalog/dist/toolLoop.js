@@ -72,6 +72,13 @@ export const TOOL_LOOP_VERSION = '1.0.0';
  * prose going to a model, not markup going to a browser, and Handlebars' HTML
  * escaping turns the fenced tool convention into `&#x60;&#x60;&#x60;` — an
  * advertisement the model cannot follow and the parser cannot read back.
+ *
+ * ⚠ **The conversation was never rendered** until 2026-10-03: the section read
+ * `{{{chatMessages}}}`, a name nothing in assemble's scope supplies, so every
+ * tool-loop prompt went out without the transcript it was written for. It
+ * walks `sessionMessages` now — each line's name, text and placed files
+ * (`{{{attachments}}}`, attachments follow-ups) — which moved this spec's
+ * prompt for every run, files or none.
  * @experimental
  */
 export const TOOL_LOOP_TEMPLATE = `{{{system}}}
@@ -83,9 +90,11 @@ export const TOOL_LOOP_TEMPLATE = `{{{system}}}
 {{{results}}}
 {{/if}}
 
-{{#if chatMessages}}
+{{#if sessionMessages}}
 # The conversation
-{{{chatMessages}}}
+{{#each sessionMessages}}
+{{{name}}}: {{{message}}}{{{attachments}}}
+{{/each}}
 {{/if}}
 
 {{#if postHistory}}
@@ -147,6 +156,24 @@ withSpriteTail(spec(TOOL_LOOP_SPEC_ID, {
     params: slot.params(),
 }))
     .task('lines', ($) => C.processMessages.v1({ messages: $.history.messages }))
+    /**
+     * 🚧 **The transcript's files, placed** (attachments follow-ups,
+     * owner ruling 2026-10-03): `respond`'s two steps, once, outside
+     * the loop — every pass sends the same transcript. Judged on the
+     * loop's `generate` pair, by its qualified key. This template has
+     * no role blocks, so on a chat wire the whole prompt is one user
+     * turn and a placed image rides that turn (`assemble`).
+     */
+    .query('attachments', ($) => C.historyAttachments.v1({
+    messages: $.history.messages,
+    params: slot.params(),
+}))
+    .task('attached', ($) => C.placeAttachments.v1({
+    messages: $.lines.messages,
+    attachments: $.attachments.attachments,
+    connection: slot.connectionOf('tools.item.generate'),
+    params: slot.params(),
+}))
     .loop('tools', { repeatWhile: ($) => $.tools.item.parse.call, max: 6 }, (l) => l
     /** The carry — see the header. Empty on the first pass. */
     .task('results', ($) => C.joinText.v1({
@@ -156,9 +183,9 @@ withSpriteTail(spec(TOOL_LOOP_SPEC_ID, {
     // carries. Named so the control is live rather
     // than stored and never read.
     params: slot.params(),
-}))
+}), { expose: { label: 'Carry the tool results' } })
     .task('prompt', ($) => C.assemble.v2({
-    messages: $.lines.messages,
+    messages: $.attached.messages,
     templateContext: {
         advertisement: $.advertise.prompt,
         results: $.tools.item.results.text,
@@ -227,7 +254,7 @@ withSpriteTail(spec(TOOL_LOOP_SPEC_ID, {
     // nobody chose, and this one differs from the declared
     // default, so it has to be a choice something made.
     params: slot.params(),
-}))
+}), { expose: { label: 'Take the answer' } })
     /** The answer's row, filled — see `placeholder`. */
     .outlet('save', ($) => C.updateMessage.v1({
     target: $.placeholder.messageId,

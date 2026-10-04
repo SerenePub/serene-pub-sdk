@@ -20,7 +20,7 @@
  * *outcome* (`ok · halt · err · cancelled`): a status is prose about progress,
  * and it decides nothing.
  */
-import { type I18n } from './i18n.js';
+import { type I18n, type LocaleMap } from './i18n.js';
 /**
  * One status: display text (R-20 — a string or a locale map with `en`), and
  * the values its `{vars}` take. A bare string is `en`, so `ctx.status({ i18n:
@@ -30,6 +30,21 @@ import { type I18n } from './i18n.js';
 export interface StatusText {
     i18n: I18n;
     vars?: Record<string, string | number>;
+}
+/**
+ * A grey widget action's reason, as the host lists it (`WidgetAction.reason`):
+ * a locale map, never a bare string.
+ *
+ * Declared here beside `StatusText` rather than in `widgets.ts` beside
+ * `WidgetAction`, because the API reference's anchor for the property
+ * `WidgetAction.reason` and for an interface named `WidgetActionReason` on the
+ * same page are one slug (`widgetactionreason`) — TypeDoc then links this type
+ * as `#widgetactionreason-1`, which is no heading, and the docs site refuses
+ * the dead link.
+ * @experimental
+ */
+export interface WidgetActionReason extends StatusText {
+    i18n: LocaleMap;
 }
 /**
  * The receipt's one record of a status — the last one set, and the node that

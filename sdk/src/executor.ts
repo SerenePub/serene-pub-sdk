@@ -208,6 +208,34 @@ export interface TaskCtx {
 	/** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
 	random?: () => number
 	signal: AbortSignal
+	/**
+	 * Says this node is still making progress (F36).
+	 *
+	 * A definition whose `timeoutKind` is `'idle'` is timed on the gap
+	 * between signs of progress rather than on its whole run: each `pulse()`
+	 * restarts that window. A long reply streaming steadily never times out;
+	 * one that goes quiet for the definition's `timeoutMs` does. The instance
+	 * ceiling (`RunOptions.timeoutCeilingMs`) still bounds the invocation, so
+	 * pulsing never runs a node forever. On a `'wall'` definition it does
+	 * nothing — that clock was never about progress.
+	 *
+	 * Cheap enough to call on every chunk. The host is handed the same
+	 * function for the request it performs on a node's behalf
+	 * (`CallHandles.pulse`), so an oracle that only calls `ctx.call` gets its
+	 * stream counted without doing anything; call it yourself when the work
+	 * is your own (a long loop, a read in pages).
+	 *
+	 * **Not** `progress` (a message for display, never timed) and **not**
+	 * `status` (what the person watching is told). Nothing is recorded.
+	 *
+	 * Always supplied by the executor; optional on the type for the reason
+	 * `status` is — an older host and a hand-built ctx in a test are still a
+	 * `TaskCtx` — so a handler calls it as `ctx.pulse?.()`.
+	 *
+	 * ⏳ Core handlers only today: a process-transport plugin hook's ctx
+	 * carries `{ input }` (see `status`), and its own timeout is the host's.
+	 */
+	pulse?(): void
 	progress(message: string): void
 	/**
 	 * What this node is doing, for the person watching (R-19).
@@ -550,7 +578,11 @@ export interface RunOptions {
 	 * back off the receipt; the executor only records them.
 	 */
 	lineage?: RunLineage
-	/** Instance ceiling — config may not exceed it (F36). */
+	/**
+	 * Instance ceiling — config may not exceed it (F36). Caps every
+	 * definition's `timeoutMs`, and is also the absolute bound on an `idle`
+	 * definition's invocation: pulses restart its window, never this.
+	 */
 	timeoutCeilingMs?: number
 	/** Force every clause sequential, as an admin may (01 §4). */
 	forceSequential?: boolean
@@ -748,8 +780,16 @@ export interface HostServices {
 	 * oracle publishes its stream and stays blind to messages; the host routes
 	 * it to the row this run's placeholder created, if there is one. Passed on
 	 * every call rather than kept anywhere a binding could read.
+	 *
+	 * `handles` is the calling node's own: its signal, which aborts when the
+	 * node's clock runs out, and its `pulse`. A host performing a request
+	 * listens to the first (together with its own cancel) and calls the
+	 * second on every sign of life — see `CallHandles`. The executor always
+	 * passes them; optional so a host can still be driven directly, as a test
+	 * does, with no node clock behind the call. A host that wraps another
+	 * must forward them.
 	 */
-	call?(payload: unknown, node: NodeRef, run: RunFacts): Promise<unknown>
+	call?(payload: unknown, node: NodeRef, run: RunFacts, handles?: CallHandles): Promise<unknown>
 	/** Core emits; a node only names the handle (F8). */
 	emit?(handle: string, payload: unknown, node: NodeRef): void
 	/**
@@ -796,6 +836,31 @@ export interface RunFacts {
 	liveRow?: string | number
 	/** Whether this run performs writes — see `RunOptions.dry`. */
 	dry: boolean
+}
+
+/**
+ * The calling node's own handles on one `HostServices.call` — as opposed to
+ * `RunFacts`, which are the run's.
+ *
+ * A request the host performs for an oracle is the oracle's work as far as
+ * its clock is concerned (F36), and only the host sees that work happen: the
+ * stream's chunks, the wait for a model server's queue, a model loading. So
+ * the executor hands over both ends of the clock.
+ * @experimental
+ */
+export interface CallHandles {
+	/**
+	 * Aborts when the node's clock runs out (`timeoutMs`). Abort the request
+	 * on it — combined with the run's own cancel, e.g. `AbortSignal.any` — or
+	 * a timed-out node leaves the model server generating into nothing.
+	 */
+	signal: AbortSignal
+	/**
+	 * The node's `ctx.pulse` (see `TaskCtx.pulse`): call it on every sign that
+	 * the request is alive. Restarts an `idle` clock; does nothing to a `wall`
+	 * one.
+	 */
+	pulse(): void
 }
 
 /** What `RunOptions.onRunEnd` is told. @experimental */
@@ -1166,8 +1231,8 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			 * names an unreadable endpoint, or one this world does not have,
 			 * leaves as null — unconfigured, which a host can say out loud.
 			 */
-			const instanceDefault = kind ? world.activeConnection[kind] : undefined
-			const chosenId = stored == null ? instanceDefault : slotConnectionId(stored)
+			const pubDefault = kind ? world.activeConnection[kind] : undefined
+			const chosenId = stored == null ? pubDefault : slotConnectionId(stored)
 			// Compared as strings, because the two sides genuinely differ in type:
 			// the panel commits a pick as a JSON number, and the world projects
 			// connection ids as strings. `===` between them is always false, and
@@ -1522,7 +1587,21 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 				d.reviewDefault,
 				config[node.key]?.['settings']?.['review'],
 			)
-			if (position !== 'off') {
+			// A dry run commits nothing (R-21 (1)), so there is nothing for a
+			// person to approve: the gate is recorded, never consulted. Without
+			// this a gated outlet BEFORE the preview halt — respond's
+			// `placeholder` — parked a card on every debounced token-count
+			// preview, so one turn showed several review prompts.
+			if (position !== 'off' && dry) {
+				nr.notes!.push(`review '${position}': not asked — dry run`)
+				reviews.push({
+					nodeKey: node.key,
+					position,
+					action: 'approve',
+					originalHash: hashPayload(input),
+					by: 'system:dry-run',
+				})
+			} else if (position !== 'off') {
 				const originalHash = hashPayload(input)
 				if (!opts.reviewer) {
 					nr.endedAt = now()
@@ -1654,8 +1733,19 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		nr.timeoutMsApplied = Number.isFinite(timeoutMs) ? timeoutMs : undefined
 
 		const controller = new AbortController()
+		// F36: `wall` bounds the invocation; `idle` bounds the gap between
+		// pulses, and the pub's ceiling still bounds the whole.
+		const clock = nodeClock(
+			{
+				ms: timeoutMs,
+				kind: d.timeoutKind ?? 'wall',
+				ceilingMs: opts.timeoutCeilingMs ?? Infinity,
+			},
+			controller,
+		)
 		const base: TaskCtx = {
 			signal: controller.signal,
+			pulse: clock.pulse,
 			progress: () => {}, // ephemeral, never recorded (F34)
 			// The status seam (R-19), on the same ephemeral footing: the host
 			// hears it, the receipt keeps only the last one on a run that
@@ -1792,7 +1882,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 					// Recorded before dispatch, so an oracle that throws still leaves the
 					// request in the receipt — the failing call is the one worth reading.
 					nr.request = p
-					return host?.call ? await host.call(p, nodeRef, { liveRow, dry }) : p
+					return host?.call
+						? await host.call(
+								p,
+								nodeRef,
+								{ liveRow, dry },
+								{ signal: controller.signal, pulse: clock.pulse },
+							)
+						: p
 				},
 				reportUsage: (t: number) => {
 					nr.tokens = (nr.tokens ?? 0) + t
@@ -1864,12 +1961,12 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 		let res: Result
 		try {
-			res = await withTimeout(Promise.resolve(hook(input, ctx)), timeoutMs, controller, now)
+			res = await clock.race(Promise.resolve(hook(input, ctx)))
 		} catch (e) {
 			if (e instanceof BudgetExceeded) throw e
-			if ((e as Error).message === '__timeout__') {
+			if (e instanceof NodeTimeout) {
 				nr.timedOut = true
-				res = err(`timeout after ${timeoutMs}ms`)
+				res = err(e.message)
 			} else {
 				res = err((e as Error).message)
 			}
@@ -2504,29 +2601,90 @@ async function sequential<T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R
 	return out
 }
 
-function withTimeout<T>(
-	p: Promise<T>,
-	ms: number,
+/** A node's own clock ran out (F36); the message is the receipt's reason. */
+class NodeTimeout extends Error {}
+
+/**
+ * One invocation's clock (F36), by the definition's `timeoutKind`.
+ *
+ * - `wall` — `ms` from the start of the invocation to its end, whatever the
+ *   node does in between. `pulse` does nothing.
+ * - `idle` — `ms` between signs of progress: every `pulse` restarts the
+ *   window, so a reply that streams for twenty minutes is fine and one that
+ *   goes silent for `ms` is not. The pub's ceiling, when finite, still
+ *   bounds the whole invocation, so no amount of pulsing runs a node forever.
+ *
+ * Real time only. Simulated waiting (`RunOptions.now`) never reaches it, and
+ * neither does a review gate — those park outside any invocation.
+ *
+ * Either way the node's own signal aborts when the clock runs out, which is
+ * what a host's in-flight request listens to (`CallHandles.signal`): a timeout
+ * that let the request run on would leave a model server generating into
+ * nothing, with the next request queued behind it.
+ */
+function nodeClock(
+	limit: { ms: number; kind: 'wall' | 'idle'; ceilingMs: number },
 	controller: AbortController,
-	now: () => number,
-): Promise<T> {
-	if (!Number.isFinite(ms)) return p
-	return new Promise<T>((resolve, reject) => {
-		const t = setTimeout(() => {
-			controller.abort()
-			reject(new Error('__timeout__'))
-		}, ms)
-		p.then(
-			(v) => {
-				clearTimeout(t)
-				resolve(v)
-			},
-			(e) => {
-				clearTimeout(t)
-				reject(e)
-			},
+): { pulse(): void; race<T>(p: Promise<T>): Promise<T> } {
+	const { ms, kind, ceilingMs } = limit
+	let window: ReturnType<typeof setTimeout> | undefined
+	let cap: ReturnType<typeof setTimeout> | undefined
+	let expire: ((reason: string) => void) | undefined
+
+	const restart = () => {
+		if (!expire || !Number.isFinite(ms)) return
+		if (window !== undefined) clearTimeout(window)
+		const fire = expire
+		window = setTimeout(
+			() =>
+				fire(
+					kind === 'idle'
+						? `timeout after ${ms}ms without progress`
+						: `timeout after ${ms}ms`,
+				),
+			ms,
 		)
-	})
+	}
+
+	return {
+		pulse: () => {
+			if (kind === 'idle') restart()
+		},
+		race<T>(p: Promise<T>): Promise<T> {
+			const capped = kind === 'idle' && Number.isFinite(ceilingMs)
+			if (!Number.isFinite(ms) && !capped) return p
+			return new Promise<T>((resolve, reject) => {
+				const settle = () => {
+					expire = undefined
+					if (window !== undefined) clearTimeout(window)
+					if (cap !== undefined) clearTimeout(cap)
+				}
+				expire = (reason) => {
+					settle()
+					controller.abort()
+					reject(new NodeTimeout(reason))
+				}
+				restart()
+				if (capped) {
+					const fire = expire
+					cap = setTimeout(
+						() => fire(`timeout after ${ceilingMs}ms (the pub's ceiling)`),
+						ceilingMs,
+					)
+				}
+				p.then(
+					(v) => {
+						settle()
+						resolve(v)
+					},
+					(e) => {
+						settle()
+						reject(e)
+					},
+				)
+			})
+		},
+	}
 }
 
 function setPath(obj: any, path: string[], value: unknown) {

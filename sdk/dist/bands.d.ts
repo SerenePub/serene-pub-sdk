@@ -110,7 +110,7 @@ export declare function bandsReaching(doc: {
 /**
  * What a `variables` slot renders at one node of a document: its static
  * `renders`, plus — when it declares `rendersBands` — every band declared
- * upstream of that in-port, minus the ones it names `raw`.
+ * upstream of that in-port.
  *
  * A band the static half already renders under the same variable is the same
  * name, not a collision (core's lore queries declare `worldLore`; Assemble

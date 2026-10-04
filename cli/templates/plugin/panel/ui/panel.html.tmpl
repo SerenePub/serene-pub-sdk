@@ -1,16 +1,17 @@
 <!doctype html>
 <!--
-  {{displayName}} — a frame panel.
+  {{displayName}} — the document inside the panel's component.
 
-  A frame panel is a VIEW ONTO A CHANNEL. This document has no cookies, no
-  socket, no DOM reach and no network: everything it knows arrives on the port
-  the host transfers with `init`, and what arrives is the messages of the
-  channels the panel declared. So anything this panel must not show is something
-  the server must never post.
+  The widget names a component (`components/{{panelId}}.ts`), and the component
+  places this document as an `sp-frame`. It has no cookies, no socket, no DOM
+  reach and no network: everything it knows arrives on the port the host
+  transfers with `init`, and what arrives is the `props` the component chose to
+  send. So anything this document must not show is something the component
+  never forwards.
 
   ⚠ The script is a FILE, not an inline block. A frame is served under
   `script-src 'self'`, so an inline <script> is refused — and from inside the
-  panel that failure is silent: the markup renders and nothing ever happens.
+  document that failure is silent: the markup renders and nothing ever happens.
   Inline <style> is allowed (`style-src 'self' 'unsafe-inline'`), which is why
   the one below stays. `npx serene-pub ui .` serves frames under core's own CSP,
   so this is the kind of thing the harness catches before an install does.

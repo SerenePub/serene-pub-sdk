@@ -1,13 +1,27 @@
 {
 	"name": "@serene-pub/conformance",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "The host conformance kit: thirty-three executable requirements a Serene Pub executor must satisfy. Run by SP Core and by any alternate host; its package cases (C28\u2013C33) by plugin authors over a built package.",
+	"version": "0.6.0-pr-1",
+	"description": "The host conformance kit: thirty-three executable requirements a Serene Pub executor must satisfy. Run by Serene Pub and by any alternate host; its package cases (C28–C33) by plugin authors over a built package.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/conformance#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "conformance"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"sideEffects": false,
 	"files": [
 		"dist",
-		"README.md"
+		"!dist/**/*.map",
+		"README.md",
+		"NOTICE"
 	],
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -19,12 +33,16 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0"
+		"@serene-pub/sdk": "0.6.0-pr-1"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

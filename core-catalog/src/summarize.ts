@@ -106,9 +106,22 @@ const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 						request: $.input.request
 					})
 				)
+				// 🚧 The files those messages show (attachments follow-ups,
+				// owner ruling 2026-10-03): the same read `respond` makes. A
+				// summary is drafted from text, so `batches` names each file
+				// after its message's text — `[image: cat.png — a grey cat]` —
+				// and counts the names in its cut. A message that is only a
+				// picture is summarized as that picture's name, not as nothing.
+				.query("attachments", ($) =>
+					C.historyAttachments.v1({
+						messages: $.transcript.messages,
+						params: slot.params()
+					})
+				)
 				.task("batches", ($) =>
 					C.batchMessages.v1({
 						messages: $.transcript.messages,
+						attachments: $.attachments.attachments,
 						params: slot.params(),
 						// The drafting step's own sampling, by reference rather
 						// than as a second picker. The cut has to be clamped to
@@ -143,7 +156,13 @@ const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 								connection: slot.connection(),
 								sampling: slot.sampling(),
 								prompts: slot.prompts()
-							})
+							}),
+							{
+								expose: {
+									label: 'Drafting',
+									purpose: 'Summarises the text a batch at a time, one draft per batch.',
+								},
+							},
 						)
 				)
 				.oracle("synth", ($: any) =>
@@ -154,7 +173,13 @@ const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 						connection: slot.connection(),
 						sampling: slot.sampling(),
 						prompts: slot.prompts()
-					})
+					}),
+					{
+						expose: {
+							label: 'Combining',
+							purpose: 'Merges the drafts into one summary, the text of the entry.',
+						},
+					},
 				)
 				.oracle("naming", ($: any) =>
 					C.nameEntry.v1({
@@ -163,7 +188,13 @@ const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 						connection: slot.connection(),
 						sampling: slot.sampling(),
 						prompts: slot.prompts()
-					})
+					}),
+					{
+						expose: {
+							label: 'Naming',
+							purpose: 'Gives the summary its title, the name the entry is filed under.',
+						},
+					},
 				)
 
 			const withCast = extractsCast

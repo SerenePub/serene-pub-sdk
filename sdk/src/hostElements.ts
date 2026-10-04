@@ -155,8 +155,10 @@ export const SP_HOST_ELEMENTS = {
 	),
 	label: plain('A label for a control.', ['for', 'id']),
 	img: plain(
-		'An image. `src` is an app media URL (`/media/…`, a session asset `/session-assets/<id>`) or the plugin\'s own file (`/plugin-ui/…`) — never another host.',
-		['src', 'alt', 'width', 'height', 'id', 'title'],
+		'An image. `src` is an app media URL (`/media/…`, a session asset `/session-assets/<id>`) or the plugin\'s own file (`/plugin-ui/…`) — never another host. ' +
+			'`loading` is `lazy` · `eager` and `decoding` `async` · `sync` · `auto` (1.2). `error` (nothing carried) is the image failing to load — a file deleted since, say — so a widget can draw its own stand-in rather than a broken image (1.2).',
+		['src', 'alt', 'width', 'height', 'id', 'title', 'loading', 'decoding'],
+		['error'],
 	),
 	a: plain(
 		'A link. `href` is `https:`, a fragment or one of the app\'s own files (`/media/…`, `/session-assets/…`); `target` may only be `_blank`, `download` names a saved file, and the host sets `rel="noopener noreferrer"`.',
@@ -304,6 +306,26 @@ export const SP_HOST_ELEMENTS = {
 			'kept from the field and raised as `key` (`{ key, shift, ctrl, meta }`). `autofocus` (core\'s alone) gives the ' +
 			'field the caret, at its end, as it lands. The `aria-*` given here go on the field itself; `field-class` ' +
 			"replaces the field's own classes (a composer skin styles the field, not its wrapper).",
+	},
+	'sp-file-picker': {
+		attributes: ['accept', 'multiple', 'disabled', 'class'],
+		events: ['files'],
+		doc:
+			"🚧 Opens the device's file picker when its body is clicked (1.3). The body is the widget's own control — a `button` " +
+			'it draws and names (`aria-label="Attach files"`) — so its look and label stay the widget\'s. `accept` is the ' +
+			"picker's filter (`image/png,.md`), `multiple` lets several be chosen, `disabled` opens nothing. `files` carries " +
+			'`{ files: File[] }`, the chosen files as the page holds them. A file `input` is not in the vocabulary ' +
+			'(`input type`): this is the one way to a file.',
+	},
+	'sp-drop-zone': {
+		attributes: ['disabled', 'label', 'class'],
+		events: ['files'],
+		parts: ['sp-drop-zone-overlay'],
+		doc:
+			'🚧 A region files can be dropped onto or pasted into (1.3). Its body is the region. While files are dragged over it the ' +
+			'host shows an overlay (`sp-drop-zone-overlay`) saying `label` (default "Drop to attach"). `files` carries ' +
+			'`{ files: File[], via: "drop" | "paste" }` — a drop, or a paste of files (a screenshot) anywhere inside the region; ' +
+			'a paste of text stays the field\'s.',
 	},
 	'sp-scroll': {
 		attributes: ['stick', 'label', 'class'],
@@ -552,6 +574,10 @@ export function hostAttributeValueFinding(tag: string, attribute: string, value:
 			? undefined
 			: `${t} keys '${bad}' — a key, after any of the modifiers Control+, Meta+ and Shift+ (Control+Enter)`
 	}
+	if (t === 'img' && attribute === 'loading')
+		return v === 'lazy' || v === 'eager' ? undefined : `img loading '${value}' — lazy or eager`
+	if (t === 'img' && attribute === 'decoding')
+		return v === 'async' || v === 'sync' || v === 'auto' ? undefined : `img decoding '${value}' — async, sync or auto`
 	if (t === 'sp-scroll' && attribute === 'stick')
 		return v === 'top' || v === 'bottom' ? undefined : `sp-scroll stick '${value}' — top or bottom`
 	if (attribute === 'src') {
@@ -755,4 +781,4 @@ export function hostElementsDts(): string {
  * componentBuiltAgainst.test.ts`): change the table without bumping this and
  * the suite says which to bump. `doc` strings are not the shape.
  */
-export const HOST_ELEMENTS_VERSION = '1.1' as const
+export const HOST_ELEMENTS_VERSION = '1.3' as const

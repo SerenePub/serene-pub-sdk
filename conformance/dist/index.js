@@ -160,7 +160,7 @@ export const REQUIREMENTS = [
         id: 'C1',
         law: 'F3',
         title: 'import(export(doc)) is identity, and the hash is stable',
-        consequence: 'Rows stop being the system of record. Export/import silently mutates specs, and two instances of the same version disagree about what they are running.',
+        consequence: 'Rows stop being the system of record. Export/import silently mutates specs, and two pubs on the same version disagree about what they are running.',
         check(host, fx) {
             const doc = fx.chatTurn();
             const back = host.importDocument(doc);
@@ -1063,15 +1063,6 @@ export const REQUIREMENTS = [
                 must(writes.length === 0, `the host answers ${writes.join(', ')} from a frame — a frame proposes and the host decides; ` +
                     `the write belongs to the run the fired action starts`);
             }
-            // The clause said rather than skipped in silence: core seats every
-            // enabled package's `surfaces.panels` widgets under a namespaced id
-            // and posts `{ t: 'settings' }` to them, same as any other widget.
-            // That is host behaviour, though, and this kit judges a package,
-            // not a host — so the clause records the rule instead of judging it.
-            report.skip('a frame surface’s declared settings are delivered by host behaviour: Serene Pub seats every ' +
-                'enabled package’s `surfaces.panels` widgets under a namespaced id and posts `{ t: "settings" }` ' +
-                'to them like any other widget, as of 2026-09-17 — but this kit judges a package, not a host, ' +
-                'so there is nothing here for it to judge.');
         },
     },
     {

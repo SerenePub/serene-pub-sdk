@@ -1,13 +1,29 @@
 {
 	"name": "@serene-pub/contracts",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "Generated, frozen type declarations for one Serene Pub release. The version IS the SP release: @serene-pub/contracts@0.6.x compiles against SP 0.6.x.",
+	"version": "0.6.0-pr-1",
+	"description": "Generated, frozen type declarations for one Serene Pub release: @serene-pub/contracts@0.6.x compiles against Serene Pub 0.6.x.",
 	"license": "Apache-2.0",
-	"sideEffects": false,
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/contracts#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "contracts"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
+	"sideEffects": [
+		"./dist/index.js"
+	],
 	"files": [
 		"dist",
-		"README.md"
+		"!dist/**/*.map",
+		"README.md",
+		"NOTICE"
 	],
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -19,12 +35,16 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": ">=0.6.0-preview.0"
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-preview.0"
+		"@serene-pub/sdk": "0.6.0-pr-1"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

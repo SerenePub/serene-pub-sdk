@@ -33,13 +33,14 @@ import type {
 	PromptDecl,
 } from './announce.js'
 import { COMPONENT_FRAMEWORKS, type ComponentDecl } from './extension.js'
-import { TURN_ORDER_CHANGED_IS_INTERNAL, sessionEvents, type GenreDecl } from './genres.js'
+import { CONVERSATION_WIDGET_ID, TURN_ORDER_CHANGED_IS_INTERNAL, sessionEvents, type GenreDecl } from './genres.js'
+import { drawnWidgetIds, validateSessionLayout, widgetOfInstance } from './sessionLayout.js'
 import { eventsLockFindings, getDefinition, swapFitFinding } from './descriptors.js'
 import { eventById, isEventId, notADeclaredEvent } from './events.js'
 import type { SpecDocument } from './document.js'
 import { actionDocumentFindings, actionsOf, slashCollisions } from './actions.js'
 import { isTodo } from './values.js'
-import { isServableEntry, isServablePanelId, type SurfacesDecl } from './surfaces.js'
+import { isServableEntry, type SurfacesDecl } from './surfaces.js'
 import { i18nFindings } from './i18n.js'
 import { annexDeclarationOf, annexStepFindings, type AnnexFieldDecl } from './annexFields.js'
 
@@ -187,6 +188,8 @@ export function swapContributionFindings(
 /** What one pass over a package's declarations produces. @experimental */
 export interface DeclarationFindings {
 	errors: string[]
+	/** What is declared as written but draws otherwise — a layout over a widget's `maxInstances`. Never refuses. */
+	warnings: string[]
 	/** The preset coverage report and the `todo()` holes — useful even on a refusal. */
 	coverage: CoverageReport
 	/** Ids referenced but not declared here; the instance enforces these at install. */
@@ -344,6 +347,33 @@ export function createPipelineFindings(
 				`genre '${g.id}' has ${creates.length} create pipelines ` +
 					`(${creates.map((s) => s.id).join(', ')}) — exactly one (24 §3)`,
 			)
+	}
+	return out
+}
+
+/**
+ * **A custom pipeline must include a default preset** (owner ruling,
+ * 2026-10-02, notes 27/28). The Pipelines view is Genre → Preset →
+ * pipelines, and a genre's pipelines are reached only through a session
+ * preset: a package that declares a genre and no preset for it ships
+ * pipelines nobody can start a session on or find under their genre. The
+ * first preset a package declares for its genre is the one an instance makes
+ * that genre's default when it has none (`registrySync`); a package that
+ * contributes to another package's genre needs none of its own.
+ * @experimental
+ */
+export function genrePresetFindings(
+	genres: readonly GenreDecl[],
+	presets: readonly PresetDecl[],
+): string[] {
+	const out: string[] = []
+	for (const g of genres) {
+		if (presets.some((p) => p.genre === g.id)) continue
+		out.push(
+			`genre '${g.id}' has no preset — a custom pipeline must include a default preset: ` +
+				`declare a preset() for this genre binding its pipelines, so sessions can start ` +
+				`on it and the Pipelines view lists them under it (the first one is the genre's default)`,
+		)
 	}
 	return out
 }
@@ -574,33 +604,25 @@ export function presetFindings(
  */
 export function surfaceFindings(surfaces: SurfacesDecl | undefined): string[] {
 	const out: string[] = []
-	const panelIds = new Set<string>()
-	for (const [i, p] of (surfaces?.panels ?? []).entries()) {
-		if (!p?.id) out.push(`surfaces.panels[${i}] has no id — a layout row keys on it`)
-		else if (panelIds.has(p.id))
-			out.push(`duplicate panel id '${p.id}' — ids are the layout key (21 §6)`)
-		else {
-			panelIds.add(p.id)
-			if (!isServablePanelId(p.id))
-				out.push(
-					`panel id '${p.id}' is not one an instance accepts (lowercase letters, ` +
-						`digits, '-' and '_') — it would be dropped silently at install`,
-				)
-		}
-		if (!p?.entry) out.push(`surfaces.panels[${i}] has no entry document`)
-		else if (!isServableEntry(p.entry))
-			out.push(
-				`surfaces.panels[${i}] entry '${p.entry}' is not a path an instance will ` +
-					`serve — it would be dropped silently at install`,
-			)
-	}
+	// A frame placed in the session layout is a widget whose component holds
+	// an `sp-frame` — never a declaration of its own.
+	if ((surfaces as { panels?: unknown } | undefined)?.panels !== undefined)
+		out.push(
+			'surfaces.panels is gone — declare each panel as a widget in `widgets` naming a component, ' +
+				'and place an `sp-frame` inside the component for the document',
+		)
 	for (const [where, decl] of [
 		['session-view', surfaces?.['session-view']],
 		['page', surfaces?.page],
 	] as const) {
 		if (decl && !decl.entry) out.push(`surfaces.${where} has no entry document`)
 		else if (decl?.entry && !isServableEntry(decl.entry))
-			out.push(`surfaces.${where} entry '${decl.entry}' is not a path an instance will serve`)
+			out.push(`surfaces.${where} entry '${decl.entry}' is not a path a pub will serve`)
+		if ((decl as { settings?: unknown } | undefined)?.settings !== undefined)
+			out.push(
+				`surfaces.${where}.settings is gone — a ${where} frame is handed no declared values; ` +
+					'declare settings on a widget, which its component reads as `ctx.settings`',
+			)
 	}
 	return out
 }
@@ -631,7 +653,7 @@ export function componentFindings(components: readonly ComponentDecl[]): string[
 		// `./dist/x.js` is a module path's ordinary spelling; the manifest
 		// carries it without the `./` (the CLI strips it).
 		else if (!isServableEntry(c.entry.replace(/^\.\//, '')))
-			out.push(`${at} entry '${c.entry}' is not a path an instance will serve`)
+			out.push(`${at} entry '${c.entry}' is not a path a pub will serve`)
 		if ((c as { surface?: unknown })?.surface !== undefined)
 			out.push(
 				`${at} names a surface point — a component has none now; declare a widget whose ` +
@@ -668,13 +690,6 @@ export function widgetComponentFindings(
 	const out: string[] = []
 	for (const g of genres)
 		for (const w of g.shape?.panels ?? []) {
-			// The deprecated alias may not reach past the package either (R25).
-			const alias = w?.surface as { kind?: string } | undefined
-			if (alias?.kind === 'native')
-				out.push(
-					`${g.id} panel '${w.id}' uses surface 'native', which is retired (R79) — declare a component ` +
-						`and name it with \`component\``,
-				)
 			if (typeof w?.component !== 'string') continue
 			if (!declared.has(w.component))
 				out.push(
@@ -704,14 +719,73 @@ export function packageWidgetFindings(
 		ids.add(w?.id)
 		if (coreWidgetIds().has(w?.id))
 			out.push(`widget '${w.id}' is core's widget's id — a layout names core's and yours by bare id, so choose another`)
-		if ((w?.surface as { kind?: string } | undefined)?.kind === 'native')
-			out.push(`widget '${w.id}' uses surface 'native', which is retired (R79) — declare a component and name it`)
 		if (typeof w?.component === 'string' && !declared.has(w.component))
 			out.push(`widget '${w.id}' names component '${w.component}', which this package does not declare — add it to \`components\``)
-		if (!w?.component && !w?.surface) out.push(`widget '${w?.id}' names no component`)
+		if (!w?.component) out.push(`widget '${w?.id}' names no component`)
+		if ((w as { surface?: unknown } | undefined)?.surface !== undefined)
+			out.push(`widget '${w.id}': \`surface\` is gone — name a component, and place an \`sp-frame\` inside it for a document`)
 		out.push(...widgetReadsFindings(w?.reads, `widget '${w?.id}' reads`))
 	}
 	return out
+}
+
+/**
+ * The layouts a package's genres ship, read as a whole package — what
+ * `genre()` and `layout()` cannot see, since a layout names widgets by id and
+ * only the package holds their declarations:
+ *
+ * - **The primary floor** (an error). A genre that withholds the
+ *   conversation draws, in the layout it ships first, a widget of this
+ *   package declared `role: 'primary'` — the one standing in the
+ *   conversation's place. `genre()` asks only that the layout draws
+ *   something. A widget of another package (a namespaced id) is that
+ *   package's to declare, and is taken as written. Needs the package's
+ *   widgets, so a package that states none is not judged.
+ * - **What draws, but not as written** (warnings): every warning
+ *   `validateSessionLayout` has for a shipped layout — an id placed but never
+ *   drawn, two items on one cell, and one of the package's widgets placed
+ *   more often than its `maxInstances`.
+ * @experimental
+ */
+export function genreLayoutFindings(
+	genres: readonly GenreDecl[],
+	widgets: readonly WidgetDecl[] | undefined,
+	ns: string,
+): { errors: string[]; warnings: string[] } {
+	const errors: string[] = []
+	const warnings: string[] = []
+	// A layout names the package's own widgets by bare id (`someWidget.id`);
+	// one written through `widgetRef` carries the package's namespace. Both
+	// spellings are the package's widget.
+	const own = (id: string): WidgetDecl | undefined => {
+		const widget = widgetOfInstance(id)
+		const bare = widget.startsWith(`${ns}:`) ? widget.slice(ns.length + 1) : widget
+		return widgets?.find((w) => w?.id === bare)
+	}
+	const capped = (widgets ?? [])
+		.filter((w) => typeof w?.maxInstances === 'number')
+		.flatMap((w) => [w, { id: `${ns}:${w.id}`, maxInstances: w.maxInstances }])
+	for (const g of genres) {
+		const layouts = g.layouts ?? []
+		for (const l of layouts)
+			for (const w of validateSessionLayout(l.preset, { widgets: capped }).warnings)
+				warnings.push(`${g.id} layout '${l.slug}': ${w}`)
+		if (!widgets || !layouts[0] || !(g.omitWidgets ?? []).includes(CONVERSATION_WIDGET_ID)) continue
+		const drawn = drawnWidgetIds(layouts[0].preset)
+		const standsIn = drawn.some((id) => {
+			const decl = own(id)
+			if (decl) return decl.role === 'primary'
+			const widget = widgetOfInstance(id)
+			return widget.includes(':') && !widget.startsWith(`${ns}:`)
+		})
+		if (!standsIn)
+			errors.push(
+				`${g.id} omits the conversation, and its layout '${layouts[0].slug}' draws none of this package's ` +
+					`role: 'primary' widgets${drawn.length ? ` (it draws ${drawn.map((id) => `'${id}'`).join(', ')})` : ''} — ` +
+					`declare the widget that stands in its place role: 'primary', and place it (any zone)`,
+			)
+	}
+	return { errors, warnings }
 }
 
 /** Deliberate holes: `todo()` sentinels found in config values, with their paths (24 §7). @experimental */
@@ -745,6 +819,7 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 		...genreOwnershipFindings(genres, p.ns),
 		...inputLockFindings(pipelines, new Set(declaredGenres.keys()), p.ns, requires),
 		...createPipelineFindings(genres, pipelines),
+		...genrePresetFindings(genres, p.presets ?? []),
 		...contributedActionFindings(pipelines),
 		...exposeSwapFindings(pipelines),
 		...swapContributionFindings(p.swaps ?? [], p.ns, declaredSpecs),
@@ -775,9 +850,12 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 		...widgetComponentFindings(genres, p.components ?? []),
 		...packageWidgetFindings(p.widgets ?? [], p.components ?? []),
 	)
+	const layouts = genreLayoutFindings(genres, p.widgets, p.ns)
+	errors.push(...layouts.errors)
 
 	return {
 		errors,
+		warnings: layouts.warnings,
 		coverage: { presets: presets.coverage, todos: todoHoles(configs) },
 		requires: [...requires].sort(),
 	}

@@ -487,8 +487,8 @@ export async function run(doc, opts) {
              * names an unreadable endpoint, or one this world does not have,
              * leaves as null — unconfigured, which a host can say out loud.
              */
-            const instanceDefault = kind ? world.activeConnection[kind] : undefined;
-            const chosenId = stored == null ? instanceDefault : slotConnectionId(stored);
+            const pubDefault = kind ? world.activeConnection[kind] : undefined;
+            const chosenId = stored == null ? pubDefault : slotConnectionId(stored);
             // Compared as strings, because the two sides genuinely differ in type:
             // the panel commits a pick as a JSON number, and the world projects
             // connection ids as strings. `===` between them is always false, and
@@ -803,7 +803,22 @@ export async function run(doc, opts) {
         // `settings.review` is the substrate slot's second field (`settingsSlot.ts`).
         if (isGated(d.effects)) {
             const position = resolvePosition(d.reviewDefault, config[node.key]?.['settings']?.['review']);
-            if (position !== 'off') {
+            // A dry run commits nothing (R-21 (1)), so there is nothing for a
+            // person to approve: the gate is recorded, never consulted. Without
+            // this a gated outlet BEFORE the preview halt — respond's
+            // `placeholder` — parked a card on every debounced token-count
+            // preview, so one turn showed several review prompts.
+            if (position !== 'off' && dry) {
+                nr.notes.push(`review '${position}': not asked — dry run`);
+                reviews.push({
+                    nodeKey: node.key,
+                    position,
+                    action: 'approve',
+                    originalHash: hashPayload(input),
+                    by: 'system:dry-run',
+                });
+            }
+            else if (position !== 'off') {
                 const originalHash = hashPayload(input);
                 if (!opts.reviewer) {
                     nr.endedAt = now();
@@ -922,8 +937,16 @@ export async function run(doc, opts) {
         const timeoutMs = Math.min(d.timeoutMs ?? Infinity, opts.timeoutCeilingMs ?? Infinity);
         nr.timeoutMsApplied = Number.isFinite(timeoutMs) ? timeoutMs : undefined;
         const controller = new AbortController();
+        // F36: `wall` bounds the invocation; `idle` bounds the gap between
+        // pulses, and the pub's ceiling still bounds the whole.
+        const clock = nodeClock({
+            ms: timeoutMs,
+            kind: d.timeoutKind ?? 'wall',
+            ceilingMs: opts.timeoutCeilingMs ?? Infinity,
+        }, controller);
         const base = {
             signal: controller.signal,
+            pulse: clock.pulse,
             progress: () => { }, // ephemeral, never recorded (F34)
             // The status seam (R-19), on the same ephemeral footing: the host
             // hears it, the receipt keeps only the last one on a run that
@@ -1056,7 +1079,9 @@ export async function run(doc, opts) {
                     // Recorded before dispatch, so an oracle that throws still leaves the
                     // request in the receipt — the failing call is the one worth reading.
                     nr.request = p;
-                    return host?.call ? await host.call(p, nodeRef, { liveRow, dry }) : p;
+                    return host?.call
+                        ? await host.call(p, nodeRef, { liveRow, dry }, { signal: controller.signal, pulse: clock.pulse })
+                        : p;
                 },
                 reportUsage: (t) => {
                     nr.tokens = (nr.tokens ?? 0) + t;
@@ -1130,14 +1155,14 @@ export async function run(doc, opts) {
         }
         let res;
         try {
-            res = await withTimeout(Promise.resolve(hook(input, ctx)), timeoutMs, controller, now);
+            res = await clock.race(Promise.resolve(hook(input, ctx)));
         }
         catch (e) {
             if (e instanceof BudgetExceeded)
                 throw e;
-            if (e.message === '__timeout__') {
+            if (e instanceof NodeTimeout) {
                 nr.timedOut = true;
-                res = err(`timeout after ${timeoutMs}ms`);
+                res = err(e.message);
             }
             else {
                 res = err(e.message);
@@ -1677,22 +1702,79 @@ async function sequential(items, fn) {
         out.push(await fn(i));
     return out;
 }
-function withTimeout(p, ms, controller, now) {
-    if (!Number.isFinite(ms))
-        return p;
-    return new Promise((resolve, reject) => {
-        const t = setTimeout(() => {
-            controller.abort();
-            reject(new Error('__timeout__'));
-        }, ms);
-        p.then((v) => {
-            clearTimeout(t);
-            resolve(v);
-        }, (e) => {
-            clearTimeout(t);
-            reject(e);
-        });
-    });
+/** A node's own clock ran out (F36); the message is the receipt's reason. */
+class NodeTimeout extends Error {
+}
+/**
+ * One invocation's clock (F36), by the definition's `timeoutKind`.
+ *
+ * - `wall` — `ms` from the start of the invocation to its end, whatever the
+ *   node does in between. `pulse` does nothing.
+ * - `idle` — `ms` between signs of progress: every `pulse` restarts the
+ *   window, so a reply that streams for twenty minutes is fine and one that
+ *   goes silent for `ms` is not. The pub's ceiling, when finite, still
+ *   bounds the whole invocation, so no amount of pulsing runs a node forever.
+ *
+ * Real time only. Simulated waiting (`RunOptions.now`) never reaches it, and
+ * neither does a review gate — those park outside any invocation.
+ *
+ * Either way the node's own signal aborts when the clock runs out, which is
+ * what a host's in-flight request listens to (`CallHandles.signal`): a timeout
+ * that let the request run on would leave a model server generating into
+ * nothing, with the next request queued behind it.
+ */
+function nodeClock(limit, controller) {
+    const { ms, kind, ceilingMs } = limit;
+    let window;
+    let cap;
+    let expire;
+    const restart = () => {
+        if (!expire || !Number.isFinite(ms))
+            return;
+        if (window !== undefined)
+            clearTimeout(window);
+        const fire = expire;
+        window = setTimeout(() => fire(kind === 'idle'
+            ? `timeout after ${ms}ms without progress`
+            : `timeout after ${ms}ms`), ms);
+    };
+    return {
+        pulse: () => {
+            if (kind === 'idle')
+                restart();
+        },
+        race(p) {
+            const capped = kind === 'idle' && Number.isFinite(ceilingMs);
+            if (!Number.isFinite(ms) && !capped)
+                return p;
+            return new Promise((resolve, reject) => {
+                const settle = () => {
+                    expire = undefined;
+                    if (window !== undefined)
+                        clearTimeout(window);
+                    if (cap !== undefined)
+                        clearTimeout(cap);
+                };
+                expire = (reason) => {
+                    settle();
+                    controller.abort();
+                    reject(new NodeTimeout(reason));
+                };
+                restart();
+                if (capped) {
+                    const fire = expire;
+                    cap = setTimeout(() => fire(`timeout after ${ceilingMs}ms (the pub's ceiling)`), ceilingMs);
+                }
+                p.then((v) => {
+                    settle();
+                    resolve(v);
+                }, (e) => {
+                    settle();
+                    reject(e);
+                });
+            });
+        },
+    };
 }
 function setPath(obj, path, value) {
     let cur = obj;

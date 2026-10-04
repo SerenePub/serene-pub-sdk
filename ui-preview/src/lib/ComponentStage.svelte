@@ -10,9 +10,9 @@
 	 *     call in try/catch (10 §7) precisely because a throwing surface must
 	 *     not take the page with it; a harness that let the throw escape would
 	 *     be teaching the opposite of what ships.
-	 *   · **No adapter is faked.** React needs a first-party adapter passing the
-	 *     conformance kit before "works with React" is a claim anyone verified,
-	 *     and the harness says so rather than half-mounting one.
+	 *   · **No adapter is faked.** Only the frameworks a declaration may name
+	 *     (`svelte`, `vanilla`) are mounted; anything else exports nothing
+	 *     mountable and says so.
 	 */
 	import { mount as svelteMount, unmount as svelteUnmount, untrack } from 'svelte'
 	import type { PreviewTarget } from '@serene-pub/sdk'
@@ -81,12 +81,6 @@
 				// points to, and a harness that searched for a component core
 				// would not find is a harness that lies.
 				const exported = (mod.default ?? mod) as any
-				if (target.framework === 'react') {
-					error =
-						'React components need the first-party React adapter, which the harness ' +
-						'does not ship yet (10 §7). Preview it as a frame surface, or use Svelte/vanilla.'
-					return
-				}
 				if (typeof exported?.mount === 'function') {
 					// Vanilla ABI: the module owns its own root.
 					const handle = exported.mount(el, live, ctx)

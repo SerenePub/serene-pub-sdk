@@ -126,14 +126,22 @@ describe('recording an event', () => {
 	})
 })
 
+/** A plain reply on `gg` — what a genre's preset binds beside its create. */
+const respondOn = (gg: typeof g, id: string) =>
+	spec(id, { version: '1.0.0' }).inlet('input', C.userMessage.v1(), { genre: gg, event: sessionEvents.messageRespond }).build()
+
 describe("the package entry's recording scope (R52)", () => {
-	const ext = (recordedBy: unknown, pipelines = [createTable, rollSpec()]) =>
+	// A genre ships with a preset (owner ruling 2026-10-02: a custom pipeline
+	// must include a default preset).
+	const respondTable = respondOn(g, 'dice:spec/respond-table')
+	const ext = (recordedBy: unknown, pipelines = [createTable, rollSpec(), respondTable]) =>
 		defineExtension({
 			slug: 'dice',
 			name: 'Dice',
 			version: '0.1.0',
 			genres: [g],
 			pipelines,
+			presets: [{ slug: 'table', genre: g, label: 'Table', bindings: [createTable, respondTable] }],
 			events: [{ event: rolled, genre: g, recordedBy: recordedBy as never }],
 		})
 
@@ -226,7 +234,17 @@ describe('E1a review fixes', () => {
 			name: 'Dice',
 			version: '0.1.0',
 			genres: [g, g2],
-			pipelines: [createOn(g, 'dice:spec/c1'), createOn(g2, 'dice:spec/c2'), respondRecording(g2, 'dice:spec/r2')],
+			pipelines: [
+				createOn(g, 'dice:spec/c1'),
+				createOn(g2, 'dice:spec/c2'),
+				respondOn(g, 'dice:spec/r1'),
+				respondRecording(g2, 'dice:spec/r2'),
+			],
+			// One preset per genre (owner ruling 2026-10-02).
+			presets: [
+				{ slug: 'table', genre: g, label: 'Table', bindings: [createOn(g, 'dice:spec/c1'), respondOn(g, 'dice:spec/r1')] },
+				{ slug: 'parlour', genre: g2, label: 'Parlour', bindings: [createOn(g2, 'dice:spec/c2'), respondRecording(g2, 'dice:spec/r2')] },
+			],
 			...over,
 		} as never)
 

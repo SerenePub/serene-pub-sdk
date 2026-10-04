@@ -22,6 +22,14 @@ const ADMONITION_KINDS = ['note', 'tip', 'warning'];
 /** Anything with a scheme, a root, a protocol-relative host, or a bare anchor. */
 const PASSTHROUGH_HREF = /^(?:[a-z][a-z0-9+.-]*:|\/\/|\/|#)/i;
 const MD_HREF = /^([^#?]*\.md)(#.*)?$/i;
+/**
+ * An absolute `http(s)` URL: a link off the docs. Every link between pages is
+ * rewritten to a root-relative `linkBase` path, so whatever is still absolute
+ * here names another site, and it opens in a new window so the reader keeps
+ * their place in the docs (owner, 2026-10-01).
+ */
+const OFFSITE_HREF = /^https?:\/\//i;
+const OFFSITE_LINK_ATTRS = ' target="_blank" rel="noopener noreferrer"';
 /** A bare `#anchor`: a link to a heading on the page that wrote it. */
 const SELF_ANCHOR_HREF = /^#(.+)$/;
 /** The slug the page being rendered compiles to — `collectPages`' rule. */
@@ -245,7 +253,8 @@ export async function renderMarkdown(markdown, opts) {
                         links.push({ href, slug: pageSlug(opts), anchor });
                 }
                 const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
-                return `<a href="${escapeHtml(resolved?.href ?? href)}"${titleAttr}>${text}</a>`;
+                const away = !resolved && OFFSITE_HREF.test(href) ? OFFSITE_LINK_ATTRS : '';
+                return `<a href="${escapeHtml(resolved?.href ?? href)}"${titleAttr}${away}>${text}</a>`;
             },
             code(token) {
                 const { text, lang } = token;

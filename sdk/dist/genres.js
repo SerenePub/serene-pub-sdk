@@ -1,4 +1,5 @@
-import { layoutWidgetIds, middleWidgetIds, widgetRef } from './widgetDecls.js';
+import { widgetRef } from './widgetDecls.js';
+import { drawnWidgetIds, layoutWidgetIds, widgetOfInstance } from './sessionLayout.js';
 import { assertChannelDecls, assertMessageVerbFloors, assertSessionWrites, assertTurnControls, channelDecls, widgetDeclsFindings, } from './descriptors.js';
 import { i18nFindings, localeMapOf } from './i18n.js';
 import { eventById, notADeclaredEvent } from './events.js';
@@ -295,7 +296,7 @@ function assertEnvoys(envoys, genreId, shape) {
         throw new Error(findings.join('\n'));
     return envoys.map((e) => normalizeEnvoy(e, e.speaks ?? 'in-turn'));
 }
-/** Core's conversation widget — the middle a genre must replace if it withholds it. @internal */
+/** Core's conversation widget — the primary widget a genre must replace if it withholds it. @internal */
 export const CONVERSATION_WIDGET_ID = 'messages';
 /** `omitWidgets` read down to ids, and `layouts` checked (R71). */
 function assertGenreWidgets(props, id) {
@@ -323,17 +324,23 @@ function assertGenreWidgets(props, id) {
         if (slugs.has(l.slug))
             problems.push(`${id} layouts: two layouts are '${l.slug}' — a slug names one`);
         slugs.add(l.slug);
+        // By widget, not by instance: `messages#sanctum` places the conversation.
         for (const w of layoutWidgetIds(l.preset))
-            if (omitWidgets.includes(w))
+            if (omitWidgets.includes(widgetOfInstance(w)))
                 problems.push(`${id} layout '${l.slug}' places '${w}', which the genre omits`);
     }
-    // The middle is never empty: a genre that withholds the conversation says
-    // what stands there instead, in the layout it ships first.
+    // The primary floor: a session always draws its primary widget. A genre
+    // that withholds the conversation says what stands in its place — its
+    // package's `role: 'primary'` widget — in the layout it ships first, in any
+    // zone (placement is free). Which widget that is, the widget's declaration
+    // says, and a genre holds only ids: so this asks that the layout draws
+    // something, and the package pass (`genreLayoutFindings`, run by
+    // `defineExtension` and the packager) that what it draws is primary.
     if (omitWidgets.includes(CONVERSATION_WIDGET_ID)) {
         const first = layouts[0];
-        if (!first || !middleWidgetIds(first.preset).length)
-            problems.push(`${id} omits the conversation — ship a layout (layouts: [layout({ … })]) whose middle zone places ` +
-                `the widget that takes its place`);
+        if (!first || !drawnWidgetIds(first.preset).length)
+            problems.push(`${id} omits the conversation — ship a layout (layouts: [layout({ … })]) that places ` +
+                `the widget that takes its place (its role: 'primary' widget), in any zone`);
     }
     if (problems.length)
         throw new Error(problems.join('\n'));

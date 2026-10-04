@@ -52,6 +52,23 @@ export const ENABLED_FIELD: FieldDecl = Object.freeze({
 })
 
 /**
+ * `enabled` on an optional node that is not a source — a model call such as
+ * the planner or the state keeper, or a task. The same switch at the same
+ * address; only the words differ, because *Use this source* over a model call
+ * says something untrue about it.
+ * @experimental
+ */
+export const ENABLED_STEP_FIELD: FieldDecl = Object.freeze({
+	type: 'boolean',
+	default: true,
+	quick: true,
+	label: { en: 'Run this step' },
+	description: {
+		en: 'Off skips the step entirely: nothing is called or charged, and the steps after it go on without what it would have made.',
+	},
+})
+
+/**
  * `review` — the gate's position on a node whose `effects` gate (01 §7).
  *
  * Declared per gated node from its `reviewDefault`, which an author may set
@@ -81,18 +98,20 @@ export function reviewField(reviewDefault: ReviewPosition | undefined): FieldDec
  * The substrate's `settings` slot for a definition, or nothing when the
  * definition has no switch to declare.
  *
- * `enabled` when the node is `optional`; `review` when its `effects` gate. A
+ * `enabled` when the node is `optional` — worded as a source for a query, as a
+ * step for anything else; `review` when its `effects` gate. A
  * node that is both (`embed-text`, `generate-json`) carries both fields on
  * the one slot — one address prefix, as the executor has always read it.
  * @experimental
  */
 export function settingsSlotFor(d: {
+	kind?: string
 	optional?: boolean
 	effects?: string
 	reviewDefault?: ReviewPosition
 }): SlotDecl | undefined {
 	const schema: Record<string, FieldDecl> = {}
-	if (d.optional === true) schema.enabled = ENABLED_FIELD
+	if (d.optional === true) schema.enabled = d.kind === 'query' ? ENABLED_FIELD : ENABLED_STEP_FIELD
 	if (d.effects === 'write' || d.effects === 'external')
 		schema.review = reviewField(d.reviewDefault)
 	if (!Object.keys(schema).length) return undefined

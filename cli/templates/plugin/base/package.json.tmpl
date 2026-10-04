@@ -24,14 +24,18 @@
 		"ui": "serene-pub ui ."
 	},
 	"dependencies": {
-		"@serene-pub/contracts": "file:../serene-pub-sdk/contracts",
-		"@serene-pub/core-catalog": "file:../serene-pub-sdk/core-catalog",
-		"@serene-pub/sdk": "file:../serene-pub-sdk/sdk"
+		"@serene-pub/contracts": "^0.6.0-pr-1",
+		"@serene-pub/core-catalog": "^0.6.0-pr-1",
+		"@serene-pub/sdk": "^0.6.0-pr-1"
 	},
 	"devDependencies": {
-		"@serene-pub/cli": "file:../serene-pub-sdk/cli",
-		"@serene-pub/conformance": "file:../serene-pub-sdk/conformance",
-		"@serene-pub/ui-preview": "file:../serene-pub-sdk/ui-preview",
+		"@serene-pub/cli": "^0.6.0-pr-1",
+{{#panel}}
+		"@serene-pub/component-client": "^0.6.0-pr-1",
+{{/panel}}
+		"@serene-pub/conformance": "^0.6.0-pr-1",
+		"@serene-pub/docs": "^0.6.0-pr-1",
+		"@serene-pub/ui-preview": "^0.6.0-pr-1",
 		"@types/node": "^26.6.1",
 		"esbuild": "^0.25.0",
 		"typescript": "^5.0.0",

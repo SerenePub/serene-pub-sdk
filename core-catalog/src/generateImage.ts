@@ -12,8 +12,7 @@
  * `effects: 'external'`, which makes it gate-eligible, and the shipped default
  * preset turns its review ON — so the executor parks there and infers a form from
  * the node's own payload. The prompt fields a person fills in ARE the payload the
- * run resumes with. `echo.ts` proved that round trip with no backend at all; this
- * is the same mechanism with something at the other end of it.
+ * run resumes with.
  *
  * The consequence worth stating: the modal is generated from the contract, so a
  * parameter added to the provider appears in it with no client change, and there

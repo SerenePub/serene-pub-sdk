@@ -198,6 +198,34 @@ test('a mark goes through set-entry-marks, shows as it now stands, and the page 
 	}
 })
 
+test('a mark a dated amendment still decides is said in this widget: saved to the entry, and the row reads as the session has it', { timeout: 120_000 }, async () => {
+	const b = book()
+	const { view } = await mountBook({
+		requests: (kind, params) => {
+			if (kind === 'session-entries') return b.page(params as Ask)
+			// Saved to the entry, but an amendment from Year 3 still unpins it here.
+			if (kind === 'set-entry-marks') return { off: false, pinned: false, heldBy: { mark: 'pinned', date: 'Year 3' } }
+			throw new Error(`not asked: ${kind}`)
+		},
+	})
+	try {
+		await view.click('button[aria-label="Pin Mira"]')
+		await view.settle()
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'set-entry-marks').map((r) => r.params), [{ entryId: 1, pinned: true }])
+		assert.equal(view.query('button[aria-label="Pin Mira"]')?.getAttribute('aria-pressed'), 'false')
+		const held = view.query('[data-widget-part~="lore-entries.held"]')
+		assert.equal(held?.getAttribute('role'), 'status')
+		assert.equal(held?.textContent?.trim(), 'Saved to the entry, but an amendment dated Year 3 still decides whether it is pinned here.')
+		assert.equal(view.query('[role="alert"]') === null, true)
+		// The line goes with the view it was said over, as a refusal's does.
+		await view.check(`input[type="radio"][value="pinned"]`)
+		await view.settle()
+		assert.equal(view.query('[data-widget-part~="lore-entries.held"]') === null, true)
+	} finally {
+		await view.unmount()
+	}
+})
+
 test("a refused mark is said in this widget, in words — never the host's error channel", { timeout: 120_000 }, async () => {
 	const b = book()
 	const { view } = await mountBook({
@@ -234,6 +262,33 @@ test("'lore:marked' on an entry shown asks the page again; on one not shown it d
 		await view.settle()
 		assert.equal(asks(view).length, before + 1)
 		assert.equal(view.query('button[aria-label="Pin Mira"]')?.getAttribute('aria-pressed'), 'true')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test("showing only Pinned or Off, 'lore:marked' on an entry not shown asks again: it may have joined", { timeout: 120_000 }, async () => {
+	const { view, b } = await mountBook()
+	try {
+		await view.check(`input[type="radio"][value="off"]`)
+		await view.settle()
+		assert.deepEqual(titles(view), [])
+		const before = asks(view).length
+		// Switched off elsewhere (the entry editor, another tab): not on screen, yet it now belongs.
+		b.rows[1]!.off = true
+		await view.event({ kind: 'lore:marked', entryId: 2 })
+		await view.settle()
+		assert.equal(asks(view).length, before + 1)
+		assert.deepEqual(titles(view), ['The Old Mill'])
+
+		await view.check(`input[type="radio"][value="pinned"]`)
+		await view.settle()
+		const pinnedBefore = asks(view).length
+		b.rows[0]!.pinned = true
+		await view.event({ kind: 'lore:marked', entryId: 1 })
+		await view.settle()
+		assert.equal(asks(view).length, pinnedBefore + 1)
+		assert.ok(titles(view).includes('Mira'))
 	} finally {
 		await view.unmount()
 	}

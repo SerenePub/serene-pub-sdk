@@ -55,7 +55,7 @@ typed<Same<NonNullable<WidgetData['session_state']>, { v1: SessionStateV1 }>>(tr
 typed<Same<NonNullable<WidgetData['characters']>, { v1: SessionCharactersV1 }>>(true)
 typed<Same<ComponentSections['scoped']['session_state'], SessionStateV1 | undefined>>(true)
 typed<Same<Extract<WidgetScope, 'session:state'>, 'session:state'>>(true)
-typed<Same<WidgetRequests['set-entry-marks']['result'], { off: boolean; pinned: boolean }>>(true)
+typed<Same<WidgetRequests['set-entry-marks']['result'], { off: boolean; pinned: boolean; heldBy?: { mark: 'off' | 'pinned'; date: string } }>>(true)
 // The search box's words are `titleOrKey` — never `query`, which the node kind owns (a retired word).
 typed<Same<keyof WidgetRequests['session-entries']['params'], 'titleOrKey' | 'sort' | 'filter' | 'typeIds' | 'offset' | 'limit'>>(true)
 

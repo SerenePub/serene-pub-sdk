@@ -55,6 +55,14 @@ search.topK
 search.params?.minScore
 
 declare const history: InputOf<typeof C.sessionHistory>
+// Exactly the names `suppliesOf` answers in nodeInput.test.ts ("the two
+// derivations agree"): a name missing here, or one too many, fails to compile.
+const _historyNames: Record<keyof typeof history, true> = {
+	budget: true,
+	messageId: true,
+	params: true,
+	scope: true,
+}
 const _limit: number | undefined = history.params?.limit
 const _channel: string | undefined = history.params?.channel
 
@@ -215,10 +223,16 @@ reads<typeof C.sessionHistory>(historyHook, {
 	ports: [],
 })
 
+// `budget` was culled from this node (2026-09-16, read by nothing) and is
+// declared again with a reader (history window, 2026-10-03): the read is
+// sized by the window. A declared port compiles; a misspelt one does not.
 reads<typeof C.sessionHistory>(historyHook, {
-	// @ts-expect-error — `budget` was this node's in-port until it was culled
-	// (2026-09-16); declaring a read of it must not compile it back
 	ports: ['budget'],
+})
+
+reads<typeof C.sessionHistory>(historyHook, {
+	// @ts-expect-error — `budjet` is nobody's port
+	ports: ['budjet'],
 })
 
 reads<typeof C.sessionHistory>(historyHook, {

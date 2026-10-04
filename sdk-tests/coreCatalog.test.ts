@@ -24,16 +24,15 @@ describe('the core catalog', () => {
 		// `coreAnnouncement()` names, not the three core started with.
 		//
 		// ⚠ Read through the package's `dist`, so a genre written today is
-		// absent here until `npm run sdk:build` catches up. `lair`,
-		// `writing-room` and `whodunit` each landed that way.
+		// absent here until `npm run sdk:build` catches up. `lair` landed
+		// that way. (Writing Room and Whodunit were core genres until
+		// 2026-09-30 and are showcase plugins now.)
 		assert.deepEqual(document.genres.map((g) => g.id).sort(), [
 			'core:genre/adventure',
 			'core:genre/chat',
 			// The guide (R-18, U5g): the pure user/assistant session type.
 			'core:genre/guide',
 			'core:genre/lair',
-			'core:genre/whodunit',
-			'core:genre/writing-room',
 		])
 		assert.equal(document.pipelines.length, CORE_SPECS.length)
 		// Core references nothing it does not ship.
@@ -342,6 +341,181 @@ describe("core's announcement (golden)", () => {
 		// Proven: the sources (sdk, contracts, core-catalog) copied with only
 		// R11's edits reverted hash back to 'f2b52529af0442f1', and every Lair
 		// spec pin comes back with it. (was 'f2b52529af0442f1')
-		assert.equal(digest.slice(0, 16), 'fe81e9984c9eead9')
+		// Moved 2026-09-29 (genre uplift C2, a narration's direction reaches
+		// the prompt): `narrate` collects optional text and wires
+		// `context.turnDirection: $.input.text`, as do `narrate-character` and
+		// `whodunit-search`; the Narrator and Side Character rows end both
+		// texts with the `{{#if turnDirection}}` focus clause, and Whodunit
+		// search names what the detective is looking for. Proven: this
+		// document with only those three specs' edge/config/collects and the
+		// five clauses removed hashes back to the old pin. (was 'fe81e9984c9eead9')
+		// Moved 2026-09-29 (places plan B6, prompts and the Lair): lair-respond's
+		// rooms read asks `withLinks`; lair-room-answer links the new room to the
+		// room the party stand in (`gather.rooms`, `here`, the `link` junction,
+		// their preset values); the Lair planner row reads the ways on from
+		// "From here" (and an older room's own exits). Proven: this document
+		// built from a copy of core-catalog/src with only B6's lair.ts,
+		// lairActions.ts and prompts.ts edits reverted hashes back to the old
+		// pin, and both Lair spec pins come back with it. (was 'b3b647e03d5f3988')
+		// Moved 2026-09-29 (places plan, B6 review round): the Lair planner row
+		// no longer calls every line under From here a way on — a line saying
+		// what the room is inside, holds or hides is not one, and a room may
+		// list none. Prompt text only: no spec pin moved. Proven: core-catalog
+		// rebuilt with only that sentence reverted hashes back to the old pin.
+		// (was 'da4e95b335f602bd')
+		// Moved 2026-09-29 (layout plan brief 1, one format): the four core
+		// genres' `layouts[0].preset` is the session layout they have always
+		// seeded (ADVENTURE_LAYOUT, LAIR_LAYOUT, WRITING_ROOM_LAYOUT,
+		// WHODUNIT_LAYOUT) instead of a LayoutDoc v2 twin, less the retired
+		// grid `required` flag. Measured with other lanes' in-flight source
+		// already in the tree. Brief 1's half, proven: this document with every
+		// genre's old `layouts` put back (and nothing else touched) hashes to
+		// '52d8e0065d7a08ad'. The rest of the move, '857dc07f24ca4a1f' →
+		// '52d8e0065d7a08ad', is NOT brief 1's: it is the genre lanes'
+		// in-flight core-catalog edits (adventure-respond's relationship
+		// gather and its presets, new nodes on respond, narrate and
+		// narrate-character, the two Adventure prompt rows), built into dist
+		// for the first time by this build — for those lanes to prove against
+		// this chain. (was '857dc07f24ca4a1f')
+		// Part of that rest, proven (genre uplift F1, 2026-09-29, Search by
+		// meaning is Automatic): `core:task/query-windows@1` gains a
+		// `connection` slot and `searchByMeaning` becomes `auto | on | off`
+		// (default `auto`); respond, narrate and narrate-character wire
+		// `queries.connection: slot.connectionOf('semantic.arm.embed')` — a
+		// config key on an existing node, no new node. contracts/src and
+		// core-catalog/src copied with only F1's edits reverted hash to
+		// '738060d6a01c90d9', and with them to this pin: F1 is exactly
+		// '738060d6a01c90d9' → 'e2b6164acdf06fc2'.
+		// Moved 2026-09-30 (plan A27 P5, the "fall back" default): Lair respond's
+		// knock reads the planner's location hint onto its block
+		// (`door.knock.vantage` and its preset path), and the room answer's
+		// `here` falls back to it (`fallbackName` from `answer.vantage`).
+		// Proven: a copy of core-catalog/src with only those lair.ts and
+		// lairActions.ts edits reverted hashes back to 'e2b6164acdf06fc2'.
+		// Moved 2026-09-30 (plan A28, genres lane): the Guide reads its
+		// lorebook (`gather.worldLore`, pooled into `lore`; the template places
+		// it), Whodunit's Answer reads the answering suspect's own private
+		// lore, the Lair's room drafts read the rooms listing and read the book
+		// as the Castellan, Adventure's respond lists its places
+		// (`gather.rooms`, `locationEntries` on the planner, scene and voices),
+		// and five prompt rows say so. Proven: a copy of core-catalog/src with
+		// only those five files' edits reverted (guide.ts, whodunitActions.ts,
+		// lairActions.ts, adventure.ts, prompts.ts) hashes back to
+		// '16bcfe24b2a75317'.
+		// Moved 2026-09-30 (plan A28 review, genres fix-up): Whodunit's Answer
+		// carries the pressed option's reference into the side-character fact
+		// (`{ name, ref }`), and the Lair's Answer the door and File as a room
+		// read world lore and history lanes in place of lorebook-triggers.
+		// Proven: a copy of core-catalog/src with only those two files' edits
+		// reverted (whodunitActions.ts, lairActions.ts) hashes back to
+		// '226e55f04d5c6bc9'.
+		// Moved 2026-09-30 (config grouping, catalog lane): every model call of a
+		// multi-call spec carries `expose.label` and `expose.purpose`, steps whose
+		// headings repeated within one group carry an `expose.label`, and the
+		// "Adventure look" prompt row claims `adventure-look`. Proven: a copy of
+		// core-catalog/src with only this lane's edits reverted (adventure.ts,
+		// adventureActions.ts, whodunit.ts, whodunitActions.ts, writingRoom.ts,
+		// writingRoomActions.ts, summarize.ts, graphBuild.ts, toolLoop.ts,
+		// respond.ts, narrate.ts, narrateCharacter.ts, lair.ts, lairActions.ts,
+		// prompts.ts) hashes back to 'e96661d516b98d2c'.
+		// Moved 2026-09-30 (Lair party speech, owner ruling: no lead delver):
+		// lair-respond's `pick` → `door` → `speech` shape, the Lair genre's
+		// `partySpeech` field (lair-create carries the shape), the
+		// "Lair Castellan speaks for the party" prompt row, and
+		// `build-scene-context@1`'s `partySpeakers` in-port. Proven: a copy of
+		// sdk, contracts and core-catalog sources with only this lane's edits
+		// reverted (lair.ts, genres.ts, prompts.ts, contracts/src/index.ts)
+		// hashes back to 'be3332b6a160c022'.
+		// Moved 2026-09-30 (Whodunit and Writing Room to showcase plugins,
+		// owner ruling): their two genres, 21 specs, 17 prompt rows and two
+		// presets leave core's announcement — removal only. Proven: the
+		// pre-move core-catalog/src hashes to '84ba48697b47ed1a'; the moved
+		// tree with the Lair lane's two specs (lair-respond, lair-turn-order)
+		// put back as they stood hashes to '30da74d6ecbe1e0a', and every other
+		// entry is unchanged. (was '84ba48697b47ed1a')
+		// Moved 2026-09-30 (Lair character turns, owner ruling: "they are
+		// character turns, not first delver, later delver"): lair-respond,
+		// lair-create and lair-turn-order — see their pins in lair.test.ts.
+		// Proven: a copy of core-catalog/src with only this lane's edits
+		// reverted (lair.ts, turnOrder.ts, genres.ts) hashes to
+		// '30da74d6ecbe1e0a', and every Lair spec pin comes back with it. The
+		// rest of the move, '84ba48697b47ed1a' → '30da74d6ecbe1e0a', is NOT
+		// this lane's: measured with other lanes' in-flight core-catalog edits
+		// already in the tree — the Whodunit and Writing Room move to showcase
+		// plugins among them — for those lanes to prove against this chain.
+		// (was '84ba48697b47ed1a')
+		// Moved 2026-10-01 (owner ruling: the post-history reminder's trigger
+		// ships at 0.5.3's 3000 in the genre): respond, guide-respond,
+		// adventure-respond and lair-respond set `postHistoryTokenTrigger` on
+		// their default preset's assemble steps. Proven: the built core-catalog
+		// with only those preset values stripped hashes back to the old pin.
+		// (was 'a3818c34d7fa03b4')
+		// Moved 2026-10-01 (post-history trigger): respond's default preset is
+		// `default` / "Default", and narrate-character, adventure-look, lair-trap
+		// and lair-reveal ship the 3000 trigger on a default preset.
+		// Proven: a copy of core-catalog/src with only this change reverted
+		// hashes back to the old pin. (was '576ae15d245ef27c')
+		// Moved 2026-10-01 (owner: the Guide's envoy is Serene): her name, face,
+		// manner and declared greeting in genres.ts, and create-guide 1.1.0 writing
+		// that greeting. Proven: a copy of core-catalog/src with only guide.ts and
+		// genres.ts reverted hashes back to the old pin. (was '4b1e7c1fa9bccafb')
+		// Moved 2026-10-02 (owner ruling: whoever writes a delver's line keeps
+		// that delver's stats): lair-respond — see its pin in lair.test.ts.
+		// Proven: a copy of core-catalog/src with only that lair.ts edit
+		// reverted hashes back to the old pin. (was '831c0be7f7661697')
+		// Moved 2026-10-02 (owner note 35: Echo deleted): `core:spec/echo` is
+		// gone from the pipelines. Proven: the current document with HEAD's
+		// compiled echo spec re-inserted before `set-annex-field` hashes back to
+		// the old pin. (was 'de302582b8bd4c9c')
+		// Moved 2026-10-02 (owner ruling AN1: the author's note, Chat only):
+		// Chat declares the `authorsNote` field (create-chat inlines it),
+		// respond's `context` step wires `fields: $.input.fields`, and
+		// Adventure, Guide and the Lair omit the new `authors-note` widget.
+		// Measured with other lanes' in-flight core-catalog edits in the
+		// tree, not proven in isolation. (was '8ff90757ee9d17dc')
+		// Moved 2026-10-02 (lorebooks Wave 8): `core:task/eligibility@1` and
+		// `core:query/cast-presences@1` declared (C2/R4), a `speaker` in-port
+		// on vector-search / entity-search / entity-link (C3), entity-search's
+		// and mention-spans' caps on by default (R5 / A23(b)), rank-hybrid's
+		// `shownElsewhere` in-port (the room rule), and every core spec that
+		// ranks rewired: an `eligible` step before each ranker, Adventure's
+		// and the Lair's arms, the room rule's `place` step. Measured with
+		// other lanes' in-flight core-catalog edits in the tree (the
+		// attachments lane's among them), not proven in isolation.
+		// (was '8286666b6a6dafa5')
+		// Moved 2026-10-02 (composer attachments phase 4, PLAN §3.5): respond,
+		// guide-respond, adventure-respond (narrator and voices), narrate,
+		// narrate-character and lair-respond (each voice) read
+		// `core:query/history-attachments@1` and place each line's files with
+		// `core:task/place-attachments@1` before the prompt. Measured with other
+		// lanes' in-flight core-catalog edits in the tree, not proven in
+		// isolation. (was '0d5224c2cec22dc6')
+		// Moved 2026-10-03 (owner note 39): the port `thinking` -> `reasoning`
+		// on generate-text (out) / update-message (in), and every core save
+		// rewired to its oracle's `reasoning`. Measured with other lanes'
+		// in-flight core-catalog edits in the tree. (was '9618918e548f1445')
+		// Moved 2026-10-03 (owner ruling: Look onto the scene builder):
+		// adventure-look's `context` is `build-scene-context@1` with the
+		// `gather.rooms` listing and the room rule's `place` step, its preset
+		// ships their values, and the "Adventure look" prompt row moved to the
+		// scene pool (place paragraph and `narratorName` added). Proven: a copy
+		// of core-catalog/src with only this lane's edits reverted
+		// (adventureActions.ts, prompts.ts) hashes to 'a23aaeb3730bfdd2'; the
+		// move from '39d1843db69b2389' to that is other lanes' in-flight edits,
+		// not this one's. Note 44's default swap (`defaultForSpecs`) is not in
+		// the announcement. (was '39d1843db69b2389')
+		// Part of that rest (owner ruling 2026-10-03, author's note lane):
+		// Chat ships a default layout (`CHAT_LAYOUT`, the Author's note
+		// unpinned in the right rail). Proven: this document with Chat's
+		// `layouts` key deleted hashes to '131c93dcb85f970d'.
+		// Moved 2026-10-03 (attachments follow-ups, owner ruling): the action
+		// specs (answer forms, tool loop, Adventure Look/Rest/Advance time/Ask,
+		// Lair Build room/room answer/File room/Trap/Reveal) read and place the
+		// transcript's files; summarize wires `attachments` into `batches`;
+		// guide's and the answer form's templates render `{{{attachments}}}`;
+		// the tool loop's renders the conversation. Measured with other lanes'
+		// in-flight core-catalog edits in the tree (lair-respond's pin also
+		// moved, not this lane's), not proven in isolation. (was '3a1f2c6f91880298')
+		assert.equal(digest.slice(0, 16), 'dcb14e231bc6c551')
 	})
 })

@@ -1,4 +1,4 @@
-# Serene Pub SDK — 0.6.0-preview draft
+# `@serene-pub/sdk` — preview
 
 A working draft of the SDK described in `/docs/pipeline` (00–17). **Preview: breaking
 changes are expected before 0.7.0.**

@@ -17,7 +17,8 @@
  * (`widgetRef`): core's bare (`stats`), a plugin's under its package
  * (`acme.dice:tray`, the `pluginWidgetId` grammar).
  */
-import type { LayoutPreset, WidgetDecl } from './layout.js';
+import type { WidgetDecl } from './layout.js';
+import { type SessionLayoutV1 } from './sessionLayout.js';
 import { type I18n } from './i18n.js';
 import { type WidgetBaseSection } from './widgets.js';
 /** Record whose widgets these are. Core's `core-catalog` and `defineExtension` call it; nothing else should. @internal */
@@ -63,24 +64,25 @@ export declare function widgetReads(w: Pick<WidgetDecl, 'reads'>): readonly Widg
 export declare function widgetReadsFindings(reads: unknown, at: string): string[];
 /** Declare a widget — the value a package lists in `widgets` and a genre names in `omitWidgets` or a layout. @experimental */
 export declare function widget(d: WidgetInput): WidgetDecl;
-/** A layout a genre ships (R71): a `LayoutPreset` under a slug and a name. The first is the genre's default. @experimental */
+/**
+ * A layout a genre ships (R71): a **session layout** under a slug and a name.
+ * The first is the genre's default — its **genre default layout**.
+ * @experimental
+ */
 export interface GenreLayoutDecl {
     /** Unique within the genre; `default` for the first. */
     slug: string;
     name: I18n;
     description?: I18n;
     /**
-     * The document and what came with it. Units name widgets by the id the
-     * page knows them by — `someWidget.id` for one of this package's,
-     * `coreWidgets.x.id` for core's; the packager puts a plugin's own under
-     * its namespace.
+     * The session layout, with the widget settings and style pins that come
+     * with it. It places widgets by the id the page knows them by —
+     * `someWidget.id` for one of this package's, `coreWidgets.x.id` for core's
+     * — or a copy of one (`messages#sanctum`); the packager puts a plugin's own
+     * widget ids under its namespace.
      */
-    preset: LayoutPreset;
+    preset: SessionLayoutV1;
 }
-/** Declare a layout a genre ships. @experimental */
+/** Declare a layout a genre ships. Refused unless `validateSessionLayout` finds no error in it. @experimental */
 export declare function layout(d: GenreLayoutDecl): GenreLayoutDecl;
-/** Every widget a layout document places, by the id it names. @experimental */
-export declare function layoutWidgetIds(preset: LayoutPreset): string[];
-/** The widgets placed in a layout's middle zone (its base document). @experimental */
-export declare function middleWidgetIds(preset: LayoutPreset): string[];
 //# sourceMappingURL=widgetDecls.d.ts.map

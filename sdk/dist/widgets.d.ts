@@ -42,9 +42,8 @@
 import type { TurnOrderV1 } from './turnOrder.js';
 import type { SlotAppliesTo, SlotType, SlotValue } from './attributes.js';
 import type { FieldDecl } from './settings.js';
-import type { StatusText } from './status.js';
+import type { StatusText, WidgetActionReason } from './status.js';
 import type { EnabledWhen } from './predicates.js';
-import type { LocaleMap } from './i18n.js';
 /** Free-form data riding beside a verb or an event. Keys are the sender's. @experimental */
 export type WidgetPayload = Record<string, unknown>;
 /**
@@ -60,11 +59,9 @@ export interface LayoutV1 {
     /**
      * Which zone in the page-level zone grid (identity + totals).
      *
-     * ⏳ Cell counts of the interim grid. ADVISORY: read them for a hint, never
-     * as the geometry. The layout document places widgets on tracks whose
-     * extents are not cells, and these numbers are absent — or arbitrary —
-     * under it. `tier`, `box.px`, `box.edges` and `chrome` are the fields that
-     * keep meaning.
+     * Cell counts of the zone's grid — the session layout's whole cells. Read
+     * them for where the widget sits, never for its size: `tier`, `box.px`,
+     * `box.edges` and `chrome` are the fields a widget sizes itself by.
      */
     zone: {
         columns: number;
@@ -74,15 +71,11 @@ export interface LayoutV1 {
     };
     /** Where this widget sits within its zone. */
     box: {
-        /**
-         * ⏳ Interim grid; advisory; absent under the layout document. See
-         * `zone`.
-         */
+        /** Width in the zone's cells. See `zone`. */
         cols: number;
         /**
-         * Height in cells, or null when the widget grows / is unbounded.
-         *
-         * ⏳ Interim grid; advisory; absent under the layout document.
+         * Height in the zone's cells, or null when the widget grows / is
+         * unbounded. See `zone`.
          */
         rows: number | null;
         /** Which zone edges the widget touches. */
@@ -95,10 +88,9 @@ export interface LayoutV1 {
         /**
          * The widget box as the host MEASURED it, in CSS pixels.
          *
-         * The size a widget can actually draw against, and the one geometry
-         * that survives the move off cells: a track's extent is whatever the
-         * browser resolved, so the number is the answer rather than a cell
-         * count multiplied by a module.
+         * The size a widget can actually draw against: whatever the browser
+         * resolved for the widget's box, so the number is the answer rather
+         * than a cell count multiplied by the cell module.
          *
          * Absent when the host has not measured this mount — a widget in a
          * pop-over, a first frame before layout settles, a host that measures
@@ -164,9 +156,11 @@ export interface SessionV1 {
  * compares user ids — the host answers "may this viewer act" itself),
  * `queueItemId`, `debugMeta` (the compiled prompt — admins read it through
  * the host's `prompt-details`), `embedding` (the row's vector),
- * `embeddingModel`, `vectorizedAt` and `version`. They are host bookkeeping,
- * listed once in {@link MESSAGE_HOST_FIELDS}: a host strips them from every
- * row it posts ({@link projectMessageRow}), so a widget never receives them.
+ * `embeddingModel`, `embeddingSourceHash` and `embedTextHash` (the hashes the
+ * embedding queue compares), `vectorizedAt` and `version`. They are host
+ * bookkeeping, listed once in {@link MESSAGE_HOST_FIELDS}: a host strips them
+ * from every row it posts ({@link projectMessageRow}), so a widget never
+ * receives them.
  */
 export interface MessageV1 {
     /** The row's id. What every verb taking a `messageId` wants. */
@@ -252,7 +246,7 @@ export interface MessageV1 {
  * bookkeeping {@link MessageV1} withholds. The one list: a host's projection
  * ({@link projectMessageRow}) and `MessageV1`'s doc comment both follow it.
  */
-export declare const MESSAGE_HOST_FIELDS: readonly ["userId", "queueItemId", "debugMeta", "embedding", "embeddingModel", "vectorizedAt", "version"];
+export declare const MESSAGE_HOST_FIELDS: readonly ["userId", "queueItemId", "debugMeta", "embedding", "embeddingModel", "embeddingSourceHash", "embedTextHash", "vectorizedAt", "version"];
 /** @experimental One of {@link MESSAGE_HOST_FIELDS}. */
 export type MessageHostField = (typeof MESSAGE_HOST_FIELDS)[number];
 /**
@@ -294,7 +288,10 @@ export interface MessagePartV1 {
     step: number;
     revision: number;
     ordinal: number;
-    /** `core:markdown` · `core:thinking` · `core:section` · `core:image` · … or a plugin's namespaced type. */
+    /**
+     * `core:markdown` · `core:reasoning` (the reply's reasoning) ·
+     * `core:section` · `core:image` · … or a plugin's namespaced type.
+     */
     type: string;
     /**
      * The text, for a textual type. A `core:section` holds its section's text
@@ -318,12 +315,12 @@ export interface MessagePartV1 {
  * swipe and serves to widgets as a `core:section` part.
  *
  * Exactly one of `content` and `items`. A folded section never enters the
- * prompt transcript, and neither does the reply's reasoning (`thinking`): both
- * are for the person reading, never re-sent to the model.
+ * prompt transcript, and neither does the reply's reasoning: both are for the
+ * person reading, never re-sent to the model.
  *
  * ⚠ Not a layout **fold** (a unit or zone giving way at a size), and not the
- * model's reasoning trace — that is the `thinking` in-port, stored as a
- * `core:thinking` part.
+ * model's reasoning trace — that is the `reasoning` in-port, stored as a
+ * `core:reasoning` part.
  */
 export interface FoldedSectionV1 {
     /**
@@ -354,8 +351,11 @@ export interface MessageMetadataV1 {
     swipes?: MessageSwipesV1;
     narratorName?: string;
     narratorInstructions?: string;
-    /** The model's reasoning for the shown swipe, when it shared any. */
-    thinking?: string | null;
+    /**
+     * The model's reasoning for the shown swipe, when it shared any — written
+     * on every streamed frame, so it fills while the reply is still reasoning.
+     */
+    reasoning?: string | null;
     /**
      * The row's folded sections while it has no alternatives; once it has,
      * `swipes.sectionsHistory` holds each one's. A widget reads the
@@ -380,7 +380,7 @@ export interface MessageSwipesV1 {
     /** Every reply's text, oldest first. */
     history: string[];
     /** The reasoning each reply carried, parallel to `history`. */
-    thinkingHistory?: (string | null)[];
+    reasoningHistory?: (string | null)[];
     /**
      * The folded sections each reply carried, parallel to `history`. Absent
      * until a write gives a later alternative sections; until then the first
@@ -423,7 +423,7 @@ export interface WidgetAction {
     };
     venue: string;
     channel?: string;
-    origin: 'core' | 'companion' | 'attachment';
+    origin: 'core' | 'companion' | 'foreign';
     floor: boolean;
     canAct: boolean;
     itemGated: boolean;
@@ -444,10 +444,6 @@ export interface WidgetAction {
      * only; absent when there are none.
      */
     itemPredicates?: EnabledWhen[];
-}
-/** @experimental A grey action's reason, as the host lists it: a locale map, never a bare string. */
-export interface WidgetActionReason extends StatusText {
-    i18n: LocaleMap;
 }
 /**
  * The session's actions per **venue**, each a primary set plus an overflow
@@ -860,10 +856,21 @@ export interface WidgetRequests {
         };
         result: void;
     };
-    /** An image a message shows, full size. */
+    /**
+     * An image a message shows, full size, in the page's lightbox. 🚧 `gallery`
+     * (composer attachments §3.4): the other images it sits with — a message's
+     * media strip — so the lightbox pages through them (←/→, swipe); `index` is
+     * where `src` sits in `srcs`, `captions` what each is called. Without it
+     * the lightbox shows the one image.
+     */
     'view-image': {
         params: {
             src: string;
+            gallery?: {
+                srcs: string[];
+                index: number;
+                captions?: string[];
+            };
         };
         result: void;
     };
@@ -929,6 +936,45 @@ export interface WidgetRequests {
             content: string;
             personaId: number | null;
             channel: string;
+            /**
+             * 🚧 The composer's **tray items** to send as this line's
+             * attachments (composer attachments §3.1), in tray order. With
+             * any, `content` may be empty. The host refuses the whole line
+             * when one is not ready; the tray then stays as it was.
+             */
+            trayItemIds?: string[];
+        };
+        result: void;
+    };
+    /**
+     * 🚧 Core's composer (composer attachments §3.3): upload these files into
+     * the session's composer tray — the files a person picked, dropped or
+     * pasted (`sp-file-picker`, `sp-drop-zone`). Resolves once they are
+     * queued; their progress, readiness and refusals arrive in the dossier's
+     * `composer.tray`, never in the reply.
+     */
+    'attach-files': {
+        params: {
+            files: File[];
+        };
+        result: void;
+    };
+    /** 🚧 Core's composer: take one tray item out of the tray (its upload stops; nothing is sent). */
+    'remove-tray-item': {
+        params: {
+            trayItemId: string;
+        };
+        result: void;
+    };
+    /**
+     * 🚧 Core's conversation (composer attachments D9, remove only): take one
+     * attachment — a `core:image` / `core:file` part, by its id — off a sent
+     * message. Whoever may edit the message may; the file itself stays.
+     */
+    'remove-attachment': {
+        params: {
+            messageId: number;
+            partId: number;
         };
         result: void;
     };
@@ -1054,8 +1100,13 @@ export interface WidgetRequests {
     };
     /**
      * 🚧 Core's lore entries (R58): an entry's **Off** and **Pin** marks, and
-     * nothing else — never a re-embed. Resolves with both marks as they now
-     * stand. For the book's owner and admins; the server judges it.
+     * nothing else — never a re-embed. Resolves with both marks as the session
+     * reads the entry — its line, at its clock. For the book's owner and
+     * admins; the server judges it.
+     *
+     * `heldBy` is present when a dated amendment still decides a mark asked
+     * for, so it does not read as asked here: the entry itself was saved, and
+     * the amendment wins from `date` on (spelled by the book's calendar).
      */
     'set-entry-marks': {
         params: {
@@ -1066,8 +1117,71 @@ export interface WidgetRequests {
         result: {
             off: boolean;
             pinned: boolean;
+            heldBy?: {
+                mark: 'off' | 'pinned';
+                date: string;
+            };
         };
     };
+    /**
+     * 🚧 Core's author's note widget (2026-10-02, AN1): the session's
+     * author's note as it reads now, whether the viewer may change it, and
+     * what the newest reply's prompt did with it. The page names its own
+     * session.
+     */
+    'authors-note': {
+        params: Record<string, never>;
+        result: AuthorsNoteV1;
+    };
+    /**
+     * 🚧 Core's author's note widget: save the session's author's note,
+     * whole. The session's owner only — the server judges it. Resolves with
+     * the note as it now reads.
+     */
+    'set-authors-note': {
+        params: {
+            note: AuthorsNoteValueV1;
+        };
+        result: AuthorsNoteV1;
+    };
+}
+/**
+ * 🚧 The session's author's note, as stored (2026-10-02, AN1) — the value of
+ * a genre's `authorsNote` field (`AUTHORS_NOTE_FIELD` in core's catalogue).
+ * Not the post-history reminder, which is the pipeline's and the card's.
+ * @experimental
+ */
+export interface AuthorsNoteValueV1 {
+    text: string;
+    /** Messages before the reply it is placed; 0 is right before the reply. */
+    depth: number;
+    /** Added to every `interval`-th reply; 1 is every reply. */
+    interval: number;
+    role: 'system' | 'user' | 'assistant';
+}
+/**
+ * 🚧 What the `authors-note` request answers (2026-10-02, AN1).
+ * @experimental
+ */
+export interface AuthorsNoteV1 {
+    /** The session's genre declares an author's note at all. False: nothing else here means anything. */
+    offered: boolean;
+    /** The viewer may change it (the session's owner). */
+    canEdit: boolean;
+    note: AuthorsNoteValueV1;
+    /**
+     * What the newest reply's prompt did with the note — Assemble's own
+     * decision, off that run's receipt. Null when no reply has been written
+     * with a note in scope yet.
+     */
+    lastReply: {
+        included: boolean;
+        /** `included`, `empty` (no text), or `interval` (this reply was not one of every `interval`). */
+        reason: 'included' | 'empty' | 'interval';
+        depth: number;
+        /** Where it landed among the messages the prompt carried, oldest first. */
+        targetIndex: number;
+    } | null;
 }
 /** @experimental */
 export type WidgetRequestKind = keyof WidgetRequests;
@@ -1288,15 +1402,29 @@ export type WidgetEvent = {
     kind: 'lore:ranked';
 }
 /**
- * 🚧 A lore entry's marks (pinned, off) changed — by this viewer, in any
- * of their tabs or widgets. A lore reader showing `entryId` asks again, so
- * a mark set in one place is never stale in another. Carries the id only:
- * the row is the request's. Sent after the write. Scoped like
+ * 🚧 A lore entry of the session's book changed — its marks (pinned, off)
+ * or anything else a save wrote — by this viewer, in any of their tabs,
+ * widgets or the lorebook's editors. A lore reader showing `entryId` asks
+ * again, so a mark set in one place is never stale in another; one showing
+ * only pinned or off entries asks again whatever the id, since the entry
+ * may have joined. Carries the id only — not how the session reads the
+ * entry now: the row is the request's. Sent after the write. Scoped like
  * `lore:ranked` ({@link WIDGET_EVENT_SCOPES}); names no channel.
  */
  | {
     kind: 'lore:marked';
     entryId: number;
+}
+/**
+ * 🚧 The session's stored **genre fields** changed (history window lane,
+ * 2026-10-03) — Edit Session › Settings saved one, or a widget wrote one
+ * (the Author's note's `set-authors-note`), in any of the owner's tabs. A
+ * widget showing a genre field's value asks again; carries nothing — the
+ * value is the request's. Sent after the write, to the session's owner's
+ * page only (the one person who may change them); names no channel.
+ */
+ | {
+    kind: 'genreFields:changed';
 }
 /** Anything core does not ship. Namespaced so it cannot shadow a member. */
  | {

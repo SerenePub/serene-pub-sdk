@@ -37,20 +37,25 @@
  * host that reads the shipped template and asserts this order — so the
  * declared default cannot drift from the prompt a fresh install actually gets.
  *
- * Order is the 0.5 prompt's order, unchanged. Do not tidy it: every entry's
- * position is a byte in every prompt on every install that has changed nothing.
+ * Order is the 0.5 prompt's order, with `characterLore` under the cards it is
+ * about — and `currentDate` LAST (B2, 2026-10-03), not first: the top of the
+ * prompt is what a backend's cache reuses from turn to turn, and the date is
+ * the one system-block value that changes on its own. Do not tidy it: every
+ * entry's position is a byte in every prompt on every install that has
+ * changed nothing.
  * @internal
  */
 export const SHIPPED_PROMPT_BLOCK_IDS = [
-    'currentDate',
     'instructions',
     'characters',
     'personas',
+    'characterLore',
     'scenario',
     'worldLore',
     'history',
     'relationshipsPerspectives',
     'relationshipsKnown',
+    'currentDate',
 ];
 /** What a person reads in the list editor, in the declaration rather than the client. */
 const BLOCK_LABELS = {
@@ -58,6 +63,7 @@ const BLOCK_LABELS = {
     instructions: 'Instructions',
     characters: 'Characters',
     personas: 'Personas',
+    characterLore: 'Character lore',
     scenario: 'Scenario',
     worldLore: 'World lore',
     history: 'History',

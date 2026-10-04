@@ -21,6 +21,19 @@
 	} from "@serene-pub/core-catalog/conversation"
 	import { actionIdentity } from "@serene-pub/sdk/component"
 	import type { ItemValues } from "@serene-pub/core-catalog/conversation"
+	import {
+		ATTACHMENT_KINDS_V1,
+		KIND_FORMATS,
+		KIND_NAME,
+		preCheckFiles,
+		readerCallLines,
+		readersSummary,
+		sendableTrayIds,
+		sniffAttachmentKind,
+		uploadingNote,
+		type TrayItemV1,
+		type TrayRefusalV1
+	} from "@serene-pub/core-catalog/conversation"
 	import { i18nText } from "@serene-pub/sdk/component"
 	import { untrack } from "svelte"
 	import { useConversation } from "./conversation.svelte"
@@ -31,7 +44,7 @@
 
 	interface Props {
 		/** How the composer is drawn (a widget setting). */
-		composerSkin?: "classic" | "minimal" | "writer"
+		composerSkin?: "classic" | "minimal" | "writer" | "quill"
 		/** Hides the Actions label and its row outright. */
 		showActions?: boolean
 	}
@@ -96,18 +109,34 @@
 
 	function send() {
 		const content = draft
-		if (!content.trim()) return
+		const trayItemIds = sendableTrayIds(tray)
+		// Attachments alone are a line (composer attachments §3.1).
+		if (!content.trim() && !trayItemIds.length && !uploading) return
 		// A whole slash name — with or without its argument — is a command,
 		// never a line: Send runs it as Enter does (S2), which is how a phone,
 		// whose Enter writes a new line, runs `/nudge go north`.
-		const command = exactSlashCommand(paletteActions, content)
+		const command = content.trim() ? exactSlashCommand(paletteActions, content) : undefined
 		if (command) {
 			invokePalette(command.action, command.argument)
 			return
 		}
-		// Cleared once the host took it: a refused line (no persona) stays put.
+		// Send waits only for the files still uploading ("Uploading 1 of
+		// 2…"), then goes on its own.
+		if (uploading) {
+			sendWaiting = true
+			return
+		}
+		sendWaiting = false
+		// Cleared once the host took it: a refused line (no persona, an
+		// attachment the reply stopped reading) stays put, tiles and all.
+		// The tiles leave when the host's tray says they were sent.
 		conv.ctx
-			.request("send", { content, personaId: c?.personaId ?? null, channel: conv.lane.current })
+			.request("send", {
+				content,
+				personaId: c?.personaId ?? null,
+				channel: conv.lane.current,
+				...(trayItemIds.length ? { trayItemIds } : {})
+			})
 			.then(
 				() => {
 					if (draft === content) setField("")
@@ -117,6 +146,87 @@
 		paletteDismissed = null
 		paletteHighlight = -1
 	}
+
+	/* ── attachments (composer attachments §3.3) ──────────────────────────
+	 * The tray is the host's (`composer.tray`): this composer asks it to
+	 * take files (`attach-files`) and to drop one (`remove-tray-item`), and
+	 * draws what it says. A file the readers would refuse — or an SVG, an
+	 * oversized file, one past the count — is refused here first, before a
+	 * byte goes up, as a tile that says why and clears itself; the server
+	 * checks every file again. What the reply can read is not drawn in the
+	 * composer's body: the More (⋮) panel's **What can be attached** opens
+	 * it in a dialog (next-pass note 41, 2026-10-03). */
+	const tray = $derived((c?.tray ?? []) as TrayItemV1[])
+	const readers = $derived(c?.attachments ?? null)
+	const offersAttachments = $derived(c?.tray !== undefined && !hideCompose)
+	const readersLine = $derived(readersSummary(readers))
+	const readerLines = $derived(readerCallLines(readers))
+	/** The More panel offers **What can be attached**: there is something to say. */
+	const readersOffered = $derived(offersAttachments && !!readersLine)
+	const uploading = $derived(uploadingNote(tray))
+	const hasAttachments = $derived(tray.some((t) => t.status !== "refused"))
+	/** The **What can be attached** dialog is open. */
+	let readersOpen = $state(false)
+	/** Pressed Send while files were uploading: it goes when they finish. */
+	let sendWaiting = $state(false)
+	$effect(() => {
+		if (sendWaiting && !uploading) untrack(() => send())
+	})
+	/** Files refused before upload, drawn as tiles until they clear (§2b). */
+	let refusedHere = $state<Array<TrayRefusalV1 & { key: number }>>([])
+	let refusalSeq = 0
+	/** What the live region last said ("cat.png attached", a refusal). */
+	let announcement = $state("")
+
+	async function attachFiles(files: File[]) {
+		if (!files.length) return
+		const sniffed = await Promise.all(
+			files.map(async (f) => ({
+				name: f.name,
+				size: f.size,
+				kind: sniffAttachmentKind(
+					new Uint8Array(await f.slice(0, 512).arrayBuffer()),
+					f.name,
+					f.type
+				)
+			}))
+		)
+		const { accept, refusals } = preCheckFiles(sniffed, tray, readers)
+		for (const r of refusals) {
+			const key = ++refusalSeq
+			refusedHere = [...refusedHere, { ...r, key }]
+			setTimeout(() => (refusedHere = refusedHere.filter((x) => x.key !== key)), 6000)
+		}
+		if (refusals.length)
+			announcement = refusals.map((r) => `Can't attach ${r.filename}: ${r.reason}`).join(" ")
+		if (accept.length)
+			conv.ctx
+				.request("attach-files", { files: accept.map((i) => files[i]!) })
+				.catch((e: Error) => (announcement = e.message))
+	}
+
+	function removeTrayItem(item: TrayItemV1) {
+		void conv.ctx.request("remove-tray-item", { trayItemId: item.id }).catch(() => {})
+		announcement = `${item.filename} removed`
+	}
+
+	// "cat.png attached" — once, as a tile turns ready; a server refusal too.
+	const heard = new Map<string, string>()
+	$effect(() => {
+		for (const t of tray) {
+			const was = heard.get(t.id)
+			if (was === t.status) continue
+			heard.set(t.id, t.status)
+			if (was === undefined && t.status === "uploading") continue
+			if (t.status === "ready") untrack(() => (announcement = `${t.filename} attached`))
+			if (t.status === "refused")
+				untrack(() => (announcement = `Can't attach ${t.filename}: ${t.refusal ?? ""}`))
+		}
+	})
+
+	/** "Open the picker" filter — the kinds this reply reads, by mime and extension. */
+	const pickerAccept = $derived(readers?.accept ?? "")
+	const progressOf = (t: TrayItemV1) => Math.round(Math.min(Math.max(t.progress, 0), 1) * 100)
 
 	/**
 	 * What a channel is CALLED: its declared label (`ChannelDecl.label`, the
@@ -396,6 +506,12 @@
 		moreMenuOpen = false
 	}
 
+	/** More › What can be attached: the panel closes, the dialog opens. */
+	function openReaders() {
+		moreMenuOpen = false
+		readersOpen = true
+	}
+
 	function backToCompose() {
 		activePaneValue = null
 	}
@@ -481,91 +597,109 @@
 					role="group"
 					aria-label="Session actions"
 				>
-					{#if actionsListed || overflowActions.length}
-						<div data-widget-part="messages.composer-actions messages.composer-chips">
-							{#if actionsListed}
-								<sp-host-view name="session-actions" channel={conv.lane.current}></sp-host-view>
-							{/if}
-							{#if overflowActions.length}
-								<!-- The overflow (R-15, F38): every enabled action
-								     the primary row leaves out, never hidden by
-								     prominence. A Menu — these are actions, not a
-								     field. A newcomer marks the trigger until the
-								     menu has been opened once. -->
-								<!-- `sp-menu` (§3.5): each `sp-menu-item`'s own content is its row. -->
-								<sp-menu
-									placement="top-start"
-									label="More actions"
-									open={overflowOpen}
-									onopen-change={(e: CustomEvent<{ open: boolean }>) =>
-										handleOverflowOpen(e.detail.open)}
-									onselect={(e: CustomEvent<{ value: string }>) => {
-										const a = overflowActions.find(
-											(x) => actionIdentity(x) === e.detail.value
-										)
-										// The wire's reason is a locale map; the palette's
-										// shape carries a sentence, and the fire needs neither.
-										if (a) conv.invoke(actionIdentity(a))
-									}}
-								>
-									<button
-										slot="trigger"
-										type="button"
-										data-widget-part="messages.composer-more-actions"
-										title="More actions"
-										aria-label={overflowNew.length
-											? `More actions (${overflowNew.length} new)`
-											: "More actions"}
-									>
-										<sp-icon name="ellipsis" size="14"></sp-icon>
-										More
-										{#if overflowNew.length}
-											<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>
-										{/if}
-									</button>
-									{#each overflowActions as a (actionIdentity(a))}
-										{@const iconName = a.icon || "play"}
-										{@const row = paletteRowState(overflowRow(a), {
-											generating: isGenerating,
-											newest: newestItem
-										})}
-										<!-- Grey, listed, with its reason (R-15, U5e): the
-										     audience's word, the declared enabled-when's, or
-										     the busy rule — as a second line and to a screen
-										     reader, never dropped from the list. -->
-										<sp-menu-item
-											value={actionIdentity(a)}
-											disabled={row.disabled}
-											data-widget-part="messages.composer-overflow-item"
-										>
-											<sp-icon name={iconName} size="12"></sp-icon>
-											<span title={a.description}>
-												{a.name}
-												<span data-widget-part="messages.composer-overflow-slash">/{a.slash}</span>
-												{#if row.reason}
-													<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
-												{/if}
-											</span>
-											{#if a.isNew}
-												<span data-widget-part="messages.composer-new">New</span>
-											{/if}
-										</sp-menu-item>
-									{/each}
-								</sp-menu>
-							{/if}
-						</div>
-					{/if}
-					{#if turnControls}
-						<div data-widget-part="messages.composer-turn-controls messages.composer-chips">
+					<!-- ONE group, ONE chip (next-pass note 30, 2026-10-02): the turn
+					     controls first — Continue, Pick who speaks, Regenerate — then
+					     the genre's actions, then More. The page's two host views
+					     draw their chips straight into this row (the row lays out
+					     `sp-host-view`'s children as its own), so they wrap, space
+					     and look as one set. -->
+					<div data-widget-part="messages.composer-actions messages.composer-chips">
+						{#if turnControls}
 							<!-- This composer's channel's turn controls (S1): a copy pinned to the
 							     Sanctum draws the Sanctum's listing. -->
 							<sp-host-view name="session-controls" channel={conv.lane.current}></sp-host-view>
-						</div>
-					{/if}
+						{/if}
+						{#if actionsListed}
+							<sp-host-view name="session-actions" channel={conv.lane.current}></sp-host-view>
+						{/if}
+						{#if overflowActions.length}
+							<!-- The overflow (R-15, F38): every enabled action
+							     the primary row leaves out, never hidden by
+							     prominence. A Menu — these are actions, not a
+							     field. A newcomer marks the trigger until the
+							     menu has been opened once. -->
+							<!-- `sp-menu` (§3.5): each `sp-menu-item`'s own content is its row. -->
+							<sp-menu
+								placement="top-start"
+								label="More actions"
+								open={overflowOpen}
+								onopen-change={(e: CustomEvent<{ open: boolean }>) =>
+									handleOverflowOpen(e.detail.open)}
+								onselect={(e: CustomEvent<{ value: string }>) => {
+									const a = overflowActions.find(
+										(x) => actionIdentity(x) === e.detail.value
+									)
+									// The wire's reason is a locale map; the palette's
+									// shape carries a sentence, and the fire needs neither.
+									if (a) conv.invoke(actionIdentity(a))
+								}}
+							>
+								<button
+									slot="trigger"
+									type="button"
+									data-widget-part="messages.composer-more-actions"
+									title="More actions"
+									aria-label={overflowNew.length
+										? `More actions (${overflowNew.length} new)`
+										: "More actions"}
+								>
+									<sp-icon name="ellipsis" size="14"></sp-icon>
+									More
+									{#if overflowNew.length}
+										<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>
+									{/if}
+								</button>
+								{#each overflowActions as a (actionIdentity(a))}
+									{@const iconName = a.icon || "play"}
+									{@const row = paletteRowState(overflowRow(a), {
+										generating: isGenerating,
+										newest: newestItem
+									})}
+									<!-- Grey, listed, with its reason (R-15, U5e): the
+									     audience's word, the declared enabled-when's, or
+									     the busy rule — as a second line and to a screen
+									     reader, never dropped from the list. -->
+									<sp-menu-item
+										value={actionIdentity(a)}
+										disabled={row.disabled}
+										data-widget-part="messages.composer-overflow-item"
+									>
+										<sp-icon name={iconName} size="12"></sp-icon>
+										<span title={a.description}>
+											{a.name}
+											<span data-widget-part="messages.composer-overflow-slash">/{a.slash}</span>
+											{#if row.reason}
+												<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
+											{/if}
+										</span>
+										{#if a.isNew}
+											<span data-widget-part="messages.composer-new">New</span>
+										{/if}
+									</sp-menu-item>
+								{/each}
+							</sp-menu>
+						{/if}
+					</div>
 				</div>
 			{/if}
 		</div>
 
+		<!-- Files dropped onto the composer, or pasted into it (a screenshot),
+		     join the tray; a drag shows "Drop to attach" (STYLE-GUIDE §6.7).
+		     Off where the host offers no attachments, so a paste of text is
+		     the field's as ever. -->
+		<sp-drop-zone
+			data-widget-part="messages.composer-drop"
+			label="Drop to attach"
+			disabled={!offersAttachments}
+			onfiles={(e: CustomEvent<{ files: File[] }>) => {
+				// Its OWN files only. An sp element's event bubbles, and the
+				// Attach picker sits inside this zone — without this, one pick
+				// staged every file twice (found in the 2026-10-02 live check).
+				if (e.target !== e.currentTarget) return
+				void attachFiles(e.detail.files)
+			}}
+		>
 		<div data-widget-part="messages.composer-card">
 			{#if usageRatio !== null}
 				<!-- The draft's share of the context window, read along the card's
@@ -699,6 +833,65 @@
 				{/if}
 			</div>
 
+			{#if offersAttachments && (tray.length || refusedHere.length)}
+				<!-- The tray: this line's attachments, uploading, ready or
+				     refused. A row of tiles that scrolls sideways on a phone. -->
+				<ul data-widget-part="messages.composer-tray" aria-label="Attachments">
+					{#each tray as t (t.id)}
+						<li
+							data-widget-part="messages.composer-tray-item"
+							data-status={t.status}
+							data-kind={t.kind ?? undefined}
+						>
+							{#if t.thumbSrc}
+								<img
+									data-widget-part="messages.composer-tray-thumb"
+									src={t.thumbSrc}
+									alt=""
+									loading="lazy"
+									decoding="async"
+								/>
+							{:else}
+								<sp-icon
+									data-widget-part="messages.composer-tray-icon"
+									name={t.kind === "image" ? "image" : "file-text"}
+									size="20"
+								></sp-icon>
+							{/if}
+							<span data-widget-part="messages.composer-tray-name" title={t.filename}>{t.filename}</span>
+							{#if t.status === "uploading"}
+								<span
+									data-widget-part="messages.composer-tray-progress"
+									role="progressbar"
+									aria-label="Uploading {t.filename}"
+									aria-valuemin={0}
+									aria-valuemax={100}
+									aria-valuenow={progressOf(t)}
+									style="--sp-fill: {progressOf(t)}%"
+								></span>
+							{:else if t.status === "refused"}
+								<span data-widget-part="messages.composer-tray-refusal">{t.refusal ?? "Not attached."}</span>
+							{/if}
+							<button
+								type="button"
+								data-widget-part="messages.composer-tray-remove"
+								aria-label="Remove {t.filename}"
+								title="Remove"
+								onclick={() => removeTrayItem(t)}
+							>
+								<sp-icon name="x" size="12"></sp-icon>
+							</button>
+						</li>
+					{/each}
+					{#each refusedHere as r (r.key)}
+						<li data-widget-part="messages.composer-tray-item" data-status="refused">
+							<sp-icon data-widget-part="messages.composer-tray-icon" name="ban" size="20"></sp-icon>
+							<span data-widget-part="messages.composer-tray-name" title={r.filename}>{r.filename}</span>
+							<span data-widget-part="messages.composer-tray-refusal">{r.reason}</span>
+						</li>
+					{/each}
+				</ul>
+			{/if}
 			<div data-widget-part="messages.composer-footer">
 				<!-- Which channel this line lands on. Drawn only when there is
 				     a choice: one channel is every session that exists today,
@@ -771,6 +964,26 @@
 				{/if}
 
 				<div data-widget-part="messages.composer-footer-end">
+					{#if offersAttachments}
+						<!-- Attach: the device's picker, filtered to what this reply
+						     reads. Its body is our own button; the picker is the
+						     page's (`sp-file-picker`). -->
+						<sp-file-picker
+							data-widget-part="messages.composer-attach"
+							accept={pickerAccept || undefined}
+							multiple={true}
+							onfiles={(e: CustomEvent<{ files: File[] }>) => void attachFiles(e.detail.files)}
+						>
+							<button
+								type="button"
+								data-widget-part="messages.composer-attach-button messages.composer-icon-button"
+								title={readersLine ? `Attach files. ${readersLine}` : "Attach files"}
+								aria-label="Attach files"
+							>
+								<sp-icon name="paperclip" size="16"></sp-icon>
+							</button>
+						</sp-file-picker>
+					{/if}
 					{#if !hideCompose}
 						<button
 							type="button"
@@ -784,9 +997,11 @@
 						</button>
 					{/if}
 
-					{#if morePanes.length > 0}
+					{#if morePanes.length > 0 || readersOffered}
 						<!-- `sp-popover` (§3.5): our button is the trigger, the card the panel.
-						     A panel filling the field area marks it `data-active`. -->
+						     A panel filling the field area marks it `data-active`. Under
+						     the panes, **What can be attached** opens the readers dialog
+						     (note 41) — so it is here in every skin, panes or none. -->
 						<sp-popover
 							placement="top-end"
 							open={moreMenuOpen}
@@ -795,7 +1010,7 @@
 							<button slot="trigger" type="button" data-widget-part="messages.composer-more messages.composer-icon-button"
 								data-active={activePane ? "" : undefined}
 								title="More"
-								aria-label="More composer panels">
+								aria-label="More">
 								<sp-icon name="ellipsis-vertical" size="16"></sp-icon>
 							</button>
 							<div data-widget-part="messages.composer-panes">
@@ -816,6 +1031,16 @@
 													<span>{pane.title}</span>
 												</button>
 											{/each}
+											{#if readersOffered}
+												<button
+													type="button"
+													data-widget-part="messages.composer-pane-option messages.composer-readers-button"
+													onclick={openReaders}
+												>
+													<sp-icon name="paperclip" size="12"></sp-icon>
+													<span>What can be attached</span>
+												</button>
+											{/if}
 										</div>
 							</div>
 						</sp-popover>
@@ -839,7 +1064,7 @@
 								type="button"
 								data-widget-part="messages.composer-send"
 								data-someone-due={sendTonal ? "" : undefined}
-								disabled={!draft.trim()}
+								disabled={!draft.trim() && !hasAttachments}
 								title="Send"
 								aria-label="Send message"
 								onclick={send}
@@ -852,6 +1077,53 @@
 				</div>
 			</div>
 		</div>
+		</sp-drop-zone>
+
+		{#if offersAttachments}
+			<!-- Attachments said aloud: "cat.png attached", a refusal, a removal. -->
+			<p data-widget-part="messages.composer-announce" aria-live="polite">{announcement}</p>
+		{/if}
+		{#if readersOffered}
+			<!-- What this reply can read (§3.2; note 41): out of the composer's
+			     body, opened from More. The summary, every kind with the reason
+			     a refused one can't be attached, and each model call's reading.
+			     A refusal at the moment of a pick or a drop still says why on
+			     its own tile, and aloud. -->
+			<sp-dialog
+				label="What can be attached"
+				open={readersOpen}
+				onopen-change={(e: CustomEvent<{ open: boolean }>) => (readersOpen = e.detail.open)}
+			>
+				<span slot="title">What can be attached</span>
+				<div data-widget-part="messages.composer-readers">
+					<p data-widget-part="messages.composer-readers-line">{readersLine}</p>
+					<ul data-widget-part="messages.composer-readers-kinds" aria-label="Kinds of file">
+						{#each ATTACHMENT_KINDS_V1 as k (k)}
+							{@const v = readers?.kinds[k]}
+							<li data-widget-part="messages.composer-readers-kind" data-allowed={v?.allowed ? "" : undefined}>
+								<strong>{KIND_NAME[k]}</strong>
+								<span>({KIND_FORMATS[k]})</span>
+								{#if v?.allowed}
+									<span> — can be attached</span>
+								{:else}
+									<span data-widget-part="messages.composer-readers-reason"> — can't be attached. {v?.reason ?? ""}</span>
+								{/if}
+							</li>
+						{/each}
+					</ul>
+					{#if readerLines.length}
+						<ul data-widget-part="messages.composer-readers-calls" aria-label="Each model call">
+							{#each readerLines as line (line)}
+								<li>{line}</li>
+							{/each}
+						</ul>
+					{/if}
+				</div>
+			</sp-dialog>
+		{/if}
+		{#if sendWaiting && uploading}
+			<p data-widget-part="messages.composer-hint" aria-live="polite">{uploading} Sends when done.</p>
+		{/if}
 
 		{#if contextExceeded}
 			<p

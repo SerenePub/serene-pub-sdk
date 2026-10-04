@@ -79,9 +79,9 @@ test('it is not optional — an empty book and a failed read must not be one val
 	assert.equal((getDefinition('core:query/world-lore@1') as any).optional, true)
 })
 
-test('three parameters, and the ceiling is declared as well as enforced', () => {
+test('four parameters, and the ceiling is declared as well as enforced', () => {
 	const schema = decl().slots.params.schema
-	assert.deepEqual(Object.keys(schema).sort(), ['entryTypes', 'limit', 'name'])
+	assert.deepEqual(Object.keys(schema).sort(), ['entryTypes', 'limit', 'name', 'withLinks'])
 
 	// Open by construction: an install with a plugin entry type has more ids
 	// than core's three, and an enum frozen into the content hash could not grow.
@@ -94,6 +94,15 @@ test('three parameters, and the ceiling is declared as well as enforced', () => 
 	assert.equal(schema.limit.default, 500)
 	assert.equal(schema.limit.min, 1)
 	assert.equal(schema.limit.max, 2000)
+})
+
+test('withLinks asks for each row’s lore links, and is off unless asked (places plan B2)', () => {
+	// Drizzle's `with: { … }` in spirit: the listing stays a listing, and a
+	// reader that wants the ways out of a room says so. Off by default, so
+	// every spec written before it reads exactly the rows it always did.
+	const schema = decl().slots.params.schema
+	assert.equal(schema.withLinks.type, 'boolean')
+	assert.equal(schema.withLinks.default, false)
 })
 
 /** The spec every showcase genre writes: list the book, hand it to a task. */

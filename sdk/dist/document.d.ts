@@ -37,14 +37,17 @@ export interface DocNode {
     /**
      * What the node shows beyond the admin panel — the session-settings mark
      * (PLAN-turn-order §4.11, R28), the streaming step and the step status
-     * (lair pass B3/B18, 2026-09-27) — see `BuiltNode.expose`. Present only
-     * when stated.
+     * (lair pass B3/B18, 2026-09-27), and the step label and step purpose
+     * the settings name it by (2026-09-30) — see `BuiltNode.expose`. Present
+     * only when stated.
      */
     expose?: {
         session?: boolean;
         swaps?: string[];
         stream?: true;
         status?: I18n;
+        label?: I18n;
+        purpose?: I18n;
     };
 }
 /** @experimental */

@@ -7,14 +7,16 @@
 	 * its active revision (`activeRevisions`, the swipe cursor), parts in
 	 * their own ordinal order.
 	 *
-	 * Types: markdown is the body; thinking and sections are collapsibles —
+	 * Types: markdown is the body; reasoning and sections are collapsibles —
 	 * the generalization that retires the two hardcoded blocks in
 	 * SessionMessage. A reply's **folded sections** (B4; D5, 2026-09-27) are
 	 * `core:section` parts: collapsed by default, laid out by the host above
-	 * the thinking and the body, and a section with `items` draws them as a
+	 * the reasoning and the body, and a section with `items` draws them as a
 	 * list — never as JSON. An unknown namespaced type (its plugin is gone, or not
 	 * yet installed) renders as a collapsed labeled section rather than
-	 * breaking: uninstalling strands nothing.
+	 * breaking: uninstalling strands nothing. `core:image` / `core:file` parts
+	 * are not drawn here: the media strip under the body shows them
+	 * (composer attachments plan §3.4).
 	 */
 	import MessageBlocksView from "./MessageBlocksView.svelte"
 	import type { MessagePartV1 } from "@serene-pub/sdk/component"
@@ -80,9 +82,9 @@
 			: undefined
 	}
 
-	/** A section of reasoning wears thinking's glyph; every other kind the notebook. */
+	/** A section of reasoning wears the reasoning fold's glyph; every other kind the notebook. */
 	function sectionIcon(part: MessagePartV1): "brain" | "notebook" {
-		return (part.data as any)?.kind === "thinking" ? "brain" : "notebook"
+		return (part.data as any)?.kind === "reasoning" ? "brain" : "notebook"
 	}
 
 	/** The graceful floor: what an unknown type shows when unfolded. */
@@ -165,8 +167,8 @@
 					onopen-image={(e: CustomEvent<{ src: string }>) => onOpenImage?.(e.detail.src)}
 				></sp-message-body>
 			</div>
-		{:else if part.type === "core:thinking"}
-			{@render collapsible(part, "Thinking", "brain", part.content ?? "")}
+		{:else if part.type === "core:reasoning"}
+			{@render collapsible(part, "Reasoning", "brain", part.content ?? "")}
 		{:else if part.type === "core:tool-call"}
 			{@render collapsible(
 				part,
@@ -191,30 +193,10 @@
 				part.content ?? "",
 				sectionItems(part)
 			)}
-		{:else if part.type === "core:image" && (part.data as any)?.assetId}
-			<!-- A button, not a bare <img> with a click handler: the lightbox
-			     open is an action, and this keeps it keyboard-reachable. -->
-			<button
-				type="button"
-				data-widget-part="messages.part-image"
-				onclick={() => onOpenImage?.(`/session-assets/${(part.data as any).assetId}`)}
-				aria-label="Open image attachment"
-			>
-				<img
-					data-widget-part="messages.part-image-img"
-					src="/session-assets/{(part.data as any).assetId}"
-					alt={(part.data as any)?.alt ?? "attachment"}
-				/>
-			</button>
-		{:else if part.type === "core:file" && (part.data as any)?.assetId}
-			<a
-				data-widget-part="messages.part-file"
-				href="/session-assets/{(part.data as any).assetId}"
-				download={(part.data as any)?.name ?? true}
-			>
-				<sp-icon name="paperclip" size="14"></sp-icon>
-				{(part.data as any)?.name ?? "attachment"}
-			</a>
+		{:else if part.type === "core:image" || part.type === "core:file"}
+			<!-- Attachments and generated images are the media strip's
+			     (MessageMediaStrip, under the body in every state of the row),
+			     never drawn inline here — and never the unknown-type fold. -->
 		{:else if Array.isArray((part.data as any)?.blocks)}
 			<!-- A block tree (20 §6): plugin content as data, core's renderer,
 			     whatever the part's namespace — the convention, not a registry. -->

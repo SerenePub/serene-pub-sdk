@@ -297,9 +297,13 @@ describe('announce (24 §6)', () => {
 			(e: unknown) => e instanceof AnnouncementError && /unknown node 'nope'/.test(e.message),
 		)
 
+		// A genre ships with a preset (owner ruling 2026-10-02: a custom
+		// pipeline must include a default preset).
+		const create = createSpec(g)
 		const { coverage } = announce(identity)
 			.genres({ g })
-			.pipelines(createSpec(g), respond)
+			.pipelines(create, respond)
+			.presets({ slug: 'plain', genre: g, label: 'Plain', bindings: [create, respond] })
 			.configs(
 				config(
 					respond,
@@ -313,6 +317,26 @@ describe('announce (24 §6)', () => {
 			.build()
 		assert.equal(coverage.todos.length, 1)
 		assert.match(coverage.todos[0]!.path, /holey → input.prompts/)
+	})
+
+	test('a genre with no preset is refused: a custom pipeline must include a default preset', () => {
+		// Owner ruling 2026-10-02 (notes 27/28): a genre's pipelines are
+		// reached through its presets, so a package declaring a genre ships
+		// at least one preset for it — the first is the genre's default.
+		const g = chatGenre()
+		const create = createSpec(g)
+		const respond = respondSpec(g)
+		assert.throws(
+			() => announce(identity).genres({ g }).pipelines(create, respond).build(),
+			(e: unknown) =>
+				e instanceof AnnouncementError &&
+				/genre 'demo:genre\/chat' has no preset — a custom pipeline must include a default preset/.test(e.message),
+		)
+		announce(identity)
+			.genres({ g })
+			.pipelines(create, respond)
+			.presets({ slug: 'plain', genre: g, label: 'Plain', bindings: [create, respond] })
+			.build()
 	})
 
 	test('the context-bound toolkit namespaces genres and custom value kinds', () => {

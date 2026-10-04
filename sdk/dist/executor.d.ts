@@ -130,6 +130,34 @@ export interface TaskCtx {
     /** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
     random?: () => number;
     signal: AbortSignal;
+    /**
+     * Says this node is still making progress (F36).
+     *
+     * A definition whose `timeoutKind` is `'idle'` is timed on the gap
+     * between signs of progress rather than on its whole run: each `pulse()`
+     * restarts that window. A long reply streaming steadily never times out;
+     * one that goes quiet for the definition's `timeoutMs` does. The instance
+     * ceiling (`RunOptions.timeoutCeilingMs`) still bounds the invocation, so
+     * pulsing never runs a node forever. On a `'wall'` definition it does
+     * nothing — that clock was never about progress.
+     *
+     * Cheap enough to call on every chunk. The host is handed the same
+     * function for the request it performs on a node's behalf
+     * (`CallHandles.pulse`), so an oracle that only calls `ctx.call` gets its
+     * stream counted without doing anything; call it yourself when the work
+     * is your own (a long loop, a read in pages).
+     *
+     * **Not** `progress` (a message for display, never timed) and **not**
+     * `status` (what the person watching is told). Nothing is recorded.
+     *
+     * Always supplied by the executor; optional on the type for the reason
+     * `status` is — an older host and a hand-built ctx in a test are still a
+     * `TaskCtx` — so a handler calls it as `ctx.pulse?.()`.
+     *
+     * ⏳ Core handlers only today: a process-transport plugin hook's ctx
+     * carries `{ input }` (see `status`), and its own timeout is the host's.
+     */
+    pulse?(): void;
     progress(message: string): void;
     /**
      * What this node is doing, for the person watching (R-19).
@@ -435,7 +463,11 @@ export interface RunOptions {
      * back off the receipt; the executor only records them.
      */
     lineage?: RunLineage;
-    /** Instance ceiling — config may not exceed it (F36). */
+    /**
+     * Instance ceiling — config may not exceed it (F36). Caps every
+     * definition's `timeoutMs`, and is also the absolute bound on an `idle`
+     * definition's invocation: pulses restart its window, never this.
+     */
     timeoutCeilingMs?: number;
     /** Force every clause sequential, as an admin may (01 §4). */
     forceSequential?: boolean;
@@ -640,8 +672,16 @@ export interface HostServices {
      * oracle publishes its stream and stays blind to messages; the host routes
      * it to the row this run's placeholder created, if there is one. Passed on
      * every call rather than kept anywhere a binding could read.
+     *
+     * `handles` is the calling node's own: its signal, which aborts when the
+     * node's clock runs out, and its `pulse`. A host performing a request
+     * listens to the first (together with its own cancel) and calls the
+     * second on every sign of life — see `CallHandles`. The executor always
+     * passes them; optional so a host can still be driven directly, as a test
+     * does, with no node clock behind the call. A host that wraps another
+     * must forward them.
      */
-    call?(payload: unknown, node: NodeRef, run: RunFacts): Promise<unknown>;
+    call?(payload: unknown, node: NodeRef, run: RunFacts, handles?: CallHandles): Promise<unknown>;
     /** Core emits; a node only names the handle (F8). */
     emit?(handle: string, payload: unknown, node: NodeRef): void;
     /**
@@ -686,6 +726,30 @@ export interface RunFacts {
     liveRow?: string | number;
     /** Whether this run performs writes — see `RunOptions.dry`. */
     dry: boolean;
+}
+/**
+ * The calling node's own handles on one `HostServices.call` — as opposed to
+ * `RunFacts`, which are the run's.
+ *
+ * A request the host performs for an oracle is the oracle's work as far as
+ * its clock is concerned (F36), and only the host sees that work happen: the
+ * stream's chunks, the wait for a model server's queue, a model loading. So
+ * the executor hands over both ends of the clock.
+ * @experimental
+ */
+export interface CallHandles {
+    /**
+     * Aborts when the node's clock runs out (`timeoutMs`). Abort the request
+     * on it — combined with the run's own cancel, e.g. `AbortSignal.any` — or
+     * a timed-out node leaves the model server generating into nothing.
+     */
+    signal: AbortSignal;
+    /**
+     * The node's `ctx.pulse` (see `TaskCtx.pulse`): call it on every sign that
+     * the request is alive. Restarts an `idle` clock; does nothing to a `wall`
+     * one.
+     */
+    pulse(): void;
 }
 /** What `RunOptions.onRunEnd` is told. @experimental */
 export interface RunEnd extends RunFacts {

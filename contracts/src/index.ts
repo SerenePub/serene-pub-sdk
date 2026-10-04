@@ -24,7 +24,7 @@ import {
 	varDocsExcerpts,
 	varRecalledLines,
 } from '@serene-pub/sdk'
-import type { FieldDecl, SlotDecl, VarField } from '@serene-pub/sdk'
+import type { FieldDecl, SlotDecl, VarField, WriteResult } from '@serene-pub/sdk'
 
 /**
  * How a provider node wants its request sent.
@@ -691,9 +691,7 @@ export const sessionHistory = pin(
 			 * was ever seeded for its pool, and so the panel rendered a picker
 			 * with **nothing in it** on every pipeline that used this node. A
 			 * control that cannot be given a value and would not be used if it
-			 * could is worse than the absence of the feature — the same
-			 * judgement `variableLayouts.ts` records about a layout for
-			 * `characterLore`.
+			 * could is worse than the absence of the feature.
 			 *
 			 * If per-message wording becomes configurable, it belongs on
 			 * `core:task/process-messages@1`, which is what actually formats a
@@ -719,11 +717,22 @@ export const sessionHistory = pin(
 					 *
 					 * Exactly the ruling `topK` got (2026-09-07), for exactly
 					 * the same defect.
+					 *
+					 * ⚠ **Not read when `budget` is wired** (history window,
+					 * 2026-10-03): that read is sized by the context window,
+					 * which belongs to the sampling config (17 §1a) — a count
+					 * of rows beside it is the same number entered twice, and
+					 * the count is what moved the prompt's first line on every
+					 * turn once a session passed it. Every shipped reply wires
+					 * the budget; the asking steps (a form's answer, Adventure's
+					 * Ask, the Lair's room drafting), the turn order and any
+					 * spec that does not keep reading this.
 					 */
 					limit: {
 						type: 'integer',
 						default: 100,
-						description: 'How many recent messages are considered for the context.',
+						description:
+							'How many recent messages are read. Not used where the read is sized by the context window — every shipped reply — which reads as much as the window could hold twice over and lets the prompt decide where the conversation starts.',
 					},
 					/**
 					 * The channel this history reads (20 §7). A session's
@@ -795,21 +804,26 @@ export const sessionHistory = pin(
 					 * and six is the minimum the map carried for the one band
 					 * R6 allows one.
 					 *
-					 * ⚠ This node ranks **no candidates** in any shipped spec
-					 * — `main` carries the transcript rows for
+					 * ⚠ **No shipped spec ranks a message candidate** —
+					 * `main` carries the transcript rows for
 					 * `process-messages`, and `assemble` builds the transcript
-					 * from those, never from ranked candidates. Its intent
+					 * from those, never from ranked candidates. Two things
+					 * keep it so: `entity-search`'s past lines publish on
+					 * their own `recalledLines` band, and `vector-search`
+					 * asks the index for lorebook entries only (the app's
+					 * binding names them; plan A1). Its intent
 					 * still reaches the ranker, on the `band` out-port a spec
 					 * concatenates in with the lore, and its `share` is what
 					 * halves the pool the lore sources divide: the
 					 * conversation's slice is reserved and whatever it does
 					 * not spend is swept to the others, exactly as the map's
 					 * `messages: 0.5` did. `maxEntries` and `minEntries` bind
-					 * only when a spec does rank message candidates (an
-					 * `entity-search` `messages` port, a compression region);
-					 * they are declared at the map's values so that spec
-					 * inherits what every install has stored, not so a person
-					 * moving them today sees a prompt change — they will not.
+					 * only when a spec does rank message candidates (a
+					 * compression region, or a plugin source publishing on
+					 * this band); they are declared at the map's values so
+					 * that spec inherits what every install has stored, not
+					 * so a person moving them today sees a prompt change —
+					 * they will not.
 					 */
 					share: {
 						type: 'number',
@@ -860,22 +874,35 @@ export const sessionHistory = pin(
 			},
 		},
 		ports: {
-			/**
-			 * ⚠ No `budget` in-port, and there was one (culled 2026-09-16,
-			 * R-12). It was declared and read by nothing: the window this
-			 * node fetches is `params.limit`, a count of messages, and a
-			 * token budget arriving here had no reader and no spec wiring it.
-			 * Fitting history to a budget is `core:task/rank-hybrid@1`'s job,
-			 * on ITS `budget` port.
-			 */
 			in: {
 				scope: S.sessionScope,
+				/**
+				 * **The window this read is sized by** (history window,
+				 * 2026-10-03) — `$.contextBudget.available`, the same value
+				 * the prompt's `assemble` is handed. Wired, the read is the
+				 * newest rows until a deliberately generous estimate
+				 * (characters ÷ 4, nothing for names or scaffolding) reaches
+				 * **twice** the budget's `total`, or every row — never more
+				 * than 2000 — and `limit` is not read. Fitting those rows to
+				 * the window stays `assemble`'s (its transcript fit, which
+				 * cuts the oldest lines in a chunk and holds the cut across
+				 * turns): reading twice what fits is what lets that held cut,
+				 * not a row count, decide where the conversation starts.
+				 * Unwired, the window is the newest `limit` rows, as it
+				 * always was.
+				 *
+				 * Not read with `unplayedOnly` (the talk keeps its `limit`)
+				 * or a wired `messageId` (one row). There was a `budget`
+				 * in-port once (culled 2026-09-16, R-12): declared and read by
+				 * nothing. This one has a reader.
+				 */
+				budget: S.budget,
 				/**
 				 * **One row, by id** (lair re-plan R11, 2026-09-28): wired —
 				 * `$.input.messageId`, the message a press on a message's ⋮
 				 * was made on — the read is exactly that row, whatever its
-				 * channel, as a one-row transcript; `limit`, `channel`,
-				 * `unplayedOnly` and `talkOnly` do not apply. The row must be
+				 * channel, as a one-row transcript; `limit`, `budget`,
+				 * `channel`, `unplayedOnly` and `talkOnly` do not apply. The row must be
 				 * this session's, and a hidden or still-generating row reads
 				 * as nothing, the same as in any window. Unwired, the window
 				 * reads as it always did. For an action that acts on the row
@@ -1401,17 +1428,31 @@ export const lorebookTriggers = pin(
 				 * binding-visibility gate for that character instead of the
 				 * scope's.
 				 *
-				 * Unwired, absent, or a reference naming nobody the host can
-				 * resolve to a character row, the scope decides exactly as it
-				 * always did — including `null`, which is the omniscient
-				 * narrator's read. A reference is never *widened* here: the port
+				 * Unwired, `null` or empty, the scope decides exactly as it
+				 * always did (a scope of nobody is the omniscient narrator's
+				 * read). Any other reference that names no character row — an
+				 * envoy, a role, a row that does not exist — reads no private
+				 * lore at all. A reference is never *widened* here: the port
 				 * chooses whose secrets are readable, never whether the gate runs.
 				 */
 				speaker: S.participantRef,
 			},
 			// Both open with band-intent elements — three, one per lore band
 			// — ahead of the items; readers call `splitCandidates()`.
-			out: { main: S.candidates, hits: S.candidates },
+			out: {
+				main: S.candidates,
+				hits: S.candidates,
+				/**
+				 * The entries this scan **found and then excluded** — an
+				 * entry's own selective logic said *not here* — as verdicts
+				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * another mechanism brings in (by meaning, by name) is the
+				 * same entry the author ruled out, and
+				 * `core:task/eligibility@1` marks it ineligible with this
+				 * reason instead of letting it through by the side door.
+				 */
+				exclusions: S.json,
+			},
 		},
 	}),
 )
@@ -1593,7 +1634,20 @@ export const worldLore = pin(
 			in: { scope: S.sessionScope },
 			// Both open with a band-intent element — this lane's own — ahead
 			// of the items; readers call `splitCandidates()`.
-			out: { main: S.candidates, hits: S.candidates },
+			out: {
+				main: S.candidates,
+				hits: S.candidates,
+				/**
+				 * The entries this scan **found and then excluded** — an
+				 * entry's own selective logic said *not here* — as verdicts
+				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * another mechanism brings in (by meaning, by name) is the
+				 * same entry the author ruled out, and
+				 * `core:task/eligibility@1` marks it ineligible with this
+				 * reason instead of letting it through by the side door.
+				 */
+				exclusions: S.json,
+			},
 		},
 	}),
 )
@@ -1628,17 +1682,31 @@ export const characterLore = pin(
 				 * binding-visibility gate for that character instead of the
 				 * scope's.
 				 *
-				 * Unwired, absent, or a reference naming nobody the host can
-				 * resolve to a character row, the scope decides exactly as it
-				 * always did — including `null`, which is the omniscient
-				 * narrator's read. A reference is never *widened* here: the port
+				 * Unwired, `null` or empty, the scope decides exactly as it
+				 * always did (a scope of nobody is the omniscient narrator's
+				 * read). Any other reference that names no character row — an
+				 * envoy, a role, a row that does not exist — reads no private
+				 * lore at all. A reference is never *widened* here: the port
 				 * chooses whose secrets are readable, never whether the gate runs.
 				 */
 				speaker: S.participantRef,
 			},
 			// Both open with a band-intent element — this lane's own — ahead
 			// of the items; readers call `splitCandidates()`.
-			out: { main: S.candidates, hits: S.candidates },
+			out: {
+				main: S.candidates,
+				hits: S.candidates,
+				/**
+				 * The entries this scan **found and then excluded** — an
+				 * entry's own selective logic said *not here* — as verdicts
+				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * another mechanism brings in (by meaning, by name) is the
+				 * same entry the author ruled out, and
+				 * `core:task/eligibility@1` marks it ineligible with this
+				 * reason instead of letting it through by the side door.
+				 */
+				exclusions: S.json,
+			},
 		},
 	}),
 )
@@ -1680,7 +1748,61 @@ export const historyEntries = pin(
 			in: { scope: S.sessionScope },
 			// Both open with a band-intent element — this lane's own — ahead
 			// of the items; readers call `splitCandidates()`.
-			out: { main: S.candidates, hits: S.candidates },
+			out: {
+				main: S.candidates,
+				hits: S.candidates,
+				/**
+				 * The entries this scan **found and then excluded** — an
+				 * entry's own selective logic said *not here* — as verdicts
+				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * another mechanism brings in (by meaning, by name) is the
+				 * same entry the author ruled out, and
+				 * `core:task/eligibility@1` marks it ineligible with this
+				 * reason instead of letting it through by the side door.
+				 */
+				exclusions: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * **Who is in the world, and when** — the cast's presences, as the session's
+ * reading sees them (E-2, R4; built 2026-10-02).
+ *
+ * A presence says *this member, at this point of their own life, is here from
+ * this date until that one* (`cast_presences`). The host reads the scope
+ * session's book and resolves the line before returning: only presences on the
+ * session's line (its own, and an ancestor's that begin at or before the fork
+ * cut) — another line's spans never reach a node. `until` is exclusive: gone at
+ * Y6 is present at Y5 and absent at Y6.
+ *
+ * `main` is the rows `{ bindingId, from, until, position }` (`from` / `until`
+ * a story date `{ year, month?, day? }` or null); `at` is the moment the
+ * session reads at — its story clock, or null for the head ("now", where every
+ * presence with an `until` has ended). A member with **no** rows is always
+ * present: declaring nothing means being here, as it always has.
+ *
+ * What it is for: `core:task/eligibility@1`'s presence rule, which gates the
+ * lore of a member who is not in the world at `at`. A custom retrieval reads it
+ * the same way (plan E-11).
+ * @experimental
+ */
+export const castPresences = pin(
+	describeQueryDefinition({
+		id: 'core:query/cast-presences@1',
+		i18n: { name: { en: 'Cast presences' } },
+		timeoutMs: 2000,
+		/** A session with no book, or a book that dates nobody, reads nothing — a normal state. */
+		optional: true,
+		ports: {
+			in: { scope: S.sessionScope },
+			out: {
+				/** `{ bindingId, from, until, position }[]`, on the session's line. */
+				main: S.json,
+				/** The story date the session reads at, or null for the head. */
+				at: S.json,
+			},
 		},
 	}),
 )
@@ -1704,25 +1826,30 @@ export const vectorSearch = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * ⚠ **0 is off, and is the shipped default** — the
-					 * convention `maxRecursionDepth`, `admitThreshold` and
-					 * `entity-search`'s own caps use, for their reason: this
-					 * changes what reaches the model, so it is turned on rather
-					 * than arrived at on upgrade.
+					 * A **ceiling, not the mechanism's switch** (2026-09-29) — see
+					 * `query-windows.searchByMeaning`, which is. Non-zero so that
+					 * turning the mechanism on with one control does something:
+					 * a feature whose two controls both default to off is one
+					 * where turning the first one on appears to do nothing.
+					 *
+					 * It *was* the switch — 0, the shipped default, was off — and
+					 * that was the defect: this is the chain's last node, so the
+					 * probes had already been embedded by the time 0 said
+					 * nothing was wanted. Every turn with an embedding model
+					 * ready paid for an embed it threw away.
 					 *
 					 * A **cap on what this mechanism contributes**, not a cap on what
-					 * it looks at — `topK` is that, one field down. The two are
-					 * different questions and only this one decides whether the
-					 * mechanism is running at all.
+					 * it looks at — `topK` is that, one field down. 0 still
+					 * contributes nothing, and the binding returns before its
+					 * reads for it, but it is not how the mechanism is turned off.
 					 */
 					maxEntries: {
 						type: 'integer',
-						default: 0,
+						default: 5,
 						min: 0,
-						quick: true,
 						label: { en: 'Entries found by meaning' },
 						description:
-							'How many lorebook entries this may bring in for being about what the conversation is about, rather than for matching a keyword. Needs an embedding model; 0 turns the whole arm off, try 5. A pipeline that ranks this arm separately reads its per-query lists instead, which this does not cut.',
+							'The most lorebook entries a search by meaning may bring in on one turn. The switch is Search by meaning, on the retrieval queries step. A pipeline that ranks this arm separately reads its per-query lists instead, which this does not cut.',
 					},
 					/**
 					 * ⚠ **40, and it was 12.** The number never reached the
@@ -1744,8 +1871,10 @@ export const vectorSearch = pin(
 					 * question from `maxEntries` one field up — that one caps
 					 * what the mechanism *contributes*. Raising this widens the
 					 * pool the ranker's other signals get to score; raising
-					 * `maxEntries` is what decides whether the mechanism runs at
-					 * all.
+					 * `maxEntries` lets more of it through. Neither decides
+					 * whether the mechanism runs at all — that is
+					 * `query-windows.searchByMeaning`, Automatic by default
+					 * (on whenever an embedding model is set up).
 					 */
 					topK: {
 						type: 'integer',
@@ -1814,6 +1943,17 @@ export const vectorSearch = pin(
 				 */
 				vectors: S.json,
 				scope: S.sessionScope,
+				/**
+				 * **Whose private lore this search may return** — a participant
+				 * reference, with `core:query/character-lore@1`'s exact
+				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * scope decides as it always did; a `character:<id>` reads
+				 * that character's own private lore and nobody else's; any
+				 * other reference reads none. The leak guard for a search
+				 * wired inside a repeating clause, where the run's scope is
+				 * not the voice being written.
+				 */
+				speaker: S.participantRef,
 			},
 			out: {
 				main: S.candidates,
@@ -1847,9 +1987,10 @@ export const vectorSearch = pin(
  *     `admitThreshold` control on the lore nodes does this *inside* the keyword
  *     scan; this does it as a source of candidates in its own right.
  *  2. **It searches the transcript**, which nothing else does. The keyword scan
- *     reads only a bounded recent window and the semantic mechanism is not wired into
- *     the shipped pipeline, so retrieving an *older message* by what it was
- *     about has not been possible until now.
+ *     reads only a bounded recent window and the semantic mechanism never
+ *     searches messages (its binding asks the index for lorebook entries
+ *     only), so this is the one way to retrieve an *older message* by what it
+ *     was about.
  *  3. **It needs no embedding model.** Names are matched, not encoded, so this
  *     is available on every install rather than only on the ones with a model
  *     loaded.
@@ -1886,20 +2027,21 @@ export const entitySearch = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * ⚠ **0 is off, and is the shipped default** — the
-					 * convention `maxRecursionDepth` and `admitThreshold` use,
-					 * and for the same reason: this changes what reaches the
-					 * model, so it is turned on rather than arrived at on
-					 * upgrade.
+					 * **On by default — 5** (R5, ruled 2026-09-30: all supported
+					 * retrieval is on by default; built 2026-10-02). It was 0,
+					 * the `maxRecursionDepth` / `admitThreshold` convention of
+					 * "turned on rather than arrived at"; the ruling replaced
+					 * that convention for retrieval. 0 still turns it off — a
+					 * preset that wants keys only says so.
 					 */
 					maxEntries: {
 						type: 'integer',
-						default: 0,
+						default: 5,
 						min: 0,
 						quick: true,
 						label: { en: 'Entries found by name' },
 						description:
-							'How many lorebook entries this may bring in because the conversation is naming the same people, places and things they do. 0 turns it off; try 5.',
+							'How many lorebook entries this may bring in because the conversation is naming the same people, places and things they do. 0 turns it off.',
 					},
 					/**
 					 * Separate from `maxEntries`, because the two answer
@@ -1908,11 +2050,11 @@ export const entitySearch = pin(
 					 */
 					maxMessages: {
 						type: 'integer',
-						default: 0,
+						default: 20,
 						min: 0,
 						label: { en: 'Earlier messages found by name' },
 						description:
-							"How many earlier messages this may return, as recalled lines, for naming what the scene is naming. They reach the prompt only where a pipeline ranks them and its context template places {{{recalledLines}}} — the shipped pipelines do neither yet — so this is off by default.",
+							"How many earlier messages this may return, as recalled lines, for naming what the scene is naming. They reach the prompt only where a pipeline ranks them and its context template places {{{recalledLines}}}. 0 turns this half off.",
 					},
 					/**
 					 * The recalled lines' **share** — a band-namespaced field
@@ -1973,7 +2115,20 @@ export const entitySearch = pin(
 			 * (2026-09-16, R-12); the window comes from `scope`, which is where
 			 * it actually comes from.
 			 */
-			in: { scope: S.sessionScope },
+			in: {
+				scope: S.sessionScope,
+				/**
+				 * **Whose private lore this search may return** — a participant
+				 * reference, with `core:query/character-lore@1`'s exact
+				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * scope decides as it always did; a `character:<id>` reads
+				 * that character's own private lore and nobody else's; any
+				 * other reference reads none. The leak guard for a search
+				 * wired inside a repeating clause, where the run's scope is
+				 * not the voice being written.
+				 */
+				speaker: S.participantRef,
+			},
 			out: {
 				main: S.candidates,
 				hits: S.candidates,
@@ -2094,8 +2249,9 @@ export const mentionSpans = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * ⚠ **0 is off, and is the shipped default** — the
-					 * `maxRecursionDepth` / `admitThreshold` convention.
+					 * **On by default — 8** (R5, ruled 2026-09-30: all supported
+					 * retrieval is on by default; built 2026-10-02). It was 0.
+					 * Still the mechanism's one switch: 0 turns it off.
 					 *
 					 * **This is the entity-vector mechanism's one switch**, and it is
 					 * on the first node of the chain on purpose: switched off,
@@ -2112,12 +2268,12 @@ export const mentionSpans = pin(
 					 */
 					maxMentions: {
 						type: 'integer',
-						default: 0,
+						default: 8,
 						min: 0,
 						quick: true,
 						label: { en: 'Descriptions to follow up' },
 						description:
-							'How many descriptive references in the recent messages — "the captain", "the order" — are matched against what your entries are called, for entries no keyword reached. Needs an embedding model; 0 turns the whole arm off, try 4.',
+							'How many descriptive references in the recent messages — "the captain", "the order" — are matched against what your entries are called, for entries no keyword reached. Needs an embedding model; 0 turns the whole arm off.',
 					},
 					scanDepth: {
 						type: 'integer',
@@ -2244,6 +2400,17 @@ export const entityLink = pin(
 				mentions: S.json,
 				/** Their embeddings, in the same order. Index alignment is the contract. */
 				vectors: S.json,
+				/**
+				 * **Whose private lore this search may return** — a participant
+				 * reference, with `core:query/character-lore@1`'s exact
+				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * scope decides as it always did; a `character:<id>` reads
+				 * that character's own private lore and nobody else's; any
+				 * other reference reads none. The leak guard for a search
+				 * wired inside a repeating clause, where the run's scope is
+				 * not the voice being written.
+				 */
+				speaker: S.participantRef,
 			},
 			out: {
 				main: S.candidates,
@@ -2399,6 +2566,69 @@ export const concatCandidates = pin(
 				main: S.candidates,
 				candidates: S.candidates,
 				/** How many arrived per list, and how many repeats were dropped. */
+				diagnostics: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * **Eligibility** — the hard gates between the mechanisms and the ranker
+ * (C2; owner rulings R2 and R4, 2026-09-30; built 2026-10-02).
+ *
+ * Scoring and eligibility are separate on purpose: a hard rule must not compete
+ * numerically with a soft one and lose. This node scores nothing. It takes the
+ * concatenated pool and returns **the same array**, with `ineligible: { reason }`
+ * set on each candidate a rule rules out; it never deletes one, so the ranker
+ * turns each into an `excluded_ineligible` decision carrying the sentence, and
+ * the receipt says why rather than "it scored badly".
+ *
+ * Its rules, and nothing else:
+ *
+ * 1. **Exclusions.** A candidate one of the wired `exclusions` lists names
+ *    (`{ source, id, reason }` — the keyword lanes publish the entries an
+ *    author's own selective logic ruled out). The same entry brought in again
+ *    by meaning or by name is the entry the author said *not here*.
+ * 2. **Secrecy.** A `relationships` candidate that is somebody's secret
+ *    (`payload.secretOf`, the holder's participant reference) is ineligible for
+ *    any other `speaker`. Unwired or null, the producers' own scope decided.
+ * 3. **Presence** (R4). A candidate about a cast member (`payload.lorebookBindingId`)
+ *    whose member has presences on the line and none holding at `at` — the
+ *    member is not in the world then. A member with no presences is always
+ *    present.
+ *
+ * Wired between the final concatenation and `rank-hybrid`. A custom source
+ * passes through it like a core one: any candidate with a payload saying who it
+ * is about is gated the same way.
+ * @experimental
+ */
+export const eligibility = pin(
+	describeTaskDefinition({
+		id: 'core:task/eligibility@1',
+		i18n: { name: { en: 'Check eligibility' } },
+		timeoutMs: 500,
+		ports: {
+			in: {
+				candidates: S.candidates,
+				/**
+				 * `{ source, id, reason }` verdicts — one list, or several as a
+				 * nested literal (`[$.a.exclusions, $.b.exclusions]`), the
+				 * construction `concat-candidates`' `sources` uses.
+				 */
+				exclusions: S.json,
+				/** Whose turn this pool is for. Null or unwired: no secrecy rule. */
+				speaker: S.participantRef,
+				/** `core:query/cast-presences@1`'s rows. */
+				presences: S.json,
+				/** The moment they are judged at — `cast-presences`' `at`. */
+				at: S.json,
+			},
+			out: {
+				// The same array, band intents first as they came; readers call
+				// `splitCandidates()`.
+				main: S.candidates,
+				candidates: S.candidates,
+				/** How many each rule ruled out. */
 				diagnostics: S.json,
 			},
 		},
@@ -2623,13 +2853,15 @@ const SIGNAL_WEIGHT_FIELDS = {
 	 * so agreement between two independent mechanisms compounds by addition and
 	 * there is no fusion step to reconcile two incomparable scales.
 	 *
-	 * ⚠ **Not zero, and that is deliberate.** The `admitThreshold` convention
-	 * says a control that changes what reaches the model ships off — and it does
-	 * here, one level up: the mechanism's own cap (`vector-search.maxEntries`) is 0, so
-	 * nothing carries this signal until somebody raises it. Making *both* the cap
-	 * and the weight zero would mean raising the cap changed nothing, which is
-	 * the trap a two-switch feature always sets. One switch, and it is the one
-	 * named after what it does.
+	 * ⚠ **Not zero, and that is deliberate.** The mechanism has one switch, one
+	 * level up: `query-windows.searchByMeaning`, on the first node of its chain
+	 * since 2026-09-29. It ships *Automatic* — on whenever an embedding model is
+	 * set up, local or a service alike, and off when there is none — so nothing
+	 * carries this signal on an install with no embedding model or with the
+	 * switch Off. Making the weight zero as well would mean
+	 * turning the switch on changed nothing, which is the trap a two-switch
+	 * feature always sets. One switch, and it is the one named after what it
+	 * does.
 	 *
 	 * Sized below a keyword hit on purpose. A cosine above the mechanism's own
 	 * threshold is real evidence and weaker evidence than an authored key
@@ -2979,7 +3211,27 @@ export const rankHybrid = pin(
 			},
 		},
 		ports: {
-			in: rankPorts.in,
+			in: {
+				...rankPorts.in,
+				/**
+				 * **Entries the prompt already shows in a slot of their own**
+				 * (lorebooks plan, the room rule, 2026-10-02) — lorebook entry
+				 * ids, one or a list (nulls skipped). A lore candidate (world
+				 * lore, character lore, history) with one of these ids is
+				 * ruled out before ranking, as `excluded_ineligible` with the
+				 * reason, so it spends no budget and the prompt never reads it
+				 * twice. Adventure and the Lair wire the room their place slot
+				 * (`{{locationEntry}}`) shows — the world's `location`,
+				 * resolved by `undescribed-name@1`. Unwired, nothing changes.
+				 *
+				 * ⚠ Not `core:task/eligibility@1`'s `exclusions`: those are
+				 * verdicts (a rule that fired, with its sentence); this is a
+				 * fact about the prompt, and a bare id is all it needs. On
+				 * `rank-hybrid` alone, like the parameters above: the
+				 * `rank-recall` example builds no prompt with slots.
+				 */
+				shownElsewhere: S.json,
+			},
 			out: {
 				...rankPorts.out,
 				/**
@@ -3019,6 +3271,11 @@ export const rankHybrid = pin(
  * embedding model might want a different shape. It is also where the two
  * windows are cut, which is the parameter a user with long posts will reach for
  * first.
+ *
+ * And it carries the **semantic mechanism's one switch**, `searchByMeaning`,
+ * because it is the first node of the mechanism's chain (2026-09-29, genre
+ * uplift C3) — `auto | on | off`, shipping `auto`, which searches whenever an
+ * embedding model is set up, wherever it runs (owner, 2026-09-30).
  * @experimental
  */
 export const queryWindows = pin(
@@ -3027,10 +3284,100 @@ export const queryWindows = pin(
 		i18n: { name: { en: 'Retrieval queries' } },
 		timeoutMs: 500,
 		slots: {
+			/**
+			 * The **embedding** connection — the one the probes would be
+			 * embedded on, for *whether there is one*. Wired by reference in
+			 * every shipped spec (`slot.connectionOf('semantic.arm.embed')`), so
+			 * it is never a second box to fill in: this step reads the embed
+			 * step's pick, or the instance's embedding default when it has none.
+			 *
+			 * Read for one fact, and only under `searchByMeaning: 'auto'`:
+			 * resolved to a connection, an embedding model is **set up** and
+			 * `auto` searches; unwired, or resolved to nothing, there is none and
+			 * `auto` does not. ⚠ Nothing else about the connection is read — not
+			 * where it runs, not whether it bills: a local model and an embedding
+			 * service search alike (owner, 2026-09-30). A host that embeds
+			 * through one fixed connection whatever the embed step's slot names
+			 * must hold that slot there (Serene Pub drops a stored pick), or this
+			 * step decides about a connection the embed never uses —
+			 * INTEGRATING.md, Step 3. A pure Task reading data it was handed, the
+			 * `context-budget` shape: the connection is resolved before the run.
+			 */
+			connection: { kind: 'connection' },
 			params: {
 				kind: 'parameters',
 				facet: 'weights',
 				schema: {
+					/**
+					 * ⚠ **The semantic mechanism's one switch**, on the *first*
+					 * node of its chain on purpose — the shape
+					 * `mention-spans.maxMentions` gives the entity-vector
+					 * mechanism. Off, this cuts no probes: `embed-text` is handed
+					 * no texts and makes no model call, and `vector-search`
+					 * returns before its reads.
+					 *
+					 * **`auto`, the default, searches whenever an embedding model
+					 * is set up** — a local model, a runtime you run yourself or a
+					 * service billed per request, alike — and not when none is (an
+					 * optional mechanism that is unavailable is skipped). `on`
+					 * searches with whatever model is set up; `off` never
+					 * searches. "Set up" is the `connection` slot above resolving
+					 * to a connection.
+					 *
+					 * ⚠ **Where the model runs is not a question it asks.** For
+					 * one day (2026-09-29) `auto` searched only with a model on
+					 * this machine and skipped a service, read into a ruling about
+					 * one expensive call per turn; the owner, 2026-09-30: *"I
+					 * never said to skip paid services for retrieval, that's what
+					 * they are there for. Don't do that."*
+					 *
+					 * The vocabulary is `embed-text`'s `enabled` — `auto | on |
+					 * off`, labelled Automatic, On, Off — and the question is
+					 * not. ⚠ That one says what to do when no model is loaded;
+					 * this says whether to search at all. `auto` there calls
+					 * whatever is loaded; `auto` here asks whether one is set up.
+					 *
+					 * It was `vector-search.maxEntries = 0`, on the chain's
+					 * *last* node, until 2026-09-29. By then the probes had
+					 * been embedded, so every turn with an embedding model
+					 * ready paid for an embed it threw away — a provider call
+					 * per turn in API mode. `maxEntries` is a ceiling now, and
+					 * ships non-zero so that turning this on does something.
+					 * It was then a boolean defaulting to off for one day
+					 * (C3), which spent nothing and searched nothing.
+					 */
+					searchByMeaning: {
+						type: 'enum',
+						of: ['auto', 'on', 'off'],
+						members: [
+							{
+								key: 'auto',
+								label: { en: 'Automatic' },
+								description: {
+									en: 'Searches whenever an embedding model is set up, on this machine or a service, and skips the search when none is.',
+								},
+							},
+							{
+								key: 'on',
+								label: { en: 'On' },
+								description: {
+									en: 'Searches on every turn with whatever embedding model is set up.',
+								},
+							},
+							{
+								key: 'off',
+								label: { en: 'Off' },
+								description: {
+									en: 'Never searches by meaning, and makes no embedding request for it.',
+								},
+							},
+						],
+						default: 'auto',
+						quick: true,
+						label: { en: 'Search by meaning' },
+						description:
+							'Find lorebook entries that are about what the conversation is about, even with no keyword in common. Needs an embedding model, and embeds the latest messages on every turn. Automatic searches whenever one is set up.',
+					},
 					currentWindow: {
 						type: 'integer',
 						default: 2,
@@ -3224,31 +3571,17 @@ export const rankRecall = pin(
 
 /**
  * What Assemble's `render()` puts on a context template itself — see the
- * template slot below. Laid-out values are strings; `characterLore` is the
- * raw list of included allocations (`rendersBands.raw`).
+ * template slot below. Laid-out values are strings.
  */
 const ASSEMBLE_TEMPLATE_SCOPE = {
 	worldLore: { type: 'string', optional: true, description: 'World lore that fit the budget, laid out.' },
+	characterLore: {
+		type: 'string',
+		optional: true,
+		description: 'Lore bound to a cast member that fit the budget, laid out — only what this speaker may see.',
+	},
 	history: { type: 'string', optional: true, description: 'History entries that fit the budget, laid out.' },
 	currentDate: { type: 'string', optional: true, description: 'The story’s current date, laid out.' },
-	characterLore: {
-		type: 'list',
-		optional: true,
-		description: 'Character lore that fit the budget — the raw list; each is also folded into its character.',
-		of: {
-			type: 'object',
-			fields: {
-				source: { type: 'string' },
-				id: { type: 'string' },
-				name: { type: 'string', optional: true },
-				content: { type: 'string' },
-				tokens: { type: 'number' },
-				meta: { type: 'record', optional: true },
-				included: { type: 'boolean' },
-				why: { type: 'list', of: { type: 'string' } },
-			},
-		},
-	},
 	sessionMessages: {
 		type: 'list',
 		description: 'The transcript, oldest first, ending with the seed line.',
@@ -3259,6 +3592,18 @@ const ASSEMBLE_TEMPLATE_SCOPE = {
 				role: { type: 'string' },
 				name: { type: 'string' },
 				message: { type: 'string', optional: true },
+				/**
+				 * 🚧 The line's files, placed (PLAN-composer-attachments
+				 * §3.5): media markers, inlined text files and placeholders,
+				 * from `core:task/place-attachments@1`. Absent on a line
+				 * with no files, and on every line of a spec with no
+				 * placement step.
+				 */
+				attachments: {
+					type: 'string',
+					optional: true,
+					description: "The line's attachments, placed: files the model receives, text files inlined, and names for the rest.",
+				},
 			},
 		},
 	},
@@ -3284,6 +3629,25 @@ const ASSEMBLE_TEMPLATE_SCOPE = {
 			instructions: { type: 'string', optional: true },
 			charInstructions: { type: 'string', optional: true },
 			exampleDialogue: { type: 'string', optional: true },
+			hasContent: { type: 'boolean' },
+		},
+	},
+	/**
+	 * 🚧 The session's **author's note**, placed (2026-10-02, AN1) — the
+	 * person's own steering text for this session, at its own depth, with no
+	 * token trigger. Not the post-history reminder: that one is the pipeline's
+	 * and the card's "how to respond"; this is the person's "what is true now".
+	 * Absent for a genre that declares no `authorsNote` field.
+	 */
+	authorsNote: {
+		type: 'object',
+		optional: true,
+		description:
+			'The session’s author’s note, placed: render it when the loop reaches targetIndex, before the injections and the post-history block.',
+		fields: {
+			targetIndex: { type: 'number' },
+			text: { type: 'string', optional: true },
+			role: { type: 'string' },
 			hasContent: { type: 'boolean' },
 		},
 	},
@@ -3338,15 +3702,11 @@ export const assemble = pin(
 			/**
 			 * How the values Assemble itself produces are laid out.
 			 *
-			 * These three exist here rather than upstream because they come out
-			 * the other side of the budget: what a layout receives is what
-			 * actually fit, which no earlier node knows.
-			 *
-			 * `characterLore` is deliberately absent, and named `raw` below. It
-			 * is a top-level value on the assembly context that no template
-			 * renders — qualifying entries are folded into their bound character
-			 * inside `characters`, under an `"extra lore"` key. A layout for it
-			 * would be a setting that changes nothing.
+			 * These exist here rather than upstream because they come out the
+			 * other side of the budget: what a layout receives is what actually
+			 * fit, which no earlier node knows. `characterLore` among them — the
+			 * admitted lore of cast members, which a context template places
+			 * with `{{{characterLore}}}` like any other lore.
 			 */
 			variables: {
 				kind: 'variables',
@@ -3355,6 +3715,7 @@ export const assemble = pin(
 					'How the retrieved lore and history are laid out — JSON, prose, or whatever you write. Duplicate one to change it.',
 				renders: {
 					worldLore: 'core:var/world-lore@1',
+					characterLore: 'core:var/character-lore@1',
 					history: 'core:var/history@1',
 					currentDate: 'core:var/current-date@1',
 				},
@@ -3362,10 +3723,9 @@ export const assemble = pin(
 				 * Open (typed templates P2, edited in place — owner ruling Q4):
 				 * every band declared upstream of `candidates` is rendered too,
 				 * under its key and through its variable's layout — a plugin's
-				 * source adds its band here by declaring it. `characterLore`
-				 * reaches a template as the raw list, as it always has.
+				 * source adds its band here by declaring it.
 				 */
-				rendersBands: { from: 'candidates', raw: ['characterLore'] },
+				rendersBands: { from: 'candidates' },
 			},
 			params: {
 				kind: 'parameters',
@@ -3408,14 +3768,24 @@ export const assemble = pin(
 					 * ⚠ No `truncation` here, and there was one — an enum of
 					 * `oldest-first | lowest-weight`, "what gets dropped first
 					 * when the context is over budget" — declared, rendered,
-					 * and read by nothing (culled 2026-09-16, R-12). Assemble
-					 * drops nothing: what fits is decided upstream by the
-					 * ranker's `select`, per band, against `share`,
-					 * `maxEntries`, `minEntries` and `scoreLedAllocation` on
-					 * `core:task/rank-hybrid@1`, and this node renders the
-					 * decisions it is handed. A second drop rule here would be
-					 * a second owner of one decision. NOMENCLATURE §25 records
-					 * the cull.
+					 * and read by nothing (culled 2026-09-16, R-12). What LORE
+					 * fits is decided upstream by the ranker's `select`, per
+					 * band, against `share`, `maxEntries`, `minEntries` and
+					 * `scoreLedAllocation` on `core:task/rank-hybrid@1`, and
+					 * this node renders the decisions it is handed. A second
+					 * drop rule for lore here would be a second owner of one
+					 * decision. NOMENCLATURE §25 records the cull.
+					 *
+					 * ⚠ The TRANSCRIPT is the exception, because nobody else
+					 * owns it (B2, 2026-10-03): no shipped spec ranks a message
+					 * candidate, so the conversation's rows were never fitted
+					 * at all and a long session went out larger than the
+					 * window. The host's binding measures what it rendered and,
+					 * over the budget, leaves out the oldest lines in a chunk
+					 * at a cut point it holds across turns — not a param,
+					 * because there is nothing to choose: a prompt that does
+					 * not fit is trimmed by the backend instead, from the
+					 * front, every turn.
 					 */
 					/**
 					 * Which sections the prompt is built from, and in what order —
@@ -3686,10 +4056,6 @@ const relationshipSlots = (what: string) => ({
 				 * empty box, which `NumberControl` and the panel already treat as
 				 * "unset" (an emptied box commits `undefined` and clears the
 				 * row), so the empty state round-trips rather than being a hole.
-				 *
-				 * `drizzle/0111` deletes the stored `12` that `reconcileConfigs`
-				 * back-filled from the old declaration; without it, wiring the
-				 * slot would cap every upgraded install at 12 as a side effect.
 				 */
 				min: 0,
 				quick: true,
@@ -3816,6 +4182,24 @@ export const relationshipsKnown = pin(
  * `relationshipSlots` rather than a declaration of its own, so the ceiling here
  * means exactly what it means on the two nodes above: on/off plus a ceiling,
  * with an absent value uncapped and 0 leaving it out altogether.
+ *
+ * ## Nobody speaking: the cast-wide read (genre plan F6(a), 2026-09-29)
+ *
+ * The three sections are claims about a SPEAKER, and a scope whose
+ * `currentCharacterId` is null has none — an Adventure turn is the narrator's
+ * entry, and its planner and narrator are nobody's voice. Such a scope reads
+ * the **cast-wide read** instead: every relationship a cast member holds, one
+ * candidate each in the `castRelationships` lane, headed by its holder and
+ * naming the other end. A host decides what it may carry; Serene Pub withholds
+ * a member's secrets, since nobody's voice is not the holder's. Ordered
+ * the same way — presence (both ends in the cast), then recency; no tie
+ * touches a speaker. Which agents are handed that band is the spec's choice:
+ * a voice is somebody speaking, and wires none of it.
+ *
+ * `loreLinks` switches the one-hop walk from the entries the turn chose (a
+ * room's ways out, what an item belongs to). On by default, which is what this
+ * node has always done; a genre whose places say their own ways out ("From
+ * here:") turns it off, so a place link is said once, by the place.
  * @experimental
  */
 export const relationshipSearch = pin(
@@ -3856,6 +4240,26 @@ export const relationshipSearch = pin(
 					// Declared second so the query's own wording and `min: 0`
 					// win over the generic ceiling above.
 					...relationshipSlots('graph relationships').params.schema,
+					/**
+					 * The lore-link hop: relationships one edge from an entry
+					 * this turn's keyword scan chose, with an entry at an end
+					 * (NOMENCLATURE §17 *lore link*).
+					 *
+					 * `true` is what every run before it did, so the default
+					 * moves nothing. Off, the hop is not walked at all — no
+					 * link read, no second scan — and the band holds cast ties
+					 * only. Adventure's preset turns it off (F6(a)): a place
+					 * link belongs to the place ("From here:"), and a hop would
+					 * spend the band on a door no section renders.
+					 */
+					loreLinks: {
+						type: 'boolean',
+						default: true,
+						label: { en: 'Follow lore links' },
+						description: {
+							en: 'Also offer the links one step from the lore this turn found — a room’s ways out, what an item belongs to. Off keeps the band to relationships between characters.',
+						},
+					},
 				},
 			},
 		},
@@ -3996,6 +4400,27 @@ export const TEMPLATE_CONTEXT_SCHEMA = {
 				instructions: { type: 'string', optional: true },
 				charInstructions: { type: 'string', optional: true },
 				exampleDialogue: { type: 'string', optional: true },
+				hasContent: { type: 'boolean' },
+				gatedBy: { type: 'string', optional: true },
+			},
+		},
+		/**
+		 * 🚧 The author's note before Assemble places it — present only when
+		 * the session's genre declares `authorsNote` and the spec wires the
+		 * genre fields into this node. `targetIndex` is a placeholder, as
+		 * `postHistory`'s is.
+		 */
+		authorsNote: {
+			type: 'object',
+			optional: true,
+			description: 'The session’s author’s note, before Assemble decides where it goes.',
+			fields: {
+				targetIndex: { type: 'number' },
+				text: { type: 'string', optional: true },
+				role: { type: 'string' },
+				depth: { type: 'number' },
+				interval: { type: 'number' },
+				replyCount: { type: 'number', optional: true },
 				hasContent: { type: 'boolean' },
 				gatedBy: { type: 'string', optional: true },
 			},
@@ -4208,13 +4633,17 @@ export const buildTemplateContext = pin(
 				/**
 				 * What the person typed with the press, for an action that
 				 * reads its composer text as **direction** (lair pass B17,
-				 * 2026-09-27): the Lair's Trigger trap and Reveal. Rendered as
+				 * 2026-09-27): the Lair's Trigger trap and Reveal, and
+				 * Whodunit's Search — what the detective is looking for (genre
+				 * uplift C2, 2026-09-29). Rendered as
 				 * `{{turnDirection}}` — the same name, and the same meaning,
 				 * `build-scene-context@1` gives the Lair's reply (B11). Absent
 				 * when blank, so a prompt writes `{{#if turnDirection}}…{{/if}}`
 				 * and a press with nothing typed leaves it to the prompt.
-				 * Declared on THIS type alone, like `state` above. Unwired on
-				 * every spec whose composer text is a line somebody said.
+				 * Declared here rather than in `contextPorts`, like `state`
+				 * above; the narrator and side-character builders declare
+				 * their own (C2). Unwired on every spec whose composer text is
+				 * a line somebody said.
 				 */
 				turnDirection: S.text,
 				/**
@@ -4317,7 +4746,28 @@ export const buildNarratorContext = pin(
 					'Scripts over what the prompt template renders — edit the instructions, roll an occasional event, or inject a reminder at a depth in the conversation.',
 			},
 		},
-		ports: contextPorts,
+		ports: {
+			in: {
+				...contextPorts.in,
+				/**
+				 * What the person asked this narration to do (genre uplift
+				 * C2, 2026-09-29): the narrator modal's text or `/narrate
+				 * <text>` — the turn's triggering text, `$.input.text`.
+				 * Rendered as `{{turnDirection}}`, the name and the meaning
+				 * `build-template-context@1` and `build-scene-context@1` give
+				 * it (B11); absent when blank, so a row writes
+				 * `{{#if turnDirection}}…{{/if}}` and an undirected narration
+				 * renders exactly what it did before.
+				 *
+				 * ⚠ Declared because the placeholder's `instructions` is not
+				 * a prompt: it is stored beside the row and shown with it. For
+				 * as long as that was the direction's only reader, 0.5.3's
+				 * _Additional focus for this response_ reached no model.
+				 */
+				turnDirection: S.text,
+			},
+			out: contextPorts.out,
+		},
 	}),
 )
 
@@ -4404,12 +4854,20 @@ export const buildSideCharacterContext = pin(
 			in: {
 				cast: contextPorts.in.cast,
 				/**
-				 * `{ name, characterId, known, character }`, from the trigger's
-				 * first step. `name` is what the seed line carries and what
-				 * `{{char}}` renders; `character` is the card, absent for a
+				 * `{ name, characterId, ref, known, character }`, from the
+				 * trigger's first step. `name` is what the seed line carries and
+				 * what `{{char}}` renders; `character` is the card, absent for a
 				 * free-form name, which is a normal turn rather than a degraded
 				 * one — the builder falls back to the name it was given,
 				 * because a typed name is all there is.
+				 *
+				 * `characterId` (a row id) or `ref` (a participant reference,
+				 * `character:<id>` — what a pressed option carries, plan A28
+				 * review) names the speaker BY ROW, and then the row is who
+				 * speaks: the name is a label, never a second lookup, so two
+				 * people sharing a name stay two people and a row the cast does
+				 * not seat is still the person it names. A fact with neither
+				 * resolves by name against the cast.
 				 *
 				 * Was `speaker` until 2026-09-16 — see the inlet's port of
 				 * this name for why the fact moved off that word.
@@ -4449,13 +4907,26 @@ export const buildSideCharacterContext = pin(
 				 * unwired, it does not render.
 				 */
 				locationPassage: S.text,
+				/**
+				 * What the person asked this side character's turn to do
+				 * (genre uplift C2, 2026-09-29) — the narrator modal's text,
+				 * which feeds both of its halves. `{{turnDirection}}`, on the
+				 * terms `build-narrator-context@1` states; wired by
+				 * `core:spec/narrate-character` alone, so a genre's voices
+				 * (whose composer text is a line somebody said) render
+				 * nothing new.
+				 */
+				turnDirection: S.text,
 			},
 			out: {
 				...contextPorts.out,
 				/**
-				 * Who this voice is, as a **participant reference** —
-				 * `character:<id>` for a name the cast holds, null for a
-				 * free-form one. Additive, 2026-09-17 (W1).
+				 * Who this voice is, as a **participant reference** — the row
+				 * the fact named (`characterId` or `ref`), else
+				 * `character:<id>` for a name the cast holds, else null for a
+				 * free-form one. Additive, 2026-09-17 (W1). A lore read wired
+				 * to it takes null as unwired, so the run's scope decides for
+				 * a free-form voice.
 				 *
 				 * The resolution already happened: this node derives the
 				 * speaking character from the `sideCharacter` fact so the card,
@@ -4610,6 +5081,23 @@ export const buildPlannerContext = pin(
 				 * wires it beside `sideTalk`.
 				 */
 				scratchpad: S.text,
+				/**
+				 * **How the cast stand with each other** (genre plan F6(a),
+				 * 2026-09-29): the ranker's allocated candidates, of which the
+				 * builder reads the `relationships` band's `castRelationships`
+				 * lane — `core:query/relationship-search@1` read with nobody
+				 * speaking. Rendered as `{{castRelationships}}`: JSON keyed by
+				 * who holds each view, then by whom it is of, in rank order.
+				 * Only what the budget
+				 * admitted arrives, so a band at share 0 renders nothing. Absent
+				 * when unwired or empty.
+				 *
+				 * ⚠ On the planner and the scene only — the game master's two
+				 * agents. A voice is a cast member speaking, and
+				 * `build-side-character-context@1` has no such port on purpose:
+				 * another member's secret must never reach it.
+				 */
+				castRelationships: S.candidates,
 			},
 			out: contextPorts.out,
 		},
@@ -4682,11 +5170,12 @@ export const buildSceneContext = pin(
 				 * `core:query/lorebook-entries@1` listing of location entries
 				 * (lair pass B13, 2026-09-27). On the template context as
 				 * `{{knownLocations}}` (their names, one line) and
-				 * `{{locationEntry}}` (the entry whose name is the world's
-				 * `location` slot — where the party are, its exits included),
-				 * whatever the retrieval ranking admitted: a planner that is
-				 * never shown the room it stands in cannot tell an open door
-				 * from an unbuilt one. Both are absent when nothing is listed.
+				 * `{{locationEntry}}` (the room the world's `location` names,
+				 * else the planner's location hint — where the party are, its
+				 * exits included), whatever the retrieval ranking admitted: a
+				 * planner that is never shown the room it stands in cannot
+				 * tell an open door from an unbuilt one. Both are absent when
+				 * nothing is listed.
 				 */
 				locationEntries: S.json,
 				/**
@@ -4698,6 +5187,41 @@ export const buildSceneContext = pin(
 				 * the Sanctum. Absent when unwired or empty.
 				 */
 				sideTalk: S.messages,
+				/**
+				 * How the cast stand with each other, on the narrator's terms
+				 * — the same port as the planner's (F6(a), 2026-09-29), rendered
+				 * as `{{castRelationships}}`. See `buildPlannerContext`.
+				 */
+				castRelationships: S.candidates,
+				/**
+				 * **Whose lines this call writes** (Lair party speech,
+				 * 2026-09-30): a list of side-character facts — the planner's
+				 * `{ name, intent }`, or `{ characterId }` for a picked
+				 * delver — rendered as `{{partySpeakers}}`, one line per
+				 * speaker in order: the name the cast gives them, then what
+				 * they mean to do when the fact says. A nested list is read
+				 * flat, so a spec may hand `[first, rest]` from
+				 * `split-first@1` as it is. A name the cast does not hold is
+				 * kept as written. Absent when unwired or empty.
+				 *
+				 * For a call that writes the cast's lines **as nobody's
+				 * voice** — the Lair's Castellan speaking for the party: this
+				 * surface hears no holder-only slot and reads no member's
+				 * private lore, so naming the speakers here gives away nothing
+				 * a voice of their own would keep.
+				 */
+				partySpeakers: S.json,
+				/**
+				 * 🚧 **Which places' stats this surface reads** (place sight,
+				 * owner ruling 2026-09-30), a literal: `'reach'` — the place
+				 * the scene is at and the places one way from it (the room's
+				 * listed links to other places, the "From here:" ways); every
+				 * other place's stats are left out, its name kept. Absent, the
+				 * session's sight: every place it sees. The Lair's Castellan
+				 * speaking for the party wires `'reach'`; its narration does
+				 * not.
+				 */
+				placeSight: S.json,
 			},
 			out: contextPorts.out,
 		},
@@ -4891,6 +5415,121 @@ export const proseTranscript = pin(
 )
 
 /**
+ * 🚧 **A transcript's attachments** (PLAN-composer-attachments §3.5, 2026-10-02).
+ *
+ * Takes the history read's rows and publishes, per message id, the files its
+ * active revision shows — `core:image` and `core:file` parts, in part order —
+ * as `HistoryAttachmentV1` references (`core:shape/media-by-message@1`). One
+ * query for the whole transcript. A text file arrives with its body (up to
+ * `textFileBytes`), because a text file reaches every model as text and the
+ * placement step after this one cannot read a disk.
+ *
+ * Reads only rows of the run's own session; a message of any other session
+ * contributes nothing. A message with no files is absent from the record.
+ * @experimental
+ */
+export const historyAttachments = pin(
+	describeQueryDefinition({
+		id: 'core:query/history-attachments@1',
+		i18n: { name: { en: 'History attachments' } },
+		timeoutMs: 2000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					textFileBytes: {
+						type: 'integer',
+						min: 0,
+						default: 65536,
+						label: { en: 'Text file read limit (bytes)' },
+						description: {
+							en: 'How much of each attached text file is read for the prompt. The placement step trims it further to its own token budget and says when it did.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { messages: S.messages },
+			out: { main: S.mediaByMessage, attachments: S.mediaByMessage },
+		},
+	}),
+)
+
+/**
+ * 🚧 **Where each line's attachments go** (PLAN-composer-attachments §3.5; owner
+ * D2/D3, 2026-10-02).
+ *
+ * Pure. Takes the processed lines and the attachments by message, and gives
+ * each line an `attachments` string the template renders after the line's text
+ * (`{{{attachments}}}` in the shipped template):
+ *
+ *  - an image or PDF the call can read, within `mediaLookback` messages of the
+ *    end, becomes a **media marker** the prompt parser lifts onto that line's
+ *    own turn;
+ *  - a text file becomes a fenced block with its name, trimmed to
+ *    `textFileTokens` with a stated note — never silently;
+ *  - anything else — a kind the call cannot read, or media older than the
+ *    lookback — becomes a **placeholder**: `[image: cat.png]`, with the
+ *    person's description when there is one.
+ *
+ * What the call can read comes from its `connection` slot — wire it with
+ * `slot.connectionOf('<the step that sends the prompt>')` — whose descriptor
+ * carries `metadata.reads` (`ConnectionReadsV1`). Unwired, the call reads no
+ * media and every image is a name: what a text-only step such as a summary
+ * wants. A line with no files is passed through untouched, so a transcript
+ * with no attachments renders byte for byte what it did without this step.
+ *
+ * `notes` are sentences for the run's receipt ("2 images older than the media
+ * lookback were sent as names").
+ * @experimental
+ */
+export const placeAttachments = pin(
+	describeTaskDefinition({
+		id: 'core:task/place-attachments@1',
+		i18n: { name: { en: 'Place attachments' } },
+		timeoutMs: 1000,
+		slots: {
+			connection: {
+				kind: 'connection',
+				shape: S.textGen,
+				description:
+					'Which step these lines are written for. Point it at the step that sends the prompt: what that step can read decides whether an image is sent or named.',
+			},
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					mediaLookback: {
+						type: 'integer',
+						min: 0,
+						default: 10,
+						label: { en: 'Media lookback (messages)' },
+						description: {
+							en: 'Images and PDFs in the last this-many messages are sent to the model; older ones are sent as their names. Set to zero to send every attachment as a name.',
+						},
+					},
+					textFileTokens: {
+						type: 'integer',
+						min: 0,
+						default: 4000,
+						label: { en: 'Text file budget (tokens)' },
+						description: {
+							en: 'How much of each attached text file goes into the prompt. A longer file is cut here, and the prompt says it was cut.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { messages: S.messages, attachments: S.mediaByMessage },
+			out: { main: S.messages, messages: S.messages, notes: S.json },
+		},
+	}),
+)
+
+/**
  * The turn-order pool, orderer and strategies (PLAN-turn-order §4.4, R3/R8;
  * re-ported in place 2026-09-22, pre-release).
  *
@@ -5004,8 +5643,8 @@ export const turnManual = pin(turnStrategy('core:task/turn-manual@1', 'Manual'))
 /**
  * One entry in the pipeline's own voice (`{ ref: null, via: 'voice' }`) when
  * the last row is a user row, else empty. How a planner genre — Adventure,
- * the Lair, Whodunit — gets exactly one reply per send with no cast in the
- * pool at all.
+ * the Lair, the Whodunit showcase plugin — gets exactly one reply per send
+ * with no cast in the pool at all.
  * @experimental
  */
 export const turnNarrator = pin(
@@ -5730,9 +6369,14 @@ export const embedText = pin(
 		 * that is the point of putting the guarantee here instead of in a
 		 * `try`.
 		 *
-		 * It also earns the node a "Use this source" switch, which is the
-		 * zero-cost way to turn the semantic mechanism off entirely on an install that
-		 * has a model and does not want it spent on retrieval.
+		 * It also earns the node a "Use this source" switch. ⚠ Not the semantic
+		 * mechanism's switch: that is `core:task/query-windows@1`'s
+		 * `searchByMeaning`, on the chain's first node, which cuts the probes
+		 * before this node is reached. Off here (or `enabled: 'off'`) still
+		 * spends nothing, and switches off every embed step that shares
+		 * `enabled` — the entity-vector mechanism's too — but it leaves the
+		 * semantic chain running on empty, and `vector-search` can only say
+		 * nothing was embedded, not why.
 		 */
 		optional: true,
 		slots: {
@@ -6072,7 +6716,7 @@ export const generateText = pin(
 			 * to `text-stream`, so every spec wired to them keeps working and
 			 * degrades by concatenating the prose.
 			 *
-			 * `thinking` is the reasoning trace the dispatch separated from
+			 * `reasoning` is the reasoning trace the dispatch separated from
 			 * the text before the text reached the port — published by the
 			 * binding since it first stripped one, declared now that a
 			 * downstream write (`update-message`) takes it. Empty when the
@@ -6082,7 +6726,7 @@ export const generateText = pin(
 				main: S.partStream,
 				text: S.textStream,
 				parts: S.partStream,
-				thinking: S.text,
+				reasoning: S.text,
 			},
 		},
 	}),
@@ -6825,6 +7469,23 @@ export const createMessage = pin(
 				 * is refused by position. Absent on nearly every message.
 				 */
 				sections: S.foldedSections,
+				/**
+				 * 🚧 The **turn plan** this row carries (Lair character turns,
+				 * owner ruling 2026-09-30): `{ plan, locationPassage? }`, where
+				 * `plan` is a planner's document whose `speakers` (side-character
+				 * facts — `{ name, intent }` or `{ characterId }`) name who takes
+				 * a **character turn** next, in order, and `locationPassage` is
+				 * prose that describes the room they are heading into. The host
+				 * resolves each speaker to a seated cast member and stores the
+				 * whole as `metadata.turnPlan` (`{ turns, plan, locationPassage? }`,
+				 * `turns` the participant references in order). A turn-order
+				 * strategy reads the **standing plan** off the history and
+				 * prepares one entry per turn not yet taken (`via: 'plan'`); each
+				 * character turn reads it back through `core:query/turn-plan@1`.
+				 * Absent, or with no `plan`, the row plans nothing — which is
+				 * every row but a planner's.
+				 */
+				turnPlan: S.json,
 			},
 			out: { main: S.writeResult, messageId: S.writeResult },
 		},
@@ -6881,11 +7542,11 @@ export const updateMessage = pin(
 				/**
 				 * The reasoning trace the oracle separated from its text, when
 				 * the model produced one. Stored beside the message as the
-				 * thinking pane reads it; absent means none. Shown folded,
+				 * reasoning fold reads it; absent means none. Shown folded,
 				 * and never re-sent to the model: the prompt transcript reads
 				 * a row's text alone (decision D5, 2026-09-27).
 				 */
-				thinking: S.text,
+				reasoning: S.text,
 				/**
 				 * Blocks to append to the row — the same list, the same
 				 * checks and the same stamping as `create-message`'s
@@ -6900,7 +7561,7 @@ export const updateMessage = pin(
 				 * regenerate replaces what the slot held, and a finish with
 				 * none clears it, while every other alternative keeps its own.
 				 * Editing a settled row, they replace the shown alternative's
-				 * only when given. Like `thinking`, never re-sent to the model.
+				 * only when given. Like `reasoning`, never re-sent to the model.
 				 */
 				sections: S.foldedSections,
 			},
@@ -7002,6 +7663,46 @@ export const setTurnOrder = pin(
 				main: S.writeResult,
 				/** The document as written, or the stored one when this was stale. */
 				turnOrder: S.turnOrder,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 The **standing turn plan** a character turn plays from (Lair character
+ * turns, owner ruling 2026-09-30).
+ *
+ * A planner's row carries the turns it planned (`create-message@1`'s
+ * `turnPlan`, stored as `metadata.turnPlan`). Each named member then takes a
+ * **character turn** of their own — a separate run, fired off the turn order
+ * — and that run reads the plan back here: the planner's document (where the
+ * scene is, what was planned) and the prose describing a room nobody filed.
+ *
+ * The plan that **stands** is the newest planner's row in the session's
+ * history, unless a person's line on `main` is newer than it — a person
+ * speaking after a plan has moved the story past it. With `messageId` (a
+ * regenerate or swipe re-voicing that row) only rows older than it count, so
+ * a re-voiced line reads the plan it was played from. No plan standing, every
+ * port reads absent and the turn plays from the scene as it stands.
+ * @experimental
+ */
+export const turnPlan = pin(
+	describeQueryDefinition({
+		id: 'core:query/turn-plan@1',
+		i18n: { name: { en: 'Turn plan' } },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				scope: S.sessionScope,
+				/** The row a regenerate or swipe re-voices — the inlet's `messageId`. Absent on a fresh turn. */
+				messageId: S.rowIds,
+			},
+			out: {
+				main: S.json,
+				/** The planner's document, as the planner's row stored it. */
+				plan: S.json,
+				/** Prose describing the room the plan heads into, when the plan carried any. */
+				locationPassage: S.text,
 			},
 		},
 	}),
@@ -7519,6 +8220,7 @@ export const advanceStoryClock = pin(
 		reviewDefault: 'off',
 		review: { fields: [] },
 		timeoutMs: 2000,
+		causesEvent: 'core:event/session-updated@1',
 		slots: {
 			params: {
 				kind: 'parameters',
@@ -7707,6 +8409,16 @@ export const makeChoices = pin(
 				 * party knocked at). Blank or absent writes none.
 				 */
 				referent: S.text,
+				/**
+				 * Where the question was asked **from**, by name — stamped on
+				 * the block as its `vantage` and handed back by
+				 * `read-answer@1`, beside `referent` (plan A27, 2026-09-30:
+				 * the room the Lair's planner said the party stood in as
+				 * they knocked). JSON because it is usually read off a
+				 * model's document (`parse-json@1`'s `value`); anything but
+				 * a non-blank string writes none.
+				 */
+				vantage: S.json,
 			},
 			out: {
 				main: S.json,
@@ -7754,6 +8466,12 @@ export const readAnswer = pin(
 				 * form shows only the fields a payload carries).
 				 */
 				referent: S.text,
+				/**
+				 * Where the question was asked from, by name — the block's
+				 * `vantage`, as the asking run stamped it (plan A27); null
+				 * when it named nowhere.
+				 */
+				vantage: S.json,
 				/** The whole answer: `{ choice }` or the entered values. */
 				values: S.json,
 			},
@@ -7962,7 +8680,17 @@ export const batchMessages = pin(
 			},
 		},
 		ports: {
-			in: { messages: S.messages },
+			/**
+			 * `attachments` (2026-10-03, owner ruling on the attachments
+			 * follow-ups): the files by message, from
+			 * `core:query/history-attachments@1`. Each message that shows
+			 * files is batched with a placeholder per file after its text —
+			 * `[image: cat.png — a grey cat]`, `[file: notes.txt]` — and the
+			 * cut counts them, so a message that is only a picture still
+			 * reaches the draft as something. Unwired, or a message with no
+			 * files, and the message is batched exactly as it was.
+			 */
+			in: { messages: S.messages, attachments: S.mediaByMessage },
 			out: { main: S.drafts, batches: S.drafts },
 		},
 	}),
@@ -8426,9 +9154,11 @@ export const entryKeys = pin(
  *    run can link what an earlier one created without holding an id. This is
  *    the shape a second turn wants.
  *
- * Each entry of `links` is a name or an entry id, or
- * `{ to, linkType?, label? }` for one that wants its own kind. Absent on
- * nearly every write, and an empty list is the same as none.
+ * Each entry of `links` is a name or an entry id, or a `LoreLinkInput` —
+ * `{ to, linkType?, reverseLinkType?, name?, description? }` — for one that
+ * says more (places plan B2, 2026-09-29). Absent on nearly every write, and an
+ * empty list is the same as none. A link the list states twice, or one the
+ * session already reads, is written once: see `linkLoreEntries` on idempotence.
  * @internal
  */
 export const createLoreEntry = pin(
@@ -8467,8 +9197,7 @@ export const createLoreEntry = pin(
 				content: S.text,
 				/**
 				 * Links to write from this entry in the same commit — see the
-				 * note above on F7. Names, entry ids, or
-				 * `{ to, linkType?, label? }`.
+				 * note above on F7. Names, entry ids, or `LoreLinkInput`s.
 				 */
 				links: S.json,
 			},
@@ -8515,13 +9244,45 @@ export const createLoreEntry = pin(
  * its links are one thought, `create-lore-entry`'s own `links` in-port writes
  * the edges in the row's transaction instead — the shape a room-builder wants.
  *
- * ## The kind of link
+ * ## What the link says (places plan B2, 2026-09-29)
  *
- * `linkType` is free text in the row and stays free text: the app's list is a
- * vocabulary of *suggestions*, and the one kind anything reads semantically is
- * the travel set (`connects to`, `leads to`, `runs past`, `near`), which is
- * what turns a pair of entries into a place you can walk between. The default
- * is `leads to` — the exit, the reason this exists.
+ * The row is a **relationship**, and it carries the relationship's whole
+ * descriptor — the same four words the lorebook's own link form edits:
+ *
+ *  - `linkType` — the relationship type, read from the `from` end ("leads
+ *    north to"). Free text in the row and free text here: the app's list is a
+ *    vocabulary of *suggestions*, and nothing reads a relationship type
+ *    semantically. The default is `leads to`.
+ *  - `reverseLinkType` — the wording read from the `to` end ("leads south
+ *    to"). **Empty is one way**, and one way is the default: direction is
+ *    something a spec says, never a guess the host makes from the forward
+ *    words. A symmetric wording repeats itself (`connects to` / `connects to`).
+ *  - `name` — the relationship's own name ("the rusted iron door", "the King's
+ *    Road"), empty for an unnamed way. ⚠ Something you can stand in is a place
+ *    of its own, not a named link.
+ *  - `description` — its description. (It was the port `label`; one column,
+ *    one word, no alias.)
+ *
+ * ## Idempotent
+ *
+ * One way is one row, **as the session reads** (the app's
+ * `linksOnReadingThatWay`): a link the session already reads — on its own
+ * line or one it inherits, undated or dated at or before its moment — with
+ * the same name (case aside) that says **everything** this one would (the same
+ * words read from the same end, both ways when both are asked, or its true
+ * mirror drawn from the far end) is **the standing row**. The outlet returns
+ * its id and writes nothing, so a re-run, a swipe or a second turn never stacks
+ * a room's ways out; `fromEntryId` is the row's own `from`. The standing row is
+ * never rewritten: a pipeline's repeat does not edit a link a person may have
+ * drawn or worded. And because this run did not make the row, the host neither
+ * records it as the run's (an undo of the run must not delete it) nor reports a
+ * write (`written: false`, so no `core:event/lore-link-created@1`).
+ *
+ * Refused with a sentence instead: a link that says only PART of this one (a
+ * one-way door where both ways is asked — a second row would say that part
+ * twice), and one that says it all but no longer stands (resolved, broken,
+ * secret) — nothing the session reads states it, and a pipeline does not
+ * reopen or reveal it.
  * @internal
  */
 export const linkLoreEntries = pin(
@@ -8530,17 +9291,18 @@ export const linkLoreEntries = pin(
 		i18n: {
 			name: { en: 'Link the lore entries' },
 			description: {
-				en: 'Draws a link between two entries of this session’s lorebook — a room’s exit, who keeps what, what stands near what.',
+				en: 'Draws a link between two entries of this session’s lorebook — a room’s way out, who keeps what, what stands near what.',
 			},
 		},
 		effects: 'write',
 		/**
-		 * The link itself is what a reviewer judges, so both the kind and the
-		 * caption may be retyped (R-15 review fields). The two ends may not:
-		 * they are the run's own identity, and a reviewer re-aiming them would
-		 * link a pair nobody judged — the rule `delete-message@1` states.
+		 * The link itself is what a reviewer judges, so its words both ways,
+		 * its name and its description may be retyped (R-15 review fields). The
+		 * two ends may not: they are the run's own identity, and a reviewer
+		 * re-aiming them would link a pair nobody judged — the rule
+		 * `delete-message@1` states.
 		 */
-		review: { fields: ['linkType', 'label'] },
+		review: { fields: ['linkType', 'reverseLinkType', 'name', 'description'] },
 		timeoutMs: 10000,
 		causesEvent: 'core:event/lore-link-created@1',
 		slots: {
@@ -8553,7 +9315,14 @@ export const linkLoreEntries = pin(
 						quick: true,
 						label: { en: 'Kind of link' },
 						description:
-							'What the link says — “leads to”, “connects to”, “near”, “keeper of”. The travel kinds are what make two entries a place you can walk between.',
+							'What the link says, read from the entry it starts at — “leads north to”, “connects to”, “is inside”, “keeper of”.',
+					},
+					reverseLinkType: {
+						type: 'string',
+						default: '',
+						label: { en: 'From there it…' },
+						description:
+							'What the link says read from the other end — “leads south to”, “holds”. Leave it empty for a way that only goes one way.',
 					},
 				},
 			},
@@ -8569,13 +9338,71 @@ export const linkLoreEntries = pin(
 				 * write result and a text name all wire here.
 				 */
 				to: S.json,
-				/** What to call this link where it is drawn. Optional. */
-				label: S.text,
+				/** The relationship's own name — "the rusted iron door". Optional. */
+				name: S.text,
+				/** Its description. Optional. */
+				description: S.text,
 			},
 			out: { main: S.writeResult, linkId: S.writeResult },
 		},
 	}),
 )
+
+/**
+ * One lore link a spec asks for — an element of
+ * `core:outlet/create-lore-entry@1`'s `links` (places plan B2, 2026-09-29).
+ *
+ * The same four words as `core:outlet/link-lore-entries@1`'s ports and
+ * parameters, and as the `LoreLinkRow` a listing reads back: what you write is
+ * what you read. A bare name, entry id or write result in `links` is the same
+ * as `{ to }` with nothing else said.
+ * @experimental
+ */
+export interface LoreLinkInput {
+	/**
+	 * The entry the link ends at: an entry id, the name of an entry in the
+	 * session's lorebook (case and surrounding space ignored), or the write
+	 * result of the write that made it.
+	 */
+	to: number | string | WriteResult
+	/** The relationship type, read from the entry being saved. Absent is `leads to`. */
+	linkType?: string
+	/** The wording read from `to`'s end. Absent or empty is one way. */
+	reverseLinkType?: string
+	/** The relationship's own name — "the rusted iron door". Absent is unnamed. */
+	name?: string
+	/** Its description. */
+	description?: string
+}
+
+/**
+ * One lore link on a `core:query/lorebook-entries@1` row, listed when the
+ * spec asks for `withLinks` (places plan B2, 2026-09-29).
+ *
+ * **Said from the listed entry**: `to` is the far end, whichever end of the
+ * relationship the listed entry is. A relationship drawn from here reads by
+ * its relationship type; one drawn to here reads by its reverse type, and one
+ * drawn to here with no reverse type (one way, inbound) is not listed at all —
+ * it is no way out of here. Only relationships between two entries, standing
+ * (active, not secret) on the session's line at its moment, with both ends
+ * live and the far end one the wired `speaker` may see — or, with no speaker
+ * wired, one every voice may see.
+ * @experimental
+ */
+export interface LoreLinkRow {
+	/** The relationship's id. */
+	id: number
+	/** The far end, named as the session's reading sees it (amendments applied). */
+	to: { entryId: number; name: string }
+	/** The wording read from the listed entry — "leads north to". */
+	linkType: string
+	/** The wording read from the far end back to here. Absent is one way. */
+	reverseLinkType?: string
+	/** The relationship's own name. Absent is unnamed. */
+	name?: string
+	/** Its description. Absent is none. */
+	description?: string
+}
 
 // ── Graph build ─────────────────────────────────────────────────────────────
 //
@@ -8804,8 +9631,9 @@ export const itemSupply = pin(
  * session's; otherwise the book's **most recently used** line (the line of
  * the session played most recently) at the **head** of its timeline. On a
  * branch, main's dated values count only up to the fork date. The document
- * says where it read: `branchId`, `moment` (null = head), `forkedAt` (null =
- * no cut).
+ * says where it read: `branchId`, `moment` (null = head), `forkedAt` — where
+ * main was cut, which on a fork of a fork is the EARLIEST fork date along the
+ * parent chain, not the branch's own (null = no cut).
  *
  * 🚧 A custom reading, all optional: `branch` — `'main'`, `'mostRecent'`,
  * `'session'` or a branch id of this book; `at` — `'head'` or a story date
@@ -8913,7 +9741,7 @@ export const lorebookState = pin(
  * `branch`, `at` and `forkCut` ports: on a branch, main's values after the
  * fork date are not points; at a date, nothing dated after it is. The
  * session's own messages are its own and are not cut. The document adds
- * `moment` and `forkedAt`.
+ * `moment` and `forkedAt` (the effective cut, as in `lorebook-state@1`).
  *
  * Scoped like `lorebook-state@1`: the scope session's lorebook, or one the
  * run's scope grants; any other, or an owner of another book, is refused.
@@ -9099,6 +9927,21 @@ export const resolveStateChanges = pin(
 				 * the world's, as before.
 				 */
 				owners: S.participantRefs,
+				/**
+				 * 🚧 **Whose stats this keeper keeps** (stat ownership, owner
+				 * ruling 2026-09-30): `'world'` — the world and its places, so
+				 * a change naming a cast member is refused; or one participant
+				 * reference (`character:<id>`) — that member alone, so a change
+				 * to the world, a place or anybody else is refused. Either may
+				 * also be a party speaker (`{ characterId }`, or `{ name }` as a
+				 * plan writes it, resolved like a change's `owner`), and a list
+				 * keeps every item it holds, read flat — an absent item keeps
+				 * nobody more. Each refusal is a sentence on `refused`. Unwired,
+				 * any owner may be named, as before. The Lair's Castellan keeper
+				 * wires `'world'` and the delvers it voiced this turn; each
+				 * character turn's keeper wires its own speaker.
+				 */
+				keeps: S.json,
 				/** Which session's cast the names are resolved against. */
 				scope: S.sessionScope,
 				/**
@@ -9266,11 +10109,13 @@ export const setState = pin(
  * Same fields, from the same host read and the same `toLoreEntry` projection
  * the four definitions above publish on each candidate's `payload` — `id`,
  * `source`, `name`, `content`, `keys`, `constant`, `enabled`, `position`,
- * `priority`, the matcher set, `bindingCharacterId`, `hasEmbedding`,
+ * `priority`, the matcher set, `bindingCharacterId`,
  * `fingerprint`, and history's `year` / `month` / `day`. That is the contract
  * worth having: a task written against a retrieved entry reads a listed one
  * without a second shape to learn, and there is no second projection to keep in
  * step (R5 — the vocabularies are reconciled at the host's read, not merged).
+ * The one addition is asked for: `withLinks` puts each row's lore links on it
+ * as `links` (`LoreLinkRow[]`), said from that row.
  *
  * ## What it will not hand over
  *
@@ -9389,7 +10234,36 @@ export const lorebookEntries = pin(
 						max: 2000,
 						label: { en: 'Most entries listed' },
 						description:
-							'A ceiling on how many entries are listed. There is no second page — raising this is the only way to see more.',
+							'A ceiling on how many entries are listed. When there are more, the newest are listed. There is no second page — raising this is the only way to see more.',
+					},
+					/**
+					 * Each row's **lore links**, on the row as `links`
+					 * (`LoreLinkRow[]`) — places plan B2, 2026-09-29. Drizzle's
+					 * `with: { … }` in spirit: the listing stays a listing, and a
+					 * reader that wants a room's ways out says so.
+					 *
+					 * Each link is said **from the listed entry** — its wording
+					 * from here, the far end named — and only a link that is a
+					 * way out of here is listed: between two entries, standing
+					 * (active, not secret) on the session's line at its moment,
+					 * both ends live, and never one drawn *into* here with no
+					 * wording back (one way, inbound). The far end passes the
+					 * visibility gate for the WIRED `speaker`; with none wired,
+					 * a far end the listing does not itself carry is named only
+					 * when every voice may see it — an unwired listing may be
+					 * read once and shared by every voice in a turn (the Lair's
+					 * rooms). Never a way round the gate.
+					 *
+					 * Off by default: a row read without it carries no `links`
+					 * at all, so every spec written before it reads exactly what
+					 * it did.
+					 */
+					withLinks: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'With each entry’s links' },
+						description:
+							'Also list, on each entry, the links that lead from it to other entries — a room’s ways out, what it is inside — each said from that entry.',
 					},
 				},
 			},
@@ -9455,6 +10329,31 @@ export const lorebookEntries = pin(
  * own `channel` (a bare slug is every lane of it), so a core task never
  * hard-codes a genre's slug: a spec that wants a side channel's prose to count
  * reads it and names it here.
+ *
+ * ## Which room is this one (places plan B6, 2026-09-29)
+ *
+ * The same lookup answers the Lair's other question: *which room do the party
+ * stand in?* — the world's `location` stat, resolved against the rooms, so
+ * *Answer the door* can link the room it writes to it. Two things make that
+ * wireable:
+ *
+ *  - **`path`**: a data reference has no sub-path, and the location sits
+ *    inside a `core:query/session-state@1` document, so `path` says where the
+ *    name is inside `name` (`world.location`) — the dotted spelling
+ *    `parse-json@1` and `generate-json@1` read. Empty reads `name` itself.
+ *  - **A lore reference is its entry.** A location stat set to a place entry
+ *    holds `{ entryId }`, not words, and naming it again by its title would
+ *    find a namesake. So a value with an `entryId` is answered by the listed
+ *    entry with that id (`describedBy` `entry`), and by nothing when no
+ *    listing holds it — archived, or hidden from this read.
+ *  - **`fallbackName`** (plan A27, 2026-09-30): what to look for when `name`
+ *    (at `path`) names nothing — for the Lair, the room its planner said the
+ *    party stood in as they knocked (the knock's `vantage`). The world's
+ *    value wins and the hint stands in only while it names nothing: the
+ *    order a play turn's prompts read the location in (the world's value,
+ *    else that turn's plan). No prompt in the knock turn shows the hinted
+ *    room; it is the planner's own answer for that turn. Read whole, by the
+ *    same rules as `name`.
  * @experimental
  */
 export const undescribedName = pin(
@@ -9506,6 +10405,19 @@ export const undescribedName = pin(
 							en: 'How many words, besides the name, a paragraph needs before it counts as describing the room rather than mentioning it.',
 						},
 					},
+					/**
+					 * Where the name is inside `name`, as a dotted path (places
+					 * plan B6) — the Lair reads `world.location` off a
+					 * session-state document. Empty reads `name` itself.
+					 */
+					path: {
+						type: 'string',
+						default: '',
+						label: { en: 'Where the name is' },
+						description: {
+							en: 'Where the name sits inside what is wired in, as a dotted path such as world.location. Leave it empty when the name itself is wired in.',
+						},
+					},
 				},
 			},
 		},
@@ -9514,10 +10426,18 @@ export const undescribedName = pin(
 				/**
 				 * The name to look for — JSON rather than text because it is
 				 * usually read off a model's document (`parse-json@1`'s
-				 * `value`); anything but a string is no name, and nothing is
-				 * undescribed.
+				 * `value`), or a document holding it at `path`; anything but a
+				 * string is no name, and nothing is undescribed — save a lore
+				 * reference (`{ entryId }`), which is the listed entry it
+				 * references (B6).
 				 */
 				name: S.json,
+				/**
+				 * What to look for when `name` at `path` names nothing — a
+				 * name or a lore reference, read whole (no `path`). Unwired,
+				 * nothing is looked for in its place.
+				 */
+				fallbackName: S.json,
 				/** Location entries (rows with `id`, `name`, `keys`), checked first. */
 				locationEntries: S.json,
 				/** The rest of the book, any entry type, checked second. */

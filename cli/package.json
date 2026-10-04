@@ -1,13 +1,27 @@
 {
 	"name": "@serene-pub/cli",
-	"version": "0.6.0-preview.0",
-	"type": "module",
-	"description": "Build-time tooling: package a plugin into a manifest plus documents, and generate /contracts from a type registry.",
+	"version": "0.6.0-pr-1",
+	"description": "Build-time tooling for Serene Pub plugins — the `serene-pub` command: check and package a plugin into a manifest plus documents, preview its UI, clone core components, and generate contracts from a type registry.",
 	"license": "Apache-2.0",
+	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/cli#readme",
+	"bugs": {
+		"url": "https://github.com/SerenePub/serene-pub-sdk/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/SerenePub/serene-pub-sdk.git",
+		"directory": "cli"
+	},
+	"type": "module",
+	"engines": {
+		"node": ">=24"
+	},
 	"files": [
 		"dist",
+		"!dist/**/*.map",
 		"templates",
-		"README.md"
+		"README.md",
+		"NOTICE"
 	],
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -46,23 +60,26 @@
 		}
 	},
 	"peerDependencies": {
-		"@serene-pub/conformance": ">=0.6.0-preview.0",
-		"@serene-pub/sdk": ">=0.6.0-preview.0",
-		"@serene-pub/ui-preview": ">=0.6.0-preview.0",
+		"@serene-pub/conformance": "^0.6.0-pr-1",
+		"@serene-pub/sdk": "^0.6.0-pr-1",
+		"@serene-pub/ui-preview": "^0.6.0-pr-1",
 		"esbuild": "*",
 		"svelte": ">=5",
-		"happy-dom": "*"
+		"happy-dom": "*",
+		"@serene-pub/contracts": "^0.6.0-pr-1",
+		"@serene-pub/core-catalog": "^0.6.0-pr-1",
+		"@serene-pub/docs": "^0.6.0-pr-1"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
-		"@serene-pub/conformance": "0.6.0-preview.0",
-		"@serene-pub/contracts": "0.6.0-preview.0",
-		"@serene-pub/core-catalog": "0.6.0-preview.0",
-		"@serene-pub/docs": "0.6.0-preview.0",
-		"@serene-pub/sdk": "0.6.0-preview.0",
-		"@serene-pub/ui-preview": "0.6.0-preview.0"
+		"@serene-pub/conformance": "0.6.0-pr-1",
+		"@serene-pub/contracts": "0.6.0-pr-1",
+		"@serene-pub/core-catalog": "0.6.0-pr-1",
+		"@serene-pub/docs": "0.6.0-pr-1",
+		"@serene-pub/sdk": "0.6.0-pr-1",
+		"@serene-pub/ui-preview": "0.6.0-pr-1"
 	},
 	"peerDependenciesMeta": {
 		"@serene-pub/ui-preview": {
@@ -76,10 +93,23 @@
 		},
 		"happy-dom": {
 			"optional": true
+		},
+		"@serene-pub/contracts": {
+			"optional": true
+		},
+		"@serene-pub/core-catalog": {
+			"optional": true
+		},
+		"@serene-pub/docs": {
+			"optional": true
 		}
 	},
 	"dependencies": {
 		"@remote-dom/core": "^1.12.0",
-		"@serene-pub/component-client": "0.6.0-preview.0"
+		"@serene-pub/component-client": "^0.6.0-pr-1"
+	},
+	"publishConfig": {
+		"access": "public",
+		"tag": "next"
 	}
 }

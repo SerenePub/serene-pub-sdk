@@ -24,7 +24,7 @@
  * line in `describeEntryType` and it is off, because a plugin-owned type also
  * owns a database constraint and the rows under it, and that half is not built.
  */
-import { describeEntryType } from "@serene-pub/sdk";
+import { describeEntryType, STORY_TIME_PART_RANGES } from "@serene-pub/sdk";
 /**
  * The keys every entry type answers with, spelled once.
  *
@@ -39,12 +39,18 @@ const KEYS = "keys";
 const CONTENT = "content";
 const TITLE = "title";
 /**
- * The `parent` column, shared by all three.
+ * The `parent` column: the entry this one is filed under (Part of), or none.
  *
- * Declared even though nothing hangs off it yet: an amendment is an entry whose
- * parent is the base entry, and the alternative to declaring it now is
- * declaring it later — which, since the shape is hashed, costs `@2` on all
- * three types to state a column that already exists.
+ * A type that declares it may be filed; a type that does not is never filed
+ * under anything, and the app asks this field role — never a type id — before
+ * it files one (the editor's Part of, the re-parent, a dated re-parent, the
+ * import). Every core type declares it except a place (places plan B2,
+ * 2026-09-29) — places join other places by relationships instead — and a
+ * history entry (owner, 2026-10-02): history is always top level relative to
+ * other lore, scoped only by its line and its date.
+ *
+ * ⚠ Not how an amendment finds its base: amendments are their own table
+ * (`entry_amendments`), keyed by the entry they amend.
  */
 const PARENT = "anchorEntryId";
 /**
@@ -149,10 +155,9 @@ export const characterLoreEntryType = describeEntryType({
     fields: {
         priority: priorityField
     },
-    // Not a variable of its own: qualifying entries are folded into their bound
-    // character's object under an "extra lore" key, which is why declaring a
-    // layout for `characterLore` would offer a setting that changes nothing.
-    render: { into: "character-card" },
+    // Assemble's `characterLore`: the admitted rows, each with the cast member
+    // it is bound to, placed by the context template like world lore.
+    render: "core:var/character-lore@1",
     sourceKind: "characterLore",
     exportKey: "character",
     amendMode: "amend"
@@ -170,6 +175,10 @@ export const characterLoreEntryType = describeEntryType({
  *    the bonus".
  *  - **no `title`.** A history entry is not named; it is *dated*, and its
  *    heading is the date. That is what `order` carries.
+ *  - **no `parent`.** History is never filed under another entry (owner,
+ *    2026-10-02): it is always top level relative to other lore, scoped by
+ *    its line and its date. Other lore may still be filed under it, and its
+ *    scenes hang off it by their own column.
  * @experimental
  */
 export const historyEntryType = describeEntryType({
@@ -199,8 +208,8 @@ export const historyEntryType = describeEntryType({
         ],
         // Content alone — a history entry has no title to prepend, which is
         // what the vectorizer already does by having no name column to read.
-        embedText: [CONTENT],
-        parent: PARENT
+        embedText: [CONTENT]
+        // ⚠ No `parent`: history is never filed under anything (see above).
     },
     fields: {
         year: {
@@ -216,12 +225,17 @@ export const historyEntryType = describeEntryType({
             // declared field here that the model actually reads.
             injected: true
         },
+        // The range is the story-time rule itself, not a Gregorian one (A15):
+        // a floor of 1 and no ceiling, because a book may count thirteen
+        // months, or days of the year. This range becomes the database's
+        // CHECK, so a copied 1–12 / 1–31 refused dates the book's calendar
+        // allows. Whether a date fits THIS book's calendar is checked at entry
+        // (`assertDateLands`), where the calendar is known.
         month: {
             type: "integer",
             label: { en: "Month" },
             description: { en: "Optional. Entries without one sort after those with." },
-            min: 1,
-            max: 12,
+            ...STORY_TIME_PART_RANGES.month,
             queryable: true,
             sortable: true,
             embedded: false,
@@ -231,8 +245,10 @@ export const historyEntryType = describeEntryType({
             type: "integer",
             label: { en: "Day" },
             description: { en: "Optional, and only meaningful beside a month." },
-            min: 1,
-            max: 31,
+            ...STORY_TIME_PART_RANGES.day,
+            // A day needs a month — the story-time rule, declared so the
+            // projected CHECK holds it too.
+            narrows: "month",
             queryable: true,
             sortable: true,
             embedded: false,
@@ -283,28 +299,38 @@ export const historyEntryType = describeEntryType({
  * "which rows are the map" is a question no reader could ask while a room was
  * just world lore with the word "room" somewhere in it.
  *
+ * ## Never filed under anything; its shape is its relationships
+ *
+ * A place declares **no `parent`** field role (places plan B2, owner ruling
+ * 2026-09-29): it is never filed under another entry (Part of), because places
+ * join by **relationships** — a door between two rooms, a road between two
+ * towns, "is inside" / "holds" between a room and its tavern — each one row
+ * with its own name and its wording from both ends. Containment is words, not
+ * a tree: a place may be inside two things, and deleting one takes nothing
+ * with it. A way big enough to stand in (a long road, a bridge with a toll
+ * house on it) is a place of its own, joined to the places at its ends by two
+ * relationships.
+ *
  * ## ⚠ There is no `exits` field, and there must not be
  *
- * A room's exits are **link rows** — `core:outlet/link-lore-entries@1`, the
- * same entry-ended edge the lorebook's own graph draws — and not a declared
- * field, for a reason that is structural rather than tasteful: `fields` is the
- * settings language, whose values land in a jsonb column and project into
- * CHECK constraints. It has no reference type. An `exits` field could only
- * ever hold *names*, with no foreign key, no cascade when the room it names is
- * deleted, and no second reader — which is precisely the parseable `Exits:`
- * line this type was declared to replace, moved one column over.
+ * A room's ways out are **lore links** — `core:outlet/link-lore-entries@1`,
+ * the same entry-ended relationship the lorebook's own graph draws — and not a
+ * declared field, for a reason that is structural rather than tasteful:
+ * `fields` is the settings language, whose values land in a jsonb column and
+ * project into CHECK constraints. It has no reference type. An `exits` field
+ * could only ever hold *names*, with no foreign key, no cascade when the room
+ * it names is deleted, and no second reader — which is precisely the parseable
+ * `Exits:` line this type was declared to replace, moved one column over.
  *
  * So a location declares the world's fields and nothing else, and its shape
- * lives in the edges.
+ * lives in its relationships.
  *
- * ## No `exportKey`
+ * ## `exportKey: "location"`
  *
- * The wire names are `world`, `character` and `history`, and they are what
- * every lorebook Serene Pub has ever exported carries. A location declares
- * none: no marker is honest, where a marker no importer reads is a file that
- * round-trips into the wrong shape. A location exported today is read back as
- * world lore by any install, which is the correct degrade and the reason the
- * marker waits for an importer that knows the word.
+ * A place travels as a place (lorebooks plan A26). Written as world lore, it
+ * reads back as world lore, without the rooms listing, its stats or the
+ * meaning of its links. An install that does not know the word reads it back
+ * as world lore, which is still the correct degrade.
  * @experimental
  */
 export const locationEntryType = describeEntryType({
@@ -325,8 +351,8 @@ export const locationEntryType = describeEntryType({
         priority: "priority",
         // World lore's order, and for its reason: the vectorizer already
         // concatenates title then content.
-        embedText: [TITLE, CONTENT],
-        parent: PARENT
+        embedText: [TITLE, CONTENT]
+        // ⚠ No `parent`: a place is never filed under anything (see above).
     },
     fields: {
         category: {
@@ -347,6 +373,7 @@ export const locationEntryType = describeEntryType({
     // weight and share maps are total over the five, and a band nobody budgets
     // is candidates scored against `undefined` and dropped with a green suite.
     sourceKind: "worldLore",
+    exportKey: "location",
     amendMode: "amend"
 });
 /**
@@ -373,8 +400,9 @@ export const ITEM_SUPPLY_MODES = ["unique", "limited", "unlimited"];
  * inventory feature the owner ruled out: inventory is an unopinionated list
  * a genre manages however it likes.
  *
- * No `exportKey`, on a place's reasoning: exported, an item reads back as
- * world lore anywhere that has not heard the word.
+ * `exportKey: "item"`, on a place's reasoning: an item travels as an item,
+ * supply and all, and reads back as world lore anywhere that has not heard
+ * the word.
  * @experimental
  */
 export const itemEntryType = describeEntryType({
@@ -435,6 +463,7 @@ export const itemEntryType = describeEntryType({
     },
     render: "core:var/world-lore@1",
     sourceKind: "worldLore",
+    exportKey: "item",
     amendMode: "amend"
 });
 /**

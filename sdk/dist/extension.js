@@ -85,7 +85,7 @@ export function permissionFindings(p) {
         if (q !== undefined &&
             (typeof q !== 'number' || !Number.isFinite(q) || q < MIN_STORAGE_QUOTA || q > MAX_STORAGE_QUOTA))
             out.push(`permissions.storage.quotaBytes must be ${MIN_STORAGE_QUOTA}…${MAX_STORAGE_QUOTA}. ` +
-                `An instance clamps whatever it is handed, so a number outside the band is not a ` +
+                `A pub clamps whatever it is handed, so a number outside the band is not a ` +
                 `bigger grant — it is a declaration that says something other than what you get.`);
     }
     if (p.network) {

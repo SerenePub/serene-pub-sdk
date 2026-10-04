@@ -50,7 +50,7 @@
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { withSpriteTail } from './sprites.js'
-import { chatGenre } from './genres.js'
+import { chatGenre, POST_HISTORY_TOKEN_TRIGGER } from './genres.js'
 
 /** @experimental */
 export const NARRATE_CHARACTER_SPEC_ID = 'core:spec/narrate-character'
@@ -95,6 +95,23 @@ export const NARRATE_CHARACTER_SPEC_ID = 'core:spec/narrate-character'
 // `drizzle/0111_reply_slots_and_relationship_cap.sql` deletes this pin so boot
 // republishes it, and `specHashes.test.ts` records the moved hash in the same
 // change; neither half is optional.
+//
+// ⚠ **1.0.0, edited in place a THIRD time (genre uplift C2, 2026-09-29).**
+//
+// `context` takes `turnDirection: $.input.text`: the narrator modal's text,
+// which the placeholder stored beside the row and nothing sent. The shipped
+// side-character row renders it inside `{{#if turnDirection}}`. Content
+// addressing republishes the edited document on boot — no migration — and
+// `specHashes.test.ts` records the moved hash.
+//
+// ⚠ **1.0.0, edited in place a FOURTH time (lorebooks C2, 2026-10-02).** A
+// `presences` read and an `eligible` step between `poolLinked` and `rank`, as
+// `narrate`'s. Content-addressed; `specHashes.test.ts` records the move.
+// ⚠ Edited in place (2026-10-03, history window) — content-addressed;
+// `specHashes.test.ts` records the move. `contextBudget` runs before the
+// reads and the history read takes its `budget`: about twice the window's
+// worth of the newest rows (never more than 2000) instead of the newest 100,
+// so the transcript fit decides where the conversation starts.
 /** @internal */
 export const NARRATE_CHARACTER_VERSION = '1.0.0'
 
@@ -175,6 +192,28 @@ export const narrateCharacterSpec = () =>
 					row: $.input.messageId,
 				}),
 			)
+			/**
+			 * How much room the context has, from the window itself.
+			 *
+			 * `samplingOf("generate")` rather than its own slot, exactly as the
+			 * other two pipelines: a budget computed against one window and a
+			 * prompt sent against another is wrong in the direction that
+			 * truncates, silently, and sharing the reference makes the two
+			 * impossible to point apart.
+			 *
+			 * Before the reads (history window, 2026-10-03): the history read
+			 * is sized by this budget, so it is computed first. It reads only
+			 * config, never a step, so moving it changes no value.
+			 */
+			.task('contextBudget', ($) =>
+				C.contextBudget.v1({
+					sampling: slot.samplingOf('generate'),
+					// The other half of the same pair, for the model's own
+					// window (0114) — see `respond`.
+					connection: slot.connectionOf('generate'),
+					params: slot.params(),
+				}),
+			)
 			// ⚠ `params`, for the reason the note below states about every
 			// other slot on this spec: unnamed is unresolved, so `limit` reached
 			// nothing and the binding fell through to a literal 100. The
@@ -182,6 +221,16 @@ export const narrateCharacterSpec = () =>
 			.query('history', ($) =>
 				C.sessionHistory.v1({
 					scope: $.input.sessionScope,
+					// Sized by the window, not by `limit` (history window,
+					// 2026-10-03): the transcript fit decides the first line.
+					budget: $.contextBudget.available,
+					params: slot.params(),
+				}),
+			)
+			// 🚧 The files those rows show (PLAN-composer-attachments §3.5).
+			.query('attachments', ($) =>
+				C.historyAttachments.v1({
+					messages: $.history.messages,
 					params: slot.params(),
 				}),
 			)
@@ -210,6 +259,8 @@ export const narrateCharacterSpec = () =>
 				}),
 			)
 			.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
+			// Who is in the world at the session's moment (R4), for `eligible`.
+			.query('presences', ($) => C.castPresences.v1({ scope: $.input.sessionScope }))
 			/**
 			 * The entity mechanism — rows found because the scene is *naming*
 			 * what they name. Its `messages` out-port is deliberately not wired
@@ -226,7 +277,13 @@ export const narrateCharacterSpec = () =>
 			 * Retrieval by meaning. A block rather than spine nodes: the debug
 			 * preview halts at the first Provider **on the spine**, and an
 			 * `embed` there would show a reader a list of query strings instead
-			 * of a prompt. Ships off — `vector-search.maxEntries` is 0.
+			 * of a prompt. Ships Automatic — `queries`' `searchByMeaning` is
+			 * `auto`, on the chain's first node: it searches whenever an
+			 * embedding model is set up (`embed`'s connection resolves), local
+			 * or a service alike, and otherwise cuts no probes and `embed`
+			 * makes no call (2026-09-29, corrected 09-30; the switch was
+			 * `vector-search.maxEntries = 0`, on the last node, after the embed
+			 * had been paid for).
 			 */
 			.gather('semantic', { mode: 'parallel' }, (b) =>
 				b.chain('arm', (c) =>
@@ -235,6 +292,10 @@ export const narrateCharacterSpec = () =>
 							C.queryWindows.v1({
 								messages: $.history.messages,
 								cast: $.cast.cast,
+								// The embed step's connection, for whether one is
+								// set up: `searchByMeaning`'s Automatic searches
+								// whenever it is, wherever the model runs.
+								connection: slot.connectionOf('semantic.arm.embed'),
 								params: slot.params(),
 							}),
 						)
@@ -243,6 +304,7 @@ export const narrateCharacterSpec = () =>
 								texts: $.semantic.arm.queries.current,
 								params: slot.params(),
 							}),
+							{ expose: { label: 'Embed the recent messages' } },
 						)
 						.query('search', ($) =>
 							C.vectorSearch.v1({
@@ -280,8 +342,9 @@ export const narrateCharacterSpec = () =>
 			/**
 			 * Retrieval by description. ⚠ It may only reorder, never admit:
 			 * `entity-link` returns the list it was handed, enriched, so there
-			 * is no id it can produce that another mechanism did not. Ships off
-			 * on the first node — `mention-spans.maxMentions` is 0.
+			 * is no id it can produce that another mechanism did not. The switch
+			 * is the first node — `mention-spans.maxMentions`, on by default
+			 * (R5, 2026-10-02); 0 turns it off.
 			 */
 			.gather('names', { mode: 'parallel' }, (b) =>
 				b.chain('arm', (c) =>
@@ -299,6 +362,7 @@ export const narrateCharacterSpec = () =>
 								// semantic mechanism's embed owns it, this one reads it.
 								params: slot.params({ node: 'semantic.arm.embed' }),
 							}),
+							{ expose: { label: 'Embed the mentions' } },
 						)
 						.query('link', ($) =>
 							C.entityLink.v1({
@@ -330,31 +394,35 @@ export const narrateCharacterSpec = () =>
 				C.buildSideCharacterContext.v1({
 					cast: $.cast.cast,
 					sideCharacter: $.input.sideCharacter,
+					/**
+					 * What the person asked this turn to do (genre uplift C2,
+					 * 2026-09-29): the narrator modal's text, which the
+					 * placeholder also stores beside the row. Until then that
+					 * was its only reader. `{{turnDirection}}`; absent when
+					 * blank.
+					 */
+					turnDirection: $.input.text,
 					prompts: slot.prompts(),
 					variables: slot.variables(),
 				}),
 			)
 			/**
-			 * How much room the context has, from the window itself.
-			 *
-			 * `samplingOf("generate")` rather than its own slot, exactly as the
-			 * other two pipelines: a budget computed against one window and a
-			 * prompt sent against another is wrong in the direction that
-			 * truncates, silently, and sharing the reference makes the two
-			 * impossible to point apart.
+			 * The hard gates before the ranker (C2; R2, R4) — `narrate`'s:
+			 * selective-logic exclusions from `lore`, and the presence gate.
+			 * The scope already names the speaker for every read here, so no
+			 * secrecy rule has a shared pool to guard.
 			 */
-			.task('contextBudget', ($) =>
-				C.contextBudget.v1({
-					sampling: slot.samplingOf('generate'),
-					// The other half of the same pair, for the model's own
-					// window (0114) — see `respond`.
-					connection: slot.connectionOf('generate'),
-					params: slot.params(),
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.poolLinked.candidates,
+					exclusions: $.lore.exclusions,
+					presences: $.presences.main,
+					at: $.presences.at,
 				}),
 			)
 			.task('rank', ($) =>
 				C.rankHybrid.v1({
-					candidates: $.poolLinked.candidates,
+					candidates: $.eligible.candidates,
 					budget: $.contextBudget.available,
 					params: slot.params(),
 				}),
@@ -370,6 +438,15 @@ export const narrateCharacterSpec = () =>
 					seedName: $.context.seedName,
 				}),
 			)
+			// 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+			.task('attached', ($) =>
+				C.placeAttachments.v1({
+					messages: $.lines.messages,
+					attachments: $.attachments.attachments,
+					connection: slot.connectionOf('generate'),
+					params: slot.params(),
+				}),
+			)
 			.task('prompt', ($) =>
 				C.assemble.v2({
 					candidates: $.rank.candidates,
@@ -379,7 +456,7 @@ export const narrateCharacterSpec = () =>
 					// `sources`, not the prompt. See `respond` for the terms.
 					groups: $.rank.groups,
 					budget: $.contextBudget.available,
-					messages: $.lines.messages,
+					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
 					// One authored prompt, read by reference where the template
@@ -424,9 +501,18 @@ export const narrateCharacterSpec = () =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
 					text: $.generate.text,
-					thinking: $.generate.thinking,
+					reasoning: $.generate.reasoning,
 				}),
 			)
 		)
+			/**
+			 * What this step ships with: the post-history reminder's trigger
+			 * (`POST_HISTORY_TOKEN_TRIGGER`), because the prompt renders the
+			 * session's growing history and the reminder only earns its place
+			 * once there is enough of it to drift from.
+			 */
+			.preset('default', { label: 'Default', default: true }, (p) =>
+				p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
+			)
 			.build(),
 	)

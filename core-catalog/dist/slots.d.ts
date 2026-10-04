@@ -27,8 +27,8 @@ export declare const trustSlot: import("@serene-pub/sdk").AttributeSlotDecl;
  * characters in different places.").
  *
  * It attaches to the world AND the cast, and a genre's sheet says which one
- * carries it (`SheetSlotEntry.appliesTo`): Adventure, Lair and Whodunit put it
- * on the world, where the scene is; a genre whose characters split up puts it
+ * carries it (`SheetSlotEntry.appliesTo`): Adventure and Lair put it on the
+ * world, where the scene is; a genre whose characters split up puts it
  * on each cast member. Nothing in core reads a location the sheet did not
  * declare.
  *
@@ -114,8 +114,9 @@ export declare const directionSlot: import("@serene-pub/sdk").AttributeSlotDecl;
  * host builds each prompt from the state as that prompt's speaker may hear
  * it: the whispered delver's own voice reads it, and no other prompt does —
  * not another delver's voice, not the planner, the scene or the state-keeper.
- * The stats widget still shows it to the person: a person's view follows the
- * data audience, not earshot.
+ * A person's view follows the data audience, not earshot: the stats widget
+ * shows it to the session's owner and to whoever plays the whispered
+ * character, and to nobody else.
  * @internal
  */
 export declare const whisperSlot: import("@serene-pub/sdk").AttributeSlotDecl;
@@ -132,54 +133,4 @@ export declare const whisperSlot: import("@serene-pub/sdk").AttributeSlotDecl;
 export declare const LAIR_SLOTS: readonly [import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl];
 /** The same ten as one named bundle — `ADVENTURE_SHEET`'s reasoning, applied. @internal */
 export declare const LAIR_SHEET: import("@serene-pub/sdk").AttributeSheetDecl;
-/**
- * How far the detective doubts one suspect, 0 to 10.
- *
- * ⚠ **It is the detective's reading, not the fiction's fact.** Nothing in this
- * genre couples suspicion to guilt — the culprit may end the case at 1 and an
- * innocent at 9 — and the state keeper is told to move it from what the scene
- * showed, never from what it knows. A slot that tracked guilt would be the
- * answer on a bar.
- * @internal
- */
-export declare const suspicionSlot: import("@serene-pub/sdk").AttributeSlotDecl;
-/**
- * How much of the case the detective has turned up — the Search action's own
- * counter, raised by the state keeper when a search actually finds something.
- * @internal
- */
-export declare const cluesFoundSlot: import("@serene-pub/sdk").AttributeSlotDecl;
-/**
- * Whether the case is still open — **the one slot the state keeper may not
- * touch.**
- *
- * `open` until somebody accuses, then `solved` or `failed` for good. Only
- * `core:spec/whodunit-verdict` writes it, and it writes it once: a keeper that
- * could set this would be a model ending the game between two messages, and
- * *Accuse*'s `enabledWhen` reads it precisely so the button goes quiet the
- * moment a verdict lands.
- *
- * ⚠ **The bare noun, and it is deliberate** (R3 asks for a qualifier). The
- * values are what make it read — *the case is open*, *the case is solved* —
- * and `case-status` would name the column rather than the thing. It is
- * declared once, in one genre, and the enum is its whole vocabulary. Ruled
- * 2026-09-17, in the same breath as the genre's `difficulty` → `candour`
- * rename: the bare noun is accepted **here**, on the strength of the enum, and
- * that ruling is about this slot and nothing else.
- * @internal
- */
-export declare const caseSlot: import("@serene-pub/sdk").AttributeSlotDecl;
-/**
- * Whodunit's four: the suspects' suspicion, then the scene, the count and the
- * verdict.
- *
- * `location` is Adventure's, reused verbatim — a mystery moves between the
- * study and the terrace exactly as an adventure moves between towns, and every
- * prompt in this genre renders `{{location}}`, which is read off this slot
- * before it falls back to the planner's hint.
- * @internal
- */
-export declare const WHODUNIT_SLOTS: readonly [import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl, import("@serene-pub/sdk").AttributeSlotDecl];
-/** The same four as one named bundle — `ADVENTURE_SHEET`'s reasoning, applied. @internal */
-export declare const WHODUNIT_SHEET: import("@serene-pub/sdk").AttributeSheetDecl;
 //# sourceMappingURL=slots.d.ts.map

@@ -302,8 +302,8 @@ describe('46 · queued time', () => {
 // ── 47 · Secret-typed settings (13 §6) ──────────────────────────────────────
 describe('47 · secret settings', () => {
 	const schema: SettingsSchema = {
-		endpoint: { type: 'string', scope: 'instance' },
-		apiKey: { type: 'secret', scope: 'instance', side: 'extension' },
+		endpoint: { type: 'string', scope: 'pub' },
+		apiKey: { type: 'secret', scope: 'pub', side: 'extension' },
 	}
 	const values = { endpoint: 'https://example.test', apiKey: secret('cipher:abc123') }
 
@@ -359,7 +359,7 @@ describe('47 · secret settings', () => {
 			() =>
 				defineSettings({
 					leaky: { type: 'secret', scope: 'user', side: 'component' },
-					shipped: { type: 'secret', scope: 'instance', default: 'sk-live-default' },
+					shipped: { type: 'secret', scope: 'pub', default: 'sk-live-default' },
 				}),
 			(e: Error) =>
 				/runs in the browser/.test(e.message) && /not a credential/.test(e.message),
@@ -473,7 +473,6 @@ describe('50 · hook surfaces', () => {
 		signal: new AbortController().signal,
 	}
 	const lifecycleSurface = {
-		readCore: () => [],
 		storage: {},
 		log: () => {},
 		signal: new AbortController().signal,

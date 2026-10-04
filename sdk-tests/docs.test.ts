@@ -192,6 +192,28 @@ describe('the docs dialect', () => {
 		assert.equal(rewriteDocHref('#local', { path: 'index.md', prefix: 'sdk' }), '#local')
 	})
 
+	test('an absolute http(s) link opens in a new window; a link between pages does not', async () => {
+		const rendered = await renderMarkdown(
+			'# T\n\n[canon](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session) ' +
+				'[plain](http://example.com/a?b=1&c=2) <https://example.org/bare> ' +
+				'[page](characters.md#tags) [here](#t) [rooted](/docs/sessions) [mail](mailto:a@example.com)\n',
+			{ path: 'index.md' },
+		)
+		const NEW_WINDOW = ' target="_blank" rel="noopener noreferrer"'
+		assert.ok(
+			rendered.html.includes(
+				`<a href="https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session"${NEW_WINDOW}>canon</a>`,
+			),
+			rendered.html,
+		)
+		assert.ok(rendered.html.includes(`<a href="http://example.com/a?b=1&amp;c=2"${NEW_WINDOW}>plain</a>`), rendered.html)
+		assert.ok(rendered.html.includes(`<a href="https://example.org/bare"${NEW_WINDOW}>`), rendered.html)
+		assert.ok(rendered.html.includes('<a href="/docs/characters#tags">page</a>'), rendered.html)
+		assert.ok(rendered.html.includes('<a href="#t">here</a>'), rendered.html)
+		assert.ok(rendered.html.includes('<a href="/docs/sessions">rooted</a>'), rendered.html)
+		assert.ok(rendered.html.includes('<a href="mailto:a@example.com">mail</a>'), rendered.html)
+	})
+
 	test('admonitions carry their kind, their title and markdown bodies', async () => {
 		const rendered = await renderMarkdown(
 			'# T\n\n:::warning Mind the gap\nBody with **bold**.\n:::\n\n:::note\nUntitled.\n:::\n',

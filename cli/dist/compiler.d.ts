@@ -25,7 +25,7 @@
  * the manifest rather than beside it, because the manifest is what an instance stores and
  * every reader it has reads that.
  */
-import type { AnnexFieldDecl, Extension, I18n, LayoutPreset, VariableDecl, WidgetDecl } from '@serene-pub/sdk';
+import type { AnnexFieldDecl, Extension, I18n, SessionLayoutV1, VariableDecl, WidgetDecl } from '@serene-pub/sdk';
 import type { SpecDocument } from '@serene-pub/sdk';
 import type { ConfigDecl, CoverageReport, GenreDecl, PresetDecl, PromptDecl, StoredEventDeclaration, StoredSwapContribution, SurfacesDecl, TemplateSeed } from '@serene-pub/sdk';
 import type { ManifestInput } from './sandbox.js';
@@ -248,15 +248,16 @@ export interface Manifest {
     variables?: VariableDecl[];
     /**
      * The layouts this package's genres ship (R71), one entry per layout with
-     * its genre, the package's own widget ids already under its namespace — the
-     * shape the instance's layout reconciler reads.
+     * its genre, each a **session layout** with the package's own widget ids
+     * already under its namespace — the shape the instance's layout reconciler
+     * reads.
      */
     layouts?: Array<{
         genreId: string;
         slug: string;
         name: unknown;
         description?: unknown;
-        preset: LayoutPreset;
+        preset: SessionLayoutV1;
     }>;
     surfaces?: SurfacesDecl;
     presets?: PresetDecl[];
@@ -339,7 +340,11 @@ export declare function scanFrameDocument(doc: {
     path: string;
     text: string;
 }): CompileFinding[];
-/** @internal The documents a `surfaces` declaration names, in declaration order. */
+/**
+ * @internal The documents a package's `surfaces` name, in declaration order
+ * (session view, page). A document inside a component (`sp-frame`) is found
+ * by the lexical pass, {@link frameEntriesIn}.
+ */
 export declare function declaredFrameEntries(surfaces: SurfacesDecl | undefined): string[];
 /**
  * The same list, read lexically out of the source — what `check` has, since it
@@ -394,9 +399,16 @@ export interface CompileInput {
  */
 export declare function compilePlugin(input: CompileInput): CompileResult;
 /**
- * The layouts a package's genres ship, as manifest entries (R71): the
- * package's own widgets named under its namespace (`<slug>:<id>`), instance
- * keys and per-instance maps with them, and everyone else's ids as written.
+ * The layouts a package's genres ship, as manifest entries (R71): each
+ * **session layout** with the package's own widgets named under its namespace
+ * (`<slug>:<id>`) and everyone else's ids as written.
+ *
+ * A widget instance id is namespaced in its WIDGET half only: `map#north`
+ * becomes `acme:map#north`, and a copy of core's widget (`messages#sanctum`)
+ * is left alone. Every place a layout names an instance is rewritten the same
+ * way — the zone lists, the grid, the arranged items and the tab-group ids
+ * built from them, and the `widgetSettings` and `widgetStyles` keys — so the
+ * id stays one string wherever the layout stores it.
  * @internal
  */
 export declare function genreLayouts(e: Extension): NonNullable<Manifest['layouts']>;

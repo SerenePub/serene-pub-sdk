@@ -25,14 +25,14 @@
 /**
  * Bare specifiers a component may import. A trailing `/*` admits subpaths.
  *
- * The last six are experimental (C6 P1, owner ruling 2026-09-25 Q4): the
+ * The last seven are experimental (C6 P1, owner ruling 2026-09-25 Q4): the
  * SDK's component subpath and core's UI kit — the helpers core's own
  * components are written against — so a clone of a core component compiles
  * in-app from its source, and a CLI modder has the same kit. Each names ONE
  * module (no `/*`): nothing else of the SDK's or core-catalog's is admitted.
  * @experimental
  */
-export declare const COMPONENT_IMPORTS: readonly ['svelte', 'svelte/*', '@serene-pub/component-client', '@serene-pub/component-client/*', '@serene-pub/controls', '@serene-pub/sdk/component', '@serene-pub/core-catalog/conversation', '@serene-pub/core-catalog/lore-entries', '@serene-pub/core-catalog/scene-portraits', '@serene-pub/core-catalog/session-state', '@serene-pub/core-catalog/widgets'];
+export declare const COMPONENT_IMPORTS: readonly ['svelte', 'svelte/*', '@serene-pub/component-client', '@serene-pub/component-client/*', '@serene-pub/controls', '@serene-pub/sdk/component', '@serene-pub/core-catalog/conversation', '@serene-pub/core-catalog/lore-entries', '@serene-pub/core-catalog/scene-portraits', '@serene-pub/core-catalog/session-state', '@serene-pub/core-catalog/widgets', '@serene-pub/core-catalog/authors-note'];
 /**
  * Specifiers no component may import, however it is built — the renderer is
  * the host's (R23), and so is the worker runtime that installs it.

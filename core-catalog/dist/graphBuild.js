@@ -79,11 +79,36 @@ export const graphBuildSpec = () => compile(spec(GRAPH_BUILD_SPEC_ID, {
     max: MAX_SCENES,
     mode: "sequential"
 }, (m) => m
-    .oracle("prefilter", ($) => C.graphPreFilter.v1(step($)))
-    .oracle("resolution", ($) => C.graphNodeResolution.v1(step($)))
-    .oracle("perspective", ($) => C.graphPerspective.v1(step($)))
-    .oracle("describe", ($) => C.graphNodeDescription.v1(step($)))
-    .oracle("state", ($) => C.graphStateDetection.v1(step($))))
+    .oracle("prefilter", ($) => C.graphPreFilter.v1(step($)), {
+    expose: {
+        label: 'Pre-filter',
+        purpose: 'Drops what in each scene is not worth graphing, before the costlier steps run.',
+    },
+})
+    .oracle("resolution", ($) => C.graphNodeResolution.v1(step($)), {
+    expose: {
+        label: 'Node resolver',
+        purpose: 'Decides whether each name a scene mentions is someone already in the graph or someone new.',
+    },
+})
+    .oracle("perspective", ($) => C.graphPerspective.v1(step($)), {
+    expose: {
+        label: 'Perspectives',
+        purpose: 'Works out whose account of the scene this is.',
+    },
+})
+    .oracle("describe", ($) => C.graphNodeDescription.v1(step($)), {
+    expose: {
+        label: 'Describer',
+        purpose: 'Writes a short introduction for each newly found character.',
+    },
+})
+    .oracle("state", ($) => C.graphStateDetection.v1(step($)), {
+    expose: {
+        label: 'State changes',
+        purpose: 'Notices when a character dies, goes missing or leaves the story during a scene.',
+    },
+}))
     .outlet("propose", ($) => C.graphProposal.v1({ proposal: $.building.main }))
     .build());
 //# sourceMappingURL=graphBuild.js.map

@@ -11,6 +11,8 @@ so a plugin can depend on the parts it needs and nothing else.
 | `@serene-pub/conformance` | the suite a host must pass to claim it runs specs |
 | `@serene-pub/core-catalog` | core's own announcement: the genres, pipelines and hooks SP ships |
 | `@serene-pub/controls` | the Svelte control per value-type id (24 §9) |
+| `@serene-pub/component-client` | what a remote component imports — bundled into it by `serene-pub build` |
+| `@serene-pub/docs` | the docs compiler: markdown and announcement pages in, one reading order out |
 | `@serene-pub/ui-preview` | the surface harness `serene-pub ui` launches — dev-time only |
 
 `@serene-pub/sdk-tests` is the test suite for all of them and is not published.
@@ -58,8 +60,17 @@ over editing serene-pub's dependency to a `file:` path: a `file:` path in a
 committed `package.json` makes a fresh clone of Serene Pub alone fail to install,
 and it is the kind of change that reaches CI before anyone notices.
 
+## Releasing
+
+Every package moves together. `node scripts/release.mjs set <version>`, build, test,
+commit, then push the tag `v<version>`: `.github/workflows/publish.yml` builds,
+tests and publishes all of them to npm (prereleases under `next`). The one-time npm
+setup — the organization, the first publish's token, trusted publishing per
+package — is in [`RELEASING.md`](RELEASING.md).
+
 ## Documents
 
+- `RELEASING.md` — publishing to npm: one-time setup, cutting a release
 - `INTEGRATING.md` — what a host has to provide, and in what order
 - `DECOMPOSITION.md` — the rulings behind the design, written as the work
   happened rather than summarised after

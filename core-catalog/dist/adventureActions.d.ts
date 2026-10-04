@@ -29,7 +29,19 @@
  */
 /** @internal */
 export declare const ADVENTURE_LOOK_SPEC_ID = "core:spec/adventure-look";
-/** @internal */
+/**
+ * 1.0.0, edited in place (lorebooks C2, 2026-10-02): a `presences` read and an
+ * `eligible` step before `rank`. Content-addressed; `specHashes.test.ts`
+ * records the move.
+ *
+ * Edited in place again (owner ruling 2026-10-03): the context step is the
+ * SCENE builder, with the places listing — see `adventureLookSpec`.
+ *
+ * And again (history window, 2026-10-03): `contextBudget` runs before the
+ * reads and `gather.history.read` takes its `budget`, so the transcript fit,
+ * not the newest 100 rows, decides where the conversation starts.
+ * @internal
+ */
 export declare const ADVENTURE_LOOK_VERSION = "1.0.0";
 /**
  * The narrator describes where you are, from the lore and the world state, and
@@ -38,10 +50,21 @@ export declare const ADVENTURE_LOOK_VERSION = "1.0.0";
  * It is also the opening scene: the create pipeline deliberately makes no model
  * call, so this is the button a new Adventure session is meant to start with.
  *
- * ⚠ **The one shipped spec that wires `core:task/build-template-context@1`'s
- * `state` port.** That port has been declared and unfilled since the stats
- * substrate landed, because Chat must never grow a state block. This is a genre
- * that wants one, using the standard context surface to get it.
+ * **Built on the scene builder** (`core:task/build-scene-context@1`, owner
+ * ruling 2026-10-03), the context Adventure's own narrator reads, so Look is
+ * shown what the narrator is shown: `{{location}}`, the clock and the weather,
+ * the place the scene is in with its ways on (`{{locationEntry}}`) and every
+ * place the world holds (`{{knownLocations}}`), off the same `rooms` listing
+ * and the same room rule as `adventure-respond`. It was built on
+ * `build-template-context@1`, which computes no scene variables, so Look
+ * described a place it had never been shown. No `plan`: nothing is planned,
+ * so `{{beats}}` is empty and the builder anchors on the world state alone.
+ * The builder also resolves the step as nobody, so the line the model
+ * continues is the narrator's rather than the session's last speaker's.
+ *
+ * Its prompt row moved with it, from the `build-template-context` pool into
+ * the `build-scene-context` pool (migration `0111` re-keys the row in place,
+ * so a configuration pointing at it keeps pointing at it).
  * @internal
  */
 export declare const adventureLookSpec: () => import("@serene-pub/sdk").SpecDocument;

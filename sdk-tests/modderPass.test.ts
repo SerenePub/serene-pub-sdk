@@ -47,16 +47,12 @@ import {
 	TURN_ORDER_BY_GENRE,
 	TURN_ORDER_EVENTS,
 	TURN_ORDER_NARRATOR_EVENTS,
-	WHODUNIT_TURN_ORDER_SPEC_ID,
-	WRITING_ROOM_TURN_ORDER_SPEC_ID,
 	adventureGenre,
 	corePresets,
 	chatGenre,
 	guideGenre,
 	lairGenre,
 	turnOrderSpec,
-	whodunitGenre,
-	writingRoomGenre,
 } from '@serene-pub/core-catalog'
 import { world } from './helpers.js'
 
@@ -159,10 +155,9 @@ describe('M1 · turnOrderSpec (R27)', () => {
 	const table = [
 		{ genre: chatGenre, id: CHAT_TURN_ORDER_SPEC_ID, slug: 'core:spec/chat-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: ['core:task/turn-user-split@1', 'core:task/turn-random@1', 'core:task/turn-scripted@1', 'core:task/turn-manual@1', 'core:task/turn-narrator@1'], pool: {} },
 		{ genre: guideGenre, id: GUIDE_TURN_ORDER_SPEC_ID, slug: 'core:spec/guide-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: undefined, pool: { characters: 'none', envoys: 'in-turn' } },
-		{ genre: writingRoomGenre, id: WRITING_ROOM_TURN_ORDER_SPEC_ID, slug: 'core:spec/writing-room-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: undefined, pool: { characters: 'none', envoys: 'in-turn' } },
 		{ genre: adventureGenre, id: ADVENTURE_TURN_ORDER_SPEC_ID, slug: 'core:spec/adventure-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'none', envoys: 'none' } },
-		{ genre: lairGenre, id: LAIR_TURN_ORDER_SPEC_ID, slug: 'core:spec/lair-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'none', envoys: 'none' } },
-		{ genre: whodunitGenre, id: WHODUNIT_TURN_ORDER_SPEC_ID, slug: 'core:spec/whodunit-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'none', envoys: 'none' } },
+		// The Lair seats its active delvers: a standing plan prepares their character turns (owner ruling 2026-09-30).
+		{ genre: lairGenre, id: LAIR_TURN_ORDER_SPEC_ID, slug: 'core:spec/lair-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'active', envoys: 'none' } },
 	] as const
 
 	for (const row of table) {
@@ -767,7 +762,7 @@ describe('M2 · turn controls follow swaps (R42)', () => {
 		assert.equal((e.strategy as { swaps?: string[] }).swaps?.length, 5)
 	})
 
-	for (const slug of [GUIDE_TURN_ORDER_SPEC_ID, WRITING_ROOM_TURN_ORDER_SPEC_ID, ADVENTURE_TURN_ORDER_SPEC_ID, LAIR_TURN_ORDER_SPEC_ID, WHODUNIT_TURN_ORDER_SPEC_ID])
+	for (const slug of [GUIDE_TURN_ORDER_SPEC_ID, ADVENTURE_TURN_ORDER_SPEC_ID, LAIR_TURN_ORDER_SPEC_ID])
 		test(`${slug} exposes no turn control`, () => {
 			assert.deepEqual(exposed(slug), { pool: null, mentioned: null, strategy: null })
 		})

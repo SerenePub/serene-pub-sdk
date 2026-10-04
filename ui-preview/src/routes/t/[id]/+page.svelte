@@ -4,11 +4,12 @@
 	 *
 	 * Two panes of input, and the split is the design:
 	 *
-	 *   **Props / settings** — *generated* from what the surface declares. A
-	 *   surface declares a `SettingsSchema`; core renders forms from schemas;
-	 *   so the editor is derived, never written. Values go down the same pipe
-	 *   an instance uses, which is what makes editing here evidence about
-	 *   there.
+	 *   **Settings** — *generated* from what a component declares. A
+	 *   component declares a `SettingsSchema`; core renders forms from
+	 *   schemas; so the editor is derived, never written. Values reach it as
+	 *   `ctx.settings`, the pipe an instance uses, which is what makes editing
+	 *   here evidence about there. A frame surface (page, session-view) is
+	 *   handed no declared values, so it has fixtures only.
 	 *
 	 *   **Fixtures** — the session and messages the host posts. Free-form JSON
 	 *   because there is no declaration to derive them from: they are the
@@ -40,7 +41,9 @@
 	let fixtures = $state<Fixtures>(base)
 	let parseError = $state<string | null>(null)
 	let reloadKey = $state(0)
-	let tab = $state<'declared' | 'fixtures'>('declared')
+	let picked = $state<'declared' | 'fixtures'>('declared')
+	// A frame has no declared values, so its only pane is the fixtures.
+	const tab = $derived(target?.kind === 'frame' ? 'fixtures' : picked)
 
 	/**
 	 * Declared values, per target id, seeded from each schema's defaults.
@@ -61,9 +64,6 @@
 		),
 	)
 	const declaredValues = $derived(target ? (declared[target.id] ?? {}) : {})
-
-	/** A surface that declares its props owns them; otherwise the fixtures do. */
-	const props = $derived(target?.settings ? declaredValues : fixtures.props)
 
 	let substituted = $state<string[]>([])
 	$effect(() => {
@@ -117,7 +117,7 @@
 					     component) and SvelteKit reuses this page across /t/[id],
 					     so without the key one surface inherits the last one's. -->
 					{#key target.id}
-						<FrameStage {target} src={frames[target.id]} {fixtures} {props} {reloadKey} />
+						<FrameStage {target} src={frames[target.id]} {fixtures} {reloadKey} />
 					{/key}
 				{:else}
 					<div class="px-5">
@@ -137,15 +137,17 @@
 			class="bg-surface-50-950 border-surface-200-800 flex w-96 min-h-0 flex-none flex-col border-l p-4"
 		>
 			<div class="mb-3 flex gap-1">
-				<button
-					class="btn btn-sm {tab === 'declared' ? 'preset-filled-primary-500' : 'preset-tonal'}"
-					onclick={() => (tab = 'declared')}
-				>
-					{target.kind === 'frame' ? 'Props' : 'Settings'}
-				</button>
+				{#if target.kind !== 'frame'}
+					<button
+						class="btn btn-sm {tab === 'declared' ? 'preset-filled-primary-500' : 'preset-tonal'}"
+						onclick={() => (picked = 'declared')}
+					>
+						Settings
+					</button>
+				{/if}
 				<button
 					class="btn btn-sm {tab === 'fixtures' ? 'preset-filled-primary-500' : 'preset-tonal'}"
-					onclick={() => (tab = 'fixtures')}
+					onclick={() => (picked = 'fixtures')}
 				>
 					Fixtures
 				</button>
@@ -155,26 +157,26 @@
 				<div class="harness-scroll min-h-0 flex-1 overflow-y-auto">
 					{#if !target.settings}
 						<p class="text-surface-600-400 text-xs">
-							This surface declares no props, so there is nothing to generate. Add a
-							<code>settings</code> schema to its declaration and the editor appears
+							This component declares no settings, so there is nothing to generate. Add a
+							<code>settings</code> schema to its widget and the editor appears
 							here — core renders forms from schemas, so you never write one.
 						</p>
 						<pre
-							class="bg-surface-100-900 mt-2 overflow-x-auto rounded p-2 text-xs">{`panels: [{
+							class="bg-surface-100-900 mt-2 overflow-x-auto rounded p-2 text-xs">{`widgets: [widget({
   id: 'tray',
-  entry: 'ui/tray.html',
   title: 'Dice tray',
+  component: 'tray',
   settings: {
     sides:  { type: 'integer', label: 'Sides', default: 20, min: 2 },
     label:  { type: 'string',  label: 'Caption' },
     shaded: { type: 'boolean', label: 'Shade the tray', default: true },
   },
-}]`}</pre>
+})]`}</pre>
 					{:else}
 						<SurfaceSettings
 							schema={target.settings}
 							bind:values={declared[target.id]}
-							delivery={target.kind === 'frame' ? '{ t: "props", props }' : 'ctx.settings'}
+							delivery="ctx.settings"
 						/>
 					{/if}
 				</div>
@@ -182,7 +184,7 @@
 				<p class="text-surface-600-400 mb-2 text-xs">
 					What the host posts. A surface can only render what core chose to send it, so
 					this is the whole world it has.{#if target.settings}
-						<strong> props</strong> comes from the declaration, not from here.{/if}
+						<strong> settings</strong> comes from the declaration, not from here.{/if}
 				</p>
 				{#if parseError}
 					<div class="preset-tonal-error mb-2 rounded p-2 text-xs">{parseError}</div>

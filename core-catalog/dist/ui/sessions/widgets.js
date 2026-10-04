@@ -6,17 +6,16 @@
  * component module, served at `/core-ui/<slug>` — remote (R79).
  *
  * A "widget" is a session-surface component — the conversation, a portrait
- * panel, a plugin frame. Component and frame widgets share ONE declaration and
- * ONE data contract; the only difference is the iframe.
+ * panel, a plugin's board. Every widget names a component; a plugin that needs
+ * a real document places an `sp-frame` inside its component.
  *
  * ## Where the declaration lives
  *
- * `WidgetDecl` and its parts moved into the SDK (`layout.ts`) with the layout
- * document that places them, because `placement`, `fold` and `priority` are
- * statements about the grid and a plugin declaring a widget should not have to
- * import core's catalogue to say them. They are re-exported here so every
- * existing import — the app's `$lib/shared/widgets/types` chain included —
- * keeps resolving through one module.
+ * `WidgetDecl` and its parts live in the SDK (`layout.ts`), because a plugin
+ * declaring a widget should not have to import core's catalogue to say what
+ * one is. They are re-exported here so every existing import — the app's
+ * `$lib/shared/widgets/types` chain included — keeps resolving through one
+ * module.
  */
 export { systemStyleSlug, } from '@serene-pub/sdk';
 import { component, ownWidgets } from '@serene-pub/sdk';
@@ -54,16 +53,12 @@ export const CORE_WIDGETS = [
      */
     {
         id: 'messages',
-        /**
-         * `0` — the conversation is the primary widget, so it is the last thing
-         * to yield space and the only one that may never fold away: `shrink` keeps
-         * it drawn at whatever it is given, which is the anchor guarantee made
-         * measurable rather than special-cased in the renderer.
-         */
-        priority: 0,
-        fold: 'shrink',
-        placement: { zone: 'middle', height: 'grow' },
         title: 'Messages',
+        /**
+         * The primary widget: every layout places one, in whichever zone a
+         * person puts it (the primary floor), and as many more copies as they
+         * add — a Sanctum panel, a second view of the story.
+         */
         role: 'primary',
         component: 'messages',
         /**
@@ -79,12 +74,17 @@ export const CORE_WIDGETS = [
                 type: 'enum',
                 label: 'Composer',
                 description: 'How the message field is drawn: the classic card, a ' +
-                    'single-line pill, or a tall editor for long turns.',
-                of: ['classic', 'minimal', 'writer'],
+                    'single-line pill, a tall editor for long turns, or a ' +
+                    'page line — no box, the next line of the story on a ' +
+                    'faint underline.',
+                of: ['classic', 'minimal', 'writer', 'quill'],
                 members: [
                     { key: 'classic', label: 'Classic card' },
                     { key: 'minimal', label: 'Single-line pill' },
                     { key: 'writer', label: 'Tall editor' },
+                    // The quill skin (next-pass note 22, 2026-10-02): writing
+                    // on the page itself, as if into an ebook.
+                    { key: 'quill', label: 'Page line' },
                 ],
                 default: 'classic',
             },
@@ -230,8 +230,6 @@ export const CORE_WIDGETS = [
     },
     {
         id: 'scene-portraits',
-        placement: { zone: 'right', height: 'grow' },
-        fold: 'scroll',
         title: 'Scene Portraits',
         component: 'scene-portraits',
         /**
@@ -317,8 +315,6 @@ export const CORE_WIDGETS = [
      */
     {
         id: 'lore-entries',
-        placement: { zone: 'right', height: 'grow' },
-        fold: 'scroll',
         title: 'Lore entries',
         icon: 'BookOpen',
         component: 'lore-entries',
@@ -373,8 +369,6 @@ export const CORE_WIDGETS = [
      */
     {
         id: 'stats',
-        placement: { zone: 'right', height: 'grow' },
-        fold: 'scroll',
         title: 'Stats',
         icon: 'HeartPulse',
         component: 'stats',
@@ -438,12 +432,11 @@ export const CORE_WIDGETS = [
     {
         id: 'world-state',
         /**
-         * The middle, as a `fit` strip: this is the one piece of state that is
-         * about the SCENE rather than about a person, so it belongs where the
-         * scene is, and its own `layout` setting defaults to `strip` to match.
+         * A strip by default (its own `layout` setting): this is the one piece
+         * of state that is about the SCENE rather than about a person, so a
+         * layout sets it where the scene is — Adventure's, above the
+         * conversation.
          */
-        placement: { zone: 'middle', height: 'fit' },
-        fold: 'scroll',
         title: 'World State',
         icon: 'CloudSun',
         component: 'world-state',
@@ -484,6 +477,24 @@ export const CORE_WIDGETS = [
             },
         },
     },
+    /**
+     * 🚧 The author's note (2026-10-02, AN1; owner ruling: Chat only): the
+     * session's own note to the model, edited and saved here, with what the
+     * newest reply did with it. It reads no section — the note, who may
+     * change it and the last reply's verdict are all asked of the page
+     * (`authors-note`, `set-authors-note`). Offered by Chat alone among core's
+     * genres (the others omit it); in a plugin genre that declares no note it
+     * says so in one line. Chat's default layout places it, unpinned, in the
+     * right rail (owner ruling 2026-10-03; `CHAT_LAYOUT`).
+     */
+    {
+        id: 'authors-note',
+        title: "Author's note",
+        icon: 'NotebookPen',
+        component: 'authors-note',
+        reads: [],
+        presets: [DEFAULT_PRESET],
+    },
 ];
 // Core's widgets are core's (R71): a genre naming one by value names its bare id.
 ownWidgets('core', CORE_WIDGETS);
@@ -505,6 +516,8 @@ export const coreWidgets = {
     loreEntries: coreWidget('lore-entries'),
     stats: coreWidget('stats'),
     worldState: coreWidget('world-state'),
+    /** 🚧 The author's note (AN1) — Chat's; the other core genres omit it. */
+    authorsNote: coreWidget('authors-note'),
 };
 /**
  * Core's components (C6 P1), declared through the public API as a package
@@ -535,6 +548,12 @@ export const CORE_COMPONENTS = [
         slug: 'scene-portraits',
         label: 'Scene Portraits',
         entry: 'components/sessions/scene-portraits/scene-portraits.ts',
+        framework: 'svelte',
+    }),
+    component({
+        slug: 'authors-note',
+        label: "Author's note",
+        entry: 'components/sessions/authors-note/authors-note.ts',
         framework: 'svelte',
     }),
 ];

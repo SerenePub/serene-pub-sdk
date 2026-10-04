@@ -55,8 +55,8 @@ describe('the item entry type', () => {
 		// World lore's band and layout: an item is a thing in the world.
 		assert.equal(itemEntryType.entryShape.sourceKind, 'worldLore')
 		assert.equal(itemEntryType.entryShape.render, 'core:var/world-lore@1')
-		// No wire name, like a place: exported, it reads back as world lore.
-		assert.equal(itemEntryType.entryShape.exportKey, undefined)
+		// Its own wire name, like a place: it travels as an item.
+		assert.equal(itemEntryType.entryShape.exportKey, 'item')
 	})
 
 	test('reads its supply off the entry fields, one reader for every mode', () => {
@@ -195,7 +195,7 @@ describe('the inventory slot', () => {
 			const sheet = getGenre(id)!.sheets?.[0] as { slots?: Array<{ id: string }> } | undefined
 			assert.ok(sheet?.slots?.some((s) => s.id === inventorySlot.id), `${id}'s sheet`)
 		}
-		for (const id of ['core:genre/chat', 'core:genre/whodunit', 'core:genre/guide', 'core:genre/writing-room']) {
+		for (const id of ['core:genre/chat', 'core:genre/guide']) {
 			assert.ok(getGenre(id), id)
 			assert.ok(!genreSlots(id).some((s) => s.id === inventorySlot.id), id)
 		}
@@ -229,11 +229,16 @@ describe('Lair enforces item supply (2026-09-27)', () => {
 		const respond = (coreAnnouncement().document as any).pipelines.find(
 			(p: any) => p.id === 'core:spec/lair-respond',
 		)
-		const supplyNode = respond.nodes.find((n: any) => n.definitionId === 'core:query/item-supply')
-		assert.ok(supplyNode, 'an item-supply query')
-		const resolve = respond.nodes.find((n: any) => n.key === 'keep.played.keeperResolve')
-		assert.ok(resolve, 'the keeper resolver')
-		assert.deepEqual(resolve.config.supply, { __ref: 'data', node: supplyNode.key, port: 'supply' })
+		// The Castellan's keeper, and each character turn's own (owner ruling
+		// 2026-09-30): each resolver reads its own supply query.
+		const CT = 'via.turn.channel.story.door.play.speech.each.character.turn'
+		for (const prefix of ['keep.played', CT]) {
+			const supplyNode = respond.nodes.find((n: any) => n.key === `${prefix}.itemSupply`)
+			assert.equal(supplyNode?.definitionId, 'core:query/item-supply', prefix)
+			const resolve = respond.nodes.find((n: any) => n.key === `${prefix}.keeperResolve`)
+			assert.ok(resolve, `${prefix}: the keeper resolver`)
+			assert.deepEqual(resolve.config.supply, { __ref: 'data', node: supplyNode.key, port: 'supply' })
+		}
 	})
 })
 
@@ -244,7 +249,6 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 	const KEEPERS: Array<[slug: string, nodeKey: string]> = [
 		['core:spec/adventure-respond', 'keeperWrite'],
 		['core:spec/lair-respond', 'keep.played.keeperWrite'],
-		['core:spec/whodunit-respond', 'keeperWrite'],
 	]
 	test('each keeper schema names `inventory`, required, and never `possessions`', async () => {
 		const { coreAnnouncement } = await import('@serene-pub/core-catalog')
@@ -271,10 +275,10 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 	})
 	test('no shipped keeper prompt asks for `possessions`', async () => {
 		const { CORE_PROMPTS } = await import('@serene-pub/core-catalog')
-		// Every prompt that answers the two-armed document: the three keepers,
-		// Adventure's Rest and Advance time, and Whodunit's search.
+		// Every prompt that answers the two-armed document: the two keepers and
+		// Adventure's Rest and Advance time.
 		const keepers = (CORE_PROMPTS as any[]).filter((p) => JSON.stringify(p.fields).includes('holding two lists'))
-		assert.equal(keepers.length, 6)
+		assert.equal(keepers.length, 4)
 		for (const p of keepers) {
 			assert.ok(!JSON.stringify(p.fields).includes('possessions'), p.seedKey)
 			assert.ok(JSON.stringify(p.fields).includes('- inventory:'), p.seedKey)

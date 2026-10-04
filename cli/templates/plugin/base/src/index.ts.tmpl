@@ -22,10 +22,14 @@ import {
 	ok,
 	pin,
 	S,
+{{#panel}}
+	component,
+	widget,
+{{/panel}}
 } from '@serene-pub/sdk'
 {{#genre}}
 
-import { {{genreVar}}{{#panel}}, PANEL_ENTRY, PANEL_ID{{/panel}} } from './genre.js'
+import { {{genreVar}} } from './genre.js'
 import { createSessionSpec } from './specs/create.js'
 import { respondSpec } from './specs/respond.js'
 {{/genre}}
@@ -45,13 +49,37 @@ import {
 /** The namespace every id this package registers sits under. */
 export const PLUGIN_SLUG = '{{slug}}'
 {{#panel}}
-{{^genre}}
 
 /** The panel's id — what a saved layout row and a `surface:open` intent key on. */
 export const PANEL_ID = '{{panelId}}'
-/** The document the panel mounts, relative to the package root. */
-export const PANEL_ENTRY = '{{panelEntry}}'
-{{/genre}}
+
+/**
+ * The panel: a widget naming a component (`components/{{panelId}}.ts`), which
+ * places one real document (`{{panelEntry}}`) as an `sp-frame`. The document
+ * runs in an opaque-origin iframe with no cookies, no DOM reach and no socket;
+ * everything it knows is what the component hands it. **A panel is a view onto
+ * channels, so anything it must not show is something the server must never
+ * post.**
+ *
+ * A package's widgets are offered in every session (unless you scope them to
+ * genres with `genres`), and a person adds this one from the layout editor.
+ *
+ * ✎ CHANGE: the title and the channels.
+ */
+export const panelWidget = widget({
+	id: PANEL_ID,
+	title: '{{displayName}}',
+	component: PANEL_ID,
+	channels: ['main'],
+})
+
+/** The component the panel names; `serene-pub build` compiles it. */
+export const panelComponent = component({
+	slug: PANEL_ID,
+	label: '{{displayName}}',
+	entry: 'components/{{panelId}}.ts',
+	framework: 'vanilla',
+})
 {{/panel}}
 
 /* ── One node definition, and the handler behind it ─────────────────────── */
@@ -180,22 +208,9 @@ export const extension = defineExtension({
 	],
 {{/genre}}
 {{#panel}}
-	/**
-	 * The frame surface: a document mounted in an opaque-origin iframe with no
-	 * cookies, no DOM reach and no socket. Everything it knows arrives on the
-	 * MessageChannel the host owns, and what it knows is one channel's
-	 * messages — which is the rule to design against. **A panel is a view onto
-	 * channels, so anything it must not show is something the server must never
-	 * post.**
-	 *
-	 * ✎ CHANGE: the id, the title and the channels. This list is what the
-	 *   packager, `serene-pub ui` and an instance's file server all read.
-	 */
-	surfaces: {
-		panels: [
-			{ id: PANEL_ID, entry: PANEL_ENTRY, title: '{{displayName}}', channels: ['main'] },
-		],
-	},
+	/** The widgets this package offers — here, the panel above — and the component it names. */
+	widgets: [panelWidget],
+	components: [panelComponent],
 {{/panel}}
 {{#storage}}
 	/**

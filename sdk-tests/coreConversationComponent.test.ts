@@ -197,7 +197,7 @@ test('a reply\'s folded sections render collapsed above the body, and expand', {
 				kind: 'plan',
 				items: ['Wren — draws her blade', 'The goblin — flees'],
 			}),
-			part(22, 2, 'core:thinking', 'It is cornered.'),
+			part(22, 2, 'core:reasoning', 'It is cornered.'),
 			part(23, 3, 'core:markdown', 'The goblin bolts.'),
 		],
 	})
@@ -226,7 +226,7 @@ test('a reply\'s folded sections render collapsed above the body, and expand', {
 		// Both folds, Plan first, both collapsed; the body is the reply alone.
 		assert.deepEqual(toggles(), [
 			['Plan', 'false'],
-			['Thinking', 'false'],
+			['Reasoning', 'false'],
 		])
 		const bodies = [...msg.querySelectorAll('sp-message-body')].map((b) => b.getAttribute('text'))
 		assert.equal(bodies.at(-1), 'The goblin bolts.')
@@ -241,12 +241,12 @@ test('a reply\'s folded sections render collapsed above the body, and expand', {
 			['Wren — draws her blade', 'The goblin — flees'],
 		)
 		assert.doesNotMatch(panel().textContent ?? '', /[{[]/)
-		// Expanding the Plan leaves Thinking folded.
+		// Expanding the Plan leaves Reasoning folded.
 		planButton.setAttribute('data-proof', 'plan')
 		await view.click('[data-proof="plan"]')
 		assert.deepEqual(toggles(), [
 			['Plan', 'true'],
-			['Thinking', 'false'],
+			['Reasoning', 'false'],
 		])
 		assert.equal(panel().hasAttribute('data-expanded'), true)
 	} finally {
@@ -254,50 +254,167 @@ test('a reply\'s folded sections render collapsed above the body, and expand', {
 	}
 })
 
-test("a reply's session assets draw in core's box: a part's image and file, a block's image", { timeout: 120_000 }, async () => {
-	const part = (id: number, ordinal: number, type: string, content: string | null, data: Record<string, unknown> | null = null) => ({
-		id,
-		messageId: 2,
-		step: 0,
-		revision: 0,
-		ordinal,
-		type,
-		content,
-		data,
-	})
-	const reply = row(2, 'assistant', 'The map.', {
-		activeRevisions: { '0': 0 },
-		parts: [
-			part(21, 1, 'core:image', null, { assetId: 41, alt: 'A map of the Undercroft' }),
-			part(22, 2, 'core:file', null, { assetId: 42, name: 'notes.txt' }),
-			part(23, 3, 'acme:card', null, { blocks: [{ kind: 'image', assetId: 43, alt: 'A sketch' }] }),
-			part(24, 4, 'core:markdown', 'The map.'),
-		],
-	})
-	const view = await mountComponent({
+const assetPart = (id: number, ordinal: number, type: string, content: string | null, data: Record<string, unknown> | null = null) => ({
+	id,
+	messageId: 2,
+	step: 0,
+	revision: 0,
+	ordinal,
+	type,
+	content,
+	data,
+})
+
+/** Core's conversation with one reply carrying `parts`; `editing` opens it in the editor. */
+async function mountWithParts(parts: unknown[], opts: { requests?: (kind: string) => unknown; editable?: boolean } = {}) {
+	const reply = row(2, 'assistant', 'The map.', { activeRevisions: { '0': 0 }, parts })
+	return mountComponent({
 		root: CORE_CATALOG,
 		entry: 'components/sessions/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
+		requests: (opts.requests ?? (() => undefined)) as never,
 		context: {
 			session: { id: 1, name: 'Proof' },
 			messages: [row(1, 'user', 'Hello there'), reply],
 			settings: {},
+			...(opts.editable ? { actions: { message: { primary: [edit], overflow: [] } } } : {}),
 			viewer: { userId: 1, isAdmin: false, isGuest: false },
 			scoped: { session_full: dossier },
 		},
 	})
+}
+
+const parts = (view: { queryAll(s: string): Element[] }, part: string) => view.queryAll(`[data-widget-part~="${part}"]`)
+
+test("a reply's media draw in core's box: the media strip below the card as square tiles, a block's image where its plugin put it", { timeout: 120_000 }, async () => {
+	const view = await mountWithParts([
+		assetPart(21, 1, 'core:image', null, { assetId: 41, alt: 'A map of the Undercroft', width: 1600, height: 900 }),
+		assetPart(22, 2, 'core:file', null, { assetId: 42, name: 'notes.txt', mime: 'text/plain', bytes: 2048 }),
+		assetPart(23, 3, 'acme:card', null, { blocks: [{ kind: 'image', assetId: 43, alt: 'A sketch' }] }),
+		assetPart(24, 4, 'core:markdown', 'The map.'),
+	])
 	try {
-		// Nothing refused: the receiver takes a session asset as the app's own file.
+		// Nothing refused: the receiver takes the strip's media as the app's own files.
 		assert.deepEqual(view.refused, [])
-		const src = (part: string) => view.queryAll(`[data-widget-part~="${part}"]`).map((n) => n.getAttribute('src'))
-		assert.deepEqual(src('messages.part-image-img'), ['/session-assets/41'])
+		const src = (part: string) => parts(view, part).map((n) => n.getAttribute('src'))
+		// One image is a square tile too (note 40, 2026-10-03): the `thumb`
+		// variant, cropped to fill the card — never a full-width preview.
+		assert.deepEqual(src('messages.media-tile-img'), ['/media/41?v=thumb'])
+		const [img] = parts(view, 'messages.media-tile-img')
+		assert.equal(img?.getAttribute('alt'), 'A map of the Undercroft')
+		assert.equal(img?.getAttribute('loading'), 'lazy')
+		assert.equal(parts(view, 'messages.media-tile')[0]?.getAttribute('aria-label'), 'Open image A map of the Undercroft')
+		assert.deepEqual(parts(view, 'messages.media-preview'), [])
+		// Not drawn inline any more, and never as the unknown-type fold.
+		assert.deepEqual(parts(view, 'messages.part-image-img'), [])
+		assert.doesNotMatch(view.html(), /core:image|core:file/)
+		// The block tree's image stays where its plugin put it.
 		assert.deepEqual(src('messages.block-image'), ['/session-assets/43'])
-		const [file] = view.queryAll('[data-widget-part~="messages.part-file"]')
-		assert.equal(file?.getAttribute('href'), '/session-assets/42')
+		// A file is a square tile: its name, its size, a download link.
+		const [file] = parts(view, 'messages.media-file')
+		assert.equal(file?.getAttribute('href'), '/media/42?download=1')
 		assert.equal(file?.getAttribute('download'), 'notes.txt')
 		assert.equal(file?.getAttribute('rel'), 'noopener noreferrer')
+		assert.equal(parts(view, 'messages.media-file-size')[0]?.textContent?.trim(), '2 KB')
+		// BELOW the card, not in it (note 40): a cell of the message itself,
+		// after its content — outside the body and the content a pack draws
+		// its card on.
+		const [strip] = parts(view, 'messages.media-strip')
+		assert.equal(strip?.closest('[data-widget-part~="messages.message-content"]'), null)
+		assert.ok(strip?.parentElement?.matches('[data-widget-part~="messages.message"]'))
+		assert.ok(strip?.previousElementSibling?.matches('[data-widget-part~="messages.message-content"]'))
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('three images are square tiles, each named by its place, and a tile opens the lightbox on the message\'s images', { timeout: 120_000 }, async () => {
+	const view = await mountWithParts([
+		assetPart(21, 10, 'core:image', null, { assetId: 41, filename: 'a.png' }),
+		assetPart(22, 11, 'core:image', null, { assetId: 42, filename: 'b.png' }),
+		assetPart(23, 12, 'core:image', null, { assetId: 43, alt: 'The third' }),
+	])
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.deepEqual(
+			parts(view, 'messages.media-tile-img').map((n) => n.getAttribute('src')),
+			['/media/41?v=thumb', '/media/42?v=thumb', '/media/43?v=thumb'],
+		)
+		assert.deepEqual(
+			parts(view, 'messages.media-tile').map((n) => n.getAttribute('aria-label')),
+			['Open image a.png, 1 of 3', 'Open image b.png, 2 of 3', 'Open image The third, 3 of 3'],
+		)
+		parts(view, 'messages.media-tile')[1]!.setAttribute('data-proof', 'tile')
+		await view.click('[data-proof="tile"]')
+		const asked = view.requested.filter((r) => r.kind === 'view-image')
+		assert.deepEqual(asked.at(-1)?.params, {
+			src: '/media/42',
+			gallery: { srcs: ['/media/41', '/media/42', '/media/43'], index: 1, captions: ['a.png', 'b.png', 'The third'] },
+		})
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('past six images the rest fold into a count chip that opens where the tiles stop', { timeout: 120_000 }, async () => {
+	const view = await mountWithParts(
+		Array.from({ length: 8 }, (_, i) => assetPart(30 + i, 10 + i, 'core:image', null, { assetId: 60 + i, filename: `p${i}.png` })),
+	)
+	try {
+		assert.equal(parts(view, 'messages.media-tile').length, 5)
+		const [more] = parts(view, 'messages.media-more')
+		assert.equal(more?.textContent?.trim(), '+3')
+		assert.equal(more?.getAttribute('aria-label'), 'Show 3 more images')
+		more!.setAttribute('data-proof', 'more')
+		await view.click('[data-proof="more"]')
+		const asked = view.requested.filter((r) => r.kind === 'view-image').at(-1)
+		assert.equal((asked?.params as { src: string }).src, '/media/65')
+		assert.equal((asked?.params as { gallery: { index: number } }).gallery.index, 5)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('an image whose file is gone says so instead of a broken image, and leaves the gallery', { timeout: 120_000 }, async () => {
+	const view = await mountWithParts([
+		assetPart(21, 10, 'core:image', null, { assetId: 41, filename: 'a.png' }),
+		assetPart(22, 11, 'core:image', null, { assetId: 42, filename: 'gone.png' }),
+	])
+	try {
+		parts(view, 'messages.media-tile-img')[1]!.setAttribute('data-proof', 'gone')
+		await view.dispatch('[data-proof="gone"]', 'error')
+		const [missing] = parts(view, 'messages.media-missing')
+		assert.equal(missing?.textContent?.replace(/\s+/g, ' ').trim(), 'File no longer available')
+		assert.equal(missing?.getAttribute('aria-label'), 'gone.png: file no longer available')
+		assert.deepEqual(
+			parts(view, 'messages.media-tile').map((n) => n.getAttribute('aria-label')),
+			['Open image a.png'],
+		)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('the strip stays under a line being edited, and its ✕ asks the host to take that attachment off (D9)', { timeout: 120_000 }, async () => {
+	const view = await mountWithParts([assetPart(21, 10, 'core:image', null, { assetId: 41, filename: 'a.png' })], { editable: true })
+	try {
+		// Read, not edited: no ✕.
+		assert.deepEqual(parts(view, 'messages.media-remove'), [])
+		const msg = parts(view, 'messages.message')[1]!
+		await view.click(msg.querySelector('button[aria-label="Edit"]')!)
+		assert.ok(msg.querySelector('sp-composer-field'), 'the line is in its editor')
+		assert.equal(parts(view, 'messages.media-tile').length, 1)
+		// D9 is remove-only: a line its viewer may edit offers ✕ on each attachment.
+		const [remove] = parts(view, 'messages.media-remove')
+		assert.equal(remove?.getAttribute('aria-label'), 'Remove a.png')
+		remove!.setAttribute('data-proof', 'remove')
+		await view.click('[data-proof="remove"]')
+		assert.deepEqual(
+			view.requested.filter((r) => r.kind === 'remove-attachment').map((r) => r.params),
+			[{ messageId: 2, partId: 21 }],
+		)
 	} finally {
 		await view.unmount()
 	}
@@ -306,7 +423,7 @@ test("a reply's session assets draw in core's box: a part's image and file, a bl
 test('a row that arrives without its parts still folds its sections, from metadata', { timeout: 120_000 }, async () => {
 	const reply = row(2, 'assistant', 'The goblin bolts.', {
 		metadata: {
-			thinking: 'It is cornered.',
+			reasoning: 'It is cornered.',
 			swipes: {
 				currentIdx: 1,
 				history: ['First.', 'The goblin bolts.'],
@@ -337,7 +454,7 @@ test('a row that arrives without its parts still folds its sections, from metada
 			])
 		assert.deepEqual(toggles(), [
 			['Plan', 'false'],
-			['Thinking', 'false'],
+			['Reasoning', 'false'],
 		])
 		const button = msg.querySelector('button[aria-expanded]')!
 		const panel = () => view.root.querySelector(`[id="${button.getAttribute('aria-controls')}"]`)!

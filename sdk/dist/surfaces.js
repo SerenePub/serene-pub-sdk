@@ -56,36 +56,6 @@ import { WIDGET_PROTOCOL, } from './widgets.js';
  */
 export const ENTRY_CANDIDATES = ['dist/index.js', 'src/index.ts', 'index.ts', 'index.js'];
 /**
- * A `surfaces.panels` entry read as the one widget declaration.
- *
- * Pure and total: every field a panel can declare has a home on
- * {@link WidgetDecl}, so nothing is dropped and nothing is invented. The host
- * calls this at the boundary where it reads a stored manifest, which is what
- * makes "a panel IS a widget" true of the code rather than only of the prose.
- *
- * `id` is carried through **bare**, because this is the SDK's pure projection
- * of what the package wrote and the package wrote its own id. It is therefore
- * NOT unique across packages: two packages declaring a panel `map` declare the
- * same id here.
- *
- * Reconciling that is the host's, and the host does it by **namespacing** —
- * {@link pluginWidgetId} turns the pair into `<pluginId>:<panelId>`, which is
- * the id a seated instance, a saved layout row, a `widget_settings` row and a
- * `surface:open` intent all carry. A reader that needs the package's own
- * spelling back takes it apart with {@link parsePluginWidgetId}.
- * @internal
- */
-export function panelToWidgetDecl(pluginId, panel) {
-    return {
-        id: panel.id,
-        title: panel.title ?? panel.id,
-        role: 'secondary',
-        surface: { kind: 'frame', pluginId, entry: panel.entry },
-        ...(panel.channels ? { channels: [...panel.channels] } : {}),
-        ...(panel.settings ? { settings: panel.settings } : {}),
-    };
-}
-/**
  * The plugin slug grammar, mirrored from `defineExtension` — lowercase
  * letters, digits, dots and hyphens, `chariot.dice-tray`, never a slash and
  * never a colon.
@@ -142,7 +112,7 @@ export function parsePluginWidgetId(id) {
  * know what it may send.
  *
  * **2 comprises** everything declared in the two unions above: the widget
- * envelope's sections as pushes (`settings`, `style`, `layout`, `event`,
+ * envelope's sections as pushes (`settings`, `layout`, `event`,
  * `actions`) alongside `session` / `messages` / `message` / `channel` /
  * `props` / `theme` / `suspend` / `resume`, and, frame → host, `invoke`
  * beside `ready` and `action`, plus `error`, `request` and `save-state` with
@@ -152,9 +122,8 @@ export function parsePluginWidgetId(id) {
  * is not a grant, `save-state` may be capped or dropped, and an `error` may go
  * no further than a log. What 2 promises is that the frame may send them
  * without breaking the wire — never that the host will act on them. A frame
- * that needs an answer must therefore tolerate not getting one, which is the
- * same rule that lets a host push `style` at a frame that has never heard of
- * it.
+ * that needs an answer must therefore tolerate not getting one, just as it
+ * ignores a host message it has never heard of.
  *
  * A v1 frame keeps working unchanged: it never sends the frame → host
  * additions, and it must already ignore host messages it does not recognise. A
@@ -215,7 +184,7 @@ export function previewManifest(entry) {
     };
     // ── frames declared under `surfaces` ────────────────────────────────────
     const s = source.surfaces;
-    const frame = (decl, point, where, extra = {}) => {
+    const frame = (decl, point, where) => {
         const entryPath = str(decl?.entry);
         if (!entryPath) {
             problems.push(`${where}: no entry — a frame surface is a document to mount`);
@@ -225,95 +194,24 @@ export function previewManifest(entry) {
         // too — and does so without saying anything. A harness that rendered
         // this surface would be showing one that can never exist.
         if (!isServableEntry(entryPath)) {
-            problems.push(`${where}: '${entryPath}' is not a path an instance will serve, and it drops ` +
+            problems.push(`${where}: '${entryPath}' is not a path a pub will serve, and it drops ` +
                 `such a surface silently. Use relative segments of letters, digits, '.', ` +
                 `'-' and '_' — no leading slash, no '..'.`);
             return;
         }
-        if (extra.panelId && !isServablePanelId(extra.panelId)) {
-            problems.push(`${where}: panel id '${extra.panelId}' is not one an instance accepts ` +
-                `(lowercase letters, digits, '-' and '_'), and it drops such a panel silently.`);
-            return;
-        }
         push({
-            id: extra.panelId ? `panel-${slugify(extra.panelId)}` : point,
-            label: label(decl.title, extra.panelId ?? point),
+            id: point,
+            label: label(decl.title, point),
             kind: 'frame',
             point,
             entry: entryPath,
-            settings: settingsOf(decl.settings),
-            source: (extra.source ?? 'surfaces'),
-            ...extra,
+            source: 'surfaces',
         });
     };
     if (s?.['session-view'])
         frame(s['session-view'], 'session-view', "surfaces['session-view']");
     if (s?.page)
         frame(s.page, 'page', 'surfaces.page');
-    for (const [i, p] of (Array.isArray(s?.panels) ? s.panels : []).entries()) {
-        const panelId = str(p?.id);
-        if (!panelId) {
-            problems.push(`surfaces.panels[${i}]: no id — a layout row keys on it`);
-            continue;
-        }
-        frame(p, 'panel', `surfaces.panels[${i}]`, {
-            panelId,
-            channels: Array.isArray(p.channels)
-                ? p.channels
-                : undefined,
-        });
-    }
-    // ── frames a genre's shape declares (21 §6) ─────────────────────────────
-    // A genre may point a panel at its own package's frame; that panel is a
-    // surface this package ships and the harness must render it.
-    for (const g of source.genres) {
-        // `?.` on every hop, including the element itself. A hand-edited
-        // announcement.json with a null in `genres` or `shape.panels` is
-        // exactly the input this function promises to survive, and `g.shape`
-        // on a null `g` is a TypeError that empties the harness — the one
-        // outcome the whole tolerance contract exists to prevent.
-        const panels = g?.shape?.panels;
-        for (const [i, p] of (Array.isArray(panels) ? panels : []).entries()) {
-            const surface = p?.surface;
-            if (surface?.kind !== 'frame')
-                continue;
-            const gid = str(g?.id) ?? 'genre';
-            const panelId = str(p?.id);
-            if (!panelId) {
-                problems.push(`${gid}.shape.panels[${i}]: no id`);
-                continue;
-            }
-            if (!str(surface.entry)) {
-                problems.push(`${gid}.shape.panels[${i}]: frame surface with no entry`);
-                continue;
-            }
-            // Same instance grammar as a `surfaces.panels[]` entry — a panel
-            // declared through a genre's shape is dropped by the same code.
-            if (!isServableEntry(surface.entry)) {
-                problems.push(`${gid}.shape.panels[${i}]: '${surface.entry}' is not a path an instance ` +
-                    `will serve, and it drops such a surface silently`);
-                continue;
-            }
-            if (!isServablePanelId(panelId)) {
-                problems.push(`${gid}.shape.panels[${i}]: panel id '${panelId}' is not one an instance ` +
-                    `accepts (lowercase letters, digits, '-' and '_')`);
-                continue;
-            }
-            push({
-                id: `panel-${slugify(panelId)}`,
-                label: label(p.title, panelId),
-                kind: 'frame',
-                point: 'panel',
-                entry: surface.entry,
-                settings: settingsOf(p.settings),
-                panelId,
-                channels: Array.isArray(p.channels)
-                    ? p.channels
-                    : undefined,
-                source: 'genre-shape',
-            });
-        }
-    }
     // ── components: modules the page's UI worker runs (§3.5, R25) ───────────
     for (const [i, c] of source.components.entries()) {
         const slug = str(c?.slug);
@@ -356,6 +254,7 @@ function unwrap(entry, problems) {
                 title: str(e.identity.title) ?? e.identity.ns,
                 genres: [],
                 components: [],
+                widgets: [],
             };
         }
     }
@@ -368,6 +267,7 @@ function unwrap(entry, problems) {
             surfaces: e.surfaces,
             genres: Array.isArray(e.genres) ? e.genres : [],
             components: Array.isArray(e.components) ? e.components : [],
+            widgets: Array.isArray(e.widgets) ? e.widgets : [],
         };
     }
     // A defineExtension result. Its `genres` are read for the same reason an
@@ -382,10 +282,11 @@ function unwrap(entry, problems) {
             surfaces: e.surfaces,
             genres: Array.isArray(e.genres) ? e.genres : [],
             components: Array.isArray(e.components) ? e.components : [],
+            widgets: Array.isArray(e.widgets) ? e.widgets : [],
         };
     }
     problems.push('the entry module has no default export this harness recognises — export ' +
         'your defineExtension(…) result');
-    return { id: 'unknown', title: 'unknown package', genres: [], components: [] };
+    return { id: 'unknown', title: 'unknown package', genres: [], components: [], widgets: [] };
 }
 //# sourceMappingURL=surfaces.js.map
