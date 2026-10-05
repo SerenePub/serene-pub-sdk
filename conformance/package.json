@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/conformance",
-	"version": "0.6.0-pr-1",
+	"version": "0.6.0-pr-2",
 	"description": "The host conformance kit: thirty-three executable requirements a Serene Pub executor must satisfy. Run by Serene Pub and by any alternate host; its package cases (C28–C33) by plugin authors over a built package.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/conformance#readme",
@@ -33,13 +33,13 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": "^0.6.0-pr-1"
+		"@serene-pub/sdk": "^0.6.0-pr-2"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-pr-1"
+		"@serene-pub/sdk": "0.6.0-pr-2"
 	},
 	"publishConfig": {
 		"access": "public",

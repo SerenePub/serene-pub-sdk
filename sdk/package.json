@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/sdk",
-	"version": "0.6.0-pr-1",
+	"version": "0.6.0-pr-2",
 	"description": "Author Serene Pub pipelines and plugins: nodes, specs, the executor, and the author-side test harness.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/sdk#readme",

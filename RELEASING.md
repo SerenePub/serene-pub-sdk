@@ -23,10 +23,10 @@ In this order — each package's dependencies and peers come before it:
 
 `sdk-tests`, `playground` and `api-docs` are private.
 
-A prerelease (`0.6.0-pr-1`) is published under the `next` dist-tag, a release (`0.6.0`) under
+A prerelease (`0.6.0-pr-2`) is published under the `next` dist-tag, a release (`0.6.0`) under
 `latest`. Every package also sets `publishConfig.tag: "next"`, so a manual `npm publish` never
 moves `latest` by accident. npm gives a package that has no `latest` yet its first version under
-`latest` too, so expect `latest` to read `0.6.0-pr-1` until the first release replaces it.
+`latest` too, so expect `latest` to read `0.6.0-pr-2` until the first release replaces it.
 
 ## One-time setup
 
@@ -95,7 +95,7 @@ unpublish, so a broken release is fixed by publishing the next version.
 | `dependencies`, `peerDependencies` | `^<version>`                                         |
 
 A prerelease range only matches prereleases of its own `major.minor.patch`, and prerelease tags
-compare as text: `>=0.6.0-preview.0` does **not** match `0.6.0-pr-1`, because `pr-1` sorts before
+compare as text: `>=0.6.0-preview.0` does **not** match `0.6.0-pr-2`, because `pr-1` sorts before
 `preview`. A range left behind by a version change stops matching without an error until someone
 installs. `release.mjs check` refuses any range that is not the one above.
 
@@ -134,6 +134,6 @@ body with install lines and npm links (GitHub's generated change list follows it
   and never becomes latest; npm gets it under `next`.
 
 A dry run never creates a release. A tag published before this job existed
-(`v0.6.0-pr-1`) gets its release by hand (Releases → Draft a new release → that tag →
+(`v0.6.0-pr-2`) gets its release by hand (Releases → Draft a new release → that tag →
 tick "Set as a pre-release"): running the workflow "from" an old tag uses the workflow
 file as it was at that tag, which has no release job.

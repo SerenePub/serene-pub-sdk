@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/docs",
-	"version": "0.6.0-pr-1",
+	"version": "0.6.0-pr-2",
 	"description": "Serene Pub's docs compiler: markdown sources plus rendered announcement pages in, a manifest, a search index and one HTML file per page out.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/docs#readme",
@@ -51,7 +51,7 @@
 		"shiki": "^4.4.3"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": "^0.6.0-pr-1"
+		"@serene-pub/sdk": "^0.6.0-pr-2"
 	},
 	"peerDependenciesMeta": {
 		"@serene-pub/sdk": {
@@ -59,7 +59,7 @@
 		}
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-pr-1"
+		"@serene-pub/sdk": "0.6.0-pr-2"
 	},
 	"publishConfig": {
 		"access": "public",

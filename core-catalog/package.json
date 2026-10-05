@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/core-catalog",
-	"version": "0.6.0-pr-1",
+	"version": "0.6.0-pr-2",
 	"description": "The genres, pipelines, hook declarations and core components Serene Pub ships. Serene Pub seeds from it at boot, conformance uses it as fixtures, and plugin authors import it for typed references.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/core-catalog#readme",
@@ -71,9 +71,9 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": "^0.6.0-pr-1",
-		"@serene-pub/contracts": "^0.6.0-pr-1",
-		"@serene-pub/component-client": "^0.6.0-pr-1",
+		"@serene-pub/sdk": "^0.6.0-pr-2",
+		"@serene-pub/contracts": "^0.6.0-pr-2",
+		"@serene-pub/component-client": "^0.6.0-pr-2",
 		"svelte": ">=5"
 	},
 	"peerDependenciesMeta": {
@@ -88,10 +88,10 @@
 		"build": "tsc -p tsconfig.build.json && node scripts/buildComponents.mjs"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-pr-1",
-		"@serene-pub/contracts": "0.6.0-pr-1",
-		"@serene-pub/cli": "0.6.0-pr-1",
-		"@serene-pub/component-client": "0.6.0-pr-1",
+		"@serene-pub/sdk": "0.6.0-pr-2",
+		"@serene-pub/contracts": "0.6.0-pr-2",
+		"@serene-pub/cli": "0.6.0-pr-2",
+		"@serene-pub/component-client": "0.6.0-pr-2",
 		"svelte": "^5.56.0"
 	},
 	"publishConfig": {

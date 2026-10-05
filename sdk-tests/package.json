@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/sdk-tests",
-	"version": "0.6.0-pr-1",
+	"version": "0.6.0-pr-2",
 	"private": true,
 	"type": "module",
 	"description": "The SDK's own suite. Kept as a workspace package so it runs against the vendored sources, not a published build — the point of the monorepo is that a change to the SDK fails here before it reaches core.",
@@ -9,14 +9,14 @@
 		"typecheck": "tsc --noEmit"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-pr-1",
-		"@serene-pub/contracts": "0.6.0-pr-1",
-		"@serene-pub/conformance": "0.6.0-pr-1",
-		"@serene-pub/cli": "0.6.0-pr-1",
-		"@serene-pub/docs": "0.6.0-pr-1",
+		"@serene-pub/sdk": "0.6.0-pr-2",
+		"@serene-pub/contracts": "0.6.0-pr-2",
+		"@serene-pub/conformance": "0.6.0-pr-2",
+		"@serene-pub/cli": "0.6.0-pr-2",
+		"@serene-pub/docs": "0.6.0-pr-2",
 		"tsx": "^4.0.0",
 		"jimp": "^1.6.1",
-		"@serene-pub/core-catalog": "0.6.0-pr-1",
-		"@serene-pub/controls": "0.6.0-pr-1"
+		"@serene-pub/core-catalog": "0.6.0-pr-2",
+		"@serene-pub/controls": "0.6.0-pr-2"
 	}
 }
