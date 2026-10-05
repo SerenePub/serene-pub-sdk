@@ -88,7 +88,10 @@ jobs:
 
             # Tests that read the app repo (../serene-pub) skip themselves when it is absent,
             # as it is here.
+            # Not required for a -pr-N pre-release (owner 2026-10-05): the suite is
+            # skipped there; release candidates and releases still have to pass it.
             - name: Test
+              if: ${{ !contains(github.ref_name, '-pr-') }}
               run: npm test --prefix sdk-tests
 
             - name: Stage LICENSE and NOTICE
