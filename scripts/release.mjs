@@ -42,8 +42,9 @@ const PUBLISHED = [
 ]
 
 /**
- * Packages whose `dist` is tsc output. `dist` is tracked in git and tsc never
- * deletes a module whose source is gone, so a release build starts from none.
+ * Packages whose `dist` is tsc output. `dist` is never tracked in git, but tsc
+ * never deletes a module whose source is gone, so a local dist can hold stale
+ * modules; a release build starts from none.
  */
 const CLEANED = ['sdk', 'contracts', 'conformance', 'docs', 'cli', 'core-catalog']
 

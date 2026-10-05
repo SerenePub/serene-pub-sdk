@@ -104,8 +104,9 @@ installs. `release.mjs check` refuses any range that is not the one above.
 1. `release.mjs check` — every package is ready to publish (version, ranges, `repository` with
    `directory` (npm checks provenance against it), `publishConfig`, `engines`, `files` covering
    every entry point, a README) and matches the tag.
-2. `npm install`, then `release.mjs clean` and `npm run build`. `dist` is tracked in git and `tsc`
-   never deletes a module whose source is gone, so the published build starts empty.
+2. `npm install`, then `release.mjs clean` and `npm run build`. `dist` is not tracked in git, and
+   cleaning first means the published build starts empty (`tsc` never deletes a module whose
+   source is gone).
 3. `npm test --prefix sdk-tests`. Tests that read the app repository (`../serene-pub`) skip
    themselves when it is absent, and say so.
 4. `release.mjs stage` copies the root `LICENSE` and `NOTICE` into each package (Apache-2.0 §4).
@@ -121,3 +122,18 @@ npm run build
 node scripts/release.mjs stage
 npm pack --dry-run -w @serene-pub/cli
 ```
+
+## The GitHub release
+
+A real publish from a tag also creates (or updates) the GitHub release for that tag:
+the nine package tarballs exactly as npm received them, plus `SHA256SUMS`, and a short
+body with install lines and npm links (GitHub's generated change list follows it).
+
+- `vX.Y.Z` is a normal release and becomes the repository's latest.
+- Any suffix — `-pr-N`, `-rc-N`, `-alpha`, `-beta`, `-dev` — is marked a **pre-release**
+  and never becomes latest; npm gets it under `next`.
+
+A dry run never creates a release. A tag published before this job existed
+(`v0.6.0-pr-1`) gets its release by hand (Releases → Draft a new release → that tag →
+tick "Set as a pre-release"): running the workflow "from" an old tag uses the workflow
+file as it was at that tag, which has no release job.

@@ -7,6 +7,11 @@
 # Re-running is safe: a package whose version npm already has is skipped, so a
 # run that failed half-way finishes the rest.
 #
+# A real publish from a tag then creates (or updates) the GitHub release for that
+# tag, with every package's tarball and SHA256SUMS attached. Any version with a
+# suffix — -pr-N, -rc-N, -alpha, -beta, -dev — is marked a pre-release and never
+# becomes the repository's "latest" release; npm gets it under the `next` tag.
+#
 # Auth: npm trusted publishing (OIDC — no stored secret) once each package is
 # configured for it on npmjs.com. Trusted publishing can only be configured on a
 # package that already exists, so the very first publish uses the NPM_TOKEN
@@ -74,8 +79,8 @@ jobs:
               run: |
                   for i in 1 2 3; do npm install --no-audit --no-fund && break || sleep 15; done
 
-            # dist is tracked in git and tsc never deletes a module whose source is gone,
-            # so the published build starts from nothing.
+            # dist is not tracked in git; cleaning first means the published build starts
+            # from nothing even when this runner reuses a workspace.
             - name: Build
               run: |
                   node scripts/release.mjs clean
@@ -110,3 +115,103 @@ jobs:
                   else
                       node scripts/release.mjs publish
                   fi
+
+            # The exact tarballs npm received, kept for the GitHub release. Packed after
+            # publishing so a failed pack never blocks npm; packing is local (no registry).
+            - name: Pack release assets
+              if: env.DRY_RUN != 'true' && github.ref_type == 'tag'
+              run: |
+                  mkdir -p release-assets
+                  for dir in $(node scripts/release.mjs order); do
+                      npm pack --workspace "$dir" --pack-destination release-assets >/dev/null
+                  done
+                  (cd release-assets && sha256sum *.tgz > SHA256SUMS)
+                  ls -l release-assets
+
+            - name: Keep release assets
+              if: env.DRY_RUN != 'true' && github.ref_type == 'tag'
+              uses: actions/upload-artifact@v4
+              with:
+                  name: release-assets
+                  path: release-assets/
+                  if-no-files-found: error
+                  retention-days: 7
+
+    github-release:
+        needs: publish
+        # Only a real publish from a tag gets a release: never a dry run, never a branch.
+        if: github.ref_type == 'tag' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        permissions:
+            contents: write # create or update the release and upload its assets
+        steps:
+            - name: Determine release kind
+              id: kind
+              shell: bash
+              env:
+                  # Never interpolate the tag into the script body (script injection via a
+                  # crafted tag name); read it from the environment.
+                  REF_NAME: ${{ github.ref_name }}
+              run: |
+                  VERSION="${REF_NAME#v}"
+                  # A plain X.Y.Z is a release; anything else (-pr-N, -rc-N, -alpha, -beta,
+                  # -dev, or a tag that is not semver at all) is a pre-release.
+                  if [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                      PRERELEASE=false
+                      DIST_TAG=latest
+                  else
+                      PRERELEASE=true
+                      DIST_TAG=next
+                  fi
+                  {
+                      echo "version=$VERSION"
+                      echo "prerelease=$PRERELEASE"
+                      echo "dist_tag=$DIST_TAG"
+                  } >> "$GITHUB_OUTPUT"
+                  echo "version $VERSION · pre-release $PRERELEASE · npm tag $DIST_TAG"
+
+            - name: Fetch release assets
+              uses: actions/download-artifact@v4
+              with:
+                  name: release-assets
+                  path: release-assets
+
+            - name: Write release body
+              env:
+                  VERSION: ${{ steps.kind.outputs.version }}
+                  DIST_TAG: ${{ steps.kind.outputs.dist_tag }}
+              run: |
+                  {
+                      echo "The Serene Pub SDK packages at \`$VERSION\`, published to npm under the \`$DIST_TAG\` tag."
+                      echo
+                      echo '```sh'
+                      echo "npm install @serene-pub/sdk@$VERSION"
+                      echo '```'
+                      echo
+                      echo '| Package | npm |'
+                      echo '|---|---|'
+                      for f in release-assets/*.tgz; do
+                          base="$(basename "$f" .tgz)"          # serene-pub-core-catalog-0.6.0-pr-1
+                          name="${base%-$VERSION}"              # serene-pub-core-catalog
+                          pkg="@serene-pub/${name#serene-pub-}" # @serene-pub/core-catalog
+                          echo "| \`$pkg\` | [npm](https://www.npmjs.com/package/$pkg/v/$VERSION) |"
+                      done
+                      echo
+                      echo 'Each package tarball attached here is the exact file npm received; `SHA256SUMS` lists their hashes.'
+                  } > release-body.md
+                  cat release-body.md
+
+            - name: Create or update the GitHub release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ github.ref_name }}
+                  name: Serene Pub SDK ${{ steps.kind.outputs.version }}
+                  body_path: release-body.md
+                  generate_release_notes: true
+                  prerelease: ${{ steps.kind.outputs.prerelease }}
+                  make_latest: ${{ steps.kind.outputs.prerelease == 'true' && 'false' || 'true' }}
+                  files: |
+                      release-assets/*.tgz
+                      release-assets/SHA256SUMS
+                  fail_on_unmatched_files: true

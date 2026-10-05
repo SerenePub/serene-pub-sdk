@@ -9,3 +9,7 @@ playground/dist/
 # published package before packing; the root copies are the only tracked ones.
 /*/LICENSE
 /*/NOTICE
+
+# Build output: every package's dist/ is produced by `npm run build` (CI publishes
+# from a clean build), so none of it is tracked.
+/*/dist/
