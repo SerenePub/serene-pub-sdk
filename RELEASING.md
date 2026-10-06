@@ -64,7 +64,7 @@ moves `latest` by accident. npm gives a package that has no `latest` yet its fir
 node scripts/release.mjs set 0.6.0-pr-2          # or: npm run release:set -- 0.6.0-pr-2
 npm run build                                    # core-catalog stamps the version into dist
 npm test -w @serene-pub/sdk-tests
-node scripts/release.mjs check --tag v0.6.0-pr-2 # or: npm run release:check -- --tag v0.6.0-pr-2
+node scripts/release.mjs check --tag v0.6.0-pr-4 # or: npm run release:check -- --tag v0.6.0-pr-4
 ```
 
 `set` moves every workspace's version, every range one workspace package holds on another, the
@@ -72,8 +72,8 @@ plugin scaffold's dependency ranges (`cli/templates/plugin/base/package.json.tmp
 lockfile. Commit the result, push it, then tag the commit:
 
 ```sh
-git tag v0.6.0-pr-2
-git push origin v0.6.0-pr-2
+git tag v0.6.0-pr-4
+git push origin v0.6.0-pr-4
 ```
 
 The tag starts the workflow. It refuses to publish unless the tag names the version every package
@@ -134,6 +134,6 @@ body with install lines and npm links (GitHub's generated change list follows it
   and never becomes latest; npm gets it under `next`.
 
 A dry run never creates a release. A tag published before this job existed
-(`v0.6.0-pr-2`) gets its release by hand (Releases → Draft a new release → that tag →
+(`v0.6.0-pr-4`) gets its release by hand (Releases → Draft a new release → that tag →
 tick "Set as a pre-release"): running the workflow "from" an old tag uses the workflow
 file as it was at that tag, which has no release job.
