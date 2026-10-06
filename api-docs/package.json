@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/api-docs",
-	"version": "0.6.0-pr-2",
+	"version": "0.6.0-pr-4",
 	"private": true,
 	"type": "module",
 	"description": "Holds TypeDoc, and the TypeScript it runs on. A workspace rather than a root devDependency because TypeDoc needs the classic TypeScript compiler API and the repo builds with TypeScript 7, which does not ship one — npm nests a TypeScript 5 here, where nothing else resolves it. The config it reads is ../typedoc.json.",

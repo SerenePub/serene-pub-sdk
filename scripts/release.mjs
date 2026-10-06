@@ -73,7 +73,7 @@ const rangeFor = (field, version) => (field === 'devDependencies' ? version : `^
 /* ── set ──────────────────────────────────────────────────────────────────── */
 
 function set(version) {
-	if (!SEMVER.test(version ?? '')) fail(`'${version}' is not a semver version (e.g. 0.6.0-pr-2)`)
+	if (!SEMVER.test(version ?? '')) fail(`'${version}' is not a semver version (e.g. 0.6.0-pr-4)`)
 	const names = workspaceNames()
 	const root = rootPkg()
 	root.version = version

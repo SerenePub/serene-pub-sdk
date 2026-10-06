@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/cli",
-	"version": "0.6.0-pr-2",
+	"version": "0.6.0-pr-4",
 	"description": "Build-time tooling for Serene Pub plugins — the `serene-pub` command: check and package a plugin into a manifest plus documents, preview its UI, clone core components, and generate contracts from a type registry.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/cli#readme",
@@ -60,26 +60,26 @@
 		}
 	},
 	"peerDependencies": {
-		"@serene-pub/conformance": "^0.6.0-pr-2",
-		"@serene-pub/sdk": "^0.6.0-pr-2",
-		"@serene-pub/ui-preview": "^0.6.0-pr-2",
+		"@serene-pub/conformance": "^0.6.0-pr-4",
+		"@serene-pub/sdk": "^0.6.0-pr-4",
+		"@serene-pub/ui-preview": "^0.6.0-pr-4",
 		"esbuild": "*",
 		"svelte": ">=5",
 		"happy-dom": "*",
-		"@serene-pub/contracts": "^0.6.0-pr-2",
-		"@serene-pub/core-catalog": "^0.6.0-pr-2",
-		"@serene-pub/docs": "^0.6.0-pr-2"
+		"@serene-pub/contracts": "^0.6.0-pr-4",
+		"@serene-pub/core-catalog": "^0.6.0-pr-4",
+		"@serene-pub/docs": "^0.6.0-pr-4"
 	},
 	"scripts": {
 		"build": "tsc -p tsconfig.build.json && node -e \"process.platform === 'win32' || require('node:fs').chmodSync('dist/bin.js', 0o755)\""
 	},
 	"devDependencies": {
-		"@serene-pub/conformance": "0.6.0-pr-2",
-		"@serene-pub/contracts": "0.6.0-pr-2",
-		"@serene-pub/core-catalog": "0.6.0-pr-2",
-		"@serene-pub/docs": "0.6.0-pr-2",
-		"@serene-pub/sdk": "0.6.0-pr-2",
-		"@serene-pub/ui-preview": "0.6.0-pr-2"
+		"@serene-pub/conformance": "0.6.0-pr-4",
+		"@serene-pub/contracts": "0.6.0-pr-4",
+		"@serene-pub/core-catalog": "0.6.0-pr-4",
+		"@serene-pub/docs": "0.6.0-pr-4",
+		"@serene-pub/sdk": "0.6.0-pr-4",
+		"@serene-pub/ui-preview": "0.6.0-pr-4"
 	},
 	"peerDependenciesMeta": {
 		"@serene-pub/ui-preview": {
@@ -106,7 +106,7 @@
 	},
 	"dependencies": {
 		"@remote-dom/core": "^1.12.0",
-		"@serene-pub/component-client": "^0.6.0-pr-2"
+		"@serene-pub/component-client": "^0.6.0-pr-4"
 	},
 	"publishConfig": {
 		"access": "public",

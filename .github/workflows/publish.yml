@@ -196,7 +196,7 @@ jobs:
                       echo '| Package | npm |'
                       echo '|---|---|'
                       for f in release-assets/*.tgz; do
-                          base="$(basename "$f" .tgz)"          # serene-pub-core-catalog-0.6.0-pr-2
+                          base="$(basename "$f" .tgz)"          # serene-pub-core-catalog-0.6.0-pr-4
                           name="${base%-$VERSION}"              # serene-pub-core-catalog
                           pkg="@serene-pub/${name#serene-pub-}" # @serene-pub/core-catalog
                           echo "| \`$pkg\` | [npm](https://www.npmjs.com/package/$pkg/v/$VERSION) |"

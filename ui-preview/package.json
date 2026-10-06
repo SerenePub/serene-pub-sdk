@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/ui-preview",
-	"version": "0.6.0-pr-2",
+	"version": "0.6.0-pr-4",
 	"description": "The Serene Pub surface harness: a SvelteKit dev server that renders the UI surfaces a package announces — frame panels in a real opaque-origin sandbox, components in the host document — with hot reload. Launched by `serene-pub ui`.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/ui-preview#readme",
@@ -41,7 +41,7 @@
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json"
 	},
 	"dependencies": {
-		"@serene-pub/controls": "^0.6.0-pr-2",
+		"@serene-pub/controls": "^0.6.0-pr-4",
 		"@skeletonlabs/skeleton": "^5.0.0",
 		"@sveltejs/kit": "^2.22.0",
 		"@sveltejs/vite-plugin-svelte": "^5.1.0",
@@ -52,10 +52,10 @@
 		"vite": "^6.4.0"
 	},
 	"peerDependencies": {
-		"@serene-pub/sdk": "^0.6.0-pr-2"
+		"@serene-pub/sdk": "^0.6.0-pr-4"
 	},
 	"devDependencies": {
-		"@serene-pub/sdk": "0.6.0-pr-2",
+		"@serene-pub/sdk": "0.6.0-pr-4",
 		"svelte-check": "^4.0.0",
 		"typescript": "~5.9.0"
 	},

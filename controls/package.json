@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/controls",
-	"version": "0.6.0-pr-2",
+	"version": "0.6.0-pr-4",
 	"description": "Svelte controls for Serene Pub value types: one editor per value-type id plus a schema form renderer. Shipped as source; the consuming app's Svelte compiles it.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/controls#readme",
@@ -32,7 +32,7 @@
 	},
 	"peerDependencies": {
 		"svelte": ">=5",
-		"@serene-pub/sdk": "^0.6.0-pr-2"
+		"@serene-pub/sdk": "^0.6.0-pr-4"
 	},
 	"scripts": {
 		"build": "echo 'raw-source svelte library — nothing to build'"
