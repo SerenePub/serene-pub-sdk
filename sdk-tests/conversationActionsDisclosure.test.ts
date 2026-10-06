@@ -7,7 +7,7 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { shouldCloseActions } from '../core-catalog/src/ui/sessions/conversation/actionsDisclosure.js'
+import { shouldCloseActions } from '../core-catalog/src/shared/ui/conversation/actionsDisclosure.js'
 
 describe('shouldCloseActions', () => {
 	describe('focusout', () => {

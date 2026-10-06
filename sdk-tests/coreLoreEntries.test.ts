@@ -15,7 +15,7 @@ import {
 	loreEntryName,
 	loreEntryReadLine,
 	readLoreEntriesSettings,
-} from '../core-catalog/src/ui/sessions/lore-entries/index.js'
+} from '../core-catalog/src/shared/ui/lore-entries/index.js'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
 
 const en = (s: string) => s

@@ -18,12 +18,12 @@
 	},
 	"sideEffects": [
 		"./dist/index.js",
-		"./dist/entries.js",
-		"./dist/statShapes.js",
-		"./dist/slots.js",
-		"./dist/genres.js",
-		"./dist/annexField.js",
-		"./dist/ui/sessions/widgets.js"
+		"./dist/registry/entries.js",
+		"./dist/registry/statShapes.js",
+		"./dist/registry/slots.js",
+		"./dist/registry/genres.js",
+		"./dist/shared/annexField.js",
+		"./dist/registry/widgets.js"
 	],
 	"files": [
 		"dist",
@@ -40,32 +40,32 @@
 			"import": "./dist/index.js"
 		},
 		"./conversation": {
-			"types": "./dist/ui/sessions/conversation/index.d.ts",
-			"import": "./dist/ui/sessions/conversation/index.js"
+			"types": "./dist/shared/ui/conversation/index.d.ts",
+			"import": "./dist/shared/ui/conversation/index.js"
 		},
 		"./session-state": {
-			"types": "./dist/ui/sessions/session-state/index.d.ts",
-			"import": "./dist/ui/sessions/session-state/index.js"
+			"types": "./dist/shared/ui/session-state/index.d.ts",
+			"import": "./dist/shared/ui/session-state/index.js"
 		},
 		"./widgets": {
-			"types": "./dist/ui/sessions/widgetContext.d.ts",
-			"import": "./dist/ui/sessions/widgetContext.js"
+			"types": "./dist/shared/ui/widgetContext.d.ts",
+			"import": "./dist/shared/ui/widgetContext.js"
 		},
 		"./core-widgets": {
-			"types": "./dist/ui/sessions/coreWidgetsEntry.d.ts",
-			"import": "./dist/ui/sessions/coreWidgetsEntry.js"
+			"types": "./dist/shared/ui/coreWidgetsEntry.d.ts",
+			"import": "./dist/shared/ui/coreWidgetsEntry.js"
 		},
 		"./lore-entries": {
-			"types": "./dist/ui/sessions/lore-entries/index.d.ts",
-			"import": "./dist/ui/sessions/lore-entries/index.js"
+			"types": "./dist/shared/ui/lore-entries/index.d.ts",
+			"import": "./dist/shared/ui/lore-entries/index.js"
 		},
 		"./authors-note": {
-			"types": "./dist/ui/sessions/authors-note/index.d.ts",
-			"import": "./dist/ui/sessions/authors-note/index.js"
+			"types": "./dist/genres/chat/ui/authors-note/index.d.ts",
+			"import": "./dist/genres/chat/ui/authors-note/index.js"
 		},
 		"./scene-portraits": {
-			"types": "./dist/ui/sessions/scene-portraits/index.d.ts",
-			"import": "./dist/ui/sessions/scene-portraits/index.js"
+			"types": "./dist/shared/ui/scene-portraits/index.d.ts",
+			"import": "./dist/shared/ui/scene-portraits/index.js"
 		},
 		"./components/*": "./dist/components/*",
 		"./package.json": "./package.json"

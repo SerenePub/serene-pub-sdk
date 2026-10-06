@@ -257,15 +257,19 @@ inputs — the caller hydrates the session and passes it in — so `assemble` ca
 hydration cannot happen inside `assemble`; it belongs in a Query, and connection **metadata**
 reaches it while material never does (F18).
 
-**The embedding connection a core node reads.** `core:task/query-windows@1` takes the embed
-step's connection by reference (`slot.connectionOf('semantic.arm.embed')`) and reads one fact
-off it under `searchByMeaning: 'auto'`: whether it resolved to a connection at all. Resolved,
-an embedding model is set up and Automatic searches; unresolved, it does not, and the receipt
-says why. Nothing else about the connection is read — not where it runs, not whether it bills:
-a local model and an embedding service search alike. One duty comes with it: if the host embeds
-through one fixed connection whatever the embed step's `connection` slot names, **hold that
-slot there**. Serene Pub offers no pick for it and drops a stored one (`isUnreadSlot`), so
-`slot.connectionOf('semantic.arm.embed')` is the connection the embed actually uses.
+**The embedding connection a core node reads.** A pipeline never chooses its embedding
+connection: the host embeds through the install's one active embedding connection, so
+`core:oracle/embed-text@1` and the sprite picker `core:oracle/pick-sprite@1` declare no
+`connection` slot (2026-10-05). `core:task/query-windows@1` declares one — `requires:
+['text->embedding']`, wired as its own `slot.connection()` in every shipped spec — and reads one
+fact off it under `searchByMeaning: 'auto'`: whether it resolved to a connection at all.
+Resolved, an embedding model is set up and Automatic searches; unresolved, it does not, and the
+receipt says why. Nothing else about the connection is read — not where it runs, not whether it
+bills: a local model and an embedding service search alike. One duty comes with it: **hold that
+slot at the connection the host embeds through** — offer no pick for it and drop a stored one —
+or Automatic decides about a connection the embed never uses. With nothing stored, the executor
+resolves it to `world.activeConnection` under the slot's own `shape` (a Task has no shape of its
+own), so publishing the active embedding connection there meets the duty.
 
 ### Node clocks — `wall` and `idle` (F36)
 
@@ -628,8 +632,10 @@ agentic turn expressible is the `loop` block, not a clever node.
 
 ### The reference
 
-`core:spec/tool-loop` in `@serene-pub/core-catalog` is the worked example.
-Read it; this section is the argument, not the API.
+`core:spec/tool-loop` in `@serene-pub/core-catalog` (`toolLoopSpec()`, `src/shared/toolLoop.ts`)
+is the worked example. Read it; this section is the argument, not the API. It is exported, not
+seeded: since 2026-10-05 it is not in `CORE_SPECS`, so no install lists it as a pipeline, and a
+package that wants one publishes its own.
 
 ```
 input → history ─┐

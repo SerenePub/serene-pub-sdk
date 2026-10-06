@@ -43,7 +43,7 @@ const STRATEGY_NODE = TURN_ORDER_BY_GENRE.find((t) => t.spec === CHAT_TURN_ORDER
 const mountNative = () =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,

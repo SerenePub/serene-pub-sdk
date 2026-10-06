@@ -408,7 +408,7 @@ export function placeActions<A extends { venue: ReadonlyArray<Venue>; quick?: bo
 	return listings
 }
 
-/** The namespace of a spec id — `core:spec/narrate` → `core`, `acme:spec/roll` → `acme`. @experimental */
+/** The namespace of a spec id — `core:spec/chat-narrate` → `core`, `acme:spec/roll` → `acme`. @experimental */
 export function specNamespace(specId: string): string {
 	const i = specId.indexOf(':')
 	return i === -1 ? '' : specId.slice(0, i)

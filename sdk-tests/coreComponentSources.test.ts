@@ -82,7 +82,7 @@ describe('dist/components/<slug>.source.json', () => {
 			}
 			assert.equal(doc.sourceHash, componentSourceHash(doc.files))
 			// The shared helpers a component reaches ride along with its own files.
-			if (decl.slug !== 'messages') assert.ok(paths.includes('sessions/shared/widgetRef.svelte.ts'))
+			if (decl.slug !== 'messages') assert.ok(paths.includes('shared/widgetRef.svelte.ts'))
 		})
 
 	test('every relative import in every included file — type-only ones too — resolves to an included file', async () => {

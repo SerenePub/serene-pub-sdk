@@ -716,7 +716,7 @@ describe('M2 · preset-seeded swaps (R40)', () => {
 			slug: 'seeded',
 			genre: chatGenre,
 			label: 'Seeded',
-			bindings: [{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] }],
+			bindings: [{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] }],
 			defaults: { swaps: [{ spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: C.turnManual }] },
 		})
 		assert.deepEqual(p.defaults?.swaps, [

@@ -27,7 +27,7 @@ import { mkdir, readdir, readFile, realpath, rm, stat, writeFile } from 'node:fs
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { buildComponentSet, COMPONENT_CHUNK_FILE, componentSourceHash, isSafeComponentPath } from '@serene-pub/cli/component-compile'
-import { CORE_COMPONENTS } from '../dist/ui/sessions/widgets.js'
+import { CORE_COMPONENTS } from '../dist/registry/widgets.js'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outdir = join(root, 'dist', 'components')

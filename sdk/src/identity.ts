@@ -124,7 +124,7 @@ export const CORE_ACTION_SPEC_ID = 'core'
 
 /**
  * An action's **identity** on the wire: `<spec slug>#<key>` — a spec slug
- * (`core`, `core:spec/narrate`, `acme:spec/roll`; versionless, so no `@`)
+ * (`core`, `core:spec/chat-narrate`, `acme:spec/roll`; versionless, so no `@`)
  * and a key (a lowercase kebab token), joined by `#`. One string names one
  * declaration; everything that keys on an action keys on this — a binding's
  * subject, a preset's included set, a session's enablement row, a genre's

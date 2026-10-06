@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ComponentContext } from '@serene-pub/component-client'
-	import MessageBlocksView from '../../../core-catalog/components/sessions/messages/MessageBlocksView.svelte'
+	import MessageBlocksView from '../../../core-catalog/components/shared/messages/MessageBlocksView.svelte'
 
 	// Core's block renderer alone, fed from `props`: `blocks`, and the ids a
 	// verdict calls superseded (`stale`; absent = no verdict handed down).

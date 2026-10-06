@@ -62,7 +62,7 @@ spec('types:block@1', { version: '1.0.0' })
 	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
 			c
-				.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() }))
+				.oracle('embed', ($) => C.embedText.v1({ text: $.input.text }))
 				// A sibling by its qualified key. Block members accumulate into the type
 				// under the key they actually get in the rows.
 				.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
@@ -75,7 +75,7 @@ spec('types:block-bad@1', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1())
 	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
-			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
+			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text })),
 		),
 	)
 	.task('merge', ($) =>
@@ -90,7 +90,7 @@ spec('types:block-leaf@1', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1())
 	.gather('gather', { mode: 'parallel' }, (b) =>
 		b.chain('semantic', (c) =>
-			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text, connection: slot.connection() })),
+			c.oracle('embed', ($) => C.embedText.v1({ text: $.input.text })),
 		),
 	)
 	.task('merge', ($) =>

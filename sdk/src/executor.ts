@@ -1210,7 +1210,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
 			const td = getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)
-			const kind = td?.shape ?? d?.shape
+			// The type's shape, then the slot's own: a Task has no shape of its
+			// own, and its connection slot states the kind it takes
+			// (`SlotDecl.shape`, which `requiredConnections` already reads) —
+			// `core:task/query-windows@1`'s embedding slot, since `embed-text`
+			// stopped declaring one to reference (2026-10-05). Every oracle
+			// declares the same shape on both, so nothing else moves.
+			const kind =
+				td?.shape ?? td?.slots?.connection?.shape ?? d?.shape ?? d?.slots?.connection?.shape
 			const stored = config[targetKey]?.['connection']?.[SLOT_VALUE]
 			/**
 			 * The pick, then the instance default — but the default answers only

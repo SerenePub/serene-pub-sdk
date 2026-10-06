@@ -64,7 +64,7 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('the single-step reply specs stream their generate', () => {
-		for (const slug of ['core:spec/respond', 'core:spec/narrate', 'core:spec/narrate-character', 'core:spec/guide-respond'])
+		for (const slug of ['core:spec/chat-respond', 'core:spec/chat-narrate', 'core:spec/chat-side-character', 'core:spec/guide-respond'])
 			assert.deepEqual(streamingOf(doc(slug)), ['generate'], slug)
 	})
 
@@ -107,7 +107,7 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('a spec that declares nothing streams nothing, and that is valid', () => {
-		const d = marked(doc('core:spec/respond'), 'generate', undefined)
+		const d = marked(doc('core:spec/chat-respond'), 'generate', undefined)
 		assert.deepEqual(streamingOf(d), [])
 		assert.deepEqual(errors(d), [])
 	})
@@ -234,7 +234,7 @@ describe('B18 · a step declares its status', () => {
 	})
 
 	test('a status that is not display text is refused', () => {
-		const bad = marked(doc('core:spec/respond'), 'generate', { stream: true, status: 42 })
+		const bad = marked(doc('core:spec/chat-respond'), 'generate', { stream: true, status: 42 })
 		assert.ok(validate(bad).some((f) => f.severity === 'error' && f.nodeKey === 'generate' && /status/.test(f.message)))
 	})
 })

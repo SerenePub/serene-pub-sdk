@@ -11,7 +11,7 @@ import type { DocsOrderGroup, DocsSource } from './types.js'
 
 export interface SourcePage {
 	source: DocsSource
-	/** Path inside the source, posix, e.g. 'pipelines/core_spec_respond.md'. */
+	/** Path inside the source, posix, e.g. 'pipelines/core_spec_chat-respond.md'. */
 	path: string
 	/** Slug without the source's prefix — what `order` is written in. */
 	bareSlug: string

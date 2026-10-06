@@ -114,7 +114,7 @@ export const extension = defineExtension({
 		tallyDefault,
 		// A config over somebody else's spec: legitimate, and the one thing in
 		// this package that has to land in `requires`.
-		config(use('core:spec/respond'), 'tally-flavoured', { label: 'Tally flavoured' }, {}),
+		config(use('core:spec/chat-respond'), 'tally-flavoured', { label: 'Tally flavoured' }, {}),
 	],
 	prompts: [
 		{

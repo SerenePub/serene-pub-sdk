@@ -11,7 +11,7 @@ import {
 	conversationIndex,
 	orderedMessages,
 	restoredScrollTop,
-} from '../core-catalog/src/ui/sessions/conversation/index.js'
+} from '../core-catalog/src/shared/ui/conversation/index.js'
 
 const messages = [1, 2, 3, 4]
 

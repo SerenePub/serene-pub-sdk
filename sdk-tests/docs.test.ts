@@ -174,8 +174,8 @@ describe('the docs dialect', () => {
 
 		// With a context: nested paths, a source prefix, a chosen link base.
 		assert.equal(
-			rewriteDocHref('pipelines/core_spec_respond.md', { path: 'index.md', prefix: 'sdk' }),
-			'/docs/sdk/pipelines/core_spec_respond',
+			rewriteDocHref('pipelines/core_spec_chat-respond.md', { path: 'index.md', prefix: 'sdk' }),
+			'/docs/sdk/pipelines/core_spec_chat-respond',
 		)
 		assert.equal(
 			rewriteDocHref('./characters.md#creator-wizard', { path: 'sessions.md' }),
@@ -307,7 +307,7 @@ describe('compiling a docs site', () => {
 				appDir,
 				'pipelines.md',
 				'# Pipelines\n\nWhat a pipeline is.\n\nThe shipped one is documented in ' +
-					'[the catalog](sdk/pipelines/core_spec_respond.md#steps).\n',
+					'[the catalog](sdk/pipelines/core_spec_chat-respond.md#steps).\n',
 			)
 			await writeDoc(appDir, 'sessions.md', '# Sessions\n\nA session holds messages.\n')
 
@@ -325,9 +325,9 @@ describe('compiling a docs site', () => {
 								markdown: '# Serene Pub core\n\nWhat core ships.\n',
 							},
 							{
-								path: 'pipelines/core_spec_respond.md',
+								path: 'pipelines/core_spec_chat-respond.md',
 								markdown:
-									'# core:spec/respond\n\nVersion 1.\n\n## Steps\n\nThe nodes.\n',
+									'# core:spec/chat-respond\n\nVersion 1.\n\n## Steps\n\nThe nodes.\n',
 							},
 						],
 					},
@@ -341,16 +341,16 @@ describe('compiling a docs site', () => {
 				{
 					group: 'SDK',
 					source: 'sdk',
-					pages: ['sdk/index', 'sdk/pipelines/core_spec_respond'],
+					pages: ['sdk/index', 'sdk/pipelines/core_spec_chat-respond'],
 				},
 			])
 
 			// The cross-repo link lands on the prefixed slug, anchor and all.
 			const pipelines = await readPage(dir, 'pipelines')
-			assert.match(pipelines, /href="\/docs\/sdk\/pipelines\/core_spec_respond#steps"/)
+			assert.match(pipelines, /href="\/docs\/sdk\/pipelines\/core_spec_chat-respond#steps"/)
 
 			// A nested slug is a nested file.
-			const respond = await readPage(dir, 'sdk/pipelines/core_spec_respond')
+			const respond = await readPage(dir, 'sdk/pipelines/core_spec_chat-respond')
 			assert.match(respond, /<h2 id="steps">Steps<\/h2>/)
 
 			const manifest = await readManifest(dir)

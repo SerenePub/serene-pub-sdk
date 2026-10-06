@@ -19,7 +19,7 @@ import {
 	statsView,
 	textDraftValue,
 	worldStateView,
-} from '../core-catalog/src/ui/sessions/session-state/index.js'
+} from '../core-catalog/src/shared/ui/session-state/index.js'
 
 describe('barView', () => {
 	test('a bounded integer is a percentage and a label', () => {
@@ -235,8 +235,8 @@ describe('a scope not granted', () => {
 // ─── Phase 2: drawing and editing by stat shape ─────────────────────────────
 
 describe('a slot is drawn by its stat shape', async () => {
-	const s = await import('../core-catalog/src/ui/sessions/session-state/index.js')
-	const { statBarsOf } = await import('../core-catalog/src/ui/sessions/scene-portraits/index.js')
+	const s = await import('../core-catalog/src/shared/ui/session-state/index.js')
+	const { statBarsOf } = await import('../core-catalog/src/shared/ui/scene-portraits/index.js')
 	const t = (x: string) => x
 
 	test('the kind comes from the field, or the type when a host sent none', () => {

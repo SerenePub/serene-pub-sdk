@@ -13,7 +13,7 @@ import {
 	scenePortraitsOf,
 	stateOwnerKeyOf,
 	statBarsOf,
-} from '../core-catalog/src/ui/sessions/scene-portraits/index.js'
+} from '../core-catalog/src/shared/ui/scene-portraits/index.js'
 
 const member = (over: Partial<SessionCharacterV1> & Pick<SessionCharacterV1, 'characterId'>): SessionCharacterV1 => ({
 	ref: `character:${over.characterId}`,

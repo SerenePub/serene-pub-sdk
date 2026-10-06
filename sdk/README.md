@@ -68,7 +68,7 @@ mistake that is supposed to be a compile error stops being one.**
 | `sdk/src/connections.ts` | what an import must wire, derived from types rather than stored rows |
 | `sdk/src/registry.ts` | `type_registry` rows, and install-time validation from data alone |
 | `sdk/src/dev.ts` | dev loading: memory-only overlay, and which reloads may apply mid-run |
-| `contracts/src/index.ts` | sample core + plugin types across four modalities |
+| `contracts/src/{inlets,queries,tasks,oracles,outlets}.ts` | core's node definitions and a few sample plugin ones, one file per node kind (`index.ts` re-exports them) |
 | `cli/src/compiler.ts` | the packager: a source scan plus the built extension, cross-checked |
 | `cli/src/codegen.ts` | `/contracts` generation, and the rule that binding names are **derived** |
 | `cli/src/bin.ts` | `serene-pub build / check / contracts` |

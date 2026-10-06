@@ -50,16 +50,14 @@ import {
 import type { Bindings, ConfigWorld, SpecDocument } from '@serene-pub/sdk'
 
 import { corePresets, CORE_SPECS, CORE_WIDGETS } from '../core-catalog/src/index.js'
-import { CORE_PROMPTS } from '../core-catalog/src/prompts.js'
-import { lairGenre, LAIR_GENRE_ID } from '../core-catalog/src/genres.js'
-import { LAIR_RESPOND_SPEC_ID } from '../core-catalog/src/lair.js'
-import {
-	LAIR_BUILD_ROOM_SPEC_ID,
-	LAIR_FILE_ROOM_SPEC_ID,
-	LAIR_ROOM_ANSWER_SPEC_ID,
-} from '../core-catalog/src/lairActions.js'
-import { itemValuesOf } from '../core-catalog/src/ui/sessions/conversation/itemValues.js'
-import { LAIR_LAYOUT } from '../core-catalog/src/ui/sessions/layouts.js'
+import { CORE_PROMPTS } from '../core-catalog/src/seed/prompts.js'
+import { lairGenre, LAIR_GENRE_ID } from '../core-catalog/src/registry/genres.js'
+import { LAIR_RESPOND_SPEC_ID } from '../core-catalog/src/genres/lair/respond.js'
+import { LAIR_BUILD_ROOM_SPEC_ID } from '../core-catalog/src/genres/lair/buildRoom.js'
+import { LAIR_FILE_ROOM_SPEC_ID } from '../core-catalog/src/genres/lair/fileRoom.js'
+import { LAIR_ROOM_ANSWER_SPEC_ID } from '../core-catalog/src/genres/lair/roomAnswer.js'
+import { itemValuesOf } from '../core-catalog/src/shared/ui/conversation/itemValues.js'
+import { LAIR_LAYOUT } from '../core-catalog/src/registry/layouts.js'
 import { bindings, world } from './helpers.js'
 
 /* ── the declaration ────────────────────────────────────────────────────── */
@@ -370,7 +368,12 @@ const PUBLISHED: Record<string, string> = {
 	// with other lanes' in-flight core-catalog edits in the tree. (was '1c71b226eaa76a')
 	// Moved 2026-10-03 (history window): every history read in the Lair wires
 	// `budget: $.contextBudget.available`. (was 'a3874a2f8cc28')
-	'core:spec/lair-respond': '13506ae2e7456',
+	// Moved 2026-10-05 (sprites in-pipeline): a character turn writes
+	// `spritePick` (`core:oracle/pick-sprite@1`) and `spriteShow` after its
+	// `save`, and `semantic.arm.queries` wires its own embedding slot
+	// (`embed-text` declares none). Measured on a tree whose only other
+	// change was CI config. (was '13506ae2e7456')
+	'core:spec/lair-respond': '198869a81e17d5',
 	// Moved twice on 2026-09-17. First (L3, contracts batch 2): `params:
 	// slot.params()` on the `create-lore-entry` node, which now declares an
 	// `entryType` parameters slot — a slot the spec never NAMES is not a config
@@ -574,7 +577,10 @@ const PUBLISHED: Record<string, string> = {
 	// Moved 2026-10-03 (attachments follow-ups, owner ruling): the transcript's files are
 	// read (`attachments`) and placed for the model call (`attached`) before `prompt`;
 	// a transcript with no files renders byte for byte as before. Plus `{{{attachments}}}` in ANSWER_FORM_TEMPLATE's message loop. (was '1c32eb6a456349')
-	'core:spec/answer-form-lair': 'd5cd2911aa349',
+	// Moved 2026-10-05 (spec ids genre first, ruling C4): the id is
+	// `core:spec/lair-answer-form`, was `core:spec/answer-form-lair`. Proven: the
+	// document with only its id set back hashes to the old pin. (was 'd5cd2911aa349')
+	'core:spec/lair-answer-form': '1e04feae5374a',
 	// Its own turn order since the modder pass (R27, 2026-09-23).
 	// Moved 2026-09-27 (lair pass B9): it recomputes on message-deleted and
 	// message-hidden too (was '6bc2842fd6676').
@@ -584,7 +590,10 @@ const PUBLISHED: Record<string, string> = {
 	// delvers (`characters: 'active'`), so the turns a standing plan prepares
 	// are kept at the write. Proven: a copy of core-catalog/src with only this lane's edits reverted
 	// (lair.ts, turnOrder.ts, genres.ts) hashes back to every old Lair pin. (was '1bee84716ce1fa')
-	'core:spec/lair-turn-order': 'c0edd4e6d3d23',
+	// Moved 2026-10-05 (ruling C3): `taxonomy.role` is `maintenance`, was
+	// `primary` — a background lane. Proven: the document with only the role
+	// set back hashes to the old pin. (was 'c0edd4e6d3d23')
+	'core:spec/lair-turn-order': '1a6264ad2eae4f',
 }
 
 describe('the Lair pipelines', () => {
@@ -642,6 +651,9 @@ describe('the Lair pipelines', () => {
 			`${SPEECH}.castellan.party.speaks.save`,
 			`${SPEECH}.each.character.turn.placeholder`,
 			`${SPEECH}.each.character.turn.save`,
+			// The delver's sprite (2026-10-05): a write to the saved line,
+			// never a row of its own.
+			`${SPEECH}.each.character.turn.spriteShow`,
 		])
 		const fed = (key: string, port: string) =>
 			doc.edges.some((e) => e.to === key && e.toPort.split('.')[0] === port) ||
@@ -1296,9 +1308,11 @@ describe('a Lair turn', () => {
 		assert.ok(!doc.clauses.some((c: any) => c.kind === 'each' && String(c.id).startsWith(PLAY)))
 		const nodeAt = (key: string) => doc.nodes.find((n) => n.key === key)!
 		const ref = (key: string, slot: string) => (nodeAt(key).config as any)?.[slot]
-		// One model call for the delver's line, labelled for the turn shape.
+		// One model call for the delver's line, labelled for the turn shape —
+		// and, between it and the books, the delver's sprite: an oracle that
+		// embeds, never one that writes (2026-10-05).
 		const says = doc.nodes.filter((n) => n.kind === 'oracle' && n.key.startsWith(`${PLAY}.speech.each.`))
-		assert.deepEqual(says.map((n) => n.key), [`${CT}.say`, `${CT}.keeperWrite`])
+		assert.deepEqual(says.map((n) => n.key), [`${CT}.say`, `${CT}.spritePick`, `${CT}.keeperWrite`])
 		assert.equal((nodeAt(`${CT}.say`).expose as any)?.label, 'Character turn')
 		assert.match(String((nodeAt(`${CT}.say`).expose as any)?.purpose), /each delver speaks/i)
 		// The books: the state-keeper's prompt, model and sampling, by reference.

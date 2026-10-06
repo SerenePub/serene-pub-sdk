@@ -17,11 +17,11 @@ import { coreAnnouncement } from '@serene-pub/core-catalog'
 describe('a pipeline as a graph', () => {
 	test('a core spec becomes nodes and edges that close over themselves', () => {
 		const { document } = coreAnnouncement()
-		const respond = document.pipelines.find((spec) => spec.id === 'core:spec/respond')
-		assert.ok(respond, 'core:spec/respond is announced')
+		const respond = document.pipelines.find((spec) => spec.id === 'core:spec/chat-respond')
+		assert.ok(respond, 'core:spec/chat-respond is announced')
 
 		const graph = specGraphOf(respond)
-		assert.equal(graph.id, 'core:spec/respond')
+		assert.equal(graph.id, 'core:spec/chat-respond')
 		assert.ok(graph.nodes.length >= 5, `${graph.nodes.length} nodes`)
 		assert.ok(graph.edges.length > 0)
 
@@ -46,10 +46,10 @@ describe('a pipeline as a graph', () => {
 
 	test('the resolver answers for what the announcement carries, and null for the rest', () => {
 		const resolve = pipelineResolver(coreAnnouncement().document)
-		const graph = resolve('core:spec/respond')
+		const graph = resolve('core:spec/chat-respond')
 		assert.ok(graph)
-		assert.equal(graph.id, 'core:spec/respond')
-		assert.equal(graph.title, 'core:spec/respond')
+		assert.equal(graph.id, 'core:spec/chat-respond')
+		assert.equal(graph.title, 'core:spec/chat-respond')
 		assert.equal(resolve('nope'), null)
 	})
 })

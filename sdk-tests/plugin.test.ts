@@ -1126,7 +1126,7 @@ describe('104 · serene-pub build emits one artifact', () => {
 			['tally-referee'],
 		)
 		// A config over somebody else's spec is a requirement, never a bundle.
-		assert.deepEqual(m.requires, ['core:spec/respond'])
+		assert.deepEqual(m.requires, ['core:spec/chat-respond'])
 
 		// the storage grant, in the flat taxonomy the app's permission model reads
 		assert.ok(m.permissions.includes('storage:4194304'))

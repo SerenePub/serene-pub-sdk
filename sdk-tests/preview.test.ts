@@ -36,9 +36,7 @@ const chat = () =>
 				)
 				.chain('semantic', (c) =>
 					c
-						.oracle('embed', ($) =>
-							C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
-						)
+						.oracle('embed', ($) => C.embedText.v1({ text: $.input.text }))
 						.query('vsearch', ($) =>
 							C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector }),
 						),

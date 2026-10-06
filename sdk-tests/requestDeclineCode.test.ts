@@ -60,7 +60,7 @@ test("a host's decline is relayed with its code, and without one when the host g
 
 test("core's conversation reads the code first, and the sentence of an older host after", async () => {
 	// A `.svelte.ts` module: imported at run time so the suite's `tsc` does not compile its runes.
-	const path: string = '../core-catalog/components/sessions/messages/conversation.svelte.ts'
+	const path: string = '../core-catalog/components/shared/messages/conversation.svelte.ts'
 	const { isUnmountDecline } = (await import(path)) as { isUnmountDecline: (e: unknown) => boolean }
 	assert.equal(isUnmountDecline(new RequestDeclined('gone', 'unmounted')), true)
 	assert.equal(isUnmountDecline(new Error('the page was unmounted before it answered')), true)

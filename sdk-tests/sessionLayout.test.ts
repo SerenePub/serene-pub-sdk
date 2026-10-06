@@ -22,7 +22,7 @@ import {
 	type SessionLayoutV1,
 } from '../sdk/src/index.js'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
-import { adventureGenre, lairGenre } from '../core-catalog/src/genres.js'
+import { adventureGenre, lairGenre } from '../core-catalog/src/registry/genres.js'
 
 const grow = { w: 'grow', h: 'grow' } as const
 const all = { top: true, bottom: true, left: true, right: true }

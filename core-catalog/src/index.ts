@@ -5,7 +5,7 @@
  * publishable package: SP core boot-seeds from it (the app's
  * `src/lib/server/pipelines/specs/*` are thin re-exports of this package),
  * conformance consumes it as fixtures, and modders import it for typed
- * references — `import { respond, chatGenre } from "@serene-pub/core-catalog"`.
+ * references — `import { chatGenre, chatTurnOrder } from "@serene-pub/core-catalog"`.
  *
  * Moving the documents here is what makes core the first consumer of the
  * announce path rather than a special case: one validator, one document
@@ -13,6 +13,24 @@
  * shipped prompts and the default preset ride the announcement too (T6b);
  * the shipped default configs stay derived (declarations + default author
  * preset + ref defaults) — there is no hand-authored config data to carry.
+ *
+ * ## Where things live
+ *
+ *  - `genres/<genre>/` — every pipeline locked to that genre (create, reply,
+ *    actions, answer form, turn order), one per file, and any widget only that
+ *    genre offers (Chat's Author's note, under `genres/chat/ui/`).
+ *  - `shared/` — what more than one genre uses: the built-in writes, sprites,
+ *    the annex field write, summarize, the story-graph build, and the shared
+ *    widgets' typed sections (`shared/ui/`). Also the tool-loop reference,
+ *    exported as an example and test fixture but not in `CORE_SPECS`.
+ *  - `factories/` — the builders a genre calls once per genre (answer form,
+ *    turn order), core's genres and a plugin's alike.
+ *  - `registry/` — the modules that register on import (genres, slots, stat
+ *    shapes, entry types, core's widgets) and the layouts the genres name.
+ *  - `seed/` — the shipped prompts, presets and the guide's mascot image.
+ *
+ * The widgets' Svelte sources mirror it under `../components/` (`genres/chat/`,
+ * `shared/`).
  */
 import {
 	announcementOf,
@@ -22,111 +40,63 @@ import {
 	type Extension,
 	type I18n,
 } from '@serene-pub/sdk'
-import { CORE_PROMPTS } from './prompts.js'
-import { corePresetInputs } from './presets.js'
-import { adventureGenre, chatGenre, guideGenre } from './genres.js'
-import { lairGenre } from './genres.js'
-import { CREATE_CHAT_SPEC_ID, createChatSpec } from './createChat.js'
-import {
-	CREATE_GUIDE_SPEC_ID,
-	createGuideSpec,
-	GUIDE_RESPOND_SPEC_ID,
-	guideRespondSpec,
-} from './guide.js'
-import {
-	ADVENTURE_CREATE_SPEC_ID,
-	ADVENTURE_RESPOND_SPEC_ID,
-	adventureCreateSpec,
-	adventureRespondSpec,
-} from './adventure.js'
-import {
-	ADVENTURE_ADVANCE_TIME_SPEC_ID,
-	ADVENTURE_ANSWER_SPEC_ID,
-	ADVENTURE_ASK_SPEC_ID,
-	ADVENTURE_LOOK_SPEC_ID,
-	ADVENTURE_REST_SPEC_ID,
-	adventureAdvanceTimeSpec,
-	adventureAnswerSpec,
-	adventureAskSpec,
-	adventureLookSpec,
-	adventureRestSpec,
-} from './adventureActions.js'
-import {
-	ANSWER_FORM_ADVENTURE_SPEC_ID,
-	ANSWER_FORM_CHAT_SPEC_ID,
-	ANSWER_FORM_GUIDE_SPEC_ID,
-	ANSWER_FORM_LAIR_SPEC_ID,
-	answerFormAdventureSpec,
-	answerFormChatSpec,
-	answerFormGuideSpec,
-	answerFormLairSpec,
-} from './answerForm.js'
-import {
-	LAIR_CREATE_SPEC_ID,
-	LAIR_RESPOND_SPEC_ID,
-	lairCreateSpec,
-	lairRespondSpec,
-} from './lair.js'
-import {
-	LAIR_BUILD_ROOM_SPEC_ID,
-	LAIR_FILE_ROOM_SPEC_ID,
-	LAIR_NUDGE_SPEC_ID,
-	LAIR_REVEAL_SPEC_ID,
-	LAIR_ROOM_ANSWER_SPEC_ID,
-	LAIR_TRAP_SPEC_ID,
-	LAIR_WHISPER_SPEC_ID,
-	lairBuildRoomSpec,
-	lairFileRoomSpec,
-	lairNudgeSpec,
-	lairRevealSpec,
-	lairRoomAnswerSpec,
-	lairTrapSpec,
-	lairWhisperSpec,
-} from './lairActions.js'
-import { RESPOND_SPEC_ID, respondSpec } from './respond.js'
-import { TURN_ORDER_BY_GENRE } from './turnOrder.js'
-import { NARRATE_SPEC_ID, narrateSpec } from './narrate.js'
-import { NARRATE_CHARACTER_SPEC_ID, narrateCharacterSpec } from './narrateCharacter.js'
-import { CORE_ANNEX_FIELDS, SET_ANNEX_FIELD_SPEC_ID, setAnnexFieldSpec } from './annexField.js'
-import {
-	BUILTIN_BRANCH_SPEC_ID,
-	BUILTIN_DELETE_SPEC_ID,
-	BUILTIN_EDIT_SPEC_ID,
-	BUILTIN_HIDE_SPEC_ID,
-	BUILTIN_SWIPE_SPEC_ID,
-	builtinBranchSpec,
-	builtinDeleteSpec,
-	builtinEditSpec,
-	builtinHideSpec,
-	builtinSwipeSpec,
-} from './builtins.js'
-import { TOOL_LOOP_SPEC_ID, toolLoopSpec } from './toolLoop.js'
-import { SHOW_SPRITE_SPEC_ID, showSpriteSpec } from './sprites.js'
-import { GENERATE_IMAGE_SPEC_ID, generateImageSpec } from './generateImage.js'
-import { GRAPH_BUILD_SPEC_ID, graphBuildSpec } from './graphBuild.js'
-import {
-	SUMMARIZE_CHARACTER_SPEC_ID,
-	SUMMARIZE_HISTORY_SPEC_ID,
-	SUMMARIZE_SCENE_SPEC_ID,
-	SUMMARIZE_WORLD_SPEC_ID,
-	summarizeCharacterSpec,
-	summarizeHistorySpec,
-	summarizeSceneSpec,
-	summarizeWorldSpec,
-} from './summarize.js'
+import { CORE_PROMPTS } from './seed/prompts.js'
+import { corePresetInputs } from './seed/presets.js'
+import { adventureGenre, chatGenre, guideGenre } from './registry/genres.js'
+import { lairGenre } from './registry/genres.js'
+import { CHAT_CREATE_SPEC_ID, createChatSpec } from './genres/chat/create.js'
+import { GUIDE_CREATE_SPEC_ID, createGuideSpec } from './genres/guide/create.js'
+import { GUIDE_RESPOND_SPEC_ID, guideRespondSpec } from './genres/guide/respond.js'
+import { ADVENTURE_CREATE_SPEC_ID, adventureCreateSpec } from './genres/adventure/create.js'
+import { ADVENTURE_RESPOND_SPEC_ID, adventureRespondSpec } from './genres/adventure/respond.js'
+import { ADVENTURE_LOOK_SPEC_ID, adventureLookSpec } from './genres/adventure/look.js'
+import { ADVENTURE_REST_SPEC_ID, adventureRestSpec } from './genres/adventure/rest.js'
+import { ADVENTURE_ADVANCE_TIME_SPEC_ID, adventureAdvanceTimeSpec } from './genres/adventure/advanceTime.js'
+import { ADVENTURE_ASK_SPEC_ID, adventureAskSpec } from './genres/adventure/ask.js'
+import { ADVENTURE_ANSWER_SPEC_ID, adventureAnswerSpec } from './genres/adventure/answer.js'
+import { CHAT_ANSWER_FORM_SPEC_ID, answerFormChatSpec } from './genres/chat/answerForm.js'
+import { ADVENTURE_ANSWER_FORM_SPEC_ID, answerFormAdventureSpec } from './genres/adventure/answerForm.js'
+import { GUIDE_ANSWER_FORM_SPEC_ID, answerFormGuideSpec } from './genres/guide/answerForm.js'
+import { LAIR_ANSWER_FORM_SPEC_ID, answerFormLairSpec } from './genres/lair/answerForm.js'
+import { LAIR_CREATE_SPEC_ID, lairCreateSpec } from './genres/lair/create.js'
+import { LAIR_RESPOND_SPEC_ID, lairRespondSpec } from './genres/lair/respond.js'
+import { LAIR_BUILD_ROOM_SPEC_ID, lairBuildRoomSpec } from './genres/lair/buildRoom.js'
+import { LAIR_ROOM_ANSWER_SPEC_ID, lairRoomAnswerSpec } from './genres/lair/roomAnswer.js'
+import { LAIR_FILE_ROOM_SPEC_ID, lairFileRoomSpec } from './genres/lair/fileRoom.js'
+import { LAIR_NUDGE_SPEC_ID, lairNudgeSpec } from './genres/lair/nudge.js'
+import { LAIR_WHISPER_SPEC_ID, lairWhisperSpec } from './genres/lair/whisper.js'
+import { LAIR_TRAP_SPEC_ID, lairTrapSpec } from './genres/lair/trap.js'
+import { LAIR_REVEAL_SPEC_ID, lairRevealSpec } from './genres/lair/reveal.js'
+import { CHAT_RESPOND_SPEC_ID, respondSpec } from './genres/chat/respond.js'
+import { TURN_ORDER_BY_GENRE } from './genres/index.js'
+import { CHAT_NARRATE_SPEC_ID, narrateSpec } from './genres/chat/narrate.js'
+import { CHAT_SIDE_CHARACTER_SPEC_ID, narrateCharacterSpec } from './genres/chat/narrateCharacter.js'
+import { CORE_ANNEX_FIELDS, SET_ANNEX_FIELD_SPEC_ID, setAnnexFieldSpec } from './shared/annexField.js'
+import { BUILTIN_DELETE_SPEC_ID, builtinDeleteSpec } from './shared/builtins/delete.js'
+import { BUILTIN_HIDE_SPEC_ID, builtinHideSpec } from './shared/builtins/hide.js'
+import { BUILTIN_EDIT_SPEC_ID, builtinEditSpec } from './shared/builtins/edit.js'
+import { BUILTIN_SWIPE_SPEC_ID, builtinSwipeSpec } from './shared/builtins/swipe.js'
+import { BUILTIN_BRANCH_SPEC_ID, builtinBranchSpec } from './shared/builtins/branch.js'
+import { SHOW_SPRITE_SPEC_ID, showSpriteSpec } from './shared/sprites.js'
+import { CHAT_GENERATE_IMAGE_SPEC_ID, generateImageSpec } from './genres/chat/generateImage.js'
+import { GRAPH_BUILD_SPEC_ID, graphBuildSpec } from './shared/graphBuild.js'
+import { SUMMARIZE_WORLD_SPEC_ID, summarizeWorldSpec } from './shared/summarize/world.js'
+import { SUMMARIZE_CHARACTER_SPEC_ID, summarizeCharacterSpec } from './shared/summarize/character.js'
+import { SUMMARIZE_SCENE_SPEC_ID, summarizeSceneSpec } from './shared/summarize/scene.js'
+import { SUMMARIZE_HISTORY_SPEC_ID, summarizeHistorySpec } from './shared/summarize/history.js'
 
-export * from './genres.js'
+export * from './registry/genres.js'
 /**
  * The attribute slots core's genres bring.
  *
- * ⚠ A load-bearing re-export, on the same terms as `./entries.js` below:
+ * ⚠ A load-bearing re-export, on the same terms as `./registry/entries.js` below:
  * declaring a slot REGISTERS it, and nothing imports these by value. Without
  * the module being reached, the Adventure genre would name seven declarations
  * that this process has never heard of.
  */
 /** Core's catalogue of stat shapes — declared before the slots that name them. */
-export * from './statShapes.js'
-export * from './slots.js'
+export * from './registry/statShapes.js'
+export * from './registry/slots.js'
 /**
  * Core's entry types (Part 1). Declaring one **registers** it, which is the
  * fact-about-the-code route node types take — so this re-export is what puts
@@ -141,29 +111,23 @@ export * from './slots.js'
  * coreCatalogSideEffects.test.ts` fails when a registering module is missing
  * from the list.
  */
-export * from './entries.js'
-export * from './prompts.js'
-export * from './presets.js'
-export * from './createChat.js'
-export * from './guide.js'
-export * from './adventure.js'
-export * from './adventureActions.js'
-export * from './lair.js'
-export * from './lairActions.js'
-export * from './answerForm.js'
-export * from './respond.js'
-export * from './turnOrder.js'
-export * from './narrate.js'
-export * from './narrateCharacter.js'
-export * from './annexField.js'
-export * from './builtins.js'
-export * from './sprites.js'
-export * from './toolLoop.js'
-export * from './generateImage.js'
-export * from './graphBuild.js'
-export * from './summarize.js'
-export * from './ui/sessions/widgets.js'
-export * from './ui/sessions/layouts.js'
+export * from './registry/entries.js'
+export * from './seed/prompts.js'
+export * from './seed/presets.js'
+/** Every genre's pipelines, a folder each, and the lists that span them. */
+export * from './genres/index.js'
+/** The builders a genre calls once per genre — core's and a plugin genre's alike. */
+export * from './factories/answerForm.js'
+export * from './factories/turnOrder.js'
+/** What more than one genre runs. */
+export * from './shared/annexField.js'
+export * from './shared/builtins/index.js'
+export * from './shared/sprites.js'
+export * from './shared/toolLoop.js'
+export * from './shared/graphBuild.js'
+export * from './shared/summarize/index.js'
+export * from './registry/widgets.js'
+export * from './registry/layouts.js'
 
 /** @experimental */
 export interface CoreSpec {
@@ -182,26 +146,32 @@ export interface CoreSpec {
 /**
  * The pipelines core ships — one registry rather than a list of builders
  * beside a map of display names (two collections that had to agree). `name`
- * is what a person calls the thing; a list showing `core:spec/respond` is a
+ * is what a person calls the thing; a list showing `core:spec/chat-respond` is a
  * list of identifiers, not of things.
+ *
+ * A name says what the pipeline does and never which genre it serves (ruled
+ * 2026-10-05): every list of several genres' pipelines shows the genre beside
+ * it, so the four create pipelines are each "Create session" and the four
+ * replies each "Reply". The slug is genre first, `core:spec/<genre>-<what>`;
+ * one that serves every genre is `core:spec/<what>`.
  * @experimental
  */
 export const CORE_SPECS: CoreSpec[] = [
 	// First, deliberately: the genre's create pipeline must exist before
 	// anything that declares itself for the genre (24 §3).
-	{ slug: CREATE_CHAT_SPEC_ID, name: 'Create chat', build: createChatSpec },
+	{ slug: CHAT_CREATE_SPEC_ID, name: 'Create session', build: createChatSpec },
 	/**
 	 * The Adventure genre, in the same order and for the same reason: its
 	 * create pipeline exists before anything that declares itself for it.
 	 */
 	{
 		slug: ADVENTURE_CREATE_SPEC_ID,
-		name: 'Create adventure',
+		name: 'Create session',
 		build: adventureCreateSpec,
 	},
 	{
 		slug: ADVENTURE_RESPOND_SPEC_ID,
-		name: 'Adventure turn',
+		name: 'Reply',
 		build: adventureRespondSpec,
 	},
 	{ slug: ADVENTURE_LOOK_SPEC_ID, name: 'Look', build: adventureLookSpec },
@@ -220,10 +190,10 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * so nothing that declares itself for the genre can be published before the
 	 * genre exists.
 	 */
-	{ slug: LAIR_CREATE_SPEC_ID, name: 'Create lair', build: lairCreateSpec },
-	{ slug: LAIR_RESPOND_SPEC_ID, name: 'Lair turn', build: lairRespondSpec },
+	{ slug: LAIR_CREATE_SPEC_ID, name: 'Create session', build: lairCreateSpec },
+	{ slug: LAIR_RESPOND_SPEC_ID, name: 'Reply', build: lairRespondSpec },
 	{ slug: LAIR_BUILD_ROOM_SPEC_ID, name: 'Build room', build: lairBuildRoomSpec },
-	/** What the knock's options fire — in no listing; see `lairActions.ts`. */
+	/** What the knock's options fire — in no listing; see `genres/lair/roomAnswer.ts`. */
 	{ slug: LAIR_ROOM_ANSWER_SPEC_ID, name: 'Answer the door', build: lairRoomAnswerSpec },
 	/** A room described in a message, filed through review (R11) — on a message's ⋮. */
 	{ slug: LAIR_FILE_ROOM_SPEC_ID, name: 'File as a room', build: lairFileRoomSpec },
@@ -235,29 +205,29 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * The guide genre (R-18, U5g): create first, for the reason above; its
 	 * reply answers as the genre's envoy.
 	 */
-	{ slug: CREATE_GUIDE_SPEC_ID, name: 'Create guide session', build: createGuideSpec },
-	{ slug: GUIDE_RESPOND_SPEC_ID, name: 'Guide reply', build: guideRespondSpec },
-	{ slug: RESPOND_SPEC_ID, name: 'Session reply', build: respondSpec },
+	{ slug: GUIDE_CREATE_SPEC_ID, name: 'Create session', build: createGuideSpec },
+	{ slug: GUIDE_RESPOND_SPEC_ID, name: 'Reply', build: guideRespondSpec },
+	{ slug: CHAT_RESPOND_SPEC_ID, name: 'Reply', build: respondSpec },
 	/**
 	 * The answer pipelines (R-15 *Forms*; U5d): one graph, published once
 	 * per shipped genre because a preset binds a spec locked to its genre.
 	 * After every genre's create spec, for the reason those come first.
 	 */
-	{ slug: ANSWER_FORM_CHAT_SPEC_ID, name: 'Answer a form (chat)', build: answerFormChatSpec },
+	{ slug: CHAT_ANSWER_FORM_SPEC_ID, name: 'Answer a form', build: answerFormChatSpec },
 	{
-		slug: ANSWER_FORM_ADVENTURE_SPEC_ID,
-		name: 'Answer a form (adventure)',
+		slug: ADVENTURE_ANSWER_FORM_SPEC_ID,
+		name: 'Answer a form',
 		build: answerFormAdventureSpec,
 	},
-	{ slug: ANSWER_FORM_GUIDE_SPEC_ID, name: 'Answer a form (guide)', build: answerFormGuideSpec },
-	{ slug: ANSWER_FORM_LAIR_SPEC_ID, name: 'Answer a form (lair)', build: answerFormLairSpec },
-	{ slug: NARRATE_SPEC_ID, name: 'World narration', build: narrateSpec },
+	{ slug: GUIDE_ANSWER_FORM_SPEC_ID, name: 'Answer a form', build: answerFormGuideSpec },
+	{ slug: LAIR_ANSWER_FORM_SPEC_ID, name: 'Answer a form', build: answerFormLairSpec },
+	{ slug: CHAT_NARRATE_SPEC_ID, name: 'Narrate', build: narrateSpec },
 	// The other half of the narrator split (ruling 2026-09-07). A NEW spec,
 	// not a bump: the 0.6 freeze forbids moving an existing semver and says
 	// nothing about publishing a new slug.
 	{
-		slug: NARRATE_CHARACTER_SPEC_ID,
-		name: 'Side character narration',
+		slug: CHAT_SIDE_CHARACTER_SPEC_ID,
+		name: 'Side character',
 		build: narrateCharacterSpec,
 	},
 	/** Every annex field's write (2026-09-26) — contributes no action; the host's door runs it. */
@@ -278,45 +248,34 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * same way: one receipted action per press, emitting `sprite-shown`.
 	 */
 	{ slug: SHOW_SPRITE_SPEC_ID, name: 'Change sprite', build: showSpriteSpec },
-	/**
-	 * The tool-loop reference (20 §9). Published like the others so the
-	 * integration suite runs it against a seeded database — an example nobody
-	 * runs is an example that is already wrong — and bound to no genre, so it
-	 * is never offered in a person's composer.
-	 */
 	{
-		slug: TOOL_LOOP_SPEC_ID,
-		name: 'Tool loop (reference)',
-		build: toolLoopSpec,
-	},
-	{
-		slug: GENERATE_IMAGE_SPEC_ID,
+		slug: CHAT_GENERATE_IMAGE_SPEC_ID,
 		name: 'Generate image',
 		build: generateImageSpec,
 	},
 	{
 		slug: SUMMARIZE_WORLD_SPEC_ID,
-		name: 'Summarize: world lore',
+		name: 'Summarize world lore',
 		build: summarizeWorldSpec,
 	},
 	{
 		slug: SUMMARIZE_CHARACTER_SPEC_ID,
-		name: 'Summarize: character lore',
+		name: 'Summarize character lore',
 		build: summarizeCharacterSpec,
 	},
 	{
 		slug: SUMMARIZE_SCENE_SPEC_ID,
-		name: 'Summarize: scene',
+		name: 'Summarize scene',
 		build: summarizeSceneSpec,
 	},
 	{
 		slug: SUMMARIZE_HISTORY_SPEC_ID,
-		name: 'Summarize: history entry',
+		name: 'Summarize history entry',
 		build: summarizeHistorySpec,
 	},
 	{
 		slug: GRAPH_BUILD_SPEC_ID,
-		name: 'Narrative graph build',
+		name: 'Build the story graph',
 		build: graphBuildSpec,
 	},
 	/**
@@ -327,9 +286,9 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * what they wrote. Last, because each one's lock names its genre and a
 	 * spec cannot be published before its genre's create pipeline (24 §3).
 	 */
-	...TURN_ORDER_BY_GENRE.map(({ spec, genre, build }) => ({
+	...TURN_ORDER_BY_GENRE.map(({ spec, build }) => ({
 		slug: spec,
-		name: `Turn order (${typeof genre.name === 'string' ? genre.name : genre.name.en})`,
+		name: 'Turn order',
 		build,
 	})),
 ]
@@ -389,7 +348,7 @@ export const coreExtension = (): Extension =>
 			nodeType: p.nodeType,
 			slot: p.slot,
 			// The announcement-level identity is the bare slug; the seed
-			// pass's idempotence key wraps it (see prompts.ts). Unique
+			// pass's idempotence key wraps it (see seed/prompts.ts). Unique
 			// within a pool, not globally — `summarize-scene-default`
 			// names a row in three of them.
 			slug: p.seedKey.split(':').at(-1)!,

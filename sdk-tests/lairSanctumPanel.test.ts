@@ -8,7 +8,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { channelDecls } from '@serene-pub/sdk'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
-import { lairGenre } from '../core-catalog/src/genres.js'
+import { lairGenre } from '../core-catalog/src/registry/genres.js'
 
 const SANCTUM = 'messages#sanctum'
 

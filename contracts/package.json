@@ -17,7 +17,12 @@
 		"node": ">=24"
 	},
 	"sideEffects": [
-		"./dist/index.js"
+		"./dist/index.js",
+		"./dist/inlets.js",
+		"./dist/queries.js",
+		"./dist/tasks.js",
+		"./dist/oracles.js",
+		"./dist/outlets.js"
 	],
 	"files": [
 		"dist",

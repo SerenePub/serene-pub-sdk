@@ -157,7 +157,6 @@ describe('56 · block chains', () => {
 							.oracle('embed', ($) =>
 								C.embedText.v1({
 									text: $.input.text,
-									connection: slot.connection(),
 								}),
 							)
 							// `$.embed` — the sibling, by its short key.
@@ -208,7 +207,6 @@ describe('56 · block chains', () => {
 								'embed',
 								C.embedText.v1({
 									text: $ref('input', 'text'),
-									connection: slot.connection(),
 								}),
 							)
 							.query(

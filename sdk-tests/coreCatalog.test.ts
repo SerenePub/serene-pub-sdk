@@ -13,6 +13,10 @@ import {
 	adventureGenre,
 	chatGenre,
 	CORE_HOOK_DECLARATIONS,
+	SHOW_SPRITE_SPEC_ID,
+	SPRITE_PICKER_NODE_KEY,
+	TOOL_LOOP_SPEC_ID,
+	toolLoopSpec,
 } from '@serene-pub/core-catalog'
 import { sessionEvents } from '@serene-pub/sdk'
 
@@ -50,9 +54,9 @@ describe('the core catalog', () => {
 		// "exactly one" is the claim that matters — two would make creation
 		// ambiguous for every session of that genre.
 		assert.deepEqual(serving(chatGenre.id, sessionEvents.sessionCreated), [
-			'core:spec/create-chat',
+			'core:spec/chat-create',
 		])
-		assert.deepEqual(serving(chatGenre.id, sessionEvents.messageRespond), ['core:spec/respond'])
+		assert.deepEqual(serving(chatGenre.id, sessionEvents.messageRespond), ['core:spec/chat-respond'])
 		assert.deepEqual(serving(adventureGenre.id, sessionEvents.sessionCreated), [
 			'core:spec/adventure-create',
 		])
@@ -64,14 +68,80 @@ describe('the core catalog', () => {
 		// rather than a schema one.
 		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 5)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
-		// optional `form-addressed` event, bound by each shipped preset.
+		// optional `form-addressed` event, bound by each shipped preset —
+		// named genre first, like every genre pipeline (2026-10-05).
 		for (const g of [chatGenre, adventureGenre]) {
 			const [spec, ...rest] = serving(g.id, sessionEvents.formAddressed)
 			assert.equal(rest.length, 0)
-			assert.ok(spec?.startsWith('core:spec/answer-form-'), g.id)
+			assert.equal(spec, `core:spec/${g.id.split('/').at(-1)}-answer-form`, g.id)
 			const preset = document.presets.find((p) => p.genre === g.id)
 			assert.equal(preset?.bindings[sessionEvents.formAddressed]?.spec, spec)
 		}
+	})
+
+	/**
+	 * Sprites in-pipeline (owner rulings 2026-10-05): every reply spec writes
+	 * the sprite step out itself, after `save` — the picker, handed the
+	 * reply's own text, then the outlet recording the pick as the picker's.
+	 * Nothing appends hidden nodes any more (`withSpriteTail`, retired), and
+	 * Adventure, Narrate and the Lair carry it too: seven, not five. The
+	 * tool-loop reference is one of the seven though it left `CORE_SPECS`
+	 * (2026-10-05): an example of a reply writes the step like a reply.
+	 */
+	test('seven reply specs write the sprite step in, after save, with the text passed in', () => {
+		const specs = [...CORE_SPECS, { slug: TOOL_LOOP_SPEC_ID, build: toolLoopSpec }]
+		const LAIR_TURN = 'via.turn.channel.story.door.play.speech.each.character.turn.'
+		// Where each spec places it: on the spine, or in the Lair's character
+		// turn — the one branch where a single delver speaks.
+		const placed: Record<string, string> = {
+			'core:spec/chat-respond': '',
+			'core:spec/tool-loop': '',
+			'core:spec/chat-side-character': '',
+			'core:spec/guide-respond': '',
+			'core:spec/adventure-respond': '',
+			'core:spec/chat-narrate': '',
+			'core:spec/lair-respond': LAIR_TURN,
+		}
+		const carrying = specs.filter((s) =>
+			(s.build().nodes as any[]).some((n) => n.definitionId === 'core:oracle/pick-sprite'),
+		).map((s) => s.slug)
+		assert.deepEqual(carrying.sort(), Object.keys(placed).sort())
+
+		for (const [slug, at] of Object.entries(placed)) {
+			const doc = specs.find((s) => s.slug === slug)!.build() as any
+			const nodes = doc.nodes as any[]
+			const at_ = (key: string) => nodes.findIndex((n) => n.key === `${at}${key}`)
+			const pick = nodes[at_(SPRITE_PICKER_NODE_KEY)]
+			const show = nodes[at_('spriteShow')]
+			assert.equal(pick?.definitionId, 'core:oracle/pick-sprite', slug)
+			assert.equal(pick.expose?.session, true, `${slug}: the picker is a session setting`)
+			assert.equal(show?.definitionId, 'core:outlet/show-sprite', slug)
+			assert.equal(show.config.source, 'picker', slug)
+			assert.ok(at_('save') < at_(SPRITE_PICKER_NODE_KEY), `${slug}: after save`)
+			assert.ok(at_(SPRITE_PICKER_NODE_KEY) < at_('spriteShow'), slug)
+			const into = (node: any, port: string) =>
+				(doc.edges as any[]).filter((e) => e.to === node.key && e.toPort === port)
+			// The reply's text, from the step that produced it — never the
+			// saved row's id for a host to re-read.
+			const [text] = into(pick, 'text')
+			assert.ok(text, `${slug}: the picker is handed the text`)
+			assert.equal(text.fromPort, 'text', slug)
+			assert.notEqual(text.from, `${at}save`, slug)
+			// Whose line: wired wherever the line has a speaker — not on a
+			// narration, which is nobody's.
+			assert.equal(into(pick, 'speaker').length, slug === 'core:spec/chat-narrate' ? 0 : 1, slug)
+			assert.equal(into(show, 'target')[0]?.from, `${at}save`, slug)
+			assert.equal(into(show, 'pick')[0]?.from, pick.key, slug)
+			assert.ok(
+				!nodes.some((n) => /spriteTail/.test(n.key) || n.definitionId === 'core:query/sprites-for'),
+				`${slug}: no hidden tail`,
+			)
+		}
+
+		// A person's pick says so in its own document.
+		const person = CORE_SPECS.find((s) => s.slug === SHOW_SPRITE_SPEC_ID)!.build() as any
+		const write = (person.nodes as any[]).find((n) => n.definitionId === 'core:outlet/show-sprite')
+		assert.equal(write.config.source, 'person')
 	})
 
 	test('hook declarations are fully-qualified core ids', () => {
@@ -87,7 +157,8 @@ describe('the core catalog', () => {
 // 2026-09-24 → 95253967abe6c0e1: sprites (DESIGN-sprites S1–S4) — the
 // `sprites-for` / `pick-sprite-similarity` / `show-sprite` definitions, the
 // `sprite-shown` event, `core:spec/show-sprite`, the sprite-set slot, and the
-// sprite tail on the five reply specs.
+// sprite tail on the five reply specs. (2026-10-05: the tail is retired; seven
+// reply specs write the step in — see the pin below and the test above.)
 //
 // 2026-09-24 → 0a545af37fd47813: R71 — core's genres carry the layouts they
 // ship (`layouts: [layout({ slug: 'default', … })]` on Adventure, Lair,
@@ -516,6 +587,25 @@ describe("core's announcement (golden)", () => {
 		// the tool loop's renders the conversation. Measured with other lanes'
 		// in-flight core-catalog edits in the tree (lair-respond's pin also
 		// moved, not this lane's), not proven in isolation. (was '3a1f2c6f91880298')
-		assert.equal(digest.slice(0, 16), 'dcb14e231bc6c551')
+		// Moved 2026-10-05 (sprites in-pipeline, owner rulings D-a/D-b/D-c):
+		// `withSpriteTail` retired — seven reply specs write `spritePick`
+		// (`core:oracle/pick-sprite@1`, handed the reply's text) and
+		// `spriteShow` after `save`; `show-sprite` takes `source` (`'person'`
+		// in `core:spec/show-sprite`); `sprites-for` and
+		// `pick-sprite-similarity` removed; `embed-text` declares no
+		// `connection` slot, so the five `semantic.arm.queries` wire their own
+		// embedding slot (`slot.connection()`). Measured on a tree whose only
+		// other change was CI config, so the move is exactly this lane's.
+		// (was 'dcb14e231bc6c551')
+		// Moved 2026-10-05 (catalogue rulings C3/C4): ten spec ids renamed
+		// genre first (`respond` → `chat-respond`, `answer-form-<genre>` →
+		// `<genre>-answer-form`, …), so every binding and prompt naming them
+		// moved with them; turn order ×4 and summarize ×4 claim
+		// `role: 'maintenance'`; `set-annex-field` has no inlet lock; the
+		// tool-loop reference and its prompt row left the catalogue. Proven:
+		// this document with the ids mapped back, the roles and the lock
+		// restored, and `toolLoopSpec()` and `TOOL_LOOP_PROMPT` put back in
+		// place hashes to the old pin. (was 'e559d5d35cad1828')
+		assert.equal(digest.slice(0, 16), '1e5447939e19d8b5')
 	})
 })

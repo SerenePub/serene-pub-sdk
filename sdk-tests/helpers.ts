@@ -102,6 +102,14 @@ export function withEmbeddings(): ConfigWorld {
  */
 export interface FixtureOptions {
 	reply?: string | ((input: unknown) => string)
+	/**
+	 * Whether the install has an embedding model set up. A host embeds
+	 * through its one active embedding connection, never one a step names
+	 * (`embed-text` declares no connection slot since 2026-10-05), so the
+	 * `embed-text` stand-in answers from this rather than from its input.
+	 * Off by default: every golden was recorded with no embedding model.
+	 */
+	embeddings?: boolean
 }
 
 /**
@@ -112,7 +120,7 @@ export interface FixtureOptions {
  * definition id is `slug:kind/name@version`, never a bare word.
  */
 export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
-	const { reply, ...hooks } = over as FixtureOptions & { [definitionId: string]: unknown }
+	const { reply, embeddings, ...hooks } = over as FixtureOptions & { [definitionId: string]: unknown }
 	const say = (input: unknown): string =>
 		reply === undefined ? 'the reply text' : typeof reply === 'function' ? reply(input) : reply
 
@@ -161,11 +169,23 @@ export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
 		'core:oracle/embed-text@1': async (i: any, ctx: any) => {
 			const enabled = i.params?.enabled ?? 'auto'
 			if (enabled === 'off') return ok({ main: null, vector: null })
-			if (!i.connection) {
+			if (!embeddings) {
 				ctx.log('info', 'no active embeddings connection, returned null')
 				return ok({ main: null, vector: null })
 			}
 			return ok({ main: [0.1, 0.2, 0.3], vector: [0.1, 0.2, 0.3] })
+		},
+
+		// The sprite step every reply spec writes after `save` (2026-10-05).
+		// The fixture's cards have no art, so the picker picks nothing — as a
+		// host does for a speaker with no sprites — and the outlet, handed a
+		// picker's null pick, writes nothing.
+		'core:oracle/pick-sprite@1': async () => ok({ main: null, pick: null, choices: null }),
+		'core:outlet/show-sprite@1': async (i: any, ctx: any) => {
+			if ((i.pick ?? null) === null && i.source === 'picker')
+				return ok({ main: i.target ?? null, messageId: i.target ?? null, sprite: null, kept: true })
+			const row = await ctx.commit({ target: i.target, pick: i.pick, source: i.source })
+			return ok({ main: row.id, messageId: row.id, sprite: i.pick ?? null, kept: false })
 		},
 
 		'core:task/context-budget@1': async (i: any) => {

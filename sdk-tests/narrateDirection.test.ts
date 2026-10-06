@@ -24,8 +24,8 @@ import '@serene-pub/contracts'
 import { getDefinition, S, type SpecDocument } from '@serene-pub/sdk'
 
 import { CORE_PROMPTS, CORE_SPECS } from '../core-catalog/src/index.js'
-import { NARRATE_SPEC_ID } from '../core-catalog/src/narrate.js'
-import { NARRATE_CHARACTER_SPEC_ID } from '../core-catalog/src/narrateCharacter.js'
+import { CHAT_NARRATE_SPEC_ID } from '../core-catalog/src/genres/chat/narrate.js'
+import { CHAT_SIDE_CHARACTER_SPEC_ID } from '../core-catalog/src/genres/chat/narrateCharacter.js'
 
 const docFor = (slug: string): SpecDocument => CORE_SPECS.find((s) => s.slug === slug)!.build()
 
@@ -40,7 +40,7 @@ const row = (seedKey: string) => {
 
 describe("Chat's Narrate collects what should happen next", () => {
 	test('optional text, with a label, a placeholder and what an empty one does', () => {
-		const actions = ((docFor(NARRATE_SPEC_ID).contributes as { actions?: any[] } | undefined)?.actions ?? []) as any[]
+		const actions = ((docFor(CHAT_NARRATE_SPEC_ID).contributes as { actions?: any[] } | undefined)?.actions ?? []) as any[]
 		const action = actions.find((a) => a.key === 'narrate')
 		assert.ok(action, 'narrate no longer contributes its action')
 		assert.deepEqual(action!.collects, {
@@ -56,8 +56,8 @@ describe("Chat's Narrate collects what should happen next", () => {
 
 describe('the collected text is the context builder’s turn direction', () => {
 	for (const [slug, builder] of [
-		[NARRATE_SPEC_ID, 'core:task/build-narrator-context'],
-		[NARRATE_CHARACTER_SPEC_ID, 'core:task/build-side-character-context'],
+		[CHAT_NARRATE_SPEC_ID, 'core:task/build-narrator-context'],
+		[CHAT_SIDE_CHARACTER_SPEC_ID, 'core:task/build-side-character-context'],
 	] as const)
 		test(`${slug}: input.text → context.turnDirection`, () => {
 			const doc = docFor(slug)

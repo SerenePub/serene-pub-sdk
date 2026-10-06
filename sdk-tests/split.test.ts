@@ -235,9 +235,11 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 			spec('demo:needs-wiring', { version: '1.0.0' })
 				.inlet('input', C.userMessage.v1())
 				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-				.oracle('embed', ($) =>
-					C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
-				)
+				// The embedding connection the retrieval queries ask about —
+				// `embed-text` declares none since 2026-10-05 (a pipeline never
+				// chooses its embedding connection), so the requirement is this
+				// step's slot.
+				.task('queries', () => C.queryWindows.v1({ connection: slot.connection() }))
 				// `assemble` declares a connection slot of its own — it renders the
 				// prompt for a specific wire format — and every shipped spec
 				// SHARES the sending Provider's, which is what the assertion
@@ -259,7 +261,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		const r = exportDocument(doc(), { presets: 'none' })
 		assert.deepEqual(
 			r.requires.map((x) => `${x.nodeKey}.${x.slot}`),
-			['embed.connection', 'generate.connection'],
+			['queries.connection', 'generate.connection'],
 		)
 	})
 
@@ -292,7 +294,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 
 	test('each requirement carries the connection kind, so only compatible ones are offered', () => {
 		const r = requiredConnections(doc())
-		assert.equal(r.find((x) => x.nodeKey === 'embed')!.kind, 'core:shape/embeddings@1')
+		assert.equal(r.find((x) => x.nodeKey === 'queries')!.kind, 'core:shape/embeddings@1')
 		assert.equal(r.find((x) => x.nodeKey === 'generate')!.kind, 'core:shape/text-gen@1')
 		// The line a person reads names the capability in the words the connection
 		// form used, not the shape id the two assertions above check. They are
@@ -304,7 +306,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 	})
 
 	test('what is still unwired drives needs-configuration, not broken', () => {
-		const missing = unwiredConnections(doc(), [{ nodeKey: 'embed', slot: 'connection' }])
+		const missing = unwiredConnections(doc(), [{ nodeKey: 'queries', slot: 'connection' }])
 		assert.deepEqual(
 			missing.map((m) => m.nodeKey),
 			['generate'],
@@ -314,7 +316,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 		assert.equal(
 			unwiredConnections(
 				doc(),
-				missing.concat({ nodeKey: 'embed', slot: 'connection', definitionId: '', kind: '' }),
+				missing.concat({ nodeKey: 'queries', slot: 'connection', definitionId: '', kind: '' }),
 			).length,
 			0,
 		)

@@ -8,7 +8,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { CORE_ACTIONS, CORE_VERB_REASONS, partitionEnabledWhen } from '@serene-pub/sdk'
-import { itemValuesOf } from '../core-catalog/src/ui/sessions/conversation/index.js'
+import { itemValuesOf } from '../core-catalog/src/shared/ui/conversation/index.js'
 import {
 	dedupePaletteActions,
 	exactPaletteMatch,
@@ -22,11 +22,11 @@ import {
 	statusTextIn,
 	stepHighlight,
 	type PaletteAction,
-} from '../core-catalog/src/ui/sessions/conversation/index.js'
+} from '../core-catalog/src/shared/ui/conversation/index.js'
 
 const action = (over: Partial<PaletteAction>): PaletteAction => ({
 	key: 'narrate',
-	specSlug: 'core:spec/narrate',
+	specSlug: 'core:spec/chat-narrate',
 	name: 'Narrate',
 	slash: 'narrate',
 	audience: { act: ['owner'] },
@@ -40,13 +40,13 @@ const ACTIONS: PaletteAction[] = [
 	action({}),
 	action({
 		key: 'narrate-character',
-		specSlug: 'core:spec/narrate-character',
+		specSlug: 'core:spec/chat-side-character',
 		name: 'Side character',
 		slash: 'narrate-character',
 	}),
 	action({
 		key: 'generate-image',
-		specSlug: 'core:spec/generate-image',
+		specSlug: 'core:spec/chat-generate-image',
 		name: 'Image',
 		slash: 'generate-image',
 	}),
@@ -146,9 +146,9 @@ describe('one row per slash name', () => {
 			rows.map((a) => a.slash),
 			['narrate', 'narrate-character', 'generate-image', 'acme.roll', 'advance'],
 		)
-		assert.partialDeepStrictEqual(rows[0], { specSlug: 'core:spec/narrate', venue: 'composer' })
+		assert.partialDeepStrictEqual(rows[0], { specSlug: 'core:spec/chat-narrate', venue: 'composer' })
 		assert.partialDeepStrictEqual(exactPaletteMatch(twice, '/narrate'), {
-			specSlug: 'core:spec/narrate',
+			specSlug: 'core:spec/chat-narrate',
 		})
 	})
 
@@ -451,7 +451,7 @@ describe('slash arguments', () => {
 			recipients: { label: 'Who hears it', min: 1 },
 		},
 	})
-	const NARRATOR = action({ key: 'narrate', specSlug: 'core:spec/narrate', name: 'Narrate', slash: 'narrator' })
+	const NARRATOR = action({ key: 'narrate', specSlug: 'core:spec/chat-narrate', name: 'Narrate', slash: 'narrator' })
 	const ALL = [...ACTIONS, NUDGE, ROOM, WHISPER, NARRATOR]
 
 	it('parses a name and its argument', () => {

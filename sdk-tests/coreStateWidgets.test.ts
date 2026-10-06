@@ -1,6 +1,6 @@
 /**
  * Core's World State and Stats as the components they ship as (R21): built
- * by the CLI's component bundler from `core-catalog/components/sessions/`,
+ * by the CLI's component bundler from `core-catalog/components/shared/`,
  * run in a worker in core's box, reading the `session_state` section and
  * their settings, and writing through `set-attribute-value` — Enter commits
  * and Escape cancels on the plain field (R80), an enum picks from an
@@ -78,7 +78,7 @@ async function mount(
 ): Promise<MountedComponent> {
 	const state = opts.state === undefined ? sessionState() : opts.state
 	return mountComponent({
-		...(await coreComponentEntry(slug, { root: CORE_CATALOG, entry: `components/sessions/${slug}/${slug}.ts` })),
+		...(await coreComponentEntry(slug, { root: CORE_CATALOG, entry: `components/shared/${slug}/${slug}.ts` })),
 		owner: opts.owner ?? 'core',
 		...(opts.grants ? { grants: opts.grants } : {}),
 		timeoutMs: 60_000,

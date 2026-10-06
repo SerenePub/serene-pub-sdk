@@ -258,7 +258,6 @@ describe('08 · async block equivalence', () => {
 							.oracle('embed', ($) =>
 								C.embedText.v1({
 									text: $.input.text,
-									connection: slot.connection(),
 								}),
 							)
 							.query('vsearch', ($) =>
@@ -911,7 +910,7 @@ describe('18 · retrieval strategy', () => {
 		spec('demo:strategy@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.oracle('embed', ($) =>
-				C.embedText.v1({ text: $.input.text, connection: slot.connection() }),
+				C.embedText.v1({ text: $.input.text }),
 			)
 			.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.embed.vector }))
 			.query('lore', ($) => C.lorebookTriggers.v1({ text: $.input.text }))
@@ -932,9 +931,11 @@ describe('18 · retrieval strategy', () => {
 
 	test('with an embeddings connection, auto resolves to vector', async () => {
 		const doc = publish(build())
+		// The host embeds through the install's active embedding connection
+		// (`embed-text` names none), so the fixture host is told there is one.
 		const r = await run(doc, {
 			input: { text: 'hi' },
-			bindings: bindings(),
+			bindings: bindings({ embeddings: true }),
 			world: withEmbeddings(),
 		})
 		assert.equal(
@@ -1174,7 +1175,6 @@ test('a full chat turn renders a legible receipt', async () => {
 							.oracle('embed', ($) =>
 								C.embedText.v1({
 									text: $.input.text,
-									connection: slot.connection(),
 								}),
 							)
 							.query('vsearch', ($) =>

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ComponentContext } from '@serene-pub/component-client'
-	import { widgetRefFromComponent } from '../../../core-catalog/components/sessions/shared/widgetRef.svelte'
+	import { widgetRefFromComponent } from '../../../core-catalog/components/shared/widgetRef.svelte'
 
 	// The conversation's own view of its context, and the view state it keeps.
 	let { ctx }: { ctx: ComponentContext } = $props()

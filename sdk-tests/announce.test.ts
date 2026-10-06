@@ -174,9 +174,9 @@ describe('announce (24 §6)', () => {
 					genre: g,
 					label: 'S',
 					bindings: [createSpec(g)],
-					actions: { include: ['core:spec/narrate#narrate' as never] },
+					actions: { include: ['core:spec/chat-narrate#narrate' as never] },
 				}),
-			/names 'core:spec\/narrate#narrate' as a string — pass the spec value .* or \{ spec, key \}/,
+			/names 'core:spec\/chat-narrate#narrate' as a string — pass the spec value .* or \{ spec, key \}/,
 		)
 		assert.throws(() => config('demo:spec/respond' as never, 'x', { label: 'X' }, {}), /as a string/)
 	})
@@ -199,7 +199,7 @@ describe('announce (24 §6)', () => {
 	test("another package's spec names its events; without them it refuses", () => {
 		const g = chatGenre()
 		assert.throws(
-			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [use('core:spec/respond') as never] }),
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [use('core:spec/chat-respond') as never] }),
 			/another package's spec — name the events it answers/,
 		)
 	})
@@ -239,8 +239,8 @@ describe('announce (24 §6)', () => {
 						genre: use('core:genre/chat'),
 						label: 'Bare external',
 						bindings: [
-							{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] },
-							{ spec: use('core:spec/respond'), events: ['message-respond'] },
+							{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] },
+							{ spec: use('core:spec/chat-respond'), events: ['message-respond'] },
 						],
 					})
 					.build(),
@@ -253,8 +253,8 @@ describe('announce (24 §6)', () => {
 	test('external references are recorded as requirements, never bundled', () => {
 		// A pure mod: one config + one preset over another package's genre/specs.
 		// use() parses the range off; the id is what documents store (24 §10).
-		const respondRef = use('core:spec/respond@^2')
-		assert.equal(respondRef.id, 'core:spec/respond')
+		const respondRef = use('core:spec/chat-respond@^2')
+		assert.equal(respondRef.id, 'core:spec/chat-respond')
 		assert.equal(respondRef.range, '^2')
 		const external = config(
 			respondRef,
@@ -271,15 +271,15 @@ describe('announce (24 §6)', () => {
 				genre: use('core:genre/chat'),
 				label: 'Modded',
 				bindings: [
-					{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] },
+					{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] },
 					{ spec: respondRef, config: external, events: [sessionEvents.messageRespond] },
 				],
 			})
 			.build()
 		assert.deepEqual(document.requires, [
 			'core:genre/chat',
-			'core:spec/create-chat',
-			'core:spec/respond',
+			'core:spec/chat-create',
+			'core:spec/chat-respond',
 		])
 		for (const s of coverage.presets[0]!.slots) assert.equal(s.status, 'bound-external')
 	})
@@ -378,10 +378,10 @@ describe('a preset includes actions by identity (W-A)', () => {
 			genre: g,
 			label: 'Table',
 			bindings: [createSpec(g)],
-			actions: { include: [{ spec: use('core:spec/narrate'), key: 'narrate' }, dice] },
+			actions: { include: [{ spec: use('core:spec/chat-narrate'), key: 'narrate' }, dice] },
 		})
 		assert.deepEqual(p.actions?.include, [
-			'core:spec/narrate#narrate',
+			'core:spec/chat-narrate#narrate',
 			'demo:spec/dice#roll',
 			'demo:spec/dice#reroll',
 		])
@@ -412,14 +412,14 @@ describe('a preset includes actions by identity (W-A)', () => {
 				genre: g,
 				label: 'Table',
 				bindings: [createSpec(g), respondSpec(g)],
-				actions: { include: [dice, { spec: use('core:spec/narrate'), key: 'narrate' }] },
+				actions: { include: [dice, { spec: use('core:spec/chat-narrate'), key: 'narrate' }] },
 			})
 			.build()
 		assert.deepEqual(document.presets[0]!.actions?.include, [
 			'demo:spec/dice#roll',
-			'core:spec/narrate#narrate',
+			'core:spec/chat-narrate#narrate',
 		])
 		// The spec, not the identity: an install resolves specs.
-		assert.deepEqual(document.requires, ['core:spec/narrate'])
+		assert.deepEqual(document.requires, ['core:spec/chat-narrate'])
 	})
 })

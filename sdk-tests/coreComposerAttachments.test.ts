@@ -1,6 +1,6 @@
 /**
  * Core's composer, attaching (composer attachments §3.3; owner D1, D5, D6,
- * 2026-10-02): built from `core-catalog/components/sessions/messages/` and
+ * 2026-10-02): built from `core-catalog/components/shared/messages/` and
  * mirrored through the host-element vocabulary, as the page mounts it.
  *
  *  - what this reply reads is out of the composer's body (note 41,
@@ -22,7 +22,7 @@ import type {
 	AttachmentReadersV1,
 	ConversationDossierV1,
 	TrayItemV1,
-} from '../core-catalog/src/ui/sessions/conversation/index.js'
+} from '../core-catalog/src/shared/ui/conversation/index.js'
 import { mountComponent } from './harnessGuard.js'
 
 const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
@@ -101,7 +101,7 @@ const dossierWith = (composer: Partial<ConversationDossierV1['composer']> = {}):
 const mount = (d: ConversationDossierV1) =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,

@@ -1313,7 +1313,7 @@ test('95d · the six laws the showcase lanes hit each fail on a host that gets t
 	// C29 — the turn loop: respond completes a message, the completion
 	// recomputes the turn order, auto-advance asks for the next reply. With
 	// auto-advance's termination policy it passes; without any, it is refused.
-	const R = 'core:spec/respond'
+	const R = 'core:spec/chat-respond'
 	const T = 'core:spec/chat-turn-order'
 	const AA = 'core:listener/auto-advance'
 	const loop = {

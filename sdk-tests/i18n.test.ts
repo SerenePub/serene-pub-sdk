@@ -351,14 +351,14 @@ describe('R-20 · every door', () => {
 				slug: 'p',
 				genre: chatGenre,
 				label: value as never,
-				bindings: [{ spec: use('core:spec/create-chat'), events: [sessionEvents.sessionCreated] }],
+				bindings: [{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] }],
 			}),
 		/preset 'p'\.label/,
 	)
 
 	itIsADoor(
 		'config (label)',
-		(value) => config(use('core:spec/respond'), 'c', { label: value as never }, {}),
+		(value) => config(use('core:spec/chat-respond'), 'c', { label: value as never }, {}),
 		/config 'c'\.label/,
 	)
 

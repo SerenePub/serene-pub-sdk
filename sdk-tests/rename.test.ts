@@ -25,11 +25,17 @@ import {
 	describeQueryDefinition,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { CORE_SPECS } from '@serene-pub/core-catalog'
+import { CORE_SPECS, TOOL_LOOP_SPEC_ID, toolLoopSpec } from '@serene-pub/core-catalog'
 import type { SpecDocument } from '@serene-pub/sdk'
 
+/**
+ * Core's pipelines and the tool-loop reference, which left `CORE_SPECS`
+ * (2026-10-05) but is still the one shipped `loop` clause these rules read.
+ */
+const SHIPPED = [...CORE_SPECS, { slug: TOOL_LOOP_SPEC_ID, name: 'Tool loop', build: toolLoopSpec }]
+
 /** `CoreSpec.build` is typed `any` (it compiles lazily); pin the document here. */
-const built = (slug: string): SpecDocument => CORE_SPECS.find((s) => s.slug === slug)!.build()
+const built = (slug: string): SpecDocument => SHIPPED.find((s) => s.slug === slug)!.build()
 
 const KINDS = ['inlet', 'query', 'task', 'oracle', 'outlet', 'entry']
 const CLAUSES = ['gather', 'each', 'loop', 'junction']
@@ -52,7 +58,7 @@ describe('R-13 · kinds are inlet · query · task · oracle · outlet, and the 
 	})
 
 	test('the shipped specs carry the new kinds in every node row', () => {
-		for (const s of CORE_SPECS) {
+		for (const s of SHIPPED) {
 			for (const n of (s.build() as SpecDocument).nodes) {
 				assert.ok(KINDS.includes(n.kind), `${s.slug} ${n.key} kind ${n.kind}`)
 				assert.match(n.definitionId, /^[^:]+:(inlet|query|task|oracle|outlet)\//)
@@ -68,7 +74,7 @@ describe('R-13 · kinds are inlet · query · task · oracle · outlet, and the 
 describe('R-14 · clauses are gather · each · loop · junction', () => {
 	test('every clause a shipped spec declares is one of the four, and the document says `clauses`', () => {
 		let seen = new Set<string>()
-		for (const s of CORE_SPECS) {
+		for (const s of SHIPPED) {
 			const doc: SpecDocument = s.build()
 			assert.ok(Array.isArray(doc.clauses), `${s.slug} has no clauses array`)
 			assert.equal('blocks' in doc, false, `${s.slug} still carries blocks`)
@@ -94,7 +100,7 @@ describe('R-14 · clauses are gather · each · loop · junction', () => {
 	})
 
 	test('no shipped spec gives a node and a clause the same key — one address space', () => {
-		for (const s of CORE_SPECS) {
+		for (const s of SHIPPED) {
 			const doc: SpecDocument = s.build()
 			const nodeKeys = new Set(doc.nodes.map((n) => n.key))
 			for (const c of doc.clauses)
@@ -138,18 +144,18 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 	})
 
 	test('no document carries `subscribes`; the lock is on `input`', () => {
-		for (const s of CORE_SPECS) {
+		for (const s of SHIPPED) {
 			const doc: SpecDocument = s.build()
 			assert.equal('subscribes' in doc, false, s.slug)
 		}
-		const respond = built('core:spec/respond')
+		const respond = built('core:spec/chat-respond')
 		assert.equal(respond.input?.event, 'core:event/message-respond@1')
 	})
 
 	test('an action says its venues; nothing says kind, pick, zone or triggers', () => {
 		// U5c: `contributes.triggers` folded into `contributes.actions`, each
 		// with a venue list — a stored document carries only the new spelling.
-		for (const s of CORE_SPECS) {
+		for (const s of SHIPPED) {
 			const doc: SpecDocument = s.build()
 			assert.equal((doc.contributes as any)?.triggers, undefined, `${s.slug} still says triggers`)
 			const actions = (doc.contributes as any)?.actions ?? []
@@ -244,18 +250,18 @@ describe('R-7 P2 · one params owner per setting per spec', () => {
 	})
 
 	test('the shipped specs trip it nowhere', () => {
-		for (const { slug } of CORE_SPECS) assert.deepEqual(p2(built(slug)), [], slug)
+		for (const { slug } of SHIPPED) assert.deepEqual(p2(built(slug)), [], slug)
 	})
 
 	test('the lore lanes and the embed pair are one owner each in the shipped reply specs', () => {
-		for (const slug of ['core:spec/respond', 'core:spec/adventure-respond']) {
+		for (const slug of ['core:spec/chat-respond', 'core:spec/adventure-respond']) {
 			const doc = built(slug)
 			for (const key of ['gather.characterLore.read', 'gather.historyEntries.read']) {
 				const n = doc.nodes.find((x) => x.key === key)!
 				assert.equal(n.resolvedRefs?.['params'], 'gather.worldLore.read', `${slug} ${key}`)
 			}
 		}
-		for (const slug of ['core:spec/respond', 'core:spec/narrate', 'core:spec/narrate-character']) {
+		for (const slug of ['core:spec/chat-respond', 'core:spec/chat-narrate', 'core:spec/chat-side-character']) {
 			const doc = built(slug)
 			const n = doc.nodes.find((x) => x.key === 'names.arm.embed')!
 			assert.equal(n.resolvedRefs?.['params'], 'semantic.arm.embed', slug)

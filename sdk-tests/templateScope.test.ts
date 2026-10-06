@@ -153,7 +153,7 @@ describe('P3 · every shipped core template slot has a scope, with zero findings
 	})
 
 	test("respond's Assemble scope is what render() supplies", () => {
-		const doc = CORE_SPECS.find((s) => s.slug === 'core:spec/respond')!.build()
+		const doc = CORE_SPECS.find((s) => s.slug === 'core:spec/chat-respond')!.build()
 		const node = doc.nodes.find((n: DocNode) => n.definitionId === 'core:task/assemble')!
 		const scope = templateScopeAt(doc, node.key)
 		// The builder's declared keys…

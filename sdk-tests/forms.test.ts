@@ -473,7 +473,9 @@ describe('R-15 · review fields are declared on every shipped effectful definiti
 
 describe('R-15 · answer-form@1 belongs on form-addressed@1', () => {
 	test('the shipped answer pipelines place it where it belongs', () => {
-		for (const entry of CORE_SPECS.filter((s) => s.slug.startsWith('core:spec/answer-form-'))) {
+		const answering = CORE_SPECS.filter((s) => s.slug.endsWith('-answer-form'))
+		assert.equal(answering.length, 4, 'one per shipped genre')
+		for (const entry of answering) {
 			const doc: SpecDocument = entry.build()
 			// R-15's own findings only: the gather-chain shape finding the
 			// validator raises on every shipped spec reading
@@ -586,7 +588,12 @@ describe('R-15 · the events and the surface', () => {
 			assert.ok(decl, g.id)
 			assert.equal(decl!.required ?? false, false)
 		}
+		// Each its own genre's, named genre first (2026-10-05).
 		for (const p of document.presets)
-			assert.match(p.bindings[sessionEvents.formAddressed]?.spec ?? '', /^core:spec\/answer-form-/)
+			assert.equal(
+				p.bindings[sessionEvents.formAddressed]?.spec,
+				`core:spec/${p.genre.split('/').at(-1)}-answer-form`,
+				p.slug,
+			)
 	})
 })

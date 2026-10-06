@@ -148,7 +148,7 @@ describe('the five built-in specs', () => {
 		}
 		assert.equal(isBuiltInOutlet('core:outlet/create-message@1'), false)
 		for (const id of Object.values(BUILTIN_SPEC_IDS)) assert.ok(isBuiltInSpec(id))
-		assert.equal(isBuiltInSpec('core:spec/respond'), false)
+		assert.equal(isBuiltInSpec('core:spec/chat-respond'), false)
 	})
 })
 

@@ -104,7 +104,7 @@ describe('serene-pub clone', () => {
 		assert.equal(base.component, 'stats')
 		assert.deepEqual(Object.keys(base.files).sort(), Object.keys(src.files).sort())
 		assert.match(out, new RegExp(`sourceHash: '${src.sourceHash}'`))
-		assert.match(out, /entry: 'components\/my-stats\/sessions\/stats\/stats\.ts'/)
+		assert.match(out, /entry: 'components\/my-stats\/shared\/stats\/stats\.ts'/)
 	})
 
 	test('--as defaults to my-<slug>', async () => {
@@ -247,7 +247,7 @@ describe('serene-pub drift', () => {
 			f[a!] += '\n// core moved\n'
 			f[b!] += '\n// core moved\n'
 			delete f[c!]
-			f['sessions/stats/added.ts'] = 'export const added = 1\n'
+			f['shared/stats/added.ts'] = 'export const added = 1\n'
 		})
 		// The author edited b too, and an untouched file stays unflagged.
 		await writeFile(join(pkg, 'components/my-stats', b!), '// mine\n')
@@ -264,7 +264,7 @@ describe('serene-pub drift', () => {
 				{ path: a!, change: 'changed' },
 				{ path: b!, change: 'changed', editedHere: true },
 				{ path: c!, change: 'removed' },
-				{ path: 'sessions/stats/added.ts', change: 'added' },
+				{ path: 'shared/stats/added.ts', change: 'added' },
 			].sort((x, y) => (x.path < y.path ? -1 : 1)),
 		)
 		assert.match(renderDrift([e!]), /merge by hand/)

@@ -129,15 +129,15 @@ describe('typed references (R48)', () => {
 			slug: 'modded',
 			genre: use('core:genre/chat'),
 			label: 'Modded',
-			bindings: [{ spec: use('core:spec/respond'), events: [sessionEvents.messageRespond] }],
+			bindings: [{ spec: use('core:spec/chat-respond'), events: [sessionEvents.messageRespond] }],
 		})
-		assert.deepEqual(p.bindings, { [sessionEvents.messageRespond]: { spec: 'core:spec/respond' } })
+		assert.deepEqual(p.bindings, { [sessionEvents.messageRespond]: { spec: 'core:spec/chat-respond' } })
 	})
 
 	test('review fixes: a use() pick names its key, no binding binds nothing, a seeded swap names a real node', () => {
 		assert.throws(
-			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [create], actions: { include: [use('core:spec/narrate') as never] } }),
-			/another package's spec — name the action: \{ spec: use\('core:spec\/narrate'\), key/,
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [create], actions: { include: [use('core:spec/chat-narrate') as never] } }),
+			/another package's spec — name the action: \{ spec: use\('core:spec\/chat-narrate'\), key/,
 		)
 		assert.throws(
 			() =>
@@ -146,7 +146,7 @@ describe('typed references (R48)', () => {
 					genre: g,
 					label: 'X',
 					bindings: [create],
-					actions: { include: [{ spec: use('core:spec/narrate'), key: 'Bad#Key' }] },
+					actions: { include: [{ spec: use('core:spec/chat-narrate'), key: 'Bad#Key' }] },
 				}),
 			/without a valid key/,
 		)

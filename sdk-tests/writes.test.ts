@@ -213,7 +213,10 @@ describe('the addition is additive', () => {
 		// `fields.authorsNote`. (was '193fca0f5fc4ae')
 		// Moved 2026-10-03 (placed text at the end): the author's note field's
 		// `depth` default is 0; the app's specHashes.test.ts records it. (was '1566992a444e50')
-		assert.equal(canonicalHash(createChatSpec() as any), '18b84026deb74b')
+		// Moved 2026-10-05 (spec ids genre first, ruling C4): the id is
+		// `core:spec/chat-create`, was `core:spec/create-chat`. Proven: the
+		// document with only its id set back hashes to the old pin. (was '18b84026deb74b')
+		assert.equal(canonicalHash(createChatSpec() as any), '1cd1222a275dec')
 		// Adventure moved 2026-09-27 (lair pass B9): its genre's events
 		// gained message-deleted and message-hidden (was "4b16999c12ab3").
 		// Moved 2026-09-27 (characterDetail genre field): Chat and Adventure
@@ -234,7 +237,9 @@ describe('the addition is additive', () => {
 		// description — proven: those two strings restored hash back to it;
 		// "1305f4e75ffa6d" until 2026-10-01, when create-guide 1.1.0 began writing
 		// Serene's declared greeting — proven: guide.ts and genres.ts reverted hash
-		// back to it)
-		assert.equal(canonicalHash(createGuideSpec() as any), '6b6c45bf731ba')
+		// back to it; "6b6c45bf731ba" until 2026-10-05, when the id became
+		// `core:spec/guide-create` (spec ids genre first, ruling C4) — proven:
+		// the document with only its id set back hashes to it)
+		assert.equal(canonicalHash(createGuideSpec() as any), '1cb7b0cfc1ae44')
 	})
 })

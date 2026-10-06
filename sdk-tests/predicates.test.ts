@@ -518,7 +518,7 @@ describe('every door runs them', () => {
 		// scene, and a fresh session must not begin with it grey.
 		assert.equal(adventureGenre.enabledWhen, undefined)
 		assert.deepEqual(genreEnabledWhen(adventureGenre, 'core:spec/adventure-look#look'), [])
-		assert.deepEqual(genreEnabledWhen(chatGenre, 'core:spec/narrate#narrate'), [])
+		assert.deepEqual(genreEnabledWhen(chatGenre, 'core:spec/chat-narrate#narrate'), [])
 	})
 })
 

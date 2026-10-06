@@ -19,7 +19,7 @@ const code = (s: string) => '`' + s + '`'
 
 /** @experimental */
 export interface DocPage {
-	/** Repo-relative path, e.g. `pipelines/core_spec_respond.md`. */
+	/** Repo-relative path, e.g. `pipelines/core_spec_chat-respond.md`. */
 	path: string
 	markdown: string
 }

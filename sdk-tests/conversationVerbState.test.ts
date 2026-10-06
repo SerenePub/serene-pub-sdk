@@ -27,7 +27,7 @@ import {
 	VERB_REASONS,
 	type RowAction,
 	type VerbContext,
-} from '../core-catalog/src/ui/sessions/conversation/index.js'
+} from '../core-catalog/src/shared/ui/conversation/index.js'
 
 /** The list's verdict for one core verb, as `listSessionActions` computes it — the wire's shape. */
 const listedRow = (key: string, generating: boolean) => {

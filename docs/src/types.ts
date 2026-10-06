@@ -33,9 +33,9 @@ export interface DocsSource {
 	group: string
 	/** Either a directory of markdown files… */
 	dir?: string
-	/** …or pre-rendered markdown pages (e.g. from @serene-pub/cli renderAnnouncementDocs). `path` is like 'pipelines/core_spec_respond.md'. */
+	/** …or pre-rendered markdown pages (e.g. from @serene-pub/cli renderAnnouncementDocs). `path` is like 'pipelines/core_spec_chat-respond.md'. */
 	pages?: { path: string; markdown: string }[]
-	/** Slug prefix for every page of this source, e.g. 'sdk' → slug 'sdk/pipelines/core_spec_respond'. Omit for none. */
+	/** Slug prefix for every page of this source, e.g. 'sdk' → slug 'sdk/pipelines/core_spec_chat-respond'. Omit for none. */
 	prefix?: string
 	/**
 	 * Explicit reading order of slugs (without prefix). A page absent from it is
@@ -151,7 +151,7 @@ export interface DocsManifest {
 }
 
 export interface DocsPageMeta {
-	/** 'getting-started' or 'sdk/pipelines/core_spec_respond'. */
+	/** 'getting-started' or 'sdk/pipelines/core_spec_chat-respond'. */
 	slug: string
 	/** First H1, else slug. */
 	title: string

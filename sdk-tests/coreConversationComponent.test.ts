@@ -1,6 +1,6 @@
 /**
  * Core's conversation as the component it ships as (C7): built by the CLI's
- * component bundler from `core-catalog/components/sessions/messages/`, run in
+ * component bundler from `core-catalog/components/shared/messages/`, run in
  * a worker and mirrored through the host-element vocabulary — rendering the
  * log, following a streamed reply, editing a line through the `edit` verb —
  * and its block renderer's three form states (plans/29 R-15 *Forms*;
@@ -9,7 +9,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
-import type { ConversationDossierV1 } from '../core-catalog/src/ui/sessions/conversation/index.js'
+import type { ConversationDossierV1 } from '../core-catalog/src/shared/ui/conversation/index.js'
 import { CORE_WIDGETS } from '@serene-pub/core-catalog'
 import { mountComponent } from './harnessGuard.js'
 
@@ -84,7 +84,7 @@ const edit = {
 test("core's conversation component renders, streams and edits", { timeout: 120_000 }, async () => {
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		// Core's box, as the page mounts it: its host views and its focus are core's to place,
 		// and its ids its native copy's (the page navigates by `#message-<id>`).
 		owner: 'core',
@@ -203,7 +203,7 @@ test('a reply\'s folded sections render collapsed above the body, and expand', {
 	})
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -270,7 +270,7 @@ async function mountWithParts(parts: unknown[], opts: { requests?: (kind: string
 	const reply = row(2, 'assistant', 'The map.', { activeRevisions: { '0': 0 }, parts })
 	return mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -433,7 +433,7 @@ test('a row that arrives without its parts still folds its sections, from metada
 	})
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -599,7 +599,7 @@ test('what the conversation saves comes back as its state on the next mount', { 
 test("a clone of the conversation in a box not granted `session:full` says so — never 'Loading session…' forever", { timeout: 120_000 }, async () => {
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		timeoutMs: 60_000,
 		grants: [],
 		context: {
@@ -640,7 +640,7 @@ async function stderrAcrossDraft(requests: (kind: string) => unknown): Promise<s
 	try {
 		const view = await mountComponent({
 			root: CORE_CATALOG,
-			entry: 'components/sessions/messages/messages.ts',
+			entry: 'components/shared/messages/messages.ts',
 			owner: 'core',
 			coreConversation: true,
 			timeoutMs: 60_000,
@@ -700,7 +700,7 @@ test("a host write replaces the composer's draft; the same write re-posted does 
 	const mount = (d: ConversationDossierV1) =>
 		mountComponent({
 			root: CORE_CATALOG,
-			entry: 'components/sessions/messages/messages.ts',
+			entry: 'components/shared/messages/messages.ts',
 			owner: 'core',
 			coreConversation: true,
 			timeoutMs: 60_000,
@@ -764,7 +764,7 @@ test("a message's icon-only quick actions are named: iconAlt, else the name; the
 	const described = { ...edit, description: 'Change the text of this message.' }
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -829,7 +829,7 @@ const channelDossier = (
 const mountCopy = (settings: Record<string, unknown>, d: ConversationDossierV1) =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/sessions/messages/messages.ts',
+		entry: 'components/shared/messages/messages.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,

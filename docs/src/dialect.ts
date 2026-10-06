@@ -49,7 +49,7 @@ export interface DocImageAsset {
 }
 
 export interface DocHrefContext {
-	/** Path of the page inside its source, e.g. 'pipelines/core_spec_respond.md'. */
+	/** Path of the page inside its source, e.g. 'pipelines/core_spec_chat-respond.md'. */
 	path: string
 	/** Slug prefix of the page's source, e.g. 'sdk'. */
 	prefix?: string
@@ -218,7 +218,7 @@ export function resolveDocLink(href: string, ctx: DocHrefContext): ResolvedDocLi
  * With no context this is the app's original one-argument function, kept
  * because the app still calls it that way: flat slugs only, `/docs` hardcoded.
  * With a context it understands nested paths and a source prefix, which is
- * what a catalog page linking `pipelines/core_spec_respond.md` needs.
+ * what a catalog page linking `pipelines/core_spec_chat-respond.md` needs.
  */
 export function rewriteDocHref(href: string, ctx?: DocHrefContext): string {
 	if (!ctx) {
@@ -484,7 +484,7 @@ const DESCENDS_INTO = new Set(['blockquote', 'docAdmonition'])
 /** Tokens that contribute nothing a reader would want to see in a search hit. */
 const PREVIEW_SKIPS = new Set(['space', 'hr', 'code', 'docFigure'])
 
-/** A fence's info string, as words: ` ```pipeline core:spec/respond ` → two. */
+/** A fence's info string, as words: ` ```pipeline core:spec/chat-respond ` → two. */
 function infoWords(lang: unknown): string[] {
 	return String(lang ?? '')
 		.trim()

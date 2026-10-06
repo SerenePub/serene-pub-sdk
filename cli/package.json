@@ -71,7 +71,7 @@
 		"@serene-pub/docs": "^0.6.0-pr-2"
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json"
+		"build": "tsc -p tsconfig.build.json && node -e \"process.platform === 'win32' || require('node:fs').chmodSync('dist/bin.js', 0o755)\""
 	},
 	"devDependencies": {
 		"@serene-pub/conformance": "0.6.0-pr-2",

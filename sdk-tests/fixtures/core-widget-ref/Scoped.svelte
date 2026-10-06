@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ComponentContext } from '@serene-pub/component-client'
-	import { widgetRefFromComponent } from '../../../core-catalog/components/sessions/shared/widgetRef.svelte'
+	import { widgetRefFromComponent } from '../../../core-catalog/components/shared/widgetRef.svelte'
 
 	// A core widget's view of the scoped sections its host granted — read off
 	// the context the shared helper builds, by the SDK's one table.

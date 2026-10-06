@@ -36,7 +36,7 @@ import {
 	type MessageV1,
 	type WidgetAction,
 } from '@serene-pub/sdk'
-import type { RowAction } from '../core-catalog/src/ui/sessions/conversation/messageVerbState.js'
+import type { RowAction } from '../core-catalog/src/shared/ui/conversation/messageVerbState.js'
 
 /** A generating assistant row with two swipes and a failed earlier run, as `sessions:get` sends it. */
 const recordedRow = {

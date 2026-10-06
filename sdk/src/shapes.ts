@@ -296,19 +296,18 @@ export const S = {
 	turnEntries: defineShape({ id: 'core:shape/turn-entries@1' }),
 	/**
 	 * **Sprite choices** (DESIGN-sprites §5.2): what a line's speaker can show
-	 * — `{ characterId, set, defaultSet, labels, last, decidedBy, text }`.
+	 * — `{ characterId, set, defaultSet, labels, last, recent, decidedBy }`.
 	 * `set` is the sprite set in force for the line (a session override, the
 	 * cast member's amendment, or the card's default — `decidedBy` says
 	 * which); `labels` are that set's sprite labels with an image; `last` is
 	 * the speaker's previous shown sprite, for stickiness. What
-	 * `core:query/sprites-for@1` publishes and every sprite picker reads.
+	 * `core:oracle/pick-sprite@1` publishes beside its pick, for the receipt.
 	 */
 	spriteChoices: defineShape({ id: 'core:shape/sprite-choices@1' }),
 	/**
 	 * **A sprite pick**: `{ set, label, score?, runnerUp?, held? } | null` — the
-	 * sprite a picker chose for a line, or null for none. What every sprite
-	 * picker publishes on `main`, so the shape-based swap list keys a picker on
-	 * it exactly as it keys a turn strategy on `turn-entries@1`.
+	 * sprite a picker chose for a line, or null for none. What the sprite
+	 * picker publishes on `main` and `core:outlet/show-sprite@1` records.
 	 */
 	spritePick: defineShape({ id: 'core:shape/sprite-pick@1' }),
 	/**

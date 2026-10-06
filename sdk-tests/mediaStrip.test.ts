@@ -11,7 +11,7 @@ import {
 	formatBytes,
 	mediaStripItems,
 	viewImageParams,
-} from '../core-catalog/components/sessions/messages/mediaStrip.js'
+} from '../core-catalog/components/shared/messages/mediaStrip.js'
 
 const part = (id: number, step: number, revision: number, ordinal: number, type: string, data: Record<string, unknown> | null) => ({
 	id,

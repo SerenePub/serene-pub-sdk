@@ -1149,7 +1149,7 @@ every reply and **fails the turn loudly when it cannot compile one**; the silent
 prompt builder is gone, because a user with a configured pipeline silently getting a reply built by
 something else is the one bug in this area nobody can see. The legacy builder survives only as
 dispatch scaffolding and as `pipeline:compare`'s second arm. The narrator rides the same call site
-into its own namespace: `isNarratorResponseMode` selects `core:spec/narrate` rather than dressing the
+into its own namespace: `isNarratorResponseMode` selects `core:spec/chat-narrate` (then `core:spec/narrate`) rather than dressing the
 respond spec in a different prompt.
 
 **The summarize sockets run their specs and stop at the write.** `chats:summarize` and
