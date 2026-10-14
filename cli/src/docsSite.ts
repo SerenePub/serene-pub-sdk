@@ -1,12 +1,12 @@
 /**
- * The docs site shell (24 T9): the generated markdown, rendered as a
+ * The docs site shell: the generated markdown, rendered as a
  * self-contained static site — no dependencies, no build step, open
  * index.html. The converter handles exactly the markdown `docs.ts` emits
  * (headings, tables, lists, fenced code, inline code, links, bold) — it is a
  * renderer for our own output, not a general markdown engine, which is what
  * keeps it a page of code instead of a dependency.
  *
- * Live controls join these pages when @serene-pub/controls exists (T6c);
+ * Live controls join these pages when @serene-pub/controls exists;
  * until then the option tables are the reference.
  */
 import { i18nText, type AnnouncementDocument } from '@serene-pub/sdk'

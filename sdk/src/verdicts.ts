@@ -1,5 +1,5 @@
 /**
- * Verdicts — one function per rule, heard at every door (01 §13; plans/31 V4).
+ * Verdicts — one function per rule, heard at every door.
  *
  * *A rule has exactly one verdict function. Every door — construction,
  * `validate()`, publish (`saveDocument`), the registry, the run, the fire,
@@ -11,11 +11,11 @@
  * A **verdict** is a declaration: an id (`core:verdict/<slug>`), the law it
  * comes from (the label a `Finding` carries — `R-20`, `F39`), the **doors**
  * that hear it, a `judge` over one input, and a `failing()` input the
- * conformance kit feeds through every declared door (C27) expecting the
+ * conformance kit feeds through every declared door expecting the
  * verdict's own sentence back. The judge answers `{ ok: true }` or
  * `{ ok: false, sentence, fix? }` — the sentence is the refusal a person
- * reads, the fix is what to do instead (the teaching-error pattern, 15
- * §1.3), and both are display text (R-20). A door quotes them; it composes
+ * reads, the fix is what to do instead (the teaching-error pattern),
+ * and both are display text. A door quotes them; it composes
  * nothing. Where a door has one string to speak through — a throw, a halt
  * reason, a receipt note — it says the sentence and then the fix; where it
  * has a `Finding`, the two are its `message` and `fix`.
@@ -45,6 +45,7 @@
  * content-keyed rule every registry here applies (`refuseUnlessIdentical`),
  * so a dev server's hot reload re-running this module is a no-op and a
  * *different* declaration under a registered id still throws.
+ * @ruling 01 §13, plans/31 V4, C27, 15 §1.3, R-20
  */
 
 import { refuseUnlessIdentical } from './hash.js'
@@ -114,11 +115,12 @@ export interface VerdictDecl<I> {
 	/** The one judgement. Pure: the same input answers the same sentence at every door. */
 	judge(input: I): VerdictResult
 	/**
-	 * A failing input the conformance kit feeds through the named door (C27);
+	 * A failing input the conformance kit feeds through the named door;
 	 * `judge(failing(door))` must be `ok: false`. Named per door because a
 	 * rule with several input kinds is heard through different ones at
-	 * different doors — F39's `construction` hears a declared port, its
+	 * different doors — the settings-never-travel verdict's `construction` hears a declared port, its
 	 * `validate` hears an edge — and the kit needs the one that door hears.
+	 * @ruling C27, F39
 	 */
 	failing(door: Door): I
 }
@@ -206,14 +208,15 @@ export interface DisplayTextInput {
 }
 
 /**
- * Display text is a non-blank string or a locale map with a non-blank `en`
- * (R-20; U5i, ruled 2026-09-17). `i18nFindings` is the one check and
+ * Display text is a non-blank string or a locale map with a non-blank `en`.
+ * `i18nFindings` is the one check and
  * answers at most one sentence per value; this is that check as a verdict.
  * Every publish door runs it: `register()`, the builder's presets, `genre()`,
  * `announce.build()`, the attribute, sheet, script-kind and value
  * declarations, `validate()`, the CLI packager, a host's `saveDocument`, and
  * the executor for a status (a note; the status is dropped, never a halt).
  * @experimental
+ * @ruling R-20, U5i (ruled 2026-09-17)
  */
 export const i18nVerdict = defineVerdict<DisplayTextInput>({
 	id: 'core:verdict/i18n',
@@ -247,12 +250,13 @@ export interface EnablementInput {
 
 /**
  * An action is offered now when every enabled-when predicate holds over the
- * session's published values (plans/29 R-15; U5e). The sentence is the
+ * session's published values. The sentence is the
  * author's own `reason` on the first predicate that fails — that is the
  * design: the refusal a door quotes and the grey a listing shows are the
  * author's words, in the person's language. `evaluateEnabledWhen` is the
  * judge; the host's listing and its fire read it through here.
  * @internal
+ * @ruling plans/29 R-15, U5e
  */
 export const enablementVerdict = defineVerdict<EnablementInput>({
 	id: 'core:verdict/enablement',
@@ -296,11 +300,12 @@ export interface AudienceInput {
 
 /**
  * An action is a person's to use when they hold one of the references its
- * audience names (plans/29 R-15 *audience*): a portrayal naming them, or
+ * audience names: a portrayal naming them, or
  * the item rule on the message. `audienceHolds` is the judge, the same
  * function the listing's `canAct` reads, so a grey chip and a refusal at
  * the fire can never disagree.
  * @internal
+ * @ruling plans/29 R-15 *audience*
  */
 export const audienceVerdict = defineVerdict<AudienceInput>({
 	id: 'core:verdict/audience',
@@ -340,7 +345,7 @@ const isSettingsAddress = (name: unknown): boolean =>
 	typeof name === 'string' && (name === SETTINGS_SLOT || name.startsWith(`${SETTINGS_SLOT}.`))
 
 /**
- * Settings never travel; only data does (12 §2 P3, 29 §5d; F39).
+ * Settings never travel; only data does.
  * `<nodeKey>.settings.*` — `enabled`, `review`, `mode` — is read by the
  * executor at its owner and handed to nobody. It is not a port: a data edge
  * drawn from it carries nothing, a reference naming it resolves to nothing,
@@ -350,6 +355,7 @@ const isSettingsAddress = (name: unknown): boolean =>
  * `validate()` (an edge, a reference) and by the executor (a reference in a
  * document that skipped validation).
  * @experimental
+ * @ruling 12 §2 P3, 29 §5d, F39
  */
 export const settingsTravelVerdict = defineVerdict<SettingsTravelInput>({
 	id: 'core:verdict/settings-travel',
@@ -435,8 +441,8 @@ export type ProvisionalInput =
 	| { kind: 'publication'; definitionId: string; provisional: boolean; bound: boolean }
 
 /**
- * A provisional definition is declared, not bound (plans/29 R-2): published
- * because a plan owns it, run by no handler. A document placing one is
+ * A provisional definition is declared, not bound: published
+ * because it is planned, run by no handler. A document placing one is
  * refused where the author is — `validate()` — and again by the executor
  * for a stored document older than the flag, so it halts on the law rather
  * than on "no binding registered" pointing at the wrong file. The other
@@ -444,6 +450,7 @@ export type ProvisionalInput =
  * handler and no flag is a packaging error, said with the three things a
  * person can do.
  * @internal
+ * @ruling plans/29 R-2
  */
 export const provisionalVerdict = defineVerdict<ProvisionalInput>({
 	id: 'core:verdict/provisional',

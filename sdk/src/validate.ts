@@ -1,8 +1,9 @@
 /**
  * Validation — the Fixed Ledger laws that can be checked statically.
  *
- * Every finding names what to do instead (15 §1.3). A prohibition without a stated
+ * Every finding names what to do instead. A prohibition without a stated
  * alternative is a bug, and there is a test asserting exactly that.
+ * @ruling 15 §1.3
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
@@ -27,6 +28,7 @@ import { PREDICATE_CONDITION_KEYS } from './predicates.js'
 import { provisionalVerdict, settingsTravelVerdict } from './verdicts.js'
 import { settingsSchemaFindings } from './settings.js'
 import { actionDocumentFindingsByLaw } from './actions.js'
+import { boundaryTriggerFindings } from './sceneSettings.js'
 import { templateLawFindings, type TemplateChecking } from './templateFit.js'
 import { isSlotRef, type SlotRef } from './refs.js'
 import { assignable, isStreaming, JSON_SHAPE } from './shapes.js'
@@ -65,9 +67,10 @@ export interface Finding {
 }
 
 /**
- * A verdict's sentence or fix as a finding's string (01 §13): findings are
+ * A verdict's sentence or fix as a finding's string: findings are
  * `en`, the locale every map carries. An absent fix is the empty string —
  * every verdict this file quotes declares one.
+ * @ruling 01 §13
  */
 const en = (v: I18n | undefined): string => (v === undefined ? '' : (i18nText(v) ?? ''))
 
@@ -76,12 +79,13 @@ const en = (v: I18n | undefined): string => (v === undefined ? '' : (i18nText(v)
  */
 export interface ValidateOptions {
 	/**
-	 * The template checker, for law T1's name check (typed templates P5):
+	 * The template checker, for the template-fit law's name check:
 	 * `{ check: checkTemplateSourceReport }` from `@serene-pub/sdk/template-check`,
 	 * plus the host's vocabulary. A value rather than an import because the
 	 * checker carries the engines and this module is on the dependency-free
-	 * barrel. Absent, T1 still refuses scope collisions, forbidden kinds and a
+	 * barrel. Absent, the law still refuses scope collisions, forbidden kinds and a
 	 * band with no variable; it does not read template sources.
+	 * @ruling law T1, typed templates P5, T1
 	 */
 	templates?: TemplateChecking
 }
@@ -507,6 +511,31 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 		})
 	}
 
+	// ── 🚧 Boundary triggers (★9; live scenes §15 G18, 2026-10-13) ────────────
+	//
+	// A genre's declared boundary triggers ride its summarize-scene spec as
+	// `contributes.boundaryTriggers`. `spec()` refuses a malformed one where
+	// the author is (`boundaryTriggerFindings`, the builder's own sentences);
+	// a document from any other source — a hand-written JSON, an import, a
+	// patched row — gets the same sentences here, and a host's publish runs
+	// this. The channels against the genre are the builder's to check
+	// (`summarizeScene`, where a genre is at hand): a stored document names
+	// none to check against. A host reading one still takes only the
+	// triggers that read (`boundaryTriggersOf`).
+	for (const message of boundaryTriggerFindings(
+		(doc.contributes as { boundaryTriggers?: unknown } | undefined)?.boundaryTriggers,
+		'contributes.boundaryTriggers',
+	))
+		f.push({
+			law: 'boundary triggers',
+			severity: 'error',
+			message,
+			fix:
+				"declare each as { key, label, when } — a camelCase key that is not core's, display text " +
+				"for the chip, and at least one of channel, narration, speaker, actionKey, stateKey — as " +
+				"summarizeScene(…, { boundaries }) writes them (see the SDK's sceneSettings.ts)",
+		})
+
 	// ── R-20 — every author-facing string the document carries is display text
 	// (a string or a locale map with `en`, never blank; U5i, ruled 2026-09-17):
 	// each author preset's label and description; the genre a create pipeline
@@ -552,7 +581,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 	}
 
 	/**
-	 * What a branch may state, counted off ONE list (D-4a, 2026-09-17).
+	 * What a branch may state, counted off ONE list.
 	 *
 	 * This read the three words out of a literal, so the night `equalsPath`
 	 * joined the grammar it was legal in an action's enabled-when and refused
@@ -560,6 +589,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 	 * two doors, which is the one thing a shared shape exists to prevent.
 	 * `default` is the junction's own fourth: only a branch can fire because
 	 * nothing else did.
+	 * @ruling D-4a (2026-09-17)
 	 */
 	const BRANCH_CONDITIONS = [...PREDICATE_CONDITION_KEYS, 'default']
 
@@ -1150,6 +1180,51 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 		}
 	}
 
+	// ── assemble wiring — a prompt is assembled for the model call it feeds ───
+	// `assemble@2` reads its `template` slot and the connection it renders for
+	// only when the spec wires them: unwired, the run halts on a real instance
+	// ("assemble has no template"), and once the template is wired a chat
+	// wire-mode connection is handed a prompt with no messages. Neither shows
+	// on a fixture host, so it is said here, where the author is (F3 docs
+	// gate, stalls 12 and 14). A warning, not an error: a host saves documents
+	// its own tests and older plugins built bare, and the run's own halt is
+	// the error.
+	for (const n of doc.nodes) {
+		if (n.definitionId !== 'core:task/assemble' || n.definitionVersion !== 2) continue
+		// A wired port, not the spine's implicit `main` hand-off.
+		const generate = doc.edges
+			.filter((e) => e.from === n.key && !e.implicit)
+			.map((e) => byKey.get(e.to))
+			.find((t) => {
+				if (t?.kind !== 'oracle') return false
+				const d = desc(t.key)
+				return d !== undefined && isModelCall(d)
+			})
+		if (!generate) continue
+		const wired = (port: string) =>
+			n.config[port] !== undefined || doc.edges.some((e) => e.to === n.key && e.toPort.split('.')[0] === port)
+		if (!wired('template'))
+			f.push({
+				law: 'assemble wiring',
+				severity: 'warning',
+				nodeKey: n.key,
+				message:
+					`'${n.key}' assembles the prompt '${generate.key}' sends, but its template is not wired — ` +
+					`the run halts with "assemble has no template", whatever configuration an administrator picks`,
+				fix: `add template: slot.template() to '${n.key}' (C.assemble.v2({ …, template: slot.template() }))`,
+			})
+		if (!wired('connection'))
+			f.push({
+				law: 'assemble wiring',
+				severity: 'warning',
+				nodeKey: n.key,
+				message:
+					`'${n.key}' assembles the prompt '${generate.key}' sends, but does not know that connection — ` +
+					`a chat wire-mode connection is handed a prompt with no messages`,
+				fix: `add connection: slot.connectionOf('${generate.key}') to '${n.key}', so the prompt is written for the connection that sends it`,
+			})
+	}
+
 	// ── T1 — a template fits where it is rendered (typed templates P5) ─────────
 	// Collisions and forbidden kinds in a template node's scope, a band with
 	// no variable, and — given the checker — every template source the
@@ -1163,8 +1238,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 }
 
 /**
- * The streaming step and the step status, as declared on `expose` (lair
- * pass B3/B18; owner D6 and D5, 2026-09-27).
+ * The streaming step and the step status, as declared on `expose`.
  *
  * Which oracle streams into the reply is **declared**, never inferred: the
  * inference it replaced skipped every oracle inside a clause and streamed the
@@ -1176,7 +1250,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
  *    would write its document into the row a person is reading;
  *  · **one per execution path** — a run has one live row, and two streams
  *    interleave or concatenate into it. Two steps that can never run in the
- *    same execution may each stream (W2, 2026-09-27): they sit in different
+ *    same execution may each stream: they sit in different
  *    branches of one junction whose predicates are mutually exclusive — one
  *    is the `otherwise`, or both are `equals` on the same path with different
  *    literals. The runtime streams whichever one runs. Anything weaker (a
@@ -1186,10 +1260,11 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
  *    into the same row;
  *  · **an oracle** — only an oracle has a model's tokens to stream.
  *
- * A step status, step label and step purpose are display text (R-20), and a
+ * A step status, step label and step purpose are display text, and a
  * step purpose sits only on a model call — an oracle whose definition declares
  * a `connection` slot (`isModelCall`; law `step purpose`, 2026-09-30).
  * @internal
+ * @ruling lair pass B3/B18, owner D6 and D5 (2026-09-27), W2 (2026-09-27), R-20
  */
 export function streamingStepFindings(doc: SpecDocument): Finding[] {
 	const f: Finding[] = []
@@ -1299,13 +1374,14 @@ type ClauseLike = SpecDocument['clauses'][number] & { branches?: Record<string, 
 type JunctionPredicateLike = { path?: string; equals?: unknown; equalsPath?: string; truthy?: boolean; default?: boolean }
 
 /**
- * Whether `a` always runs after `b` has finished (F7's "after, not beside").
+ * Whether `a` always runs after `b` has finished ("after, not beside").
  *
  * A level — the spine, or one chain of one clause — runs its items one at a
  * time in position order; only a clause's chains may run side by side. So
  * `a` follows `b` exactly when, at the innermost level both sit in, the item
  * holding `a` is positioned after the item holding `b`. Two branches of one
  * clause meet at that clause's own position, and are never ordered.
+ * @ruling F7
  */
 function runsStrictlyAfter(
 	doc: SpecDocument,
@@ -1336,9 +1412,10 @@ function runsStrictlyAfter(
 }
 
 /**
- * Whether two nodes can never run in the same execution (W2): they diverge
+ * Whether two nodes can never run in the same execution: they diverge
  * in two branches of one junction whose predicates cannot both fire.
  * Conservative — anything not provably exclusive is the same path.
+ * @ruling W2
  */
 function exclusiveSteps(
 	clauseById: ReadonlyMap<string, SpecDocument['clauses'][number]>,
@@ -1450,11 +1527,12 @@ export function assertValid(doc: SpecDocument, options?: ValidateOptions): void 
 }
 
 /**
- * The R-20 findings over one stored document: presets, and the genre
+ * The display-text findings over one stored document: presets, and the genre
  * declaration a create pipeline carries. Read as `unknown` throughout — a
  * document may have come from anywhere — so a wrong shape is a sentence,
  * never a throw.
  * @experimental
+ * @ruling R-20
  */
 export function documentDisplayTextFindings(doc: SpecDocument): string[] {
 	const out: string[] = []

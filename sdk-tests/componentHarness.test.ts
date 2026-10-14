@@ -9,6 +9,10 @@ import { mkdtemp, rm, symlink, writeFile, mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { assertRefusedMount, mountComponent, test } from './harnessGuard.js'
 import { writeComponentScaffold } from '../cli/src/scaffoldComponent.js'
+import type { MessageV1 } from '@serene-pub/sdk'
+
+/** A message row as the context types it; the component under test reads only its count. */
+const msg = (id: number): MessageV1 => ({ id, role: 'user', content: '' })
 
 const dirs: string[] = []
 async function pkg(): Promise<string> {
@@ -31,11 +35,11 @@ test('a scaffolded Svelte component renders its canned context, and hears a chan
 	const view = await mountComponent({
 		root: dir,
 		entry: 'components/who-next.ts',
-		context: { messages: [{ id: 1 }, { id: 2 }] },
+		context: { messages: [msg(1), msg(2)] },
 	})
 	try {
 		assert.equal(view.query('p')?.textContent, '2 messages')
-		await view.push('messages', [{ id: 1 }, { id: 2 }, { id: 3 }])
+		await view.push('messages', [msg(1), msg(2), msg(3)])
 		assert.equal(view.query('p')?.textContent, '3 messages')
 		assert.deepEqual(view.refused, [])
 	} finally {
@@ -223,11 +227,11 @@ test('two mounts at once share the lent DOM, and the first to leave does not tak
 	await writeComponentScaffold(dir, { slug: 'pair' })
 	const [a, b] = await Promise.all([
 		mountComponent({ root: dir, entry: 'components/pair.ts', context: { messages: [] } }),
-		mountComponent({ root: dir, entry: 'components/pair.ts', context: { messages: [{ id: 1 }] } }),
+		mountComponent({ root: dir, entry: 'components/pair.ts', context: { messages: [msg(1)] } }),
 	])
 	await a.unmount()
 	try {
-		await b.push('messages', [{ id: 1 }, { id: 2 }])
+		await b.push('messages', [msg(1), msg(2)])
 		assert.equal(b.query('p')?.textContent, '2 messages')
 	} finally {
 		await b.unmount()
@@ -557,6 +561,7 @@ async function askerPkg(): Promise<string> {
 <button class="entries" type="button" onclick={() => ask('session-entries', { limit: 5 })}>entries</button>
 <button class="write" type="button" onclick={() => ask('set-attribute-value', { owner: { kind: 'session', id: 1 }, slotId: 'core:slot/weather@1', value: 'rain' })}>write</button>
 <button class="page" type="button" onclick={() => ask('messages', { channel: 'main', limit: 2 })}>page</button>
+<button class="send" type="button" onclick={() => ask('send', { content: 'rolled 4', personaId: null, channel: 'dice' })}>send</button>
 <p class="out">{out}</p>
 `,
 	)
@@ -588,9 +593,12 @@ test("the test answers a component's requests as the page would, and every ask i
 		// `messages` is answered as the page answers it: a page, rows and cursor.
 		await view.click('.page')
 		assert.equal(view.query('.out')?.textContent, 'ok {"rows":[{"id":7}],"nextCursor":"c1"}')
-		// A core-only kind from a plugin's box is declined by the table — never asked of the test.
+		// A write from a plugin's box without its write grant is declined by the table — never asked of the test.
 		await view.click('.write')
-		assert.equal(view.query('.out')?.textContent, "no only core's own widgets ask 'set-attribute-value'")
+		assert.equal(
+			view.query('.out')?.textContent,
+			"no 'set-attribute-value' changes what the 'session:state' scope covers, and this widget was not granted the write grant 'session:state:write'",
+		)
 		assert.deepEqual(asked, ['session-entries', 'messages'])
 		assert.deepEqual(view.requested, [
 			{ kind: 'session-entries', params: { limit: 5 } },
@@ -600,6 +608,54 @@ test("the test answers a component's requests as the page would, and every ask i
 				params: { owner: { kind: 'session', id: 1 }, slotId: 'core:slot/weather@1', value: 'rain' },
 			},
 		])
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('🚧 a plugin\'s send needs the write grant on a channel it declares (D4)', async () => {
+	const dir = await askerPkg()
+	const mount = (o: { grants?: string[]; channels?: string[] }, asked: string[]) =>
+		mountComponent({
+			root: dir,
+			entry: 'src/asker.ts',
+			grants: o.grants as never,
+			channels: o.channels,
+			requests: (kind) => {
+				asked.push(kind)
+				return undefined
+			},
+		})
+	// Declared, not granted the write: refused, never asked of the test.
+	let asked: string[] = []
+	let view = await mount({ channels: ['dice'], grants: ['channel:dice'] }, asked)
+	try {
+		await view.click('.send')
+		assert.equal(
+			view.query('.out')?.textContent,
+			"no 'send' writes to the 'dice' channel, and this widget was not granted the write grant 'channel:dice:write'",
+		)
+		assert.deepEqual(asked, [])
+	} finally {
+		await view.unmount()
+	}
+	// Granted the write on a channel it did not declare: refused.
+	asked = []
+	view = await mount({ channels: ['main'], grants: ['channel:dice:write'] }, asked)
+	try {
+		await view.click('.send')
+		assert.equal(view.query('.out')?.textContent, "no 'send' writes to 'dice', which is not one of this widget's channels")
+		assert.deepEqual(asked, [])
+	} finally {
+		await view.unmount()
+	}
+	// Declared and granted, a person's press behind it: asked, and answered.
+	asked = []
+	view = await mount({ channels: ['dice'], grants: ['channel:dice:write'] }, asked)
+	try {
+		await view.click('.send')
+		assert.equal(view.query('.out')?.textContent, 'ok null')
+		assert.deepEqual(asked, ['send'])
 	} finally {
 		await view.unmount()
 	}
@@ -845,6 +901,37 @@ test('a component is told which of its scopes were granted: not granted is said,
 		assert.equal(core.query('.granted')?.textContent, 'yes|characters,session_state')
 	} finally {
 		await core.unmount()
+	}
+})
+
+test('a component reads a granted section by its scope string; revoked, it is gone and `granted()` says no', async () => {
+	const dir = await pkg()
+	await mkdir(join(dir, 'src'), { recursive: true })
+	await writeFile(
+		join(dir, 'src/scope.ts'),
+		`import { defineComponent } from '@serene-pub/component-client'
+export default defineComponent((root, ctx) => {
+	const p = document.createElement('p')
+	p.setAttribute('class', 'scope')
+	root.append(p)
+	const draw = () => {
+		const state = ctx.scope('session:state')
+		p.textContent = [String(ctx.granted('session:state')), state ? 'session ' + state.sessionId : 'none'].join('|')
+	}
+	draw()
+	return ctx.subscribe(draw)
+})
+`,
+	)
+	const view = await mountComponent({ root: dir, entry: 'src/scope.ts', grants: ['session:state'], context: { scoped: everySection } })
+	try {
+		assert.equal(view.query('.scope')?.textContent, 'true|session 1')
+		// Revoked, as an admin's review does: the section is withdrawn and the grant says no.
+		await view.setGrants([])
+		assert.equal(view.query('.scope')?.textContent, 'false|none')
+		assert.deepEqual(view.errors, [])
+	} finally {
+		await view.unmount()
 	}
 })
 

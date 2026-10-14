@@ -1,5 +1,5 @@
 /**
- * Typed-handle generation (24 T7b): from a declaration artifact, emit a TS
+ * Typed-handle generation: from a declaration artifact, emit a TS
  * module of `use()` handles whose type parameter carries the target's whole
  * option space — node → slot → field, with field types derived from the
  * declared schemas. `config(handle, …)` then autocompletes and typo-checks

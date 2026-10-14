@@ -56,6 +56,9 @@ const CORE_V1 = [
 	// The turn scope, added 2026-09-21: who speaks next, as a script — the
 	// plugin's (and the admin's) seam for turn detection of its own.
 	'core:script:turn/select@1',
+	// The generic scope, added 2026-10-12: JSON in, JSON out — the body of
+	// the script step (`core:task/run-script@1`).
+	'core:script:data/transform@1',
 ]
 
 describe('18-S1 · the id grammar', () => {
@@ -157,6 +160,7 @@ describe('18-S1 · core ships eight contracts', () => {
 			'candidates',
 			'cast',
 			'context',
+			'data',
 			'messages',
 			'text',
 			'turn',

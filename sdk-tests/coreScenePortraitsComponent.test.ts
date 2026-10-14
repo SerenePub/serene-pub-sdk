@@ -5,11 +5,14 @@
  * sections the page posts it — `characters` (cast over card, R76, the page's
  * pins riding along) and `session_state` (its bars) — and no log.
  *
- * What it proves: the scene and the pinned sources draw what the sections
+ * What it proves: who, picture and arrangement (W6) draw what the sections
  * say; a scoped push redraws; the sprite-set menu is offered only where the
- * viewer may switch (R77) and every switch and clear goes through
- * `ctx.request` (the page answers, R77: a clear clears the PAGE's pin); the
- * persona is the viewer's (`mine`, R77); a refusal is this widget's own line.
+ * viewer may switch (R77) and every switch goes through `ctx.request`; a
+ * chosen image is found by paging `character-images`, and ⋯ opens the
+ * member's gallery, where a tile chooses that image (`set-chosen-image`,
+ * F2) and *Use the avatar* takes it away; the persona is the viewer's
+ * (`mine`, R77);
+ * a refusal is this widget's own line.
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
@@ -172,60 +175,121 @@ test("core's scene portraits: a refused switch is this widget's own line, and th
 	}
 })
 
-test("core's scene portraits: the pinned source is the page's pins, cleared through the page", { timeout: 120_000 }, async () => {
-	// The first clear is refused (R77: said here), the second lands.
-	let refuse = true
-	const view = await mount({ bars: true }, (kind) => {
-		if (kind === 'clear-scene-image' && refuse) {
-			refuse = false
-			throw new Error('the scene image did not clear')
-		}
-		return undefined
-	})
+test("core's scene portraits (W6): a pinned instance reads as a stage of chosen images; ⋯ opens the member's gallery, a tile chooses (F2)", { timeout: 120_000 }, async () => {
+	const gallery = {
+		images: [
+			{ ref: 'u-1', src: face(7) },
+			{ ref: 'u-2', src: face(8) },
+		],
+		nextCursor: 'p2',
+	}
+	const view = await mount(
+		{ source: 'pinned', bars: true, pickMembers: ['Ada', 'Wee', 'Bo'], chosenImages: ['character:3=u-2'] },
+		(kind, params) => {
+			if (kind !== 'character-images') return undefined
+			return params.cursor === 'p2' ? { images: [{ ref: 'u-3', src: face(9) }] } : gallery
+		},
+	)
 	try {
 		assert.deepEqual(view.refused, [])
+		// ⏳ `source: pinned` is who: pick, face: chosen, arrangement: stage — the first two picked, large.
+		assert.equal(view.query('[data-widget-part~="scene-portraits.root"]')?.getAttribute('data-arrangement'), 'stage')
+		assert.ok(view.query('[data-widget-part~="scene-portraits.stage"]'))
+		assert.deepEqual(
+			view.queryAll('[data-scene-member]').map((n) => n.getAttribute('data-scene-member')),
+			['character:3', 'persona:9'],
+		)
+		// Ada's chosen image, found by paging her gallery; Wee has none chosen: her avatar.
 		assert.deepEqual(
 			view.queryAll('img').map((i) => [i.getAttribute('alt'), i.getAttribute('src')]),
-			[['left scene portrait', face(1)]],
+			[['Ada', face(8)], ['Wee', face(6)]],
 		)
-		// The pin pictures Ada (the host matched it), so her bars ride under it.
-		assert.deepEqual(view.queryAll('[data-widget-part~="scene-portraits.bar"]').map((b) => b.getAttribute('aria-label')), ['HP 14/20'])
-		assert.deepEqual(view.queryAll('[data-widget-part~="scene-portraits.pin"]').map((d) => text(d)), ['HP', 'Empty'])
-		await view.click('button[aria-label="Clear left portrait"]')
-		assert.equal(text(view.query('[data-widget-part~="scene-portraits.alert-text"]')), 'the scene image did not clear')
-		await view.click('button[aria-label="Clear left portrait"]')
-		assert.equal(view.query('[role="alert"]') === null, true)
-		assert.deepEqual(view.requested, [
-			{ kind: 'clear-scene-image', params: { side: 'left' } },
-			{ kind: 'clear-scene-image', params: { side: 'left' } },
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'character-images'), [
+			{ kind: 'character-images', params: { characterId: 3 } },
 		])
-		// The page clears its pin and pushes the section: the widget follows it.
-		await view.push('scoped', { characters: characters({ sceneImages: { left: null, right: null } }) })
-		assert.equal(
-			text(view.query('[data-widget-part~="scene-portraits.empty"]')),
-			"No scene portraits set. Click a character's avatar in the chat to pin one here.",
+		// Ada's bars ride under her face on the stage.
+		assert.deepEqual(view.queryAll('[data-widget-part~="scene-portraits.bar"]').map((b) => b.getAttribute('aria-label')), ['HP 14/20'])
+		// No sprite-set menu on a chosen face; ⋯ instead.
+		assert.equal(view.queryAll('sp-popover').length, 0)
+		await view.click('button[aria-label="Choose an image for Ada"]')
+		assert.equal(text(view.query('[data-widget-part~="scene-portraits.chooser-head"]')), "Ada's images")
+		assert.deepEqual(
+			view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]').map((b) => [b.querySelector('img')?.getAttribute('src'), b.getAttribute('aria-current')]),
+			[[face(7), null], [face(8), 'true']],
 		)
-		// A section not yet arrived is the empty scene, never a crash.
-		await view.push('settings', { source: 'scene' })
-		await view.push('scoped', { characters: { members: [], sceneImages: { left: null, right: null } } })
+		// The next page, on asking.
+		await view.click('[data-widget-part~="scene-portraits.chooser-more"]')
+		assert.equal(view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]').length, 3)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-more"]'), null)
+		// The chosen one pressed again changes nothing: the chooser just closes.
+		const asked = view.requested.length
+		await view.click(view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]')[1]!)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		assert.equal(view.requested.length, asked)
+		// Another tile chooses it (F2): the chooser closes at once.
+		await view.click('button[aria-label="Choose an image for Ada"]')
+		assert.equal(
+			view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]')[0]?.getAttribute('aria-label'),
+			'Show image 1 for Ada',
+		)
+		await view.click(view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]')[2]!)
+		assert.deepEqual(view.requested.at(-1), {
+			kind: 'set-chosen-image',
+			params: { characterRef: 'character:3', mediaRef: 'u-3' },
+		})
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		// The settings come back: the face shows it.
+		await view.push('settings', { source: 'pinned', bars: true, pickMembers: ['Ada', 'Wee', 'Bo'], chosenImages: ['character:3=u-3'] })
+		assert.equal(view.query('[data-scene-member="character:3"] img')?.getAttribute('src'), face(9))
+		// Use the avatar takes the choice away; the chooser offers it only while one is chosen.
+		await view.click('button[aria-label="Choose an image for Ada"]')
+		await view.click('[data-widget-part~="scene-portraits.chooser-clear"]')
+		assert.deepEqual(view.requested.at(-1), {
+			kind: 'set-chosen-image',
+			params: { characterRef: 'character:3', mediaRef: null },
+		})
+		await view.push('settings', { source: 'pinned', bars: true, pickMembers: ['Ada', 'Wee', 'Bo'], chosenImages: [] })
+		await view.click('button[aria-label="Choose an image for Ada"]')
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-clear"]'), null)
+		// Closing goes back to the faces; nothing asked to clear a pin or to view.
+		await view.click('[data-widget-part~="scene-portraits.chooser-close"]')
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		assert.equal(view.requested.some((r) => r.kind === 'clear-scene-image' || r.kind === 'view-image'), false)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test("core's scene portraits (W6): whoever spoke last, ranked; a row; nobody yet is said", { timeout: 120_000 }, async () => {
+	const spoke = characters()
+	spoke.members[0] = { ...spoke.members[0]!, lastSpokeAt: 100 }
+	spoke.members[1] = { ...spoke.members[1]!, lastSpokeAt: 200 }
+	const view = await mount({ who: 'recent', recentTurns: 1, arrangement: 'row' }, () => undefined)
+	try {
+		await view.push('scoped', { characters: spoke })
+		assert.equal(view.query('[data-widget-part~="scene-portraits.root"]')?.getAttribute('data-arrangement'), 'row')
+		assert.deepEqual(view.queryAll('[data-scene-member]').map((n) => n.getAttribute('data-scene-member')), ['character:4'])
+		assert.equal(text(view.query('[data-widget-part~="scene-portraits.recent-rank"]')), '1')
+		await view.push('scoped', { characters: characters() })
 		assert.equal(
 			text(view.query('[data-widget-part~="scene-portraits.empty"]')),
-			'Nobody is in this scene yet. Add a character to the session and they show up here.',
+			'Nobody has spoken yet. Faces show up here as the cast speaks.',
 		)
 	} finally {
 		await view.unmount()
 	}
 })
 
-test("core's scene portraits: before the characters section arrives, neither source says nothing is here", { timeout: 120_000 }, async () => {
-	for (const source of ['pinned', 'scene']) {
+test("core's scene portraits: before the characters section arrives, no who says nothing is here", { timeout: 120_000 }, async () => {
+	for (const settings of [{ who: 'pick', pickMembers: ['Ada'] }, { who: 'scene' }, { who: 'recent' }]) {
+		const source = settings.who
 		const view = await mountComponent({
 			...(await coreComponentEntry('scene-portraits', { root: CORE_CATALOG, entry: 'dist/components/scene-portraits.js' })),
 			owner: 'core',
 			timeoutMs: 60_000,
 			context: {
 				session: { id: 1, name: 'Proof' },
-				settings: { source },
+				settings,
 				viewer: { userId: 1, isAdmin: false, isGuest: false },
 				scoped: { session_state: sessionState(14) },
 			},
@@ -234,9 +298,10 @@ test("core's scene portraits: before the characters section arrives, neither sou
 			assert.deepEqual(view.refused, [])
 			assert.equal(view.query('[data-widget-part~="scene-portraits.empty"]') === null, true, source)
 			assert.equal(view.queryAll('img').length, 0, source)
-			// Once it arrives, the widget draws it.
+			// Once it arrives, the widget draws it (nobody has spoken: recent says so).
 			await view.push('scoped', { characters: characters() })
-			assert.equal(view.queryAll('img').length > 0, true, source)
+			if (source === 'recent') assert.ok(view.query('[data-widget-part~="scene-portraits.empty"]'), source)
+			else assert.equal(view.queryAll('img').length > 0, true, source)
 		} finally {
 			await view.unmount()
 		}

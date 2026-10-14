@@ -1,5 +1,5 @@
 /**
- * Context variables as an open registry (F2 — ids namespaced, `core:` reserved).
+ * Context variables as an open registry (ids namespaced, `core:` reserved).
  *
  * ## The inversion this exists to make
  *
@@ -28,6 +28,7 @@
  * `sample` is the other half. A preview that renders against real chat data
  * needs a chat; a preview that renders against a declared sample needs nothing,
  * which is what lets the template editor show output while you type.
+ * @ruling F2
  */
 
 import type { I18n } from './descriptors.js'
@@ -67,13 +68,14 @@ export interface VariableDecl {
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never
 
 /**
- * What a declaration's `sample` must be, from its `scope` (typed templates P1).
+ * What a declaration's `sample` must be, from its `scope`.
  *
  * One root — the usual case, `{ worldLore: … }` — and the sample is that
  * root's value; several, and it is an object covering them (`sampleValues`).
  * A scope the compiler cannot see into (`TemplateScope` itself, a widened
  * `VarField`) leaves the sample `unknown`, exactly as before.
  * @experimental
+ * @ruling typed templates P1
  */
 export type VariableSample<S extends TemplateScope> = string extends keyof S
 	? unknown
@@ -154,11 +156,11 @@ export function _withdrawVariable(id: VariableId): boolean {
 
 /**
  * What is wrong with a package's variable list, one sentence each — the check
- * `defineExtension`, the packager and a host's install share (typed templates,
- * 2026-09-27). Every id sits under the package's own namespace: `core:` is
- * reserved and another package's namespace is theirs (F2). A list naming one
+ * `defineExtension`, the packager and a host's install share. Every id sits under the package's own namespace: `core:` is
+ * reserved and another package's namespace is theirs. A list naming one
  * id twice with different content is refused — an id means one thing.
  * @experimental
+ * @ruling typed templates (2026-09-27), F2
  */
 export function pluginVariableFindings(slug: string, raw: unknown, at = 'variables'): string[] {
 	if (raw === undefined) return []
@@ -237,6 +239,49 @@ const CHARACTER_CARD: VarField = {
 			type: 'string',
 			optional: true,
 			description: { en: 'How they behave. Absent for a non-speaker when the session shows brief character detail.' },
+		},
+		/**
+		 * The card's strokes, resolved (strokes.ts) — widened in place, ruled
+		 * 2026-10-11, rather than an `@2`: optional, so every template written
+		 * against the four fields reads the same card.
+		 *
+		 * Present only when the card is painted in strokes and a
+		 * `core:task/card-strokes@1` step ran; `description`/`personality`
+		 * above are then already compiled from the `always` + fired ones. Here
+		 * so a template can iterate them or pick one by slug. `off` strokes
+		 * never appear; `brief` detail drops personality strokes as it drops
+		 * the field.
+		 */
+		strokes: {
+			type: 'list',
+			optional: true,
+			description: { en: 'The card in pieces, when it is written in strokes, in order.' },
+			of: {
+				type: 'object',
+				fields: {
+					kind: {
+						type: 'string',
+						description: { en: "Which field the stroke paints: 'description' or 'personality'." },
+					},
+					slug: {
+						type: 'string',
+						optional: true,
+						description: { en: 'Its key, for picking one stroke out by name.' },
+					},
+					label: {
+						type: 'string',
+						optional: true,
+						description: { en: 'Its heading — "Eyes" in "Eyes: green".' },
+					},
+					text: { type: 'string', description: { en: 'The stroke itself.' } },
+					fired: {
+						type: 'boolean',
+						description: {
+							en: 'Whether it is in this prompt: always for an every-turn stroke, and for a keyword stroke whether a key appeared in the recent conversation.',
+						},
+					},
+				},
+			},
 		},
 	},
 }
@@ -364,6 +409,43 @@ export const varPersonaNames = defineVariable({
 	sample: 'Rell',
 })
 
+/**
+ * 🚧 Everyone on stage's **likeness prompt**:
+ * the tag line each card carries for drawing them — the switched-on cast,
+ * then the personas. The group answer for a picture prompt: a scene names
+ * each present character's look.
+ *
+ * Not the description (prose for the language model) and not the avatar.
+ * `prompt` is an empty string for a character whose card has none, so the
+ * list always names everyone present. A list of objects, so it gets the
+ * automatic JSON layout (`objectVariableLayouts.ts` in the host).
+ * @experimental
+ */
+export const varLikenesses = defineVariable({
+	id: 'core:var/likenesses@1',
+	i18n: { name: { en: 'Likenesses' } },
+	description: { en: "How to draw everyone in the scene: each one's likeness prompt, by name." },
+	scope: {
+		likenesses: {
+			type: 'list',
+			of: {
+				type: 'object',
+				fields: {
+					name: { type: 'string', description: { en: 'Who this is.' } },
+					prompt: {
+						type: 'string',
+						description: { en: "Their likeness prompt — a tag line of their look; empty when the card has none." },
+					},
+				},
+			},
+		},
+	},
+	sample: [
+		{ name: 'Ash', prompt: 'adult woman, red braid, green cloak, freckles' },
+		{ name: 'Rell', prompt: '' },
+	],
+})
+
 // ── Produced during assembly ────────────────────────────────────────────────
 //
 // These come out the other side of the budget, so what reaches a layout
@@ -436,7 +518,7 @@ export const varDocsExcerpts = defineVariable({
 /**
  * Recalled lines — older transcript lines found again because they name what
  * the current context names: the band `core:query/entity-search@1` publishes
- * on its `messages` out-port (declared 2026-09-27, owner ruling option b).
+ * on its `messages` out-port (declared 2026-09-27).
  *
  * Its own band, not `messages`: the transcript renders from the recent
  * window (`sessionMessages`), so a recalled line in the transcript's band was
@@ -450,8 +532,9 @@ export const varDocsExcerpts = defineVariable({
  * that names the transcript's own lines.
  *
  * Not *recall* the measurement (precision/recall): a **recalled line** is a
- * line, and the qualifier is what keeps the two apart (R3).
+ * line, and the qualifier is what keeps the two apart.
  * @experimental
+ * @ruling owner ruling option b, R3
  */
 export const varRecalledLines = defineVariable({
 	id: 'core:var/recalled-lines@1',

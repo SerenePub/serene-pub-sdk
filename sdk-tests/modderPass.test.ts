@@ -885,6 +885,7 @@ describe('M4 · turnOrderSpec({ advise }) builds the decide junction', () => {
 		assert.equal(d.kind, 'oracle')
 		assert.deepEqual(Object.keys(d.ports.in ?? {}).sort(), ['candidates', 'messages'])
 		assert.deepEqual(Object.keys(d.ports.out ?? {}).sort(), ['main', 'order'])
-		assert.deepEqual(Object.keys(d.slots ?? {}).sort(), ['connection', 'prompts', 'sampling'])
+		// `loadout` (I12): every model-calling oracle names the engine it runs on.
+		assert.deepEqual(Object.keys(d.slots ?? {}).sort(), ['connection', 'loadout', 'prompts', 'sampling'])
 	})
 })

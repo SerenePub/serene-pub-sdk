@@ -54,10 +54,10 @@
 
 	// Primitives, so a push that changes neither asks nothing again.
 	const pageSize = $derived(
-		readLoreEntriesSettings(widget?.current?.settings?.v1 as Record<string, unknown> | undefined).pageSize
+		readLoreEntriesSettings(widget?.current?.settings?.v1).pageSize
 	)
 	const settledSort = $derived(
-		readLoreEntriesSettings(widget?.current?.settings?.v1 as Record<string, unknown> | undefined).sort
+		readLoreEntriesSettings(widget?.current?.settings?.v1).sort
 	)
 
 	let query = $state("")

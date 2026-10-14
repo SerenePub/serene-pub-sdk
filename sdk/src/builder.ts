@@ -1,18 +1,18 @@
 /**
- * The builder (04 §4). Kind-named methods — `.inlet() .query() .task() .oracle()
+ * The builder. Kind-named methods — `.inlet() .query() .task() .oracle()
  * .outlet()` — so reading a spec top to bottom shows the effect taxonomy, and so
  * the type system can enforce laws that a generic .step() could only find at
- * validation time (04 §4a). Clauses are `.gather() .each() .loop() .junction()`
- * (R-14, ruled 2026-09-15).
+ * validation time. Clauses are `.gather() .each() .loop() .junction()`.
  *
  * The chain is a *value*. It compiles to a document; SP imports the document and
- * never this code (F6).
+ * never this code.
  *
  * Every node method takes either a pinned constructor or a **callback that receives the
  * scope** — `$ => C.assemble({ messages: $.history.messages })`. The callback form is
  * preferred: it types the node key and the port, and it makes a forward reference
  * impossible to write rather than a finding to read (src/scope.ts). Both forms compile
  * to the same rows.
+ * @ruling 04 §4, 04 §4a, R-14 (2026-09-15), F6
  */
 
 import {
@@ -25,7 +25,8 @@ import {
 	type Descriptor,
 } from './descriptors.js'
 import { makeScope, ITEM, type Scope } from './scope.js'
-import { isDataRef, isSlotRef, type DataRef } from './refs.js'
+import { isDataRef, isSlotRef, slot, type DataRef } from './refs.js'
+import type { LoadoutId, LoadoutRef, Prefers } from './loadouts.js'
 import type { SessionShape } from './descriptors.js'
 import type { TemplateValue } from './engines.js'
 import { assertSpecId, parseSpecId } from './identity.js'
@@ -33,6 +34,8 @@ import { TURN_ORDER_CHANGED_IS_INTERNAL, genreIdOf, sessionEvents, type EnvoyDec
 import type { ExternalRef } from './announce.js'
 import { eventById, isSessionEventDecl, notADeclaredEvent, packageEventById, type SessionEventDecl } from './events.js'
 import { i18nFindings, type I18n } from './i18n.js'
+import { rendersProblem } from './bands.js'
+import type { VariableDecl, VariableId } from './variables.js'
 import {
 	actionFindings,
 	normalizeContributes,
@@ -40,6 +43,7 @@ import {
 	type ActionDecl,
 	type NormalizedAction,
 } from './actions.js'
+import { boundaryTriggerFindings, type BoundaryTriggerDecl } from './sceneSettings.js'
 
 /** @experimental */
 export interface SpecMeta {
@@ -58,10 +62,11 @@ export interface SpecMeta {
 	 */
 	owner?: string
 	/**
-	 * For the genre's create pipeline this carries the genre's declaration
-	 * (24 §3): display name, family, standing `SessionShape`, event surface.
+	 * For the genre's create pipeline this carries the genre's declaration:
+	 * display name, family, standing `SessionShape`, event surface.
 	 * Stored on the version row so shape checks stay SELECTs, never document
 	 * loads.
+	 * @ruling 24 §3
 	 */
 	genre?: {
 		name: unknown
@@ -70,29 +75,33 @@ export interface SpecMeta {
 		description?: unknown
 		shape?: SessionShape
 		/**
-		 * The genre's event surface (24 §5), persisted with the declaration
+		 * The genre's event surface, persisted with the declaration
 		 * so "which events exist and which are required" stays a SELECT —
 		 * the genre dashboard and the preset editor read it off the row.
+		 * @ruling 24 §5
 		 */
 		events?: Record<string, { required?: boolean; open?: boolean }>
 		/**
-		 * The genre's envoys (R-18), persisted with the declaration for the
+		 * The genre's envoys, persisted with the declaration for the
 		 * same reason the events are: a host reads "which speakers does this
 		 * genre bring" off the create spec's row, never from the running
 		 * registry — which is also what makes them part of the spec's hash.
+		 * @ruling R-18
 		 */
 		envoys?: readonly EnvoyDecl[]
 		/**
-		 * What a person's persona-less line is called (R4), persisted with the
+		 * What a person's persona-less line is called, persisted with the
 		 * declaration on the same terms as the envoys: the host names those
 		 * lines off the create spec's row. See `GenreDecl.playerLabel`.
+		 * @ruling R4
 		 */
 		playerLabel?: unknown
 		/**
-		 * The genre's pinned settings (PLAN-turn-order §4.13), persisted
+		 * The genre's pinned settings, persisted
 		 * with the declaration on the same terms as the envoys: the host
 		 * resolves the settings cascade off the create spec's row, never
 		 * from the running registry. See `GenreDecl.settings`.
+		 * @ruling PLAN-turn-order §4.13
 		 */
 		settings?: Readonly<Record<string, unknown>>
 	}
@@ -106,17 +115,18 @@ export interface SpecMeta {
 	 */
 	taxonomy?: SpecTaxonomy
 	/**
-	 * What this spec contributes to *other* surfaces (19 §3–§4). **Actions**
+	 * What this spec contributes to *other* surfaces. **Actions**
 	 * are the first kind: "I offer this function on sessions of that genre,
 	 * at these venues" — the narrate spec contributes the narrator button to
 	 * the standard genre, and the genre never has to know. Rides the document
 	 * (hashed with it, stored with it, exported with it), so contribution is
 	 * content, not registration.
 	 *
-	 * The action model (plans/29 R-15, 30 §U5c): every action declares a
+	 * The action model: every action declares a
 	 * **venue** (where, per channel), an **audience** (who sees, who acts),
 	 * `quick` (primary set or overflow), a **slash name** and a localised
 	 * `label` — see `actions.ts`.
+	 * @ruling 19 §3–§4, plans/29 R-15, 30 §U5c
 	 */
 	contributes?: {
 		/**
@@ -124,6 +134,14 @@ export interface SpecMeta {
 		 * action never names a genre — `.inlet()` fills it in.
 		 */
 		actions?: Array<Omit<ActionDecl, 'genre'> & { genre?: never }>
+		/**
+		 * 🚧 The genre's own **boundary triggers** (live scenes ★9, ruled
+		 * 2026-10-13) — a summarize-scene spec's, written by
+		 * `summarizeScene(…, { boundaries })`: deterministic predicates the
+		 * host's boundary watcher reads beside core's, each a session switch.
+		 * Refused here when one does not read (`boundaryTriggerFindings`).
+		 */
+		boundaryTriggers?: BoundaryTriggerDecl[]
 	}
 }
 
@@ -136,16 +154,18 @@ export interface SpecMeta {
 export interface SpecTaxonomy {
 	/**
 	 * What the pipeline is to its genre: `create` instantiates sessions of its
-	 * type (23 §7 — the required one; the spec IS the session type), `primary`
+	 * type (the required one; the spec IS the session type), `primary`
 	 * carries the main turn, `action` is invoked by a person or trigger,
 	 * `maintenance` runs off the critical path (summaries, graph builds).
+	 * @ruling 23 §7
 	 */
 	role?: 'create' | 'primary' | 'action' | 'maintenance'
 	/**
-	 * The one session genre this spec serves — a genre id (24 §3), e.g.
+	 * The one session genre this spec serves — a genre id, e.g.
 	 * `core:genre/chat`. **Never written by an author**: `.inlet()`
 	 * copies it from the lock, so the catalogue and the lock cannot
 	 * disagree. A document read back carries it.
+	 * @ruling 24 §3
 	 */
 	genre?: never
 }
@@ -164,32 +184,32 @@ export interface BuiltNode {
 	position: number
 	/**
 	 * Where this node's controls may be shown beyond the admin's pipeline
-	 * panel (PLAN-turn-order §4.11, R12). `session: true` marks the node's
+	 * panel. `session: true` marks the node's
 	 * rebind (on a strategy node) or its params as a **declared session
 	 * setting**: the session settings form renders a card for the spec with
 	 * exactly the marked keys, and nothing else. Stored in the document, so
 	 * the form reads it off the registry. Absent = admin panel only.
 	 *
-	 * `swaps` (R28, the modder pass): the definition ids a session may seat
+	 * `swaps`: the definition ids a session may seat
 	 * here instead of the pin, in the order a picker lists them. The pin is
 	 * the default and is always offered first, so it is never listed. Present
 	 * only when non-empty; a node with swaps is always `session: true`.
 	 *
-	 * `stream` and `status` (lair pass B3/B18, ruled 2026-09-27, D6/D5) are
+	 * `stream` and `status` are
 	 * what the node shows **while it runs**:
 	 *
 	 *  · `stream: true` — **the streaming step**: this oracle's tokens are
 	 *    the reply's prose, routed into the run's live row as they arrive.
-	 *    Declared, never inferred (D6): a spec that marks nothing streams
+	 *    Declared, never inferred: a spec that marks nothing streams
 	 *    nothing and shows its status until the write lands. At most one on
 	 *    any single execution path — steps in mutually exclusive branches of
-	 *    one junction may each stream, and the one that runs does (W2) — an
+	 *    one junction may each stream, and the one that runs does — an
 	 *    oracle with a streaming out-port — a JSON step never
 	 *    streams — and never inside an `each` or a `loop`; `validate()`
 	 *    refuses the rest (law `streaming step`).
 	 *  · `status` — **the step status**: the sentence the row and the
 	 *    progress card show while this node runs (*Planning the turn*), a
-	 *    string or a locale map (R-20), `{speaker}` filled by the host. It
+	 *    string or a locale map, `{speaker}` filled by the host. It
 	 *    wins over any status the node's own handler sets, for this node
 	 *    only.
 	 *
@@ -206,14 +226,28 @@ export interface BuiltNode {
 	 *    (`isModelCall`); no other step heads a group, so a purpose anywhere
 	 *    else would never be read.
 	 *
-	 * Display text (R-20), hashed with the document like `status`: a spec that
+	 * Display text, hashed with the document like `status`: a spec that
 	 * sets neither hashes as it always did.
+	 * @ruling PLAN-turn-order §4.11, R12, R28, lair pass B3/B18 (2026-09-27), D6/D5, W2, R-20
 	 */
 	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n; label?: I18n; purpose?: I18n }
+	/** The placement's `prefers`, when stated — see `NodeOpts.prefers`. */
+	prefers?: Prefers
+	/**
+	 * What this placement's rendered keys **mean** (owner ruling 2026-10-13):
+	 * a key its definition's `variables` slot renders, re-pointed at another
+	 * registered variable — `{ characterLore: 'acme:var/ranked-lore@1' }`.
+	 * The key stays the template's word; the variable decides which layouts
+	 * the picker offers, the default row, the floor and the absence rule.
+	 * Stated by the spec's author, hashed with the document, never by a
+	 * config or a session. Present only when stated.
+	 * @ruling PROPOSAL-variable-layout-accounting ★2, ★5
+	 */
+	renders?: Record<string, VariableId>
 }
 
 /**
- * One branch's condition (20 §10). Exactly one of `equals` / `equalsPath` /
+ * One branch's condition. Exactly one of `equals` / `equalsPath` /
  * `truthy` / `default` per predicate; `path` narrows what the condition reads
  * off the junction's value (dot path, e.g. `call.tool`). Deliberately not a
  * rules engine — a decision too rich for this table belongs in a Task that
@@ -223,6 +257,7 @@ export interface BuiltNode {
  * so a branch and a greyed button can never mean two different things by the
  * same words.
  * @experimental
+ * @ruling 20 §10
  */
 export interface JunctionPredicate {
 	/** Dot path read off the junction's value first. Absent = the value itself. */
@@ -231,7 +266,7 @@ export interface JunctionPredicate {
 	equals?: unknown
 	/**
 	 * Fires when the value strictly equals the value at **another path on the
-	 * same junction value** (D-4a, 2026-09-17) — `{ path: 'accused',
+	 * same junction value** — `{ path: 'accused',
 	 * equalsPath: 'culprit' }` over a task publishing both.
 	 *
 	 * `equals` takes a literal, so without this a branch could ask *is the
@@ -239,6 +274,7 @@ export interface JunctionPredicate {
 	 * question a genre that DERIVES its hidden fact has to ask. ⚠ Either side
 	 * absent fires nothing: two unwired ports must not compare equal and route
 	 * the branch that means *you got it right*.
+	 * @ruling D-4a (2026-09-17)
 	 */
 	equalsPath?: string
 	/** Fires when the value is truthy. */
@@ -248,7 +284,7 @@ export interface JunctionPredicate {
 }
 
 /**
- * The four clause rules (R-14, ruled 2026-09-15). A **clause** is a container of
+ * The four clause rules. A **clause** is a container of
  * nodes with a repetition or branching rule of its own: **gather** collects
  * several chains (was `async`; `mode` is a setting and, by the equivalence law,
  * unobservable), **each** runs once per item (was `map`), **loop** repeats
@@ -256,6 +292,7 @@ export interface JunctionPredicate {
  * fired (was `route`). Stored documents say these words; the content hash
  * moved once, with the kinds.
  * @experimental
+ * @ruling R-14 (2026-09-15)
  */
 export type ClauseKind = 'gather' | 'each' | 'loop' | 'junction'
 
@@ -286,7 +323,8 @@ export interface BuiltClause {
 	 * junction only. The value the branches are chosen on — a port reference
 	 * resolved when the clause runs. A reference for the same reason
 	 * `repeatWhile` is one: the construct stays renderable ("junction on
-	 * parse.call") and no second expression language enters the design (20 §10).
+	 * parse.call") and no second expression language enters the design.
+	 * @ruling 20 §10
 	 */
 	on?: unknown
 	/**
@@ -306,28 +344,34 @@ export interface BuiltClause {
 }
 
 /**
- * A preset the **spec author** ships — "Balanced", "Lore-heavy", "Fast" (12 §3).
+ * A preset the **spec author** ships — "Balanced", "Lore-heavy", "Fast".
  *
  * The scope chain's layer 5 is a single author default per slot, which is enough for one
  * opinion and no help at all for "here are three coherent ways to run this." Named author
  * presets fill that, and they need no schema: they seed `config_presets` and
  * `node_overrides` rows at `scope_kind='config'` on install, which both already exist.
  *
- * Two rulings ride on this — see 12 §3a.
+ * Two rules ride on this: the `slug` is the identity, and the `owner` decides
+ * what an uninstall removes.
  * @experimental
+ * @ruling 12 §3, 12 §3a
  */
 export interface BuiltPreset {
 	/**
 	 * **The identity.** Stable, PK-agnostic, and the reference an update or a defaults
-	 * sync matches on — same convention as the events registry (13 §7g), now applied to
+	 * sync matches on — same convention as the events registry, now applied to
 	 * every seeded row rather than to events alone.
 	 *
 	 * The consequence worth knowing: the slug is the identity and the label is the
 	 * display, so renaming "Lore-heavy" to "World-focused" is free and keeps every
 	 * user's selection intact. Changing the *slug* is a delete plus a create.
+	 * @ruling 13 §7g
 	 */
 	slug: string
-	/** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+	/**
+	 * The name a picker lists it by — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label: I18n
 	description?: I18n
 	/** At most one author preset may be the shipped default. */
@@ -337,7 +381,8 @@ export interface BuiltPreset {
 	 * stated explicitly only in the case that justifies the field existing: a **preset
 	 * pack** — a plugin shipping presets for a pipeline someone else ships. Uninstalling
 	 * the pack must remove its presets and leave the pipeline alone, which is only
-	 * decidable if the preset says who it belongs to (12 §3b).
+	 * decidable if the preset says who it belongs to.
+	 * @ruling 12 §3b
 	 */
 	owner?: string
 	/** Flat override rows, exactly the shape `node_overrides` stores. */
@@ -350,20 +395,27 @@ export interface BuiltSpec {
 	meta: SpecMeta
 	nodes: BuiltNode[]
 	clauses: BuiltClause[]
-	/** Fragments included, recorded for provenance after expansion (16 §3a). */
+	/**
+	 * Fragments included, recorded for provenance after expansion.
+	 * @ruling 16 §3a
+	 */
 	includes: Array<{ key: string; fragmentId: string }>
-	/** Author-shipped named configurations (12 §3a). Round-trips with the document (F4). */
+	/**
+	 * Author-shipped named configurations. Round-trips with the document.
+	 * @ruling 12 §3a, F4
+	 */
 	presets: BuiltPreset[]
 	/**
-	 * The usage lock (24 §4): the session event this spec's input answers,
+	 * The usage lock: the session event this spec's input answers,
 	 * and the genre it serves. Declared on `.input()`, serialized with the
 	 * document, hashed with it, enforced at compile, publish and dispatch.
 	 *
-	 * `events` (PLAN-turn-order §4.1, 2026-09-21): the alternative to one
+	 * `events`: the alternative to one
 	 * `event` — a spec that answers several session events (the turn-order
 	 * spec answers nine). A dispatched event is accepted when it is the
 	 * locked `event` or is in `events`. Preset bindings are unchanged: a
 	 * spec bound to N events has N binding rows.
+	 * @ruling 24 §4, PLAN-turn-order §4.1 (2026-09-21)
 	 */
 	input?: { genre?: string; event?: string; events?: string[] }
 }
@@ -372,37 +424,92 @@ export interface BuiltSpec {
 export type NodeArg<N, Nodes extends Record<string, PortDecl>> = N | (($: Scope<Nodes>) => N)
 
 /**
- * The optional third argument of a node method (PLAN-turn-order §4.11):
+ * The optional third argument of a node method:
  * `{ expose: { session: true } }` marks the node's controls as a declared
  * session setting — see `BuiltNode.expose`. Additive: every existing call
  * passes nothing and lands exactly the row it landed before.
  *
- * `swaps` (R28) lists the pins a session may seat instead of this node's —
+ * `swaps` lists the pins a session may seat instead of this node's —
  * pins, not strings, so a typo is a compile error and the fit is checked
  * here: each must be the same kind with the same in- and out-ports, by name
  * and shape. Listing swaps implies `session: true`.
  * @experimental
+ * @ruling PLAN-turn-order §4.11, R28
  */
 export interface NodeOpts {
 	expose?: {
 		session?: boolean
 		swaps?: readonly { readonly id: string; readonly descriptor: Descriptor<any, any, any> }[]
-		/** This oracle is the streaming step — see `BuiltNode.expose` (B3, D6). */
+		/**
+		 * This oracle is the streaming step — see `BuiltNode.expose`.
+		 * @ruling B3, D6
+		 */
 		stream?: true
-		/** The step status shown while this node runs — see `BuiltNode.expose` (B18, D5). */
+		/**
+		 * The step status shown while this node runs — see `BuiltNode.expose`.
+		 * @ruling B18, D5
+		 */
 		status?: I18n
 		/** The step label: this step's name in settings — see `BuiltNode.expose`. */
 		label?: I18n
 		/** The step purpose: what this model call is for, under its settings heading — see `BuiltNode.expose`. */
 		purpose?: I18n
 	}
+	/**
+	 * What this step runs best on — overrides the definition's own
+	 * `Descriptor.prefers` for this placement. A suggestion, never a gate.
+	 */
+	prefers?: Prefers
+	/**
+	 * What this placement's rendered keys mean — see `BuiltNode.renders`. A
+	 * declaration or its id; each key must be one the definition's
+	 * `variables` slot renders, and the variable must be registered with the
+	 * key in its scope. Refused here, naming the fix.
+	 *
+	 * ```ts
+	 * .task('prompt', ($) => C.assemble.v2({ … }), { renders: { characterLore: varRankedLore } })
+	 * ```
+	 */
+	renders?: Readonly<Record<string, VariableDecl | VariableId>>
 }
 
 /**
- * The stored mark (R28): swaps as ids, present only when non-empty and
+ * A placement's `renders`, checked against its definition and stored as ids
+ * — `undefined` when it says nothing, so a node that states none hashes as it
+ * always did.
+ */
+function rendersOf(
+	key: string,
+	pinned: Descriptor<any, any, any>,
+	renders: Readonly<Record<string, VariableDecl | VariableId>>,
+): Record<string, VariableId> | undefined {
+	const out: Record<string, VariableId> = {}
+	const slots = Object.values((pinned.slots ?? {}) as Record<string, { kind?: string; renders?: Record<string, string> }>)
+		.filter((s) => s.kind === 'variables')
+	const rendered = slots.flatMap((s) => Object.keys(s.renders ?? {}))
+	for (const [k, v] of Object.entries(renders)) {
+		const id = typeof v === 'string' ? v : v?.id
+		// Saying a key means what its definition already says is no statement:
+		// not stored, so it does not move the document's hash.
+		if (slots.some((s) => s.renders?.[k] === id)) continue
+		if (!rendered.includes(k))
+			throw new Error(
+				`node '${key}': renders names '${k}', which '${pinned.id}' does not render — a spec says ` +
+					`what a key means, it does not add one. It renders ${rendered.map((r) => `'${r}'`).join(', ') || 'nothing'}.`,
+			)
+		const problem = rendersProblem(k, id)
+		if (problem) throw new Error(`node '${key}': renders ${problem}`)
+		out[k] = id!
+	}
+	return Object.keys(out).length ? out : undefined
+}
+
+/**
+ * The stored mark: swaps as ids, present only when non-empty and
  * implying `session: true`, plus the streaming step and step status
- * (B3/B18) when stated; `undefined` when the mark says nothing, so a
+ * when stated; `undefined` when the mark says nothing, so a
  * node that declares nothing hashes as it always did.
+ * @ruling R28, B3/B18
  */
 function exposeOf(
 	key: string,
@@ -453,10 +560,11 @@ export const stepPurposeRefusal = (key: string, definitionId: string): string =>
 	`put the purpose on the oracle that does, or give this step a label instead`
 
 /**
- * The swap list a node declares, refused where it cannot work (R28, R26):
+ * The swap list a node declares, refused where it cannot work:
  * a swap that does not fit would seat a node the spec's edges and config
  * cannot feed, and a person would pick it and get a broken run with no
  * sentence. Returns the stored form — definition ids.
+ * @ruling R28, R26
  */
 function swapIds(
 	key: string,
@@ -484,10 +592,11 @@ function swapIds(
 
 /**
  * A pinned constructor of a given kind. Constraining each method to its own kind makes
- * `.query('x', C.generateText())` a **compile** error rather than a throw — 04 §4a said
- * the method names the kind, and this is that claim actually enforced by the type system
+ * `.query('x', C.generateText())` a **compile** error rather than a throw — the method
+ * names the kind, and this is that claim actually enforced by the type system
  * instead of by a message at authoring time.
  * @experimental
+ * @ruling 04 §4a
  */
 export type NodeOf<K extends Kind> = NodeSpec<Descriptor<any, any> & { kind: K }>
 
@@ -501,9 +610,10 @@ export type EachOver<Nodes extends Record<string, PortDecl>> =
 	(($: Scope<Nodes>) => DataRef) | DataRef | readonly unknown[]
 
 /**
- * Node keys accumulate **fully qualified**, exactly as they land in the rows (F21) — so
+ * Node keys accumulate **fully qualified**, exactly as they land in the rows — so
  * a node declared inside a clause enters the scope as `gather.semantic.embed`, and the
  * scope type expands the dots back into a path (src/scope.ts).
+ * @ruling F21
  */
 type Qualify<Prefix extends string, K extends string> = Prefix extends '' ? K : `${Prefix}.${K}`
 type Add<Nodes extends Record<string, PortDecl>, K extends string, N> = Nodes & {
@@ -531,15 +641,19 @@ export type NodesOf<B> =
 export type BranchPorts = { main: string; values: string; branches: string; ok: string }
 
 /**
- * What a junction publishes (M4, PLAN-turn-order §4.14): the clause ports,
+ * What a junction publishes: the clause ports,
  * and the fired branch's own ports beside them — `$.decide.order`. Open at
  * the type level (any port name reads); `validate()` holds the document to
  * ports every branch's last node actually publishes, with one shape.
  * @experimental
+ * @ruling M4, PLAN-turn-order §4.14
  */
 export type JunctionPorts = BranchPorts & { [port: string]: string }
 
-/** Namespace a fragment's nodes under the include key, at publish and in the type (16 §3a). */
+/**
+ * Namespace a fragment's nodes under the include key, at publish and in the type.
+ * @ruling 16 §3a
+ */
 type Prefixed<K extends string, M> = { [P in keyof M & string as `${K}.${P}`]: M[P] }
 
 /** Lowercase kebab. A slug is a database reference, not display text. */
@@ -635,6 +749,12 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 				const expose = opts?.expose ? exposeOf(key, node.descriptor, opts.expose) : undefined
 				return expose ? { expose } : {}
 			})(),
+			// Only when stated, for the same reason as `expose`.
+			...(opts?.prefers && Object.keys(opts.prefers).length ? { prefers: { ...opts.prefers } } : {}),
+			...(() => {
+				const renders = opts?.renders ? rendersOf(key, node.descriptor, opts.renders) : undefined
+				return renders ? { renders } : {}
+			})(),
 		})
 		return this as any
 	}
@@ -662,10 +782,11 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	}
 
 	/**
-	 * A **gather** clause: several chains collected and awaited together (01 §4).
-	 * `mode` is a setting — by the equivalence law (C8) parallel and sequential
+	 * A **gather** clause: several chains collected and awaited together.
+	 * `mode` is a setting — by the equivalence law parallel and sequential
 	 * are unobservable, which is why the construct is named for what it does
 	 * (gather) and not for how (was `.async()`).
+	 * @ruling 01 §4, C8
 	 */
 	gather<Id extends string, R extends GatherBuilder<any, any>>(
 		id: Id,
@@ -683,7 +804,10 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 		return this as any
 	}
 
-	/** An **each** clause: one contained chain, once per item of a list (01 §4). Was `.map()`. */
+	/**
+	 * An **each** clause: one contained chain, once per item of a list. Was `.map()`.
+	 * @ruling 01 §4
+	 */
 	each<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
 		opts: { over: EachOver<Nodes>; max: number; mode?: 'sequential' | 'parallel' },
@@ -704,7 +828,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 
 	/**
 	 * One contained chain, repeated while a declared port stays truthy — bounded by a
-	 * mandatory `max` (01 §4a).
+	 * mandatory `max`.
 	 *
 	 * This is the construct that makes tool-calling expressible on the spine. It is **not
 	 * a back-edge**: like `each`, the repetition lives in the clause's declaration rather
@@ -713,6 +837,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	 * instead of a list length.
 	 *
 	 * Always sequential — each iteration depends on the last, so `mode` would be a lie.
+	 * @ruling 01 §4a
 	 */
 	loop<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
@@ -747,18 +872,19 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 
 	/**
 	 * A **junction** clause (was `.route()`): branches selected by declared
-	 * predicates over a value on the spine (20 §10). Any subset fires — one,
+	 * predicates over a value on the spine. Any subset fires — one,
 	 * several, or none — plus an optional `otherwise` that fires exactly when
 	 * nothing else did. The decision is *data a task computed* (the value the
 	 * junction is `on`); the branching is declaration; the receipt records
 	 * every predicate's evaluation, fired and skipped alike. Not a back-edge
 	 * and not code in the executor — the loop clause's whole argument, applied
-	 * to fan-out. 01 §4 amended: branching exists as a declared junction; no
+	 * to fan-out. Branching exists as a declared junction; there are no
 	 * back-edges.
 	 *
 	 * Skipped branches publish `halt('not selected')` results marked
 	 * `fired: false`; the union's `ok`/`values` read the *fired* branches, so
-	 * downstream folds see what ran, in declaration order (13 §1).
+	 * downstream folds see what ran, in declaration order.
+	 * @ruling 20 §10, 01 §4 amended, 13 §1
 	 */
 	junction<Id extends string, R extends JunctionBuilder<any, any>>(
 		id: Id,
@@ -889,10 +1015,11 @@ export class JunctionBuilder<
 }
 
 /**
- * Slot-named methods, for the same reason the chain has kind-named ones (04 §4a): the
+ * Slot-named methods, for the same reason the chain has kind-named ones: the
  * method names the slot, so setting a slot a node never declared is caught by name rather
  * than becoming an override row that silently matches nothing.
  * @experimental
+ * @ruling 04 §4a
  */
 export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 	constructor(private preset: BuiltPreset) {}
@@ -902,7 +1029,10 @@ export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 		return this
 	}
 
-	/** Node behaviour knobs — retrieval `weight`, `minInclude`, `topK` (12 §2). */
+	/**
+	 * Node behaviour knobs — retrieval `weight`, `minInclude`, `topK`.
+	 * @ruling 12 §2
+	 */
 	params(nodeKey: keyof Nodes & string, value: Record<string, unknown>) {
 		return this.set(nodeKey, 'params', value)
 	}
@@ -922,15 +1052,25 @@ export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 	settings(nodeKey: keyof Nodes & string, value: Record<string, unknown>) {
 		return this.set(nodeKey, 'settings', value)
 	}
+	/**
+	 * The **loadout** this model call runs on — `slot.loadout(id)` or the
+	 * id itself. Unlike a connection this is allowed in an author preset: a
+	 * loadout names no compute of the user's (a shipped one has no pair), it
+	 * names the *kind* of engine, and the admin fills or merges it.
+	 */
+	loadout(nodeKey: keyof Nodes & string, value: LoadoutRef | LoadoutId) {
+		return this.set(nodeKey, 'loadout', typeof value === 'string' ? slot.loadout(value) : value)
+	}
 
 	/**
 	 * Deliberately absent: `connection`.
 	 *
-	 * An admin preset may set one (12 §4); an author preset may not. The author does not
-	 * know what hardware or credentials the user has, and 12 §4's admin cascade works
+	 * An admin preset may set one; an author preset may not. The author does not
+	 * know what hardware or credentials the user has, and the admin cascade works
 	 * *because* connection has no writable scope below instance — an author preset
 	 * pinning compute would put a layer underneath the admin and break the one guarantee
 	 * the write matrix exists to make.
+	 * @ruling 12 §4
 	 */
 }
 
@@ -984,6 +1124,11 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 			const faults = actions.flatMap((a) => actionFindings({ ...a, genre: PENDING_GENRE }, id))
 			if (faults.length)
 				throw new Error(`spec '${id}' declares an action core cannot offer:\n · ${faults.join('\n · ')}`)
+			// 🚧 The boundary triggers (★9): their shape here; the channels
+			// against the genre where one is at hand (`summarizeScene`).
+			const triggerFaults = boundaryTriggerFindings(normalized.contributes?.boundaryTriggers, 'contributes.boundaryTriggers')
+			if (triggerFaults.length)
+				throw new Error(`spec '${id}' declares a boundary trigger core cannot watch:\n · ${triggerFaults.join('\n · ')}`)
 		}
 		super({
 			id,
@@ -1027,7 +1172,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	}
 
 	/**
-	 * A named configuration the spec ships with (12 §3a). Declared **after** the nodes,
+	 * A named configuration the spec ships with. Declared **after** the nodes,
 	 * so the node keys it addresses are the ones that exist — same accumulation the
 	 * scope uses, so a typo is a compile error rather than a dead override row.
 	 *
@@ -1037,6 +1182,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	 *   .prompts ('generate', { system: LORE_SYSTEM })
 	 *   .template('prompt',   jinja(LORE_ASSEMBLY)))
 	 * ```
+	 * @ruling 12 §3a
 	 */
 	preset(
 		slug: string,
@@ -1084,15 +1230,16 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	}
 
 	/**
-	 * Exactly one **inlet**, positionally first (01 §2). Enforced here rather than
+	 * Exactly one **inlet**, positionally first. Enforced here rather than
 	 * by the validator, so it is a throw at authoring time.
 	 *
-	 * The optional third argument is the **usage lock** (24 §4): the session
+	 * The optional third argument is the **usage lock**: the session
 	 * event this inlet answers and the genre it serves. A session-event spec
 	 * without it does not compile — required for now, and relaxing later
 	 * (`genre: string[]`, `"*"`) is additive, never breaking. **The lock is the
-	 * only subscription** (R-4, 09-B B5): `.on()` and `subscribes` were deleted
+	 * only subscription**: `.on()` and `subscribes` were deleted
 	 * 2026-09-16 — nothing read them at dispatch.
+	 * @ruling 01 §2, 24 §4, R-4, 09-B B5
 	 */
 	inlet<K extends string, N extends NodeOf<'inlet'>>(
 		key: K,
@@ -1232,16 +1379,31 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 		return super.junction(id as any, opts, fn as any) as any
 	}
 
-	/** Compile-time include — expanded here, so rows hold the flat chain (16 §3a). */
+	/**
+	 * Compile-time include — expanded here, so rows hold the flat chain.
+	 * @ruling 16 §3a
+	 */
 	include<K extends string, F extends Fragment<any>>(
 		key: K,
 		fragment: F,
 	): SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>> {
 		this.spec.includes.push({ key, fragmentId: fragment.id })
+		// The fragment's internal wiring moves with it: a reference that names one of
+		// its own nodes or clauses (or a clause's current item) is re-addressed under
+		// the prefix; a reference to anything outside the fragment is left alone.
+		const own = new Set<string>()
+		for (const n of fragment.nodes) own.add(n.key)
+		for (const b of fragment.clauses) {
+			own.add(b.id)
+			own.add(`${b.id}.${ITEM}`)
+		}
+		const rekey = (k: string) => (own.has(k) ? `${key}.${k}` : k)
+		const rewrite = <T>(v: T): T => rewriteFragmentRefs(v, rekey)
 		for (const n of fragment.nodes) {
 			this.spec.nodes.push({
 				...n,
 				key: `${key}.${n.key}`,
+				config: rewrite(n.config),
 				clauseId: n.clauseId ? `${key}.${n.clauseId}` : undefined,
 				position: this.spec.nodes.length,
 			})
@@ -1250,6 +1412,9 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 			this.spec.clauses.push({
 				...b,
 				id: `${key}.${b.id}`,
+				...(b.over !== undefined ? { over: rewrite(b.over) } : {}),
+				...(b.on !== undefined ? { on: rewrite(b.on) } : {}),
+				...(b.repeatWhile !== undefined ? { repeatWhile: rewrite(b.repeatWhile) } : {}),
 				clauseId: b.clauseId ? `${key}.${b.clauseId}` : undefined,
 				position: this.spec.nodes.length,
 			})
@@ -1281,8 +1446,9 @@ export function spec(id: string, meta: SpecMeta): SpecBuilder<{}> {
 /**
  * A fragment carries its node map in its type, so `.include('ctx', contextInfill)` puts
  * `ctx.embed`, `ctx.search`, `ctx.merge` into the including spec's scope — namespaced by
- * the include key in the type exactly as they are namespaced in the rows (16 §3a).
+ * the include key in the type exactly as they are namespaced in the rows.
  * @experimental
+ * @ruling 16 §3a
  */
 export interface Fragment<Nodes extends Record<string, PortDecl> = {}> {
 	id: string
@@ -1290,6 +1456,28 @@ export interface Fragment<Nodes extends Record<string, PortDecl> = {}> {
 	clauses: BuiltClause[]
 	/** Phantom — carries the node map. Never populated at runtime. */
 	readonly __nodes?: Nodes
+}
+
+/**
+ * Deep-copy `value`, re-addressing every `DataRef.node` and `SlotRef.ofNode`
+ * through `rekey`. Plain objects and arrays are walked; everything else is
+ * returned as is. Used by `include` to carry a fragment's internal wiring
+ * under its key prefix.
+ * @internal
+ */
+function rewriteFragmentRefs<T>(value: T, rekey: (key: string) => string): T {
+	const walk = (v: unknown): unknown => {
+		if (isDataRef(v)) return { ...v, node: rekey(v.node) }
+		if (isSlotRef(v)) return v.ofNode !== undefined ? { ...v, ofNode: rekey(v.ofNode) } : { ...v }
+		if (Array.isArray(v)) return v.map(walk)
+		if (v && typeof v === 'object' && Object.getPrototypeOf(v) === Object.prototype) {
+			const out: Record<string, unknown> = {}
+			for (const [k, x] of Object.entries(v)) out[k] = walk(x)
+			return out
+		}
+		return v
+	}
+	return walk(value) as T
 }
 
 /** @experimental */

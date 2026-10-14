@@ -1,5 +1,5 @@
 /**
- * The conformance kit (03 §9).
+ * The conformance kit.
  *
  * This is the artifact SP Core upgrades *against*. The rest of this package is a
  * reference implementation whose runtime half is placeholder — a real executor will have
@@ -21,7 +21,7 @@ import type { Finding } from '@serene-pub/sdk'
 import type { Receipt } from '@serene-pub/sdk'
 import type { Bindings, HostServices, Reviewer, RunEnd, RunOptions } from '@serene-pub/sdk'
 import type { ListedVenueKind, VenueListings } from '@serene-pub/sdk'
-import { actionsOf, DEFAULT_CHANNEL, parseChannel, slashFindings, slashNameOf } from '@serene-pub/sdk'
+import { actionsOf, DEFAULT_CHANNEL, ok, parseChannel, slashFindings, slashNameOf } from '@serene-pub/sdk'
 import { allDefinitions, assertHookSurface, effectsOf, sessionEvents, worldBlockFunctions } from '@serene-pub/sdk'
 import type { GenreDecl, MessageBlock, ParticipantRef, PresetDecl } from '@serene-pub/sdk'
 import type { EventGraph } from '@serene-pub/sdk'
@@ -30,7 +30,7 @@ import { uncausedGenreEvents, unterminatedCycles } from '@serene-pub/sdk'
 // the host's doors to each verdict's own sentence.
 import { i18nText, verdicts, type Door } from '@serene-pub/sdk'
 /**
- * The plugin grant table (plans/29 R-3), imported rather than restated.
+ * The plugin grant table, imported rather than restated.
  * `pluginHarness.ts` keeps it byte-for-byte with the two sandboxes' programs
  * and the app's `hookCtx.ts`, and its docblock says what a further copy would
  * be: the drift the install-time check exists to catch. C25 judges a host's
@@ -55,7 +55,7 @@ export * from './components.js'
 export * from './packages.js'
 
 /**
- * One entry of a host's venue listing, as C19 reads it (F40): the action's
+ * One entry of a host's venue listing, as C19 reads it: the action's
  * identity — its `key` and the id of the spec that contributed it, never the
  * declaration object, because a host decorates its entries — and, in the
  * composer, the slash name the host calls it by.
@@ -77,7 +77,7 @@ export interface BuiltComponent {
 	/** The scopes the page grants it (`session:full`, …) when C31 mounts it. */
 	grants?: string[]
 	/**
-	 * The base sections its widget declares it reads (`WidgetDecl.reads`, R75)
+	 * The base sections its widget declares it reads (`WidgetDecl.reads`)
 	 * — C31 mounts it with those and no others, as the page does, so a module
 	 * that reads a section it never declared fails here rather than on a
 	 * layout. Omitted: every base section, as a declaration without `reads`
@@ -105,14 +105,14 @@ export interface HostUnderTest {
 	importDocument(doc: SpecDocument): SpecDocument
 	/**
 	 * The host's own venue projection of the actions one document
-	 * contributes, for one channel (F40) — what its composer, message menu
+	 * contributes, for one channel — what its composer, message menu
 	 * and settings tabs render from. C19 judges THIS, entry by entry: the
 	 * SDK's executor implements it with `placeActions` over `actionsOf(doc)`,
 	 * each entry decorated with `slashNameOf`; core implements it with
 	 * `listSessionActions`'s placement (its `specSlug` is `specId` here).
 	 * Optional because a validator-only host has no listing — C19 then fails
 	 * naming the missing seam, rather than judging a rule the kit applied on
-	 * the host's behalf, which any host would pass (U7 review, C1).
+	 * the host's behalf, which any host would pass.
 	 */
 	listActions?(
 		doc: SpecDocument,
@@ -130,7 +130,7 @@ export interface HostUnderTest {
 	shipped?(): ShippedCatalogue | Promise<ShippedCatalogue>
 	/**
 	 * The **event map** this host draws for one genre, with each node's
-	 * termination policy — C29's evidence (PLAN-turn-order §B3). The graph is
+	 * termination policy — C29's evidence. The graph is
 	 * the host's own (the app's `eventMap`), never one the kit derives, and a
 	 * termination policy is the host's statement of how a loop through that
 	 * node stops: auto-advance's cause rule and cap, or the run caps that park
@@ -140,14 +140,14 @@ export interface HostUnderTest {
 	eventMap?(genre: string): EventMapEvidence | Promise<EventMapEvidence>
 	/**
 	 * The BUILT component modules this host ships or has been handed — C30's
-	 * evidence for what a module may carry (§3.5).
+	 * evidence for what a module may carry.
 	 */
 	components?(): BuiltComponent[] | Promise<BuiltComponent[]>
 	/**
 	 * Mount a built component module the way this host's page does — its
 	 * worker, its gate — in a **plugin's box** (never core's), with these
 	 * sections pushed and, when given, these scopes granted and only these
-	 * base sections read (`reads`, R75 — the page withholds every other base
+	 * base sections read (`reads` — the page withholds every other base
 	 * section, as it does from a widget that declared them); show the kit the
 	 * result. C30 mounts its own fixture through it; C31 mounts every module
 	 * `components()` lists. The SDK harness takes both as they are
@@ -168,7 +168,7 @@ export interface HostUnderTest {
 	 */
 	componentParity?(): Promise<{ native: ComponentView; remote: ComponentView }>
 	/**
-	 * The swaps offered to this host (R28/R29) — a package's manifest's
+	 * The swaps offered to this host — a package's manifest's
 	 * `swaps`, each with the declaration of the definition it seats
 	 * (`swapsFromManifest`). C32 fits each against `pinnedDefinition`; C33
 	 * probes each definition's handler.
@@ -205,19 +205,20 @@ export interface HostUnderTest {
 		kind: HookCtxKind,
 	): readonly string[] | undefined | Promise<readonly string[] | undefined>
 	/**
-	 * How this host mounts a frame surface (20 §12). Optional; without it C26
+	 * How this host mounts a frame surface. Optional; without it C26
 	 * names the gap rather than judging a boundary the kit cannot see.
 	 */
 	frameMount?(): FrameMount | Promise<FrameMount>
 	/**
-	 * One entry per door this host has (01 §13). The kit feeds each
+	 * One entry per door this host has. The kit feeds each
 	 * registered verdict's `failing(door)` input through it and expects
 	 * `judge(failing).sentence` back (the en text) somewhere in what the door
 	 * refused with; `null` if the door heard the input and did not refuse —
 	 * a failure, the rule is not heard there; `undefined` if this host's door
 	 * does not hear that verdict at all — a gap, named on the result (the
 	 * SDK's `registry` is `register()`, which never judges what a host can
-	 * run, so R-2's publication half is the app's to answer there). The entry
+	 * run, so the publication half of `core:verdict/provisional` is the app's
+	 * to answer there). The entry
 	 * drives the host's REAL door — `validate` runs its validator on a
 	 * document built to hit the verdict, `run` runs the executor and answers
 	 * the receipt's halt or note, `registry` registers a declaration and
@@ -236,7 +237,7 @@ export interface HostUnderTest {
 	>
 }
 
-/** @experimental What a host ships, for C24's read of the form surface (R-15). */
+/** @experimental What a host ships, for C24's read of the form surface. */
 export interface ShippedCatalogue {
 	genres: readonly GenreDecl[]
 	presets: readonly PresetDecl[]
@@ -278,7 +279,7 @@ export interface CheckReport {
 	 * A half of the requirement this host could not be judged on, and why.
 	 * Recorded on the result as `skipped`, never as a failure — for a gap in
 	 * the host's shape rather than a law broken: C18(b) on a host whose
-	 * `run` refuses a document `validate()` refuses (U7 review, W1).
+	 * `run` refuses a document `validate()` refuses.
 	 */
 	skip(why: string): void
 	/**
@@ -315,8 +316,8 @@ export interface Requirement {
 export interface Fixtures {
 	/**
 	 * A minimal chat turn: input → query → task → provider → write, the write
-	 * opening the run's **live row** (`create-message` with `generating: true`
-	 * — F7, W1). C16 holds the host to naming that row; a complete message
+	 * opening the run's **live row** (`create-message` with `generating: true`).
+	 * C16 holds the host to naming that row; a complete message
 	 * would be an ordinary write, and a run with none names no live row.
 	 */
 	chatTurn(): SpecDocument
@@ -330,17 +331,17 @@ export interface Fixtures {
 	looped(max: number): SpecDocument
 	/**
 	 * Two `create-message` placeholders (`generating: true`) in one document,
-	 * an oracle between them (F37). Two live rows, which `validate()`
+	 * an oracle between them. Two live rows, which `validate()`
 	 * refuses under F7 — that refusal IS the one-live-row law at publish
-	 * (a complete message beside them would be an ordinary write, W1), and C16(a) holds the host to it. Never run: the run
+	 * (a complete message beside them would be an ordinary write), and C16(a) holds the host to it. Never run: the run
 	 * half of the law is proved on `chatTurn()`, a document the host can
-	 * publish (U7 review, W1).
+	 * publish.
 	 */
 	twoWrites(): SpecDocument
 	/**
-	 * A document contributing actions (F40): at least one `quick`, one not,
+	 * A document contributing actions: at least one `quick`, one not,
 	 * one on a named channel, one whose `key` is a core verb's (a different
-	 * identity, never shadowing it — plans/31 V2). Every
+	 * identity, never shadowing it). Every
 	 * one of them must be reachable from its venue's listing.
 	 */
 	actions(): SpecDocument
@@ -353,8 +354,8 @@ export interface Fixtures {
 	 */
 	invalid(): Array<{ law: string; doc: SpecDocument; because: string }>
 	/**
-	 * A document with a **live-row** outlet inside a repeating clause (01 §4,
-	 * W1) — an `each` or loop body. One reply row per pass is N live rows;
+	 * A document with a **live-row** outlet inside a repeating clause
+	 * — an `each` or loop body. One reply row per pass is N live rows;
 	 * other writes may repeat, and any write may sit in a gather or a
 	 * junction. Optional; without it C21 judges the two-live-rows half alone
 	 * and names the fixture it is missing.
@@ -363,8 +364,8 @@ export interface Fixtures {
 	/**
 	 * A **parallel** gather whose chains each end in a write, the first chain
 	 * declared finishing LAST (a slow node before its write). C8 holds the
-	 * host to committing the writes in declaration order in both modes (01 §4,
-	 * W1b). Optional; without it C8 judges its results half alone and names
+	 * host to committing the writes in declaration order in both
+	 * modes. Optional; without it C8 judges its results half alone and names
 	 * the fixture it is missing.
 	 */
 	gatherWrites?(): SpecDocument
@@ -377,10 +378,20 @@ export interface Fixtures {
 	 * not judged.
 	 */
 	worldAction?(): SpecDocument
+	/**
+	 * 🚧 The **summarize-scene** specs to judge (live scenes §13.5) — a
+	 * genre's own, as `summarizeScene()` builds them, or one ejected to its
+	 * graph. C34 runs each with the kit's stand-ins for the source, the
+	 * source's attachments, the cast, the model calls and the save, and the
+	 * HOST's bindings for the two pure
+	 * steps between them (`core:task/render-transcript@1`,
+	 * `core:task/batch-messages@2`). Optional; without it C34 is skipped.
+	 */
+	summarizeScenes?(): SpecDocument[]
 	bindings(over?: Bindings): Bindings
 	world: RunOptions['world']
 	/**
-	 * How many writes the world has taken so far (F38), for a host whose
+	 * How many writes the world has taken so far, for a host whose
 	 * writes the kit cannot watch through `RunOptions.host` — a row count in a
 	 * test database, say. Optional: the kit's own probe covers a host that
 	 * routes `ctx.commit` to `RunOptions.host.commit`, and is read first — a
@@ -475,7 +486,7 @@ const headline = (e: unknown): string => {
 	return law ? `${lines[0]} ${law}` : (lines[0] ?? '')
 }
 
-/** Said up front by every C18(b) failure on a refused document (U7 review, W1). */
+/** Said up front by every C18(b) failure on a refused document. */
 const UNVALIDATED =
 	'C18(b) runs a document validate() refuses, on purpose — a host that skips validation must ' +
 	'still hand out no setting; a host that cannot run an unvalidated document needs a run seam ' +
@@ -492,7 +503,7 @@ interface ObservedRun {
 	 * `writesSeen` delta when the fixtures supply one; else undefined. A probe
 	 * that saw commits is never shadowed by a row count it kept from moving —
 	 * a host routing `ctx.commit` through `RunOptions.host` hands the probe
-	 * the write the database never gets (U7 delta review, 2).
+	 * the write the database never gets.
 	 */
 	writes: number | undefined
 	/** Which channel `writes` came from — what to say when it is zero. */
@@ -2026,7 +2037,152 @@ export const REQUIREMENTS: Requirement[] = [
 			must(!failed.length, failed.join('\n'))
 		},
 	},
+	{
+		id: 'C34',
+		law: 'live scenes §13.5 (2026-10-13)',
+		title:
+			'a genre’s summarize-scene spec accepts the summarize request, ends in the save, survives an empty span and an unknown channel, and renders units that carry message ids',
+		consequence:
+			'A scene of that genre cannot be summarized: the scenes socket hands the spec a request it does not read, finds no `synth` / `naming` / `save` to read back, fails on a quiet scene or on a plugin’s channel it never heard of, or drafts from text no row can be traced to — so a reprocess cannot say which lines a summary came from.',
+		async check(host, fx, report) {
+			const docs = fx.summarizeScenes?.() ?? []
+			if (!docs.length)
+				return report.skip('no fixture supplies summarize-scene specs — supply `summarizeScenes()` for C34 to judge them')
+			for (const doc of docs) await judgeSummarizeScene(host, fx, doc)
+		},
+	},
 ]
+
+// ── C34: the summarize-scene fixture ────────────────────────────────────────
+
+/**
+ * The span C34 runs a summarize-scene spec over: two story lines and an aside
+ * on a channel no genre declares. Rows in the `summarize-source@2` row shape
+ * (`id`, `role`, `senderName`, `content`, `channel`).
+ */
+const SCENE_STORY = [
+	{ id: 9101, role: 'user', senderName: 'Ada', content: 'We push the door open.', channel: 'main' },
+	{ id: 9102, role: 'assistant', senderName: 'Bram', content: 'The hinges scream; something below goes quiet.', channel: 'main' },
+]
+const SCENE_ASIDE = [
+	{ id: 9103, role: 'user', senderName: 'Ada', content: 'Make the next room colder.', channel: 'conformance-unknown' },
+]
+
+const SCENE_CAST = { characters: [{ id: 1, name: 'Bram' }], personas: [], envoys: [] }
+const SCENE_SUMMARY = 'The party opened the door, and something below went quiet.'
+
+const C34_DEFINITIONS = {
+	inlet: 'core:inlet/summarize-request@1',
+	render: 'core:task/render-transcript@1',
+	outlet: 'save',
+	read: ['synth', 'naming'],
+} as const
+
+/**
+ * A document node's pin, `id@version`: a built node stores the id bare and
+ * the version beside it; a receipt's row may carry either form.
+ */
+const pinOf = (n: { definitionId: string; definitionVersion?: number }) =>
+	/@\d+$/.test(n.definitionId) ? n.definitionId : `${n.definitionId}@${n.definitionVersion ?? 1}`
+
+async function judgeSummarizeScene(host: HostUnderTest, fx: Fixtures, doc: SpecDocument): Promise<void> {
+	const id = (doc as { id?: string }).id ?? '(unnamed spec)'
+	const nodes = (
+		(doc as { nodes?: Array<{ key: string; kind: string; definitionId: string; definitionVersion?: number }> }).nodes ?? []
+	).map((n) => ({ ...n, definitionId: pinOf(n) }))
+	const renderKey = nodes.find((n) => n.definitionId === C34_DEFINITIONS.render)?.key
+	const inlet = nodes.find((n) => n.kind === 'inlet')
+	must(
+		inlet?.definitionId === C34_DEFINITIONS.inlet,
+		`${id}: its inlet is '${inlet?.definitionId ?? 'none'}' — a summarize-scene spec takes '${C34_DEFINITIONS.inlet}', the request the scenes socket sends`,
+	)
+	const save = nodes.find((n) => n.key === C34_DEFINITIONS.outlet)
+	must(save?.kind === 'outlet', `${id}: no outlet keyed '${C34_DEFINITIONS.outlet}' — the scenes socket previews to it`)
+	for (const key of C34_DEFINITIONS.read)
+		must(nodes.some((n) => n.key === key), `${id}: no node keyed '${key}' — the scenes socket reads the summary off it`)
+	must(
+		nodes.some((n) => n.definitionId === C34_DEFINITIONS.render),
+		`${id}: no '${C34_DEFINITIONS.render}' step — nothing lays the transcript out, so no unit names its message`,
+	)
+	const errors = host.validate(doc).filter((f) => f.severity === 'error')
+	must(!errors.length, `${id}: validate() refuses it — ${errors.map((e) => `${e.law}: ${e.message}`).join('; ')}`)
+
+	const run = async (story: unknown[], asides: unknown[], request: Record<string, unknown>) => {
+		const saved: Array<Record<string, unknown>> = []
+		const receipt = await host.run(doc, {
+			input: { scope: { sessionId: 1 }, request, session: {} },
+			world: fx.world,
+			bindings: fx.bindings({
+				'core:inlet/summarize-request@1': async (i: any) => ok(i),
+				'core:query/summarize-source@2': async () => ok({ main: story, messages: story, asides }),
+				'core:query/session-cast@1': async () => ok({ main: SCENE_CAST, cast: SCENE_CAST, envoys: [] }),
+				// The span's rows are the kit's, so are their files: none.
+				'core:query/history-attachments@1': async () => ok({ main: {}, attachments: {} }),
+				'core:oracle/summarize-batch@1': async (i: any) => {
+					const draft = `A draft of ${String(i?.batch ?? '').length} characters.`
+					return ok({ main: draft, draft })
+				},
+				'core:oracle/summarize-synth@1': async () => ok({ main: SCENE_SUMMARY, content: SCENE_SUMMARY }),
+				'core:oracle/name-entry@1': async () => ok({ main: 'The Door', name: 'The Door' }),
+				'core:oracle/extract-cast@1': async () => {
+					const cast = { participants: [], mentioned: [] }
+					return ok({ main: cast, cast })
+				},
+				'core:outlet/create-lore-entry@1': async (i: any) => {
+					saved.push({ name: i?.name, content: i?.content })
+					return ok({ main: 1, entryId: 1 })
+				},
+			} as Bindings),
+		})
+		const render = receipt.nodes.find((n) => n.nodeKey === renderKey)
+		const units = ((render?.output as { units?: unknown } | undefined)?.units ?? undefined) as
+			| Array<{ messageId?: unknown; text?: unknown; tokens?: unknown }>
+			| undefined
+		return { receipt, saved, units }
+	}
+
+	// (a) The inlet in, the outlet out: a span with story and an aside on a
+	// channel nothing declared reaches `save` with a name and a body.
+	const full = await run(SCENE_STORY, SCENE_ASIDE, { messageIds: [9101, 9102, 9103], channel: 'main' })
+	must(
+		full.receipt.outcome === 'ok',
+		`${id}: a span with an aside on an undeclared channel ended '${full.receipt.outcome}'` +
+			(full.receipt.haltReason ? ` (${full.receipt.haltNodeKey}: ${full.receipt.haltReason})` : '') +
+			' — a plugin’s channel in the span must never stop a summary',
+	)
+	must(
+		full.saved.length === 1 && !!full.saved[0]!.name && !!full.saved[0]!.content,
+		`${id}: the run wrote ${full.saved.length} entries through '${C34_DEFINITIONS.outlet}' — expected one, with a name and a body`,
+	)
+	// (b) Units carry message ids: every unit names a row of the span, and
+	// every row of the span — the aside included — is in some unit.
+	must(Array.isArray(full.units), `${id}: '${C34_DEFINITIONS.render}' published no \`units\` list`)
+	const rows = [...SCENE_STORY, ...SCENE_ASIDE].map((r) => r.id)
+	for (const u of full.units!) {
+		must(
+			rows.includes(Number(u?.messageId)),
+			`${id}: a transcript unit names message ${JSON.stringify(u?.messageId)}, which is not a row of the span`,
+		)
+		must(typeof u?.text === 'string', `${id}: a transcript unit carries no text`)
+		must(typeof u?.tokens === 'number', `${id}: a transcript unit carries no token count`)
+	}
+	for (const r of rows)
+		must(
+			full.units!.some((u) => Number(u?.messageId) === r),
+			`${id}: message ${r} of the span is in no transcript unit — a reprocess could not trace it`,
+		)
+
+	// (c) An empty span: no rows at all is a quiet scene, not an error.
+	const empty = await run([], [], { messageIds: [] })
+	must(
+		empty.receipt.outcome === 'ok' || empty.receipt.outcome === 'halt',
+		`${id}: an empty span ended '${empty.receipt.outcome}' — a scene with nothing in it must end quietly (ok, or a halt with a reason), never as an error`,
+	)
+	must(
+		!empty.units || empty.units.length === 0,
+		`${id}: an empty span rendered ${empty.units?.length} transcript units out of no rows`,
+	)
+}
 
 // ── Runner ──────────────────────────────────────────────────────────────────
 

@@ -46,7 +46,18 @@ const streamingParam = (): FieldDecl => ({
 })
 
 /**
- * **The model decides who speaks** (PLAN-turn-order R41, M4): the oracle on
+ * The **loadout** a model call runs on: pair, sampling and workflow by
+ * one id. Additive and optional — the `connection` and `sampling` slots
+ * beside it stay as per-value overrides, and resolution is: the node's
+ * explicit slot → its loadout (following merges) → the transform's default
+ * loadout when that one is unfilled. One constant, so every model-calling
+ * oracle declares the same slot.
+ * @ruling DESIGN-image-generation §11, §13
+ */
+const LOADOUT_SLOT = { kind: 'loadout', quick: true } as const
+
+/**
+ * **The model decides who speaks**: the oracle on
  * the turn-order spec's optional model path (`decide.model.advise`). Same
  * ports as a strategy — candidates and the visible history in, prepared turn
  * entries out on `main` and `order` — so the junction's result port reads
@@ -74,6 +85,7 @@ export const turnAdvise = pin(
 		timeoutMs: 60000,
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -105,7 +117,7 @@ export const turnAdvise = pin(
 
 /**
  * Run the tool the model asked for, and hand the answer back as text it can
- * read on the next pass (20 §9).
+ * read on the next pass.
  *
  * ## Why this is a Provider and not a Task
  *
@@ -140,7 +152,7 @@ export const runTool = pin(
 		id: 'core:oracle/run-tool@1',
 		i18n: { name: { en: 'Run tool' } },
 		effects: 'external',
-		/** The call was the model's and the tool list the install's: approve or refuse (R-15 review fields). */
+		/** The call was the model's and the tool list the install's: approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 30000,
 		ports: {
@@ -177,7 +189,7 @@ export const embedText = pin(
 		id: 'core:oracle/embed-text@1',
 		shape: S.embeddings,
 		effects: 'external',
-		/** Nothing to edit: an embedding of a text somebody else wrote (R-15 review fields). */
+		/** Nothing to edit: an embedding of a text somebody else wrote. */
 		review: { fields: [] },
 		timeoutMs: 5000,
 		/**
@@ -225,8 +237,8 @@ export const embedText = pin(
 				kind: 'parameters',
 				schema: {
 					/**
-					 * `shared`: one switch for every embed step of a spec (R-7
-					 * P2). `respond` puts it on the semantic mechanism's embed
+					 * `shared`: one switch for every embed step of a
+					 * spec. `respond` puts it on the semantic mechanism's embed
 					 * and the entity-vector mechanism's embed reads it through
 					 * `slot.params({ node })` — an install with no embedding
 					 * model switches both off in one place, which is the only
@@ -274,19 +286,19 @@ export const embedText = pin(
 )
 
 /**
- * An MCP tool call (14 §2) — the generic Provider for a tool on any MCP
- * connection. The snapshot path (14 §3) projects each advertised tool as its
+ * An MCP tool call — the generic Provider for a tool on any MCP
+ * connection. The snapshot path projects each advertised tool as its
  * own registry row under the connection's namespace, typed off the tool's
  * declared input schema; this generic type is the escape hatch beneath them —
  * pin it, choose the connection, name the tool in params.
  *
  * `effects: 'external'` unconditionally: MCP annotations (`readOnlyHint` and
  * friends) are advisory by specification and are never trusted for gating
- * (14 §4). The admin's per-tool classification lives on the snapshot rows;
+ * The admin's per-tool classification lives on the snapshot rows;
  * this generic type gates always, because through it any tool is reachable.
  *
  * The result carries the request and response verbatim in its output — which
- * is the receipt, which is the pitch (14 §5): no other MCP client can answer
+ * is the receipt, which is the pitch: no other MCP client can answer
  * "what did this tool actually do, and did I approve it" from a row.
  * @experimental
  */
@@ -301,9 +313,9 @@ export const mcpTool = pin(
 		},
 		shape: S.mcp,
 		effects: 'external',
-		/** Declared, not bound — plans/28 owns the handler (plans/29 R-2). */
+		/** Declared, not bound — no handler exists for it yet. */
 		provisional: true,
-		/** The arguments are the model's invocation: approve or refuse it, never rewrite it (R-15 review fields). */
+		/** The arguments are the model's invocation: approve or refuse it, never rewrite it. */
 		review: { fields: [] },
 		timeoutMs: 60000,
 		slots: {
@@ -356,10 +368,10 @@ export const mcpTool = pin(
 )
 
 /**
- * An MCP resource read (14 §2) — a Provider, deliberately not a Query. A
- * Query may not reach the network (16 §1), and everything crossing the
- * process boundary must be recorded verbatim so replay never re-infers
- * (F16); a resource is external state that can change between runs, and
+ * An MCP resource read — a Provider, deliberately not a Query. A
+ * Query may not reach the network, and everything crossing the
+ * process boundary must be recorded verbatim so replay never re-infers;
+ * a resource is external state that can change between runs, and
  * modelling it as a Query would quietly break both rules.
  * @experimental
  */
@@ -374,9 +386,9 @@ export const mcpResource = pin(
 		},
 		shape: S.mcp,
 		effects: 'external',
-		/** Declared, not bound — plans/28 owns the handler (plans/29 R-2). */
+		/** Declared, not bound — no handler exists for it yet. */
 		provisional: true,
-		/** The uri is the invocation: approve or refuse (R-15 review fields). */
+		/** The uri is the invocation: approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 60000,
 		slots: {
@@ -423,12 +435,13 @@ export const generateText = pin(
 		i18n: { name: { en: 'Generate reply' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** The payload is the compiled prompt; a prompt rewritten at the gate is one the receipt cannot explain — approve or refuse (R-15 review fields). */
+		/** The payload is the compiled prompt; a prompt rewritten at the gate is one the receipt cannot explain — approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -463,7 +476,7 @@ export const generateText = pin(
 			/**
 			 * ⚠ No `prompts` slot, and there was one — `system` and
 			 * `postHistory`, "the written instructions sent with every request
-			 * from this step" (culled 2026-09-16, R-12). No handler read it:
+			 * from this step" (culled 2026-09-16). No handler read it:
 			 * the instructions reach the model INSIDE the assembled context,
 			 * through `core:task/assemble@2`'s own `prompts` slot, and this
 			 * node sends what it is handed on `context`. Every shipped spec
@@ -517,12 +530,12 @@ export const generateText = pin(
 			in: {
 				context: S.assembled,
 				/**
-				 * Whose reply is being generated — the stop-string exclusion
-				 * (§27l): the speaking character's own name must not stop
+				 * Whose reply is being generated — the stop-string exclusion:
+				 * the speaking character's own name must not stop
 				 * their own reply. The host already preferred a payload value
 				 * over the run scope's; this port is what lets a spec supply
 				 * one, so the exclusion follows the next-speaker node's output
-				 * (19 §5) instead of the pre-run guess.
+				 * instead of the pre-run guess.
 				 */
 				currentCharacterId: S.rowIds,
 				/**
@@ -565,7 +578,7 @@ export const generateText = pin(
 )
 
 /**
- * Generate, with the tools on the wire (20 §9) — the native door.
+ * Generate, with the tools on the wire — the native door.
  *
  * ## Why this is a second type rather than two ports on `generate-text`
  *
@@ -601,12 +614,13 @@ export const generateWithTools = pin(
 		i18n: { name: { en: 'Generate with tools' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** The compiled prompt and the tool list: approve or refuse, as `generate-text` (R-15 review fields). */
+		/** The compiled prompt and the tool list: approve or refuse, as `generate-text`. */
 		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -715,7 +729,7 @@ export const generateJson = pin(
 		i18n: { name: { en: 'Generate JSON' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** The compiled prompt and the schema: approve or refuse, as `generate-text` (R-15 review fields). */
+		/** The compiled prompt and the schema: approve or refuse, as `generate-text`. */
 		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
@@ -732,6 +746,7 @@ export const generateJson = pin(
 		 */
 		optional: true,
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -824,12 +839,13 @@ export const speak = pin(
 		i18n: { name: { en: 'Speak' } },
 		shape: S.tts,
 		effects: 'external',
-		/** Declared, not bound — plans/14 owns the handler (plans/29 R-2). */
+		/** Declared, not bound — no handler exists for it yet. */
 		provisional: true,
-		/** The words to be spoken may be corrected before the call (R-15 review fields). */
+		/** The words to be spoken may be corrected before the call. */
 		review: { fields: ['text'] },
 		timeoutMs: 60000,
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -886,6 +902,30 @@ export const speak = pin(
  * `init` is declared now rather than added later: img2img changes nothing else
  * about this contract, and retrofitting a port onto a published type costs a
  * version bump for every spec pinning it.
+ *
+ * ## Widened in place (2026-10-12)
+ *
+ * Additive, so still `@1` — every new port is optional and every new param
+ * has a default that reproduces the old behaviour; the descriptor hash moves.
+ *
+ *  - `references` — images the output should RESEMBLE (a likeness). Not
+ *    `init` (the starting canvas) and not `mask` (where to paint): three
+ *    different wire fields on every backend that has them.
+ *  - `series` — the pictures wanted, each `{ key, vars }`. The prompt rows
+ *    render once per item with `vars` in scope; every media item out carries
+ *    its `key`. How many CALLS that is, is the host's packing (loop, batch,
+ *    keyed graph) from the pair's drawing sheet — never the spec's.
+ *  - `orientation` swaps the longer edge of the sampling's size; `free`
+ *    takes it as-is.
+ *  - `cutOut` asks for a transparent background: native where the pair
+ *    draws one, else the media is flagged for the cut-out task
+ *    (`native-or-task`), or the bind refuses (`native-only`).
+ *  - `references: required` refuses a pair that takes no reference image;
+ *    `preferred` (default) runs anyway, reports `references` as ignored, and
+ *    says so on the action's form before the run.
+ *
+ * `requires` stays `[text->image]`: `requires` is a static list, so the gate
+ * for reference images is the drawing sheet, read at bind, not a transform.
  * @experimental
  */
 export const generateImage = pin(
@@ -894,13 +934,14 @@ export const generateImage = pin(
 		i18n: { name: { en: 'Generate image' } },
 		shape: S.imageGen,
 		effects: 'external',
-		/** The prompt and the negative may be edited; `init` names an asset and may not (R-15 review fields). */
+		/** The prompt and the negative may be edited; `init` names an asset and may not. */
 		review: { fields: ['prompt', 'negative'] },
 		// Idle rather than wall: a render is minutes on modest hardware, and a
 		// backend still reporting progress is working, not hung.
 		timeoutMs: 600000,
 		timeoutKind: 'idle',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -918,6 +959,16 @@ export const generateImage = pin(
 				quick: true,
 				shape: S.imageGen,
 				description: 'Steps, CFG, size, seed — the settings every image backend shares.',
+			},
+			/**
+			 * 🚧 The graph a template-payload pair draws with (a ComfyUI
+			 * workflow). Optional: flat dialects
+			 * ignore it, and the host's bind guard requires it only when the
+			 * resolved pair's drawing sheet says `payload: 'template'`.
+			 */
+			workflow: {
+				kind: 'workflow',
+				description: 'Which ComfyUI workflow this step draws with, when its image server runs workflows.',
 			},
 			prompts: {
 				kind: 'prompts',
@@ -940,7 +991,110 @@ export const generateImage = pin(
 			 */
 			params: {
 				kind: 'parameters',
-				schema: { streaming: streamingParam() },
+				schema: {
+					streaming: streamingParam(),
+					orientation: {
+						type: 'enum',
+						of: ['free', 'square', 'portrait', 'landscape'],
+						members: [
+							{
+								key: 'free',
+								label: { en: 'As set' },
+								description: { en: "Takes the sampling's width and height as they are." },
+							},
+							{
+								key: 'square',
+								label: { en: 'Square' },
+								description: { en: 'Both edges become the shorter of the two.' },
+							},
+							{
+								key: 'portrait',
+								label: { en: 'Portrait' },
+								description: { en: 'Taller than wide: the longer edge is the height.' },
+							},
+							{
+								key: 'landscape',
+								label: { en: 'Landscape' },
+								description: { en: 'Wider than tall: the longer edge is the width.' },
+							},
+						],
+						default: 'free',
+						description: "Which way up the picture is drawn. As set takes the sampling's size unchanged.",
+					},
+					cutOut: {
+						type: 'enum',
+						of: ['off', 'native-or-task', 'native-only'],
+						members: [
+							{
+								key: 'off',
+								label: { en: 'Off' },
+								description: { en: 'Keeps the background the model draws.' },
+							},
+							{
+								key: 'native-or-task',
+								label: { en: 'Transparent when possible' },
+								description: {
+									en: 'Asks the model for a transparent background, or cuts one out afterwards when it cannot.',
+								},
+							},
+							{
+								key: 'native-only',
+								label: { en: 'Transparent from the model' },
+								description: { en: 'Only runs on a model that draws a transparent background itself.' },
+							},
+						],
+						default: 'off',
+						description: 'Whether the picture needs a transparent background, and where it may come from.',
+					},
+					references: {
+						type: 'enum',
+						of: ['preferred', 'required'],
+						members: [
+							{
+								key: 'preferred',
+								label: { en: 'Preferred' },
+								description: {
+									en: "Runs on a model that can't take a reference image, from the prompt alone, and says so first.",
+								},
+							},
+							{
+								key: 'required',
+								label: { en: 'Required' },
+								description: { en: 'Only runs on a model that takes reference images.' },
+							},
+						],
+						default: 'preferred',
+						description: 'What happens when the model cannot take the reference images wired to this step.',
+					},
+					/**
+					 * 🚧 One seed for the whole step:
+					 * `per-run` draws a seed once when the sampling's
+					 * seed is random and sends it with every call, so a
+					 * series drawn on an SD-class model coheres. A sampling
+					 * that fixes its own seed keeps it. Models that ignore
+					 * seeds ignore this too.
+					 */
+					seed: {
+						type: 'enum',
+						of: ['as-set', 'per-run'],
+						members: [
+							{
+								key: 'as-set',
+								label: { en: 'As set' },
+								description: { en: "Uses the sampling's seed: random stays random for every picture." },
+							},
+							{
+								key: 'per-run',
+								label: { en: 'Same for every picture' },
+								description: {
+									en: 'Picks one seed per run and draws every picture with it, so a set looks alike.',
+								},
+							},
+						],
+						default: 'as-set',
+						description: 'Whether every picture this step draws shares one seed.',
+					},
+				},
 			},
 		},
 		media: { emits: ['image', 'video'] },
@@ -948,10 +1102,21 @@ export const generateImage = pin(
 			in: {
 				prompt: S.text,
 				negative: S.text,
-				/** An input image, for backends that report `img2img`. */
+				/** The starting canvas, for an edit (img2img). Not a reference. */
 				init: S.media,
+				/** Where to paint, for inpainting. Absent edits the whole frame. */
+				mask: S.image,
+				/** Images the output should resemble — a likeness. Not `init`. */
+				references: S.mediaList,
+				/** The pictures wanted, each `{ key, vars }` (`ImageSeriesItemV1`). */
+				series: S.imageSeries,
 			},
 			out: {
+				/**
+				 * Each item is a `MediaRef` plus `key` — the series item it was
+				 * drawn for (`"1"` without a series). Several items may share a
+				 * key (variants); an item with no key is surplus the host kept.
+				 */
 				main: S.mediaList,
 				media: S.mediaList,
 				image: S.image,
@@ -971,7 +1136,7 @@ export const renderImage = pin(
 		id: 'chariot.comfy:render-image@1',
 		shape: S.imageGen,
 		effects: 'external',
-		/** A sample plugin oracle: its payload is a compiled prompt — approve or refuse (R-15 review fields). */
+		/** A sample plugin oracle: its payload is a compiled prompt — approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 300000,
 		slots: {
@@ -1060,7 +1225,7 @@ export const pickSprite = pin(
 		id: 'core:oracle/pick-sprite@1',
 		i18n: { name: { en: 'Closest sprite' } },
 		effects: 'external',
-		/** Nothing to edit: a choice among the card's own sprites (R-15 review fields). */
+		/** Nothing to edit: a choice among the card's own sprites. */
 		review: { fields: [] },
 		timeoutMs: 5000,
 		slots: {
@@ -1154,21 +1319,23 @@ export const pickSprite = pin(
 export const summarizeBatch = pin(
 	describeOracleDefinition({
 		id: 'core:oracle/summarize-batch@1',
+		/** Runs best on a low-temperature, short-answer preset — a suggestion, never a gate. */
+		prefers: { sampling: 'sampling-extraction' },
 		i18n: { name: { en: 'Draft a batch' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** A drafting call over a batch: approve or refuse (R-15 review fields). */
+		/** A drafting call over a batch: approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
 		/**
-		 * The first interior point (18 §4e), and core dogfooding it (07 §0b):
+		 * The first interior point, and core dogfooding it:
 		 * every intermediate draft passes the user's chain before synthesis
 		 * reads it — slop killed in the material summaries are built *from*,
 		 * not only in final replies. Invoked by the binding via
 		 * `ctx.scripts.applyText('each-draft', …)`; recorded per application
-		 * as `appliedBy: 'binding'`. Declares what it accepts (R-11): a draft
+		 * as `appliedBy: 'binding'`. Declares what it accepts: a draft
 		 * is text, so text transforms — said here rather than assumed by the
 		 * broker, which is the difference between a point a plugin can shape
 		 * and a literal in the executor.
@@ -1184,6 +1351,7 @@ export const summarizeBatch = pin(
 			},
 		],
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -1257,15 +1425,18 @@ export const summarizeBatch = pin(
 export const summarizeSynth = pin(
 	describeOracleDefinition({
 		id: 'core:oracle/summarize-synth@1',
+		/** Runs best on a low-temperature, short-answer preset — a suggestion, never a gate. */
+		prefers: { sampling: 'sampling-extraction' },
 		i18n: { name: { en: 'Synthesize the drafts' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** The merge call: approve or refuse (R-15 review fields). */
+		/** The merge call: approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 120000,
 		timeoutKind: 'idle',
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -1299,14 +1470,17 @@ export const summarizeSynth = pin(
 export const nameEntry = pin(
 	describeOracleDefinition({
 		id: 'core:oracle/name-entry@1',
+		/** Runs best on a low-temperature, short-answer preset — a suggestion, never a gate. */
+		prefers: { sampling: 'sampling-extraction' },
 		i18n: { name: { en: 'Name the entry' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** Approve or refuse; the name it produces is reviewed at the entry's write (R-15 review fields). */
+		/** Approve or refuse; the name it produces is reviewed at the entry's write. */
 		review: { fields: [] },
 		timeoutMs: 60000,
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -1343,14 +1517,17 @@ export const nameEntry = pin(
 export const extractCast = pin(
 	describeOracleDefinition({
 		id: 'core:oracle/extract-cast@1',
+		/** Runs best on a low-temperature, short-answer preset — a suggestion, never a gate. */
+		prefers: { sampling: 'sampling-extraction' },
 		i18n: { name: { en: 'Extract the cast' } },
 		shape: S.textGen,
 		effects: 'external',
-		/** Approve or refuse (R-15 review fields). */
+		/** Approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 60000,
 		usage: 'response.usage',
 		slots: {
+			loadout: LOADOUT_SLOT,
 			connection: {
 				kind: 'connection',
 				quick: true,
@@ -1417,12 +1594,13 @@ const graphStep = (id: string, label: string, field: string, extra: { timeoutMs?
 			i18n: { name: { en: label } },
 			shape: S.textGen,
 			effects: 'external',
-			/** Each graph step sends a compiled prompt: approve or refuse (R-15 review fields). */
+			/** Each graph step sends a compiled prompt: approve or refuse. */
 			review: { fields: [] },
 			timeoutMs: extra.timeoutMs ?? 120000,
 			timeoutKind: 'idle',
 			usage: 'response.usage',
 			slots: {
+				loadout: LOADOUT_SLOT,
 				connection: {
 					kind: 'connection',
 					quick: true,
@@ -1477,4 +1655,78 @@ export const graphStateDetection = graphStep(
 	'core:oracle/graph-state-detection@1',
 	'Detect state changes',
 	'stateDetection',
+)
+
+/**
+ * 🚧 **Describe image** — a model that reads pictures is shown one or more
+ * images and asked one written question about them; its answer is the text
+ * out (*Describe from image*, 2026-10-12).
+ *
+ * Not `generate-text`: that node sends an assembled TURN (a transcript, a
+ * speaker, a reply being continued) and its connection requires only
+ * `text->text`, so it resolves to the instance's chat default. This node
+ * sends no transcript — one instruction plus the images — and its connection
+ * REQUIRES `text+image->text`, so an unset slot resolves to the default of
+ * that job (the model that reads pictures), never to the chat model.
+ *
+ * Not a caption either: `caption` is `generate-image`'s out-port (the text a
+ * picture is posted with). This node's answer is whatever the instruction
+ * asks for — a tag list of a person's look, for the likeness helper.
+ *
+ * The instruction is the `prompts` slot's `instruction` field (a prompt
+ * row), so an admin rewrites the question in Admin › Pipelines.
+ * @experimental
+ */
+export const describeImage = pin(
+	describeOracleDefinition({
+		id: 'core:oracle/describe-image@1',
+		i18n: {
+			name: { en: 'Describe image' },
+			description: { en: 'Shows a model that reads pictures an image and asks it one question about it.' },
+		},
+		shape: S.textGen,
+		effects: 'external',
+		/** The instruction is config and the images are references: approve or refuse. */
+		review: { fields: [] },
+		timeoutMs: 120000,
+		timeoutKind: 'idle',
+		usage: 'response.usage',
+		slots: {
+			loadout: LOADOUT_SLOT,
+			connection: {
+				kind: 'connection',
+				quick: true,
+				shape: S.textGen,
+				/** A model that reads images — the job default this resolves to when unset. */
+				requires: [tf({ in: [IoKinds.text, IoKinds.image], out: [IoKinds.text] })],
+				description: 'Which model reads the picture. It must be one that can see images.',
+			},
+			sampling: {
+				kind: 'sampling',
+				quick: true,
+				shape: S.textGen,
+				description: 'The sampling settings used for this request.',
+			},
+			prompts: {
+				kind: 'prompts',
+				quick: true,
+				facet: 'prompts',
+				description: 'The question the model is asked about the picture.',
+				fields: {
+					instruction: { type: 'text' },
+				},
+			},
+		},
+		media: { accepts: ['image'] },
+		ports: {
+			in: {
+				/** The pictures to read, in order. Empty refuses: there is nothing to describe. */
+				images: S.mediaList,
+			},
+			out: {
+				main: S.text,
+				text: S.text,
+			},
+		},
+	}),
 )

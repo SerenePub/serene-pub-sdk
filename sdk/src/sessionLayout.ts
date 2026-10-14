@@ -1,5 +1,5 @@
 /**
- * The **session layout** (`SessionLayoutV1`, NOMENCLATURE §9) — the ONE layout
+ * The **session layout** (`SessionLayoutV1`) — the ONE layout
  * format: what the screen draws, what a person arranges, what a genre or a
  * plugin ships (`GenreLayoutDecl.preset`), and what a **session layout preset**
  * row stores. Plain JSON, stored verbatim; every reader reads it defensively,
@@ -16,6 +16,13 @@
  *   edges it anchors to. The middle's membership lives here; a side's may too.
  * - `arrangedGrid` — the arrangement per zone: whole grid cells (`cols` ×
  *   `rows`) and each widget's cell box. Where a zone has one, it is what draws.
+ *
+ * Three slots can name one zone, so what the screen DRAWS is a reading of
+ * them, and there is one: {@link resolveDrawn} (→ {@link DrawnLayout}) decides
+ * which slot draws each zone, drops retired widgets, gives every placed
+ * instance one pin ({@link pinnedOf}: absent means pinned) and walks each
+ * side's width ladder ({@link zoneRungAt}). The id readers that ask "is it
+ * drawn" ({@link drawnWidgetIds}, {@link primaryPlaced}) are that answer.
  *
  * A named layout adds `widgetSettings` and `widgetStyles` (per-instance values
  * and style pins), so one blob is the portable layout. A session keeps those
@@ -40,6 +47,7 @@
  * package SHIPS ({@link validateSessionLayout}), where refusing is right. No
  * `svelte` import, ever: a linked package that imports svelte gives the app a
  * second Svelte.
+ * @ruling NOMENCLATURE §9
  */
 
 import { parsePluginWidgetId } from './surfaces.js'
@@ -63,16 +71,36 @@ export const INSTANCE_NAME = /^[a-z0-9][a-z0-9-]{0,31}$/
 /** Core's widget id grammar — the bare half a package never namespaces. */
 const CORE_WIDGET_ID = /^[a-z][a-z0-9-]*$/
 
-/** The widget a placed id is a copy of: the id up to its `#`, else the id. @experimental */
-export function widgetOfInstance(instanceId: string): string {
+/** The widget half of a placed id as written — the id up to its `#`, else the id — before any alias. */
+function writtenWidgetOf(instanceId: string): string {
 	const at = instanceId.indexOf(INSTANCE_NAME_SEPARATOR)
 	return at > 0 ? instanceId.slice(0, at) : instanceId
 }
 
-/** The instance name of a copy (`sanctum` of `messages#sanctum`), or `null` for the widget itself. @experimental */
-export function instanceNameOf(instanceId: string): string | null {
+/** The instance name half as written (`2` of `world-state#2`), before any alias. */
+function writtenNameOf(instanceId: string): string | null {
 	const at = instanceId.indexOf(INSTANCE_NAME_SEPARATOR)
 	return at > 0 && at < instanceId.length - 1 ? instanceId.slice(at + 1) : null
+}
+
+/**
+ * The widget a placed id is a copy of: the id up to its `#`, else the id —
+ * read through {@link WIDGET_ID_ALIASES}, so `world-state` is a copy of
+ * `stats`. @experimental
+ */
+export function widgetOfInstance(instanceId: string): string {
+	return resolveWidgetAlias(instanceId).widgetId
+}
+
+/**
+ * The instance name of a copy (`sanctum` of `messages#sanctum`), or `null` for
+ * the widget itself. An aliased id answers the name it reads as
+ * (`world-state` → `world`, {@link resolveWidgetAlias}), so the pair
+ * {@link widgetOfInstance} · `instanceNameOf` always names one copy.
+ * @experimental
+ */
+export function instanceNameOf(instanceId: string): string | null {
+	return writtenNameOf(resolveWidgetAlias(instanceId).instanceId)
 }
 
 /** Is this placed id a copy of `widgetId` — the widget itself or one of its instances? @experimental */
@@ -104,7 +132,7 @@ export function isWidgetInstanceId(id: unknown): id is string {
  * field are one thing to arrange, and the field's shape is a setting on
  * `messages` rather than a widget beside it.
  *
- * `inventory` is one because R79 (2026-09-25) removed core's Inventory widget
+ * `inventory` is one because core's Inventory widget was removed (2026-09-25)
  * for now, with no replacement. Adventure and Lair shipped it, so layouts and
  * presets saved from them name it; dropping it here is what makes such a
  * layout open on the widgets it still has — nothing drawn in its place, no
@@ -112,8 +140,113 @@ export function isWidgetInstanceId(id: unknown): id is string {
  * the stats widget draws as a list. Take it off this list if the widget comes
  * back.
  * @experimental
+ * @ruling R79
  */
 export const RETIRED_WIDGET_IDS: ReadonlySet<string> = new Set(['composer', 'inventory'])
+
+// ── Widget id aliases ───────────────────────────────────────────────────────
+
+/**
+ * One widget id that now reads as another widget with some settings implied
+ * ({@link WIDGET_ID_ALIASES}).
+ * @experimental
+ */
+export interface WidgetIdAlias {
+	/** The widget it is now (`stats`). */
+	id: string
+	/**
+	 * The instance name it reads as (`world`): `world-state` is `stats#world`,
+	 * `world-state#2` is `stats#world-2`.
+	 */
+	instanceName: string
+	/**
+	 * The settings the old widget meant, merged UNDER the instance's own — a
+	 * preset's and a person's stored values win. A reader takes them as the
+	 * instance's defaults.
+	 */
+	settings: Readonly<Record<string, unknown>>
+}
+
+/**
+ * ⏳ Widget ids that are another widget now — an ALIAS, not a retirement: a
+ * stored layout, preset or arrangement that places one keeps drawing what it
+ * drew, as a copy of the widget it became with the settings it meant
+ * ({@link resolveWidgetAlias}). Every id reader goes through it
+ * ({@link widgetOfInstance}, {@link resolveDrawn}, {@link validateSessionLayout}),
+ * so an aliased id is neither retired nor unknown.
+ *
+ * `world-state` is one since the Stats uplift: World State was Stats drawn for the world, as a strip — one
+ * capability, so one widget, with `owners` and `arrangement` settings. A
+ * layout written today places `stats#world` with those settings itself (and
+ * `title: 'World State'`, as core's shipped layouts do).
+ * REMOVE in 0.7.0, with the `world-state` declaration (rewritten layouts
+ * have had a release to land).
+ * @experimental
+ * @ruling PLAN-core-widgets W7 (2026-10-11)
+ */
+export const WIDGET_ID_ALIASES: Readonly<Record<string, WidgetIdAlias>> = Object.freeze({
+	'world-state': Object.freeze({
+		id: 'stats',
+		instanceName: 'world',
+		// `title` is core's own setting (every widget has one): an existing
+		// placed World State keeps its name rather than reading "Stats".
+		settings: Object.freeze({ owners: 'world', arrangement: 'strip', title: 'World State' }),
+	}),
+})
+
+/**
+ * A placed id read through {@link WIDGET_ID_ALIASES} — what
+ * {@link resolveWidgetAlias} answers.
+ * @experimental
+ */
+export interface ResolvedWidgetAlias {
+	/** The widget it is a copy of (`stats` for `world-state`). */
+	widgetId: string
+	/**
+	 * The instance id it reads as — `stats#world` for `world-state`,
+	 * `stats#world-2` for `world-state#2` — what a layout written today would
+	 * place. NOT a storage key: stored settings, style pins and a layout's
+	 * own lists stay keyed by the id as placed. The id itself when nothing
+	 * is aliased.
+	 */
+	instanceId: string
+	/** The settings the alias implies, merged under the instance's own; `{}` when none. */
+	impliedSettings: Readonly<Record<string, unknown>>
+	/** The aliased widget id (`world-state`), or `null` when the id is not an alias. */
+	aliasedFrom: string | null
+}
+
+const NO_SETTINGS: Readonly<Record<string, unknown>> = Object.freeze({})
+
+/** An instance name cut to {@link INSTANCE_NAME}'s length, never ending on a `-`. */
+const nameWithin = (name: string): string => name.slice(0, 32).replace(/-+$/, '')
+
+/**
+ * Read a placed id through {@link WIDGET_ID_ALIASES}. An id that is no alias
+ * answers itself, its widget and no settings.
+ *
+ * The id it reads as is stable — `world-state` is always `stats#world`,
+ * `world-state#n` always `stats#world-n` — and, given the ids already placed
+ * (`taken`), collision-safe: one a layout already places is skipped for the
+ * next free `-2`, `-3`… So a caller rewriting a layout passes every id it
+ * places.
+ * @experimental
+ */
+export function resolveWidgetAlias(instanceId: string, taken?: Iterable<string>): ResolvedWidgetAlias {
+	const written = writtenWidgetOf(instanceId)
+	const alias = Object.hasOwn(WIDGET_ID_ALIASES, written) ? WIDGET_ID_ALIASES[written] : undefined
+	if (!alias) return { widgetId: written, instanceId, impliedSettings: NO_SETTINGS, aliasedFrom: null }
+	const own = writtenNameOf(instanceId)
+	const name = nameWithin(own ? `${alias.instanceName}-${own}` : alias.instanceName)
+	let canonical = `${alias.id}${INSTANCE_NAME_SEPARATOR}${name}`
+	if (taken) {
+		const placed = new Set(taken)
+		placed.delete(instanceId)
+		for (let n = 2; placed.has(canonical); n++)
+			canonical = `${alias.id}${INSTANCE_NAME_SEPARATOR}${nameWithin(name.slice(0, 32 - `-${n}`.length))}-${n}`
+	}
+	return { widgetId: alias.id, instanceId: canonical, impliedSettings: alias.settings, aliasedFrom: written }
+}
 
 // ── The shape ───────────────────────────────────────────────────────────────
 
@@ -153,7 +286,7 @@ export interface LayoutZoneDef {
 	pinned?: boolean
 	/** Widget instance ids, in order. */
 	widgets: string[]
-	/** The width ladder. Absent means the app's default for the side. */
+	/** The width ladder. Absent means the default for where it is drawn ({@link DEFAULT_SIDE_RULES}, {@link DEFAULT_STRIP_RULES}). */
 	rules?: LayoutZoneRule[]
 }
 
@@ -203,7 +336,7 @@ export interface GridWidget {
 	colSpan?: number
 	size: { w: GridSizeSpec; h: GridSizeSpec }
 	anchor: WidgetAnchor
-	/** Stays visible when the drawer is closed. */
+	/** Stays visible when the drawer is closed. Absent means pinned ({@link pinnedOf}). */
 	pinned?: boolean
 	/** Only meaningful when pinned: the card background toggle. */
 	background?: boolean
@@ -234,7 +367,7 @@ export interface ArrangedItem {
 	anchor?: WidgetAnchor
 	/** Tab-group membership: items sharing one draw as one tab set (`g:` + the sorted members). */
 	group?: string
-	/** Docked in a side column. ABSENT MEANS PINNED; `false` is the only value written. */
+	/** Docked in a side column. ABSENT MEANS PINNED ({@link pinnedOf}); `false` is the only value written. */
 	pinned?: boolean
 }
 
@@ -343,48 +476,402 @@ export function middleWidgetIds(layout: SessionLayoutV1): string[] {
 	return [...new Set([...gridIn(layout, 'middle'), ...(arrangedIn(layout, 'middle') ?? [])])]
 }
 
+// ── What a layout draws ─────────────────────────────────────────────────────
+
+/**
+ * What a zone's width ladder resolves to at one inline size: its rules merged
+ * ascending, each stating only what changes. For a side zone the zone's pin
+ * then refines a `rail`: pinned (absent or `true`) stays a docked rail, and
+ * `pinned: false` is an icon strip. A strip is a `row` unless a rule hides it.
+ * @experimental
+ */
+export interface ZoneRung {
+	mode: NonNullable<LayoutZoneRule['mode']>
+	/** The rail's or drawer's inline size, px. */
+	width: number
+	/** Rail stack columns (a wide screen turns a rail into a grid). */
+	columns: number
+}
+
+/**
+ * The width ladder a side zone walks when it declares no `rules` of its own:
+ * an overlay drawer below the rail rung, a docked rail above it, wider and
+ * then two columns on a very wide box. The left docks later than the right,
+ * because the right is where a fresh session's widgets land.
+ *
+ * From 1200 to 1440 — where the left has just docked beside the right — each
+ * side's rail is 248px rather than 264, so two docked columns, their gaps and
+ * the stage's 696px measure fit a 1216px session box (a 1280 window):
+ * 248 + 248 + 2×8 + 696 = 1208. At 264 they needed 1240 and both sides tucked.
+ * @experimental
+ */
+export const DEFAULT_SIDE_RULES: Readonly<Record<'left' | 'right', readonly LayoutZoneRule[]>> = {
+	right: [
+		{ min: 0, mode: 'drawer', width: 320 },
+		{ min: 760, mode: 'rail', width: 264 },
+		{ min: 1200, width: 248 },
+		{ min: 1440, width: 264 },
+		{ min: 1900, width: 300 },
+		{ min: 2400, width: 344, columns: 2 },
+	],
+	left: [
+		{ min: 0, mode: 'drawer', width: 320 },
+		{ min: 1200, mode: 'rail', width: 248 },
+		{ min: 1440, width: 264 },
+		{ min: 1900, width: 300 },
+		{ min: 2400, width: 344, columns: 2 },
+	],
+}
+
+/** The width ladder a strip walks when it declares none: always a row. @experimental */
+export const DEFAULT_STRIP_RULES: readonly LayoutZoneRule[] = [{ min: 0, mode: 'row' }]
+
+/**
+ * A zone's width ladder at `inline` px — its own `rules`, else the default
+ * ladder for where it is drawn ({@link DEFAULT_SIDE_RULES},
+ * {@link DEFAULT_STRIP_RULES}) — with the pin refinement {@link ZoneRung}
+ * describes. The one walk: the page's rails, the editor's simulator and
+ * {@link resolveDrawn} all read a ladder through it.
+ * @experimental
+ */
+export function zoneRungAt(def: LayoutZoneDef, inline: number): ZoneRung {
+	const strip = def.kind === 'strip'
+	const own = Array.isArray(def.rules)
+		? (def.rules as unknown[]).filter((r): r is LayoutZoneRule => isObj(r) && typeof r.min === 'number')
+		: null
+	const rules = own ?? (strip ? DEFAULT_STRIP_RULES : DEFAULT_SIDE_RULES[def.side === 'left' ? 'left' : 'right'])
+	const out: ZoneRung = { mode: 'row', width: 264, columns: 1 }
+	for (const rule of [...rules].sort((a, b) => a.min - b.min)) {
+		if (inline < rule.min) break
+		if (rule.mode !== undefined) out.mode = rule.mode
+		if (rule.width !== undefined) out.width = rule.width
+		if (rule.columns !== undefined) out.columns = rule.columns
+	}
+	if (strip) {
+		if (out.mode !== 'hidden') out.mode = 'row'
+	} else if (out.mode === 'rail' && def.pinned === false) out.mode = 'icons'
+	return out
+}
+
+/**
+ * Is this placement pinned? **Absent means pinned; `false` is the only value
+ * that unpins.** The ONE pin rule of the session layout, for every slot that
+ * carries the field — an arranged item, a grid entry and a zone — so a layout
+ * saved before a slot had the field reads exactly as it drew: docked.
+ * Anything that is not `false` (a missing field, `true`, junk) is pinned.
+ *
+ * What a pin means is where it sits: an arranged item's or a grid entry's is
+ * that widget's (docked in its side column, or a rail icon that flies out);
+ * a zone's is the un-arranged side's (a docked rail, or an icon strip —
+ * {@link zoneRungAt}). ⚠ Not the widget envelope's `layout.v1.pinned`, which
+ * a host tells a widget about its own box.
+ * @experimental
+ */
+export function pinnedOf(placement: { pinned?: unknown } | null | undefined): boolean {
+	return placement?.pinned !== false
+}
+
+/**
+ * One widget instance a zone draws.
+ * @experimental
+ */
+export interface DrawnInstance {
+	/** The widget instance id (`messages`, `messages#sanctum`). */
+	instanceId: string
+	/** The widget it is a copy of ({@link widgetOfInstance}, read through {@link WIDGET_ID_ALIASES}). */
+	widgetId: string
+	/**
+	 * ⏳ When the id is an alias (`world-state`): the settings it implies
+	 * ({@link resolveWidgetAlias}), which a settings reader merges UNDER the
+	 * instance's stored ones. `instanceId` stays the id as placed — the key
+	 * its stored settings and style pin live under.
+	 */
+	impliedSettings?: Readonly<Record<string, unknown>>
+	/**
+	 * Its cells — 0-based origin and span in whole cells of the zone's
+	 * arrangement ({@link DrawnZone.arrangement}) — when the zone is drawn from
+	 * one. As written: a renderer that draws into a measured grid clamps it.
+	 */
+	cells?: { x: number; y: number; w: number; h: number }
+	/** Pinned, by the one rule ({@link pinnedOf}). Every instance has exactly one. */
+	pinned: boolean
+	/** Tab-group membership: instances sharing one draw as one tab set. */
+	group?: string
+	/** The edges of its space it sticks to (an arrangement's or the grid's). */
+	anchor?: WidgetAnchor
+	/** A grid-drawn instance's size spec. */
+	size?: GridWidget['size']
+	/** A grid-drawn instance's span, in cells. */
+	colSpan?: number
+}
+
+/**
+ * One of the three zones as a layout draws it.
+ * @experimental
+ */
+export interface DrawnZone {
+	zone: ZoneId
+	kind: 'side' | 'middle'
+	/** A side zone's edge. */
+	side?: 'left' | 'right'
+	/**
+	 * Where its instances come from: its `arrangedGrid` frame (`arrangement`),
+	 * the grid's middle entries (`grid`), or a side's zone lists, presented by
+	 * the width ladder (`ladder`). {@link resolveDrawn} says which wins.
+	 */
+	drawnFrom: 'arrangement' | 'grid' | 'ladder'
+	/** The arrangement's cell grid, when drawn from one. */
+	arrangement?: { cols: number; rows: number }
+	/**
+	 * A side: the key of the first `zoneLayout` zone drawn on it — the one an
+	 * editor writes to — or null when the layout declares none there.
+	 */
+	zoneKey?: string | null
+	/**
+	 * A side: the zone's own pin, by the one rule ({@link pinnedOf}); true
+	 * when the layout declares no zone there. It decides what an un-arranged
+	 * side draws (its `rung`); an arranged side's instances carry their own.
+	 * The middle is always pinned.
+	 */
+	pinned: boolean
+	/**
+	 * A side: its width ladder at the box's inline size ({@link zoneRungAt};
+	 * the first zone's, else the side's default ladder). An un-arranged side is
+	 * drawn as its `mode`; an arranged one takes `width × columns` as its
+	 * footprint and docks per instance.
+	 */
+	rung?: ZoneRung
+	/** What it draws, in reading order. */
+	instances: DrawnInstance[]
+}
+
+/** A strip as a layout draws it: its list, in order. @experimental */
+export interface DrawnStrip {
+	/** The `zoneLayout` key of the strip. */
+	zoneKey: string
+	area: 'top' | 'bottom'
+	rung: ZoneRung
+	instances: DrawnInstance[]
+}
+
+/**
+ * What a session layout DRAWS, and where — {@link resolveDrawn}'s answer.
+ * The three slots are its inputs, never a second answer: a renderer, a
+ * picture of a preset, the primary floor and a genre's checks all read this.
+ * @experimental
+ */
+export interface DrawnLayout {
+	left: DrawnZone
+	middle: DrawnZone
+	right: DrawnZone
+	/** The strips, in the order `zoneLayout` declares them. */
+	strips: DrawnStrip[]
+}
+
+/** An arranged frame read as the page reads it: whole numbers of cells and an item list, else none. */
+function frameIn(layout: SessionLayoutV1, zone: ZoneId): { cols: number; rows: number; items: ArrangedItem[] } | null {
+	const frame = isObj(layout.arrangedGrid) ? (layout.arrangedGrid as Record<string, unknown>)[zone] : undefined
+	if (!isObj(frame) || typeof frame.cols !== 'number' || typeof frame.rows !== 'number' || !Array.isArray(frame.items))
+		return null
+	const items = (frame.items as unknown[]).filter(
+		(i): i is ArrangedItem =>
+			isObj(i) && typeof i.id === 'string' && !!i.id && ['x', 'y', 'w', 'h'].every((k) => typeof i[k] === 'number'),
+	)
+	return { cols: frame.cols, rows: frame.rows, items }
+}
+
+/** The grid's well-formed entries, as written. */
+function gridEntries(layout: SessionLayoutV1): GridWidget[] {
+	const widgets = isObj(layout.widgetGrid) && Array.isArray(layout.widgetGrid.widgets) ? layout.widgetGrid.widgets : []
+	return widgets.filter(
+		(w): w is GridWidget => isObj(w) && typeof w.id === 'string' && !!w.id && (ZONE_IDS as readonly unknown[]).includes(w.zone),
+	)
+}
+
+/** Is this instance a copy of a retired widget? No reader draws one. */
+const retired = (instanceId: string): boolean => RETIRED_WIDGET_IDS.has(widgetOfInstance(instanceId))
+
+/** An instance's widget, read through the aliases, and the settings an alias implies. */
+function widgetFacts(instanceId: string): Pick<DrawnInstance, 'widgetId' | 'impliedSettings'> {
+	const r = resolveWidgetAlias(instanceId)
+	return r.aliasedFrom ? { widgetId: r.widgetId, impliedSettings: r.impliedSettings } : { widgetId: r.widgetId }
+}
+
+/**
+ * What a session layout draws at a session box of `box.inline` px: per zone,
+ * the instances it draws in reading order, each with one `pinned`, plus the
+ * facts a renderer draws the zone by. Pure and total — any value reads; what
+ * it cannot read places nothing.
+ *
+ * **The precedence, written once.** Three slots can name one zone; this is
+ * the one place that decides which draws.
+ *
+ * - **The middle draws its arrangement whenever the layout has one** — an
+ *   empty one included, else the grid's middle entries by `order`. The
+ *   arrangement is the editor's capture of what a person laid out; an
+ *   emptied middle is a decision, and the primary floor (the app's) is what
+ *   puts the conversation back.
+ * - **A side draws its arrangement when that places anything, else its zone
+ *   lists** — every `zoneLayout` zone drawn on that side (by its `side`,
+ *   never its key) in order, with any grid entry naming the side folded in
+ *   after the first zone's list, but only when a zone is there to hold it.
+ *   An arrangement of nothing is the editor's leftover, not a decision: a
+ *   side that loses its last card goes back to its list.
+ * - **When a side has no arrangement, its width ladder decides how it is
+ *   drawn** ({@link zoneRungAt}): docked as a rail, an icon strip, a drawer
+ *   or hidden — the zone's pin refining the rail. An arranged side is not
+ *   asked: each instance's own pin decides whether it docks.
+ * - **A strip draws its list.**
+ *
+ * Read in that order — middle, left, right, strips — an instance is drawn
+ * once, where it is first drawn. A copy of a retired widget
+ * ({@link RETIRED_WIDGET_IDS}) is never drawn; an aliased id
+ * ({@link WIDGET_ID_ALIASES}) is drawn as the widget it became, under the id
+ * it was placed by, with the settings it implies. Every `pinned` is
+ * {@link pinnedOf}'s: an arranged item's and a grid entry's own, a listed
+ * instance's its zone's.
+ *
+ * The box's `block` size is not read today: no rung is a height.
+ * @experimental
+ */
+export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; block?: number }): DrawnLayout {
+	const doc: SessionLayoutV1 = isObj(layout) ? layout : {}
+	const inline = typeof box?.inline === 'number' && Number.isFinite(box.inline) ? box.inline : 0
+	const seen = new Set<string>()
+	/** Admit an instance once, in reading order, never a retired one. */
+	const admit = (id: string): boolean => {
+		if (retired(id) || seen.has(id)) return false
+		seen.add(id)
+		return true
+	}
+	const grid = gridEntries(doc)
+	const gridZone = (zone: ZoneId) =>
+		grid
+			.filter((w) => w.zone === zone)
+			.map((w, n) => ({ w, order: typeof w.order === 'number' ? w.order : n }))
+			.sort((a, b) => a.order - b.order)
+			.map(({ w }) => w)
+	const fromGrid = (w: GridWidget, pinned = pinnedOf(w)): DrawnInstance => ({
+		instanceId: w.id,
+		...widgetFacts(w.id),
+		pinned,
+		...(typeof w.group === 'string' ? { group: w.group } : {}),
+		...(isObj(w.anchor) ? { anchor: { ...w.anchor } } : {}),
+		...(isObj(w.size) ? { size: w.size } : {}),
+		...(typeof w.colSpan === 'number' ? { colSpan: w.colSpan } : {}),
+	})
+	/** An arrangement's live items in reading order (by row, then column), admitted. */
+	const arrangedInstances = (items: ArrangedItem[]): DrawnInstance[] =>
+		[...items]
+			.sort((a, b) => a.y - b.y || a.x - b.x)
+			.filter((i) => admit(i.id))
+			.map((i) => ({
+				instanceId: i.id,
+				...widgetFacts(i.id),
+				cells: { x: i.x, y: i.y, w: i.w, h: i.h },
+				pinned: pinnedOf(i),
+				...(typeof i.group === 'string' ? { group: i.group } : {}),
+				...(isObj(i.anchor) ? { anchor: { ...i.anchor } } : {}),
+			}))
+
+	// The middle.
+	const middleFrame = frameIn(doc, 'middle')
+	const middle: DrawnZone = middleFrame
+		? {
+				zone: 'middle',
+				kind: 'middle',
+				drawnFrom: 'arrangement',
+				arrangement: { cols: middleFrame.cols, rows: middleFrame.rows },
+				pinned: true,
+				instances: arrangedInstances(middleFrame.items),
+			}
+		: {
+				zone: 'middle',
+				kind: 'middle',
+				drawnFrom: 'grid',
+				pinned: true,
+				instances: gridZone('middle')
+					.filter((w) => admit(w.id))
+					.map((w) => fromGrid(w)),
+			}
+
+	// The sides.
+	const zonesRaw: unknown = isObj(doc.zoneLayout) ? doc.zoneLayout.zones : undefined
+	const defs = isObj(zonesRaw)
+		? Object.entries(zonesRaw).filter((e): e is [string, Record<string, unknown>] => isObj(e[1]))
+		: []
+	const side = (edge: 'left' | 'right'): DrawnZone => {
+		const zones = defs.filter(([, d]) => zoneDrawnAt(d) === edge) as unknown as Array<[string, LayoutZoneDef]>
+		const first = zones[0]?.[1]
+		const pinned = first ? pinnedOf(first) : true
+		const rung = zoneRungAt(first ?? { kind: 'side', side: edge, widgets: [] }, inline)
+		const base = { zone: edge, kind: 'side' as const, side: edge, zoneKey: zones[0]?.[0] ?? null, pinned, rung }
+		const frame = frameIn(doc, edge)
+		if (frame && frame.items.some((i) => !retired(i.id)))
+			return {
+				...base,
+				drawnFrom: 'arrangement',
+				arrangement: { cols: frame.cols, rows: frame.rows },
+				instances: arrangedInstances(frame.items),
+			}
+		const instances: DrawnInstance[] = []
+		zones.forEach(([, def], n) => {
+			const listed = pinnedOf(def)
+			for (const id of strings(def.widgets))
+				if (admit(id)) instances.push({ instanceId: id, ...widgetFacts(id), pinned: listed })
+			// A grid entry naming this side is drawn in its first zone, after
+			// what that zone lists — and nowhere, when no zone is here.
+			if (n === 0) for (const w of gridZone(edge)) if (admit(w.id)) instances.push(fromGrid(w, listed))
+		})
+		return { ...base, drawnFrom: 'ladder', instances }
+	}
+	const left = side('left')
+	const right = side('right')
+
+	// The strips.
+	const strips: DrawnStrip[] = defs
+		.filter(([, d]) => d.kind === 'strip')
+		.map(([key, def]) => {
+			const d = def as unknown as LayoutZoneDef
+			return {
+				zoneKey: key,
+				area: d.area === 'bottom' ? 'bottom' : 'top',
+				rung: zoneRungAt(d, inline),
+				instances: strings(d.widgets)
+					.filter((id) => admit(id))
+					.map((id) => ({ instanceId: id, ...widgetFacts(id), pinned: pinnedOf(d) })),
+			}
+		})
+	return { left, middle, right, strips }
+}
+
+/** Every instance a drawn layout draws, in its reading order: middle, left, right, strips. @experimental */
+export function drawnInstances(drawn: DrawnLayout): DrawnInstance[] {
+	return [
+		...drawn.middle.instances,
+		...drawn.left.instances,
+		...drawn.right.instances,
+		...drawn.strips.flatMap((s) => s.instances),
+	]
+}
+
 /**
  * Every widget instance id the layout DRAWS, in reading order — middle, left,
- * right, then any strips — which is the page's own precedence, place by place:
- *
- * - the middle draws its arrangement whenever it has one (an emptied middle
- *   stays empty), else the grid's middle entries;
- * - a side draws its arrangement when that places anything, else the lists
- *   of the zones on it (by their `side`, never their key) — and, folded into
- *   them, any grid entry naming that side, but only when the layout has a
- *   zone on that side to fold it into;
- * - a strip draws its list.
- *
- * So an entry an arrangement shadows is named but not drawn. A retired widget
- * id is never drawn.
+ * right, then any strips: {@link resolveDrawn}'s answer as ids, so the
+ * precedence is that function's and nowhere else. An entry an arrangement
+ * shadows is named but not drawn; a retired widget is never drawn.
  * @experimental
  */
 export function drawnWidgetIds(layout: SessionLayoutV1): string[] {
-	const out: string[] = []
-	const add = (id: string) => {
-		if (!RETIRED_WIDGET_IDS.has(id) && !out.includes(id)) out.push(id)
-	}
-	;(arrangedIn(layout, 'middle') ?? gridIn(layout, 'middle')).forEach(add)
-	const defs = zoneDefs(layout)
-	for (const side of ['left', 'right'] as const) {
-		const frame = arrangedIn(layout, side)
-		if (frame?.length) {
-			frame.forEach(add)
-			continue
-		}
-		const zones = defs.filter((z) => zoneDrawnAt(z) === side)
-		for (const z of zones) strings(z.widgets).forEach(add)
-		if (zones.length) gridIn(layout, side).forEach(add)
-	}
-	for (const z of defs) if (z.kind === 'strip') strings(z.widgets).forEach(add)
-	return out
+	// Membership does not depend on the box: only a side's presentation does.
+	return drawnInstances(resolveDrawn(layout, { inline: 0 })).map((i) => i.instanceId)
 }
 
 /**
  * Does the layout DRAW any instance of `primaryId` — the bare id or a
  * `#name` copy — anywhere? The **primary floor**'s question: placement is
  * free, and the one rule left is that a layout draws its genre's primary
- * widget somewhere.
+ * widget somewhere. Asked of {@link resolveDrawn}, like every "is it drawn".
  * @experimental
  */
 export function primaryPlaced(layout: SessionLayoutV1, primaryId: string): boolean {
@@ -472,6 +959,10 @@ function isAnchor(x: unknown): boolean {
  *   `maxInstances` (readers draw the first ones in reading order);
  * - with `opts.unknownWidgets: 'warn'` too, a widget `opts.widgets` does not
  *   hold (it draws a labelled placeholder).
+ *
+ * An aliased id (`world-state`, {@link WIDGET_ID_ALIASES}) is checked as the
+ * widget it became: neither retired nor unknown, and counted against that
+ * widget's `maxInstances`.
  * @experimental
  */
 export function validateSessionLayout(

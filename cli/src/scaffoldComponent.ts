@@ -1,5 +1,5 @@
 /**
- * `serene-pub create component <slug>` (§3.5, C3): the files a remote
+ * `serene-pub create component <slug>`: the files a remote
  * component starts from, and the declarations to add to the package's
  * `defineExtension` — printed, never edited in: the entry module is the
  * author's, and a tool that rewrites it is a tool nobody trusts twice.
@@ -69,16 +69,14 @@ export default defineComponent((root, ctx) => {
 \t * ✎ CHANGE: what this component shows. It runs in the page's UI worker:
 \t * build it from the host elements (plain HTML plus the sp-* set), style it
 \t * with classes — a <style> block is dropped at build — and read what the
-\t * host pushes off \`ctx\`.
+\t * host pushes off \`ctx\`. \`ctx\` is reactive: a read in markup or
+\t * $derived redraws when the host pushes.
 \t */
 \tlet { ctx }: { ctx: ComponentContext } = $props()
-\tconst rows = () => ctx.messages?.length ?? 0
-\tlet count = $state(rows())
-\t$effect(() => ctx.subscribe(() => (count = rows())))
 </script>
 
 <div class="space-y-2 p-3">
-\t<p class="text-sm">{count} messages</p>${frame}
+\t<p class="text-sm">{ctx.messages?.length ?? 0} messages</p>${frame}
 </div>
 `,
 		})

@@ -62,7 +62,7 @@ test("a component's <style> is dropped, and said", async () => {
 		`import { svelteComponent } from '@serene-pub/component-client/svelte'\nimport S from './Styled.svelte'\nexport default svelteComponent(S)\n`,
 	)
 	const b = await bundleComponent({ entry: join(dir, 'src/styled.ts'), outfile: join(dir, 'out/styled.js') })
-	assert.match(b.warnings.join(' '), /<style> is dropped/)
+	assert.match(b.warnings.join(" "), /<style> block is dropped/)
 })
 
 test('an alias that LANDS in the renderer is refused, whatever it is called', async () => {

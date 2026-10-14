@@ -1,9 +1,9 @@
 /**
- * Session genres (24 §3) — first-class declared objects with their own ids.
+ * Session genres — first-class declared objects with their own ids.
  *
  * A genre is what kind of session something is: `core:genre/chat`. It owns
- * its id; the create pipeline is its **required member**, not its identity
- * (revises 23 §7). The genre object declares everything a surface asks about
+ * its id; the create pipeline is its **required member**, not its identity.
+ * The genre object declares everything a surface asks about
  * for the life of a session — display name, family, standing shape — plus
  * its **event surface**: which session events exist for this genre and which
  * are required. Presets validate against that surface; dispatch keys on
@@ -12,10 +12,11 @@
  * Pipelines reference the genre object directly (`input(…, { genre: chat,
  * event: events.messageRespond })`) — a typed reference the compiler checks,
  * never a string retyped per spec. In the document it serializes to the id.
+ * @ruling 24 §3, 23 §7
  */
 import type { WidgetDecl } from './layout.js'
 import { widgetRef, type GenreLayoutDecl } from './widgetDecls.js'
-import { drawnWidgetIds, layoutWidgetIds, widgetOfInstance } from './sessionLayout.js'
+import { drawnWidgetIds, layoutWidgetIds, resolveWidgetAlias } from './sessionLayout.js'
 import {
 	assertChannelDecls,
 	assertMessageVerbFloors,
@@ -27,13 +28,14 @@ import {
 	type SessionShape,
 	type SlotDecl,
 } from './descriptors.js'
+import { assertSceneSettings, declaredScenePlace } from './sceneSettings.js'
 import { i18nFindings, localeMapOf, type LocaleMap } from './i18n.js'
 import { eventById, notADeclaredEvent } from './events.js'
 import { settingsSchemaFindings } from './settings.js'
 import { getAttributeSlot, type AttributeSlotDecl } from './attributes.js'
 import type { AttributeSheetDecl } from './sheets.js'
 import { refuseUnlessIdentical } from './hash.js'
-import { isActionIdentity } from './identity.js'
+import { isActionIdentity, parseSpecId, assertSpecId } from './identity.js'
 import {
 	enabledWhenFindings,
 	normalizeEnabledWhen,
@@ -55,30 +57,35 @@ export function assertGenreId(id: string): void {
 }
 
 /**
- * The core session events (24 §5), as **event ids** — `core:event/<name>@1`.
+ * The core session events, as **event ids** — `core:event/<name>@1`.
  *
- * Constants so the core vocabulary is typo-proof. Since R-4 (ruled 2026-09-15,
- * landed 2026-09-16) these ARE `CORE_EVENTS` entries (`events.ts`): one
+ * Constants so the core vocabulary is typo-proof. Since 2026-09-16
+ * these ARE `CORE_EVENTS` entries (`events.ts`): one
  * registry, and a genre's event surface, a preset's `bindings` map and a spec's
  * inlet lock are all keyed by these ids. The bare names (`session-created`)
  * were the keys until the fold; a host migrates its stored keys once.
  * @public
+ * @ruling 24 §5, R-4 (ruled 2026-09-15)
  */
 export const sessionEvents = Object.freeze({
 	/** The create slot — required; exactly one pipeline per genre declares it. */
 	sessionCreated: 'core:event/session-created@1',
 	/** The primary turn. A swipe is this pipeline re-run, not a new event. */
 	messageRespond: 'core:event/message-respond@1',
-	/** Arbitrary buttons/triggers — the existing functions surface (19 §3). */
+	/**
+	 * Arbitrary buttons/triggers — the existing functions surface.
+	 * @ruling 19 §3
+	 */
 	sessionAction: 'core:event/session-action@1',
 	/** A character or persona joined; payload carries the kind. */
 	memberAdded: 'core:event/member-added@1',
 	/** A character or persona left; payload carries the kind. */
 	memberRemoved: 'core:event/member-removed@1',
 	/**
-	 * A form in a message was addressed to a participant the AI portrays
-	 * (R-15 *Forms*; U5d). Optional in every genre's surface: a genre that
+	 * A form in a message was addressed to a participant the AI portrays.
+	 * Optional in every genre's surface: a genre that
 	 * binds nothing leaves such a form waiting, as it would for a person.
+	 * @ruling R-15 *Forms*, U5d
 	 */
 	formAddressed: 'core:event/form-addressed@1',
 	// ── Turn order as event-driven state (PLAN-turn-order §4.1, 2026-09-21) ──
@@ -92,7 +99,10 @@ export const sessionEvents = Object.freeze({
 	messageDeleted: 'core:event/message-deleted@1',
 	/** A message was hidden from the prompt, or shown again. */
 	messageHidden: 'core:event/message-hidden@1',
-	/** A line's shown sprite changed — a picker's choice or a person's (DESIGN-sprites). */
+	/**
+	 * A line's shown sprite changed — a picker's choice or a person's.
+	 * @ruling DESIGN-sprites
+	 */
 	spriteShown: 'core:event/sprite-shown@1',
 	/** A seated participant's row changed — active, position, visibility or portrayal. */
 	castChanged: 'core:event/cast-changed@1',
@@ -106,6 +116,12 @@ export const sessionEvents = Object.freeze({
 	 */
 	annexChanged: 'core:event/annex-changed@1',
 	/**
+	 * 🚧 The session's backdrop was set or cleared — by
+	 * `core:outlet/set-backdrop@1` or by a person.
+	 * @ruling DESIGN-image-generation §6.4
+	 */
+	backdropSet: 'core:event/backdrop-set@1',
+	/**
 	 * `metadata.turnOrder` was written. **For typing only**: core-internal,
 	 * read by the auto-advance listener and the `sessions:turnOrder` push;
 	 * `genre()` refuses it in `events`, so no preset can bind it.
@@ -117,10 +133,11 @@ export const sessionEvents = Object.freeze({
 export type SessionEvent = (typeof sessionEvents)[keyof typeof sessionEvents]
 
 /**
- * Why no genre may list, and no spec may lock, `turn-order-changed`
- * (PLAN-turn-order §4.1): the turn-order write's own event is core-internal.
+ * Why no genre may list, and no spec may lock, `turn-order-changed`:
+ * the turn-order write's own event is core-internal.
  * One sentence for `genre()`, the builder's `.inlet()` and the package pass.
  * @experimental
+ * @ruling PLAN-turn-order §4.1
  */
 export const TURN_ORDER_CHANGED_IS_INTERNAL =
 	`'${sessionEvents.turnOrderChanged}' is core-internal — the auto-advance listener and the ` +
@@ -141,12 +158,18 @@ export interface GenreEventDecl {
 /** @public */
 export interface GenreDecl {
 	readonly id: string
-	/** The picker card's title — a string or a locale map with `en` (R-20). */
+	/**
+	 * The picker card's title — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	readonly name: I18n
 	readonly family: string
 	/** The picker card's subtitle. */
 	readonly description?: I18n
-	/** The standing SessionShape every surface asks about (19 §1). */
+	/**
+	 * The standing SessionShape every surface asks about.
+	 * @ruling 19 §1
+	 */
 	readonly shape?: SessionShape
 	/**
 	 * The event surface: which events exist for this genre, and which are
@@ -195,26 +218,26 @@ export interface GenreDecl {
 	 */
 	readonly customAttributes?: CustomAttributes
 	/**
-	 * The **envoys** this genre brings with it (plans/29 R-18, ruled
-	 * 2026-09-15; built 2026-09-16 as U5g) — speakers that exist nowhere in
+	 * The **envoys** this genre brings with it (built 2026-09-16) — speakers
+	 * that exist nowhere in
 	 * the library: Serene Pub's guide, a dungeon's narrator-in-residence. An
 	 * array, so a genre may offer several; the session or its preset's
 	 * defaults seat one or more, and `default: true` seats one with no choice.
 	 *
 	 * Normalised at declaration: every entry carries `speaks` (`in-turn`
 	 * unless stated), keys are unique, at most one is the default, and every
-	 * `name` is display text with `en` — a string or a locale map (R-20). Part
+	 * `name` is display text with `en` — a string or a locale map. Part
 	 * of the declaration's hash, so a changed envoy is a changed genre.
+	 * @ruling plans/29 R-18 (2026-09-15), U5g, R-20
 	 */
 	readonly envoys?: readonly EnvoyDecl[]
 	/**
-	 * 🚧 What a person's **persona-less line** is called in this genre
-	 * (lair re-plan R4, owner ruling 3, 2026-09-28) — the Lair's
+	 * 🚧 What a person's **persona-less line** is called in this genre — the Lair's
 	 * "Dungeon Master". The counterpart to envoys: an envoy names a speaker
 	 * the genre brings, this names the person at the keyboard when no persona
 	 * speaks for them.
 	 *
-	 * Display text (R-20), normalised to a locale map at the declaration.
+	 * Display text, normalised to a locale map at the declaration.
 	 * Read at render and at prompt time — the log's author name, the
 	 * transcript label, `{{playerLabel}}` in every context builder — and
 	 * **never stamped on a row**: it is a role, not an identity, so a rename
@@ -224,24 +247,25 @@ export interface GenreDecl {
 	 * Refused on a genre whose `shape.personas.min` is 1 or more: a persona
 	 * always names the person's line there, so nothing would ever carry it.
 	 * Absent when unstated, so a genre that says nothing hashes as it did.
+	 * @ruling lair re-plan R4, owner ruling 3 (2026-09-28), R-20
 	 */
 	readonly playerLabel?: LocaleMap
 	/**
-	 * The genre's **enabled-when defaults** (plans/29 R-15; U5e, built
+	 * The genre's **enabled-when defaults** (built
 	 * 2026-09-17), keyed by action **identity** — `<spec>#<key>`, and
-	 * `core#<verb>` for one of core's message verbs (plans/31 V2, ruled
-	 * 2026-09-17; it was the function key until then). A genre's defaults
+	 * `core#<verb>` for one of core's message verbs (it was the function key
+	 * until 2026-09-17). A genre's defaults
 	 * name its own actions and core's verbs; a key that is not an identity
 	 * is refused at the declaration. An action that declares its own
 	 * `enabledWhen` beats this; a session's binding override beats both. Each entry is the junction clause's predicate
 	 * shape over the session's published values (`predicates.ts`), stored
 	 * in list form with `reason` a locale map; refused at the declaration
 	 * on the same terms as the envoys.
+	 * @ruling plans/29 R-15, U5e, plans/31 V2 (2026-09-17)
 	 */
 	readonly enabledWhen?: Readonly<Record<string, readonly EnabledWhen[]>>
 	/**
-	 * The genre's **pinned settings** (PLAN-turn-order §4.13, R14; ruled
-	 * 2026-09-21) — the genre layer of the settings cascade, keyed by
+	 * The genre's **pinned settings** — the genre layer of the settings cascade, keyed by
 	 * setting key: `session > genre > core`.
 	 *
 	 * A genre that declares the field (`shape.fields[key]`) **and** pins a
@@ -250,21 +274,51 @@ export interface GenreDecl {
 	 * declares no field renders no control, stores nothing on the session,
 	 * and the pinned value is what every run reads — the replacement for a
 	 * `hidden` flag. A pinned value is never stored per session.
+	 * @ruling PLAN-turn-order §4.13, R14 (2026-09-21)
 	 */
 	readonly settings?: Readonly<Record<string, unknown>>
 	/**
-	 * Widgets this genre's sessions do not offer (R71) — any package's, core's
+	 * Widgets this genre's sessions do not offer — any package's, core's
 	 * included, by the id the page knows them by (`widgetRef`). Declared by
 	 * value (`omitWidgets: [coreWidgets.stats]`).
+	 * @ruling R71
 	 */
 	readonly omitWidgets?: readonly string[]
-	/** The layouts this genre ships (R71); the first is its default. */
+	/**
+	 * The layouts this genre ships; the first is its default.
+	 * @ruling R71
+	 */
 	readonly layouts?: readonly GenreLayoutDecl[]
+	/**
+	 * 🚧 The **summarize pipelines this genre owns** (live scenes §13,
+	 * 2026-10-13): `scene` is the spec id a scene of this genre's sessions is
+	 * summarized with — `core:spec/lair-summarize-scene`,
+	 * `acme.phone:spec/summarize-scene`. Absent, core's default
+	 * (`core:spec/summarize-scene`) runs, so a new genre summarizes on day one
+	 * with nothing written.
+	 *
+	 * Resolution is this field, never a search: the host asks the session's
+	 * genre for `summarize.scene` and runs that spec. Which channels are the
+	 * story and which are asides is the SPEC's business (its source step's
+	 * params), not the genre's. Absent when unstated, so a genre that says
+	 * nothing hashes as it did.
+	 */
+	readonly summarize?: {
+		/**
+		 * The spec a scene is summarized with — `owner:spec/<name>`. Only
+		 * `scene` is read today; world, character and history summaries
+		 * stay on the shared specs.
+		 */
+		readonly scene?: string
+	}
 }
 
 /** @experimental */
 export interface GenreProps {
-	/** The picker card's title — a string or a locale map with `en` (R-20). */
+	/**
+	 * The picker card's title — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	name: I18n
 	family: string
 	description?: I18n
@@ -281,10 +335,15 @@ export interface GenreProps {
 	enabledWhen?: Readonly<Record<string, EnabledWhenDecl>>
 	/** Pinned setting values — the genre layer of the cascade; see `GenreDecl.settings`. */
 	settings?: Readonly<Record<string, unknown>>
-	/** Widgets this genre's sessions do not offer, by value (R71). */
+	/**
+	 * Widgets this genre's sessions do not offer, by value.
+	 * @ruling R71
+	 */
 	omitWidgets?: readonly WidgetDecl[]
 	/** The layouts this genre ships (`layout()`); the first is its default. */
 	layouts?: readonly GenreLayoutDecl[]
+	/** 🚧 The summarize pipelines this genre owns, by spec id — see `GenreDecl.summarize`. */
+	summarize?: { scene?: string }
 }
 
 /** 🚧 Whether a genre's sessions may track attributes beyond its baseline (`GenreDecl.customAttributes`). @experimental */
@@ -297,7 +356,7 @@ export const genreAllowsCustomAttributes = (g: GenreDecl | string): boolean =>
 /* ── Envoys ─────────────────────────────────────────────────────────────── */
 
 /**
- * When an envoy speaks (plans/29 R-21 (6)).
+ * When an envoy speaks.
  *
  *  · `in-turn` — a turn-taking candidate like any cast character: the turn
  *    strategies may pick it, the composer's reply may be its. The default for
@@ -306,11 +365,12 @@ export const genreAllowsCustomAttributes = (g: GenreDecl | string): boolean =>
  *    plugin's *Roll* reports as its envoy, and no strategy ever picks it. The
  *    only value an action's envoy may carry (`ActionDecl.envoy`).
  * @experimental
+ * @ruling plans/29 R-21 (6)
  */
 export type EnvoySpeaks = 'in-turn' | 'on-action'
 
 /**
- * A speaker a genre or a contributed action brings with it (plans/29 R-18).
+ * A speaker a genre or a contributed action brings with it.
  *
  * Declared in one of exactly two places — `GenreDecl.envoys[]` or
  * `ActionDecl.envoy` — and nowhere else: there is no API to add an envoy to
@@ -319,18 +379,22 @@ export type EnvoySpeaks = 'in-turn' | 'on-action'
  * `key`; an action's is `<plugin>.<key>`, namespaced like a slash name so it
  * cannot collide with a genre's (`envoyIdentity`).
  *
- * Its data is **configuration** (R-18 (2)): `prompts`, `description` and
+ * Its data is **configuration**: `prompts`, `description` and
  * `image` are the genre's declared defaults, read by a pipeline node through
  * `slot.prompts({ envoy })` and tuned in the Pipelines panel with deviation
  * semantics like any other setting — no second schema.
  *
  * ⚠ Not a *character* (a library row) and not a *persona* (the user's own).
  * @experimental
+ * @ruling plans/29 R-18, R-18 (2)
  */
 export interface EnvoyDecl {
 	/** The genre-local key — lowercase kebab, no dots (a dot marks an action's namespace). */
 	key: string
-	/** Display text (R-20): a string or a locale map with `en` — `'Guide'` is `{ en: 'Guide' }`. */
+	/**
+	 * Display text: a string or a locale map with `en` — `'Guide'` is `{ en: 'Guide' }`.
+	 * @ruling R-20
+	 */
 	name: I18n
 	/**
 	 * ⏳ An `http(s)://` URL or a `data:image/…` URI (`ENVOY_IMAGE`) — refused
@@ -368,8 +432,8 @@ export interface EnvoyDecl {
 	/** See `EnvoySpeaks`. A genre's default is `in-turn`; an action's envoy is always `on-action`. */
 	speaks?: EnvoySpeaks
 	/**
-	 * The line this envoy opens a new session with (lair re-plan R6,
-	 * 2026-09-28): the Lair's Castellan introduces the game and invites the
+	 * The line this envoy opens a new session with: the Lair's Castellan
+	 * introduces the game and invites the
 	 * person to start. **Declared, not generated** — a create run is a
 	 * person waiting, so it calls no model; the text is interpolated
 	 * (`{{char}}` is the envoy, `{{playerLabel}}`, `{{characterNames}}`)
@@ -380,13 +444,17 @@ export interface EnvoyDecl {
 	 * A **genre's** envoy only: an action's envoy speaks for its action.
 	 *
 	 * ⚠ Not `SessionShape.greeting`, which is the CARDS' greetings.
+	 * @ruling lair re-plan R6 (2026-09-28)
 	 */
 	greeting?: EnvoyGreeting
 }
 
 /** An envoy's opening line and where it lands — see `EnvoyDecl.greeting`. @experimental */
 export interface EnvoyGreeting {
-	/** The line, interpolated at create. Display text (R-20). */
+	/**
+	 * The line, interpolated at create. Display text.
+	 * @ruling R-20
+	 */
 	text: I18n
 	/** A channel the genre declares. Default `main`. */
 	channel?: string
@@ -394,11 +462,12 @@ export interface EnvoyGreeting {
 
 /**
  * The name a line nobody claims is shown and prompted under when its genre
- * declares no fallback envoy (`EnvoyDecl.fallback`) — display text (R-20), read
+ * declares no fallback envoy (`EnvoyDecl.fallback`) — display text, read
  * in the viewer's language. The host's last resort, so no line is ever
  * attributed to "Unknown" (ruled 2026-09-26). The same word the host already
  * gives narration with no narrator name.
  * @experimental
+ * @ruling R-20
  */
 export const UNCLAIMED_LINE_NAME: LocaleMap = Object.freeze({ en: 'Narrator' })
 
@@ -412,10 +481,11 @@ const ENVOY_SPEAKS: ReadonlySet<string> = new Set<EnvoySpeaks>(['in-turn', 'on-a
 
 /**
  * Every fault in one envoy declaration, as sentences (the teaching-error
- * pattern, 15 §1.3). Empty when it is sound. `owner` says which of the two
+ * pattern). Empty when it is sound. `owner` says which of the two
  * declaring places this is, because an action's envoy has one rule of its own:
  * it may only be `on-action`.
  * @internal
+ * @ruling 15 §1.3
  */
 export function envoyFindings(
 	raw: unknown,
@@ -485,8 +555,9 @@ export function envoyFindings(
 /**
  * The findings on a genre's whole list: each entry's, plus unique keys, at
  * most one default, and — given the genre's `channels` (slugs, `main`
- * included; R6) — a greeting on a channel the genre does not declare.
+ * included) — a greeting on a channel the genre does not declare.
  * @internal
+ * @ruling R6
  */
 export function envoysFindings(raw: unknown, at = 'envoys', channels?: readonly string[]): string[] {
 	if (raw === undefined) return []
@@ -567,13 +638,14 @@ function assertEnabledWhen(
 }
 
 /**
- * Every display string a genre carries (R-20): `name` (required) and
+ * Every display string a genre carries: `name` (required) and
  * `description`; the shape's `fields` schema and its `panels[]` titles; and
  * the `label` / `description` of every slot and sheet it brings. The slots and
  * sheets passed their own doors already; they are read again here because a
  * genre is the declaration a session is created under, and a picker card that
  * lists a slot with no label is this genre's defect to hear about.
  * @experimental
+ * @ruling R-20
  */
 export function genreDisplayTextFindings(props: GenreProps, at: string): string[] {
 	const out: string[] = []
@@ -600,10 +672,11 @@ function assertDisplayText(props: GenreProps, genreId: string): void {
 }
 
 /**
- * `GenreProps.playerLabel` (R4), checked and normalised: display text with an
- * `en` (R-20), as a frozen locale map — and refused for a genre where a
+ * `GenreProps.playerLabel`, checked and normalised: display text with an
+ * `en`, as a frozen locale map — and refused for a genre where a
  * persona always names the person's line (`shape.personas.min ≥ 1`), because
  * nothing there would ever carry it.
+ * @ruling R4, R-20
  */
 function assertPlayerLabel(props: GenreProps, genreId: string): LocaleMap | undefined {
 	if (props.playerLabel === undefined) return undefined
@@ -636,7 +709,10 @@ function assertEnvoys(
 /** Core's conversation widget — the primary widget a genre must replace if it withholds it. @internal */
 export const CONVERSATION_WIDGET_ID = 'messages'
 
-/** `omitWidgets` read down to ids, and `layouts` checked (R71). */
+/**
+ * `omitWidgets` read down to ids, and `layouts` checked.
+ * @ruling R71
+ */
 function assertGenreWidgets(props: GenreProps, id: string): { omitWidgets: string[]; layouts: GenreLayoutDecl[] } {
 	const problems: string[] = []
 	const omitWidgets: string[] = []
@@ -661,9 +737,13 @@ function assertGenreWidgets(props: GenreProps, id: string): { omitWidgets: strin
 		if (slugs.has(l.slug)) problems.push(`${id} layouts: two layouts are '${l.slug}' — a slug names one`)
 		slugs.add(l.slug)
 		// By widget, not by instance: `messages#sanctum` places the conversation.
-		for (const w of layoutWidgetIds(l.preset))
-			if (omitWidgets.includes(widgetOfInstance(w)))
+		// An aliased id (`world-state`) is both the widget it became and the
+		// one it was: omitting either withholds it.
+		for (const w of layoutWidgetIds(l.preset)) {
+			const read = resolveWidgetAlias(w)
+			if (omitWidgets.includes(read.widgetId) || (read.aliasedFrom !== null && omitWidgets.includes(read.aliasedFrom)))
 				problems.push(`${id} layout '${l.slug}' places '${w}', which the genre omits`)
+		}
 	}
 	// The primary floor: a session always draws its primary widget. A genre
 	// that withholds the conversation says what stands in its place — its
@@ -685,6 +765,64 @@ function assertGenreWidgets(props: GenreProps, id: string): { omitWidgets: strin
 }
 
 /**
+ * 🚧 What is wrong with a genre's `summarize` declaration — one sentence per
+ * problem, empty when it is sound. Each entry is a spec id with an owner
+ * (`core:spec/lair-summarize-scene`): a bare slug is a hand-imported
+ * document's, which no genre can be sure an install holds.
+ * @experimental
+ */
+export function genreSummarizeFindings(raw: unknown, at = 'summarize'): string[] {
+	if (raw === undefined) return []
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+		return [`${at}: an object of spec ids — { scene: 'owner:spec/name' } — not ${JSON.stringify(raw)}`]
+	const out: string[] = []
+	for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+		if (key !== 'scene') {
+			out.push(`${at}.${key}: not a summarize pipeline a genre can own — only 'scene' is read`)
+			continue
+		}
+		if (value === undefined) continue
+		if (typeof value !== 'string') {
+			out.push(`${at}.scene: a spec id, as a string — not ${JSON.stringify(value)}`)
+			continue
+		}
+		try {
+			assertSpecId(value)
+		} catch (e) {
+			out.push(`${at}.scene: ${(e as Error).message}`)
+			continue
+		}
+		if (!parseSpecId(value).owner)
+			out.push(`${at}.scene: '${value}' names no owner — use 'owner:spec/name', e.g. 'core:spec/chat-summarize-scene'`)
+	}
+	return out
+}
+
+/** A slot id as a template reads it: `core:slot/location@1` → `location`. */
+const slotLocalKey = (slotId: string) => slotId.replace(/^.*:slot\//, '').replace(/@\d+$/, '')
+
+/**
+ * 🚧 A genre's `shape.scenes.place` (live scenes §15 G2) must name a slot the
+ * genre declares — in its `slots` or its `sheets` — by the key a template
+ * reads it under: a place the genre's state never holds would name no scene
+ * and fire no *place changed*. Refused here, where the author is.
+ */
+function assertScenePlaceDeclared(props: GenreProps, id: string): void {
+	const place = declaredScenePlace(props.shape)
+	if (!place) return
+	const keys = new Set<string>([
+		...(props.slots ?? []).map((s) => slotLocalKey(s.id)),
+		...(props.sheets ?? []).flatMap((sheet) => (sheet.slots ?? []).map((e) => slotLocalKey(e.id))),
+	])
+	if (!keys.has(place.stateKey))
+		throw new Error(
+			`${id}.scenes.place.stateKey: '${place.stateKey}' is not a slot this genre declares` +
+				(keys.size ? ` (${[...keys].join(', ')})` : ' — it declares none') +
+				` — the place must be a state value its sessions hold`,
+		)
+}
+
+/**
  * Declare a genre. The id is stated in full, under your plugin's slug
  * (`acme.dice:genre/table`), and the genre value is what everything else
  * references.
@@ -702,6 +840,11 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	assertSessionWrites(props.shape, id)
 	assertTurnControls(props.shape, id)
 	assertChannelDecls(props.shape, id)
+	// 🚧 The scene settings (live scenes §4): refused here on the same terms —
+	// a mode or a trigger that does not read is an authoring mistake, not a
+	// default to fall back to silently.
+	assertSceneSettings(props.shape, id)
+	assertScenePlaceDeclared(props, id)
 	const events: Record<string, GenreEventDecl> = { ...(props.events ?? {}) }
 	// The turn-order write's own event is core-internal (PLAN-turn-order
 	// §4.1): the recompute must not be able to answer itself, so no genre
@@ -742,6 +885,10 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	if (props.customAttributes !== undefined && props.customAttributes !== 'allow' && props.customAttributes !== 'deny')
 		throw new Error(`${id}.customAttributes: 'allow' or 'deny' — not ${JSON.stringify(props.customAttributes)}`)
 	const playerLabel = assertPlayerLabel(props, id)
+	const summarizeFindings = genreSummarizeFindings(props.summarize, `${id}.summarize`)
+	if (summarizeFindings.length) throw new Error(summarizeFindings.join('\n'))
+	const summarize =
+		props.summarize?.scene !== undefined ? Object.freeze({ scene: props.summarize.scene }) : undefined
 	const decl: GenreDecl = Object.freeze({
 		id,
 		name: props.name,
@@ -765,6 +912,8 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		// R71: absent when unstated, so a genre that says nothing hashes as it did.
 		...(omitWidgets.length ? { omitWidgets: Object.freeze(omitWidgets) } : {}),
 		...(layouts.length ? { layouts: Object.freeze(layouts) } : {}),
+		// Live scenes §13: absent when unstated, so a genre that says nothing hashes as it did.
+		...(summarize ? { summarize } : {}),
 	})
 	const existing = registry.get(id)
 	if (existing)
@@ -829,8 +978,17 @@ export function _registerPackageGenre(packageId: string, raw: GenreDecl): GenreD
 		throw new Error(`genre '${id}' has no name or family — not a genre declaration`)
 	const events = { ...(raw.events ?? {}) }
 	events[sessionEvents.sessionCreated] = { ...(events[sessionEvents.sessionCreated] ?? {}), required: true }
+	// A stored `summarize` the authoring door would refuse is dropped rather
+	// than refused: the host then runs core's default summarizer, which is the
+	// standing "fall back, never strand the session" rule for a stale binding.
+	const { summarize: storedSummarize, ...rest } = raw
+	const summarize =
+		storedSummarize !== undefined && !genreSummarizeFindings(storedSummarize).length
+			? storedSummarize
+			: undefined
 	const decl: GenreDecl = Object.freeze({
-		...raw,
+		...rest,
+		...(summarize?.scene !== undefined ? { summarize: Object.freeze({ scene: summarize.scene }) } : {}),
 		events: Object.freeze(events),
 		...(raw.slots ? { slots: Object.freeze([...raw.slots]) } : {}),
 		...(raw.sheets ? { sheets: Object.freeze([...raw.sheets]) } : {}),
@@ -937,7 +1095,7 @@ export const genreIdOf = (g: GenreDecl | { readonly id: string } | string): stri
 }
 
 /**
- * The configurable surface of one envoy, as a slot declaration (R-18 (2)).
+ * The configurable surface of one envoy, as a slot declaration.
  *
  * An envoy is not a node and has no registry row to carry a declaration —
  * so the SDK declares its slot from the two facts the genre does carry, its
@@ -954,6 +1112,7 @@ export const genreIdOf = (g: GenreDecl | { readonly id: string } | string): stri
  * is the name the reading node's own slot has and the name `slot.prompts({
  * envoy })` resolves at; the fields are that node's fields.
  * @internal
+ * @ruling R-18 (2)
  */
 export function envoyPromptsSlotFor(envoy: EnvoyDecl): SlotDecl {
 	return {

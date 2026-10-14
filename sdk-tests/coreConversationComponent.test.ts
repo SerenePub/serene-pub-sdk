@@ -11,6 +11,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import type { ConversationDossierV1 } from '../core-catalog/src/shared/ui/conversation/index.js'
 import { CORE_WIDGETS } from '@serene-pub/core-catalog'
+import type { WidgetAction } from '@serene-pub/sdk'
 import { mountComponent } from './harnessGuard.js'
 
 const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
@@ -63,9 +64,9 @@ const dossier: ConversationDossierV1 = {
 	turn: { order: [], candidates: [], show: false, canChoose: false },
 	readOnly: null,
 	state: { ledgers: {}, pending: {}, waiting: [] },
-	backdrop: false,
+	appBackground: false,
 }
-const edit = {
+const edit: WidgetAction = {
 	key: 'edit',
 	specSlug: 'core',
 	name: 'Edit',
@@ -74,6 +75,7 @@ const edit = {
 	audience: { see: ['participant'], act: ['item'] },
 	venue: 'message',
 	origin: 'core',
+	floor: false,
 	canAct: true,
 	itemGated: true,
 	isNew: false,
@@ -173,6 +175,73 @@ test("core's conversation component renders, streams and edits", { timeout: 120_
 		assert.equal(view.invoked.length, 3)
 	} finally {
 		await view.unmount()
+	}
+})
+
+/* ── the ledger head (live scenes §15 G13) ───────────────────────────── */
+
+test('time moved before anything was said is the ledger head: drawn on the empty log, then above the first line', { timeout: 120_000 }, async () => {
+	const head = [
+		{
+			ownerKey: 'world',
+			ownerLabel: 'Proof',
+			lines: [{ key: 'c7', text: 'Time passes: 3 hours (Day 4, 09:00 → Day 4, 12:00)', updatedBy: 'run:1' }],
+		},
+	]
+	const withHead = { ...dossier, state: { ...dossier.state, head } }
+	const mount = (messages: ReturnType<typeof row>[], d: ConversationDossierV1) =>
+		mountComponent({
+			root: CORE_CATALOG,
+			entry: 'components/shared/messages/messages.ts',
+			owner: 'core',
+			coreConversation: true,
+			timeoutMs: 60_000,
+			context: {
+				session: { id: 1, name: 'Proof' },
+				messages,
+				settings: {},
+				viewer: { userId: 1, isAdmin: false, isGuest: false },
+				scoped: { session_full: d },
+			},
+		})
+	const headText = (view: { queryAll(s: string): Element[] }) =>
+		view.queryAll('[data-ledger-head]').map((n) => n.textContent?.replace(/\s+/g, ' ').trim())
+
+	const empty = await mount([], withHead)
+	try {
+		assert.deepEqual(empty.refused, [])
+		assert.deepEqual(headText(empty), ['Proof Time passes: 3 hours (Day 4, 09:00 → Day 4, 12:00)'])
+		assert.ok(empty.queryAll('[data-ledger-head]')[0]!.closest('[data-widget-part~="messages.log-empty"]'))
+	} finally {
+		await empty.unmount()
+	}
+
+	const talking = await mount([row(1, 'user', 'Hello there'), row(2, 'assistant', 'Hi!')], withHead)
+	try {
+		const [drawn] = talking.queryAll('[data-ledger-head]')
+		assert.ok(drawn, 'the head stays above the first line once there is one')
+		const list = talking.queryAll('[data-widget-part~="messages.message-list"]')[0]!
+		assert.equal(drawn!.compareDocumentPosition(list) & 4, 4, 'before the list (oldest first)')
+		// Nothing waits on a line that does not exist: no proposals, no Review.
+		assert.equal(drawn!.querySelector('[data-widget-part~="messages.ledger-review"]'), null)
+	} finally {
+		await talking.unmount()
+	}
+
+	// Older lines still to load: the head is not the conversation's head yet.
+	const paged = await mount([row(5, 'user', 'Later')], { ...withHead, hasOlder: true })
+	try {
+		assert.deepEqual(headText(paged), [])
+	} finally {
+		await paged.unmount()
+	}
+
+	// No head sent — a host that predates it — draws nothing.
+	const none = await mount([], dossier)
+	try {
+		assert.deepEqual(headText(none), [])
+	} finally {
+		await none.unmount()
 	}
 })
 
@@ -941,4 +1010,356 @@ test('the widget root carries its Line width: Full unless the settings say Comfo
 	assert.equal(await lineWidthOf({ lineWidth: 'comfortable' }), 'comfortable')
 	// An unknown value reads as the default, never as no width at all.
 	assert.equal(await lineWidthOf({ lineWidth: 'narrow' }), 'full')
+})
+
+/* ── Folio (PLAN-core-widgets §3.7) ─────────────────────────────────────── */
+
+/**
+ * A copy whose Presentation is Folio reads its lines as one block of prose:
+ * each line's body a paragraph in reading order, a thin rule naming the
+ * speaker where the speaker changes, no avatar, name row, time or swipes —
+ * not rendered, never merely hidden — while every line keeps its row and its
+ * `#message-<id>`, so packs, j/k and anchors hold. Unset, it follows the
+ * claimed channel's role; a stored value wins.
+ */
+const manuscriptRows = [
+	row(10, 'user', 'The rain had not stopped for three days.', { channel: 'manuscript' }),
+	row(11, 'user', 'Nobody in the village remembered why.', { channel: 'manuscript' }),
+	row(12, 'assistant', 'Except the miller.', { channel: 'manuscript' }),
+	row(13, 'user', 'And he was not talking.', { channel: 'manuscript' }),
+]
+const speakerLine = (name: string, ref: string) => ({
+	...line(name),
+	speaker: { name, ref, face: null, sprite: null },
+	swipes: { show: true, right: true },
+})
+const manuscriptDossier = (roles: Record<string, 'conversation' | 'folio'> | undefined): ConversationDossierV1 => ({
+	...dossier,
+	lines: {
+		10: speakerLine('Ada', 'persona:9'),
+		11: speakerLine('Ada', 'persona:9'),
+		12: speakerLine('Scribe', 'character:3'),
+		13: speakerLine('Ada', 'persona:9'),
+	},
+	composer: {
+		...dossier.composer,
+		channels: ['manuscript'],
+		channelLabels: { manuscript: 'Manuscript' },
+		...(roles ? { channelRoles: roles } : {}),
+	},
+})
+const mountManuscript = (settings: Record<string, unknown>, d: ConversationDossierV1) =>
+	mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		requests: () => undefined,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: manuscriptRows,
+			settings,
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: { session_full: d },
+		},
+	})
+type Manuscript = Awaited<ReturnType<typeof mountManuscript>>
+const part = (name: string) => `[data-widget-part~="${name}"]`
+/** The log's items in the order drawn: a rule by its name, a line by its anchor. */
+const folioSequence = (view: Manuscript) =>
+	view
+		.queryAll(`${part('messages.message-list')} > li`)
+		.map((li) =>
+			li.matches(part('messages.folio-rule'))
+				? `rule:${li.querySelector(part('messages.folio-rule-name'))?.textContent?.trim()}`
+				: `line:${li.querySelector(part('messages.message'))?.id}`,
+		)
+const presentationOf = (view: Manuscript) =>
+	view.query(part('messages.root'))?.getAttribute('data-presentation')
+
+test('Presentation is a declared setting whose default is Follow the channel (`auto`)', () => {
+	const decl = CORE_WIDGETS.find((w) => w.id === 'messages')?.settings?.presentation as
+		| { type: string; label: string; of: string[]; members: Array<{ key: string; label: string }>; default?: unknown; group?: string }
+		| undefined
+	assert.ok(decl, 'messages declares presentation')
+	assert.equal(decl.type, 'enum')
+	assert.equal(decl.label, 'Presentation')
+	assert.deepEqual(decl.of, ['auto', 'rows', 'folio'])
+	assert.deepEqual(
+		decl.members.map((m) => m.label),
+		['Follow the channel', 'Rows', 'Folio'],
+	)
+	// Settings arrive complete, so the default must not be one of the two
+	// drawings: `auto` says "unset" out loud, and the select is never empty.
+	assert.equal(decl.default, 'auto')
+	assert.equal(decl.group, undefined)
+})
+
+test('a Folio copy reads its lines as one block of prose, a rule wherever the speaker changes', { timeout: 120_000 }, async () => {
+	const view = await mountManuscript({ channel: 'manuscript', presentation: 'folio' }, manuscriptDossier(undefined))
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.equal(presentationOf(view), 'folio')
+		assert.ok(view.query(`${part('messages.stage')}${part('messages.folio')}`), 'the stage says Folio')
+		// One paragraph per line, in reading order, each its own row and anchor.
+		assert.deepEqual(bodies(view), manuscriptRows.map((r) => r.content))
+		assert.deepEqual(folioSequence(view), [
+			'rule:Ada',
+			'line:message-10',
+			'line:message-11',
+			'rule:Scribe',
+			'line:message-12',
+			'rule:Ada',
+			'line:message-13',
+		])
+		assert.equal(view.queryAll(part('messages.message-row')).length, 4)
+		// No avatar, name row, controls cell, time or swipes — not rendered at all.
+		for (const gone of [
+			'messages.message-avatar',
+			'messages.message-identity',
+			'messages.message-name',
+			'messages.message-controls',
+			'messages.message-time',
+			'messages.message-swipes',
+		])
+			assert.equal(view.queryAll(part(gone)).length, 0, `${gone} is not drawn`)
+		// Each paragraph keeps its menu, at its edge.
+		assert.equal(view.queryAll(`${part('messages.folio-controls')} ${part('messages.message-menu')}`).length, 4)
+		// Scene markers off; the composer on the page line.
+		const root = view.query(part('messages.root'))!
+		assert.equal(root.getAttribute('data-show-scene-markers'), 'false')
+		assert.equal(root.getAttribute('data-composer-skin'), 'quill')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a Folio paragraph is still the line: its Edit opens the editor, Save and Cancel at its edge', { timeout: 120_000 }, async () => {
+	const view = await mountManuscript({ channel: 'manuscript', presentation: 'folio' }, manuscriptDossier(undefined))
+	try {
+		const third = view.query('#message-12')!
+		await view.click(third.querySelector('button[aria-label="Edit"]')!)
+		assert.ok(third.querySelector('sp-composer-field'), 'the editor opens in the paragraph')
+		const controls = third.querySelector(part('messages.folio-controls'))!
+		assert.ok(controls.querySelector(part('messages.message-save')))
+		assert.ok(controls.querySelector(part('messages.message-cancel')))
+		assert.equal(third.getAttribute('data-msg-state'), 'editing')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a Folio copy read newest-first keeps the order, and its rules follow the reading order', { timeout: 120_000 }, async () => {
+	const view = await mountManuscript(
+		{ channel: 'manuscript', presentation: 'folio', order: 'newest-first' },
+		manuscriptDossier(undefined),
+	)
+	try {
+		assert.deepEqual(bodies(view), [...manuscriptRows].reverse().map((r) => r.content))
+		assert.deepEqual(folioSequence(view), [
+			'rule:Ada',
+			'line:message-13',
+			'rule:Scribe',
+			'line:message-12',
+			'rule:Ada',
+			'line:message-11',
+			'line:message-10',
+		])
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('unset, Presentation follows the claimed channel; a stored value wins', { timeout: 120_000 }, async () => {
+	const drawn = async (settings: Record<string, unknown>, roles?: Record<string, 'conversation' | 'folio'>) => {
+		const view = await mountManuscript(settings, manuscriptDossier(roles))
+		try {
+			assert.deepEqual(view.refused, [])
+			return {
+				presentation: presentationOf(view),
+				rules: view.queryAll(part('messages.folio-rule')).length,
+				avatars: view.queryAll(part('messages.message-avatar')).length,
+				skin: view.query(part('messages.root'))?.getAttribute('data-composer-skin'),
+			}
+		} finally {
+			await view.unmount()
+		}
+	}
+	// A folio channel, nothing stored: Folio.
+	assert.deepEqual(await drawn({ channel: 'manuscript' }, { manuscript: 'folio' }), {
+		presentation: 'folio',
+		rules: 3,
+		avatars: 0,
+		skin: 'quill',
+	})
+	// A stored Rows wins over the channel.
+	assert.deepEqual(await drawn({ channel: 'manuscript', presentation: 'rows' }, { manuscript: 'folio' }), {
+		presentation: 'rows',
+		rules: 0,
+		avatars: 4,
+		skin: 'classic',
+	})
+	// The host says nothing of roles, or the channel is a conversation: Rows.
+	assert.equal((await drawn({ channel: 'manuscript' })).presentation, 'rows')
+	assert.equal((await drawn({ channel: 'manuscript' }, { manuscript: 'conversation' })).presentation, 'rows')
+	// A Folio copy that chose a composer skin keeps it.
+	assert.equal((await drawn({ channel: 'manuscript', composer: 'writer' }, { manuscript: 'folio' })).skin, 'writer')
+	// `auto` — the declared default, Follow the channel — is unset said out loud.
+	assert.equal((await drawn({ channel: 'manuscript', presentation: 'auto' }, { manuscript: 'folio' })).presentation, 'folio')
+	assert.equal((await drawn({ channel: 'manuscript', presentation: 'auto' }, { manuscript: 'conversation' })).presentation, 'rows')
+})
+
+/* ── the turn line (PLAN-core-widgets §3.16) ────────────────────────────── */
+
+/**
+ * Between the log and the composer, ONE row: what the last run did on the
+ * left (a status pill read off the newest reply, Review N changes when
+ * proposals wait, Inspect run for an administrator), who is next on the
+ * right (who is typing, then the order's head with Someone else and
+ * Continue — or Stop while the reply streams, or Try again after it failed).
+ * `nextUp: hidden` drops the right half only.
+ */
+const turnRows = (reply: Record<string, unknown> = {}) => [
+	row(1, 'user', 'We go north.'),
+	row(2, 'assistant', 'The road narrows.', reply),
+]
+const turnDossier = (extra: Partial<ConversationDossierV1> = {}): ConversationDossierV1 => ({
+	...dossier,
+	lines: { 1: line('You'), 2: line('Wren') },
+	turn: {
+		order: [{ ref: 'character:3' }] as ConversationDossierV1['turn']['order'],
+		candidates: [{ ref: 'character:3', kind: 'character', name: 'Wren' }],
+		show: true,
+		canChoose: true,
+	},
+	...extra,
+})
+const mountTurnLine = (
+	opts: { reply?: Record<string, unknown>; settings?: Record<string, unknown>; d?: ConversationDossierV1; admin?: boolean } = {},
+) =>
+	mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		requests: () => undefined,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: turnRows(opts.reply),
+			settings: opts.settings ?? {},
+			viewer: { userId: 1, isAdmin: !!opts.admin, isGuest: false },
+			scoped: { session_full: opts.d ?? turnDossier() },
+		},
+	})
+type TurnView = Awaited<ReturnType<typeof mountTurnLine>>
+const text = (view: TurnView, name: string) => view.query(part(name))?.textContent?.replace(/\s+/g, ' ').trim()
+
+test('the turn line is one row: what the last run did beside who is next', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine()
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.equal(view.queryAll(part('messages.turn-line')).length, 1)
+		const line = view.query(part('messages.turn-line'))!
+		const run = line.querySelector(part('messages.turn-line-run'))
+		const next = line.querySelector(part('messages.turn-line-next'))
+		assert.ok(run && next, 'both halves')
+		assert.equal(text(view, 'messages.turn-line-status'), 'Wren replied')
+		// The right half: who is typing (the page's view, placed once), then who is due.
+		assert.ok(next.querySelector(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
+		assert.equal(view.queryAll('sp-host-view[name="session-banners"]').length, 1)
+		assert.equal(text(view, 'messages.turn-line-text'), 'Wren is ready to continue')
+		// The ⏳ aliases ride on the same elements.
+		const go = next.querySelector(part('messages.turn-line-continue'))!
+		assert.ok(go.matches(part('messages.next-up-continue')))
+		assert.ok(next.querySelector(part('messages.turn-line-pick')))
+		// A member is offered no Inspect run, and nothing waits: no links.
+		assert.equal(view.query(part('messages.turn-line-links')), null)
+		await view.click(go)
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('while the reply streams the pill is live and the right half is Stop', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine({ reply: { isGenerating: true, content: '' } })
+	try {
+		assert.equal(text(view, 'messages.turn-line-status'), 'Wren is thinking')
+		assert.equal(view.query(part('messages.turn-line-status'))?.getAttribute('data-turn-state'), 'live')
+		assert.equal(view.query(part('messages.turn-line-continue')), null)
+		await view.click(part('messages.turn-line-stop'))
+		assert.equal(view.invoked.at(-1)?.key, 'stop')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('after a failure the pill says why and the right half is Try again', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine({ reply: { error: { message: 'connection timed out' }, content: '' } })
+	try {
+		assert.equal(text(view, 'messages.turn-line-status'), 'Last run failed · connection timed out')
+		assert.equal(view.query(part('messages.turn-line-status'))?.getAttribute('data-turn-state'), 'failed')
+		assert.equal(text(view, 'messages.turn-line-retry'), 'Try again')
+		assert.equal(view.query(part('messages.turn-line-continue')), null)
+		await view.click(part('messages.turn-line-retry'))
+		const last = view.invoked.at(-1) as { key: string; messageId?: number }
+		assert.equal(last.key, 'retry')
+		assert.equal(last.messageId, 2)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('Who is due next: Nothing hides the right half only', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine({ settings: { nextUp: 'hidden' } })
+	try {
+		assert.equal(view.query(part('messages.turn-line-next')), null)
+		assert.equal(view.query(part('messages.turn-line-continue')), null)
+		assert.equal(text(view, 'messages.turn-line-status'), 'Wren replied')
+		// Who is typing still has its place.
+		assert.ok(view.query(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('Review N changes appears when proposals wait; an administrator gets Inspect run', { timeout: 120_000 }, async () => {
+	const proposal = (id: number) => ({ id, status: 'pending', messageId: 2, text: `hp 20 → ${id}`, proposedBy: 'Wren', moved: null })
+	const view = await mountTurnLine({
+		admin: true,
+		d: turnDossier({ state: { ledgers: {}, pending: {}, waiting: [proposal(14), proposal(12)] } }),
+	})
+	try {
+		assert.equal(text(view, 'messages.turn-line-review'), 'Review 2 changes')
+		// The pill opens a panel holding the same links (all a narrow box shows).
+		assert.equal(view.query(part('messages.turn-line-status'))?.tagName.toLowerCase(), 'button')
+		await view.click(`${part('messages.turn-line-links')} ${part('messages.turn-line-inspect')}`)
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'inspect-run').at(-1)?.params, { messageId: 2 })
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a greeting is no run: a log with only one has no left half', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine({ reply: { metadata: { isGreeting: true } } })
+	try {
+		assert.equal(view.query(part('messages.turn-line-run')), null)
+		assert.equal(text(view, 'messages.turn-line-text'), 'Wren is ready to continue')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a run this view saw start and end is timed on the pill', { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine()
+	try {
+		await view.event({ kind: 'generation:start', messageId: 2 })
+		await view.event({ kind: 'generation:end', messageId: 2, aborted: false })
+		assert.match(text(view, 'messages.turn-line-status') ?? '', /^Wren replied · \d+(\.\d)? s$/)
+	} finally {
+		await view.unmount()
+	}
 })

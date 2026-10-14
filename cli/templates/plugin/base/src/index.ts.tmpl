@@ -150,7 +150,12 @@ export const extension = defineExtension({
 	name: '{{displayName}}',
 	version: '0.1.0',
 	description: '✎ CHANGE: one sentence. This is what reads under the name in the plugin list.',
-	engines: { 'serene-pub': '>=0.7 <0.8' },
+	/**
+	 * The Serene Pub releases this package runs on, as an npm range. It starts
+	 * at the release the SDK you scaffolded with ships with; a prerelease
+	 * floor ends in `-0` so that release's prereleases are inside it.
+	 */
+	engines: { 'serene-pub': '{{enginesRange}}' },
 	handlers: [
 		handler(echoDefinition, echoHandler),
 {{#storage}}

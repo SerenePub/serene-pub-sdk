@@ -79,11 +79,15 @@ describe('the pipelines', () => {
 		}
 	})
 
-	it('each one sits under this package’s namespace and answers one event', () => {
+	it('each one sits under this package’s namespace and answers its events', () => {
 		for (const built of extension.pipelines ?? []) {
 			expect(built.id.startsWith(`${PLUGIN_SLUG}:`)).toBe(true)
-			expect(built.input?.event).toBeTruthy()
-			expect(built.input?.genre).toBeTruthy()
+			// The usage lock is one `event` or several `events`: a
+			// `turnOrderSpec()` document is locked on every event it
+			// recomputes on.
+			const input = compile(built).input
+			expect(input?.event ?? input?.events?.[0]).toBeTruthy()
+			expect(input?.genre).toBeTruthy()
 		}
 	})
 })

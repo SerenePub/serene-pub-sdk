@@ -26,10 +26,16 @@ describe('widget parts in the widgets guide', () => {
 		for (const owner of [
 			'messages',
 			'stats',
-			'world-state',
+			// No `world-state`: World State is Stats now (W7), its module a
+			// wrapper with no markup of its own.
 			'scene-portraits',
 			'lore-entries',
 			'stat-slot',
+			// W4: Places, and the shared map canvas it draws with.
+			'places',
+			'map-canvas',
+			// W10: Who's here.
+			'attendance',
 		])
 			assert.ok(owned.get(owner)?.size, `no parts read for '${owner}'`)
 		assert.ok(owned.get('messages')!.has('root'))

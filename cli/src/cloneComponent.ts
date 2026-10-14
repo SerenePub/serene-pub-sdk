@@ -1,5 +1,5 @@
 /**
- * `serene-pub clone <core-slug>` and `serene-pub drift` (C6): a core
+ * `serene-pub clone <core-slug>` and `serene-pub drift`: a core
  * component's source, copied into a package with its paths kept, and the
  * question an author asks afterwards — has core moved on since I copied it?
  *
@@ -183,12 +183,20 @@ export interface UntrustedReach {
 	coreOnly: string[]
 	/** Kinds a scope gates: answered only when the widget is granted that scope. */
 	scoped: Array<{ kind: string; scope: string }>
+	/**
+	 * Kinds a write grant gates (`send`, `draft`, `set-attribute-value`):
+	 * answered only when the widget holds that write grant — `grant` as a
+	 * declaration's `scopes` spells it, `channel:<slug>:write` for a channel
+	 * the widget declares.
+	 */
+	writes: Array<{ kind: string; grant: string }>
 	/** Files placing `<sp-host-view>` — core's; a plugin's is refused. */
 	hostView: string[]
 	/** Files writing `autofocus` — core's to place; a plugin's is dropped. */
 	autofocus: string[]
 	/**
-	 * Scopes whose section the source reads (`….session_full?.v1`): core's
+	 * Scopes whose section the source reads (`scope('session:full')`, or the
+	 * older `….session_full?.v1`): core's
 	 * widgets hold every scope, so core's declaration names none — a copy
 	 * must declare each, and is reviewed for it.
 	 */
@@ -208,16 +216,24 @@ export function untrustedReach(files: Readonly<Record<string, string>>): Untrust
 	}
 	const sections: string[] = []
 	for (const [scope, section] of Object.entries(WIDGET_SCOPED_SECTIONS))
-		if (Object.values(files).some((t) => new RegExp(`\\.${section}\\??\\.v1\\b`).test(t))) sections.push(scope)
+		if (
+			Object.values(files).some((t) =>
+				new RegExp(`\\.${section}\\??\\.v1\\b|\\bscope\\(\\s*['"]${scope}['"]\\s*\\)`).test(t),
+			)
+		)
+			sections.push(scope)
 	const coreOnly: string[] = []
 	const scoped: Array<{ kind: string; scope: string }> = []
+	const writes: Array<{ kind: string; grant: string }> = []
 	for (const kind of [...kinds].sort()) {
 		if (!Object.hasOwn(WIDGET_REQUEST_ASKERS, kind)) continue
 		const askers = WIDGET_REQUEST_ASKERS[kind as keyof typeof WIDGET_REQUEST_ASKERS]
 		if (askers === 'core') coreOnly.push(kind)
+		else if (typeof askers === 'object' && askers.write === true)
+			writes.push({ kind, grant: askers.scope === 'channel' ? 'channel:<slug>:write' : `${askers.scope}:write` })
 		else if (typeof askers === 'object') scoped.push({ kind, scope: askers.scope })
 	}
-	return { coreOnly, scoped, hostView, autofocus, sections }
+	return { coreOnly, scoped, writes, hostView, autofocus, sections }
 }
 
 /** @experimental The lines a clone prints about what its copy loses — empty when it loses nothing. */
@@ -227,6 +243,12 @@ export function untrustedReachLines(r: UntrustedReach): string[] {
 		out.push(`requests only core's widgets may ask are refused: ${r.coreOnly.map((k) => `'${k}'`).join(', ')}`)
 	for (const s of r.scoped)
 		out.push(`'${s.kind}' is answered only when the widget is granted the '${s.scope}' scope (scopes: ['${s.scope}'])`)
+	for (const w of r.writes)
+		out.push(
+			w.grant.startsWith('channel:')
+				? `'${w.kind}' is answered only when the widget holds the write grant '${w.grant}' on a channel it declares (scopes: ['${w.grant}'], channels: ['<slug>']), and a person pressed`
+				: `'${w.kind}' is answered only when the widget holds the write grant '${w.grant}' (scopes: ['${w.grant}']), and a person pressed`,
+		)
 	if (r.sections.length)
 		out.push(
 			`it reads ${r.sections.map((s) => `'${s}'`).join(', ')} — declared in scopes and granted at review, never held as core's are`,
@@ -393,7 +415,13 @@ export async function cloneCoreComponent(pkgDir: string, o: CloneRequest): Promi
 	const coreWidget = meta.widgets[o.slug]
 	const reach = untrustedReach(source.files)
 	const scopes = [
-		...new Set([...(coreWidget?.scopes ?? []), ...reach.sections, ...reach.scoped.map((s) => s.scope)]),
+		...new Set([
+			...(coreWidget?.scopes ?? []),
+			...reach.sections,
+			...reach.scoped.map((s) => s.scope),
+			// A channel's write names its slug, which only the author knows; the line says so.
+			...reach.writes.map((w) => w.grant).filter((g) => !g.startsWith('channel:')),
+		]),
 	] as string[]
 	const reads = (coreWidget?.reads ?? []) as string[]
 	const widget = widgetDecl({

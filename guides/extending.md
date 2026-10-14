@@ -55,7 +55,7 @@ import * as C from '@serene-pub/contracts'
 const reply = spec('acme.greeter:reply', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.messageRespond })
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-	.task('prompt', () => C.assemble.v2())
+	.task('prompt', () => C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }))
 	.oracle('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
 	.outlet('save', ($) => C.createMessage.v1({ text: $.generate.text }))
 ```
@@ -285,6 +285,16 @@ const nightly = eventListener(SCHEDULED_WORK_PATH.instead, async (e, ctx) => {
   renders in the sandbox, as a pure function.
 - **Configs and presets.** Named settings for your pipelines, and which pipelines a session of a
   genre runs. See [Where values come from](where-values-come-from.md).
+- **Variables and their layouts.** A value your step hands a template is a variable you declare
+  with `definePluginVariable`; on a lore source it is a band (`bands: { clue: varClue }`). Every
+  object variable gets an automatic JSON layout. Ship layouts of your own under `templates` with
+  `kind: 'variables'`, including for a variable you don't own, such as a prose layout for
+  `core:var/characters@1`: it is offered beside the shipped ones and never becomes the default. A
+  name means one variable wherever one template reads it, so your band may share a name with a
+  core value in a pipeline where the two never meet. When your pipeline feeds a core step a
+  different value under one of its names, say so on that step, and the setting then offers your
+  variable's layouts: `.task('prompt', ($) => C.assemble.v2({ … }), { renders: { characterLore:
+  varRankedLore } })`.
 
 The [API reference](https://serenepub.com/docs/sdk/api/index) on the Serene Pub website lists
 every export with its stability: `@public` is stable for SDK 1.0, and `@experimental` may still

@@ -1,5 +1,5 @@
 /**
- * 🚧 The guarded connection (C7): the ONE judge of the records a remote
+ * 🚧 The guarded connection: the ONE judge of the records a remote
  * component's worker sends, before a Remote DOM receiver applies them. The
  * page's receiver (the app's `receiverPolicy.ts`, inside `ComponentMount`)
  * and the component harness (`@serene-pub/cli/testing`) both run it, so what
@@ -38,10 +38,11 @@
  * is, and what crosses back when a listener fires.
  *
  * Remote DOM's types only: the SDK carries no runtime import of the renderer
- * (a component never bundles it, R23), so its protocol numbers are held here
+ * (a component never bundles it), so its protocol numbers are held here
  * — the ones `@remote-dom/core` exports, which the SDK's tests pin.
  *
- * @experimental 🚧 provisional with the vocabulary it enforces (C7, R21).
+ * @experimental 🚧 provisional with the vocabulary it enforces.
+ * @ruling C7, R23, C7, R21
  */
 import { isFnHandle, type FnHandle } from './componentWire.js'
 import { SP_HOST_ELEMENTS, hostEventAllowed, type HostElementSpec } from './hostElements.js'

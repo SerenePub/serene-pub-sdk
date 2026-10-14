@@ -37,7 +37,7 @@ const migrated = () =>
 	spec('core:spec/chat-turn@1', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-		.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }))
+		.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages, template: slot.template(), connection: slot.connectionOf('generate') }))
 		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 		)

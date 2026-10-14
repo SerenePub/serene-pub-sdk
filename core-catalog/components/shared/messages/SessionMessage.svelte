@@ -34,9 +34,19 @@
 		 * as `--sp-scene`, which the badge below inherits.
 		 */
 		sceneName?: string | null
+		/**
+		 * Folio (PLAN-core-widgets §3.7): the line is a paragraph of one
+		 * block of prose. Only its content is drawn — no avatar, identity
+		 * or controls cell, so no name row, time or swipes (not rendered,
+		 * never merely hidden) — and its menu, its edit's Save and Cancel,
+		 * the selection's choices and Stop sit in `messages.folio-controls`
+		 * at the paragraph's edge. The element, its `#message-<id>` and its
+		 * `data-msg-*` stay, so j/k, anchors and the state overlays hold.
+		 */
+		folio?: boolean
 	}
 
-	let { msg, index, isLastMessage, sceneName = null }: Props = $props()
+	let { msg, index, isLastMessage, sceneName = null, folio = false }: Props = $props()
 
 	const conv = useConversation()
 	const line = $derived(conv.line(msg.id))
@@ -368,7 +378,9 @@
      content — plus the media strip, a fifth cell under content when the
      message has files — and the `data-msg-*` attributes a pack keys its look off. Every
      element is a widget part (`messages.message-*`, STYLE-GUIDE §6.16): no look
-     here; the default widget stylesheet draws them, and a pack restyles them. -->
+     here; the default widget stylesheet draws them, and a pack restyles them.
+     Folio draws the content cell alone (and the media strip under it): the
+     line is a paragraph, and the stage it sits on says so (`messages.folio`). -->
 <div
 	id="message-{msg.id}"
 	data-widget-part="messages.message"
@@ -393,6 +405,7 @@
 		? '...'
 		: ''}"
 >
+	{#if !folio}
 	<span data-widget-part="messages.message-avatar">
 		{#if msg.isNarratorResponse}
 			<span
@@ -513,9 +526,9 @@
 			</span>
 		{/if}
 	</div>
+	{/if}
 
-	<div data-widget-part="messages.message-controls">
-		{#if isEditing}
+	{#snippet editButtons()}
 			<button
 				data-widget-part="messages.message-cancel"
 				title="Cancel edit (Esc)"
@@ -535,6 +548,12 @@
 			>
 				Save
 			</button>
+	{/snippet}
+
+	{#if !folio}
+	<div data-widget-part="messages.message-controls">
+		{#if isEditing}
+			{@render editButtons()}
 		{:else}
 			{#if messageTime}
 				<span data-widget-part="messages.message-time">{messageTime}</span>
@@ -574,6 +593,14 @@
 				</div>
 			{/if}
 
+			{@render quickRow()}
+			{@render lineMenu()}
+			{@render stopButton()}
+		{/if}
+	</div>
+	{/if}
+
+	{#snippet quickRow()}
 			{#if showQuickActions}
 				<!-- The icons fade in on hover and focus on a fine pointer and
 				     stand permanently on a coarse one — see messageLayouts.css,
@@ -601,7 +628,9 @@
 					{/each}
 				</div>
 			{/if}
+	{/snippet}
 
+	{#snippet lineMenu()}
 			<div data-widget-part="messages.message-menu">
 				{#if isSummarizationMode}
 					<!-- Selecting lines for a summary: this line's own choice, and
@@ -652,7 +681,9 @@
 					<MessageControls {msg} {isLastMessage} />
 				{/if}
 			</div>
+	{/snippet}
 
+	{#snippet stopButton()}
 			{#if msg.isGenerating}
 				<button
 					data-widget-part="messages.message-stop"
@@ -662,10 +693,24 @@
 					Stop
 				</button>
 			{/if}
-		{/if}
-	</div>
+	{/snippet}
 
 	<div data-widget-part="messages.message-content">
+		{#if folio}
+			<!-- Folio's controls (PLAN-core-widgets §3.7): what the controls
+			     cell holds less the time and the swipes, at the paragraph's
+			     edge — shown on hover and focus (a tap focuses the line), and
+			     standing while the line is edited, selected or generating. -->
+			<div data-widget-part="messages.folio-controls" role="group" aria-label="Line controls">
+				{#if isEditing}
+					{@render editButtons()}
+				{:else}
+					{@render quickRow()}
+					{@render lineMenu()}
+					{@render stopButton()}
+				{/if}
+			</div>
+		{/if}
 		<!-- The collapsibles a reply can carry: the Narrator's per-trigger
 		     focus note, its folded sections (a Plan, B4) and the model's own
 		     reasoning. All are suppressed when parts render — the section and

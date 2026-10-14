@@ -9,6 +9,7 @@
  */
 
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { chatGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
 
@@ -351,6 +352,18 @@ export const CHAT_RESPOND_SPEC_ID = 'core:spec/chat-respond'
 // `withSpriteTail` wrapper appended four nodes this source never named; and
 // `semantic.arm.queries` wires its own embedding connection
 // (`slot.connection()`), since `embed-text` declares none to reference.
+//
+// ⚠ **1.21.0, edited in place (2026-10-13, live scenes §6) —
+// content-addressed; `specHashes.test.ts` records the move.** The reply tick
+// after `spriteShow`: a `tick` step (`core:task/clock-step@1`, exposed to the
+// session as *Each reply advances the clock by …*, By 0 = off) and a `clock`
+// junction holding *Advance story clock*. Off by default, so every session
+// replies exactly as it did.
+//
+// ⚠ **1.21.0, edited in place (2026-10-13, live scenes §15 G12) —
+// content-addressed; `specHashes.test.ts` records the move.** The tick's
+// *Advance story clock* says `onRefusal: 'skip'`: a story with no clock yet
+// skips the tick with a ledger line instead of halting after the reply.
 /** @internal */
 export const CHAT_RESPOND_VERSION = '1.21.0'
 
@@ -1152,9 +1165,44 @@ export const respondSpec = () =>
 					source: 'picker',
 				}),
 			)
+			/**
+			 * 🚧 **The reply tick** (live scenes §6, 2026-10-13): *Each reply
+			 * advances the clock by …*, the session's to set and off by default
+			 * (**By** 0). A fixed tick, never a model's guess: the step reads
+			 * its own parameters, and *Advance story clock* moves the session's
+			 * clock behind a junction on `moves`, so the default writes nothing
+			 * and refuses nothing. A reply that re-drives its row — a
+			 * regenerate, a swipe, an extend — does not tick again (`unless`).
+			 * Last, after the line and its face. Says it is a `tick` (live
+			 * scenes §15 G4): never a time action for the boundary watcher,
+			 * and a swipe of the reply keeps it, since the re-driven reply
+			 * does not tick again. 🚧 A story with no clock yet skips the tick
+			 * (`onRefusal: 'skip'`, live scenes §15 G12): the reply stands,
+			 * the run finishes, and the ledger under the reply says *not on
+			 * the clock* and why — never a turn that looks failed.
+			 */
+			.task('tick', ($) => C.clockStep.v1({ unless: $.input.messageId, params: slot.params() }), {
+				expose: { session: true, label: 'Each reply advances the clock by' },
+			})
+			.junction('clock', { on: ($: any) => $.tick.moves }, (j) =>
+				j.when('moves', { truthy: true }, (c) =>
+					c.outlet('advance', ($: any) =>
+						C.advanceStoryClock.v1({
+							by: $.tick.by,
+							unit: $.tick.unit,
+							cause: 'tick',
+							onRefusal: 'skip',
+							params: slot.params(),
+						}),
+					),
+				),
+			)
 			/** What Chat ships with: the reminder's trigger (`POST_HISTORY_TOKEN_TRIGGER`). */
 			.preset('default', { label: 'Default', default: true }, (p) =>
-				p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
+				p
+					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+					// The reply runs on the Reply loadout (I12).
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
 			)
 			.build(),
 	)

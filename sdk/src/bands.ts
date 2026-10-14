@@ -1,5 +1,5 @@
 /**
- * Bands as template variables (typed templates P2, 2026-09-27).
+ * Bands as template variables.
  *
  * A **band** is the ranker's word for one source's slice of the context window
  * (`bandIntent`, candidates.ts). A source that puts its own band in the window
@@ -27,11 +27,12 @@
  * when the slot says `rendersBands` — every band declared upstream of the
  * named in-port, followed through any node that takes candidates in
  * (concatenation, fusion, ranking). `rendersAt` is that answer.
+ * @ruling typed templates P2 (2026-09-27)
  */
 
 import { getDefinition, type Descriptor, type SlotDecl } from './descriptors.js'
 import type { DocEdge, DocNode } from './document.js'
-import { allVariables, getVariable, type VariableDecl, type VariableId } from './variables.js'
+import { getVariable, type VariableDecl, type VariableId } from './variables.js'
 
 /** A band's key — a top-level template name, so an identifier. @experimental */
 export type BandKey = string
@@ -77,19 +78,7 @@ export const ASSEMBLE_OWN_TEMPLATE_NAMES: readonly string[] = [
 const variableIdOf = (v: VariableDecl | VariableId | undefined): VariableId | undefined =>
 	typeof v === 'string' ? v : v?.id
 
-/**
- * A **core** variable that already renders a top-level name, if any — the
- * names core's own nodes put in a template (`characters`, `scenario`, …). A
- * plugin variable sharing a root is not by itself a collision: two plugins'
- * bands meaning different things is, and the definitions check names both.
- */
-const otherVariableRendering = (key: string, id: VariableId): VariableDecl | undefined =>
-	allVariables().find(
-		(v) =>
-			v.id !== id &&
-			v.id.startsWith('core:') &&
-			Object.prototype.hasOwnProperty.call(v.scope, key),
-	)
+const hasOwn = (o: object, key: string): boolean => Object.prototype.hasOwnProperty.call(o, key)
 
 /**
  * Refuse a definition's band declarations — at `describe…Definition`, where
@@ -98,14 +87,18 @@ const otherVariableRendering = (key: string, id: VariableId): VariableDecl | und
  * - the key is an identifier (a band is a template name);
  * - the variable is registered (`defineVariable` / `definePluginVariable`) and
  *   its scope declares the key, because a layout renders `{ [key]: value }`;
- * - the key does not shadow a name core renders — Assemble's own, or a
- *   core variable's that is not this band's own variable;
- * - no other registered definition declares the key with a different variable.
+ * - the key is not one of Assemble's own names.
+ *
+ * **Not refused here: a key some other definition, or some core variable,
+ * already uses** (owner ruling 2026-10-13, ★1). A key is a local name and
+ * means one variable *within one template's scope* — `bandsReaching` and
+ * `rendersAt` refuse two meanings meeting in one document, and law T1 reports
+ * it. Two pipelines that never meet may each mean their own `characterLore`.
  *
  * Each refusal names the fix.
  * @internal
  */
-export function checkBandDeclarations(d: Descriptor, others: Iterable<Descriptor>): void {
+export function checkBandDeclarations(d: Descriptor): void {
 	const bands = d.bands
 	for (const key of Object.keys(d.bandPorts ?? {}))
 		if (!bands || !Object.prototype.hasOwnProperty.call(bands, key))
@@ -150,13 +143,6 @@ export function checkBandDeclarations(d: Descriptor, others: Iterable<Descriptor
 					`template reading {{{${key}}}} would get one or the other depending on order. ` +
 					`Rename the band.`,
 			)
-		const core = otherVariableRendering(key, id)
-		if (core)
-			throw new Error(
-				`'${d.id}' declares band '${key}' as '${id}', which collides with '${core.id}' — that ` +
-					`variable already renders the top-level name '${key}'. A band key means one thing; ` +
-					`rename the band.`,
-			)
 		const ports = d.bandPorts?.[key]
 		if (ports !== undefined) {
 			const out = Object.keys(d.ports?.out ?? {})
@@ -172,25 +158,87 @@ export function checkBandDeclarations(d: Descriptor, others: Iterable<Descriptor
 						`if every out-port may carry it.`,
 				)
 		}
-		for (const other of others) {
-			if (other.id === d.id) continue
-			const theirs = variableIdOf(other.bands?.[key])
-			if (theirs && theirs !== id)
-				throw new Error(
-					`'${d.id}' declares band '${key}' as '${id}', but '${other.id}' already declares ` +
-						`'${key}' as '${theirs}'. A band key is a top-level template name and means one ` +
-						`thing — rename one of the two bands.`,
-				)
+	}
+}
+
+/**
+ * What is wrong with a node rendering `key` as `id`, as the end of a sentence
+ * that begins with what renders it — or `undefined` when nothing is.
+ *
+ * The facts a band declaration states, asked of every rendered key: a layout
+ * is written against its variable's scope and renders `{ [key]: value }`, so
+ * a key the scope does not name reaches no layout, and a variable nobody
+ * registered has no layout, no type and no picker.
+ * @internal
+ */
+export function rendersProblem(key: string, id: unknown): string | undefined {
+	if (!isBandKey(key))
+		return (
+			`'${key}', which is not an identifier — a rendered key is a top-level template name. ` +
+			`Rename it '${bandKeySuggestion(key)}'.`
+		)
+	if (typeof id !== 'string' || !id)
+		return `'${key}' without a variable. Name the variable it renders: { ${key}: 'core:var/…@1' }.`
+	const v = getVariable(id)
+	if (!v)
+		return (
+			`'${key}' as '${id}', which is not registered. Declare it with definePluginVariable() ` +
+			`(defineVariable() in core) before the definition or spec that names it — the layout ` +
+			`picker and the template editor read it from the registry.`
+		)
+	if (!hasOwn(v.scope, key))
+		return (
+			`'${key}' as '${id}', whose scope does not declare '${key}' (it declares ` +
+			`${Object.keys(v.scope).map((k) => `'${k}'`).join(', ') || 'nothing'}). A layout renders ` +
+			`the value as {{{${key}}}}, so add '${key}' to the variable's scope.`
+		)
+	if (ASSEMBLE_OWN_TEMPLATE_NAMES.includes(key))
+		return `'${key}', which collides with Assemble's own '${key}'. Render it under another name.`
+	return undefined
+}
+
+/**
+ * Refuse a definition's static `renders` (owner ruling 2026-10-13) — at
+ * `describe…Definition`, like its bands, and for the same reasons
+ * (`rendersProblem`). Until then nothing read a `renders` entry until a run
+ * did, and a key whose variable did not declare it rendered nothing.
+ * @internal
+ */
+export function checkRendersDeclarations(d: Descriptor): void {
+	for (const [slotName, slot] of Object.entries((d.slots ?? {}) as Record<string, SlotDecl>)) {
+		if (slot.kind !== 'variables') continue
+		for (const [key, id] of Object.entries(slot.renders ?? {})) {
+			const problem = rendersProblem(key, id)
+			if (problem) throw new Error(`'${d.id}' slot '${slotName}' renders ${problem}`)
 		}
 	}
+}
+
+/**
+ * What one placement's `variables` slot renders, before any band: the slot's
+ * static `renders`, with each key the **spec's own `renders`** names for this
+ * node (`NodeOpts.renders`, owner ruling 2026-10-13) re-pointed at the
+ * spec's variable. Only keys the slot already renders — the spec says what a
+ * key *means* here, it does not add keys; `validate()` reports one it names
+ * that no slot renders (law T1).
+ * @experimental
+ */
+export function effectiveRenders(
+	slot: Pick<SlotDecl, 'renders'>,
+	node?: Pick<DocNode, 'renders'>,
+): Record<string, VariableId> {
+	const out: Record<string, VariableId> = { ...(slot.renders ?? {}) }
+	for (const [key, id] of Object.entries(node?.renders ?? {})) if (hasOwn(out, key)) out[key] = id
+	return out
 }
 
 /**
  * What `bandsReaching` needs from a node's definition: its in-ports and the
  * bands it declares. A `Descriptor` satisfies it, and so does a registry row
  * (whose policy carries the band ids, `DefinitionPolicy.bands`) — which is how
- * a host reading rows answers without loading a plugin (F6).
+ * a host reading rows answers without loading a plugin.
  * @experimental
+ * @ruling F6
  */
 export interface BandSource {
 	ports?: { in?: Record<string, unknown> }
@@ -304,17 +352,24 @@ export function rendersAt(
 	slot: Pick<SlotDecl, 'renders' | 'rendersBands'>,
 	describe?: (node: DocNode) => BandSource | undefined,
 ): Record<string, VariableId> {
-	const out: Record<string, VariableId> = { ...(slot.renders ?? {}) }
+	// The spec's own `renders` for this node first: a band reaching a key the
+	// spec re-pointed has to agree with the spec, not with the definition.
+	const own = effectiveRenders(
+		slot,
+		doc.nodes.find((n) => n.key === nodeKey),
+	)
+	const out: Record<string, VariableId> = { ...own }
 	const from = slot.rendersBands?.from
 	if (!from) return out
 	const reaching = bandsReaching(doc, nodeKey, from, describe)
 	for (const [band, { variable, declarer }] of Object.entries(reaching)) {
-		const own = slot.renders?.[band]
-		if (own !== undefined) {
-			if (own !== variable)
+		const mine = own[band]
+		if (mine !== undefined) {
+			if (mine !== variable)
 				throw new BandCollisionError(
 					`band '${band}' declared by ${declarer} as '${variable}' collides with '${nodeKey}''s ` +
-						`own '${band}', which it renders as '${own}'. Rename the band.`,
+						`own '${band}', which it renders as '${mine}'. Rename the band, or — if this ` +
+						`spec means that band here — say so on the node: renders: { ${band}: '${variable}' }.`,
 				)
 			continue
 		}

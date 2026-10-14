@@ -64,9 +64,9 @@ describe('the core catalog', () => {
 			'core:spec/adventure-respond',
 		])
 		// The open slot takes any number: five actions since U5d (look, rest,
-		// advance-time, ask, answer), and adding a sixth is a package change
-		// rather than a schema one.
-		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 5)
+		// advance-time, ask, answer), six since Scene (2026-10-12, §16
+		// follow-up D3) — a package change rather than a schema one.
+		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 6)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
 		// optional `form-addressed` event, bound by each shipped preset —
 		// named genre first, like every genre pipeline (2026-10-05).
@@ -606,6 +606,114 @@ describe("core's announcement (golden)", () => {
 		// this document with the ids mapped back, the roles and the lock
 		// restored, and `toolLoopSpec()` and `TOOL_LOOP_PROMPT` put back in
 		// place hashes to the old pin. (was 'e559d5d35cad1828')
-		assert.equal(digest.slice(0, 16), '1e5447939e19d8b5')
+		// Moved 2026-10-11 (PLAN-core-widgets §4, the core widgets' default
+		// layouts): Adventure's left rail places Chronicle and Lore entries,
+		// its strip is `stats#world` (World State is Stats for the world, W7)
+		// and Scene Portraits names `who`/`face`/`arrangement` (W6); the
+		// Lair's right column is Places, the Castellan's scratchpad (an Annex
+		// copy) and the Sanctum. Proven: this document with only Adventure's
+		// and the Lair's two layouts put back as they were hashes to the old
+		// pin. (was 'bf867f9d8a4a7f9a', a value that included the card strokes
+		// S3 move; strokes were paused 2026-10-11 and taken back out of every
+		// core spec, so the pre-widgets value is the pre-strokes '1e5447939e19d8b5'.)
+		// Moved 2026-10-11 (card strokes paused, owner): the `cardStrokes` step
+		// taken back out of every core spec and each semver restored, on top of
+		// the widgets move above. Measured from source (core-catalog `src`, not
+		// dist), with other lanes' in-flight edits in the tree. (was '433c1df16b0190a3')
+		// Moved 2026-10-11 (widget DX, PLAN-widget-api-dx D7): measured from
+		// source with the same-day core-widgets work still in flight in the tree.
+		// D7's own catalog edit (five widgets' `reads` narrowed) does not move
+		// the document — the lane re-measured with those reverted and got this
+		// same value — so the move is the in-flight registry work, not proven
+		// key by key. (was 'ad7f5fb3f90c5b7a')
+		// Moved 2026-10-12 (I12 loadouts): every model-calling oracle gains
+		// the additive `loadout` slot, the reply/summary/keeper/image specs'
+		// Default configs name their loadouts. Measured with other lanes'
+		// in-flight edits in the tree. (was '056b27a677887bca')
+		// Moved 2026-10-12 (I7a ComfyUI): the image oracle gains the optional
+		// `workflow` slot and `chat-generate-image` wires `slot.workflow()`.
+		// Measured with other lanes' in-flight edits in the tree (a `seed`
+		// param on the image oracle among them). (was '398ac8b3b1a4c61a')
+		// Moved 2026-10-12 (I8 Portrait): `core:spec/character-portrait`
+		// joins the catalogue with its two prompt rows (*Portrait, tags* /
+		// *Portrait, prose*), the card action inlet gains an optional `count`
+		// port (so `sprite-set-fill`'s inlet hash moves too). Measured with
+		// other lanes' in-flight edits in the tree; re-measured after the task
+		// was named `build-proofs` (R1: *candidate* is retrieval's).
+		// (was '4ae849d62002771d')
+		// Moved 2026-10-12 (I9 the Scene action): `core:spec/chat-illustrate-scene`
+		// joins the catalogue with its two scene prompt rows (*Scene prompt
+		// 2026-10-12 sweep: Portrait + Sprite set fill name their loadouts; Scene calls carry purposes.
+		// from the last lines* / *Scene prompt, prose*), the *Prompt as
+		// written* image row also claims it, and three node types are new
+		// (`likeness-images`, `clean-image-prompt`, `picture-placement`).
+		// Measured with other lanes' in-flight edits in the tree.
+		// (was 'bdd4bf494aa1da37')
+		// Moved 2026-10-12 (D1 Describe from image): `core:spec/describe-likeness`
+		// joins the catalogue with its prompt row (*Describe a likeness*) and a
+		// new node type (`core:oracle/describe-image@1`). Measured with other
+		// lanes' in-flight edits in the tree (D3's Adventure Scene spec among
+		// them). (was '0e95c72e084ffa50')
+		// Moved 2026-10-12 (owner ruling: no SillyTavern-copied prompts in the
+		// Apache catalog): the twelve alternative reply rows, the two scene
+		// prompt rows and *Describe a likeness* carry Serene Pub's own prose
+		// and new names under their seed keys. (was '246612caeb56ce1a')
+		// Moved 2026-10-13 (live scenes lane A, the genre-owned summarize-scene):
+		// four specs (`core:spec/{chat,adventure,guide,lair}-summarize-scene`),
+		// two drafting prompt rows (`summarize-scene-transcript`,
+		// `lair-summarize-scene`) and each core genre's `summarize`. Proven: this
+		// document with those stripped hashes to '6453ce65503a0c9e'; the rest of
+		// the move from the old pin is other lanes' in-flight edits in the tree,
+		// not this one's — among them the reply prompts cut to four the same day
+		// (owner ruling 2026-10-13: ten rows leave, *Writer* merges two,
+		// *Roleplay - Brief* joins). (was '5e2d0c2f61a886d1')
+		// Moved 2026-10-13 (live scenes reconcile R): `render-transcript@1`
+		// takes an `attachments` in-port and its template an `attachments`
+		// variable; the four genre summarize-scene specs read the story rows'
+		// files and their transcript templates name them after each line.
+		// Measured with other lanes' in-flight edits in the tree.
+		// (was '09ed8aa6556b283d')
+		// Moved 2026-10-13 (live scenes lane D): `core:spec/chat-advance-time`
+		// and `core:spec/lair-advance-time` (*Time passes…*) join the
+		// catalogue; Adventure's *Time passes* collects the clock step and
+		// moves the clock after its keeper; Chat's reply gains the reply tick
+		// (`tick` + `clock`); `core:task/clock-step@1` is new and the
+		// user-message inlet publishes `clockStep`. Measured with other lanes'
+		// in-flight edits in the tree. (was '9aa24fd9a318433d')
+		// Moved 2026-10-13 (live scenes lane F, ★3 — the keeper's clock
+		// proposal): `ADVENTURE_KEEPER_SCHEMA` gains the `clock` list; the
+		// Adventure keeper, Rest and Time passes prompt rows hold three
+		// lists; `resolve-state-changes@1` takes and publishes `clock`;
+		// `adventure-respond` and `adventure-rest` gain `keeperStep` and the
+		// trusted arm's *Advance story clock*. Measured with other lanes'
+		// in-flight edits in the tree. (was '6e8b025dd432a91b')
+		// Moved 2026-10-13 (live scenes lane E): every genre's
+		// summarize-scene reads its aside rows' files (`asideAttachments`, a
+		// second history-attachments@1) and its transcript's `aside` section
+		// names them; `render-transcript@1` gains the `asideAttachments` port
+		// and its scope says `attachments` in `aside` too. Measured with other
+		// lanes' in-flight edits in the tree. (was 'fad55242d83c4d2e')
+		// Moved 2026-10-13 (live scenes lane F, after lane E): Adventure's
+		// `keeperStep` wires `unless: input.messageId`, so a re-driven reply
+		// never moves the clock twice under Trust the narrator. Measured
+		// with other lanes' in-flight edits in the tree. (was 'dda557977b636127')
+		// Moved 2026-10-13 (measured during the live scenes fix-ups): NOT the
+		// fix-ups' aside label — the document hashes to this value with that
+		// label stripped too — but other lanes' in-flight edits in the tree.
+		// (was 'bb89315ed694e3f9')
+		// Moved 2026-10-13 (live scenes §15 G1–G2): Adventure's and the Lair's
+		// shapes name their place, and the Lair's summarize-scene carries its
+		// boundary trigger. Measured with other lanes' in-flight edits in the
+		// tree (lair-advance-time moved under another lane). (was 'cfe2bcaafa2d02ef')
+		// That measurement already held live scenes §15 G4–G7 (lane H): every
+		// core *Advance story clock* says its `cause` (Adventure's also
+		// `onRefusal: 'skip'`), Adventure's `keeperStep` re-drive rule is the
+		// extend's prefill, the Time passes keeper context takes `clockStep`,
+		// and the *Adventure clock* prompt row reads `{{clockStep}}`.
+		// Moved 2026-10-13 (live scenes §15 G12): Chat's reply tick and
+		// Chat's / the Lair's *Time passes…* say `onRefusal: 'skip'` (every
+		// core clock move now skips a story with no clock). Measured with
+		// other lanes' in-flight edits in the tree. (was '6126a10744301919')
+		assert.equal(digest.slice(0, 16), 'fdf6db9e0c86f24b')
 	})
 })

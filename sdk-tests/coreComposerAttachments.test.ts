@@ -95,7 +95,7 @@ const dossierWith = (composer: Partial<ConversationDossierV1['composer']> = {}):
 	turn: { order: [], candidates: [], show: false, canChoose: false },
 	readOnly: null,
 	state: { ledgers: {}, pending: {}, waiting: [] },
-	backdrop: false,
+	appBackground: false,
 })
 
 const mount = (d: ConversationDossierV1) =>

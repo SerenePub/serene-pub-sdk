@@ -63,12 +63,15 @@ export const setAnnexFieldSpec = () =>
  *   R13): the Lair Castellan's running notes — rooms it has planned with the
  *   Dungeon Master, intentions, corrections. The one key a core **pipeline**
  *   writes: `lair-respond` rewrites it after each Sanctum reply (the
- *   `channel.sanctum.notes.*` step). Its audience is the Castellan alone
- *   (`see: ['envoy:castellan']`), so it is hidden from every person's view and
- *   reaches no prompt but the Castellan's own — never a delver's (earshot by
- *   the audience model: the AI view keeps it only for that speaker). The
- *   owner may set it by hand (`act: ['owner']`, the Session data panel),
- *   and the Lair's sessions alone carry it (`genre`).
+ *   `channel.sanctum.notes.*` step). Its audience is the Castellan and the
+ *   session owner (`see: ['envoy:castellan', 'owner']`, ruled 2026-10-11 so
+ *   the Annex widget can place it beside the story): the owner's view carries
+ *   it, no other person's does, and it reaches no prompt but the Castellan's
+ *   own — never a delver's (earshot by the audience model: the AI view holds
+ *   `ai`, `participant` and its speaker, never `owner`, so the owner entry
+ *   changes nothing a model hears). The owner may set it by hand
+ *   (`act: ['owner']`, the Session data panel or the Annex widget), and the
+ *   Lair's sessions alone carry it (`genre`).
  *
  * Every other core pipeline keeps its state in core's own columns
  * (`sessions.metadata.turnOrder`, written by `set-turn-order`; each member's
@@ -92,7 +95,7 @@ export const CORE_ANNEX_FIELDS: readonly AnnexFieldDecl[] = Object.freeze([
 	annexField({
 		key: CASTELLAN_SCRATCHPAD_KEY,
 		shape: { type: 'text', default: '' },
-		see: [`envoy:${LAIR_CASTELLAN_KEY}`],
+		see: [`envoy:${LAIR_CASTELLAN_KEY}`, 'owner'],
 		act: ['owner'],
 		genre: lairGenre,
 		label: { en: "Castellan's scratchpad" },

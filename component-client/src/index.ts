@@ -1,5 +1,5 @@
 /**
- * `@serene-pub/component-client` (§3.5, C3) — what a remote component
+ * `@serene-pub/component-client` — what a remote component
  * imports. The context itself is the host's; this names it.
  *
  * ```ts
@@ -11,6 +11,7 @@
  *   return ctx.subscribe(() => (p.textContent = `${ctx.messages?.length ?? 0} messages`))
  * })
  * ```
+ * @ruling §3.5, C3
  */
 export {
 	defineComponent,

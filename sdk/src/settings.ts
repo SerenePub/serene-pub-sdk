@@ -1,8 +1,8 @@
 /**
  * Plugin settings — the schema an extension declares, and the four things core does
- * with it (12 §6).
+ * with it.
  *
- * 12 §6 promises "the same schema strategy as node config and review steps — one
+ * The design promises "the same schema strategy as node config and review steps — one
  * renderer, three uses." That promise is only real if it is literally the same
  * declaration, so `FieldDecl` here is the same shape node `params` use, plus the two
  * fields that only mean something for plugin settings (`scope`, `side`). An extension
@@ -13,7 +13,7 @@
  *   1. **The form** core renders in plugin settings — no UI work by the author.
  *   2. **Validation** of stored values, on save and on update.
  *   3. **The manifest entry**, extracted statically by the compiler — never by running
- *      the author's code (F6, 03 §3).
+ *      the author's code.
  *   4. **Typed access** from the extension's own hooks: `settings.values` is inferred,
  *      so `apiKey` is a `SecretValue` and a mistyped key does not compile.
  *
@@ -23,11 +23,12 @@
  * secrets" sounds safer than storing them — but an extension keeping credentials in its
  * own data directory has no key and no crypto facility, so the realistic outcome is
  * plaintext on the user's disk, unencrypted *and* unauditable. Declining custody produced
- * the worse result (13 §6).
+ * the worse result.
  *
  * What makes accepting it defensible is that the field is **typed**, which is what lets
- * core mechanically redact it from receipts (F16), exclude it from export (12 §7) and
+ * core mechanically redact it from receipts, exclude it from export and
  * keep it write-only in the UI. A free-form column cannot tell a key from a note.
+ * @ruling 12 §6, F6, 03 §3, 13 §6, F16, 12 §7
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
@@ -166,7 +167,7 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 */
 	quick?: boolean
 	/**
-	 * Which lens renders this one field (05 §3), when it is not the slot's.
+	 * Which lens renders this one field, when it is not the slot's.
 	 *
 	 * A slot carries a `facet` and every field of it lands there — which is
 	 * right for a `params` slot of tunables and wrong for the substrate's
@@ -174,6 +175,7 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 * beside `enabled`'s. Declared on the field rather than special-cased in
 	 * the panel, so a plugin whose one slot holds a weight and a switch can
 	 * say the same thing. Absent means the slot's.
+	 * @ruling 05 §3
 	 */
 	facet?: string
 	/**
@@ -192,10 +194,11 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	members?: readonly MemberDecl[]
 	/**
 	 * For `secret`: lend it to this package's nodes when they run in another
-	 * package's pipeline (R63). Off by default — a node you made public runs
+	 * package's pipeline. Off by default — a node you made public runs
 	 * for other packages without your keys unless you lend them. Either way
 	 * the code holds a **secret handle**, never the value: `ctx.fetch` fills it
 	 * in at the network boundary, for your declared hosts only.
+	 * @ruling R63
 	 */
 	lend?: boolean
 	/**
@@ -222,7 +225,10 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	min?: number
 	max?: number
 	of?: O
-	/** Options sourced from the live connection, e.g. `'connection.voices'` (17 §2b). */
+	/**
+	 * Options sourced from the live connection, e.g. `'connection.voices'`.
+	 * @ruling 17 §2b
+	 */
 	from?: string
 	/**
 	 * Blocks activation when unset. The plugin is **not broken** — it is installed,
@@ -284,8 +290,8 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	narrows?: string
 	/**
 	 * A node `params` field several nodes of one spec hold **in common**, and
-	 * therefore resolve at ONE owner's address (R-7 P2, one owner per setting
-	 * per spec; refined 2026-09-16, plans/30 U3b).
+	 * therefore resolve at ONE owner's address (one owner per setting
+	 * per spec).
 	 *
 	 * Where a node's `params` slot is a reference — `slot.params({ node })` —
 	 * the executor resolves its fields in two halves: a field marked `shared`
@@ -301,12 +307,13 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 * side by side, and a spec that references an owner gets exactly those.
 	 * A spec referencing an owner whose schema marks nothing `shared` has
 	 * written a reference that resolves nothing, and `validate()` says so.
-	 * `validate()`'s P2 diagnostic is keyed on it as well: two own-node
+	 * `validate()`'s one-owner diagnostic is keyed on it as well: two own-node
 	 * `params` owners in one spec that both declare a `shared` field under the
 	 * same name are two addresses for one setting.
 	 *
 	 * Unset on plugin settings, genre fields and entry shapes, where there is
 	 * no second node to share with.
+	 * @ruling R-7 P2 (refined 2026-09-16), plans/30 U3b, P2
 	 */
 	shared?: boolean
 	/**
@@ -318,8 +325,14 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 * `'story-time'` (🚧): a `string` holding a position on the story
 	 * calendar in its canonical line (`412-03-05 22:30`, `storyTime.ts`) — the
 	 * field a clock/date stat is declared as (`core:stat-shape/story-time@1`).
+	 *
+	 * `'logit-bias'` (🚧): a `text` field holding an ordered list of logit bias
+	 * entries, `{ text, value }` rows (`LogitBiasEntry`, `sampling.ts`) — the
+	 * text a word, `{exact text}` or `[token ids]`, the value a bias from −100
+	 * to 100. The renderer draws rows, not a textarea; a legacy `{ "<id>": bias }`
+	 * object reads as `[<id>]` rows (`readLogitBiasValue`).
 	 */
-	format?: 'json' | 'story-time'
+	format?: 'json' | 'story-time' | 'logit-bias'
 }
 
 /** @public */
@@ -335,7 +348,7 @@ export function fieldLabel(decl: { label?: I18nText }, language = 'en'): string 
 }
 
 /**
- * Every display-text fault in one settings schema (R-20), as sentences that
+ * Every display-text fault in one settings schema, as sentences that
  * name the field: each field's `label` and its `description`; each
  * `members[]` band's label and description; and the
  * same for a `list`'s `item` and an `object`'s `fields`, recursively. A schema
@@ -347,6 +360,7 @@ export function fieldLabel(decl: { label?: I18nText }, language = 'en'): string 
  * `of` stays unread: an enum's options are stored values, not display text,
  * and their labels live on `members[]`.
  * @experimental
+ * @ruling R-20
  */
 export function settingsSchemaFindings(schema: unknown, where: string): string[] {
 	if (schema === undefined) return []
@@ -421,7 +435,10 @@ export interface SettingsFinding {
 	field?: string
 	severity: 'error' | 'warning'
 	message: string
-	/** What to do instead — required, like every other finding in this SDK (15 §1.3). */
+	/**
+	 * What to do instead — required, like every other finding in this SDK.
+	 * @ruling 15 §1.3
+	 */
 	fix: string
 }
 
@@ -525,7 +542,7 @@ export function checkSchema(schema: SettingsSchema): SettingsFinding[] {
 				})
 			}
 		}
-		if (d.type === 'enum' && !d.of?.length && !d.from) {
+		if (d.type === 'enum' && !d.of?.length && !d.members?.length && !d.from) {
 			f.push({
 				field: key,
 				severity: 'error',
@@ -660,7 +677,10 @@ export function checkValues(schema: SettingsSchema, values: Record<string, unkno
 /** @experimental */
 export interface Reconciled {
 	values: Record<string, unknown>
-	/** Stored values the new schema no longer declares. **Never deleted** (12 §6, 02 §7). */
+	/**
+	 * Stored values the new schema no longer declares. **Never deleted**.
+	 * @ruling 12 §6, 02 §7
+	 */
 	orphaned: Array<{ field: string; value: unknown; reason: string }>
 	findings: SettingsFinding[]
 }
@@ -668,11 +688,12 @@ export interface Reconciled {
 /**
  * What an update does to values that already exist.
  *
- * The rule is the one 12 §5 already applies to a node swap's orphaned slots: **unmigrated
+ * The rule is the one already applied to a node swap's orphaned slots: **unmigrated
  * values land in diagnostics rather than disappearing.** An author who renames a field
  * and an admin who then downgrades should both get their data back; silently dropping it
  * makes the update irreversible in the one direction that matters.
  * @internal
+ * @ruling 12 §5
  */
 export function reconcile(schema: SettingsSchema, stored: Record<string, unknown>): Reconciled {
 	const values: Record<string, unknown> = {}
@@ -715,14 +736,16 @@ export function forExport(schema: SettingsSchema, values: Record<string, unknown
 
 /**
  * What the declaring extension's own hook receives — the only place plaintext appears,
- * and only for the extension that owns the field. Same shape as F18's per-call injection
+ * and only for the extension that owns the field. Same shape as the per-call injection
  * of connection material.
+ * @ruling F18
  */
 /**
- * The handle plugin code holds for a secret setting — never its value (R63).
+ * The handle plugin code holds for a secret setting — never its value.
  * `nonce` is minted by the host per plugin load, so a handle cannot be forged
  * from text that came from anywhere but the host.
  * @experimental
+ * @ruling R63
  */
 export const secretHandle = (key: string, nonce: string): string => `\u27E6secret:${key}:${nonce}\u27E7`
 
@@ -730,11 +753,12 @@ export const secretHandle = (key: string, nonce: string): string => `\u27E6secre
 export const SECRET_KEY = /^[A-Za-z0-9_.-]+$/
 
 /**
- * What a hook's `settings` carries (R63): every value, and a **secret handle**
+ * What a hook's `settings` carries: every value, and a **secret handle**
  * in place of each secret — so the plugin's code never holds a key — beside
  * the plaintext the host keeps for the fetch bridge and the scrub, and the
  * keys the package lends to its nodes in other packages' pipelines.
  * @internal
+ * @ruling R63
  */
 export function forOwningHookSplit(
 	schema: SettingsSchema,
@@ -849,8 +873,9 @@ export class SettingsError extends Error {}
 /**
  * Declare a plugin's settings. The compiler extracts this statically into the manifest,
  * so it must be a literal — a schema assembled at runtime cannot be read without running
- * the author's code, which the packager never does (F6, 03 §3).
+ * the author's code, which the packager never does.
  * @public
+ * @ruling F6, 03 §3
  */
 export function defineSettings<const S extends SettingsSchema>(schema: S): PluginSettings<S> {
 	const errs = checkSchema(schema).filter((x) => x.severity === 'error')

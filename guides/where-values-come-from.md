@@ -78,7 +78,13 @@ call that acts for no one (a lifecycle callback) starts at the administrator's v
 `set-session-annex`, merging per package.
 
 **The turn order.** No layers. It is stored in the session, written by
-`core:outlet/set-turn-order@1`, and read as it is. Nothing recomputes it.
+`core:outlet/set-turn-order@1`, and read as it is: no layer recomputes it when it is read.
+The genre's turn-order pipeline rewrites it. A `turnOrderSpec()` document recomputes the order
+each time one of the events it is bound on happens: `TURN_ORDER_EVENTS` (a message completed,
+edited, deleted or hidden, a member added or removed, the cast changed, the session updated or
+branched), plus `annex-changed` when the spec is bound on it too. A turn strategy sees the turn
+candidates and the messages, never the annex, so binding `annex-changed` makes an annex write
+recompute the order without the strategy reading the annex.
 
 Two things that are easy to miss:
 

@@ -11,9 +11,9 @@
  *
  * ## ⚠ A third sense of the word `block`
  *
- * NOMENCLATURE §15 says a **block** is one message — `system`, `user`,
+ * The vocabulary canon says a **block** is one message — `system`, `user`,
  * `assistant`. The pipeline container that used to share the word is a
- * **clause** since 2026-09-15 (R-14), which took one sense off the pile. This
+ * **clause** since 2026-09-15, which took one sense off the pile. This
  * is another: one **section within** a prompt, named by the template variable
  * that renders it. The word is the ruling's, so it is used here and recorded
  * there rather than quietly replaced with a fresh invention. Say **prompt
@@ -27,6 +27,7 @@
  * with its receipt. It renders nothing and knows no template syntax — which
  * template variables a given story string produces is a question only that
  * template's engine can answer, and the host asks it.
+ * @ruling NOMENCLATURE §15, R-14
  */
 
 import type { FieldDecl, MemberDecl } from './settings.js'
@@ -57,12 +58,13 @@ export interface PromptBlockEntry {
  * declared default cannot drift from the prompt a fresh install actually gets.
  *
  * Order is the 0.5 prompt's order, with `characterLore` under the cards it is
- * about — and `currentDate` LAST (B2, 2026-10-03), not first: the top of the
+ * about — and `currentDate` LAST, not first: the top of the
  * prompt is what a backend's cache reuses from turn to turn, and the date is
  * the one system-block value that changes on its own. Do not tidy it: every
  * entry's position is a byte in every prompt on every install that has
  * changed nothing.
  * @internal
+ * @ruling B2 (2026-10-03)
  */
 export const SHIPPED_PROMPT_BLOCK_IDS = [
 	'instructions',

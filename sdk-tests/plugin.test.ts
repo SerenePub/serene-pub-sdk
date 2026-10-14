@@ -31,6 +31,7 @@ import {
 	bindingsOf,
 	handlersOf,
 	ExtensionError,
+	announcementOf,
 } from '@serene-pub/sdk'
 import { compilePlugin, scanSource, renderFindings, cannotDo } from '@serene-pub/cli'
 import { hookBindingsFor, pluginEntrySource } from '@serene-pub/cli'
@@ -518,15 +519,54 @@ describe('98b · chat modes must be titled, and should be described', () => {
 		assert.match(w.fix, /subtitle/)
 	})
 
-	test("a plugin's own hooks, or an old-SDK 'hooks' list, are refused rather than dropped (R54)", () => {
+	test("a plugin's declared hook points reach its manifest; an old-SDK 'hooks' list is refused (R54)", () => {
 		const base = { __extension: true, slug: 'chariot.hooky', name: 'Hooky', version: '1.0.0' }
 		const run = (hooks: unknown) =>
 			compilePlugin({ sources: [{ path: 'index.ts', text: '' }], extension: { ...base, hooks } as never })
-		const declared = run({ 'before-shout': { event: 'core:event/message-created@1' } })
-		assert.equal(declared.ok, false)
-		assert.match(declared.findings.find((f) => f.code === 'E_HOOKS_FIELD')!.fix ?? '', /cannot define its own hook points/)
+		const declared = run({
+			'before-shout': { event: 'core:event/message-created@1', description: 'Before a shout lands.' },
+		})
+		assert.ok(declared.ok, renderFindings(declared.findings))
+		// Under `declaredHooks`, fully qualified as the announcement keys them —
+		// never `hooks`, which is the wire form of the code the plugin runs.
+		assert.deepEqual(declared.manifest!.declaredHooks, {
+			'chariot.hooky:hook/before-shout': {
+				event: 'core:event/message-created@1',
+				description: 'Before a shout lands.',
+			},
+		})
+		assert.deepEqual(declared.manifest!.hooks.handlers, [])
+		// The same declaration through defineExtension, and its announcement, agree.
+		const ext = defineExtension({
+			slug: 'chariot.hooky',
+			name: 'Hooky',
+			version: '1.0.0',
+			hooks: { 'before-shout': { event: 'core:event/message-created@1', description: 'Before a shout lands.' } },
+		})
+		const viaDefine = compilePlugin({ sources: [{ path: 'index.ts', text: '' }], extension: ext })
+		assert.ok(viaDefine.ok, renderFindings(viaDefine.findings))
+		assert.deepEqual(viaDefine.manifest!.declaredHooks, announcementOf(ext).document.hooks)
+		// A malformed point is refused with its own finding.
+		const bad = run({ 'Not A Key': { event: 'core:event/message-created@1' }, nameless: {} })
+		assert.equal(bad.ok, false)
+		assert.equal(bad.findings.filter((f) => f.code === 'E_HOOK_DECLARATION').length, 2)
+		// No points, no key: the manifest is the one it was before.
+		assert.equal('declaredHooks' in run(undefined).manifest!, false)
 		const oldList = run([])
+		assert.equal(oldList.ok, false)
 		assert.match(oldList.findings.find((f) => f.code === 'E_HOOKS_FIELD')!.fix ?? '', /rename hooks: \[handler/)
+	})
+
+	test("the slug 'core' is refused — it is the app's own", () => {
+		const r = compilePlugin({
+			sources: [{ path: 'index.ts', text: "export default defineExtension({ slug: 'core' })" }],
+			extension: defineExtension({ slug: 'core', name: 'Not core', version: '1.0.0' }),
+		})
+		assert.equal(r.ok, false)
+		assert.equal(r.manifest, undefined)
+		const f = r.findings.find((x) => x.code === 'E_RESERVED_SLUG')!
+		assert.match(f.message, /slug 'core' is the app's own — a plugin cannot take it/)
+		assert.match(f.fix, /chariot\.dice-tray/)
 	})
 
 	test('a lifecycle callback for sidecarSpawn or scheduled is refused as not supported yet', () => {
@@ -1126,7 +1166,11 @@ describe('104 · serene-pub build emits one artifact', () => {
 			['tally-referee'],
 		)
 		// A config over somebody else's spec is a requirement, never a bundle.
-		assert.deepEqual(m.requires, ['core:spec/chat-respond'])
+		assert.deepEqual(m.requires, [
+			'core:event/message-respond@1',
+			'core:event/session-created@1',
+			'core:spec/chat-respond',
+		])
 
 		// the storage grant, in the flat taxonomy the app's permission model reads
 		assert.ok(m.permissions.includes('storage:4194304'))

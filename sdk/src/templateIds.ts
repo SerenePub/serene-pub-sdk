@@ -1,6 +1,6 @@
 /**
  * **Template ids** — the owner-namespaced name a spec uses to reference a
- * template row, and the declaration a plugin ships one under (R19).
+ * template row, and the declaration a plugin ships one under.
  *
  * ## The problem this closes
  *
@@ -45,8 +45,8 @@
  * (`engines.ts`) and share this kind segment. The two never meet in one field:
  * an engine id is only ever read from an `engine` column or an engine registry,
  * a template id only from `template_id` or a config value's `templateId`. The
- * overlap is recorded here rather than left to be discovered — see the report
- * accompanying R19.
+ * overlap is recorded here rather than left to be discovered.
+ * @ruling R19, R19
  */
 
 import type { EngineId } from './engines.js'

@@ -1,5 +1,5 @@
 /**
- * 🚧 The receiver's rules (C7): what the page does with an element a remote
+ * 🚧 The receiver's rules: what the page does with an element a remote
  * component places and an attribute it writes, beyond the vocabulary table
  * ({@link hostAttributeAllowed}, {@link hostAttributeValueFinding}) — the
  * rules that turn on WHOSE box it is, and the rule that the value a check
@@ -34,7 +34,8 @@
  * the harness does not), the tag an update is judged against, and what the
  * remote writes into a subtree these rules refused.
  *
- * @experimental 🚧 provisional with the vocabulary it extends (C7, R21).
+ * @experimental 🚧 provisional with the vocabulary it extends.
+ * @ruling C7, C7, R21
  */
 import { hostAttributeAllowed, hostAttributeValueFinding, isHostElement } from './hostElements.js'
 

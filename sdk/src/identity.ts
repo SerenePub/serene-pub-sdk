@@ -1,5 +1,5 @@
 /**
- * Spec identity: **owner + slug + version** (12 §3b, 02 §3).
+ * Spec identity: **owner + slug + version**.
  *
  * Two versioning schemes live in this system and conflating them causes real confusion,
  * so they are stated apart:
@@ -13,6 +13,7 @@
  * So a spec id carries **no `@N` suffix**. The version is not part of the identity; it is
  * what the identity is compared *at*.
  * @experimental
+ * @ruling 12 §3b, 02 §3
  */
 
 export interface SpecIdentity {
@@ -128,10 +129,10 @@ export const CORE_ACTION_SPEC_ID = 'core'
  * and a key (a lowercase kebab token), joined by `#`. One string names one
  * declaration; everything that keys on an action keys on this — a binding's
  * subject, a preset's included set, a session's enablement row, a genre's
- * enabled-when default, the fire, a block's `action`, the *new* mark (plans/31
- * V2: the one key; there is no bare function beside it). The host's
+ * enabled-when default, the fire, a block's `action`, the *new* mark (the one key; there is no bare function beside it). The host's
  * `shared/actions/identity.ts` reads the same grammar from here.
  * @internal
+ * @ruling plans/31 V2
  */
 export const ACTION_IDENTITY = /^[a-z0-9:./-]+#[a-z0-9-]+$/
 /** The longest identity the wire accepts; a spec slug is never near this. @internal */

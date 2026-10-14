@@ -8,8 +8,8 @@
 	// in order — the renderer's calls, which its markup does not show.
 	let { ctx }: { ctx: ComponentContext } = $props()
 	type Fed = { blocks?: unknown[]; stale?: string[] }
-	let p = $state<Fed>((ctx.props ?? {}) as Fed)
-	$effect(() => ctx.subscribe((s) => s === 'props' && (p = (ctx.props ?? {}) as Fed)))
+	// `ctx` is reactive: this re-reads when the page posts new props.
+	const p = $derived((ctx.props ?? {}) as Fed)
 	const verdict = $derived.by(() => {
 		const stale = p.stale
 		if (!stale) return undefined

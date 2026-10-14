@@ -8,10 +8,9 @@
  *   (`sandbox="allow-scripts"`, never `allow-same-origin`). Zero ambient
  *   anything: no cookies, no DOM reach, no socket. Everything it knows arrives
  *   on the MessageChannel the host owns (the frame protocol below). This is the
- *   shape the app ships today — session-view replacement, page, panel grid
- *   (20 §12, 21 §7).
+ *   shape the app ships today — session-view replacement, page, panel grid.
  *
- *   **component** — a module the page's UI worker runs (§3.5, R25): one
+ *   **component** — a module the page's UI worker runs: one
  *   worker per owner per session page, no DOM, no network. It places
  *   elements from the host vocabulary (`SP_HOST_ELEMENTS`, `hostElements.ts`)
  *   and the host mirrors them into the widget box, dropping anything not
@@ -46,6 +45,7 @@
  * a frame receives the same sections a native widget reads off its context,
  * one push per section. `FRAME_PROTOCOL` says which vintage of that wire the
  * host speaks.
+ * @ruling 20 §12, 21 §7, §3.5, R25
  */
 
 import type { TurnOrderV1 } from './turnOrder.js'
@@ -56,6 +56,7 @@ import {
 	WIDGET_PROTOCOL,
 	type ActionsV1,
 	type AnnexV1,
+	type AttendanceV1,
 	type LayoutV1,
 	type MessageV1,
 	type SessionV1,
@@ -66,6 +67,7 @@ import {
 	type WidgetProtocolVersion,
 	type WidgetScopedSectionName,
 	type WidgetSectionScope,
+	type WidgetWriteGrant,
 } from './widgets.js'
 
 /**
@@ -150,14 +152,15 @@ export function parsePluginWidgetId(id: string): { pluginId: string; panelId: st
  */
 export interface SurfacesDecl {
 	/**
-	 * Replaces the whole message section for a genre that names it (19 `view`).
+	 * Replaces the whole message section for a genre that names it.
 	 *
 	 * Spelled `session-view`, not `sessionView`, because that is the key the
 	 * app's `surfacesOf` reads out of a stored manifest — and the announcement
-	 * *is* the manifest (24 §6), so there is no layer in between to translate
+	 * *is* the manifest, so there is no layer in between to translate
 	 * it. A camelCase spelling here compiled, previewed, installed, and then
 	 * silently never mounted: the exact class of bug this file's docstring
 	 * claims cannot happen. One spelling, end to end.
+	 * @ruling 19 `view`, 24 §6
 	 */
 	'session-view'?: FrameSurfaceDecl
 	/** A standalone page under the app's plugin route shell. */
@@ -187,6 +190,7 @@ export type RequestDeclineCode = 'unmounted'
  * members (`settings`, `layout`, `scoped`, `grants`) are widget data that
  * only a component is sent — a frame never is one.
  * @experimental
+ * @ruling R57, 10 §6, RESEARCH §7b, C0b, C5, W10
  */
 export type HostFrameMessage =
 	| { t: 'init'; protocol: FrameProtocolVersion; surface: FramePoint; payload?: unknown }
@@ -209,7 +213,9 @@ export type HostFrameMessage =
 	 * a component's wire only, never to a frame.
 	 */
 	| { t: 'layout'; layout: LayoutV1 }
-	/** The viewer's view of the session annex (R57), on open and on every change — `annex.v1`. */
+	/**
+	 * The viewer's view of the session annex, on open and on every change — `annex.v1`.
+	 */
 	| { t: 'annex'; annex: AnnexV1 }
 	/**
 	 * One host event — the port's analog of the `on` verb, and the same union a
@@ -226,11 +232,11 @@ export type HostFrameMessage =
 	 */
 	| { t: 'actions'; actions: ActionsV1 }
 	/**
-	 * The host's active theme, as data (10 §6: *"the active theme id is a
-	 * prop"*). An in-document component reads it off `ctx.theme`; a frame is
+	 * The host's active theme, as data: the active theme id is a
+	 * prop. An in-document component reads it off `ctx.theme`; a frame is
 	 * its own document, so it arrives here.
 	 *
-	 * Values, never tokens. RESEARCH §7b is explicit that SP publishes no
+	 * Values, never tokens. SP deliberately publishes no
 	 * token artifact of any kind — the frame applies the id and the mode to
 	 * its own `<html>` (`data-theme` / `data-mode`) and lets the stylesheet it
 	 * linked resolve them, exactly as the top document does. That keeps the
@@ -267,20 +273,30 @@ export type HostFrameMessage =
 	 *  `save-state`. */
 	| { t: 'state'; state: Record<string, unknown> }
 	/**
-	 * 🚧 The answer to any `request` but `messages` (C0b), echoing its
+	 * 🚧 The answer to any `request` but `messages`, echoing its
 	 * `requestId`: `ok` with the kind's result, or declined with why — and,
 	 * when the decline is one a component may tell apart, its
 	 * {@link RequestDeclineCode} (`code`; absent from an older host).
 	 */
 	| { t: 'response'; requestId: string; ok: boolean; result?: unknown; error?: string; code?: RequestDeclineCode }
-	/** 🚧 Translations of strings the frame asked for with `translate` (C0b). */
+	/**
+	 * 🚧 Translations of strings the frame asked for with `translate`.
+	 */
 	| { t: 'strings'; strings: Record<string, string> }
-	/** 🚧 Who is looking — the envelope's `viewer.v1` (C0b). */
+	/**
+	 * 🚧 Who is looking — the envelope's `viewer.v1`.
+	 */
 	| { t: 'viewer'; viewer: ViewerV1 }
-	/** The session's turn order — the envelope's `turnOrder.v1` (C5), on open and on every change. */
+	/**
+	 * The session's turn order — the envelope's `turnOrder.v1`, on open and on every change.
+	 */
 	| { t: 'turn-order'; turnOrder: TurnOrderV1 }
 	/**
-	 * 🚧 A scoped section the widget was granted (C0b) — named as the SDK's
+	 * The session's attendance — the envelope's `attendance.v1`, on open and on every change.
+	 */
+	| { t: 'attendance'; attendance: AttendanceV1 }
+	/**
+	 * 🚧 A scoped section the widget was granted — named as the SDK's
 	 * one table posts it (`WidgetScopedSections`: `session_full`,
 	 * `session_state`, `persona`, `characters`, `lore`), the envelope's
 	 * `<name>.v1` — posted when it changes; `value: null` withdraws it (the
@@ -289,15 +305,16 @@ export type HostFrameMessage =
 	 */
 	| { t: 'scoped'; section: WidgetScopedSectionName; value: unknown }
 	/**
-	 * 🚧 The scopes the widget holds, BARE (`session:state`, never the
-	 * permission key `widget:session:state`) — sent before the first push
+	 * 🚧 The scopes and write grants the widget holds, BARE (`session:state`,
+	 * `channel:main:write`; never the permission key `widget:session:state`)
+	 * — sent before the first push
 	 * of its sections and again whenever they change (an admin grants or
 	 * revokes one while it is open). What lets a widget tell a scope that was
 	 * NOT granted (its section will never come: say so) from one whose
 	 * section has not been posted yet (wait): both are an absent `scoped`.
 	 * Sent over a component's wire only, never to a frame.
 	 */
-	| { t: 'grants'; grants: WidgetSectionScope[] }
+	| { t: 'grants'; grants: (WidgetSectionScope | WidgetWriteGrant)[] }
 
 /**
  * frame → host. Deliberately tiny: a frame proposes, the host decides.
@@ -310,6 +327,7 @@ export type HostFrameMessage =
  * giving up control — they are the frame reporting, requesting and naming,
  * with the host still deciding.
  * @experimental
+ * @ruling C0b
  */
 export type FrameHostMessage =
 	| { t: 'ready' }
@@ -351,9 +369,10 @@ export type FrameHostMessage =
 			messageId?: number
 			payload?: WidgetPayload
 			/**
-			 * The form this press answers — a block's id within `messageId`
-			 * (R-15 *Forms*). Absent on every other press; the frame half of
+			 * The form this press answers — a block's id within `messageId`.
+			 * Absent on every other press; the frame half of
 			 * `WidgetInvokeArgs.blockId`.
+			 * @ruling R-15 *Forms*
 			 */
 			blockId?: string
 			/** The text the press supplies (a slash argument) — the frame half of `WidgetInvokeArgs.text`. */
@@ -380,7 +399,7 @@ export type FrameHostMessage =
 			limit?: number
 	  }
 	/**
-	 * 🚧 Ask the host for anything else in {@link WidgetRequests} (C0b) — a
+	 * 🚧 Ask the host for anything else in {@link WidgetRequests} — a
 	 * host view opened, a picker shown. Answered with `response`.
 	 */
 	| {
@@ -389,7 +408,9 @@ export type FrameHostMessage =
 			what: Exclude<WidgetRequestKind, 'messages'>
 			params: unknown
 	  }
-	/** 🚧 English UI strings the frame wants in the viewer's language (C0b); answered with `strings`. */
+	/**
+	 * 🚧 English UI strings the frame wants in the viewer's language; answered with `strings`.
+	 */
 	| { t: 'translate'; sources: string[] }
 	/** Persist small view state (a scroll offset, an open tab). Returned as
 	 *  `state` on the next mount. Not storage: the host may cap or drop it. */
@@ -436,14 +457,21 @@ export interface PreviewTarget {
 	kind: 'frame' | 'component'
 	/**
 	 * For a frame, one of `FramePoint`. For a component, the mount point it
-	 * renders at — `widget` today (a page mount point comes later, R25).
+	 * renders at — `widget` today (a page mount point comes later).
+	 * @ruling R25
 	 */
 	point: string
 	/** Path to the entry, exactly as declared — relative to the package root. */
 	entry: string
-	/** Components only: which adapter renders it (10 §7). */
+	/**
+	 * Components only: which adapter renders it.
+	 * @ruling 10 §7
+	 */
 	framework?: ComponentFramework
-	/** Components only: settings the target reads through `ctx` (12 §6). */
+	/**
+	 * Components only: settings the target reads through `ctx`.
+	 * @ruling 12 §6
+	 */
 	settings?: SettingsSchema
 	/** Where the declaration came from, for the harness's "declared in" line. */
 	source: 'surfaces' | 'components'

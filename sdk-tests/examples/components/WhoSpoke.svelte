@@ -3,14 +3,13 @@
 
 	let { ctx }: { ctx: ComponentContext } = $props()
 
-	type Row = { id: number; speakerLabel?: string | null; role: string }
-	const recent = () =>
-		((ctx.messages ?? []) as Row[])
+	// `ctx` is reactive: this redraws when the page posts new messages.
+	const rows = $derived(
+		(ctx.messages ?? [])
 			.slice(-3)
 			.reverse()
-			.map((m) => ({ id: m.id, who: m.speakerLabel ?? m.role }))
-	let rows = $state(recent())
-	$effect(() => ctx.subscribe(() => (rows = recent())))
+			.map((m) => ({ id: m.id, who: m.speakerLabel ?? m.role })),
+	)
 </script>
 
 <div class="space-y-2 p-3">

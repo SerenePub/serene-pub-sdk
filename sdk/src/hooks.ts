@@ -1,15 +1,16 @@
 /**
- * The three kinds of extension callable and their injected surfaces (01 §9, F10, F32).
+ * The three kinds of extension callable and their injected surfaces.
  *
- * A **hook** is a declared point where authored code may run (NOMENCLATURE §12); the
- * three callables are named for what they are (R-1, ruled 2026-09-14): a **handler**
+ * A **hook** is a declared point where authored code may run; the
+ * three callables are named for what they are: a **handler**
  * implements a node definition, a **lifecycle callback** answers a core moment, an
- * **event listener** answers a core event. 01's *pipeline hook* / *lifecycle hook* /
- * *event hook* are the same three under the old word; the code moved 2026-09-16 (U3).
+ * **event listener** answers a core event. The older *pipeline hook* / *lifecycle hook* /
+ * *event hook* are the same three under the old word.
  *
  * The rules are enforced by *what is in the object*, not by a document someone reads.
  * A capability that isn't on the surface cannot be called, which is why these are
  * types rather than a checklist.
+ * @ruling 01 §9, F10, F32, NOMENCLATURE §12, R-1 (ruled 2026-09-14), 01, U3 (2026-09-16)
  */
 
 import type { Result } from './executor.js'
@@ -31,12 +32,13 @@ export type LogLevel = 'debug' | 'info' | 'warn' | 'error'
 /**
  * Data in, expected shape out; the executor is the only caller. Private = only the
  * owning extension's specs may pin it. Public = any spec may, which is how peer
- * composition happens — as a node on the spine, never a peer call mid-run (F10).
+ * composition happens — as a node on the spine, never a peer call mid-run.
  *
  * Both are enumerated in the manifest. Listing private ones costs nothing and the
  * manifest is already the audit surface, since permissions are compiled from SDK
- * usage (13 §7c).
+ * usage.
  * @experimental
+ * @ruling F10, 13 §7c
  */
 export interface HandlerRules {
 	kind: 'pipeline'
@@ -132,12 +134,13 @@ export interface EventListenerInput<T = unknown> {
 	/** The event that fired, exactly as the subscription pinned it. */
 	event: string
 	/**
-	 * The occurrence, snapshotted at emit time (11 §3) — a hook never reads live
+	 * The occurrence, snapshotted at emit time — a hook never reads live
 	 * state through this.
 	 *
 	 * Read-only in the sense that matters: mutating it, or returning something
 	 * else in its place, changes nothing for the subscribers after you and
 	 * nothing for the action that emitted it. An event states what happened.
+	 * @ruling 11 §3
 	 */
 	payload: T
 }
@@ -161,11 +164,14 @@ export interface EventListenerSurface {
 	 *  much room is left. See storage.ts for why all four are needed. */
 	storage: ExtensionStorage
 	signal: AbortSignal
-	/** Deliberately absent: callProvider (F32), trigger (F10), fetch — an
-	 *  event listener is told what happened, and network access is an oracle's
-	 *  grant. Also absent: any way to read the occurrence off this object. It
-	 *  arrives as argument 0 (see `EventListenerInput`), which is what both
-	 *  sandboxes have always passed. */
+	/**
+	 * Deliberately absent: callProvider, trigger, fetch — an
+	 * event listener is told what happened, and network access is an oracle's
+	 * grant. Also absent: any way to read the occurrence off this object. It
+	 * arrives as argument 0 (see `EventListenerInput`), which is what both
+	 * sandboxes have always passed.
+	 * @ruling F32, F10
+	 */
 }
 
 // ── Lifecycle callback — core-invoked at defined moments ────────────────────
@@ -191,15 +197,18 @@ export interface LifecycleCallbackSurface {
 	/** The extension's own rows and files. */
 	storage: ExtensionStorage
 	signal: AbortSignal
-	/** Deliberately absent: callProvider (F32), trigger (F10), fetch (an
-	 *  oracle's grant), and any read or write of core's tables. */
+	/**
+	 * Deliberately absent: callProvider, trigger, fetch (an
+	 * oracle's grant), and any read or write of core's tables.
+	 * @ruling F32, F10
+	 */
 }
 
 /**
  * The moments a lifecycle callback may be registered against:
  *
  * - `startup` — at boot, before the ready-gate opens.
- * - `load` — declared, and not called yet (INTEGRATING.md §5c, Gaps).
+ * - `load` — declared, and not called yet.
  * - `enable` — after the plugin is switched on.
  * - `disable` — before it is switched off. Bounded; a failure never stops the switch.
  * - `update` — once, after a reinstall replaced its bundle, on the new bundle's
@@ -270,11 +279,11 @@ export interface LifecycleUpdateInput {
  *  - **You are isolated.** Throwing, overrunning or being stopped costs you
  *    your own call and nothing else: no sibling's result changes, no sibling's
  *    storage rolls back with yours, and the action that caused the event still
- *    succeeds (01 §9c).
+ *    succeeds.
  *  - **You cannot rely on order, and you cannot rely on being alone.** Dispatch
  *    order is **declaration order** — the order you wrote your own
  *    subscriptions in, tie-broken across extensions by plugin id — so a bug
- *    reproduces, but nothing about completion order is promised (11 §3). There
+ *    reproduces, but nothing about completion order is promised. There
  *    is no `priority` to raise: it would promise a sequencing core declines to
  *    give, and be its own collision the moment two extensions claimed one
  *    number.
@@ -284,8 +293,9 @@ export interface LifecycleUpdateInput {
  *    chain and a pipeline node hook are for.
  *
  * Returning `halt(reason)` is the normal way to say "not applicable to me", and
- * is a success rather than a failure (11 §3).
+ * is a success rather than a failure.
  * @experimental
+ * @ruling 01 §9c, 11 §3
  */
 export type EventListener = (input: EventListenerInput, ctx: EventListenerSurface) => Result | Promise<Result>
 
@@ -341,10 +351,11 @@ const FORBIDDEN_ON_ANY_HOOK = [
 ] as const
 
 /**
- * F32, checked rather than documented. The probe reads the surface an implementation
- * actually hands out — a regression that adds `callProvider` back fails here instead
+ * The forbidden surface members, checked rather than documented. The probe
+ * reads the surface an implementation actually hands out — a regression that adds `callProvider` back fails here instead
  * of shipping.
  * @experimental
+ * @ruling F32
  */
 export function assertHookSurface(
 	kind: 'event' | 'lifecycle',
@@ -360,9 +371,9 @@ export function assertHookSurface(
 }
 
 /**
- * The scheduled-work path, stated as code so it is discoverable from the SDK rather
- * than only from 13 §7c.
+ * The scheduled-work path, stated as code so it is discoverable from the SDK.
  * @experimental
+ * @ruling 13 §7c
  */
 export const SCHEDULED_WORK_PATH = {
 	instead: 'core:event/schedule-tick@1',

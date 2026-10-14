@@ -21,8 +21,10 @@ const kind: WidgetEventKind = 'lore:ranked'
 const withRows: WidgetEvent = { kind: 'lore:ranked', rows: [] }
 void withRows
 
-test("lore:ranked and lore:marked need the 'lore' scope; nothing else is scoped yet", () => {
-	assert.deepEqual({ ...WIDGET_EVENT_SCOPES }, { 'lore:ranked': 'lore', 'lore:marked': 'lore' })
+test("lore:ranked, lore:marked and story:moved need the 'lore' scope; nothing else is scoped yet", () => {
+	// 🚧 story:moved (Chronicle, W3): the session's story is its lore's.
+	assert.deepEqual({ ...WIDGET_EVENT_SCOPES }, { 'lore:ranked': 'lore', 'lore:marked': 'lore', 'story:moved': 'lore' })
+	assert.equal(widgetEventHeard('story:moved', { owner: 'acme.lore', grants: ['characters'] }), false)
 	assert.equal(widgetEventHeard('lore:marked', { owner: 'core' }), true)
 	assert.equal(widgetEventHeard('lore:marked', { owner: 'acme.lore', grants: ['lore'] }), true)
 	assert.equal(widgetEventHeard('lore:marked', { owner: 'acme.lore', grants: ['characters'] }), false)

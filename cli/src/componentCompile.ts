@@ -1,5 +1,5 @@
 /**
- * The component compiler (§3.5, C6 P0): ONE build a component's source goes
+ * The component compiler: ONE build a component's source goes
  * through, whether it is a package's files on disk (`serene-pub build`,
  * `bundleComponent`, core's own components) or an admin's files in memory
  * (the app's in-app authoring). Two front doors, one compiler — the CLI and
@@ -27,6 +27,7 @@ import { readFile, realpath } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { COMPONENT_IMPORTS, componentImportFinding, componentModuleFindings, currentBuiltAgainst, type ComponentBuiltAgainst } from '@serene-pub/sdk'
 import { COMPONENT_COMPILE_LIMITS, SAFE_PATH, hasDotSegment, isSafeComponentPath, componentSourceHash } from './componentSource.js'
+import { unknownClassFindings } from './componentClasses.js'
 
 export { COMPONENT_COMPILE_LIMITS, isSafeComponentPath, componentSourceHash, builtAgainstOfFingerprint } from './componentSource.js'
 
@@ -165,10 +166,14 @@ export async function runComponentBuild(opts: {
 	outfile?: string
 	/** A split build only: the directory its outputs are named for (nothing is written). */
 	outdir?: string
+	/** The classes the host app was built with; a Svelte file's class outside it is a warning. Unchecked when omitted. */
+	knownClasses?: ReadonlySet<string>
 }): Promise<{
 	code: string
 	bundled: string[]
 	warnings: string[]
+	/** The same warnings, each at its place in the file when it has one. */
+	warningsAt: ComponentCompileWarning[]
 	inputs: string[]
 	/** A split build's every output (entries and chunks), in esbuild's order. */
 	outputs?: ComponentBuildOutput[]
@@ -186,6 +191,12 @@ export async function runComponentBuild(opts: {
 	const NS = COMPONENT_SOURCE_NAMESPACE
 	const bundled = new Set<string>()
 	const warnings: string[] = []
+	const warningsAt: ComponentCompileWarning[] = []
+	/** Said, not fatal: the text a CLI prints, and the place an editor lists it at (`line` 0 when none). */
+	const warn = (file: string, text: string, line = 0, column = 0) => {
+		warnings.push(`${file}: ${text}`)
+		warningsAt.push({ file, line, column, text })
+	}
 	const names = new Map<string, string | null>()
 	/** A file of the author's own — not a dependency's, wherever that is linked from. */
 	const ownOnDisk = (file: string) => inside(file, root) && !/[\\/]node_modules[\\/]/.test(relative(root, file))
@@ -336,12 +347,19 @@ export async function runComponentBuild(opts: {
 				} catch (e) {
 					return { errors: [svelteError(e, args.path, args.namespace)] }
 				}
-				if (out.css?.code?.trim())
-					warnings.push(
-						`${args.path}: its <style> is dropped — a component styles itself with classes ` +
-							`(styles are not in the host-element vocabulary; a widget skin does the rest)`,
+				if (out.css?.code?.trim()) {
+					const at = /<style[\s>]/i.exec(source)?.index ?? -1
+					const { line, column } = at < 0 ? { line: 0, column: 0 } : lineAt(source, at)
+					warn(
+						args.path,
+						`A <style> block is dropped here. Style it with the app's utility classes, or give the widget a style.`,
+						line,
+						column,
 					)
-				for (const w of out.warnings) warnings.push(`${args.path}: ${w.message}`)
+				}
+				for (const w of out.warnings) warn(args.path, w.message, w.start?.line ?? 0, w.start?.column ?? 0)
+				if (opts.knownClasses && args.namespace === NS)
+					for (const f of unknownClassFindings(source, opts.knownClasses)) warn(args.path, f.text, f.line, f.column)
 				return { contents: out.js.code, loader: 'js', resolveDir: args.namespace === NS ? root : dirname(args.path) }
 			})
 			// A rune module (`store.svelte.ts`): its `$state` is compiled too, or
@@ -373,7 +391,7 @@ export async function runComponentBuild(opts: {
 				} catch (e) {
 					return { errors: [svelteError(e, args.path, args.namespace)] }
 				}
-				for (const w of out.warnings) warnings.push(`${args.path}: ${w.message}`)
+				for (const w of out.warnings) warn(args.path, w.message, w.start?.line ?? 0, w.start?.column ?? 0)
 				return { contents: out.js.code, loader: 'js', resolveDir: args.namespace === NS ? root : dirname(args.path) }
 			})
 			if (host.kind === 'virtual')
@@ -438,17 +456,18 @@ export async function runComponentBuild(opts: {
 			walk(key)
 			entryInputs[name] = [...seen].map(onDisk).sort()
 		}
-		return { code: '', bundled: [...bundled].sort(), warnings, inputs, outputs, entryInputs }
+		return { code: '', bundled: [...bundled].sort(), warnings, warningsAt, inputs, outputs, entryInputs }
 	}
 	const code = result.outputFiles?.find((f) => f.path.endsWith('.js'))?.text ?? result.outputFiles?.[0]?.text ?? ''
 	// A computed `import(x)` gets past any build: the worker's CSP is what
 	// refuses it at run time, and an author should hear that before then.
 	if (/\bimport\s*\(/.test(code))
-		warnings.push(
-			`${opts.entry}: the module still imports at run time (\`import(…)\`) — a component's ` +
+		warn(
+			opts.entry,
+			`the module still imports at run time (\`import(…)\`) — a component's ` +
 				`UI worker loads nothing but the app's own files, so bundle what it needs`,
 		)
-	return { code, bundled: [...bundled].sort(), warnings, inputs }
+	return { code, bundled: [...bundled].sort(), warnings, warningsAt, inputs }
 }
 
 /* ── the split front door (core's own components) ───────────────────────── */
@@ -474,7 +493,7 @@ export interface ComponentSetBuild {
 }
 
 /**
- * Build a set of ONE owner's components together (core's, C7 unit M): each
+ * Build a set of ONE owner's components together (core's): each
  * entry one module, what they share in `shared-<hash>.js` chunks the entries
  * import relatively, so the owner's one UI worker loads Svelte's runtime and
  * the helpers once. The same build, guard and loaders as every other
@@ -486,7 +505,7 @@ export interface ComponentSetBuild {
  * `import(…)` or an output that is neither an entry nor a chunk throws.
  *
  * Never for a plugin or an authored component: their modules stay
- * self-contained, and nothing here is loaded by another owner's worker (R35).
+ * self-contained, and nothing here is loaded by another owner's worker.
  * @internal
  */
 export async function buildComponentSet(opts: {
@@ -597,7 +616,7 @@ export function toolchainFingerprint(
 /**
  * @internal The packager and the in-app compile record it; read it off their output.
  *
- * What a module built from `resolveFrom` is built against (F1): the widget
+ * What a module built from `resolveFrom` is built against: the widget
  * protocol and host-element vocabulary of the SDK the CLI runs (the one the
  * component client it bundles was released with), and the SDK and
  * component-client versions as resolved from `resolveFrom`, for the reader.
@@ -622,18 +641,23 @@ export interface ComponentCompileError {
 	text: string
 }
 
+/** @internal A warning at its place in the AUTHORED file, as an error is placed; `line` 0 when it has none. */
+export type ComponentCompileWarning = ComponentCompileError
+
 /** @internal */
 export interface ComponentCompileResult {
 	/** The self-contained ES module; `''` when `errors` is not empty. */
 	code: string
 	/** SHA-256 of `code`, hex; `''` when `errors` is not empty. */
 	hash: string
-	/** Said, not fatal: a `<style>` dropped, a run-time `import()`, Svelte's own warnings. Sorted. */
+	/** Said, not fatal: a `<style>` dropped, a run-time `import()`, Svelte's own warnings, a class the app lacks. Sorted. */
 	warnings: string[]
+	/** The same warnings, each placed as an error is (`line` 0 when it has no place), by file and line. */
+	warningsAt: ComponentCompileWarning[]
 	errors: ComponentCompileError[]
 	/** `toolchainFingerprint()` of the toolchain that built it. */
 	fingerprint: string
-	/** The host contract it was built against (F1) — what a host judges before mounting it. */
+	/** The host contract it was built against — what a host judges before mounting it. */
 	builtAgainst: ComponentBuiltAgainst
 }
 
@@ -658,6 +682,13 @@ export interface CompileComponentSourceOptions {
 	resolveFrom?: string
 	/** A host may LOWER `COMPONENT_COMPILE_LIMITS`; a higher value is ignored. */
 	limits?: Partial<Record<keyof typeof COMPONENT_COMPILE_LIMITS, number>>
+	/**
+	 * The class names the host app's build produced. Given, each static class
+	 * in a Svelte file's markup (`class="…"`, `class:name`) outside it is a
+	 * warning, best-effort: class expressions are not checked, and the file
+	 * is told so once. Omitted, nothing is checked.
+	 */
+	knownClasses?: ReadonlySet<string> | readonly string[]
 }
 
 const bytes = (s: string) => Buffer.byteLength(s, 'utf8')
@@ -668,10 +699,15 @@ export async function compileComponentSource(opts: CompileComponentSourceOptions
 	const resolveFrom = resolve(opts.resolveFrom ?? process.cwd())
 	const fingerprint = toolchainFingerprint({ esbuild: opts.esbuild, svelte: opts.svelte ?? null, resolveFrom })
 	const builtAgainst = componentBuiltAgainst(resolveFrom)
-	const failed = (errors: ComponentCompileError[], warnings: string[] = []): ComponentCompileResult => ({
+	const failed = (
+		errors: ComponentCompileError[],
+		warnings: string[] = [],
+		warningsAt: ComponentCompileWarning[] = [],
+	): ComponentCompileResult => ({
 		code: '',
 		hash: '',
 		warnings: [...warnings].sort(),
+		warningsAt: byPlace(warningsAt),
 		errors,
 		fingerprint,
 		builtAgainst,
@@ -718,6 +754,11 @@ export async function compileComponentSource(opts: CompileComponentSourceOptions
 			framework: opts.framework,
 			esbuild: opts.esbuild,
 			svelte: opts.svelte,
+			knownClasses: opts.knownClasses
+				? opts.knownClasses instanceof Set
+					? opts.knownClasses
+					: new Set(opts.knownClasses as readonly string[])
+				: undefined,
 		})
 	} catch (e) {
 		const failure = e as { errors?: Esbuild.Message[]; warnings?: Esbuild.Message[] }
@@ -725,14 +766,20 @@ export async function compileComponentSource(opts: CompileComponentSourceOptions
 		return failed(failure.errors.map(located))
 	}
 	const warnings = [...built.warnings]
-	if (built.bundled.length) warnings.push(`the module bundles ${built.bundled.join(', ')}`)
+	const warningsAt = [...built.warningsAt]
+	if (built.bundled.length) {
+		const text = `the module bundles ${built.bundled.join(', ')}`
+		warnings.push(text)
+		warningsAt.push(at('', text))
+	}
 	const size = bytes(built.code)
 	if (size > L.outputBytes)
-		return failed([at(opts.entry, `the built module is ${size} bytes — a component is at most ${L.outputBytes}`)], warnings)
+		return failed([at(opts.entry, `the built module is ${size} bytes — a component is at most ${L.outputBytes}`)], warnings, warningsAt)
 	return {
 		code: built.code,
 		hash: createHash('sha256').update(built.code).digest('hex'),
 		warnings: warnings.sort(),
+		warningsAt: byPlace(warningsAt),
 		errors: [],
 		fingerprint,
 		builtAgainst,
@@ -746,4 +793,21 @@ function located(m: Esbuild.Message): ComponentCompileError {
 	const prefix = `${COMPONENT_SOURCE_NAMESPACE}:`
 	const file = loc.file.startsWith(prefix) ? loc.file.slice(prefix.length) : loc.file
 	return { file, line: loc.line, column: loc.column, text: m.text }
+}
+
+/** Warnings by file, then line and column; the placeless last within a file. Stable otherwise. */
+function byPlace(list: ComponentCompileWarning[]): ComponentCompileWarning[] {
+	return [...list].sort(
+		(a, b) =>
+			(a.file < b.file ? -1 : a.file > b.file ? 1 : 0) ||
+			(a.line || Infinity) - (b.line || Infinity) ||
+			a.column - b.column,
+	)
+}
+
+/** The 1-based line and 0-based column of `offset` in `text`. */
+function lineAt(text: string, offset: number): { line: number; column: number } {
+	const before = text.slice(0, offset)
+	const nl = before.lastIndexOf('\n')
+	return { line: before.split('\n').length, column: offset - nl - 1 }
 }

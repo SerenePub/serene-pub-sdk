@@ -44,6 +44,9 @@ export * from './engines.js'
 // and the declaration a plugin ships one under (R19). Beside engines because the
 // two share the `template` kind segment and must be read together.
 export * from './templateIds.js'
+// Loadouts (I12): the third model layer — a declaration a package ships, the
+// `loadout-ref` value a node's `loadout` slot holds, and `prefers`.
+export * from './loadouts.js'
 export * from './variables.js'
 // Bands as template variables (typed templates P2): a source declares the
 // bands it publishes; `rendersAt` is what a node's variables slot renders.
@@ -66,11 +69,20 @@ export * from './attributes.js'
 // Beside attributes because it is the same registry discipline one level up:
 // a slot says what one value is, a sheet says which values a thing has.
 export * from './sheets.js'
+// Card strokes — a card's description and personality as ordered prose
+// pieces, and the card dowry — the stats a card carries between installs.
+// Beside sheets because the dowry is sheets and slots on the card; strokes
+// sit with it because both live on the card and nowhere else.
+export * from './strokes.js'
+export * from './dowry.js'
 // Stat shapes — the named FieldDecls a slot's value may take, and the story
 // time a clock/date stat holds. Beside sheets: the same registry discipline,
 // one level down (a sheet names slots, a slot names its shape).
 export * from './statShapes.js'
 export * from './storyTime.js'
+// 🚧 Scene settings (live scenes §4–§5): how a session places its scene
+// boundaries and when a scene's summary runs; `SessionShape.scenes`.
+export * from './sceneSettings.js'
 // The turn lock — whether the numbers written for one speaker are still open.
 // In the SDK because the host's write gate, a plugin proposing a change and
 // the client drawing the ledger must answer it identically; see the file.
@@ -101,6 +113,9 @@ export * from './worldinfo.js'
 // native and frame alike. Before surfaces because the frame wire carries these
 // shapes; `widgets.ts` imports nothing, so neither direction can cycle.
 export * from './widgets.js'
+// The conversation dossier (`session_full.v1`, C4): the one scoped section
+// whose shape is large enough for a file of its own. Imports nothing.
+export * from './sessionDossier.js'
 // The person gate on a widget's invoke of a message-changing core verb — the
 // page's and the harness's one table (imports nothing).
 export * from './personGate.js'

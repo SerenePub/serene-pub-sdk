@@ -853,6 +853,18 @@ export interface SpHostElements {
 		slot?: string
 	}
 	/**
+	 * 🚧 A handle a person drags along a list to move a boundary between its items (1.4) — a scene divider's start. Its body is the grip (`sp-drag-handle-grip`), drawn by the widget. `along` names the items, by one widget part (`messages.message-row`); each item carries its key as `data-drag-key`, and an item drawn `hidden` is passed over. While dragged, a line (`sp-drag-handle-line`) shows the gap between items the handle would land in, snapping to the nearest; Escape cancels. On release `move` carries `{ prev, next }` — the keys of the items before and after that gap, in document order (null at either end). Pointer only: the widget offers the same move another way (a menu row), and the grip is hidden from assistive technology.
+	 * Parts: `.sp-drag-handle`, `.sp-drag-handle-grip`, `.sp-drag-handle-line`.
+	 * Events: `move`.
+	 */
+	'sp-drag-handle': {
+		'along'?: SpAttr
+		'label'?: SpAttr
+		'disabled'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
 	 * A scroll region. `stick="bottom"` keeps it anchored to the end as content grows, as a log does (`stick="top"` for a newest-first log); scrolled away from that end, what is on screen stays put as rows arrive above or below. `reach-start` fires when the far end from `stick` is reached (load older).
 	 * Parts: `.sp-scroll`.
 	 * Events: `reach-start`.
@@ -909,6 +921,7 @@ export interface SpHostEvents {
 	'sp-composer-field': 'input' | 'change' | 'submit' | 'key' | 'focus'
 	'sp-file-picker': 'files'
 	'sp-drop-zone': 'files'
+	'sp-drag-handle': 'move'
 	'sp-scroll': 'reach-start'
 	'sp-frame': 'action' | 'error' | 'invoke'
 }

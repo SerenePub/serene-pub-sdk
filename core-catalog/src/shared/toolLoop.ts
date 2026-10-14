@@ -51,6 +51,7 @@
  * would be N writes, which `validate.ts` refuses (F7), and correctly.
  */
 import { compile, handlebars, slot, spec } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import type { CorePromptSeed } from '../seed/prompts.js'
 
@@ -373,7 +374,9 @@ export const toolLoopSpec = () =>
 						source: TOOL_LOOP_TEMPLATE,
 						engine: handlebars.id,
 					})
-					.params('answer', { path: 'answer' }),
+					.params('answer', { path: 'answer' })
+					// The loop's model call runs on Tool calling (I12).
+					.loadout('tools.item.generate', slot.loadout(CORE_LOADOUT.toolCalling)),
 			)
 			.build(),
 	)

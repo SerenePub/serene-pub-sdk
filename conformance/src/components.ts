@@ -1,5 +1,5 @@
 /**
- * Components (§3.5, C4 / C30): what a host must do with a remote component,
+ * Components (C4 / C30): what a host must do with a remote component,
  * as cases a host is run through — the built module's own findings, the
  * protocol round trip, and parity between a widget's native copy and a
  * remote built from the same source.
@@ -282,7 +282,7 @@ export function componentParitySections(): Record<string, unknown> {
 				turn: { order: [], candidates: [], show: false, canChoose: false },
 				readOnly: null,
 				state: { ledgers: {}, pending: {}, waiting: [] },
-				backdrop: false,
+				appBackground: false,
 			},
 		},
 	}

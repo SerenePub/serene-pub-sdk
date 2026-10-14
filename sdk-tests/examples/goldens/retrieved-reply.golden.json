@@ -266,7 +266,23 @@
 						"priority": "normal"
 					}
 				],
-				"budget": 3584
+				"budget": 3584,
+				"template": {},
+				"connection": {
+					"id": "ollama-local",
+					"kind": "core:shape/text-gen@1",
+					"metadata": {
+						"contextLength": 4096,
+						"tokenizer": "llama-bpe",
+						"model": "llama3",
+						"supportedSamplers": [
+							"temperature",
+							"top_p"
+						]
+					},
+					"modelId": null,
+					"contextWindow": null
+				}
 			},
 			"output": {
 				"main": {

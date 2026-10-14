@@ -1,5 +1,5 @@
 /**
- * What a BUILT component module may carry (§3.5, C4 / C30) — judged on the
+ * What a BUILT component module may carry — judged on the
  * module's text, as a host judges a package it is handed and the CLI judges
  * what it just wrote.
  *
@@ -19,6 +19,7 @@
  * Worker( is bad") is not code, and minified output (`import{a}from"x"`)
  * is read as the import it is. The CSP of the page's worker is the wall;
  * this says so at build time.
+ * @ruling §3.5, C4 / C30
  */
 import { isHostElement } from './hostElements.js'
 

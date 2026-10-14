@@ -67,6 +67,7 @@ const CLASSIFICATION = {
 	timeoutMs: ['policy', 'how long the host waits — the host’s to tune'],
 	timeoutKind: ['policy', 'wall or idle — the same tuning, one axis over'],
 	usage: ['policy', 'where a receipt reads token usage — changes what is reported, never what is produced'],
+	prefers: ['policy', 'what a model call runs best on — a suggestion, never a gate (I12)'],
 	bands: ['contract', 'which top-level template names a source publishes, and through which variable — what a template may reference (owner ruling 2026-09-27)'],
 	bandPorts: ['contract', 'which out-ports carry a declared band — whether a band reaches a template at all (2026-09-27)'],
 	portSchemas: ['contract', 'what an out-port payload holds, which is what a template reading it may reference (owner ruling 2026-09-27)'],

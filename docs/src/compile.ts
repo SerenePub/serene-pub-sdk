@@ -161,6 +161,17 @@ export async function compileDocs(opts: CompileDocsOptions): Promise<CompileDocs
 				)
 				continue
 			}
+			// TypeDoc's markdown numbers an anchor it believes is duplicated
+			// (`#strokekind-1` on a page whose only such heading is
+			// `#strokekind`). On an API page, a numbered anchor whose base
+			// heading exists lands on that heading rather than failing the build.
+			if (
+				link.anchor &&
+				!target.has(link.anchor) &&
+				link.slug.includes('/api/') &&
+				target.has(link.anchor.replace(/-\d+$/, ''))
+			)
+				continue
 			if (link.anchor && !target.has(link.anchor)) {
 				offenders.push(
 					`\`${page.slug}\` links \`${link.href}\` — page \`${link.slug}\` has no ` +

@@ -51,7 +51,16 @@ describe('every provider node declares how it wants to be sent', () => {
 		// which is where a send-shape decision belongs.
 		const slot = (C.generateImage.descriptor.slots as any)?.params
 		assert.equal(slot.kind, 'parameters')
-		assert.deepEqual(Object.keys(slot.schema), ['streaming'])
+		// Widened in place 2026-10-12 (DESIGN-image-generation §4.1): the
+		// picture's orientation, cut-out and references policy sit beside it,
+		// and the Sprite set fill's one-seed-per-run `seed` (§6.3, I5).
+		assert.deepEqual(Object.keys(slot.schema), [
+			'streaming',
+			'orientation',
+			'cutOut',
+			'references',
+			'seed',
+		])
 	})
 
 	test('the three text nodes keep `stopSequences` beside it', () => {

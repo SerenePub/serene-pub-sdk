@@ -3,7 +3,7 @@
  *
  * Every entry is a descriptor plus a pinned constructor. Note that the LLM, TTS and
  * image-gen providers are structurally identical: `params` is declared per type, so
- * nothing anywhere switches on modality (17 §1).
+ * nothing anywhere switches on modality.
  *
  * Split by node kind (2026-10-05): `inlets.ts`, `queries.ts`, `tasks.ts`,
  * `oracles.ts` and `outlets.ts`, each holding its kind's definitions and the

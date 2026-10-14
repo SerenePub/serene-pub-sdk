@@ -3,7 +3,7 @@
  *
  * ## Three levels, and only the middle one is new here
  *
- * A stat is three things, not one (entries plan Part 3): a **declaration**
+ * A stat is three things, not one: a **declaration**
  * ("Health is an integer with a max, and it attaches to cast members"), a
  * **configuration** ("this character's Health caps at 20"), and a **value**
  * ("health = 12, as of message 47"). This file owns the first. The other two
@@ -57,7 +57,7 @@
  * than part of it, and writing one down must not force an `@N+1` on everything
  * already storing values under the id.
  *
- * ⚠ **"Slot" here is not a pipeline slot.** NOMENCLATURE §"slot" is a declared
+ * ⚠ **"Slot" here is not a pipeline slot.** A pipeline *slot* is a declared
  * parameter address on a node type (`SlotDecl` in descriptors.ts). This is an
  * *attribute* slot, and prose says the qualified word. The two never meet: one
  * is a key on a descriptor, the other is an id in this registry.
@@ -69,6 +69,7 @@
  * will be imported wrong. The *types* keep the short names (`SlotId`,
  * `SlotConfig`, `SlotValue`): they are only ever written next to this file's
  * functions, so they cannot be mistaken at a call site.
+ * @ruling entries plan Part 3
  */
 
 import type { I18n } from './descriptors.js'
@@ -552,8 +553,7 @@ export interface AttributeSlotProps {
 	 */
 	pickable?: false
 	/**
-	 * 🚧 **Earshot**: which prompts may read this slot's value (lair pass R1,
-	 * 2026-09-28).
+	 * 🚧 **Earshot**: which prompts may read this slot's value.
 	 *
 	 *  · `'all'` (the default) — every agent a run builds a prompt for: the
 	 *    planner, the scene, the state-keeper, every voice.
@@ -574,6 +574,7 @@ export interface AttributeSlotProps {
 	 * so saying the default and saying nothing are one declaration and one
 	 * hash. Inside the content hash when `'holder'`: it decides which prompts
 	 * the value reaches.
+	 * @ruling lair pass R1 (2026-09-28)
 	 */
 	earshot?: SlotEarshot
 }
@@ -826,12 +827,13 @@ export function reviveAttributeSlot(id: SlotId): AttributeSlotDecl {
 }
 
 /**
- * The display-text findings of one slot declaration (R-20): `label` and
+ * The display-text findings of one slot declaration: `label` and
  * `description`, both optional — a slot may be listed by its id — but a blank
  * one is a label that draws nothing where the author meant to say something.
  * Run by the code door here and by the host's **write** door for an authored
  * slot (the app's `declareSlot` / `updateSlot`), never by a reload.
  * @internal
+ * @ruling R-20
  */
 export function attributeSlotDisplayFindings(id: SlotId, props: AttributeSlotProps): string[] {
 	return [
@@ -851,11 +853,12 @@ function assertDisplayText(id: SlotId, props: AttributeSlotProps): AttributeSlot
 
 /**
  * A stored row reloading at boot is never refused for its display text
- * (ruled 2026-09-17, U5i review): the gate is the write door, and a row that
+ * (ruled 2026-09-17): the gate is the write door, and a row that
  * was stored with a blank `description` would otherwise vanish from every
  * boot after. The offending field is dropped — a blank label reads as "listed
  * by id" — and a warning names the row and the finding, so the defect is
  * visible without the slot being lost.
+ * @ruling U5i review
  */
 function withDisplayTextTolerated(id: SlotId, props: AttributeSlotProps): AttributeSlotProps {
 	const findings = attributeSlotDisplayFindings(id, props)
@@ -1141,10 +1144,11 @@ export function resolveSlotConfig(
  * inventing three wordings for one rule is how a validator stops being one.
  *
  * ⚠ A value is checked against the configuration valid at **its own anchor**,
- * not against the current one (plan Part 3). Callers pass that config in; this
+ * not against the current one. Callers pass that config in; this
  * function never reaches for a current one, because doing so is precisely the
  * mistake that retroactively invalidates a legitimate historical value.
  * @internal
+ * @ruling plan Part 3
  */
 export function checkSlotValue(
 	decl: AttributeSlotDecl,

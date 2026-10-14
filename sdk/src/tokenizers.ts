@@ -22,8 +22,8 @@
  *
  * The SDK barrel has **no dependencies**, deliberately — nothing it reaches
  * imports anything outside `src/`. (The one exception is its own entry point:
- * `/template-check` parses with `handlebars` and `liquidjs`, typed templates
- * Q5, and nothing on the barrel imports it.) Real tokenizers are the opposite of that: the four
+ * `/template-check` parses with `handlebars` and `liquidjs`, and
+ * nothing on the barrel imports it.) Real tokenizers are the opposite of that: the four
  * packages a host needs for the twelve ids below are ~69 MB on disk, and an
  * author who installed `@serene-pub/sdk` to write one node type has no business
  * downloading a BPE merge table. There is also a hard mechanical reason: this

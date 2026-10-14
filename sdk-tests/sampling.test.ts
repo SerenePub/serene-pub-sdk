@@ -21,6 +21,10 @@ import {
 	resolveSamplingValues,
 	normalizeSamplingRow,
 	allDefinitions,
+	readLogitBiasValue,
+	LOGIT_BIAS_MIN,
+	LOGIT_BIAS_MAX,
+	LOGIT_BIAS_OVERTHINKING_MARKERS,
 } from '@serene-pub/sdk'
 // Imported for its side effect: the contracts register the core descriptors, and
 // the coverage test below has nothing to walk until they have.
@@ -260,22 +264,18 @@ describe('normalization — what gets written', () => {
 	})
 
 	test('a json-format field accepts either the parsed object or the textarea text', () => {
-		assert.deepEqual(
-			normalizeSamplingRow({
-				shape: S.textGen,
-				values: { logitBias: '{"123":-100}' },
-				enabled: ['logitBias'],
-			}).values.logitBias,
-			{ '123': -100 }
-		)
-		assert.deepEqual(
-			normalizeSamplingRow({
-				shape: S.textGen,
-				values: { logitBias: { '123': -100 } },
-				enabled: ['logitBias'],
-			}).values.logitBias,
-			{ '123': -100 }
-		)
+		// No shipped vocabulary declares one since `logitBias` became
+		// `format: 'logit-bias'`, so the rule is pinned on a schema of its own.
+		const schema = { extra: { type: 'text', format: 'json' } } as const
+		const normalize = (extra: unknown) =>
+			normalizeSamplingRow(
+				{ shape: S.textGen, values: { extra }, enabled: ['extra'] },
+				schema,
+			).values
+		assert.deepEqual(normalize('{"123":-100}').extra, { '123': -100 })
+		assert.deepEqual(normalize({ '123': -100 }).extra, { '123': -100 })
+		// Unparseable JSON is dropped, so the default applies — unlike a logit bias list.
+		assert.equal('extra' in normalize('{nope'), false)
 	})
 
 	test('a string[] field accepts a newline-separated textarea', () => {
@@ -334,5 +334,122 @@ describe('normalization — what gets written', () => {
 			height: 1216,
 			seed: -1,
 		})
+	})
+})
+
+describe('logit bias — a list of { text, value } rows', () => {
+	const normalize = (logitBias: unknown) =>
+		normalizeSamplingRow({ shape: S.textGen, values: { logitBias }, enabled: ['logitBias'] })
+			.values.logitBias
+
+	test('the declaration is the rows format, defaulting to the overthinking markers', () => {
+		const decl = textSamplingSchema.logitBias
+		assert.equal(decl?.type, 'text')
+		assert.equal(decl?.format, 'logit-bias')
+		assert.equal(decl?.default, LOGIT_BIAS_OVERTHINKING_MARKERS)
+		assert.equal(LOGIT_BIAS_OVERTHINKING_MARKERS.length, 49)
+		assert.deepEqual(LOGIT_BIAS_OVERTHINKING_MARKERS.slice(0, 4), [
+			{ text: 'perhaps', value: -2 },
+			{ text: 'maybe', value: -2 },
+			{ text: 'wait', value: -2 },
+			{ text: 'Wait', value: -2 },
+		])
+		assert.deepEqual(LOGIT_BIAS_OVERTHINKING_MARKERS.at(-1), { text: 'incorrect', value: -2 })
+		assert.ok(
+			LOGIT_BIAS_OVERTHINKING_MARKERS.every((e) => e.value === -2 && /^\S+$/.test(e.text)),
+		)
+	})
+
+	test('the default is filled but not sent: only a ticked field reaches the adapter', () => {
+		assert.deepEqual(resolveSamplingValues({ shape: S.textGen, values: {}, enabled: [] }), {})
+		assert.deepEqual(
+			resolveSamplingValues({ shape: S.textGen, values: {}, enabled: ['logitBias'] }),
+			{ logitBias: LOGIT_BIAS_OVERTHINKING_MARKERS },
+		)
+	})
+
+	test('rows keep their order; biases clamp and a non-number becomes 0', () => {
+		assert.deepEqual(
+			normalize([
+				{ text: 'hello', value: -5 },
+				{ text: '{exact}', value: 250 },
+				{ text: '[1, 2]', value: -1000 },
+				{ text: 'x', value: 'nope' },
+				{ text: 'y', value: Infinity },
+				{ text: 'z', value: '7.5' },
+			]),
+			[
+				{ text: 'hello', value: -5 },
+				{ text: '{exact}', value: LOGIT_BIAS_MAX },
+				{ text: '[1, 2]', value: LOGIT_BIAS_MIN },
+				{ text: 'x', value: 0 },
+				{ text: 'y', value: 0 },
+				{ text: 'z', value: 7.5 },
+			],
+		)
+	})
+
+	test('a row with empty or malformed text is kept for the editor to report', () => {
+		assert.deepEqual(
+			normalize([
+				{ text: '', value: 3 },
+				{ text: '[a, b]', value: 1 },
+				{ value: 2 },
+				{ text: 42 },
+			]),
+			[
+				{ text: '', value: 3 },
+				{ text: '[a, b]', value: 1 },
+				{ text: '', value: 2 },
+				{ text: '42', value: 0 },
+			],
+		)
+	})
+
+	test('the legacy id → bias object becomes [id] rows, in key order', () => {
+		assert.deepEqual(normalize({ '123': -100, '456': 5 }), [
+			{ text: '[123]', value: -100 },
+			{ text: '[456]', value: 5 },
+		])
+		assert.deepEqual(normalize({}), [])
+	})
+
+	test('either shape arrives as JSON text too', () => {
+		assert.deepEqual(normalize('{"123":-100}'), [{ text: '[123]', value: -100 }])
+		assert.deepEqual(normalize('[{"text":"hmm","value":-2}]'), [{ text: 'hmm', value: -2 }])
+		assert.deepEqual(normalize('   '), [])
+	})
+
+	test("llama.cpp's own [id, bias] pairs read as rows", () => {
+		assert.deepEqual(
+			normalize([
+				[15043, 1],
+				['Hello', false],
+			]),
+			[
+				{ text: '[15043]', value: 1 },
+				{ text: '{Hello}', value: LOGIT_BIAS_MIN },
+			],
+		)
+	})
+
+	test('an unreadable value is kept as it came, never deleted', () => {
+		// The json format drops an unparseable value; a logit bias list is
+		// somebody's typing, so it stays for the editor to report.
+		assert.equal(normalize('{not json'), '{not json')
+		assert.equal(normalize(42), 42)
+		assert.equal(readLogitBiasValue('{not json'), null)
+		assert.equal(readLogitBiasValue('"just a string"'), null)
+		assert.equal(readLogitBiasValue(true), null)
+	})
+
+	test('normalizing a list is idempotent', () => {
+		const once = normalizeSamplingRow({
+			shape: S.textGen,
+			values: { logitBias: { '9': 200 } },
+			enabled: ['logitBias'],
+		})
+		assert.deepEqual(normalizeSamplingRow(once), once)
+		assert.deepEqual(once.values.logitBias, [{ text: '[9]', value: 100 }])
 	})
 })

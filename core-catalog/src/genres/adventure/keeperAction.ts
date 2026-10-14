@@ -6,6 +6,7 @@ import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { ADVENTURE_KEEPER_SCHEMA } from './respond.js'
 import { adventureGenre } from '../../registry/genres.js'
+import { TIME_PASSES_COLLECTS } from '../../shared/timePasses.js'
 
 /* ── the two keeper-only actions ────────────────────────────────────────── */
 
@@ -27,9 +28,25 @@ export const keeperAction = (
 	id: string,
 	version: string,
 	trigger: { key: string; icon: string; label: string; description: string },
-) =>
-	compile(
-		spec(id, {
+	/**
+	 * 🚧 `clock` (live scenes §6, 2026-10-13): the press collects a clock
+	 * step on the stepper — the amount is the player's — and, once the
+	 * keeper's changes are committed, the session's story clock moves by it
+	 * (`core:task/clock-step@1` → *Advance story clock*, behind a junction
+	 * on `moves`). Last, after the keeper's changes stand; a clock that
+	 * cannot move (a book with nothing dated and no clock set) is skipped
+	 * with its sentence in the ledger and on the receipt, never a halt
+	 * (live scenes §15 G7). Time passes says it; Rest does not.
+	 *
+	 * 🚧 Without it (Rest), the keeper's own `clock` list is read instead
+	 * (live scenes ★3, lane F): a clock proposal under review, or — with
+	 * Trust the narrator on — *Advance story clock* in the trusted arm.
+	 * With it, the keeper's `clock` is never wired: the amount is the
+	 * player's.
+	 */
+	opts: { clock?: boolean } = {},
+) => {
+	const resolved = spec(id, {
 			version,
 			taxonomy: {
 				role: 'action',
@@ -43,6 +60,7 @@ export const keeperAction = (
 						icon: trigger.icon,
 						label: { en: trigger.label },
 						description: { en: trigger.description },
+						...(opts.clock ? { collects: TIME_PASSES_COLLECTS as any } : {}),
 					},
 				],
 			},
@@ -82,6 +100,10 @@ export const keeperAction = (
 					cast: $.gather.cast.read.cast,
 					state: $.gather.state.read.state,
 					fields: $.input.fields,
+					// 🚧 Time passes: the span the player chose, as
+					// `{{clockStep}}` (live scenes §15 G6), so the keeper
+					// turns the sky over that span, not one notch.
+					...(opts.clock ? { clockStep: $.input.clockStep } : {}),
 					prompts: slot.prompts(),
 					variables: slot.variables(),
 				}),
@@ -162,38 +184,96 @@ export const keeperAction = (
 					scope: $.input.sessionScope,
 					// The version this run read — see `respond`'s keeperResolve.
 					base: $.gather.state.read.version,
+					// 🚧 The keeper's clock move (★3) — Rest's alone: under
+					// Time passes the amount is the player's stepper, so the
+					// keeper's own `clock` is never read there.
+					...(opts.clock ? {} : { clock: $.write.json }),
 				}),
 			)
-			.junction('commit', { on: ($: any) => $.input.fields }, (r) =>
-				r
-					.when('trusted', { path: 'trustNarrator', truthy: true }, (c) =>
-						c.task(
-							'apply',
-							($: any) =>
-								C.setState.v1({
-									changes: $.resolve.changes,
-									scope: $.input.sessionScope,
-									base: $.gather.state.read.version,
-									params: slot.params(),
-								}),
-							{ expose: { label: 'Apply the changes' } },
-						),
-					)
-					.otherwise('reviewed', (c) =>
-						c.task(
-							'propose',
-							($: any) =>
-								C.setState.v1({
-									changes: $.resolve.changes,
-									scope: $.input.sessionScope,
-									base: $.gather.state.read.version,
-									params: slot.params(),
-								}),
-							{ expose: { label: 'Propose the changes' } },
+	/** The keeper's clock move, decided — Rest's alone; see `respond`'s `keeperStep`. */
+	const stepped = opts.clock
+		? resolved
+		: (resolved as any).task('keeperStep', ($: any) =>
+				C.clockStep.v1({ step: $.resolve.clock, params: slot.params() }),
+			)
+	const committed = (stepped as any).junction('commit', { on: ($: any) => $.input.fields }, (r: any) =>
+		r
+			.when('trusted', { path: 'trustNarrator', truthy: true }, (c: any) => {
+				const applied = c.task(
+					'apply',
+					($: any) =>
+						C.setState.v1({
+							changes: $.resolve.changes,
+							scope: $.input.sessionScope,
+							base: $.gather.state.read.version,
+							params: slot.params(),
+						}),
+					{ expose: { label: 'Apply the changes' } },
+				)
+				// 🚧 Rest's clock move under Trust the narrator (★3): through
+				// *Advance story clock*, as `respond`'s — `apply` passes the
+				// clock line over. The keeper's move, and a refusal skips
+				// the clock rather than halting the rest (§15 G4/G7).
+				return opts.clock
+					? applied
+					: applied.junction('keeperClock', { on: ($: any) => $.keeperStep.moves }, (j: any) =>
+							j.when('moves', { truthy: true }, (k: any) =>
+								k.outlet(
+									'advance',
+									($: any) =>
+										C.advanceStoryClock.v1({
+											by: $.keeperStep.by,
+											unit: $.keeperStep.unit,
+											cause: 'keeper',
+											onRefusal: 'skip',
+											params: slot.params(),
+										}),
+									{ expose: { label: 'Move the story clock' } },
+								),
+							),
+						)
+			})
+			.otherwise('reviewed', (c: any) =>
+				c.task(
+					'propose',
+					($: any) =>
+						C.setState.v1({
+							changes: $.resolve.changes,
+							scope: $.input.sessionScope,
+							base: $.gather.state.read.version,
+							params: slot.params(),
+						}),
+					{ expose: { label: 'Propose the changes' } },
+				),
+			),
+	)
+	const withClock = opts.clock
+		? (committed as any)
+				/** The press's step, decided: `{ by, unit }` and whether it moves at all. */
+				.task('step', ($: any) => C.clockStep.v1({ step: $.input.clockStep, params: slot.params() }))
+				/**
+				 * 🚧 A person's press (`cause: 'action'`). A story with no
+				 * clock yet skips the move with a line in the ledger
+				 * instead of halting after the keeper's changes landed
+				 * (`onRefusal: 'skip'`, live scenes §15 G7).
+				 */
+				.junction('clock', { on: ($: any) => $.step.moves }, (j: any) =>
+					j.when('moves', { truthy: true }, (c: any) =>
+						c.outlet('advance', ($: any) =>
+							C.advanceStoryClock.v1({
+								by: $.step.by,
+								unit: $.step.unit,
+								cause: 'action',
+								onRefusal: 'skip',
+								params: slot.params(),
+							}),
 						),
 					),
-			)
-			.preset('adventure', { label: 'Adventure', default: true }, (p) =>
+				)
+		: committed
+	return compile(
+		withClock
+			.preset('adventure', { label: 'Adventure', default: true }, (p: any) =>
 				p
 					// The keeper's two arms, joined into the one list
 					// the resolver takes.
@@ -202,3 +282,4 @@ export const keeperAction = (
 			)
 			.build(),
 	)
+}

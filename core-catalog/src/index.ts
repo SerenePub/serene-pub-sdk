@@ -78,12 +78,29 @@ import { BUILTIN_EDIT_SPEC_ID, builtinEditSpec } from './shared/builtins/edit.js
 import { BUILTIN_SWIPE_SPEC_ID, builtinSwipeSpec } from './shared/builtins/swipe.js'
 import { BUILTIN_BRANCH_SPEC_ID, builtinBranchSpec } from './shared/builtins/branch.js'
 import { SHOW_SPRITE_SPEC_ID, showSpriteSpec } from './shared/sprites.js'
+import { SPRITE_SET_FILL_SPEC_ID, spriteSetFillSpec } from './shared/spriteFill.js'
+import { CHARACTER_PORTRAIT_SPEC_ID, characterPortraitSpec } from './shared/portrait.js'
+import { DESCRIBE_LIKENESS_SPEC_ID, describeLikenessSpec } from './shared/describeLikeness.js'
 import { CHAT_GENERATE_IMAGE_SPEC_ID, generateImageSpec } from './genres/chat/generateImage.js'
+import { CHAT_ILLUSTRATE_SCENE_SPEC_ID, illustrateSceneSpec } from './genres/chat/illustrateScene.js'
+import { ADVENTURE_ILLUSTRATE_SCENE_SPEC_ID, adventureIllustrateSceneSpec } from './genres/adventure/illustrateScene.js'
+import { CHAT_ADVANCE_TIME_SPEC_ID, chatAdvanceTimeSpec } from './genres/chat/advanceTime.js'
+import { LAIR_ADVANCE_TIME_SPEC_ID, lairAdvanceTimeSpec } from './genres/lair/advanceTime.js'
 import { GRAPH_BUILD_SPEC_ID, graphBuildSpec } from './shared/graphBuild.js'
 import { SUMMARIZE_WORLD_SPEC_ID, summarizeWorldSpec } from './shared/summarize/world.js'
 import { SUMMARIZE_CHARACTER_SPEC_ID, summarizeCharacterSpec } from './shared/summarize/character.js'
 import { SUMMARIZE_SCENE_SPEC_ID, summarizeSceneSpec } from './shared/summarize/scene.js'
 import { SUMMARIZE_HISTORY_SPEC_ID, summarizeHistorySpec } from './shared/summarize/history.js'
+import {
+	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	CHAT_SUMMARIZE_SCENE_SPEC_ID,
+	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
+	LAIR_SUMMARIZE_SCENE_SPEC_ID,
+} from './shared/summarize/sceneIds.js'
+import { chatSummarizeSceneSpec } from './genres/chat/summarizeScene.js'
+import { adventureSummarizeSceneSpec } from './genres/adventure/summarizeScene.js'
+import { guideSummarizeSceneSpec } from './genres/guide/summarizeScene.js'
+import { lairSummarizeSceneSpec } from './genres/lair/summarizeScene.js'
 
 export * from './registry/genres.js'
 /**
@@ -114,6 +131,8 @@ export * from './registry/slots.js'
 export * from './registry/entries.js'
 export * from './seed/prompts.js'
 export * from './seed/presets.js'
+// The core loadouts (I12): declarations the instance seeds unfilled by id.
+export * from './loadouts.js'
 /** Every genre's pipelines, a folder each, and the lists that span them. */
 export * from './genres/index.js'
 /** The builders a genre calls once per genre — core's and a plugin genre's alike. */
@@ -123,6 +142,10 @@ export * from './factories/turnOrder.js'
 export * from './shared/annexField.js'
 export * from './shared/builtins/index.js'
 export * from './shared/sprites.js'
+export * from './shared/spriteFill.js'
+export * from './shared/portrait.js'
+export * from './shared/describeLikeness.js'
+export * from './shared/timePasses.js'
 export * from './shared/toolLoop.js'
 export * from './shared/graphBuild.js'
 export * from './shared/summarize/index.js'
@@ -253,6 +276,55 @@ export const CORE_SPECS: CoreSpec[] = [
 		name: 'Generate image',
 		build: generateImageSpec,
 	},
+	/**
+	 * 🚧 The Scene action (DESIGN-image-generation §6.4, I9): a picture of
+	 * the session as it stands, posted and/or set as the backdrop.
+	 */
+	{
+		slug: CHAT_ILLUSTRATE_SCENE_SPEC_ID,
+		name: 'Illustrate scene',
+		build: illustrateSceneSpec,
+	},
+	/** 🚧 The same Scene graph with Adventure's inlet (§16 follow-up D3). */
+	{
+		slug: ADVENTURE_ILLUSTRATE_SCENE_SPEC_ID,
+		name: 'Illustrate scene',
+		build: adventureIllustrateSceneSpec,
+	},
+	/**
+	 * 🚧 Time passes… (live scenes §6): the story clock moved by an amount
+	 * the person picks, no model. One graph (`shared/timePasses.ts`), one
+	 * spec per genre; Adventure's is its keeper action above.
+	 */
+	{ slug: CHAT_ADVANCE_TIME_SPEC_ID, name: 'Time passes', build: chatAdvanceTimeSpec },
+	{ slug: LAIR_ADVANCE_TIME_SPEC_ID, name: 'Time passes', build: lairAdvanceTimeSpec },
+	/**
+	 * 🚧 Draw a card's sprites from its likeness (image generation I5) — a
+	 * card action from the Sprites tab, bound to no genre and no session.
+	 */
+	{
+		slug: SPRITE_SET_FILL_SPEC_ID,
+		name: 'Fill sprites',
+		build: spriteSetFillSpec,
+	},
+	/**
+	 * 🚧 Portrait (DESIGN-image-generation §6.2, I8): a few pictures of a
+	 * card offered to its gallery — a card action from the Gallery tab.
+	 */
+	{
+		slug: CHARACTER_PORTRAIT_SPEC_ID,
+		name: 'Portrait',
+		build: characterPortraitSpec,
+	},
+	/**
+	 * 🚧 Describe a likeness (§5, follow-up D1): a card's likeness prompt
+	 * written from its likeness image — a card action from the Likeness tab.
+	 */
+	{
+		slug: DESCRIBE_LIKENESS_SPEC_ID,
+		name: 'Describe a likeness',
+		build: describeLikenessSpec,
+	},
 	{
 		slug: SUMMARIZE_WORLD_SPEC_ID,
 		name: 'Summarize world lore',
@@ -273,6 +345,16 @@ export const CORE_SPECS: CoreSpec[] = [
 		name: 'Summarize history entry',
 		build: summarizeHistorySpec,
 	},
+	/**
+	 * 🚧 The genre-owned summarize-scene specs (live scenes §13–§14): each
+	 * core genre's, built by `summarizeScene()` and named by the genre's
+	 * `summarize.scene`. `core:spec/summarize-scene` above stays the
+	 * fallback for a genre that names none.
+	 */
+	{ slug: CHAT_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: chatSummarizeSceneSpec },
+	{ slug: ADVENTURE_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: adventureSummarizeSceneSpec },
+	{ slug: GUIDE_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: guideSummarizeSceneSpec },
+	{ slug: LAIR_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: lairSummarizeSceneSpec },
 	{
 		slug: GRAPH_BUILD_SPEC_ID,
 		name: 'Build the story graph',

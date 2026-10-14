@@ -2,7 +2,7 @@
  * One canonical form, one digest, one re-declaration rule.
  *
  * Two things in the SDK have to answer "is this the same content as that": a
- * spec document's `canonicalHash` (02 §3), and every registry here that refuses
+ * spec document's `canonicalHash`, and every registry here that refuses
  * a second declaration under an id it already holds. They must not answer
  * differently, so the sort and the digest live here once and both call in — a
  * second hashing scheme is how two places quietly start disagreeing about what
@@ -23,6 +23,7 @@
  * not gated on `import.meta.hot` or `NODE_ENV`: an identical re-declaration is
  * harmless everywhere, and an environment check would only hide the case where
  * it is *not* identical — which is the case the guard exists for.
+ * @ruling 02 §3
  */
 
 const sortDeep = (v: unknown): unknown => {
@@ -37,12 +38,20 @@ const sortDeep = (v: unknown): unknown => {
 	return v
 }
 
-/** Canonical form — stable key order, for hashing and round-trip identity (F3). @experimental */
+/**
+ * Canonical form — stable key order, for hashing and round-trip identity.
+ * @experimental
+ * @ruling F3
+ */
 export function canonicalize(v: unknown): string {
 	return JSON.stringify(sortDeep(v))
 }
 
-/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). @experimental */
+/**
+ * Cheap deterministic content hash — stands in for the real canonical_hash.
+ * @experimental
+ * @ruling 02 §3
+ */
 export function contentHash(v: unknown): string {
 	const s = canonicalize(v)
 	let h1 = 0xdeadbeef
@@ -73,12 +82,13 @@ const UNIVERSAL_DISPLAY = ['i18n', 'description'] as const
  * the denylist below is the re-declaration guard of every registry whose
  * declarations are hashed whole — genres, scripts, engines, wire formats,
  * events, facets, variables, sheets, attributes. A **node definition** is the
- * exception (plans/31 V6, 2026-09-17): its hash is an *allowlist* of its
+ * exception (since 2026-09-17): its hash is an *allowlist* of its
  * contract — `definitionContract` in `descriptors.ts` — and everything else on
  * a `Descriptor` is policy, never hashed. `provisional`, `reviewDefault`,
  * `timeoutMs`, `timeoutKind`, `toggleable`, `public` and `usage` are policy,
  * so flipping one moves no pin; the digest and the canonical form are still
  * this file's.
+ * @ruling plans/31 V6 (2026-09-17)
  */
 
 /**
@@ -188,11 +198,12 @@ export function declarationMaterial(v: unknown, opts?: DisplayKeys): unknown {
  *
  * The node-definition contract (`definitionContract`) reads its fields
  * through this. A definition's contract is what a registry row carries so
- * core can judge a plugin without executing it (F6), and a row cannot carry
+ * core can judge a plugin without executing it, and a row cannot carry
  * a function — so a function is not contract, and its source text is not
  * either. No `Descriptor` field is a function today; the rule is here so the
  * day one is, it is classified rather than digested by accident.
  * @experimental
+ * @ruling F6
  */
 export function declarationData(v: unknown, opts?: DisplayKeys): unknown {
 	return stripDisplay(v, displaySet(opts), 'omit')

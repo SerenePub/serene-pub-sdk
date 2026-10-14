@@ -9,7 +9,7 @@
  * inline (ruled 2026-09-25: stat shapes are the field language, and core
  * SEEDS a catalogue of common ones so stats stay predictable). Core's
  * catalogue is declared in `@serene-pub/core-catalog` through this file's
- * door, like anybody's would be (R26).
+ * door, like anybody's would be.
  *
  * ## Open in the declaration, closed in the behaviour
  *
@@ -27,6 +27,7 @@
  *
  * ⚠ Lore entry types keep their own fixed shapes (`entryShape`); a stat
  * shape describes a value an owner holds, never a lorebook row.
+ * @ruling R26
  */
 
 import type { I18n } from './descriptors.js'

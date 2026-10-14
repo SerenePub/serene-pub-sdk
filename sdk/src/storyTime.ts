@@ -15,7 +15,7 @@
  *
  * Parts, validated beyond shape only against a book's **declared calendar**
  * (`StoryCalendar`, below) when it has one; with none the book is
- * **free-form** — no month lengths, no rollover, no origin. The story-time design (DESIGN-story-time) stores a signed
+ * **free-form** — no month lengths, no rollover, no origin. The story-time design stores a signed
  * **instant** once a book has a real calendar; when that rung is built the
  * shape moves to `@2` rather than reinterpreting what `@1` stored.
  *
@@ -27,6 +27,7 @@
  * number to sort on: a radix packing collides once a part passes its radix,
  * which is the bug the host's `compareDates` was rewritten to fix. The host's
  * lorebook dates delegate here, so one calendar has one comparator.
+ * @ruling DESIGN-story-time
  */
 
 /** A position on the story calendar. An absent part is one the author did not give. @experimental */
@@ -48,7 +49,7 @@ export interface StoryTime {
  * leap day — `storyTimeProblem`); nothing widens it. `parseStoryTime`,
  * `storyTimeProblem` and core's history entry type all read these, and the
  * entry type's declared range is projected into the database's CHECK — so a
- * date a book's calendar allows is a date the database holds (A15, 2026-09-30:
+ * date a book's calendar allows is a date the database holds (2026-09-30:
  * a copied 1–12 / 1–31 once refused month 13 of a thirteen-month calendar and
  * the day after a free-form day 31).
  *
@@ -66,6 +67,7 @@ export interface StoryTime {
  * `storyTimeProblem`'s, which reads these for every part and is the check
  * every dated writer answers with.
  * @experimental
+ * @ruling A15 (2026-09-30)
  */
 export const STORY_TIME_PART_RANGES = {
 	month: { min: 1 },
@@ -383,8 +385,9 @@ export function storyTimeProblem(time: StoryTime, calendar: StoryCalendar | null
  * without a full date or for one that does not land.
  *
  * ⚠ A POSITION FOR ARITHMETIC (weekdays), not a stored key and not an
- * ordering: the design's `day_index` column is P2 and not built.
+ * ordering: the design's `day_index` column is a later step and not built.
  * @experimental
+ * @ruling P2
  */
 export function storyDayIndex(time: StoryTime, calendar: StoryCalendar): number | null {
 	if (!has(time.month) || !has(time.day) || storyTimeProblem(time, calendar)) return null
@@ -480,8 +483,9 @@ export function storyTimeOfDayIndex(index: number, calendar: StoryCalendar): { y
 }
 
 /**
- * What a story clock advances by (DESIGN-story-time §5, `advance(n, unit)`).
+ * What a story clock advances by (`advance(n, unit)`).
  * @experimental
+ * @ruling DESIGN-story-time §5
  */
 export type StoryTimeUnit = 'minutes' | 'hours' | 'days' | 'months' | 'years'
 
@@ -507,8 +511,8 @@ function partsOf(t: StoryTime): StoryTime {
 }
 
 /**
- * Move a story time by `by` of `unit` — what a clock's `advance(n, unit)` is
- * (DESIGN-story-time P3). Negative `by` goes back.
+ * Move a story time by `by` of `unit` — what a clock's `advance(n, unit)` is.
+ * Negative `by` goes back.
  *
  * **By a declared calendar** the step carries: minutes into hours into days
  * (a 24-hour day), days through month lengths and the leap day, months into
@@ -525,6 +529,7 @@ function partsOf(t: StoryTime): StoryTime {
  * A missing time of day reads as the start of the day when stepping by hours
  * or minutes, and stays missing otherwise.
  * @experimental
+ * @ruling DESIGN-story-time P3
  */
 export function advanceStoryTime(
 	from: StoryTime,
@@ -588,9 +593,10 @@ export function advanceStoryTime(
 const WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
 /**
- * The presets the calendar editor starts from (DESIGN-story-time P5). Each is
+ * The presets the calendar editor starts from. Each is
  * an ordinary declared calendar — a starting point, never a live link.
  * @experimental
+ * @ruling DESIGN-story-time P5
  */
 export const STORY_CALENDAR_PRESETS: ReadonlyArray<{ id: string; name: string; calendar: StoryCalendar }> = [
 	{

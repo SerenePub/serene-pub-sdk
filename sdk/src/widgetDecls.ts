@@ -1,6 +1,6 @@
 /**
  * Widgets as a package declares them, and genres as they subtract and lay
- * them out (R71, ruled 2026-09-24).
+ * them out.
  *
  * - A **package** — a plugin, or core in `core-catalog` — declares its
  *   widgets once (`defineExtension({ widgets })`), each optionally scoped to
@@ -16,6 +16,7 @@
  * another package's widget by value names the id the page knows it by
  * (`widgetRef`): core's bare (`stats`), a plugin's under its package
  * (`acme.dice:tray`, the `pluginWidgetId` grammar).
+ * @ruling R71 (ruled 2026-09-24)
  */
 import type { WidgetDecl } from './layout.js'
 import { validateSessionLayout, type SessionLayoutV1 } from './sessionLayout.js'
@@ -78,7 +79,7 @@ export interface WidgetInput extends Omit<WidgetDecl, 'genres'> {
 const WIDGET_ID = /^[a-z][a-z0-9-]*$/
 
 /**
- * The base sections a widget reads (R75): its `reads`, or every base section
+ * The base sections a widget reads: its `reads`, or every base section
  * when it declares none — what its host sends it. A host asks this rather
  * than reading `reads`, so the default lives in one place.
  *
@@ -86,6 +87,7 @@ const WIDGET_ID = /^[a-z][a-z0-9-]*$/
  * is not a base section (a scoped one, junk) never comes back, and each name
  * comes back once.
  * @experimental
+ * @ruling R75
  */
 export function widgetReads(w: Pick<WidgetDecl, 'reads'>): readonly WidgetBaseSection[] {
 	if (!Array.isArray(w?.reads)) return WIDGET_BASE_SECTIONS
@@ -99,11 +101,12 @@ export function widgetReads(w: Pick<WidgetDecl, 'reads'>): readonly WidgetBaseSe
 }
 
 /**
- * What is wrong with a widget's `reads` (R75), one sentence each, each led by
+ * What is wrong with a widget's `reads`, one sentence each, each led by
  * `at` (where it was written): a name that is not a base section is refused
  * where it is declared, rather than naming a section the widget would
  * silently never receive.
  * @experimental
+ * @ruling R75
  */
 export function widgetReadsFindings(reads: unknown, at: string): string[] {
 	if (reads === undefined) return []
@@ -143,9 +146,10 @@ export function widget(d: WidgetInput): WidgetDecl {
 }
 
 /**
- * A layout a genre ships (R71): a **session layout** under a slug and a name.
+ * A layout a genre ships: a **session layout** under a slug and a name.
  * The first is the genre's default — its **genre default layout**.
  * @experimental
+ * @ruling R71
  */
 export interface GenreLayoutDecl {
 	/** Unique within the genre; `default` for the first. */

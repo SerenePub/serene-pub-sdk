@@ -5,8 +5,8 @@
 	// component bundler builds them — so no option may shape what esbuild
 	// writes (no `paths`/`baseUrl`: esbuild resolves through them too).
 	//
-	// Check: svelte-check --workspace core-catalog/components \
-	//          --tsconfig core-catalog/components/tsconfig.json
+	// Check: `npm run check` at the SDK root (svelte-check --workspace core-catalog/components \
+	//          --tsconfig core-catalog/components/tsconfig.json, TypeScript 5 nested here)
 	"extends": "../../tsconfig.base.json",
 	"compilerOptions": {
 		// A UI worker's world: the DOM Svelte renders into, no Node globals.

@@ -58,7 +58,13 @@ const foldResults = pin(
 const agentic = (max = 8) =>
 	spec('demo:agent', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
-		.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
+		.task('prompt', ($) =>
+			C.assemble.v2({
+				candidates: [],
+				template: slot.template(),
+				connection: slot.connectionOf('agent.item.turn'),
+			}),
+		)
 		.loop('agent', { repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max }, (l) =>
 			l
 				.oracle('turn', ($: any) =>
@@ -281,7 +287,13 @@ describe('89 · the carry', () => {
 	const carrying = (max = 8) =>
 		spec('demo:carry', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
-			.task('prompt', ($) => C.assemble.v2({ candidates: [] }))
+			.task('prompt', ($) =>
+			C.assemble.v2({
+				candidates: [],
+				template: slot.template(),
+				connection: slot.connectionOf('agent.item.turn'),
+			}),
+		)
 			.loop(
 				'agent',
 				{ repeatWhile: ($: any) => $.agent.item.turn.hasToolCalls, max },

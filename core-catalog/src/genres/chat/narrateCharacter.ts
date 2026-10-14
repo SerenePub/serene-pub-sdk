@@ -48,6 +48,7 @@
  */
 
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { chatGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
 
@@ -537,7 +538,9 @@ export const narrateCharacterSpec = () =>
 			 * once there is enough of it to drift from.
 			 */
 			.preset('default', { label: 'Default', default: true }, (p) =>
-				p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
+				p
+					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
 			)
 			.build(),
 	)

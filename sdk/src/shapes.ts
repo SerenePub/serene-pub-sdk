@@ -1,11 +1,12 @@
 /**
- * Shapes — versioned edge/payload contracts (01 §1, §3).
+ * Shapes — versioned edge/payload contracts.
  *
  * A shape is the unit of compatibility. Two nodes connect if the upstream port's
  * shape is assignable to the downstream port's. Shapes are also connection kinds
- * and sampling-config kinds (F17), which is what makes the system modality-agnostic:
+ * and sampling-config kinds, which is what makes the system modality-agnostic:
  * nothing anywhere switches on "is this an LLM".
  * @public
+ * @ruling 01 §1, §3, F17
  */
 
 export type ShapeId = string // e.g. 'core:shape/text-gen@1'
@@ -15,7 +16,10 @@ export interface ShapeDef {
 	id: ShapeId
 	/** Shapes this one may be assigned to. A stream is assignable to its settled form. */
 	assignableTo?: ShapeId[]
-	/** True if a downstream node may begin consuming before the value settles (F22). */
+	/**
+	 * True if a downstream node may begin consuming before the value settles.
+	 * @ruling F22
+	 */
 	streaming?: boolean
 }
 
@@ -30,6 +34,17 @@ export function defineShape(def: ShapeDef): ShapeId {
 /** @experimental */
 export function getShape(id: ShapeId): ShapeDef | undefined {
 	return registry.get(id)
+}
+
+/**
+ * Every registered shape, in registration order — core's and any a package
+ * declared in this process. The packager reads it to carry a package's own
+ * shapes (`<slug>:shape/…`) in the manifest, so an instance can register
+ * them from data before the events and ports that name them.
+ * @experimental
+ */
+export function listShapes(): ShapeDef[] {
+	return [...registry.values()]
 }
 
 /** @experimental */
@@ -51,6 +66,16 @@ export function assignable(from: ShapeId, to: ShapeId, seen = new Set<ShapeId>()
 	return def.assignableTo.some((next) => assignable(next, to, seen))
 }
 
+/**
+ * Withdraw one shape — a host's uninstall of the package that declared it,
+ * so a reinstall may declare it afresh. Never a core shape.
+ * @internal
+ */
+export function _withdrawShape(id: ShapeId): void {
+	if (id.startsWith('core:')) return
+	registry.delete(id)
+}
+
 /** Reset — test isolation only. @internal */
 export function _clearShapes(): void {
 	registry.clear()
@@ -69,12 +94,12 @@ export const S = {
 	/**
 	 * Transcript rows — what `session-history@1` publishes on `main` and
 	 * `messages` and what `process-messages@1` / `prose-transcript@1` read
-	 * (declared so since 2026-09-17, U5d review W9; the port had said
+	 * (declared so since 2026-09-17; the port had said
 	 * `context-candidates@1` since the SDK was vendored while the value was
 	 * always rows, and `validate()` never ran over the catalog to say so).
 	 *
-	 * **Not assignable to `context-candidates@1`** (U5d review R-a, the same
-	 * day; W9 had declared it one way). A transcript wired into a candidates
+	 * **Not assignable to `context-candidates@1`** (decided the same day; the
+	 * first declaration had made it one way). A transcript wired into a candidates
 	 * port is a wiring the host silently drops: `concat-candidates` keys a
 	 * row that is not a candidate as `undefined:<id>`, the ranker's `select`
 	 * excludes it as `excluded_unknown_source`, and `assemble` handed rows
@@ -86,6 +111,7 @@ export const S = {
 	 * rather than refusing, so a document built from the older corpus still
 	 * compiles. The reverse was never declared either: a ranked candidates
 	 * list is not a transcript, and a port that reads rows is handed rows.
+	 * @ruling U5d review W9, U5d review R-a
 	 */
 	messages: defineShape({ id: 'core:shape/messages@1' }),
 	candidates: defineShape({ id: 'core:shape/context-candidates@1' }),
@@ -93,13 +119,14 @@ export const S = {
 	assembled: defineShape({ id: 'core:shape/assembled-context@1' }),
 
 	/**
-	 * What Assemble publishes after the allocation/formatting split (16 §7): ordered
+	 * What Assemble publishes after the allocation/formatting split: ordered
 	 * **blocks** with role, source, token count and a `why` trail — not prose. The
 	 * Provider's `wire` slot turns it into whatever its connection actually wants.
 	 *
 	 * Assignable to `assembled-context@1` so existing specs keep connecting while core
 	 * migrates; the reverse is not assignable, because a rendered string has already
 	 * thrown away everything the panel and the budget need.
+	 * @ruling 16 §7
 	 */
 	allocated: defineShape({
 		id: 'core:shape/allocated-context@1',
@@ -122,11 +149,12 @@ export const S = {
 	 */
 	sessionCast: defineShape({ id: 'core:shape/session-cast@1' }),
 	/**
-	 * The MCP connection kind (14 §1). A connection whose shape is `mcp` is a
+	 * The MCP connection kind. A connection whose shape is `mcp` is a
 	 * Model Context Protocol server core talks to — foreign code SP speaks
 	 * JSON-RPC with, never code SP loads. The shape doubles as the connection
-	 * kind (F17), so only MCP connections are offerable on an MCP provider's
+	 * kind, so only MCP connections are offerable on an MCP provider's
 	 * connection slot.
+	 * @ruling 14 §1, F17
 	 */
 	mcp: defineShape({ id: 'core:shape/mcp@1' }),
 	templateContext: defineShape({ id: 'core:shape/template-context@1' }),
@@ -135,21 +163,22 @@ export const S = {
 	rowIds: defineShape({ id: 'core:shape/row-ids@1' }),
 
 	/**
-	 * The output of an async block or a map (01 §1, 13 §1). An ordered list in
+	 * The output of an async block or a map. An ordered list in
 	 * **declaration order**, one entry per branch — never a merged object, because
 	 * merging needs a field-collision policy and every such policy is wrong for
 	 * somebody. `async` and `map` produce the same shape, so one equivalence
-	 * harness covers both (F26).
+	 * harness covers both.
+	 * @ruling 01 §1, 13 §1, F26
 	 */
 	branchResults: defineShape({ id: 'core:shape/branch-results@1' }),
 
 	/**
-	 * What a **gate-eligible** Consumer publishes (13 §7j-b). Discriminated, because
+	 * What a **gate-eligible** Consumer publishes. Discriminated, because
 	 * a write may in principle land as a proposal rather than a row — and a
 	 * proposal id in a shared id space is indistinguishable from a real row id
 	 * right up until the foreign key dangles.
 	 *
-	 * **Assignable to `row-ids@1`** since the 2026-09-15 rulings (09-B B4, R-17).
+	 * **Assignable to `row-ids@1`** since the 2026-09-15 rulings.
 	 * It was deliberately not, and the reason was the `async` review position:
 	 * a row proposed under it might never exist. That position is gone
 	 * (`review.ts` — on or off, nothing between): `on` parks the run until the
@@ -158,6 +187,7 @@ export const S = {
 	 * a create → update pair on one row inside one run legal, and it is how a
 	 * pipeline owns its reply: a placeholder outlet straight after the inlet,
 	 * and an `update-message` at the end that fills it.
+	 * @ruling 13 §7j-b, 09-B B4, R-17
 	 */
 	writeResult: defineShape({
 		id: 'core:shape/write-result@1',
@@ -167,9 +197,10 @@ export const S = {
 	 * A request to summarize something into a lore entry.
 	 *
 	 * Its own shape rather than `json@1` because it is what the summarize
-	 * pipelines take as *input*, and 11 §2 matches an event's payload against a
+	 * pipelines take as *input*, and core matches an event's payload against a
 	 * pipeline's Input contract by shape. A request typed as bare json would make
 	 * every pipeline compatible with every event.
+	 * @ruling 11 §2
 	 */
 	summarizeRequest: defineShape({ id: 'core:shape/summarize-request@1' }),
 	/**
@@ -180,6 +211,19 @@ export const S = {
 	 * that permitted reordering would turn a narrative into a pile of events.
 	 */
 	drafts: defineShape({ id: 'core:shape/drafts@1' }),
+	/**
+	 * 🚧 A scene's transcript, rendered — one **transcript unit** per message:
+	 * `{ messageId, text, tokens }[]`, in reading order, from
+	 * `core:task/render-transcript@1` (live scenes, 2026-10-13).
+	 *
+	 * Its own shape rather than `messages@1` because a unit is already TEXT —
+	 * the genre's transcript template has laid the line out — and the batch
+	 * cut counts it as it stands. Every unit names the message it was
+	 * rendered from, so a batch can always be traced back to its rows.
+	 * Not a transcript *line* of the prompt (Assemble's `sessionMessages`):
+	 * a unit is what a summarizer drafts from, never what a reply is sent.
+	 */
+	transcriptUnits: defineShape({ id: 'core:shape/transcript-units@1' }),
 	/** Scenes with their messages, as the graph builder walks them. */
 	graphScenes: defineShape({ id: 'core:shape/graph-scenes@1' }),
 	/**
@@ -191,19 +235,20 @@ export const S = {
 	 */
 	graphProposal: defineShape({ id: 'core:shape/graph-proposal@1' }),
 	/**
-	 * Who speaks next, and how that was decided (19 §5).
+	 * Who speaks next, and how that was decided.
 	 *
 	 * Its own shape rather than `row-ids@1` because it is the swap-list
 	 * membership test: a task whose `main` publishes this shape *is* a
 	 * next-speaker strategy, and the dropdown is a SELECT over such rows — an
 	 * extension's strategy appears beside core's by existing, the same way a
 	 * chat mode does. The bundle carries `{speaker, characterId, strategy, via}`
-	 * — the speaker as a participant reference beside the bare id (R-18 (3)) —
+	 * — the speaker as a participant reference beside the bare id —
 	 * and each rides its own port for wiring.
+	 * @ruling 19 §5, R-18 (3)
 	 */
 	speakerSelection: defineShape({ id: 'core:shape/speaker-selection@1' }),
 	/**
-	 * A participant reference (R-15, R-18 (3)): `character:<id>`,
+	 * A participant reference: `character:<id>`,
 	 * `envoy:<slug>`, `user:<id>`, or a role — see `participants.ts`.
 	 *
 	 * The inlet's `speaker` port and a turn strategy's carry this, so one
@@ -211,19 +256,21 @@ export const S = {
 	 * envoy alike. Not assignable to `row-ids@1` on purpose: a reference is a
 	 * name, and a node that wants the bare character id keeps reading
 	 * `characterId` until every reader speaks references.
+	 * @ruling R-15, R-18 (3)
 	 */
 	participantRef: defineShape({ id: 'core:shape/participant-ref@1' }),
 	/**
-	 * An ordered list of participant references, no duplicates (lair pass R3,
-	 * 2026-09-28): the inlet's `recipients` — the cast members a press
+	 * An ordered list of participant references, no duplicates: the inlet's
+	 * `recipients` — the cast members a press
 	 * collected (`CollectedRecipients`). Its own id rather than `json@1` so a
 	 * port that wants people is not handed any list. Consumed by
-	 * `core:query/resolve-state-changes@1`'s `owners` (R10): the Whisper's
+	 * `core:query/resolve-state-changes@1`'s `owners`: the Whisper's
 	 * one change, made on each recipient.
+	 * @ruling lair pass R3 (2026-09-28), R10
 	 */
 	participantRefs: defineShape({ id: 'core:shape/participant-refs@1' }),
 	/**
-	 * One **session change** (R-15, built 2026-09-16): the payload every
+	 * One **session change** (built 2026-09-16): the payload every
 	 * built-in write's event carries — `{ event, sessionId, messageId, at,
 	 * … }` plus what was lost or replaced (`lost` on a delete, `previous` on
 	 * an edit or a swipe). The next reply's inlet publishes the changes since
@@ -233,75 +280,84 @@ export const S = {
 	 * Its own id rather than `json@1`, for the reason `summarize-request@1`
 	 * gives: `pipeline_event_registry.payload_shape` names it, and an event
 	 * whose payload was bare json would match every inlet.
+	 * @ruling R-15
 	 */
 	sessionChange: defineShape({ id: 'core:shape/session-change@1' }),
 	/**
-	 * A **form addressed** to a participant the AI portrays (R-15 *Forms*;
-	 * 30 §U5d): the payload of `core:event/form-addressed@1` — `{ sessionId,
+	 * A **form addressed** to a participant the AI portrays: the payload of
+	 * `core:event/form-addressed@1` — `{ sessionId,
 	 * messageId, blockId, action, addressee }` (`FormAddressedPayload`,
 	 * events.ts) — and what `core:inlet/form-addressed@1` publishes, port by
 	 * port, with the block itself beside them. Its own id for the reason
 	 * `session-change@1` has: the registry's `payload_shape` names it.
+	 * @ruling R-15 *Forms*, 30 §U5d
 	 */
 	formAddressed: defineShape({ id: 'core:shape/form-addressed@1' }),
 	/**
-	 * A **cast change** (PLAN-turn-order §4.1): the payload of
+	 * A **cast change**: the payload of
 	 * `core:event/cast-changed@1` — `{ event, sessionId, at, cause, ref,
 	 * change, value }` (`CastChangePayload`, events.ts). A seated
 	 * participant was switched on or off, or its `position` or portrayal moved;
 	 * a seat added or removed is `member-added` / `member-removed`, not
 	 * this. Its own id for the reason `session-change@1` has.
+	 * @ruling PLAN-turn-order §4.1
 	 */
 	castChange: defineShape({ id: 'core:shape/cast-change@1' }),
 	/**
-	 * **Annex changed** (PLAN-turn-order §4.14, R30): the payload of
+	 * **Annex changed**: the payload of
 	 * `core:event/annex-changed@1` — `{ event, sessionId, at, cause, owner }`
 	 * (`AnnexChangePayload`, events.ts). Names whose entry moved, never the
 	 * value.
+	 * @ruling PLAN-turn-order §4.14, R30
 	 */
 	annexChange: defineShape({ id: 'core:shape/annex-change@1' }),
 	/** What a listener receives for an event a pipeline recorded: the envelope, the author's payload inside. */
 	recordedEvent: defineShape({ id: 'core:shape/recorded-event@1' }),
 	/**
-	 * **Turn order changed** (§4.1): the payload of
+	 * **Turn order changed**: the payload of
 	 * `core:event/turn-order-changed@1` — `{ event, sessionId, at, cause,
 	 * runId, turnOrder }` (`TurnOrderChangedPayload`, events.ts), the
 	 * document as `core:outlet/set-turn-order@1` wrote it. Core-internal:
 	 * the auto-advance listener and the `sessions:turnOrder` push read it;
 	 * a genre may not bind a spec to it.
+	 * @ruling §4.1
 	 */
 	turnOrderChanged: defineShape({ id: 'core:shape/turn-order-changed@1' }),
 	/**
-	 * The session's **turn order** as state (§4.2): `TurnOrderV1` —
+	 * The session's **turn order** as state: `TurnOrderV1` —
 	 * `{ v, order, candidates, basedOnAt, computedAt, runId, event,
 	 * strategy }`, stored at `sessions.metadata.turnOrder` and written by
 	 * `core:outlet/set-turn-order@1` alone. Not the entries alone and not
 	 * the candidates alone: the whole answer, with what it answered.
+	 * @ruling §4.2
 	 */
 	turnOrder: defineShape({ id: 'core:shape/turn-order@1' }),
 	/**
-	 * **Turn candidates** (§4.2): `TurnCandidateV1[]` — the participants the
+	 * **Turn candidates**: `TurnCandidateV1[]` — the participants the
 	 * pool admitted this run, in pool order. What `core:task/turn-pool@1`
 	 * publishes, an orderer rewrites, and a strategy reads. Open objects:
 	 * an orderer or a plugin may add keys and core passes them through.
+	 * @ruling §4.2
 	 */
 	turnCandidates: defineShape({ id: 'core:shape/turn-candidates@1' }),
 	/**
-	 * **Turn entries** (§4.2): `TurnEntryV1[]` — prepared turns, each
+	 * **Turn entries**: `TurnEntryV1[]` — prepared turns, each
 	 * `{ ref, channel?, subject?, via }`. What a strategy publishes on
 	 * `main` and `order`; the shape-based swap list keys a strategy on it,
 	 * as it keyed one on `speaker-selection@1` before (that shape stays
 	 * until the strategies are re-ported).
+	 * @ruling §4.2
 	 */
 	turnEntries: defineShape({ id: 'core:shape/turn-entries@1' }),
 	/**
-	 * **Sprite choices** (DESIGN-sprites §5.2): what a line's speaker can show
+	 * **Sprite choices**: what a line's speaker can show
 	 * — `{ characterId, set, defaultSet, labels, last, recent, decidedBy }`.
 	 * `set` is the sprite set in force for the line (a session override, the
 	 * cast member's amendment, or the card's default — `decidedBy` says
 	 * which); `labels` are that set's sprite labels with an image; `last` is
 	 * the speaker's previous shown sprite, for stickiness. What
 	 * `core:oracle/pick-sprite@1` publishes beside its pick, for the receipt.
+	 * @ruling DESIGN-sprites §5.2
 	 */
 	spriteChoices: defineShape({ id: 'core:shape/sprite-choices@1' }),
 	/**
@@ -311,11 +367,12 @@ export const S = {
 	 */
 	spritePick: defineShape({ id: 'core:shape/sprite-pick@1' }),
 	/**
-	 * The **settings document** (§4.12): `SessionSettingsV1` — every
+	 * The **settings document**: `SessionSettingsV1` — every
 	 * setting a person can see in session settings, resolved once per run
 	 * with the cascade applied (session > genre > core), and handed to the
 	 * inlet as `session`. A spec reads `$.input.session.fields.tone` and
 	 * never learns which table it came from.
+	 * @ruling §4.12
 	 */
 	sessionSettings: defineShape({ id: 'core:shape/session-settings@1' }),
 	/**
@@ -332,19 +389,31 @@ export const S = {
 	 *  as its attachments. */
 	mediaList: defineShape({ id: 'core:shape/media-refs@1' }),
 	/**
-	 * 🚧 **A transcript's attachments, by message** (PLAN-composer-attachments
-	 * §3.5): `Record<messageId, HistoryAttachmentV1[]>` (media.ts) — each
+	 * 🚧 **An image series**: `ImageSeriesItemV1[]` (media.ts) — the pictures
+	 * one image step is asked for, each `{ key, vars }`. The prompt rows
+	 * render once per item with `vars` in scope; every media item the step
+	 * returns carries the `key` of the item it was drawn for. A spec says
+	 * WHAT pictures it wants; how many calls that costs is the host's packing,
+	 * never the spec's. Absent on the port = one item, key `"1"`.
+	 * @ruling DESIGN-image-generation §4.7
+	 */
+	imageSeries: defineShape({ id: 'core:shape/image-series@1' }),
+	/**
+	 * 🚧 **A transcript's attachments, by message**:
+	 * `Record<messageId, HistoryAttachmentV1[]>` (media.ts) — each
 	 * message's `core:image` / `core:file` parts, in part order. What
 	 * `core:query/history-attachments@1` publishes and
 	 * `core:task/place-attachments@1` reads, so each line's files travel with
 	 * that line's own turn rather than with the request as a whole.
+	 * @ruling PLAN-composer-attachments §3.5
 	 */
 	mediaByMessage: defineShape({ id: 'core:shape/media-by-message@1' }),
 	/**
-	 * A reply's **folded sections** (B4; D5, 2026-09-27): `FoldedSectionV1[]`
+	 * A reply's **folded sections**: `FoldedSectionV1[]`
 	 * (widgets.ts) — each `{ kind, label, content }` or `{ kind, label, items }`,
 	 * shown collapsed beside the body and never read into the prompt. What the
 	 * message outlets' `sections` in-port takes.
+	 * @ruling B4, D5 (2026-09-27)
 	 */
 	foldedSections: defineShape({ id: 'core:shape/folded-sections@1' }),
 	audio: defineShape({
@@ -357,10 +426,11 @@ export const S = {
 	}),
 	json: defineShape({ id: 'core:shape/json@1' }),
 	/**
-	 * What a ranker judged (PLAN-sdk-1.0 §3.9, R64): one `RankingDecisionV1`
+	 * What a ranker judged: one `RankingDecisionV1`
 	 * per candidate. A node whose out-port carries this shape is RECORDED by
 	 * the host — core's rankers and a plugin's alike — into the ranking store.
-	 * Reviewed with L1 (PLAN-sdk-1.0 §4 ✓); it carries `S`'s own tag.
+	 * It carries `S`'s own tag.
+	 * @ruling PLAN-sdk-1.0 §3.9, R64, L1, PLAN-sdk-1.0 §4 ✓
 	 */
 	decisions: defineShape({ id: 'core:shape/decisions@1' }),
 

@@ -1,5 +1,5 @@
 /**
- * The control registry (24 §8) — the render leg of the four-way registry,
+ * The control registry — the render leg of the four-way registry,
  * as pure data so the conformance canary can read it without a Svelte
  * compiler: value-type id → which component edits it.
  *

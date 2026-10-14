@@ -1,5 +1,5 @@
 /**
- * What a component may import (§3.5, R23, R35).
+ * What a component may import.
  *
  * A component's source imports `svelte`, the component client and the
  * unstyled controls — and places `sp-*` elements (`hostElements.ts`). It
@@ -19,19 +19,21 @@
  * 3. **Runtime** — the worker's own CSP and the bootstrap's stripped network
  *    globals.
  *
- * Preact, the React alias and `htm` arrive after 1.0 (R35); the list grows,
+ * Preact, the React alias and `htm` arrive after 1.0; the list grows,
  * it never shrinks.
+ * @ruling §3.5, R23, R35, R35
  */
 
 /**
  * Bare specifiers a component may import. A trailing `/*` admits subpaths.
  *
- * The last seven are experimental (C6 P1, owner ruling 2026-09-25 Q4): the
+ * The last eight are experimental: the
  * SDK's component subpath and core's UI kit — the helpers core's own
  * components are written against — so a clone of a core component compiles
  * in-app from its source, and a CLI modder has the same kit. Each names ONE
  * module (no `/*`): nothing else of the SDK's or core-catalog's is admitted.
  * @experimental
+ * @ruling C6 P1, owner ruling 2026-09-25 Q4
  */
 export const COMPONENT_IMPORTS = [
 	'svelte',
@@ -48,12 +50,29 @@ export const COMPONENT_IMPORTS = [
 	// 🚧 2026-10-02 (AN1): the author's note widget's plain half — appended,
 	// so the list only grows.
 	'@serene-pub/core-catalog/authors-note',
+	// 🚧 2026-10-10 (W1): the turn order widget's plain half — appended.
+	'@serene-pub/core-catalog/turn-order',
+	// 🚧 2026-10-11 (W8): the actions widget's plain half — appended.
+	'@serene-pub/core-catalog/actions',
+	// 🚧 2026-10-11 (W9): the annex widget's plain half — appended.
+	'@serene-pub/core-catalog/annex',
+	// 🚧 2026-10-11 (W2): the album widget's plain half — appended.
+	'@serene-pub/core-catalog/album',
+	// 🚧 2026-10-11 (W3): the chronicle widget's plain half — appended.
+	'@serene-pub/core-catalog/chronicle',
+	// 🚧 2026-10-11 (W4): the places widget's plain half — appended.
+	'@serene-pub/core-catalog/places',
+	// 🚧 2026-10-11 (W10): the Who's here widget's plain half — appended.
+	'@serene-pub/core-catalog/attendance',
+	// 🚧 2026-10-12 (DESIGN-image-generation §6.4): the backdrop widget's plain half — appended.
+	'@serene-pub/core-catalog/backdrop',
 ] as const
 
 /**
  * Specifiers no component may import, however it is built — the renderer is
- * the host's (R23), and so is the worker runtime that installs it.
+ * the host's, and so is the worker runtime that installs it.
  * @experimental
+ * @ruling R23
  */
 export const COMPONENT_FORBIDDEN_IMPORTS = ['@remote-dom/*', '@serene-pub/component-client/worker-runtime'] as const
 

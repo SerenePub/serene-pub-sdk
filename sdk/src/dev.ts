@@ -1,15 +1,15 @@
 /**
- * Dev mode: point at an entry file, load it in memory, hot reload (13 §11).
+ * Dev mode: point at an entry file, load it in memory, hot reload.
  *
  * ## The collision, stated before it is resolved
  *
- * F6 says **core imports documents, never authoring JS**, and 04 §5a says nothing is
- * discovered by executing. A dev loader that evaluates `src/index.ts` and pulls pipelines,
+ * The import rule is that **core imports documents, never authoring JS**, and the discovery rule
+ * is that nothing is discovered by executing. A dev loader that evaluates `src/index.ts` and pulls pipelines,
  * hooks and components out of memory looks exactly like the thing both rules forbid.
  *
  * It is not, and the distinction is worth being precise about rather than waving at.
  *
- * **What F6 protects is the *importer*.** The claim it makes is that no code path reachable
+ * **What the import rule protects is the *importer*.** The claim it makes is that no code path reachable
  * from installing or running a plugin evaluates authoring JavaScript — so a malicious
  * document cannot become a malicious program, and a plugin cannot announce capabilities at
  * runtime that its manifest did not declare. That claim survives here, because the dev
@@ -29,7 +29,7 @@
  *    plugin whose rows outlived the session would leave a user's chats pinning types that no
  *    longer exist — a broken install with no install to uninstall.
  * 2. **Permissions are compiled and enforced identically.** Dev mode changes the source of
- *    the code, never the trust in it. The runtime double-check (F28) does not know or care
+ *    the code, never the trust in it. The runtime double-check does not know or care
  *    that a plugin came from a file path.
  * 3. **Provenance is recorded.** Every run from a dev-loaded plugin marks its receipt
  *    `source: 'dev'`, because "it worked on my machine" needs to be distinguishable in the
@@ -43,6 +43,7 @@
  * anything a running pipeline is using is *deferred*, not applied — and `reloadPlan` says
  * which runs are holding it up, so the developer sees "waiting on 1 run" rather than
  * silence.
+ * @ruling 13 §11, F6, 04 §5a, F6, F28
  */
 
 import { compile, type SpecDocument } from './document.js'

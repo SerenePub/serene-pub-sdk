@@ -1,5 +1,5 @@
 /**
- * The settings document (PLAN-turn-order §4.12, R13; ruled 2026-09-21).
+ * The settings document (ruled 2026-09-21).
  *
  * Every setting a person can see in session settings reaches every run as
  * **one resolved document**, defaults applied. A run's `sessionScope` was a
@@ -9,7 +9,7 @@
  * `session`, so `$.input.session.fields.tone` reads in any spec and no spec
  * knows which table a setting came from.
  *
- * `fields` is the cascade's answer (§4.13): for every declared key, the
+ * `fields` is the cascade's answer: for every declared key, the
  * session's stored value, else the genre's pinned value, else the field's
  * core default. A key nobody declares or pins is absent.
  *
@@ -20,6 +20,7 @@
  * The widget envelope's `session.v1` is a projection of this document:
  * widgets receive `title`, `fields`, `turnOrder`, `channels`, `cast`,
  * `annex` — never `guests` or `pipelines`.
+ * @ruling PLAN-turn-order §4.12, R13, §4.13
  */
 import type { SessionCastV1 } from './participants.js'
 import type { TurnOrderV1 } from './turnOrder.js'
@@ -36,10 +37,11 @@ export interface SessionSettingsV1 {
 	/** Every declared genre field: default, then the session's value over it. */
 	fields: Record<string, unknown>
 	/**
-	 * 🚧 What a person's persona-less line is called in this session (R4):
+	 * 🚧 What a person's persona-less line is called in this session:
 	 * the session's own value, else the genre's `playerLabel` (in `en`), else
 	 * absent — and absent whenever the genre declares none, whatever is
 	 * stored. Read, never stamped on a row.
+	 * @ruling R4
 	 */
 	playerLabel?: string
 	scenario: string | null
@@ -54,11 +56,12 @@ export interface SessionSettingsV1 {
 		{ rebinds: Record<string, string>; params: Record<string, Record<string, unknown>> }
 	>
 	/**
-	 * The session's turn order — the state, as `set-turn-order` wrote it
-	 * (R28, the modder pass). What the session chose is
+	 * The session's turn order — the state, as `set-turn-order` wrote it.
+	 * What the session chose is
 	 * `pipelines[<its turn-order spec>].rebinds.strategy`; what it may choose
 	 * is the node's `expose.swaps` on the registry. The document carries no
 	 * turn-order special case.
+	 * @ruling R28 (the modder pass)
 	 */
 	turnOrder: TurnOrderV1
 	/** Read-only from the pipeline layer: written by no outlet except `set-turn-order`. */

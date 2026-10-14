@@ -48,7 +48,7 @@ const chat = () =>
 			}),
 		)
 		.task('prompt', ($) =>
-			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
+			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available, template: slot.template(), connection: slot.connectionOf('generate') }),
 		)
 		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),

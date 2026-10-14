@@ -82,8 +82,12 @@ describe('A1 · the four events (§4.1)', () => {
 	test('the registry grew by exactly four — every other event is where it was', () => {
 		// 22 before A1 (2026-09-21 baseline); the four of §4.1 make 26, and
 		// the modder pass's `annex-changed` (R30, 2026-09-23) makes 27, and
-		// sprites' `sprite-shown` (DESIGN-sprites §5, 2026-09-24) makes 28.
-		assert.equal(allEvents().length, 28)
+		// sprites' `sprite-shown` (DESIGN-sprites §5, 2026-09-24) makes 28,
+		// and the backdrop's `backdrop-set` (DESIGN-image-generation §6.4,
+		// 2026-10-12) makes 29, and the Sprite set fill's `sprites-attached`
+		// (DESIGN-image-generation §6.3, 2026-10-12) makes 30, and Portrait's
+		// `media-offered` (DESIGN-image-generation §6.2, 2026-10-12) makes 31.
+		assert.equal(allEvents().length, 31)
 	})
 
 	test('sessionEvents names every event a genre may bind the turn-order spec to, by registered id', () => {

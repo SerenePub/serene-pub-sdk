@@ -3,6 +3,10 @@
 A working draft of the SDK described in `/docs/pipeline` (00–17). **Preview: breaking
 changes are expected before 0.7.0.**
 
+New here? Read the [vocabulary](../guides/vocabulary.md) before the API reference. There, 🚧
+marks a shape that may still change before 1.0, and ⏳ marks one that is going away, with the
+version named.
+
 ```bash
 npm install
 npm test          # tsc --noEmit, then 310 assertions across 109 use cases
@@ -336,25 +340,25 @@ tags belonging to an inner scope must not be stripped by an outer pass.
 entries have no `depth` field.** An entry-schema addition in the lorebook model, not pipeline
 work.
 
-## Known gaps in the draft
+## Known gaps
 
-Unimplemented, not undecided.
+What the SDK still does not do, as of 2026-10-13. Unimplemented, not undecided; the
+2026-08 draft's list is gone because most of it has since been built (real tokenizers are
+registered by the host, `recursionDepth` and inclusion groups run in `worldinfo.ts`, a scope
+chain lets a map's iterations run concurrently, and a `secret` setting is ciphertext at rest
+and a handle in a hook's code).
 
-- **In-process timeouts abandon rather than kill**, matching 13 §7h. The abandoned promise
-  keeps running; only the result is discarded.
-- **No sidecar transport, no MCP client.** `mcpTool` is a descriptor with a stub binding.
-- **No real tokenizer.** `contextBudget` reads `metadata.contextLength` and subtracts.
-- **The template engine is minimal** — `{{ a.b }}` and `{% for %}` only, enough to prove the
-  variable-awareness contract, not to be Jinja.
-- **ST parity items are declared but not implemented** — recursion, inclusion groups and
-  positional insertion are `params` on the descriptors only (13 §7i).
-- **A map forces sequential execution.** The observable result is identical, which is exactly
-  what F26 asserts, but the draft does not actually run iterations concurrently — a single
-  shared value map cannot hold two iterations at once. Real per-iteration scoping is the
-  work, not the shape.
-- **`secret` values are stored as tagged plaintext**, not encrypted. `forOwningHookSplit` takes a
-  `decrypt` function so the seam is in the right place; the app secret in `meta.json` is
-  core's side of it (13 §5).
+- **An in-process timeout cuts the result off, not the code.** When a node's clock runs out
+  its own `signal` aborts and the executor moves on; a handler that never reads its signal
+  keeps running until it returns. Only the host's sandboxes bound CPU.
+- **No MCP client in the SDK.** `mcp-tool` and `mcp-resource` are provisional node
+  definitions: the `mcp` connection shape and the ports exist, and the host supplies the
+  client. The app does not ship one yet.
+- **The template engine in `template.ts` is minimal by design** — `{{ a.b }}`, `{% for %}`
+  and `{% if %}`, enough for variable awareness in an editor. Rendering a real template is
+  the host's; `/template-check` parses Handlebars and Liquid for the same checks.
+- **Depth positioning of a lore entry** is expressed in a task because lorebook entries
+  carry no `depth` field. The gap is in the lorebook model, not the pipeline.
 
 ## Two bugs the tests caught while writing this
 

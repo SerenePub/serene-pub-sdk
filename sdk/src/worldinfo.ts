@@ -1,5 +1,5 @@
 /**
- * World Info parity — testing the claim in 13 §7i.
+ * World Info parity — testing the parity claim.
  *
  * The competitive assessment asserts that every SillyTavern World Info feature "maps into
  * the existing model as params or template logic, not as new mechanisms." That was an
@@ -8,6 +8,7 @@
  *
  * Verdict, recorded honestly at the bottom of this file.
  * @experimental
+ * @ruling 13 §7i
  */
 
 export interface LoreEntry {
@@ -30,13 +31,14 @@ export interface LoreEntry {
 	/** Where it goes: a named position, or a depth into the chat history. */
 	position?: 'before_char' | 'after_char' | 'author_note' | { atDepth: number }
 	/**
-	 * ⚠ **The one real parity gap** (13 §7i). Depth positioning is expressed in the
+	 * ⚠ **The one real parity gap**. Depth positioning is expressed in the
 	 * assembly template, not by a node or a shape — but the template has to have
 	 * something to compare against, and **SP lorebook entries carry no `depth` today.**
 	 *
 	 * This field is the whole fix: an entry-schema addition in the lorebook model, not
 	 * architecture. "Feature missing" and "architecture can't express it" are different
-	 * sizes of problem and only the first was ever true. See 16 §5e and use case 41.
+	 * sizes of problem and only the first was ever true.
+	 * @ruling 13 §7i, 16 §5e, use case 41
 	 */
 	depth?: number
 	/** May this entry activate others by mentioning their keys? */
@@ -86,10 +88,11 @@ const secondaryOk = (e: LoreEntry, text: string, p: ScanParams): boolean => {
 /**
  * Activation, including bounded recursion.
  *
- * Recursion lives *inside* the Query hook's opaque interior (01 §12.3) and is bounded by a
+ * Recursion lives *inside* the Query hook's opaque interior and is bounded by a
  * declared param — so it needs no pipeline-level construct and cannot become an unbounded
  * loop. This is the part of the parity claim that held cleanly.
  * @experimental
+ * @ruling 01 §12.3
  */
 export function activate(
 	entries: LoreEntry[],
@@ -143,8 +146,9 @@ export function rollProbability(
  * Inclusion groups: competing entries share a label, and one wins by group weight, with
  * insertion order as the deterministic tiebreak.
  *
- * This is ranking, so it belongs in the rank Task (16 §5c) — no new mechanism.
+ * This is ranking, so it belongs in the rank Task — no new mechanism.
  * @experimental
+ * @ruling 16 §5c
  */
 export function resolveGroups(entries: LoreEntry[], random: () => number): { kept: LoreEntry[]; lost: string[] } {
 	const groups = new Map<string, LoreEntry[]>()
@@ -259,7 +263,7 @@ export function assembleWithPositions(
 }
 
 /**
- * ── Verdict on 13 §7i's claim ──────────────────────────────────────────────
+ * ── Verdict on the parity claim ──────────────────────────────────────────────
  *
  * **Seven of seven mapped with no new mechanism.**
  *
@@ -282,4 +286,5 @@ export function assembleWithPositions(
  * model, not anything in the pipeline architecture. Worth stating precisely, because
  * "positional insertion is missing" and "the architecture can't express it" are very
  * different problems and only the first one is true.
+ * @ruling 13 §7i
  */

@@ -1,10 +1,11 @@
 /**
- * The grant table (plans 29 R-3): which members each kind of plugin hook finds
+ * The grant table: which members each kind of plugin hook finds
  * on its `ctx`. The ONE copy — the app's sandboxes derive every call's grants
  * from it, the boot check reads each kind's keys from it, an author's harness
  * builds its context from it, and the plugin permissions guide is rendered
- * from it (K1c). Nothing else in here, so the runtime can import it without
+ * from it. Nothing else in here, so the runtime can import it without
  * the test harness behind it.
+ * @ruling plans 29 R-3, K1c
  */
 
 
@@ -45,13 +46,14 @@ export interface HookCtxGrants {
 /**
  * The table.
  *
- *  - **task**, **chain-link** — neither. A task is pure (F11) and a chain link
+ *  - **task**, **chain-link** — neither. A task is pure and a chain link
  *    is a script: the in-app script host hands one `{ random, log }` and a
  *    plugin's link gets the same.
- *  - **query**, **outlet**, **event**, **lifecycle** — storage. F32: an
+ *  - **query**, **outlet**, **event**, **lifecycle** — storage: an
  *    extension's own rows, no network.
  *  - **oracle** — storage and fetch. The one kind that calls out, which is what
  *    `effects: 'external'` names.
+ * @ruling F11, F32
  */
 const GRANTS: Record<HookCtxKind, HookCtxGrants> = {
 	task: { storage: false, fetch: false },

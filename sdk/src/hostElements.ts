@@ -1,5 +1,5 @@
 /**
- * The host-element vocabulary (§3.5, R17, R22): every element a component
+ * The host-element vocabulary: every element a component
  * may place, with the attributes it takes, the events it raises and the
  * named slots it fills. A component runs in the page's UI worker and the
  * host mirrors what it renders into the widget box; **this table is the
@@ -21,7 +21,7 @@
  *   that keep the caret on the page, markdown that streams, a scroll that
  *   sticks to the bottom, a real document for a charting library).
  *
- * **Sp elements are unopinionated about style (R22).** An sp element renders the markup
+ * **Sp elements are unopinionated about style.** An sp element renders the markup
  * its behaviour needs and the structural hooks a skin targets — `.sp-<name>`
  * on its root and the parts named in its `parts` — and no colour, radius or
  * spacing beyond what the behaviour requires. A widget styles it through
@@ -52,8 +52,9 @@
  * to prefix per widget box, so a remote cannot collide with the page's.
  *
  * @experimental 🚧 provisional until core's own session widgets render
- * through it (C7, R21): the set may grow and an attribute may be renamed
+ * through it: the set may grow and an attribute may be renamed
  * before then. It never shrinks after 1.0.
+ * @ruling §3.5, R17, R22, C7, R21
  */
 
 /** One element in the vocabulary. @experimental */
@@ -99,7 +100,8 @@ const ARIA = [
 /**
  * The allowlist. Keys are tag names; order is the order the `.d.ts` prints.
  *
- * @experimental 🚧 until C7 (see the module note).
+ * @experimental 🚧 provisional (see the module note).
+ * @ruling C7
  */
 export const SP_HOST_ELEMENTS = {
 	// ── plain elements ────────────────────────────────────────────────────
@@ -327,6 +329,19 @@ export const SP_HOST_ELEMENTS = {
 			'`{ files: File[], via: "drop" | "paste" }` — a drop, or a paste of files (a screenshot) anywhere inside the region; ' +
 			'a paste of text stays the field\'s.',
 	},
+	'sp-drag-handle': {
+		attributes: ['along', 'label', 'disabled', 'class'],
+		events: ['move'],
+		parts: ['sp-drag-handle-grip', 'sp-drag-handle-line'],
+		doc:
+			'🚧 A handle a person drags along a list to move a boundary between its items (1.4) — a scene divider\'s start. ' +
+			'Its body is the grip (`sp-drag-handle-grip`), drawn by the widget. `along` names the items, by one widget part ' +
+			'(`messages.message-row`); each item carries its key as `data-drag-key`, and an item drawn `hidden` is passed over. ' +
+			'While dragged, a line (`sp-drag-handle-line`) shows the gap between items the handle would land in, snapping to ' +
+			'the nearest; Escape cancels. On release `move` carries `{ prev, next }` — the keys of the items before and after ' +
+			'that gap, in document order (null at either end). Pointer only: the widget offers the same move another way ' +
+			'(a menu row), and the grip is hidden from assistive technology.',
+	},
 	'sp-scroll': {
 		attributes: ['stick', 'label', 'class'],
 		events: ['reach-start'],
@@ -347,7 +362,11 @@ export const SP_HOST_ELEMENTS = {
 /** @experimental */
 export type HostElementTag = keyof typeof SP_HOST_ELEMENTS
 
-/** The host sp elements alone — the elements the host must implement (C1b's boot gate). @experimental */
+/**
+ * The host sp elements alone — the elements the host must implement, checked at boot.
+ * @experimental
+ * @ruling C1b
+ */
 export const SP_ELEMENT_TAGS = Object.keys(SP_HOST_ELEMENTS).filter((t) =>
 	t.startsWith('sp-'),
 ) as Array<Extract<HostElementTag, `sp-${string}`>>
@@ -373,7 +392,7 @@ export function hostAttributeAllowed(tag: string, attribute: string): boolean {
 }
 
 /**
- * Attributes every element takes (C0b), besides `aria-*` (all of them; the
+ * Attributes every element takes, besides `aria-*` (all of them; the
  * ones naming an element by id are the host's to prefix) and a widget's own
  * `data-*`: `hidden` and `inert` hide and disable what the widget drew;
  * `role`; `tabindex` (0 or -1 — into the tab order or out of it, never
@@ -381,6 +400,7 @@ export function hostAttributeAllowed(tag: string, attribute: string): boolean {
  * (`--sp-fill: 40%`), which the widget's skin reads — a declaration of its
  * own could fetch (`url()`) or cover the page.
  * @experimental
+ * @ruling C0b
  */
 export const GLOBAL_ATTRIBUTES: readonly string[] = ['hidden', 'inert', 'role', 'tabindex', 'style']
 
@@ -408,11 +428,12 @@ export const isDataAttribute = (attribute: string): boolean =>
 
 /** `input type`s a component may place — no `file`, `password`, `submit`, `image`, `hidden`. */
 /**
- * 🚧 The host views a widget may place with `sp-host-view` (C0b) — parts of
+ * 🚧 The host views a widget may place with `sp-host-view` — parts of
  * the page that belong to the session, not to any widget: the status strips
  * above the composer and the composer's own page tabs. The list grows; a name
  * the host does not know renders nothing.
  * @experimental
+ * @ruling C0b
  */
 export const HOST_VIEW_NAMES = [
 	'session-banners',
@@ -423,6 +444,8 @@ export const HOST_VIEW_NAMES = [
 	'session-workflow',
 	'retrieval-preview',
 	'session-usage',
+	// ⏳ The composer's Pinned images pane, retired by W6 (2026-10-11): the
+	// page draws nothing under it now. REMOVE in 0.7.0.
 	'scene-images',
 	'session-statistics',
 ] as const
@@ -468,13 +491,14 @@ const isAppMedia = (v: string) =>
 	SESSION_ASSET.test(v) || (APP_MEDIA.test(v) && !DOT_SEGMENT.test(v.split('?')[0]!))
 
 /**
- * One `keys` token — `sp-composer-field`'s and a plain `input`'s (R80): a
+ * One `keys` token — `sp-composer-field`'s and a plain `input`'s: a
  * key, after any number of the modifiers the host reads (`Control+Enter`,
  * `Shift+Meta+ArrowUp`). The key holds no `+`: {@link hostKeysMatch} splits
  * a token at its `+`s, so `+` or `Control++` would read as an empty key. A
  * modifier the host does not read (`Alt+`, `Ctrl+`, a lowercase `control+`)
  * or a token that ends at its `+` would be a key no press ever matches —
  * kept from nothing, and silently — so it is refused instead.
+ * @ruling R80
  */
 const HOST_KEYS_TOKEN = /^(?:(?:Control|Meta|Shift)\+)*[^+]+$/
 
@@ -482,10 +506,11 @@ const HOST_KEYS_TOKEN = /^(?:(?:Control|Meta|Shift)\+)*[^+]+$/
 const KEYED_TAGS: ReadonlySet<string> = new Set(['sp-composer-field', 'input'])
 
 /**
- * 🚧 What a `key` event carries (R80) — `sp-composer-field`'s and a plain
+ * 🚧 What a `key` event carries — `sp-composer-field`'s and a plain
  * `input`'s alike: the key pressed (`KeyboardEvent.key`), and the modifiers
  * held with it.
  * @experimental
+ * @ruling R80
  */
 export interface HostKeyEventDetail {
 	key: string
@@ -512,13 +537,14 @@ const HELD_MODIFIERS: ReadonlyMap<string, (press: HostKeyPress) => boolean> = ne
 ])
 
 /**
- * 🚧 Does this `keys` value name this press (R80)? THE reading of the
+ * 🚧 Does this `keys` value name this press? THE reading of the
  * grammar, for every element that takes `keys`: a bare key names it whatever
  * is held — except that a bare `Enter` leaves Shift+Enter to the field (a
  * composer's newline) — and `Control+Enter` names it only while Control is
  * held (every modifier the token names held; others may be too). A press
  * mid-composition is named by nothing.
  * @experimental
+ * @ruling R80
  */
 export function hostKeysMatch(keys: string | null | undefined, press: HostKeyPress): boolean {
 	if (!keys || press.isComposing) return false
@@ -533,7 +559,11 @@ export function hostKeysMatch(keys: string | null | undefined, press: HostKeyPre
 	return false
 }
 
-/** 🚧 The `key` event's detail for this press (R80). @experimental */
+/**
+ * 🚧 The `key` event's detail for this press.
+ * @experimental
+ * @ruling R80
+ */
 export function hostKeyEventDetail(press: HostKeyPress): HostKeyEventDetail {
 	return { key: press.key, shift: press.shiftKey, ctrl: press.ctrlKey, meta: press.metaKey }
 }
@@ -613,7 +643,7 @@ export function hostEventAllowed(tag: string, event: string): boolean {
 }
 
 /**
- * 🚧 The events the page re-delivers (C7): `click` alone. The receiver
+ * 🚧 The events the page re-delivers: `click` alone. The receiver
  * forwards an event only from the node that listens for it, and only the
  * vocabulary's listeners exist — a button hears `click`; the `span` label
  * inside it does not, nor the `svg` an icon draws for itself — so a click on
@@ -621,6 +651,7 @@ export function hostEventAllowed(tag: string, event: string): boolean {
  * descendant's, re-delivered, would arrive as the ANCESTOR's own event
  * carrying the descendant's value.
  * @experimental
+ * @ruling C7
  */
 export const REDELIVERED_EVENTS = ['click'] as const
 
@@ -675,7 +706,7 @@ export function redeliveredCopy(e: Event): Event {
 }
 
 /**
- * 🚧 Where the page raises `key` for a keydown (R80): the plain `input` the
+ * 🚧 Where the page raises `key` for a keydown: the plain `input` the
  * press landed on, when it sits strictly inside `territory` (a remote's box,
  * or a panel one of its elements portaled out) and its `keys` names the
  * press ({@link hostKeysMatch}) — else `null`. `sp-composer-field` reads its
@@ -683,6 +714,7 @@ export function redeliveredCopy(e: Event): Event {
  * page and the component harness share it, and each keeps the press from the
  * field (`preventDefault`) and dispatches {@link hostKeyEvent} there.
  * @experimental
+ * @ruling R80
  */
 export function keyedInputTarget(e: KeyboardEvent, territory: Element): Element | null {
 	const t = e.target as Element | null
@@ -692,11 +724,12 @@ export function keyedInputTarget(e: KeyboardEvent, territory: Element): Element 
 }
 
 /**
- * 🚧 The `key` event the page dispatches at {@link keyedInputTarget} (R80):
+ * 🚧 The `key` event the page dispatches at {@link keyedInputTarget}:
  * a `CustomEvent` carrying {@link HostKeyEventDetail}, unbubbling — the
  * receiver listens on the field itself, and the page has no business with
  * it. Made in the press's own window, as {@link redeliveredCopy} is.
  * @experimental
+ * @ruling R80
  */
 export function hostKeyEvent(e: KeyboardEvent): CustomEvent<HostKeyEventDetail> {
 	const view = (e.target as Node | null)?.ownerDocument?.defaultView
@@ -755,14 +788,14 @@ export function hostElementsDts(): string {
 }
 
 /**
- * @experimental 🚧 with the vocabulary it versions (F1).
+ * @experimental 🚧 with the vocabulary it versions.
  *
  * The version of the host-element vocabulary's PUBLIC SHAPE — every tag in
  * {@link SP_HOST_ELEMENTS} with its attributes, events, slots, children and
  * parts, and the closed value lists beside it ({@link GLOBAL_ATTRIBUTES},
  * {@link HOST_VIEW_NAMES}, {@link HOST_ARIA_CURRENT}, {@link HOST_ARIA_LIVE},
  * {@link HOST_INPUT_TYPES}). A built component records the one it was built
- * against (`builtAgainst.hostElements`, F1), and a host refuses to mount one
+ * against (`builtAgainst.hostElements`), and a host refuses to mount one
  * whose MAJOR it lacks (`componentBuiltAgainstFinding`).
  *
  * `major.minor`, never a hash: a hash changes on every addition and cannot
@@ -772,7 +805,7 @@ export function hostElementsDts(): string {
  * - **minor** bumps when the shape GROWS: a tag, an attribute, an event, a
  *   slot, a part, a value. A component built for a newer minor still mounts
  *   on an older host — what that host does not know it drops, the
- *   vocabulary's stated failure mode (unstyled-but-correct, R22).
+ *   vocabulary's stated failure mode (unstyled-but-correct).
  * - **major** bumps when anything is REMOVED, RENAMED or NARROWED (a value
  *   list loses a value, an event changes its `detail`). A host that has
  *   moved to a new major still lists the majors it keeps mounting.
@@ -780,5 +813,6 @@ export function hostElementsDts(): string {
  * A test pins a hash of the shape to this version (`sdk-tests/
  * componentBuiltAgainst.test.ts`): change the table without bumping this and
  * the suite says which to bump. `doc` strings are not the shape.
+ * @ruling F1, R22
  */
-export const HOST_ELEMENTS_VERSION = '1.3' as const
+export const HOST_ELEMENTS_VERSION = '1.4' as const

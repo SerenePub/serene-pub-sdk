@@ -1,5 +1,5 @@
 /**
- * `@serene-pub/sdk/testing` — the harness a **plugin author** runs (03 §9, U11).
+ * `@serene-pub/sdk/testing` — the harness a **plugin author** runs.
  *
  * Distinct from `src/conformance.ts`, which is what **SP Core** runs against its own
  * executor. Two different audiences and two different questions:
@@ -11,6 +11,7 @@
  * is answered by goldens: record a receipt now, compare later, and see the diff rather
  * than a pass/fail. **"It still runs" is not the assertion anyone needs** — a plugin that
  * runs and quietly changes the prompt is the failure mode that reaches users.
+ * @ruling 03 §9, U11
  */
 
 import type { Receipt, NodeReceipt } from './receipt.js'
@@ -20,10 +21,11 @@ import { run } from './executor.js'
 import type { Descriptor } from './descriptors.js'
 
 /**
- * The plugin sandbox's context, in this harness (plans 29 §14 D-3) — the half
+ * The plugin sandbox's context, in this harness — the half
  * the executor cannot supply, because a plugin's node handlers never run
  * against the executor's context at install. Re-exported here so an author's
  * one import is `@serene-pub/sdk/testing`.
+ * @ruling plans 29 §14 D-3
  */
 export * from './pluginHarness.js'
 
@@ -366,12 +368,13 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
 const WROTE_LIMIT = 100
 
 /**
- * Whether this outlet's published result is a write the host took (13 §7j-b).
+ * Whether this outlet's published result is a write the host took.
  *
  * The verb on the line below is `wrote`, so it has to be earned. A write-effect
  * outlet publishes a discriminated `WriteResult` and the executor stamps
  * `committed` on it; an emit-class outlet publishes whatever its binding
  * returned, and `pending` is a write still sitting in review.
+ * @ruling 13 §7j-b
  */
 const committed = (output: unknown): boolean =>
 	!!output &&
@@ -450,10 +453,11 @@ export function renderRunSummary(r: Receipt): string {
 // ── Equivalence ─────────────────────────────────────────────────────────────
 
 /**
- * F26 as a one-liner an author can run: parallel and forced-sequential must produce the
+ * A one-liner an author can run: parallel and forced-sequential must produce the
  * same result. If your hook has a hidden ordering dependency, this is where it shows up
  * — not in a user's chat at 2am under load.
  * @experimental
+ * @ruling F26
  */
 export async function assertEquivalent(doc: SpecDocument, opts: RunOptions): Promise<void> {
 	const norm = (r: Receipt) =>
@@ -471,7 +475,11 @@ export async function assertEquivalent(doc: SpecDocument, opts: RunOptions): Pro
 	}
 }
 
-/** Run the same spec twice on one seed and assert nothing moved (F11). @experimental */
+/**
+ * Run the same spec twice on one seed and assert nothing moved.
+ * @experimental
+ * @ruling F11
+ */
 export async function assertDeterministic(doc: SpecDocument, opts: RunOptions & { seed: string }): Promise<void> {
 	const a = await run(doc, opts)
 	const b = await run(doc, opts)

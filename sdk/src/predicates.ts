@@ -1,7 +1,6 @@
 /**
- * Predicates — one declared shape, read in two places (plans/29 R-15
- * *enabled-when*; 20 §10 *junction*; ruled 2026-09-15, built 2026-09-17 as
- * U5e).
+ * Predicates — one declared shape, read in two places (*enabled-when* and
+ * *junction*; ruled 2026-09-15, built 2026-09-17).
  *
  * A **junction** clause branches on a value a task computed: each branch is
  * `{ path?, equals? | equalsPath? | truthy? }` over that value. An action's
@@ -12,7 +11,7 @@
  * both read, so a predicate that fires a branch and one that greys a button
  * can never mean two things.
  *
- * ## The two-port compare (D-4a, 2026-09-17)
+ * ## The two-port compare (2026-09-17)
  *
  * `equals` takes a literal, so until this the grammar could ask *is the
  * accused Vell?* and never *is the accused the culprit?* — and a genre that
@@ -31,6 +30,7 @@
  * or in a value the state-keeper publishes. And not the field-level
  * `ValuePredicate` of `values.ts`, which gates one settings-form field on a
  * sibling field's value.
+ * @ruling plans/29 R-15, 20 §10, U5e, D-4a (2026-09-17)
  */
 
 import type { I18n, LocaleMap } from './descriptors.js'
@@ -65,7 +65,7 @@ export interface Predicate {
 	equals?: unknown
 	/**
 	 * Holds when the value strictly equals **the value at another path in the
-	 * same document** — the two-port compare (D-4a, 2026-09-17).
+	 * same document** — the two-port compare.
 	 *
 	 * `equals` takes a literal, so a document could state *is the accused
 	 * Vell?* and never *is the accused the culprit?* — which is the one
@@ -82,6 +82,7 @@ export interface Predicate {
 	 * Strict (`===`) like `equals`, so it compares a key and not a document:
 	 * two structurally equal objects are not equal here, and a structured
 	 * comparison belongs in a value the pipeline publishes as one.
+	 * @ruling D-4a (2026-09-17)
 	 */
 	equalsPath?: string
 	/** Holds when the value is truthy (`truthy`). */
@@ -134,7 +135,7 @@ export function predicateHolds(pred: Predicate, value: unknown, scope?: unknown)
 /* ── enabled-when ──────────────────────────────────────────────────────── */
 
 /**
- * One enabled-when predicate (plans/29 R-15): a declared condition over the
+ * One enabled-when predicate: a declared condition over the
  * session's published values that says whether an action is offered *now*.
  * The junction clause's predicate shape, never code.
  *
@@ -144,10 +145,10 @@ export function predicateHolds(pred: Predicate, value: unknown, scope?: unknown)
  * `message` venue, `item.<field>` per message — `item.id`, `item.isNewest`,
  * `item.hidden`, `item.generating`, `item.role`, `item.mine`,
  * `item.hasSwipes`, `item.greeting`, `item.channel`, `item.speaker` (a
- * participant reference, or null) and `item.characterLine` (lair re-plan
- * R11). A predicate over `item.*` is evaluated
+ * participant reference, or null) and `item.characterLine`. A predicate over `item.*` is evaluated
  * where a message is at hand: the client per row, the server at the door.
  * @experimental
+ * @ruling plans/29 R-15, lair re-plan R11
  */
 export interface EnabledWhen extends Predicate {
 	/**
@@ -156,7 +157,10 @@ export interface EnabledWhen extends Predicate {
 	 * actions live outside a run.
 	 */
 	on: string
-	/** Why the control is grey when this predicate does not hold. Required (R-20: a string or a locale map with `en`). */
+	/**
+	 * Why the control is grey when this predicate does not hold. Required (a string or a locale map with `en`).
+	 * @ruling R-20
+	 */
 	reason: I18n
 }
 
@@ -249,11 +253,12 @@ export function partitionEnabledWhen(
 
 /**
  * Every fault in one enabled-when declaration — a predicate or a list — as
- * sentences that say what to do instead (the teaching-error pattern, 15
- * §1.3). Empty when it is sound, and for `undefined` (no predicate). Applied
+ * sentences that say what to do instead (the teaching-error pattern).
+ * Empty when it is sound, and for `undefined` (no predicate). Applied
  * to an action's `enabledWhen` at construction, in `validate()` and at the
  * host's publish, and to a genre's defaults at declaration.
  * @experimental
+ * @ruling 15 §1.3
  */
 export function enabledWhenFindings(raw: unknown, at = 'enabledWhen'): string[] {
 	if (raw === undefined || raw === null) return []

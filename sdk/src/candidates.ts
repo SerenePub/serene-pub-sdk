@@ -2,7 +2,7 @@
  * The wire value of `core:shape/context-candidates@1`, and the one thing it
  * carries besides candidates: each source's **band intent**.
  *
- * ## Queries declare, the ranker resolves (16 §5a; R-7 P5, ruled 2026-09-15)
+ * ## Queries declare, the ranker resolves (ruled 2026-09-15)
  *
  * *Per-source* intent — how much of the window a source wants (`share`), the
  * most entries it may contribute (`maxEntries`), the fewest it keeps when room
@@ -11,7 +11,7 @@
  * the source, as ordinary `params`, and travels to the ranker as metadata on
  * the candidates it publishes. The ranker declares only what is
  * *cross-source*: how mechanisms and signals weigh, and how the shares
- * normalise. A per-source map on the ranker is the design 16 §5a rejected: it
+ * normalise. A per-source map on the ranker is the design that was rejected: it
  * goes stale when a source is added, and a plugin source cannot participate
  * without somebody editing it.
  *
@@ -42,6 +42,7 @@
  * — a band no source declared falls back to the ranker's own table for the
  * five core bands and is excluded with a receipt for any other, which is what
  * makes a plugin source's participation a matter of publishing one element.
+ * @ruling 16 §5a, R-7 P5, 16 §5a
  */
 
 /**
@@ -68,7 +69,8 @@ export const isBandPriority = (v: unknown): v is BandPriority =>
 export interface BandIntentFields {
 	/**
 	 * The band's slice of the window, relative to every other band's. `0` is
-	 * the band's off switch. NOMENCLATURE §7: a share, never a weight.
+	 * the band's off switch. A share, never a weight.
+	 * @ruling NOMENCLATURE §7
 	 */
 	share?: number
 	/** The most entries this band may contribute. Absent means no ceiling. */

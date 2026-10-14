@@ -1,6 +1,6 @@
 /**
  * A gather clause's execution mode, as a setting rather than only an authoring
- * choice (R-14: `mode` is a setting, the construct is the clause).
+ * choice: `mode` is a setting, the construct is the clause.
  *
  * `gather` chains are declared `parallel` or `sequential` by whoever wrote the
  * spec, and until now that was the end of it. But the right answer is not a
@@ -13,6 +13,7 @@
  * on exactly the terms `review` already uses (see `resolvePosition`): same
  * `settings` slot, same precedence, same refusal to let an author forbid the
  * override.
+ * @ruling R-14
  */
 
 import type { I18n } from './descriptors.js'

@@ -3,7 +3,7 @@
  *
  * A slot already carries a `facet` — `prompts`, `weights`, `review` — and the
  * configuration panel groups on it, because a facet names a kind and never a
- * node key, a count or an order (05 §0a). What the panel did *not* have was any
+ * node key, a count or an order. What the panel did *not* have was any
  * way to know a facet's heading, its position, or whether it leads the panel or
  * sits behind the tuning door. All three lived in a hardcoded list in the
  * client.
@@ -17,6 +17,7 @@
  * So a facet is declared here, and the client renders what it is sent. An
  * undeclared facet still gets a group of its own rather than disappearing:
  * unknown is not the same as absent, and the panel should say so.
+ * @ruling 05 §0a
  */
 
 import type { I18n } from './descriptors.js'
@@ -81,9 +82,10 @@ defineFacet({ id: 'weights', i18n: { en: 'Tuning' }, order: 5 })
 defineFacet({ id: 'review', i18n: { en: 'Review' }, order: 6, simple: true })
 /**
  * The substrate's own (`settingsSlot.ts`): an optional node's switch, a gather
- * clause's mode. Declared since R-9 (2026-09-16) — it resolved through the
+ * clause's mode. Declared since 2026-09-16 — it resolved through the
  * undeclared-facet fallback before, which is the path meant for a plugin's
  * word, not core's. Same heading; behind the tuning door as it always was.
+ * @ruling R-9
  */
 defineFacet({ id: 'settings', i18n: { en: 'Settings' }, order: 7 })
 /** `context-budget` and friends declare a bare `parameters` slot. */

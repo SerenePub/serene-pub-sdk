@@ -124,7 +124,12 @@ const voicesSpec = () =>
 			}),
 		)
 		.task('planPrompt', ($) =>
-			C.assemble.v2({ candidates: $.rank.candidates, budget: $.contextBudget.available }),
+			C.assemble.v2({
+				candidates: $.rank.candidates,
+				budget: $.contextBudget.available,
+				template: slot.template(),
+				connection: slot.connectionOf('plan'),
+			}),
 		)
 		.oracle('plan', ($) =>
 			C.generateJson.v1({
@@ -173,6 +178,8 @@ const voicesSpec = () =>
 						groups: $.voices.item.rank.groups,
 						budget: $.contextBudget.available,
 						templateContext: $.voices.item.context.templateContext,
+						template: slot.template(),
+						connection: slot.connectionOf('voices.item.say'),
 					}),
 				)
 				.oracle('say', ($: any) =>

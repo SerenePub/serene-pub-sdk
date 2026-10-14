@@ -209,7 +209,9 @@ const PUBLISHED: Record<string, string> = {
 	// `partySpeech` description says each delver takes a turn of their own.
 	// Proven: a copy of core-catalog/src with only this lane's edits reverted
 	// (lair.ts, turnOrder.ts, genres.ts) hashes back to every old Lair pin. (was '17398a61457451')
-	'core:spec/lair-create': 'b41ea5ad6054d',
+	// Moved 2026-10-13 (live scenes §15 G2): the embedded shape names the
+	// Lair's place, `scenes: { place: { stateKey: 'location' } }`. (was 'b41ea5ad6054d')
+	'core:spec/lair-create': '1dff70c6bd68c1',
 	// Moved 2026-09-17 (W1): the voices `each` gained a per-speaker
 	// character-lore lane, its own pool and its own rank, so a delver reads
 	// their own private lore instead of the whole party's.
@@ -373,7 +375,9 @@ const PUBLISHED: Record<string, string> = {
 	// `save`, and `semantic.arm.queries` wires its own embedding slot
 	// (`embed-text` declares none). Measured on a tree whose only other
 	// change was CI config. (was '13506ae2e7456')
-	'core:spec/lair-respond': '198869a81e17d5',
+	// I12 (2026-10-12): the Lair preset names its loadouts — Reply on every
+	// spoken line, Extraction on both keepers. (was '198869a81e17d5')
+	'core:spec/lair-respond': '3919232d21aac',
 	// Moved twice on 2026-09-17. First (L3, contracts batch 2): `params:
 	// slot.params()` on the `create-lore-entry` node, which now declares an
 	// `entryType` parameters slot — a slot the spec never NAMES is not a config
@@ -580,7 +584,8 @@ const PUBLISHED: Record<string, string> = {
 	// Moved 2026-10-05 (spec ids genre first, ruling C4): the id is
 	// `core:spec/lair-answer-form`, was `core:spec/answer-form-lair`. Proven: the
 	// document with only its id set back hashes to the old pin. (was 'd5cd2911aa349')
-	'core:spec/lair-answer-form': '1e04feae5374a',
+	// I12: the answer-form preset names the Reply loadout. (was '1e04feae5374a')
+	'core:spec/lair-answer-form': '1c86e1cc01c1b7',
 	// Its own turn order since the modder pass (R27, 2026-09-23).
 	// Moved 2026-09-27 (lair pass B9): it recomputes on message-deleted and
 	// message-hidden too (was '6bc2842fd6676').
@@ -594,6 +599,29 @@ const PUBLISHED: Record<string, string> = {
 	// `primary` — a background lane. Proven: the document with only the role
 	// set back hashes to the old pin. (was 'c0edd4e6d3d23')
 	'core:spec/lair-turn-order': '1a6264ad2eae4f',
+	// New 2026-10-13 (live scenes lane A): the Lair's own summarize-scene —
+	// the Sanctum read as transcript asides, through the Lair's transcript template.
+	// Moved 2026-10-13 (live scenes reconcile R): the story rows' files are
+	// read (`attachments`, history-attachments@1) and named after each line's
+	// text, as `summarizeSpec`'s batches name them. (was '668a24f84a6fb')
+	// Moved 2026-10-13 (live scenes lane E): the aside rows' files are read
+	// too (`asideAttachments`, a second history-attachments@1, wired to
+	// render's new `asideAttachments` port) and the Lair template's `aside`
+	// section names them after its text. (was '159e471ba7353a')
+	// Moved 2026-10-13 (live scenes fix-ups): the aside read is headed
+	// *Transcript aside attachments* (`expose.label`), so its settings never
+	// show two steps headed "History attachments". (was 'd410ef541cb80')
+	// Moved 2026-10-13 (live scenes §15 G1, ★9): the spec carries the Lair's
+	// own boundary trigger, `contributes.boundaryTriggers` — a new floor on
+	// main (`LAIR_NEW_FLOOR_TRIGGER`). (was '14ef483fc1f337')
+	'core:spec/lair-summarize-scene': '69777beaaf6a6',
+	// New 2026-10-13 (live scenes lane D): the Lair's *Time passes…* — the
+	// clock step a press collects, and Advance story clock behind a junction.
+	// Moved 2026-10-13 (live scenes §15 G4, lane H): *Advance story clock*
+	// says `cause: 'action'`. (was '5dc482ba17d89')
+	// Moved 2026-10-13 (live scenes §15 G12): its *Advance story clock* says
+	// `onRefusal: 'skip'`. (was '12cff8a420c99a')
+	'core:spec/lair-advance-time': '7e1eaa16ea91a',
 }
 
 describe('the Lair pipelines', () => {
@@ -686,7 +714,10 @@ describe('the Lair pipelines', () => {
 				entry.slug === LAIR_RESPOND_SPEC_ID ||
 				entry.slug === 'core:spec/lair-create' ||
 				entry.slug === LAIR_ROOM_ANSWER_SPEC_ID ||
-				entry.slug === LAIR_FILE_ROOM_SPEC_ID
+				entry.slug === LAIR_FILE_ROOM_SPEC_ID ||
+				// Time passes… (live scenes §6): the clock moves only when the
+				// step does, behind a junction on `moves`.
+				entry.slug === 'core:spec/lair-advance-time'
 			)
 				continue
 			for (const node of entry.build().nodes as SpecDocument['nodes'])
@@ -714,11 +745,12 @@ describe('the Lair pipelines', () => {
 		assert.equal(shipped!.slug, 'default')
 		assert.equal(shipped!.preset, LAIR_LAYOUT)
 		const placed = drawnWidgetIds(shipped!.preset)
-		// The room list is `world-state` until a map widget exists — see the
-		// note in layouts.ts. Naming one core does not ship would put a
-		// labelled placeholder in every Lair session.
+		// The room list is Places (W4), which replaced the `world-state`
+		// stand-in; the Castellan's scratchpad sits under it. Naming a widget
+		// core does not ship would put a labelled placeholder in every Lair.
 		for (const id of placed) assert.ok(known.has(widgetOfInstance(id)), id)
-		assert.deepEqual(placed, ['messages', 'stats', 'world-state', 'messages#sanctum'])
+		assert.deepEqual(placed, ['messages', 'stats', 'places', 'annex#castellan', 'messages#sanctum'])
+		assert.deepEqual(shipped!.preset.widgetSettings?.['annex#castellan']?.key, 'core.castellan-scratchpad')
 	})
 })
 
@@ -855,6 +887,9 @@ const lairBindings = (plan: unknown, over: Bindings = {}): Bindings =>
 		'core:query/entity-link@1': async (i: any) =>
 			ok({ main: [], candidates: i?.candidates ?? [], links: [] }),
 		'core:query/cast-presences@1': async () => ok({ main: [], at: null }),
+		// Card strokes (DESIGN-card-strokes A.4): the fixture's cards carry no
+		// strokes, so the cast passes through as the host's binding passes it.
+		'core:task/card-strokes@1': async (i: any) => ok({ main: i?.cast, cast: i?.cast }),
 		'core:task/eligibility@1': async (i: any) =>
 			ok({ main: i?.candidates ?? [], candidates: i?.candidates ?? [], diagnostics: {} }),
 		'core:task/build-planner-context@1': async () =>

@@ -55,7 +55,16 @@ import {
 	type PluginHandlerContext,
 } from '@serene-pub/sdk/testing'
 import * as C from '@serene-pub/contracts'
-import { coreAnnouncement } from '@serene-pub/core-catalog'
+import {
+	coreAnnouncement,
+	CORE_SPECS,
+	DEFAULT_TRANSCRIPT_TEMPLATE,
+	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	CHAT_SUMMARIZE_SCENE_SPEC_ID,
+	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
+	LAIR_SUMMARIZE_SCENE_SPEC_ID,
+} from '@serene-pub/core-catalog'
+import Handlebars from 'handlebars'
 // The preview harness's frame port — the SDK's reference *host* half of the
 // frame wire, imported the way `framePort.test.ts` imports it (it carries no
 // DOM, deliberately). C26 asks the host which frame → host messages it
@@ -514,8 +523,96 @@ const patchedActions = (id: string, actions: Array<Record<string, unknown>>) => 
 	return { ...doc, contributes: { actions: actions.map((a) => ({ genre: CHAT, ...a })) } }
 }
 
+// ── C34's host half: the two pure summarize-scene steps ─────────────────────
+
+/**
+ * One section of a transcript template — the inline partial `section`,
+ * rendered on its own. The template is run once bare and once with the
+ * partial called at its end; what the second adds is the section, so text a
+ * template leaves outside its partials never reaches a unit. A template that
+ * does not define the section falls back to the shipped Default's.
+ */
+const renderTranscriptSection = (source: string | undefined, section: string, ctx: unknown): string => {
+	for (const src of [source, DEFAULT_TRANSCRIPT_TEMPLATE]) {
+		if (typeof src !== 'string' || !src) continue
+		try {
+			const hb = Handlebars.create()
+			const bare = hb.compile(src, { noEscape: true })(ctx)
+			const whole = hb.compile(`${src}{{> ${section}}}`, { noEscape: true })(ctx)
+			return whole.slice(bare.length)
+		} catch {
+			// The section is not in this template — the Default's has it.
+		}
+	}
+	return ''
+}
+
+/** The reference binding for `core:task/render-transcript@1` — what a host does, at its smallest. */
+const renderTranscriptBinding = async (i: any) => {
+	const source: string | undefined = i?.template?.source
+	const castRows = [i?.cast?.characters, i?.cast?.personas, i?.cast?.envoys].flatMap((xs) => (Array.isArray(xs) ? xs : []))
+	const preamble = renderTranscriptSection(source, 'preamble', {
+		scene: i?.scene?.scene ?? {},
+		cast: castRows.map((c: any) => ({ name: c?.name })).filter((c: any) => c.name),
+	})
+	const story: any[] = Array.isArray(i?.messages) ? i.messages : []
+	const asides: any[] = Array.isArray(i?.asides) ? [...i.asides] : []
+	const unit = (row: any, section: 'line' | 'aside') => {
+		const text = renderTranscriptSection(source, section, {
+			messageId: row.id,
+			name: row.senderName ?? row.name ?? '',
+			role: row.role,
+			text: row.content ?? row.text ?? '',
+			channel: row.channel,
+		})
+		return { messageId: row.id, text, tokens: Math.ceil(text.length / 4) }
+	}
+	// Each aside after the story line before it — by id, the reference's
+	// stand-in for the host's write order.
+	const units: Array<{ messageId: number; text: string; tokens: number }> = []
+	const leading = asides.filter((a) => !story.length || a.id < story[0].id)
+	for (const a of leading) units.push(unit(a, 'aside'))
+	story.forEach((row, n) => {
+		units.push(unit(row, 'line'))
+		const next = story[n + 1]?.id ?? Infinity
+		for (const a of asides) if (a.id > row.id && a.id < next) units.push(unit(a, 'aside'))
+	})
+	return ok({ main: units, preamble, units })
+}
+
+/** The reference binding for `core:task/batch-messages@2`: whole units, each batch headed by the preamble. */
+const batchTranscriptBinding = async (i: any) => {
+	const budget = Number(i?.params?.batchTokens ?? 2560)
+	const preamble = String(i?.preamble ?? '')
+	const units: any[] = Array.isArray(i?.units) ? i.units : []
+	const batches: string[] = []
+	let open: string[] = []
+	let used = 0
+	for (const u of units) {
+		if (open.length && used + u.tokens > budget) {
+			batches.push(preamble + open.join('\n'))
+			open = []
+			used = 0
+		}
+		open.push(u.text)
+		used += u.tokens
+	}
+	if (open.length) batches.push(preamble + open.join('\n'))
+	return ok({ main: batches, batches })
+}
+
+const GENRE_SUMMARIZE_SCENES = [
+	CHAT_SUMMARIZE_SCENE_SPEC_ID,
+	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
+	LAIR_SUMMARIZE_SCENE_SPEC_ID,
+]
+
 const fixtures: Fixtures = {
 	world,
+	// C34: every core genre's own summarize-scene spec.
+	summarizeScenes: () =>
+		CORE_SPECS.filter((s) => GENRE_SUMMARIZE_SCENES.includes(s.slug)).map((s) => s.build()),
 	// The kit's fixtures decide their own behaviour: `gate` halts (so the halt and
 	// compaction requirements have something to observe) and the loop step stays truthy
 	// (so the ceiling requirement actually reaches the ceiling).
@@ -523,6 +620,8 @@ const fixtures: Fixtures = {
 		bindings({
 			'test:task/gate@1': async () => halt('this chat type is not applicable'),
 			'test:task/passthrough@1': async () => ok({ main: true }),
+			'core:task/render-transcript@1': renderTranscriptBinding,
+			'core:task/batch-messages@2': batchTranscriptBinding,
 			...over,
 		}),
 
@@ -534,7 +633,7 @@ const fixtures: Fixtures = {
 				// The data flow the docblock promises — input → query → task →
 				// provider → write — so C4 and C5 exercise a task with upstream
 				// data, not one that runs on its defaults (U7 review, W5).
-				.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }))
+				.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages, template: slot.template(), connection: slot.connectionOf('generate') }))
 				.oracle('generate', ($) =>
 					C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 				)
@@ -1498,4 +1597,50 @@ test('95e · C30 fails on a host that carries the renderer, and on one that drop
 	const r2 = await c30(deaf)
 	assert.equal(r2.pass, false)
 	assert.match(r2.error!, /pushed section must reach the component/)
+})
+
+test('C34 · every core genre’s summarize-scene passes, and the kit fails a render that drops message ids', async () => {
+	const c34 = async (host: HostUnderTest, fx: Fixtures) => (await conform(host, fx, { only: ['C34'] }))[0]!
+	assert.equal(fixtures.summarizeScenes!().length, 4, 'chat, adventure, guide and lair each ship one')
+	const own = await c34(sdk, fixtures)
+	assert.equal(own.pass, true, own.error)
+	assert.equal(own.skipped, undefined)
+
+	// A host whose render names no message: the units cannot be traced.
+	const untraced: Fixtures = {
+		...fixtures,
+		bindings: (over = {}) =>
+			fixtures.bindings({
+				'core:task/render-transcript@1': async (i: any) => {
+					const r: any = await renderTranscriptBinding(i)
+					const units = r.value.units.map((u: any) => ({ text: u.text, tokens: u.tokens }))
+					return ok({ main: units, preamble: r.value.preamble, units })
+				},
+				...over,
+			}),
+	}
+	const broken = await c34(sdk, untraced)
+	assert.equal(broken.pass, false)
+	assert.match(broken.error!, /not a row of the span/)
+
+	// A host whose render throws on a channel it never heard of.
+	const narrow: Fixtures = {
+		...fixtures,
+		bindings: (over = {}) =>
+			fixtures.bindings({
+				'core:task/render-transcript@1': async (i: any) => {
+					if ((i?.asides ?? []).some((a: any) => a.channel !== 'sanctum')) throw new Error('unknown channel')
+					return renderTranscriptBinding(i)
+				},
+				...over,
+			}),
+	}
+	const unknown = await c34(sdk, narrow)
+	assert.equal(unknown.pass, false)
+	assert.match(unknown.error!, /undeclared channel/)
+
+	// No fixture: skipped, with what to supply.
+	const none = await c34(sdk, { ...fixtures, summarizeScenes: undefined })
+	assert.equal(none.pass, true)
+	assert.match(none.skipped!.join(' '), /supply `summarizeScenes\(\)`/)
 })

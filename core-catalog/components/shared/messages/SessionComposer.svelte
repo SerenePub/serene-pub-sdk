@@ -336,11 +336,18 @@
 				: (exactPaletteMatch(paletteActions, draft) ??
 					(paletteQuery ? paletteRows[0] : undefined))
 	)
-	// Opening the palette is meeting its newcomers.
+	// Opening the palette is meeting its newcomers. Their keys are held in
+	// `paletteNewOnOpen` until it closes so the "New" chips survive being seen.
 	$effect(() => {
-		if (!paletteOpen) return
+		if (!paletteOpen) {
+			paletteNewOnOpen = new Set()
+			return
+		}
 		const fresh = paletteRows.filter((a) => a.isNew)
-		if (fresh.length) void conv.request("actions-seen", { keys: fresh.map(actionIdentity) })
+		if (!fresh.length) return
+		const keys = fresh.map(actionIdentity)
+		paletteNewOnOpen = new Set([...paletteNewOnOpen, ...keys])
+		void conv.request("actions-seen", { keys })
 	})
 
 	/**
@@ -442,11 +449,26 @@
 		return false
 	}
 
+	/**
+	 * The keys that were new when the menu opened. Opening marks them seen,
+	 * which clears `isNew` at once; without this snapshot the "New" chips
+	 * vanished before anyone could read them (2026-10-11). The trigger's dot
+	 * keeps reading live `isNew`, so it still clears on open; the chips read
+	 * this set until the menu closes.
+	 */
+	let overflowNewOnOpen = $state<ReadonlySet<string>>(new Set())
 	function handleOverflowOpen(open: boolean) {
 		overflowOpen = open
-		if (open && overflowNew.length)
-			void conv.request("actions-seen", { keys: overflowNew.map(actionIdentity) })
+		if (open) {
+			const keys = overflowNew.map(actionIdentity)
+			overflowNewOnOpen = new Set(keys)
+			if (keys.length) void conv.request("actions-seen", { keys })
+		} else {
+			overflowNewOnOpen = new Set()
+		}
 	}
+	/** Same for the palette: what was new when it opened, held until it closes. */
+	let paletteNewOnOpen = $state<ReadonlySet<string>>(new Set())
 	let actionsLabelShown = $derived(showActions && hasActionsRow)
 
 	let tokenCounts = $derived(c?.usage ?? null)
@@ -638,7 +660,9 @@
 									slot="trigger"
 									type="button"
 									data-widget-part="messages.composer-more-actions"
-									title="More actions"
+									title={overflowNew.length
+										? `More actions (${overflowNew.length} new)`
+										: "More actions"}
 									aria-label={overflowNew.length
 										? `More actions (${overflowNew.length} new)`
 										: "More actions"}
@@ -672,7 +696,7 @@
 												<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
 											{/if}
 										</span>
-										{#if a.isNew}
+										{#if a.isNew || overflowNewOnOpen.has(actionIdentity(a))}
 											<span data-widget-part="messages.composer-new">New</span>
 										{/if}
 									</sp-menu-item>
@@ -792,7 +816,7 @@
 											<span data-widget-part="messages.composer-palette-argument">{argHint}</span>
 										{/if}
 										<span data-widget-part="messages.composer-palette-label">{a.name}</span>
-										{#if a.isNew}
+										{#if a.isNew || paletteNewOnOpen.has(actionIdentity(a))}
 											<span data-widget-part="messages.composer-new">New</span>
 										{/if}
 										{#if rowState.reason}

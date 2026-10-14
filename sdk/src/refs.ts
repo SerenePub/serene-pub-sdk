@@ -1,10 +1,13 @@
+import { isLoadoutId } from './loadouts.js'
+
 /**
- * References — edges as data (04 §4), and config references (F35).
+ * References — edges as data, and config references.
  *
  * $ref creates a *data* edge and compiles 1:1 to a pipeline_edges row.
  * slot.* creates a *config* reference, which is resolved before execution and is
  * therefore not an edge and creates no dependency in the graph.
  * @experimental
+ * @ruling 04 §4, F35
  */
 
 export interface DataRef {
@@ -16,19 +19,23 @@ export interface DataRef {
 /** @public */
 export interface SlotRef {
 	readonly __ref: 'slot'
-	slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables'
+	slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables' | 'workflow'
 	/** Whose config. Undefined = this node's own. */
 	ofNode?: string
 	/**
-	 * An **envoy's** config (plans/29 R-18 (2); built 2026-09-16 as U5g):
+	 * An **envoy's** config:
 	 * the genre-declared defaults for `envoy:<key>`, resolved through the
 	 * config chain at the address `envoy:<key>` exactly as a node's are —
 	 * the host projects the declaration at `author` and an admin's tuning
 	 * sits above it. Compiles to `resolvedRefs[slot] = 'envoy:<key>'`
 	 * after the genre the spec serves is checked for the key.
+	 * @ruling plans/29 R-18 (2), U5g (2026-09-16)
 	 */
 	ofEnvoy?: string
-	/** Unresolved marker: resolve to the first oracle reachable forward (16 §5b-i). */
+	/**
+	 * Unresolved marker: resolve to the first oracle reachable forward.
+	 * @ruling 16 §5b-i
+	 */
 	resolveDownstreamOracle?: boolean
 }
 
@@ -65,6 +72,22 @@ export const isEnvoyConfigKey = (key: string): boolean => key.startsWith(ENVOY_C
 
 /** @public */
 export const slot = {
+	/**
+	 * A **loadout** value — what a `loadout` slot holds: the shipped or
+	 * pub loadout a model call runs on, by id. Unlike the other members this is
+	 * a value, not a reference to another node's slot: it goes in a preset
+	 * (`p.loadout('generate', slot.loadout('core:loadout/reply@1'))`).
+	 * The id is checked against the grammar here; whether it names a
+	 * registered declaration is checked by the host at seed and bind.
+	 */
+	loadout: <const Id extends `${string}:loadout/${string}`>(id: Id): { id: Id } => {
+		if (!isLoadoutId(id))
+			throw new Error(
+				`'${id}' is not a loadout id — write '<owner>:loadout/<kebab-name>@<major>' ` +
+					`(e.g. 'core:loadout/extraction@1').`,
+			)
+		return { id }
+	},
 	connection: (ofNode?: NodeAddress): SlotRef => ({
 		__ref: 'slot',
 		slot: 'connection',
@@ -79,7 +102,8 @@ export const slot = {
 	 * With a target, the slot is *shared*: the node reads the target's authored
 	 * prompts and declares none of its own to configure. One authored text, one
 	 * place to edit it — three nodes that each demanded the same system prompt
-	 * is the defect this exists to close (13 §12 finding i).
+	 * is the defect this exists to close.
+	 * @ruling 13 §12 finding i
 	 */
 	prompts: (of?: NodeAddress | EnvoyAddress): SlotRef =>
 		isEnvoyAddress(of)
@@ -92,7 +116,7 @@ export const slot = {
 	template: (): SlotRef => ({ __ref: 'slot', slot: 'template' }),
 	/**
 	 * With a target, the slot's **shared** fields resolve at the target — and
-	 * only those (R-7 P2, refined 2026-09-16; `FieldDecl.shared`).
+	 * only those (`FieldDecl.shared`).
 	 *
 	 * A definition marks the `params` fields several nodes of one spec hold in
 	 * common — the lore lanes' seven scan knobs, the embed pair's switch —
@@ -104,9 +128,10 @@ export const slot = {
 	 *
 	 * ⚠ It used to read the whole slot at the target, and its docblock argued
 	 * for the ranker as the owner of "every query's minimums and weights". That
-	 * is the per-source map on the ranker 16 §5a rejected; per-source intent
-	 * lives on the source now (R-7 P5) and travels as candidate metadata, so
+	 * is the per-source map on the ranker that was rejected; per-source intent
+	 * lives on the source now and travels as candidate metadata, so
 	 * nothing needs to read the ranker's params from a query any more.
+	 * @ruling R-7 P2 (2026-09-16), 16 §5a, R-7 P5
 	 */
 	params: (ofNode?: NodeAddress): SlotRef => ({
 		__ref: 'slot',
@@ -121,6 +146,17 @@ export const slot = {
 	variables: (ofNode?: NodeAddress): SlotRef => ({
 		__ref: 'slot',
 		slot: 'variables',
+		ofNode: addr(ofNode),
+	}),
+
+	/**
+	 * 🚧 The node's `workflow` slot: a `{ id }` naming a host `workflows` row
+	 * (a ComfyUI graph), which the host resolves and hands to the adapter.
+	 * @ruling DESIGN-image-generation §4.10
+	 */
+	workflow: (ofNode?: NodeAddress): SlotRef => ({
+		__ref: 'slot',
+		slot: 'workflow',
 		ofNode: addr(ofNode),
 	}),
 
@@ -143,7 +179,8 @@ export const slot = {
 
 	/**
 	 * Resolves at publish to the first oracle reachable forward. Compiles to the
-	 * explicit form, so nothing implicit survives into rows (16 §5b-i).
+	 * explicit form, so nothing implicit survives into rows.
+	 * @ruling 16 §5b-i
 	 */
 	downstreamOracle: (): SlotRef => ({
 		__ref: 'slot',

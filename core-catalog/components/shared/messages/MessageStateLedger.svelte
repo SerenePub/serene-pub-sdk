@@ -12,28 +12,39 @@
 	 * rather than in a queue somewhere else because the sentence that justifies a
 	 * change is the one above them; **Review** opens the same rows for the whole
 	 * session, for when they have scrolled away.
+	 *
+	 * 🚧 `head` (live scenes §15 G13): the conversation's **ledger head**
+	 * instead — the clock moves made before the session had a single line
+	 * (`state.head`), drawn above the first message. Lines only: nothing
+	 * waits on a line that does not exist.
 	 */
 	import StateProposalList from "./StateProposalList.svelte"
 	import { useConversation } from "./conversation.svelte"
 
-	interface Props {
-		messageId: number
-	}
-	let { messageId }: Props = $props()
+	type Props = { messageId: number; head?: false } | { messageId?: undefined; head: true }
+	let { messageId, head = false }: Props = $props()
 
 	// What this line changed and what waits on it: the page's projection of
 	// the session state (C0b), read off the conversation.
 	const conv = useConversation()
-	let groups = $derived(conv.dossier?.state.ledgers[messageId] ?? [])
-	let pending = $derived(conv.dossier?.state.pending[messageId] ?? [])
-	let waiting = $derived(conv.dossier?.state.waiting ?? [])
+	let groups = $derived(
+		head
+			? (conv.dossier?.state.head ?? [])
+			: (conv.dossier?.state.ledgers[messageId as number] ?? [])
+	)
+	let pending = $derived(head ? [] : (conv.dossier?.state.pending[messageId as number] ?? []))
+	let waiting = $derived(head ? [] : (conv.dossier?.state.waiting ?? []))
 	let reviewOpen = $state(false)
 </script>
 
 <!-- The ledger's parts (`messages.ledger*`, `messages.proposal*`; STYLE-GUIDE
      §6.16): no look here; the default widget stylesheet draws them. -->
 {#if groups.length || pending.length}
-	<div data-widget-part="messages.ledger" data-ledger-message={messageId}>
+	<div
+		data-widget-part="messages.ledger"
+		data-ledger-message={head ? undefined : messageId}
+		data-ledger-head={head ? "" : undefined}
+	>
 		{#each groups as group (group.ownerKey)}
 			<p data-widget-part="messages.ledger-line" data-owner-key={group.ownerKey}>
 				<span data-widget-part="messages.ledger-owner">{group.ownerLabel}</span>

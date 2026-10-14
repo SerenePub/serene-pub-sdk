@@ -44,6 +44,115 @@ import type { FieldDecl, SettingsSchema } from './settings.js'
 import type { ShapeId } from './shapes.js'
 import { S } from './shapes.js'
 
+// ── Logit bias ──────────────────────────────────────────────────────────────
+
+/**
+ * One row of a logit bias list — the value of `logitBias` (`format:
+ * 'logit-bias'`) is an ordered list of these.
+ *
+ * `text` is what the row biases, in SillyTavern's syntax: a plain word is
+ * tokenized with a leading space, `{exact text}` verbatim, and `[1, 2]` is
+ * token ids as they stand. `value` is the bias every token of that sequence
+ * gets, `LOGIT_BIAS_MIN`…`LOGIT_BIAS_MAX`.
+ *
+ * Text rather than ids, because an id means something to one tokenizer only:
+ * the same list has to bias the same words on whichever model the config is
+ * pointed at. ⚠ A **logit bias entry**, never a bare _entry_ — that word is
+ * the lorebook's.
+ * @experimental
+ */
+export interface LogitBiasEntry {
+	text: string
+	value: number
+}
+
+/** The lowest bias a logit bias entry holds: a ban, wherever the backend honours it. @experimental */
+export const LOGIT_BIAS_MIN = -100
+
+/** The highest bias a logit bias entry holds. @experimental */
+export const LOGIT_BIAS_MAX = 100
+
+/**
+ * The `logitBias` default: the "overthinking markers" — the words a reasoning
+ * model hedges and backtracks with — each nudged down by 2 (r/LocalLLaMA,
+ * u/am17an, after arXiv 2606.00206).
+ *
+ * A default, not a switch: `logitBias` is in no shipped config's `enabled`
+ * list, so this is what the editor starts from and what ticking the field
+ * sends — never what an untouched config sends. Plain words, so each is
+ * biased as " word" on whatever tokenizer the model uses.
+ * @experimental
+ */
+export const LOGIT_BIAS_OVERTHINKING_MARKERS: readonly Readonly<LogitBiasEntry>[] = `
+	perhaps maybe wait Wait actually hold Hmm hmm Alternatively alternatively
+	However however instead Instead But but though although yet rather unless
+	otherwise nonetheless nevertheless regardless still anyway Or or either
+	whether uncertain unsure possibly might could another different reconsider
+	rethink backtrack retry revisit doubt confused wrong mistake error incorrect
+`
+	.trim()
+	.split(/\s+/)
+	.map((text) => ({ text, value: -2 }))
+
+/**
+ * A stored or submitted `logitBias` value as logit bias entries, or `null`
+ * when it cannot be read as one.
+ *
+ * Three shapes reach it: the rows the editor writes; the legacy
+ * `{ "<id>": bias }` object the JSON textarea wrote, read as one `[<id>]` row
+ * per key, in key order; and either of those as a JSON string (a blank string
+ * is an empty list). Row by row it is lenient: a text that is not a string
+ * becomes one, llama.cpp's own `[id, bias]` / `["text", bias]` pair becomes
+ * `[id]` / `{text}`, a bias that is not a finite number becomes 0, and every
+ * bias clamps to `LOGIT_BIAS_MIN`…`LOGIT_BIAS_MAX`. A row whose text is empty
+ * or malformed is KEPT — the editor shows it with its error, and dropping it
+ * here would lose what somebody typed.
+ *
+ * `null` — any other value, or a string that is not JSON — is the caller's to
+ * report; normalization keeps such a value as it came rather than deleting it.
+ * @experimental
+ */
+export function readLogitBiasValue(value: unknown): LogitBiasEntry[] | null {
+	let parsed = value
+	if (typeof value === 'string') {
+		if (!value.trim()) return []
+		try {
+			parsed = JSON.parse(value)
+		} catch {
+			return null
+		}
+	}
+	if (Array.isArray(parsed)) return parsed.map(logitBiasRow)
+	if (parsed && typeof parsed === 'object')
+		return Object.entries(parsed).map(([id, bias]) => ({
+			text: `[${id}]`,
+			value: logitBiasNumber(bias),
+		}))
+	return null
+}
+
+function logitBiasRow(row: unknown): LogitBiasEntry {
+	if (Array.isArray(row) && row.length === 2) {
+		const [target, bias] = row
+		// llama.cpp: `false` in place of a bias bans the token outright.
+		const value = bias === false ? LOGIT_BIAS_MIN : logitBiasNumber(bias)
+		if (typeof target === 'number') return { text: `[${target}]`, value }
+		if (typeof target === 'string') return { text: `{${target}}`, value }
+	}
+	if (row && typeof row === 'object' && !Array.isArray(row)) {
+		const { text, value } = row as { text?: unknown; value?: unknown }
+		return { text: text == null ? '' : String(text), value: logitBiasNumber(value) }
+	}
+	// A bare string, number or id list typed without a bias: kept, at 0.
+	const text = typeof row === 'string' ? row : row == null ? '' : JSON.stringify(row)
+	return { text, value: 0 }
+}
+
+function logitBiasNumber(v: unknown): number {
+	const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN
+	return Number.isFinite(n) ? clamp(n, LOGIT_BIAS_MIN, LOGIT_BIAS_MAX) : 0
+}
+
 // ── The vocabularies ────────────────────────────────────────────────────────
 
 /**
@@ -404,10 +513,11 @@ export const textSamplingSchema: SettingsSchema = {
 	},
 	logitBias: {
 		type: 'text',
-		format: 'json',
+		format: 'logit-bias',
 		label: 'Logit Bias',
-		description: 'Token id → bias, as JSON.',
-		default: {},
+		description: 'Words, {exact text} or [token ids], each with a bias from −100 to 100.',
+		// Filled but not enabled: nothing is sent until the field is ticked.
+		default: LOGIT_BIAS_OVERTHINKING_MARKERS,
 		group: 'Budget',
 	},
 }
@@ -725,6 +835,10 @@ function coerce(value: unknown, decl: FieldDecl): unknown {
 		case 'enum':
 			return typeof value === 'string' ? value : String(value)
 		case 'text':
+			// A logit bias list: rows, the legacy id → bias object, or either as
+			// JSON. One that cannot be read is kept as it came, for the editor
+			// to report — never deleted, which is what a bad `json` field gets.
+			if (decl.format === 'logit-bias') return readLogitBiasValue(value) ?? value
 			// `format: 'json'` fields hold parsed data; the renderer stringifies
 			// for display and parses on submit, so either side may arrive here.
 			if (decl.format === 'json' && typeof value === 'string') {

@@ -1,5 +1,5 @@
 /**
- * Ranking decisions (PLAN-sdk-1.0 §3.9, R64): what a ranker says about each
+ * Ranking decisions: what a ranker says about each
  * candidate it judged. A node that publishes an array of these on a port of
  * shape `core:shape/decisions@1` (`S.decisions`) has them recorded by the
  * host automatically — nothing else to opt into.
@@ -13,6 +13,7 @@
  *
  * A decision with no derivable subject (a message or relationship band) is
  * counted on its ranking, not stored.
+ * @ruling PLAN-sdk-1.0 §3.9, R64
  */
 
 /** The shape id a decisions port carries. @experimental */

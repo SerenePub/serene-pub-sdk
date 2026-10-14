@@ -193,3 +193,84 @@ test("ids are prefixed per box for a plugin's (and core's widgets'), not for cor
 		await conversation.unmount()
 	}
 })
+
+/**
+ * A Svelte widget reading the reactive `ctx` straight in markup and
+ * `$derived` — no `subscribe`, no `$effect` — beside `raw`, the plain
+ * context, read once.
+ */
+const REACTIVE = `<script lang="ts">
+	import type { ComponentContext } from '@serene-pub/component-client'
+	let { ctx, raw }: { ctx: ComponentContext; raw: ComponentContext } = $props()
+	const held = $derived(Object.keys(ctx.scoped ?? {}).sort().join(','))
+	const once = raw.messages?.length ?? 0
+</script>
+<p class="count">{ctx.messages?.length ?? 0}</p>
+<p class="held">{ctx.granted('session:state') ? 'yes' : 'no'}|{held}</p>
+<p class="once">{once}</p>
+`
+
+/** The same, reading a scoped section by the scope it declared (`ctx.scope`). */
+const REACTIVE_SCOPE = `<script lang="ts">
+	import type { ComponentContext } from '@serene-pub/component-client'
+	let { ctx }: { ctx: ComponentContext } = $props()
+	const loaded = $derived(ctx.scope('session:state')?.loaded)
+</script>
+<p class="state">{loaded === undefined ? 'none' : String(loaded)}</p>
+`
+
+async function sveltePkg(source: string): Promise<string> {
+	const dir = await pkg(
+		`import { svelteComponent } from '@serene-pub/component-client/svelte'\nimport C from './C.svelte'\nexport default svelteComponent(C)\n`,
+	)
+	await writeFile(join(dir, 'C.svelte'), source)
+	return dir
+}
+
+const SESSION_STATE = { sessionId: 1, loaded: true, error: null, resolved: { world: {}, cast: {} }, slots: [], owners: [] }
+
+test("a Svelte widget's `ctx` is reactive: a pushed section redraws it with no subscribe", async () => {
+	const view = await mountComponent({
+		root: await sveltePkg(REACTIVE),
+		entry: 'c.ts',
+		timeoutMs: 60_000,
+		grants: ['session:state'],
+		context: { messages: [{ id: 1 }] } as never,
+	})
+	try {
+		assert.equal(view.query('.count')?.textContent, '1')
+		assert.equal(view.query('.held')?.textContent, 'yes|')
+		await view.push('messages', [{ id: 1 }, { id: 2 }, { id: 3 }] as never)
+		assert.equal(view.query('.count')?.textContent, '3')
+		await view.push('scoped', { session_state: SESSION_STATE } as never)
+		assert.equal(view.query('.held')?.textContent, 'yes|session_state')
+		// Grants reach `granted()` the same way, and the withdrawn section goes.
+		await view.setGrants([])
+		assert.equal(view.query('.held')?.textContent, 'no|')
+		// `raw` is the plain context, read once at mount: the host posts after
+		// mount, so it saw nothing then and shows nothing since.
+		assert.equal(view.query('.once')?.textContent, '0')
+	} finally {
+		await view.unmount()
+	}
+})
+
+// Needs `ctx.scope` in the SDK's built context (D2): passes after `npm run sdk:build`.
+test('a scoped push is read through `ctx.scope(...)` in the reactive context', async () => {
+	const view = await mountComponent({
+		root: await sveltePkg(REACTIVE_SCOPE),
+		entry: 'c.ts',
+		timeoutMs: 60_000,
+		grants: ['session:state'],
+		context: {} as never,
+	})
+	try {
+		assert.equal(view.query('.state')?.textContent, 'none')
+		await view.push('scoped', { session_state: SESSION_STATE } as never)
+		assert.equal(view.query('.state')?.textContent, 'true')
+		await view.push('scoped', { session_state: { ...SESSION_STATE, loaded: false } } as never)
+		assert.equal(view.query('.state')?.textContent, 'false')
+	} finally {
+		await view.unmount()
+	}
+})

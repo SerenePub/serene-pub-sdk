@@ -1,5 +1,5 @@
 /**
- * The component wire (§3.5, C2/C3b): what crosses between a page and its UI
+ * The component wire: what crosses between a page and its UI
  * worker, beside each mount's own widget-protocol port — and the worker
  * side of that port, the {@link ComponentContext} a component is handed.
  *
@@ -16,10 +16,24 @@
  * cannot overtake the DOM changes of the turn that sent it.
  *
  * @internal
+ * @ruling §3.5, C2/C3b
  */
 import type { ComponentContext, ComponentInvokeArgs, ComponentSection, ComponentSections } from './componentClient.js'
 import type { RequestDeclineCode } from './surfaces.js'
-import { WIDGET_SCOPED_SECTIONS, isWidgetScopedSectionName, type WidgetSectionScope } from './widgets.js'
+import { WIDGET_SCOPED_SECTIONS, isWidgetScopedSectionName, type WidgetEvent, type WidgetScopedSections, type WidgetScopedSectionValues, type WidgetSectionScope, type WidgetWriteGrant } from './widgets.js'
+
+/**
+ * A grant a component may be told it holds: a scope the table names, or a
+ * write grant — `<scope>:write` on such a scope, or `channel:<slug>:write`.
+ * Anything else the host sends is dropped, as an unknown scope always was.
+ */
+const isHeldGrant = (g: unknown): g is WidgetSectionScope | WidgetWriteGrant => {
+	if (typeof g !== 'string') return false
+	if (Object.hasOwn(WIDGET_SCOPED_SECTIONS, g)) return true
+	if (!g.endsWith(':write')) return false
+	const base = g.slice(0, -':write'.length)
+	return Object.hasOwn(WIDGET_SCOPED_SECTIONS, base) || /^channel:\S+$/.test(base)
+}
 
 /** The handle key a function is replaced by on the wire. @experimental */
 export const FN = '__spFn'
@@ -146,7 +160,7 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 		}, 0)
 	}
 	const subs = new Set<(section: ComponentSection) => void>()
-	const eventSubs = new Set<(event: unknown) => void>()
+	const eventSubs = new Set<(event: WidgetEvent) => void>()
 	const notify = (section: ComponentSection) => {
 		for (const fn of subs) {
 			try {
@@ -162,25 +176,25 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 		if (!m || typeof m !== 'object') return
 		switch (m.t) {
 			case 'session':
-				data.session = m.session
+				data.session = m.session as ComponentSections['session']
 				return notify('session')
 			case 'messages':
-				data.messages = m.messages as unknown[]
+				data.messages = m.messages as ComponentSections['messages']
 				return notify('messages')
 			case 'channel':
-				data.channels = { ...data.channels, [String(m.channel)]: m.messages as unknown[] }
+				data.channels = { ...data.channels, [String(m.channel)]: m.messages as ComponentSections['messages'] & {} }
 				return notify('channels')
 			case 'settings':
-				data.settings = m.settings as Record<string, unknown>
+				data.settings = m.settings as ComponentSections['settings']
 				return notify('settings')
 			case 'actions':
-				data.actions = m.actions
+				data.actions = m.actions as ComponentSections['actions']
 				return notify('actions')
 			case 'annex':
-				data.annex = m.annex as Record<string, unknown>
+				data.annex = m.annex as ComponentSections['annex']
 				return notify('annex')
 			case 'props':
-				data.props = m.props as Record<string, unknown>
+				data.props = m.props as ComponentSections['props']
 				return notify('props')
 			case 'theme':
 				data.theme = { theme: String(m.theme ?? ''), mode: m.mode === 'dark' ? 'dark' : 'light' }
@@ -196,11 +210,10 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 				return notify('scoped')
 			}
 			case 'grants': {
-				// A list, or nothing new; only a scope the table names is kept.
+				// A list, or nothing new; only a scope the table names, or a
+				// write grant, is kept. Sections still key off the scopes alone.
 				if (!Array.isArray(m.grants)) return
-				data.grants = m.grants.filter(
-					(g): g is WidgetSectionScope => typeof g === 'string' && Object.hasOwn(WIDGET_SCOPED_SECTIONS, g),
-				)
+				data.grants = m.grants.filter(isHeldGrant)
 				return notify('grants')
 			}
 			case 'viewer':
@@ -209,6 +222,9 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 			case 'turn-order':
 				data.turnOrder = m.turnOrder as ComponentSections['turnOrder']
 				return notify('turnOrder')
+			case 'attendance':
+				data.attendance = m.attendance as ComponentSections['attendance']
+				return notify('attendance')
 			case 'page':
 			case 'response': {
 				const waiting = pending.get(String(m.requestId))
@@ -232,7 +248,7 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 				data.locale = String(m.locale ?? 'en')
 				return notify('locale')
 			case 'layout':
-				data.layout = m.layout
+				data.layout = m.layout as ComponentSections['layout']
 				return notify('layout')
 			case 'state':
 				data.state = m.state
@@ -244,7 +260,7 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 			case 'event':
 				for (const fn of eventSubs) {
 					try {
-						fn(m.event)
+						fn(m.event as WidgetEvent)
 					} catch (e) {
 						console.error(e)
 					}
@@ -295,7 +311,7 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 			subs.add(fn)
 			return () => subs.delete(fn)
 		},
-		onEvent(fn: (event: unknown) => void) {
+		onEvent(fn: (event: WidgetEvent) => void) {
 			eventSubs.add(fn)
 			return () => eventSubs.delete(fn)
 		},
@@ -341,11 +357,19 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 		get turnOrder() {
 			return data.turnOrder
 		},
+		get attendance() {
+			return data.attendance
+		},
 		get grants() {
 			return data.grants
 		},
-		granted(scope: WidgetSectionScope) {
+		granted(scope: WidgetSectionScope | WidgetWriteGrant) {
 			return data.grants === undefined ? undefined : data.grants.includes(scope)
+		},
+		// One spelling for the author: the scope they declared, looked up in
+		// the table, read off the raw bag. A withdrawn grant left no entry.
+		scope<S extends WidgetSectionScope>(scope: S) {
+			return data.scoped[WIDGET_SCOPED_SECTIONS[scope]] as WidgetScopedSectionValues[WidgetScopedSections[S]['section']] | undefined
 		},
 		ready() {
 			port.postMessage({ t: 'ready' })
@@ -358,5 +382,10 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 			port.close()
 		}
 	}
+	// Every section a component is handed has a getter here: a base section
+	// added to `WidgetData` (and so to `ComponentSections`) does not compile
+	// until this object hands it over.
+	const handsEvery: [Exclude<keyof ComponentSections, keyof typeof ctx>] extends [never] ? true : never = true
+	void handsEvery
 	return ctx
 }

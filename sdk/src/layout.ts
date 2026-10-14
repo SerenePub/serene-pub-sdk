@@ -9,13 +9,13 @@
  * `descriptors.ts` can name `WidgetDecl` without a cycle.
  *
  * The file kept its name when the retired layout document (LayoutDoc v2) and
- * its machinery left it (plan `PLAN-layout-one-format-2026-09-28`, brief 1):
- * the widget half is what stayed.
+ * its machinery left it: the widget half is what stayed.
+ * @ruling PLAN-layout-one-format-2026-09-28 brief 1
  */
 
 import type { I18n } from './i18n.js'
 import type { SettingsSchema } from './settings.js'
-import type { WidgetBaseSection, WidgetSectionScope } from './widgets.js'
+import type { WidgetBaseSection, WidgetSectionScope, WidgetWriteGrant } from './widgets.js'
 
 // ── Widget declarations ─────────────────────────────────────────────────────
 
@@ -23,10 +23,13 @@ import type { WidgetBaseSection, WidgetSectionScope } from './widgets.js'
  * Data a widget requests access to (grant-gated, host-enforced at
  * projection): a scope that delivers a scoped section — the SDK's one table,
  * `WidgetScopedSections` (`session:full`, `session:state`, `persona`,
- * `characters`, `lore`) — or a `channel:<slug>`.
+ * `characters`, `lore`) — or a `channel:<slug>`; or a **write grant** on one
+ * (`session:state:write`, `channel:<slug>:write`, {@link WidgetWriteGrant}),
+ * a permission apart from the read that lets a plugin's widget ask the
+ * request kinds that change it (`set-attribute-value`, `send`, `draft`).
  * @experimental
  */
-export type WidgetScope = WidgetSectionScope | `channel:${string}`
+export type WidgetScope = WidgetSectionScope | `channel:${string}` | WidgetWriteGrant
 
 /** An external plugin dependency; the CLI captures pkg/range from the imports. @experimental */
 export interface WidgetDependency {
@@ -81,10 +84,11 @@ export function systemStyleSlug(widgetId: string, presetSlug: string): string {
 /**
  * What a widget renders, resolved — the host's switch. `remote` is a
  * component running in its owner's UI worker, mirrored through the
- * vocabulary (§3.5) — core's own components as much as a plugin's (R79).
+ * vocabulary — core's own components as much as a plugin's.
  * A real document goes INSIDE the component, as an `sp-frame`; a widget is
  * never a bare frame (the `surface` shortcut retired 2026-10-02).
  * @experimental
+ * @ruling §3.5, R79
  */
 export type WidgetSurface = { kind: 'remote'; owner: string; component: string }
 
@@ -102,18 +106,22 @@ export function resolveWidgetSurface(decl: Pick<WidgetDecl, 'component'>, owner:
 
 /**
  * One **widget** a session offers: the conversation, a portrait column, a
- * plugin's board. Every widget names a component (R25); a plugin that needs a
+ * plugin's board. Every widget names a component; a plugin that needs a
  * real document places an `sp-frame` inside that component.
  *
  * Declaring a widget makes it *addable*. Where an instance of it sits is the
  * **session layout**'s business (`SessionLayoutV1`): any widget may sit in any
  * zone, as many times as the layout places it (`maxInstances` aside).
  * @experimental
+ * @ruling R25
  */
 export interface WidgetDecl {
 	/** Stable id — a layout's widget instance ids and `surface:open` intents key on this. */
 	id: string
-	/** Human title shown in the widget's chrome and the tray — a string or a locale map (R-20). */
+	/**
+	 * Human title shown in the widget's chrome and the tray — a string or a locale map.
+	 * @ruling R-20
+	 */
 	title: I18n
 	/** Optional icon name (the app maps it to its icon set). */
 	icon?: string
@@ -126,28 +134,34 @@ export interface WidgetDecl {
 	 */
 	role?: 'primary' | 'secondary'
 	/**
-	 * The genres whose sessions offer it (R71), by id — `widget()` reads
+	 * The genres whose sessions offer it, by id — `widget()` reads
 	 * genre values down to these. Absent = every genre. A genre may still
 	 * withhold it (`GenreDecl.omitWidgets`).
+	 * @ruling R71
 	 */
 	genres?: string[]
 	/**
 	 * What renders inside: the slug of a {@link ComponentDecl} in the same
-	 * package (R25). Core's widgets name core components. A document the
+	 * package. Core's widgets name core components. A document the
 	 * widget needs goes inside that component, as an `sp-frame`.
+	 * @ruling R25
 	 */
 	component: string
-	/** Which channels feed it (20 §4/§7). A widget is a view onto its channels. */
+	/**
+	 * Which channels feed it. A widget is a view onto its channels.
+	 * @ruling 20 §4/§7
+	 */
 	channels?: string[]
 	/** Data the widget requests; each entry is a grant an admin can deny. */
 	scopes?: WidgetScope[]
 	/**
-	 * The BASE sections this widget reads (R75) — `messages`, `settings`, … —
+	 * The BASE sections this widget reads — `messages`, `settings`, … —
 	 * and so the only ones its host sends it: a widget that does not read
 	 * `messages` is never handed the log again on every token. Absent means
-	 * every base section, which is what a widget declared before R75 reads.
+	 * every base section, which is what a widget declared before `reads` existed reads.
 	 * A name outside `WIDGET_BASE_SECTIONS` is refused where the widget is
 	 * declared. Scoped sections are not named here — `scopes` asks for them.
+	 * @ruling R75
 	 */
 	reads?: WidgetBaseSection[]
 	/** External plugin dependencies (CLI-captured into the manifest). */
@@ -184,7 +198,7 @@ export interface WidgetDecl {
 	 * reads: the column span a widget asks for, its minimum box, whether it may
 	 * collapse or close, and whether it prefers the drawer. The layout
 	 * document's replacements for them (`placement`, `cells`, `fold`) retired
-	 * with it (owner L1, 2026-09-28), so these stand until the session layout
+	 * with it (owner ruling 2026-09-28), so these stand until the session layout
 	 * states sizes of its own.
 	 */
 	layout?: {
@@ -195,6 +209,13 @@ export interface WidgetDecl {
 		closable?: boolean
 		prefer?: 'grid' | 'drawer'
 	}
-	/** Seed this widget into a new session's default layout. Default false. */
+	/**
+	 * ⏳ Read by nothing since 2026-10-10: whether a widget
+	 * starts on is a LAYOUT fact — it is on in a session exactly when that
+	 * session's layout draws it, so a genre that wants it on places it in its
+	 * layout (`GenreDecl.layouts`). Kept so a declaration that carries it still
+	 * type-checks; it goes in 0.7.0.
+	 * @ruling widget consolidation C2
+	 */
 	defaultActive?: boolean
 }

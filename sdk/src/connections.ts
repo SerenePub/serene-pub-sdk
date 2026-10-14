@@ -1,5 +1,5 @@
 /**
- * What an import has to wire before it can run — the ruling on 13 §10a.
+ * What an import has to wire before it can run — the ruling on connection bindings.
  *
  * The question was whether connection bindings deserve their own table, so that an
  * export could state *structurally* that connections were excluded rather than relying
@@ -7,7 +7,7 @@
  *
  * **Ruled: no table.** A second table implies a second lifecycle — its own ids, its own
  * ownership rules, its own migration — and there isn't one. A connection binding is a
- * config value at instance scope, which 12's five-layer chain already owns.
+ * config value at instance scope, which the config chain already owns.
  *
  * The guarantee people wanted from the table is available without it, and stronger. A
  * table could only ever report the connections the exporting instance had *filled in*,
@@ -15,6 +15,7 @@
  * importer would find out at the first run. Slots are declared on the **type**, so
  * deriving the requirement from descriptors is complete by construction — independent of
  * what the exporter did, and independent of whether the exporter was even configured.
+ * @ruling 13 §10a, 12
  */
 
 import type { DocNode, SpecDocument } from './document.js'
@@ -31,7 +32,10 @@ import {
 export interface ConnectionRequirement {
 	nodeKey: string
 	slot: string
-	/** Which connection kind satisfies it — the produced shape (F17). */
+	/**
+	 * Which connection kind satisfies it — the produced shape.
+	 * @ruling F17
+	 */
 	kind?: string
 	definitionId: string
 	/** What the connection must be able to do. Unmet is a hard failure at bind. */
@@ -41,7 +45,7 @@ export interface ConnectionRequirement {
 }
 
 /**
- * A slot this node reads from ANOTHER node's config (16 §5b-i).
+ * A slot this node reads from ANOTHER node's config.
  *
  * `resolvedRefs` is what publish leaves behind for `slot.connectionOf('x')`, and
  * the executor honours it: `resolveSlot` reads the TARGET's stored value, so a
@@ -53,6 +57,7 @@ export interface ConnectionRequirement {
  * `core:task/assemble@2` is the first core type to share a CONNECTION reference:
  * it renders the prompt for whatever the sending Provider is bound to, and has
  * nothing of its own for an importer to bind.
+ * @ruling 16 §5b-i
  */
 const sharedWithAnotherNode = (n: DocNode, slot: string): boolean => {
 	const target = n.resolvedRefs?.[slot]
@@ -97,10 +102,11 @@ export function requiredConnections(doc: SpecDocument): ConnectionRequirement[] 
 /**
  * What is still unwired, given what the importing instance has bound so far.
  *
- * Feeds `needs-configuration` (12 §6), which is deliberately not `broken`. A spec nobody
+ * Feeds `needs-configuration`, which is deliberately not `broken`. A spec nobody
  * has given a connection is not damaged, it is unfinished — and the difference decides
  * whether a user files a bug or opens settings.
  * @experimental
+ * @ruling 12 §6
  */
 export function unwiredConnections(
 	doc: SpecDocument,

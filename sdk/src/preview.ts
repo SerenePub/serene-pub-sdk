@@ -9,10 +9,11 @@
  * because something is off.
  *
  * Almost everything the panel shows is already in the receipt: Assemble records the
- * allocation it computed and the inputs it computed it from (16 §5a), and the Provider's
+ * allocation it computed and the inputs it computed it from, and the Provider's
  * resolved input is recorded like any node's. The preview hoists those into one place so
  * a UI does not have to reassemble them from three node receipts, and adds the one thing
  * that only exists at the call site — the formed payload and its token count.
+ * @ruling 16 §5a
  */
 
 import type { Receipt } from './receipt.js'
@@ -44,16 +45,20 @@ export interface PreviewReport {
 	definitionId: string
 	targetedBy: 'first-provider-on-spine' | 'explicit'
 
-	/** Metadata only — material never leaves core (F18). */
+	/**
+	 * Metadata only — material never leaves core.
+	 * @ruling F18
+	 */
 	connection?: { id?: string; kind?: string; contextLength?: number; tokenizer?: string }
 	budget?: { maxContext?: number; reserved?: number; available?: number }
 
 	/** The payload as it would have gone out, and the count that would have applied. */
 	context: { rendered: unknown; tokens: number }
 	/**
-	 * How blocks became that payload (16 §7). Present once a Provider declares a `wire`
+	 * How blocks became that payload. Present once a Provider declares a `wire`
 	 * slot — and it is what makes the scaffolding cost visible rather than a mystery
 	 * gap between "my blocks add up to 3,000" and "it said 3,180".
+	 * @ruling 16 §7
 	 */
 	wire?: { format: string; blockTokens: number; overheadTokens: number }
 

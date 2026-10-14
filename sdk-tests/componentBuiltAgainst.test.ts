@@ -77,6 +77,10 @@ const SHAPE_AT_VERSION: Record<string, string> = {
 	// opened by its body's control) and `sp-drop-zone` (files dropped or
 	// pasted), both raising `files`. Grew only.
 	'1.3': '1085b6aa0b3bfed1ea4015dadae1cb6e3e73a32a8325d06685446693958f9fa1',
+	// 1.4 (live scenes, lane E, 2026-10-13): `sp-drag-handle` (a scene
+	// divider's start dragged between the log's rows), raising `move`.
+	// Grew only.
+	'1.4': '98058e33e2ec23c1661b6d6768c7815c7a469c27cded8fe76816820b2a9a6feb',
 }
 
 test('the host-element vocabulary version is pinned to its shape — change the table, bump the version', () => {

@@ -26,6 +26,10 @@ import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { componentBuiltAgainstFinding, componentModuleFindings } from '@serene-pub/sdk'
 import { mountComponent, test, type MountComponentOptions } from './harnessGuard.js'
+import type { MessageV1 } from '@serene-pub/sdk'
+
+/** A message row as the context types it; the component under test reads only its count. */
+const msg = (id: number): MessageV1 => ({ id, role: 'user', content: '' })
 
 const FROZEN = resolve(import.meta.dirname, 'fixtures', 'frozen-artifacts', '2026-09-26')
 
@@ -83,7 +87,7 @@ test("today's host would serve and mount every frozen artifact: its module judge
 
 test('a frozen Svelte widget still reads its sections, asks a request, hears an event and invokes', async () => {
 	const view = await mountFrozen('ledger', {
-		context: { messages: [{ id: 1 }, { id: 2 }], settings: { title: 'Ledger of old' }, locale: 'en' },
+		context: { messages: [msg(1), msg(2)], settings: { title: 'Ledger of old' }, locale: 'en' },
 		requests: (kind) => (kind === 'messages' ? { rows: [{ id: -1 }, { id: 0 }] } : undefined),
 	})
 	try {
@@ -97,7 +101,7 @@ test('a frozen Svelte widget still reads its sections, asks a request, hears an 
 		)
 		await view.event({ kind: 'message:created', channel: 'main', slug: 'main', lane: 1, messageId: 3 })
 		assert.equal(view.query('.event')?.textContent, 'last event: message:created #3')
-		await view.push('messages', [{ id: 1 }, { id: 2 }, { id: 3 }])
+		await view.push('messages', [msg(1), msg(2), msg(3)])
 		assert.equal(view.query('.count')?.textContent, '3 messages · en')
 		await view.click('.note')
 		assert.deepEqual(view.invoked, [{ key: 'note', payload: { n: 3 } }])
@@ -132,7 +136,7 @@ test('a frozen widget of sp-* elements still switches tabs, flips a switch and h
 })
 
 test('a frozen vanilla widget still restores its saved state, counts and saves', async () => {
-	const view = await mountFrozen('counter', { context: { messages: [{ id: 1 }], state: { n: 4 } } })
+	const view = await mountFrozen('counter', { context: { messages: [msg(1)], state: { n: 4 } } })
 	try {
 		assert.equal(view.query('.count')?.textContent, 'count 4 of 1 messages')
 		await view.click('.bump')

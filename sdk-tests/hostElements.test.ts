@@ -198,6 +198,14 @@ test('a component imports svelte, the component client and controls — never th
 		'@serene-pub/core-catalog/session-state',
 		'@serene-pub/core-catalog/widgets',
 		'@serene-pub/core-catalog/authors-note',
+		'@serene-pub/core-catalog/turn-order',
+		'@serene-pub/core-catalog/actions',
+		'@serene-pub/core-catalog/annex',
+		'@serene-pub/core-catalog/album',
+		'@serene-pub/core-catalog/chronicle',
+		'@serene-pub/core-catalog/places',
+		'@serene-pub/core-catalog/attendance',
+		'@serene-pub/core-catalog/backdrop',
 	])
 	assert.equal(componentImportFinding('@serene-pub/component-client/svelte'), undefined)
 	assert.equal(componentImportFinding('svelte'), undefined)

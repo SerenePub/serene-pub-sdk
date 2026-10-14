@@ -1,5 +1,5 @@
 /**
- * The checks a package's declarations get, whichever surface declared them (D-1).
+ * The checks a package's declarations get, whichever surface declared them.
  *
  * A package says the same things in two places. `announce()` collects them as a
  * builder and compiles the announcement document; `defineExtension()` carries
@@ -18,6 +18,7 @@
  * callers already enforce in their own words (one names the package namespace,
  * the other the plugin slug), and the identity display text, which only an
  * announcement has.
+ * @ruling D-1
  */
 
 import type { WidgetDecl } from './layout.js'
@@ -60,9 +61,15 @@ export interface DeclaredPackage {
 	presets?: readonly PresetDecl[]
 	surfaces?: SurfacesDecl
 	components?: readonly ComponentDecl[]
-	/** The widgets this package declares (R71). */
+	/**
+	 * The widgets this package declares.
+	 * @ruling R71
+	 */
 	widgets?: readonly WidgetDecl[]
-	/** Definitions this package offers on another package's swappable nodes (R29). */
+	/**
+	 * Definitions this package offers on another package's swappable nodes.
+	 * @ruling R29
+	 */
 	swaps?: readonly (SwapContribution | StoredSwapContribution)[]
 	/** Events this package declares, with who may record them. */
 	events?: readonly StoredEventDeclaration[]
@@ -76,13 +83,14 @@ export interface DeclaredPackage {
 }
 
 /**
- * One swap a package contributes (R29): its own definition, offered on a node
+ * One swap a package contributes: its own definition, offered on a node
  * another package (usually core) exposes — `{ spec: chatTurnOrder, node:
  * 'decide.rules.strategy', definition: myStrategy }`. The spec is a value
  * — the spec you imported, or `use('<id>')` for one you cannot import.
  * With a value, the node key is checked here; the instance checks exposure and
  * port fit at install. Stored with ids (`StoredSwapContribution`).
  * @experimental
+ * @ruling R29
  */
 export interface SwapContribution {
 	/** The spec whose node this is offered on — never this package's own. */
@@ -147,10 +155,11 @@ export function swapInputFindings(swaps: readonly SwapContribution[]): string[] 
 const DEFINITION_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*:[a-z]+\/[a-z0-9]+(?:-[a-z0-9]+)*@\d+$/
 
 /**
- * Swap contributions (R29): a package offers only its own definitions, never
+ * Swap contributions: a package offers only its own definitions, never
  * on its own specs (those list swaps on the node with `expose.swaps` — one
- * way to do each thing, R26), and each once.
+ * way to do each thing), and each once.
  * @experimental
+ * @ruling R29, R26
  */
 export function swapContributionFindings(
 	swaps: readonly (SwapContribution | StoredSwapContribution)[],
@@ -197,10 +206,11 @@ export interface DeclarationFindings {
 }
 
 /**
- * The display text of one labelled declaration (R-20): `label` is required
+ * The display text of one labelled declaration: `label` is required
  * — a config, a preset and a prompt are all listed by it — `description` is
  * not.
  * @experimental
+ * @ruling R-20
  */
 export function labelFindings(
 	at: string,
@@ -244,10 +254,11 @@ const definitionOfNode = (n: { definitionId: string; definitionVersion: number }
 	n ? getDefinition(`${n.definitionId}@${n.definitionVersion}`) : undefined
 
 /**
- * A compiled document's `expose.swaps` (R28), checked as the builder checks
+ * A compiled document's `expose.swaps`, checked as the builder checks
  * them: known ids that do not fit are refused; ids this SDK does not know are
  * the instance's to check at install.
  * @experimental
+ * @ruling R28
  */
 export function exposeSwapFindings(pipelines: readonly AnnouncedSpec[]): string[] {
 	const out: string[] = []
@@ -265,10 +276,11 @@ export function exposeSwapFindings(pipelines: readonly AnnouncedSpec[]): string[
 }
 
 /**
- * The input lock (24 §4): a spec that answers a session event names the genre it
+ * The input lock: a spec that answers a session event names the genre it
  * serves, and the event is one core declares or one this package namespaced.
  * A genre the package does not declare is recorded as a requirement.
  * @experimental
+ * @ruling 24 §4
  */
 export function inputLockFindings(
 	pipelines: readonly AnnouncedSpec[],
@@ -295,6 +307,10 @@ export function inputLockFindings(
 			if (!eventById(event)) out.push(`pipeline '${s.id}': ${notADeclaredEvent(event)}`)
 			else if (event === sessionEvents.turnOrderChanged)
 				out.push(`pipeline '${s.id}': ${TURN_ORDER_CHANGED_IS_INTERNAL}`)
+			// A core event is a requirement on the host's version: an older
+			// Serene Pub that lacks it refuses the install and says so, rather
+			// than installing a pipeline nothing can ever trigger.
+			else if (event.startsWith('core:event/')) requires.add(event)
 		}
 		// The builder checks an `events` lock against its inlet (R33); a
 		// compiled document handed in directly gets the same sentence here,
@@ -309,9 +325,10 @@ export function inputLockFindings(
 
 /**
  * The events an inlet lock answers: the one `event`, or the `events` list
- * (PLAN-turn-order §4.1) — as one list, so every reader of the lock asks
+ * — as one list, so every reader of the lock asks
  * one question. Empty for a spec with no lock.
  * @experimental
+ * @ruling PLAN-turn-order §4.1
  */
 export function lockedEvents(
 	input: { event?: string; events?: string[] } | undefined,
@@ -327,7 +344,11 @@ export const lockAnswers = (
 	event: string,
 ): boolean => lockedEvents(input).includes(event)
 
-/** Exactly one create pipeline per declared genre (24 §3). @experimental */
+/**
+ * Exactly one create pipeline per declared genre.
+ * @experimental
+ * @ruling 24 §3
+ */
 export function createPipelineFindings(
 	genres: readonly GenreDecl[],
 	pipelines: readonly AnnouncedSpec[],
@@ -379,12 +400,13 @@ export function genrePresetFindings(
 }
 
 /**
- * Contributed actions (R-15, U5c): each declaration sound, and one slash name
+ * Contributed actions: each declaration sound, and one slash name
  * meaning one function across the whole package — the per-document check cannot
  * see two specs of one package claiming `/acme.roll` for two different things,
  * so the package is the first place the collision rule runs across documents;
  * the install is the second.
  * @experimental
+ * @ruling R-15, U5c
  */
 export function contributedActionFindings(pipelines: readonly AnnouncedSpec[]): string[] {
 	const out: string[] = []
@@ -455,7 +477,11 @@ export function configFindings(
 	return out
 }
 
-/** Presets: validated against the genre's event surface, with the coverage (24 §7). @experimental */
+/**
+ * Presets: validated against the genre's event surface, with the coverage.
+ * @experimental
+ * @ruling 24 §7
+ */
 export function presetFindings(
 	presets: readonly PresetDecl[],
 	declaredGenres: ReadonlyMap<string, GenreDecl>,
@@ -519,6 +545,7 @@ export function presetFindings(
 			const bound = declaredSpecs.get(binding.spec)
 			if (!bound) {
 				requires.add(binding.spec)
+				if (event.startsWith('core:event/')) requires.add(event)
 				slots.push({
 					event,
 					required: !!declared?.required,
@@ -633,10 +660,11 @@ export const COMPONENT_SLUG = /^[a-z][a-z0-9-]*$/
 const SOURCE_HASH = /^[0-9a-f]{64}$/
 
 /**
- * Components (§3.5, R25): one slug, a label, a servable entry and a
+ * Components: one slug, a label, a servable entry and a
  * framework SDK 1.0 ships. There is no mount point on the declaration — a
  * widget names the component, and that is where it mounts.
  * @experimental
+ * @ruling §3.5, R25
  */
 export function componentFindings(components: readonly ComponentDecl[]): string[] {
 	const out: string[] = []
@@ -677,10 +705,11 @@ export function componentFindings(components: readonly ComponentDecl[]): string[
 }
 
 /**
- * A package's widgets name its own components (R25): every genre panel with
+ * A package's widgets name its own components: every genre panel with
  * a `component` must name a `ComponentDecl` this package declares — a plugin
  * cannot mount core's or another plugin's component by slug.
  * @experimental
+ * @ruling R25
  */
 export function widgetComponentFindings(
 	genres: readonly GenreDecl[],
@@ -701,11 +730,12 @@ export function widgetComponentFindings(
 }
 
 /**
- * A package's widgets (R71): each names a component the package declares
+ * A package's widgets: each names a component the package declares
  * (core's own widgets name core components — a plugin's cannot), and each id
  * is unique in the package, because the package's namespace plus the id is
  * the id every layout row keys on.
  * @experimental
+ * @ruling R71
  */
 export function packageWidgetFindings(
 	widgets: readonly WidgetDecl[],
@@ -788,7 +818,11 @@ export function genreLayoutFindings(
 	return { errors, warnings }
 }
 
-/** Deliberate holes: `todo()` sentinels found in config values, with their paths (24 §7). @experimental */
+/**
+ * Deliberate holes: `todo()` sentinels found in config values, with their paths.
+ * @experimental
+ * @ruling 24 §7
+ */
 export function todoHoles(configs: readonly ConfigDecl[]): CoverageReport['todos'] {
 	const out: CoverageReport['todos'] = []
 	for (const c of configs)
@@ -857,7 +891,9 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 		errors,
 		warnings: layouts.warnings,
 		coverage: { presets: presets.coverage, todos: todoHoles(configs) },
-		requires: [...requires].sort(),
+		// Never the package's own ids: core locks on its own events and
+		// requires nothing of itself.
+		requires: [...requires].filter((id) => !id.startsWith(`${p.ns}:`)).sort(),
 	}
 }
 

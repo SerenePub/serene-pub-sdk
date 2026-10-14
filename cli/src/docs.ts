@@ -1,12 +1,12 @@
 /**
- * Docs from declarations (24 T9, the generation half).
+ * Docs from declarations (the generation half).
  *
  * A package's announcement already contains everything reference
  * documentation says: identity, genres with their event surfaces and shapes,
  * every pipeline's nodes and options with types, defaults and descriptions,
  * shipped prompts, presets with their bindings. So the docs are *rendered*,
  * never written — the same bytes that ship become the pages, and the pages
- * cannot drift from the product. The docs site (T9 proper) consumes this
+ * cannot drift from the product. The docs site (`docsSite.ts`) consumes this
  * markdown and adds live controls once @serene-pub/controls exists.
  */
 import { i18nText, type AnnouncementDocument, type I18n, type SpecDocument } from '@serene-pub/sdk'

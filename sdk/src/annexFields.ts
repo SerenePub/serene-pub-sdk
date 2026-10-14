@@ -41,12 +41,13 @@
  * declaration, so a field can only ever describe its own package's document.
  * Core's own keys are core-catalog's `CORE_ANNEX_FIELDS`, under `core`.
  *
- * Never credentials or personal data (R61): a shape holding a `secret`
+ * Never credentials or personal data: a shape holding a `secret`
  * anywhere is refused at the declaration.
  *
  * @experimental 🚧 provisional — the vocabulary (annex field, annex
  * declaration, settable, the `<owner>:annex#<key>` identity) is new with this
  * module.
+ * @ruling R61
  */
 
 import { dataAudienceFindings, isParticipantRef } from './participants.js'
@@ -79,9 +80,10 @@ export interface AnnexFieldDecl {
 	/** What the value must be — the settings vocabulary's `FieldDecl`, checked by `checkValues`. */
 	readonly shape: FieldDecl
 	/**
-	 * Who may SEE the stored value besides pipelines (R57) — a data
+	 * Who may SEE the stored value besides pipelines — a data
 	 * audience (participant references). `[]` (the default) is
-	 * pipelines only (R59): a widget cannot read back a value nobody may see.
+	 * pipelines only: a widget cannot read back a value nobody may see.
+	 * @ruling R57, R59
 	 */
 	readonly see: readonly string[]
 	/**
@@ -316,7 +318,9 @@ export const isSettableAnnexField = (f: Pick<AnnexFieldDecl, 'act'>): boolean =>
  * An owner's annex schema — key → declared shape — for a session of `genre`
  * (or every genre, with none). Undefined when the owner is unknown here; `{}`
  * when it declares nothing. What a typed template reads `annex.<owner>.<key>`
- * against (typed-templates §1b, P6). @experimental
+ * against.
+ * @experimental
+ * @ruling typed-templates §1b, P6
  */
 export function annexSchemaOf(owner: string, genre?: string): SettingsSchema | undefined {
 	const fields = declarations.get(owner)

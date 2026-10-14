@@ -15,7 +15,7 @@
 
 import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
-import { join, resolve, relative } from 'node:path'
+import { dirname, join, resolve, relative } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
 import {
 	compilePlugin,
@@ -36,7 +36,8 @@ import { typeSurfaces } from './typeSurfaces.js'
 
 const USAGE = `serene-pub <command>
 
-  build [dir]        package the plugin in [dir] (default: .) into dist/plugin/
+  build [dir]        package the plugin in [dir] (default: .) into dist/plugin/,
+                     and the zip an administrator installs: dist/<slug>-<version>.zip
   check [dir]        report what core would refuse, without writing anything
   contracts [dir]    generate a /contracts module from the types [dir] registers
   scaffold config <spec-id>    print a config skeleton — the whole option space,
@@ -184,11 +185,11 @@ export async function frameDocumentsIn(
 /**
  * The dynamic half. The packager reads source statically *and* evaluates the author's
  * entry module to get the built `Extension` — the two halves are cross-checked against
- * each other, which is what catches a hook registered behind an `if` (13 §30).
+ * each other, which is what catches a hook registered behind an `if`.
  *
  * Evaluating here is safe in a way it is not in core: this runs on the author's own
  * machine, on their own code. **Core never does this** — it imports documents, never
- * authoring JS (F6).
+ * authoring JS.
  */
 async function loadExtension(dir: string): Promise<{ extension: unknown; entry: string }> {
 	const { ENTRY_CANDIDATES } = await import('@serene-pub/sdk')
@@ -252,6 +253,57 @@ function reportIgnored(ignored: readonly string[], to: NodeJS.WritableStream): v
  * Returns the problem instead of throwing, because a build that fails has to
  * say which half failed and why.
  */
+/**
+ * Write `<slug>-<version>.zip` beside the build folder, holding the package in
+ * the layout the app's installer reads: the build folder as `dist/plugin/`
+ * (whatever `--out` named it), the whole `ui/` tree, and any surface or
+ * component entry the manifest names that lies outside both. Returns its path.
+ */
+async function writePackageZip(
+	dir: string,
+	out: string,
+	manifest: {
+		slug: string
+		version: string
+		surfaces?: Record<string, { entry?: string } | undefined>
+		components?: Array<{ entry?: string }>
+	},
+): Promise<string> {
+	const { zipStore } = await import('./zip.js')
+	const files = new Map<string, Uint8Array>()
+	const walk = async (root: string, prefix: string) => {
+		let entries
+		try {
+			entries = await readdir(root, { withFileTypes: true })
+		} catch {
+			return
+		}
+		for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+			const full = join(root, e.name)
+			if (e.isDirectory()) await walk(full, `${prefix}${e.name}/`)
+			else if (e.isFile()) files.set(`${prefix}${e.name}`, await readFile(full))
+		}
+	}
+	await walk(out, 'dist/plugin/')
+	await walk(join(dir, 'ui'), 'ui/')
+	const entries = [
+		...Object.values(manifest.surfaces ?? {}).map((s) => s?.entry),
+		...(manifest.components ?? []).map((c) => c.entry),
+	]
+	for (const entry of entries) {
+		if (typeof entry !== 'string' || files.has(entry) || entry.startsWith('/') || entry.split('/').includes('..'))
+			continue
+		try {
+			files.set(entry, await readFile(join(dir, entry)))
+		} catch {
+			// The installer names a missing entry; the zip carries what exists.
+		}
+	}
+	const zipPath = join(dirname(out), `${manifest.slug}-${manifest.version}.zip`)
+	await writeFile(zipPath, zipStore([...files].map(([path, data]) => ({ path, data }))))
+	return zipPath
+}
+
 async function buildSandboxBundle(
 	dir: string,
 	entry: string,
@@ -295,7 +347,7 @@ async function buildSandboxBundle(
  * Build every declared component into `<out>/components/<slug>.js` and point
  * its manifest entry there (the declared path is kept as `source`, the
  * packages it inlines as `bundled`, and the host contract it was built
- * against as `builtAgainst` — F1). Rewrites the manifest's rows in place.
+ * against as `builtAgainst`). Rewrites the manifest's rows in place.
  * esbuild is imported lazily, as the sandbox bundle's is.
  */
 async function buildComponents(
@@ -375,7 +427,7 @@ function writeDeclarationReport(
 }
 
 /**
- * Declaration resolution, shared by scaffold/docs/types (24 §10): an
+ * Declaration resolution, shared by scaffold/docs/types: an
  * announcement JSON file, an HTTP URL serving one, or the installed
  * @serene-pub/core-catalog. Nothing is guessed.
  */
@@ -534,11 +586,16 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 			return 1
 		}
 		if (bundle.source !== undefined) await writeFile(join(out, 'bundle.js'), bundle.source)
+		// The installable artifact (F3 docs gate, stall 8): Admin › Plugins ›
+		// Install a package… takes a zip, and the installer reads it at
+		// `dist/plugin/manifest.json` plus the client files under `ui/`.
+		const zipPath = await writePackageZip(dir, out, r.manifest as never)
 		if (json) process.stdout.write(JSON.stringify(r.manifest, null, 2) + '\n')
 		else {
 			process.stdout.write(
 				`wrote ${r.documents.length + (bundle.source === undefined ? 1 : 2)} files to ` +
-					`${relative(process.cwd(), out)}\n\n`,
+					`${relative(process.cwd(), out)}\n` +
+					`wrote ${relative(process.cwd(), zipPath)} — install it in Admin › Plugins › Install a package…\n\n`,
 			)
 			// Printed on every successful build on purpose. The list of what a plugin
 			// *cannot* do is generated from the manifest, so it cannot flatter — and an

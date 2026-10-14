@@ -74,18 +74,21 @@ const state = (over: Partial<SessionStateV1> = {}): SessionStateV1 => ({
 describe('readScenePortraitsSettings', () => {
 	test('the declared defaults fill whatever the instance leaves out, and a wrong type is the default', () => {
 		assert.deepEqual(readScenePortraitsSettings(undefined), SCENE_PORTRAITS_DEFAULTS)
-		assert.deepEqual(readScenePortraitsSettings({ source: 'scene', bars: true, persona: 'yes', sprites: false }), {
-			source: 'scene',
-			persona: false,
+		assert.deepEqual(readScenePortraitsSettings({ who: 'recent', bars: true, persona: 'yes', face: 'avatar', recentTurns: 40 }), {
+			...SCENE_PORTRAITS_DEFAULTS,
+			who: 'recent',
 			bars: true,
-			sprites: false,
+			face: 'avatar',
 		})
-		assert.equal(readScenePortraitsSettings({ source: 'map' }).source, 'pinned')
+		assert.equal(readScenePortraitsSettings({ who: 'map' }).who, 'scene')
+		// ⏳ the old keys (W6): sprites off is the avatar; an unknown source is nothing.
+		assert.equal(readScenePortraitsSettings({ source: 'scene', sprites: false }).face, 'avatar')
+		assert.deepEqual(readScenePortraitsSettings({ source: 'map' }), SCENE_PORTRAITS_DEFAULTS)
 	})
 })
 
 describe('scenePortraitsOf', () => {
-	const on = { ...SCENE_PORTRAITS_DEFAULTS, source: 'scene' as const }
+	const on = SCENE_PORTRAITS_DEFAULTS
 
 	test('the characters, in order; each current sprite over its face; the override', () => {
 		const out = scenePortraitsOf(cast, state(), on)
@@ -97,7 +100,7 @@ describe('scenePortraitsOf', () => {
 	})
 
 	test('without sprites, faces — and no menu', () => {
-		const out = scenePortraitsOf(cast, state(), { ...on, sprites: false })
+		const out = scenePortraitsOf(cast, state(), { ...on, face: 'avatar' })
 		assert.equal(out[0]!.src, '/media/a')
 		assert.ok(out.every((p) => !p.offersSpriteSets))
 	})
@@ -117,6 +120,8 @@ describe('scenePortraitsOf', () => {
 			isPersona: true,
 			name: '#9',
 			src: '/media/w',
+			chosenRef: null,
+			rank: null,
 			ownerKey: null,
 			spriteSets: [],
 			spriteSetOverride: null,

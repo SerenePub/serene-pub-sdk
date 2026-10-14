@@ -35,6 +35,7 @@ export * from './respond.js'
  * the first reason still stands on its own, so the action stays out.)
  */
 export * from './look.js'
+export * from './illustrateScene.js'
 export * from './rest.js'
 export * from './advanceTime.js'
 export * from './ask.js'
@@ -42,3 +43,4 @@ export * from './answer.js'
 
 export * from './answerForm.js'
 export * from './turnOrder.js'
+export * from './summarizeScene.js'

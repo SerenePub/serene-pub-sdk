@@ -1,6 +1,10 @@
 {
 	"$schema": "https://typedoc.org/schema.json",
-	"entryPoints": ["sdk/src", "contracts/src", "controls/src"],
+	"entryPoints": [
+		"sdk/src",
+		"contracts/src",
+		"controls/src"
+	],
 	"entryPointStrategy": "expand",
 	"exclude": [
 		"**/*.d.ts",
@@ -9,7 +13,9 @@
 		"sdk/src/index.ts"
 	],
 	"tsconfig": "tsconfig.base.json",
-	"plugin": ["typedoc-plugin-markdown"],
+	"plugin": [
+		"typedoc-plugin-markdown"
+	],
 	"out": "docs/generated/api",
 	"readme": "none",
 	"entryFileName": "index.md",
@@ -20,5 +26,60 @@
 	"githubPages": false,
 	"excludePrivate": true,
 	"excludeInternal": true,
-	"excludeReferences": true
+	"excludeReferences": true,
+	"blockTags": [
+		"@defaultValue",
+		"@deprecated",
+		"@example",
+		"@jsx",
+		"@param",
+		"@privateRemarks",
+		"@remarks",
+		"@returns",
+		"@see",
+		"@throws",
+		"@typeParam",
+		"@author",
+		"@callback",
+		"@category",
+		"@categoryDescription",
+		"@default",
+		"@document",
+		"@extends",
+		"@augments",
+		"@yields",
+		"@group",
+		"@groupDescription",
+		"@import",
+		"@inheritDoc",
+		"@license",
+		"@module",
+		"@mergeModuleWith",
+		"@prop",
+		"@property",
+		"@return",
+		"@satisfies",
+		"@since",
+		"@sortStrategy",
+		"@template",
+		"@this",
+		"@type",
+		"@typedef",
+		"@summary",
+		"@preventInline",
+		"@inlineType",
+		"@preventExpand",
+		"@expandType",
+		"@ruling"
+	],
+	"excludeTags": [
+		"@override",
+		"@virtual",
+		"@privateRemarks",
+		"@satisfies",
+		"@overload",
+		"@inline",
+		"@inlineType",
+		"@ruling"
+	]
 }

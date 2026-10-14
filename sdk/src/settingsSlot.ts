@@ -1,27 +1,28 @@
 /**
- * The `settings` slot — the one slot the substrate declares (R-9, ruled
- * 2026-09-15; 01 §1, 12 §2).
+ * The `settings` slot — the one slot the substrate declares (ruled
+ * 2026-09-15).
  *
  * Three switches have always been read by the executor off `config[key]
  * .settings.*` — `enabled` to skip an optional node, `review` to park a gated
  * one, `mode` to run a gather clause in turn — and until 2026-09-16 nothing
  * *declared* them: `settings` was not a `SlotKind`, and the configuration
  * panel synthesised the three controls by hand, wording and defaults included.
- * A control the executor honours and no declaration names is the shape 01
- * calls a substrate key and 12 §2 calls a slot; this file makes the second
+ * A control the executor honours and no declaration names is the shape the
+ * substrate calls a key and the config chain calls a slot; this file makes the second
  * word true.
  *
  * What is declared here is derived, never authored. A definition says
  * `optional: true` or `effects: 'write'` and the slot follows from that; a
  * clause says `gather` and its `mode` follows. The projection
  * (`snapshotRegistry`) writes the slot onto the registry row so the panel
- * reads it from rows like every other slot (F6), and the content hash leaves it
+ * reads it from rows like every other slot, and the content hash leaves it
  * out — see `authoredSlots` — because a slot nobody authored cannot be a change
  * to what somebody authored; `optional` and `effects` are hashed already.
  *
  * The addresses are unchanged: `<nodeKey>.settings.enabled`,
  * `<nodeKey>.settings.review`, `<clauseId>.settings.mode`. Every stored row at
  * one of them is exactly as valid as it was.
+ * @ruling R-9, 01 §1, 12 §2, 01, 12 §2, F6
  */
 
 import type { FieldDecl } from './settings.js'
@@ -69,15 +70,16 @@ export const ENABLED_STEP_FIELD: FieldDecl = Object.freeze({
 })
 
 /**
- * `review` — the gate's position on a node whose `effects` gate (01 §7).
+ * `review` — the gate's position on a node whose `effects` gate.
  *
  * Declared per gated node from its `reviewDefault`, which an author may set
  * **on** and can never set to *never* — the declaration's `of` has no such
- * value, which is F14 enforced by the field language rather than by a check.
+ * value, which is enforced by the field language rather than by a check.
  * The two retired spellings (`sync`, `async`) are folded to `on` here exactly
  * as `resolvePosition` folds them at run time, so the panel's default and the
  * gate's agree.
  * @experimental
+ * @ruling 01 §7, F14
  */
 export function reviewField(reviewDefault: ReviewPosition | undefined): FieldDecl {
 	return {
@@ -167,10 +169,11 @@ export function clauseSettingsSlotFor(clause: {
  * `effects` and `reviewDefault`. The first two are contract and hashed on
  * their own terms, so digesting the slot again would move every optional and
  * every gated definition's pin for a projection change nobody authored;
- * `reviewDefault` is policy (plans/31 V6) and hashed nowhere. The name is
+ * `reviewDefault` is policy and hashed nowhere. The name is
  * reserved (`checkNoAuthoredSettings`), so stripping by name can never strip
  * something an author wrote.
  * @experimental
+ * @ruling plans/31 V6
  */
 export function authoredSlots<T>(slots: Record<string, T> | undefined): Record<string, T> {
 	if (!slots || !(SETTINGS_SLOT in slots)) return slots ?? {}

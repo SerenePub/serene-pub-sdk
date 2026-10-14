@@ -7,8 +7,8 @@ installing it. This is the paragraph a plugin list shows under the name.
 npm install
 npm run build      # tsc → dist/
 npm run check      # what core would refuse, and the permissions the shipped code requests
-npm run package    # dist/plugin/: the manifest plus one document per pipeline
-npm test           # the declaration, and the executed example against its golden
+npm run package    # dist/plugin/, and dist/<slug>-<version>.zip — the file an admin installs
+npm test           # the declaration, the example against its golden, the conformance kit
 npm run typecheck  # src, test and examples together
 npm run ui         # the surface harness: this package's frames, in core's own sandbox
 ```
@@ -19,6 +19,13 @@ against an SDK checkout instead, point them at `file:../serene-pub-sdk/<package>
 There is no golden yet, so `npm test` fails until you record one:
 `UPDATE_GOLDENS=1 npm test` writes `examples/goldens/first-run.golden.json`. Commit it —
 an example whose output nothing pins is a page that can drift.
+
+`test/conformance.test.ts` runs the conformance kit's package cases (C28–C33) over the
+build, so run `npm run package` before `npm test`; it fails naming that step otherwise.
+
+To install: Admin › Plugins › Install a package…, choose `dist/<slug>-<version>.zip`.
+It lands switched off — approve what it asks for and enable it — and a preset it ships
+starts hidden from users until an admin makes it available in Admin › Play › Presets.
 
 ## What it shows
 

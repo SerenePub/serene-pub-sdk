@@ -1,5 +1,5 @@
 /**
- * The UI worker's runtime (§3.5, C2/C3b): a component's side of the page.
+ * The UI worker's runtime: a component's side of the page.
  * Loads Remote DOM's DOM polyfill, forwards every event an element can
  * raise, gives controls their live `value`/`checked`, and runs each mount
  * against its own root and context — whose messages leave behind the DOM
@@ -10,6 +10,7 @@
  * never imports it (the build refuses anything that lands in `@remote-dom`).
  * What a worker must NOT have — network, storage — is the starter's to
  * strip before it runs any component.
+ * @ruling §3.5, C2/C3b
  */
 import { hooks } from '@remote-dom/core/polyfill'
 import {

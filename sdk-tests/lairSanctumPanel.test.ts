@@ -14,15 +14,17 @@ const SANCTUM = 'messages#sanctum'
 
 test("the Lair's live layout places a Sanctum copy of the conversation in its right column", () => {
 	const layout = lairGenre.layouts![0]!.preset as any
-	assert.deepEqual(layout.zoneLayout.zones.right.widgets, ['world-state', SANCTUM])
+	// Places (the room list, W4) and the Castellan's scratchpad above it.
+	assert.deepEqual(layout.zoneLayout.zones.right.widgets, ['places', 'annex#castellan', SANCTUM])
 	const right = layout.arrangedGrid.right.items as Array<{ id: string; y: number; h: number }>
 	assert.deepEqual(
 		right.map((i) => i.id),
-		['world-state', SANCTUM],
+		['places', 'annex#castellan', SANCTUM],
 	)
-	// The two share the column's twelve rows, the talk taking the larger share.
+	// The three share the column's twelve rows, the talk taking the largest share.
 	assert.equal(right.reduce((n, i) => n + i.h, 0), layout.arrangedGrid.right.rows)
-	assert.ok(right[1]!.h > right[0]!.h)
+	const talk = right[2]!.h
+	assert.ok(right.slice(0, 2).every((i) => i.h < talk))
 	// The story stays in the middle.
 	assert.deepEqual(
 		layout.widgetGrid.widgets.map((w: { id: string }) => w.id),

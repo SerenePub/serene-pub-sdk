@@ -22,6 +22,15 @@
 	export type LineWidth = "full" | "comfortable"
 
 	/**
+	 * How the lines are drawn (PLAN-core-widgets §3.7): `rows`, the log as
+	 * it has always been, or `folio` — one block of prose, a thin rule
+	 * naming the speaker where the speaker changes, nothing else around a
+	 * line. The SETTING also takes `auto` (§3.16, the declared default:
+	 * _Follow the channel_), which the reader turns into one of the two.
+	 */
+	export type Presentation = "rows" | "folio"
+
+	/**
 	 * The `messages` widget's settings, complete: every value the widget reads,
 	 * with the declared default wherever the instance has no deviation. The
 	 * page receives this object too (as the snippet parameter and through
@@ -33,6 +42,12 @@
 		composerSkin: ComposerSkin
 		composerPosition: ComposerPosition
 		lineWidth: LineWidth
+		/**
+		 * The effective presentation: a stored `rows` or `folio`, else —
+		 * `auto`, or nothing stored — `folio` when this copy's claimed
+		 * channel is a folio-role one, else `rows`.
+		 */
+		presentation: Presentation
 		showMessages: boolean
 		showComposer: boolean
 		showAvatars: boolean
@@ -58,6 +73,7 @@
 		composerSkin: "classic",
 		composerPosition: "bottom",
 		lineWidth: "full",
+		presentation: "rows",
 		showMessages: true,
 		showComposer: true,
 		showAvatars: true,
@@ -83,30 +99,54 @@
 		return typeof raw === "boolean" ? raw : fallback
 	}
 
-	/** Read one settings payload into the complete object above. */
+	/**
+	 * Read one settings payload into the complete object above.
+	 *
+	 * `channelRole` is what the copy's claimed channel IS (`ChannelDecl.role`,
+	 * off the dossier), and it decides the two values Folio changes when the
+	 * settings leave them to it: a `presentation` of `auto` (the declared
+	 * default, _Follow the channel_), or none, follows the channel (a folio
+	 * channel reads as Folio), and a Folio copy's composer is the
+	 * page line (`quill`) unless the copy chose a skin other than the declared
+	 * default. Settings arrive complete, so `classic` — the default — is the
+	 * one value that cannot say "chosen"; a Folio copy that wants the card
+	 * back cannot have it, which is the price of a manuscript's page line.
+	 */
 	export function readConversationSettings(
-		raw: Record<string, unknown> | undefined
+		raw: Record<string, unknown> | undefined,
+		channelRole: "conversation" | "folio" = "conversation"
 	): ConversationSettings {
 		const v = raw ?? {}
 		const d = CONVERSATION_DEFAULTS
+		// `auto` is neither of the two, so it falls to the channel's rule.
+		const presentation = pickEnum<Presentation>(
+			v.presentation,
+			["rows", "folio"],
+			channelRole === "folio" ? "folio" : d.presentation
+		)
+		const folio = presentation === "folio"
+		const skin = pickEnum(
+			v.composer,
+			["classic", "minimal", "writer", "quill"],
+			d.composerSkin
+		)
 		return {
 			order: pickEnum(v.order, ["oldest-first", "newest-first"], d.order),
-			composerSkin: pickEnum(
-				v.composer,
-				["classic", "minimal", "writer", "quill"],
-				d.composerSkin
-			),
+			composerSkin: folio && skin === d.composerSkin ? "quill" : skin,
 			composerPosition: pickEnum(
 				v.composerPosition,
 				["bottom", "top"],
 				d.composerPosition
 			),
 			lineWidth: pickEnum(v.lineWidth, ["full", "comfortable"], d.lineWidth),
+			presentation,
 			showMessages: pickBool(v.showMessages, d.showMessages),
 			showComposer: pickBool(v.showComposer, d.showComposer),
 			showAvatars: pickBool(v.showAvatars, d.showAvatars),
 			showTimestamps: pickBool(v.showTimestamps, d.showTimestamps),
-			showSceneMarkers: pickBool(v.showSceneMarkers, d.showSceneMarkers),
+			// A manuscript has no scenes or dates between its paragraphs.
+			showSceneMarkers:
+				!folio && pickBool(v.showSceneMarkers, d.showSceneMarkers),
 			// ⏳ `showNudge: false` was this setting before `nextUp` (A8).
 			nextUp: pickEnum(
 				v.nextUp,
@@ -128,17 +168,19 @@
 	 * field you write into, as ONE widget.
 	 *
 	 * It owns the conversation (C0b): the model its parts read
-	 * (`conversation.svelte.ts`) and the log. The page still passes the
-	 * composer, the ready-to-continue line and the banners as snippets; this
-	 * component reads the widget's settings off `useWidgetContext()`, hands
-	 * them back to those snippets, writes them onto the root as data
-	 * attributes, and decides which end the composer sits at.
+	 * (`conversation.svelte.ts`), the log, the turn line (`TurnLine`) and the
+	 * composer; the page's own views (who is typing, the action chips) it
+	 * places as `sp-host-view`s. It reads the widget's settings off
+	 * `useWidgetContext()`, hands them to the page (`onSettings`), writes them
+	 * onto the root as data attributes, and decides which end the composer
+	 * sits at.
 	 */
 	import { useWidgetContext } from "../context"
 	import SessionContainer from "./SessionContainer.svelte"
 	import SessionComposer from "./SessionComposer.svelte"
-	import NextCharacterBlock from "./NextCharacterBlock.svelte"
+	import TurnLine from "./TurnLine.svelte"
 	import { createConversation, setConversation } from "./conversation.svelte"
+	import { markedRun, runOffer } from "./sceneMarks"
 
 	interface Props {
 		/**
@@ -165,6 +207,23 @@
 	})
 	const selecting = $derived(!!conversation?.select.active)
 	const selectedCount = $derived(conversation?.select.ids.size ?? 0)
+	/**
+	 * 🚧 *Mark as scene* (PROPOSAL-live-scenes §14 C): the selection's
+	 * boundary path, offered first — the picked run becomes one closed live
+	 * scene, opened at its first line and closed at its last, in one write.
+	 * Offered only where the viewer may place scene boundaries and the run
+	 * overlaps no scene on its lane (`runOffer`, lane E — an earlier run
+	 * too); tick capture (*Scene summary*) stays beside it for now.
+	 */
+	const markRun = $derived.by(() => {
+		if (!conversation?.scenes.boundaries || !selectedCount) return null
+		const rows = (conversation.rows ?? []) as Array<{ id: number; channel?: unknown }>
+		const run = markedRun(conversation.select.ids, rows)
+		return run && runOffer(run, conversation.dossier?.scenes ?? [], rows) ? run : null
+	})
+	const selectionRefusal = $derived(
+		conversation?.scenes.refusal?.at === "selection" ? conversation.scenes.refusal.text : null
+	)
 	/** Every line a scene has not already captured. */
 	const selectable = $derived.by(() => {
 		const taken = new Set(conversation?.dossier?.scened ?? [])
@@ -172,11 +231,16 @@
 			.map((m) => m.id)
 			.filter((id) => !taken.has(id))
 	})
-	let settings = $derived(
-		readConversationSettings(
-			ctx?.current.settings.v1 as Record<string, unknown> | undefined
+	let settings = $derived.by(() => {
+		const raw = ctx?.current.settings.v1 as Record<string, unknown> | undefined
+		// The claimed channel's role, when the host says it (the dossier's
+		// `composer.channelRoles`): what an unset Presentation follows.
+		const claim = typeof raw?.channel === "string" ? raw.channel.trim() : ""
+		return readConversationSettings(
+			raw,
+			claim && conversation ? conversation.channelRole(claim) : "conversation"
 		)
-	)
+	})
 
 	// Compared by value, the way `WidgetHost` compares its layout: the widget
 	// context re-projects on every message that lands, and the settings on it
@@ -200,6 +264,7 @@
 	data-composer-position={settings.composerPosition}
 	data-composer-skin={settings.composerSkin}
 	data-line-width={settings.lineWidth}
+	data-presentation={settings.presentation}
 	data-show-messages={settings.showMessages}
 	data-show-avatars={settings.showAvatars}
 	data-show-timestamps={settings.showTimestamps}
@@ -226,7 +291,11 @@
 	{#if settings.showMessages}
 		<div data-widget-part="messages.log">
 			{#if conversation}
-				<SessionContainer order={settings.order} showSceneMarkers={settings.showSceneMarkers} />
+				<SessionContainer
+					order={settings.order}
+					showSceneMarkers={settings.showSceneMarkers}
+					presentation={settings.presentation}
+				/>
 			{/if}
 		</div>
 	{/if}
@@ -240,6 +309,19 @@
 			<div data-widget-part="messages.compose-area">
 				<!-- The selection bar's parts are `messages.selection-*` (STYLE-GUIDE
 				     §6.16): no look here; the default widget stylesheet draws them. -->
+				{#if selectionRefusal}
+					<p data-widget-part="messages.scene-refusal" role="alert">
+						<span data-widget-part="messages.scene-refusal-text">{selectionRefusal}</span>
+						<button
+							type="button"
+							data-widget-part="messages.scene-refusal-dismiss messages.message-icon-button"
+							aria-label="Dismiss"
+							onclick={() => conversation.scenes.dismiss()}
+						>
+							<sp-icon name="x" size="14"></sp-icon>
+						</button>
+					</p>
+				{/if}
 				<div data-widget-part="messages.selection-bar toolbar">
 					<span data-widget-part="messages.selection-count">
 						{selectedCount}
@@ -272,17 +354,35 @@
 							<sp-icon name="x" size="16"></sp-icon>
 							<span data-widget-part="messages.selection-button-label">Cancel</span>
 						</button>
+						<!-- 🚧 The boundary path first: the run becomes one live
+						     scene, summarized later from its divider. -->
+						{#if conversation.scenes.boundaries}
+							<button
+								data-widget-part="messages.mark-scene messages.selection-button"
+								title="Make these lines one scene: it starts at the first line picked and ends at the last"
+								disabled={!markRun || conversation.scenes.busy}
+								onclick={() => void conversation.scenes.markSelection()}
+							>
+								<sp-icon name="flag" size="16"></sp-icon>
+								<span data-widget-part="messages.selection-button-label">Mark as scene</span>
+							</button>
+						{/if}
 						<!-- A scene summary opens a scene, which is its own declared
-						     write (R-B): a genre that opens none does not offer it. -->
+						     write (R-B): a genre that opens none does not offer it.
+						     ⏳ Tick capture, kept while live scenes land. -->
 						{#if conversation.dossier?.writes.scenes}
 							<button
 								data-widget-part="messages.summarize-scene messages.selection-button"
-								title="Scene"
+								title={conversation.scenes.boundaries
+									? "Summarize the picked lines as a scene, now"
+									: "Scene"}
 								disabled={selectedCount === 0}
 								onclick={() => conversation.select.commit("scene")}
 							>
 								<sp-icon name="film" size="16"></sp-icon>
-								<span data-widget-part="messages.selection-button-label">Scene</span>
+								<span data-widget-part="messages.selection-button-label">
+									{conversation.scenes.boundaries ? "Scene summary" : "Scene"}
+								</span>
 							</button>
 						{/if}
 						<button
@@ -310,23 +410,9 @@
 	{:else if settings.showComposer && conversation}
 		{@const dossier = conversation.dossier}
 		<div data-widget-part="messages.compose">
-			<!-- The page's status strips (who is typing, a stale preset). -->
-			<sp-host-view name="session-banners"></sp-host-view>
-			{#if settings.nextUp !== "hidden" && dossier && !dossier.readOnly}
-				<div data-widget-part="messages.next-up">
-					<NextCharacterBlock
-						order={dossier.turn.order}
-						candidates={dossier.turn.candidates}
-						mode={settings.nextUp}
-						shouldShow={dossier.turn.show && conversation.edit.id === null}
-						avatarFor={(ref) => (ref.startsWith("character:") ? ref : undefined)}
-						canChooseSomeoneElse={dossier.turn.canChoose}
-						viewerUserId={conversation.ctx.viewer.v1.userId}
-						onContinue={(channel) => void conversation.request("fire-turn", { channel })}
-						onSomeoneElse={() => void conversation.request("pick-turn", {})}
-					/>
-				</div>
-			{/if}
+			<!-- The turn line (§3.16): what the last run did, and who is next —
+			     one row above the field. -->
+			<TurnLine nextUp={settings.nextUp} />
 			<div data-widget-part="messages.compose-area">
 				{#if dossier?.readOnly}
 					<!-- Read-only (19 §6, ruled): the mode disappeared, the history

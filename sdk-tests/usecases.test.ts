@@ -20,7 +20,7 @@ import { validate } from '@serene-pub/sdk'
 import { run, replay, ok, halt, err, seededRandom } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { resolveConfig, resolveConfigSources, assertWritable, mayWrite } from '@serene-pub/sdk'
-import { slot } from '@serene-pub/sdk'
+import { slot, $ref } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import * as T from './fixtures.js'
 import {
@@ -39,7 +39,7 @@ describe('01 · a minimal chat turn runs end to end', () => {
 		spec('demo:minimal@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
-			.task('prompt', () => C.assemble.v2())
+			.task('prompt', () => C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }))
 			.oracle('generate', ($) =>
 				C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),
 			)
@@ -981,6 +981,40 @@ test('20 · an included fragment expands to flat, namespaced rows', () => {
 	assert.equal(doc.includes[0]!.fragmentId, 'core:fragment/context-infill@2')
 })
 
+test('20b · an included fragment keeps its internal wiring under the prefix', () => {
+	// A fragment of two steps where the second reads the first, and a junction
+	// deciding on the first. `include` must carry those references under the
+	// key prefix; a reference to something outside the fragment (the spec's
+	// inlet) stays exactly as written.
+	const wired = fragment('demo:fragment/wired@1', (f) =>
+		f
+			.task('a', C.runScript.v1({ input: $ref('input', 'text') as never }))
+			.task('b', ($) => C.runScript.v1({ input: $.a.main }))
+			.junction('pick', { on: ($) => $.a.main }, (j) =>
+				j
+					.when('yes', { path: 'go', truthy: true }, (c) =>
+						c.task('go', ($) => C.runScript.v1({ input: $.b.main })),
+					)
+					.otherwise('no', (c) => c.task('skip', ($) => C.runScript.v1({ input: $.b.main }))),
+			),
+	)
+	const doc = publish(
+		spec('demo:fragment-wired@1', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.include('frag', wired),
+	)
+	// Explicit edges only — chain order alone would add an implicit a → b.
+	const edge = (from: string, to: string) =>
+		doc.edges.some((e) => !e.implicit && e.from === from && e.to === to && e.toPort === 'input')
+	assert.ok(edge('input', 'frag.a'), 'the outside reference is left as written')
+	assert.ok(edge('frag.a', 'frag.b'), JSON.stringify(doc.edges))
+	assert.ok(edge('frag.b', 'frag.pick.yes.go'), JSON.stringify(doc.edges))
+	assert.ok(!doc.edges.some((e) => !doc.nodes.some((n) => n.key === e.from) && !doc.clauses.some((c) => c.id === e.from)))
+	const pick = doc.clauses.find((c) => c.id === 'frag.pick')!
+	assert.equal((pick.on as { node: string }).node, 'frag.a')
+	assert.deepEqual(validate(doc).filter((f) => f.severity === 'error'), [])
+})
+
 // ── 21 · Document round-trip identity (F3) ──────────────────────────────────
 test('21 · import(export(rows)) is identity, and the hash is stable', () => {
 	const doc = publish(
@@ -1083,7 +1117,7 @@ describe('24 · modality agnosticism', () => {
 		const doc = publish(
 			spec('chariot.comfy:illustrate@1', { version: '2.1.0' })
 				.inlet('input', C.userMessage.v1())
-				.task('scene', C.assemble.v2({ candidates: [] }))
+				.task('scene', C.assemble.v2({ candidates: [], template: slot.template(), connection: slot.connectionOf('render') }))
 				.oracle('render', ($) =>
 					C.renderImage.v1({
 						context: $.scene.context,
@@ -1193,7 +1227,12 @@ test('a full chat turn renders a legible receipt', async () => {
 			)
 			.task('rank', ($) => C.rankHybrid.v1({ candidates: $.merge.candidates }))
 			.task('prompt', ($) =>
-				C.assemble.v2({ candidates: $.rank.candidates, budget: $.budget.available }),
+				C.assemble.v2({
+					candidates: $.rank.candidates,
+					budget: $.budget.available,
+					template: slot.template(),
+					connection: slot.connectionOf('generate'),
+				}),
 			)
 			.oracle('generate', ($) =>
 				C.generateText.v1({

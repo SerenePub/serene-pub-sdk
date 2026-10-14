@@ -1,7 +1,7 @@
 /**
  * What a Handlebars reference can reach, at one point in a template.
  *
- * Typed templates P4. The template checker (`@serene-pub/sdk/template-check`)
+ * The template checker (`@serene-pub/sdk/template-check`)
  * and a host's editor assist both need the same three answers — what `../`
  * climbs to, what a block param is bound to, and what one `{{#each}}` element
  * is — and when they were two copies they drifted: the assist treated an

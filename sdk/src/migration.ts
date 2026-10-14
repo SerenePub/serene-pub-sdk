@@ -1,6 +1,6 @@
 /**
  * Migration harness — converting an existing workflow into a pipeline without users
- * losing what they customised (08 §5, U25).
+ * losing what they customised.
  *
  * The failure this exists to prevent is specific and it is not "the migration crashed."
  * A migration that runs cleanly and quietly changes what the model receives is far worse
@@ -15,6 +15,7 @@
  * That is checkable because a preview run already produces the exact payload that would
  * be sent, from the same formatter and the same tokenizer as a real run (src/preview.ts).
  * The parity test is the preview, not a second renderer written for the occasion.
+ * @ruling 08 §5, U25
  */
 
 import type { ScopeKind } from './config.js'
@@ -27,9 +28,10 @@ import type { SpecDocument } from './document.js'
  * A migrated row's slug is derived from where it came from, not generated.
  *
  * This is what makes a migration **idempotent**: re-running after a bug fix matches the
- * existing row by slug and replaces it, instead of creating a second copy beside it
- * (12 §3b). A migration that cannot be safely re-run is a migration nobody dares fix.
+ * existing row by slug and replaces it, instead of creating a second copy beside it.
+ * A migration that cannot be safely re-run is a migration nobody dares fix.
  * @experimental
+ * @ruling 12 §3b
  */
 export function migratedSlug(sourceTable: string, sourceId: string | number): string {
 	const clean = String(sourceId)
@@ -51,7 +53,10 @@ export interface MigrationEntry {
 	/** Where the value landed: the scope it was written at, and what it became. */
 	target?: {
 		slug: string
-		/** A `ScopeKind` (config.ts): `session · config · defaults · author` since R-10. */
+		/**
+		 * A `ScopeKind` (config.ts): `session · config · defaults · author`.
+		 * @ruling R-10
+		 */
 		scopeKind: ScopeKind
 		nodeKey?: string
 		slot?: string
@@ -82,9 +87,10 @@ export function summarize(r: MigrationReport) {
 
 /**
  * Everything that did not migrate cleanly must say why, and must remain visible —
- * `spec_diagnostics` in core, the same place an orphaned slot lands after a node swap
- * (12 §5). Same principle as export (12 §7a): nothing is dropped silently.
+ * `spec_diagnostics` in core, the same place an orphaned slot lands after a node swap.
+ * Same principle as export: nothing is dropped silently.
  * @experimental
+ * @ruling 12 §5, 12 §7a
  */
 export function unmappedEntries(r: MigrationReport): MigrationEntry[] {
 	return r.entries.filter((e) => e.outcome !== 'migrated')
@@ -132,7 +138,7 @@ const EXCERPT = 60
  * Three shapes reach here. A Provider with a `wire` slot puts a formed payload on
  * the port, and that may already be a string. Core's Assemble puts an **allocated
  * context** there — blocks plus the rendered string, because the budget panel needs
- * the blocks (16 §7) — so the prompt is one level in. A split-chat connection has
+ * the blocks — so the prompt is one level in. A split-chat connection has
  * `messages` instead of `rendered`, and its comparable form is the role-tagged text.
  *
  * Unwrapping matters more than it looks: the first version compared
@@ -140,6 +146,7 @@ const EXCERPT = 60
  * "diverges at character 0" on every fixture forever — a harness that can never go
  * green is indistinguishable from one whose subject is broken, and it costs a day
  * to tell them apart.
+ * @ruling 16 §7
  */
 function renderedText(value: unknown): string {
 	if (typeof value === 'string') return value
@@ -195,10 +202,11 @@ export function checkParity(
 }
 
 /**
- * The gate on dropping an old code path (08 §5). Deliberately strict: an empty corpus
+ * The gate on dropping an old code path. Deliberately strict: an empty corpus
  * passes nothing, because "no failures" and "nothing was checked" look identical in a
  * summary and only one of them is safe.
  * @internal
+ * @ruling 08 §5
  */
 export function parityGate(
 	results: ParityResult[],
@@ -245,8 +253,9 @@ export function renderParity(r: ParityResult): string {
  *
  * So the rule is: an id wired in (by edge or by config) means update; nothing wired
  * means create; **anything else is reported unmapped rather than decided**. `unmapped`
- * is already the shape 08 §5b uses for "a human has to look at this."
+ * is already the shape used for "a human has to look at this."
  * @experimental
+ * @ruling 08 §5b
  */
 export const LEGACY_COMMIT_MESSAGE = 'core:outlet/commit-message'
 

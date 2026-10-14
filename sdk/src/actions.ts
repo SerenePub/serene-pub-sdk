@@ -1,11 +1,9 @@
 /**
  * Actions — what a person (or an AI-portrayed participant) can invoke, and
- * where (plans/29 R-15 *venue* · *audience* · *quick* · *slash name*;
- * 09-AMENDMENTS-B B9, F40 — was F38 before the 2026-09-17 renumbering; ruled
- * 2026-09-15, built 2026-09-16 as U5c).
+ * where (built 2026-09-16).
  *
  * A spec contributes actions through `contributes.actions[]`. Core's own message verbs — the floors and the
- * built-ins of U5b — are described by the same shape in `CORE_ACTIONS`, so
+ * built-ins — are described by the same shape in `CORE_ACTIONS`, so
  * a client renders **one list** per venue and never hand-writes a verb button.
  *
  * ## The four declarations
@@ -22,16 +20,16 @@
  * - **quick** — the one prominence flag. Every venue is a **primary set**
  *   (`quick: true`) plus an **overflow** that always lists every enabled
  *   action; composer actions are always reachable through `/`. Placement is
- *   presentation; availability is data (F40). A CSS pack may reposition the
+ *   presentation; availability is data. A CSS pack may reposition the
  *   primary set, never remove an action.
  * - **slash** — the stable ASCII id a composer action is called by. Core's
  *   specs claim bare names (`advance`, `narrate`); a plugin's are
  *   `<plugin>.<action>` (`acme.roll`), the plugin id being the spec's
  *   namespace — so a collision across owners is impossible by construction,
  *   and the palette autocompletes so nobody types the long form. Never
- *   localised (R-20): the palette shows the localised `label` beside it.
+ *   localised: the palette shows the localised `label` beside it.
  *
- * - **enabled-when** (U5e, built 2026-09-17) — whether the action is offered
+ * - **enabled-when** (built 2026-09-17) — whether the action is offered
  *   *now*: a declared predicate over the session's **published values**, the
  *   junction clause's shape (`{ on: 'state.world.location', truthy: true,
  *   reason }`), never code. A list means all must hold. The genre supplies
@@ -44,10 +42,11 @@
  * ## What this is not
  *
  * Not a *pipeline* — an action *starts* one (`function` is the key routing
- * resolves, 19 §3). Not an *event* — those are core-owned occurrences. Not
+ * resolves). Not an *event* — those are core-owned occurrences. Not
  * *availability* — the genre's `messageVerbs` and the preset's included set
  * decide that; a declaration here says where and to whom an available action
  * is offered.
+ * @ruling plans/29 R-15 *venue* · *audience* · *quick* · *slash name*, 09-AMENDMENTS-B B9, F40 (was F38 before the 2026-09-17 renumbering; ruled 2026-09-15), U5c, U5b, R-20, U5e, 19 §3
  */
 
 import type { Audience } from './participants.js'
@@ -67,55 +66,73 @@ import { i18nText } from './i18n.js'
 import type { VerdictResult } from './verdicts.js'
 import { CORE_ACTION_SPEC_ID } from './identity.js'
 import { assertSlotId } from './attributes.js'
+import { STORY_TIME_UNITS, type StoryTimeUnit } from './storyTime.js'
 
 export type { EnabledWhen, EnabledWhenDecl } from './predicates.js'
 
-/** The two sides of the effects line (R-15). `fiction` is the default. @experimental */
+/**
+ * The two sides of the effects line. `fiction` is the default.
+ * @experimental
+ * @ruling R-15
+ */
 export const ACTION_EFFECTS = ['fiction', 'world'] as const
 /** @experimental */
 export type ActionEffects = (typeof ACTION_EFFECTS)[number]
 
 /**
- * How much an action needs the text it **collects** (lair pass R3,
- * 2026-09-28): `required` — the press does not fire without some;
+ * How much an action needs the text it **collects**: `required` — the
+ * press does not fire without some;
  * `optional` — an empty submit fires too, and `CollectedText.ifEmpty` says
- * what that does. Was `COMPOSER_TEXT_MODES` (B10), when the text was read
+ * what that does. Was `COMPOSER_TEXT_MODES`, when the text was read
  * off the composer's draft.
  * @experimental
+ * @ruling lair pass R3 (2026-09-28), B10
  */
 export const TEXT_NEEDS = ['required', 'optional'] as const
 
 /**
- * The text an action collects before it fires (lair pass R3, ruled
- * 2026-09-28: typing and then pressing an action is unintuitive). The press
- * opens the **collect modal**, or — S2 — a slash argument supplies it. It
+ * The text an action collects before it fires (typing and then pressing an
+ * action is unintuitive). The press
+ * opens the **collect modal**, or a slash argument supplies it. It
  * reaches the run as `input.text`, trimmed.
  * @experimental
+ * @ruling lair pass R3 (ruled 2026-09-28), S2
  */
 export interface CollectedText {
 	need: (typeof TEXT_NEEDS)[number]
-	/** The field's label — what the modal asks: "What do you whisper?". Display text (R-20). */
+	/**
+	 * The field's label — what the modal asks: "What do you whisper?". Display text.
+	 * @ruling R-20
+	 */
 	label: I18n
-	/** The empty field's placeholder. Display text (R-20). */
+	/**
+	 * The empty field's placeholder. Display text.
+	 * @ruling R-20
+	 */
 	placeholder?: I18n
 	/**
 	 * What an empty submit does, in one sentence — "The room decides."
 	 * **Required when `need` is `optional`**: an empty box must say what
-	 * pressing on will do. Display text (R-20).
+	 * pressing on will do. Display text.
+	 * @ruling R-20
 	 */
 	ifEmpty?: I18n
 }
 
 /**
- * The cast members an action collects before it fires (lair pass R3; the
- * whisper's use is R10): a multiselect over the session's **enabled cast
+ * The cast members an action collects before it fires: a multiselect over
+ * the session's **enabled cast
  * members**, each a `character:<id>` reference. They reach the run as
  * `input.recipients`, validated by the host: seated and enabled, no
  * duplicates, within `min` and `max`.
  * @experimental
+ * @ruling lair pass R3, R10
  */
 export interface CollectedRecipients {
-	/** The list's label — "Who hears it". Display text (R-20). */
+	/**
+	 * The list's label — "Who hears it". Display text.
+	 * @ruling R-20
+	 */
 	label: I18n
 	/** The fewest that may be picked. Default 1; never below 1. */
 	min?: number
@@ -123,16 +140,63 @@ export interface CollectedRecipients {
 	max?: number
 	/**
 	 * The per-cast slot this action writes on each recipient, replacing what
-	 * it held (lair re-plan R10, 2026-09-28) — the Lair's Whisper names
+	 * it held — the Lair's Whisper names
 	 * `core:slot/whisper@1`. The collect modal shows each member's current
 	 * value beside their box, so an overwrite is visible before it happens.
 	 * Display only: what the run writes is the spec's.
+	 * @ruling lair re-plan R10 (2026-09-28)
 	 */
 	overwrites?: string
 }
 
+/**
+ * 🚧 A **clock step** an action collects before it fires: an amount of story
+ * time, forward or back, in one unit — the collect modal's stepper (a whole
+ * number, a unit, *Forward* / *Back*). It reaches the run as
+ * `input.clockStep: { by, unit }`, `by` signed (back is negative), validated
+ * by the host (a whole number other than zero, within `CLOCK_STEP_MAX`, a unit
+ * of `STORY_TIME_UNITS`). What the run does with it is the spec's — core's
+ * *Time passes…* wires it into `core:task/clock-step@1` and the *Advance story
+ * clock* outlet. ⚠ Not a turn's step and not the Chronicle's one-press step:
+ * the person picks the amount.
+ * @experimental
+ * @ruling PROPOSAL-live-scenes §6 (2026-10-13)
+ */
+export interface CollectedClockStep {
+	/**
+	 * The stepper's label — what the modal asks: "How much time passes?".
+	 * Display text.
+	 * @ruling R-20
+	 */
+	label: I18n
+	/** What the stepper opens at. Default `{ by: 1, unit: 'hours' }`; `by` above 0 (the modal's Back makes it negative). */
+	default?: { by: number; unit: StoryTimeUnit }
+}
+
+/** The largest step a press may collect, either way — a typo of 100000 years is refused, not stepped. @experimental */
+export const CLOCK_STEP_MAX = 10_000
+
+/**
+ * Why a collected clock step cannot ride, as a sentence — or null when it can:
+ * `{ by, unit }`, a whole `by` other than zero within ±`CLOCK_STEP_MAX`, a unit
+ * of `STORY_TIME_UNITS`. The host's door and the modal ask the same.
+ * @experimental
+ */
+export function clockStepRefusal(raw: unknown): string | null {
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+		return 'takes its time as { by, unit } — how many, and of what.'
+	const { by, unit } = raw as { by?: unknown; unit?: unknown }
+	if (typeof by !== 'number' || !Number.isInteger(by) || by === 0)
+		return 'takes a whole number of units other than zero.'
+	if (Math.abs(by) > CLOCK_STEP_MAX) return `takes at most ${CLOCK_STEP_MAX} units at a time.`
+	if (!(STORY_TIME_UNITS as readonly unknown[]).includes(unit))
+		return `counts in ${STORY_TIME_UNITS.join(', ')}.`
+	return null
+}
+
 /** The keys `ActionDecl.collects` may carry, and each request's own keys. */
-const COLLECTS_KEYS: readonly string[] = ['text', 'recipients']
+const COLLECTS_KEYS: readonly string[] = ['text', 'recipients', 'clockStep']
+const COLLECTED_CLOCK_STEP_KEYS: readonly string[] = ['label', 'default']
 const COLLECTED_TEXT_KEYS: readonly string[] = ['need', 'label', 'placeholder', 'ifEmpty']
 const COLLECTED_RECIPIENTS_KEYS: readonly string[] = ['label', 'min', 'max', 'overwrites']
 
@@ -140,11 +204,11 @@ const COLLECTED_RECIPIENTS_KEYS: readonly string[] = ['label', 'min', 'max', 'ov
  * The venues a `world` action may appear in: never a form, the extra tab or a
  * widget.
  *
- * ⚠ **`message` is on the owner's side since 2026-09-28** (lair re-plan R11,
- * *File as a room*). The line exists so that a character can never be asked
- * to answer an out-of-fiction question (29 R-15 *The line*), and a question
+ * ⚠ **`message` is on the owner's side since 2026-09-28**. The line exists
+ * so that a character can never be asked
+ * to answer an out-of-fiction question, and a question
  * put to someone lives in the **`form`** venue — split out of `message` the
- * day the line was built (U5d review, S1). The `message` venue is a message's
+ * day the line was built. The `message` venue is a message's
  * own ⋮ and quick row: a person's button, pressed by the person, on a row.
  * With `act` held to `owner` / `admin` (`WORLD_ACTION_ACTORS`), no block
  * naming it, and no fire made **as** a participant, a `world` action there
@@ -152,6 +216,7 @@ const COLLECTED_RECIPIENTS_KEYS: readonly string[] = ['label', 'min', 'max', 'ov
  * with the row as its subject. `extra` and `widget` stay out: a widget can
  * invoke without a person's press.
  * @experimental
+ * @ruling lair re-plan R11 *File as a room*, 29 R-15 *The line*, U5d review, S1
  */
 export const WORLD_ACTION_VENUES: readonly VenueKind[] = ['composer', 'message', 'session-settings', 'admin', 'review']
 /** The references a `world` action's `act` audience may name: the owner, an administrator. @experimental */
@@ -164,7 +229,7 @@ export const effectsOf = (action: { effects?: unknown }): ActionEffects =>
 /**
  * The closed set of places an action may appear. Core owns it; a plugin picks.
  *
- * `form` (U5d review, S1) is the one venue nothing lists: an action carried
+ * `form` is the one venue nothing lists: an action carried
  * by a **form** — a `choices` or `form` block in a message — and pressed
  * only from that block (the Adventure genre's *Answer*). A `form`-venue
  * action never appears in a message's overflow, the composer's More menu or
@@ -172,7 +237,7 @@ export const effectsOf = (action: { effects?: unknown }): ActionEffects =>
  * it. A `world` action may not take it (`WORLD_ACTION_VENUES`): an
  * out-of-fiction effect is never a question a message carries.
  *
- * ⚠ **`form` stays fiction-only even after L1** (ruled 2026-09-17). A block
+ * ⚠ **`form` stays fiction-only** (ruled 2026-09-17). A block
  * addressed to the **owner** may name a `world` action — see
  * `worldBlockFunctions` — but a *venue* is declared and an *addressee* is
  * decided at run time, so this check cannot see one and would have to admit
@@ -181,6 +246,7 @@ export const effectsOf = (action: { effects?: unknown }): ActionEffects =>
  * says where the declaration may be OFFERED, the addressee says who may press
  * this particular button, and the two answers stay separate.
  * @experimental
+ * @ruling U5d review, S1, L1
  */
 export const VENUE_KINDS = [
 	'composer',
@@ -206,7 +272,10 @@ export type ListedVenueKind = (typeof LISTED_VENUE_KINDS)[number]
 /** Where an action appears, optionally on one channel only. @experimental */
 export interface Venue {
 	kind: VenueKind
-	/** A channel slug (20 §7). Absent = every channel of the session. */
+	/**
+	 * A channel slug. Absent = every channel of the session.
+	 * @ruling 20 §7
+	 */
 	channel?: string
 }
 
@@ -216,20 +285,22 @@ export interface Venue {
  * `key` is the action's own identity within the spec — what a widget's
  * `invoke(key)` names, what the *new* marker is kept against, and, joined to
  * the spec slug as `<spec>#<key>` (`ACTION_IDENTITY`), **the one key
- * everything routes and stores by** (plans/31 V2, ruled 2026-09-17): a
+ * everything routes and stores by**: a
  * binding's subject, a preset's included set, a session's enablement row, a
  * genre's enabled-when default, the fire, a block's `action`. There is no
  * second routing key: two specs declaring the same `key` are two actions, and
  * a person binds each on its own.
  * @experimental
+ * @ruling plans/31 V2 (2026-09-17)
  */
 export interface ActionDecl {
 	key: string
 	/**
-	 * The genre this action serves — a genre id (24 §3). Required (U5c
-	 * review, W5): an action is offered *to a genre*, and one naming none
+	 * The genre this action serves — a genre id. Required: an action is
+	 * offered *to a genre*, and one naming none
 	 * would be offered to nobody while still claiming a slash name — so it is
 	 * refused at construction, in `validate()` and in `announce.build()`.
+	 * @ruling 24 §3, U5c review, W5
 	 */
 	genre: string
 	venue: Venue | Venue[]
@@ -237,30 +308,35 @@ export interface ActionDecl {
 	quick?: boolean
 	/** The slash name. Composer actions without one are called by their `key`. */
 	slash?: string
-	/** What the control reads — a string or a locale map with `en` (R-20); never the slash name. */
+	/**
+	 * What the control reads — a string or a locale map with `en`; never the slash name.
+	 * @ruling R-20
+	 */
 	label: I18n
 	/** A Lucide icon name, kebab-case. */
 	icon?: string
 	/**
 	 * What the icon says when it stands alone — the accessible name of an
-	 * icon-only control (`aria-label`). Display text (R-20). Absent: the
+	 * icon-only control (`aria-label`). Display text. Absent: the
 	 * `label`, which is right for nearly every action; give one only when the
 	 * icon-only control should read differently from the named one. Needs an
 	 * `icon`.
 	 * @experimental
+	 * @ruling R-20
 	 */
 	iconAlt?: I18n
 	/**
-	 * What the action does, in one plain sentence — display text (R-20).
+	 * What the action does, in one plain sentence — display text.
 	 * **Required** (2026-09-28): the session's action legend lists every
 	 * action with it, and a control shows it as its tooltip, so a person can
 	 * learn what a button does before pressing it. Say the effect, not the
 	 * mechanism: "Roll the dice and post the result."
 	 * @experimental
+	 * @ruling R-20
 	 */
 	description: I18n
 	/**
-	 * When the action is offered (plans/29 R-15 *enabled-when*; U5e): a
+	 * When the action is offered: a
 	 * predicate — or a list, all of which must hold — over the session's
 	 * published values, the junction clause's shape and never code. `on` is
 	 * a dotted path such as `state.world.location`, `session.generating` or
@@ -268,11 +344,12 @@ export interface ActionDecl {
 	 * outside a run. `reason` says why the control is grey. Absent: the
 	 * genre's default for this function, if it declares one, else always
 	 * enabled. See `predicates.ts`.
+	 * @ruling plans/29 R-15 *enabled-when*, U5e
 	 */
 	enabledWhen?: EnabledWhenDecl
 	/**
-	 * When the action is **present** at all (W-GATE D3, 2026-09-27): the
-	 * turn controls' present-when (B8), on a contributed action. The same
+	 * When the action is **present** at all: the
+	 * turn controls' present-when, on a contributed action. The same
 	 * predicate grammar as `enabledWhen`, over the same published values,
 	 * and the opposite answer when it fails — the action is **hidden**, not
 	 * grey: left out of every listing and refused at the door when pressed
@@ -284,51 +361,55 @@ export interface ActionDecl {
 	 * (`session.openForm.action`). An `item.*` predicate is refused: a
 	 * listing has no row to judge it on. Absent: always present.
 	 * @experimental
+	 * @ruling W-GATE D3 (2026-09-27), B8
 	 */
 	presentWhen?: EnabledWhenDecl
 	/**
-	 * What the action's result touches — **the effects line** (plans/29
-	 * R-15 *The line*; F41, was 09-B's F39; built 2026-09-17 as U5d).
+	 * What the action's result touches — **the effects line** (built 2026-09-17).
 	 *
 	 * `fiction` (the default): the result stays inside the story — a
 	 * message, a state proposal, a narration, a branch (a copy of a session
 	 * is still the fiction). `world`: the result touches something outside
 	 * it — character cards, lorebook data, settings, permissions,
 	 * connections. A `world` action may appear only in the `composer`,
-	 * `message` (a row's own ⋮, since lair re-plan R11), `session-settings`,
+	 * `message` (a row's own ⋮), `session-settings`,
 	 * `admin` or `review` venues (never `form`, `extra` or `widget`), its `act` audience is `owner` and/or `admin`
 	 * only, no block may name it **unless that block is addressed to the
-	 * owner** (`worldBlockFunctions`, `isOwnerAddressed`; L1, ruled
-	 * 2026-09-17), and the form-answer pipeline refuses to answer it — so a
+	 * owner** (`worldBlockFunctions`, `isOwnerAddressed`), and the form-answer
+	 * pipeline refuses to answer it — so a
 	 * character asking a question is fine, and a character granting another
 	 * character permission is impossible by construction. Refused at
 	 * construction, in `validate()`, in `announce.build()` and at the host's
 	 * publish.
+	 * @ruling plans/29 R-15 *The line*, F41 (was 09-B's F39), U5d, lair re-plan R11, L1 (ruled 2026-09-17)
 	 */
 	effects?: ActionEffects
 	/**
-	 * The speaker this action's results post as (plans/29 R-18 (1), R-21
-	 * (6); built 2026-09-16 as U5g) — a dice plugin's *Roll* reporting as
+	 * The speaker this action's results post as (built 2026-09-16) — a dice
+	 * plugin's *Roll* reporting as
 	 * "the Dice Master". Addressed as `envoy:<plugin>.<key>`
 	 * (`envoyIdentity({ action: { specId } }, key)`), a cast member with
 	 * `origin: action` once it has posted, and **`on-action` only**: it
 	 * speaks through this action's outputs and is never a turn-taking
 	 * candidate. `speaks` is stamped by `normalizeAction` and a declaration
 	 * saying `in-turn` is refused.
+	 * @ruling plans/29 R-18 (1), R-21 (6), U5g
 	 */
 	envoy?: EnvoyDecl
 	/**
-	 * What the action asks for before it fires (lair pass R3, 2026-09-28):
-	 * `text` (`CollectedText`) and/or `recipients` (`CollectedRecipients`).
+	 * What the action asks for before it fires:
+	 * `text` (`CollectedText`), `recipients` (`CollectedRecipients`) and/or
+	 * 🚧 a `clockStep` (`CollectedClockStep`).
 	 * Every press of a collecting action — a chip, the palette, a message's
-	 * ⋮, a form's option — opens the **collect modal**; S2's slash argument
+	 * ⋮, a form's option — opens the **collect modal**; a slash argument
 	 * supplies the text instead. What was collected reaches the run as
-	 * `input.text` and `input.recipients`. Absent: the action collects
+	 * `input.text`, `input.recipients` and `input.clockStep`. Absent: the action collects
 	 * nothing, and its run's `input.text` is empty. Any venue. Was
 	 * `composerText`, when the text was read off the composer's draft.
 	 * @experimental
+	 * @ruling lair pass R3 (2026-09-28), S2
 	 */
-	collects?: { text?: CollectedText; recipients?: CollectedRecipients }
+	collects?: { text?: CollectedText; recipients?: CollectedRecipients; clockStep?: CollectedClockStep }
 }
 
 /** A declaration after normalisation: venues and predicates always lists, no alias spellings, no `function`. @experimental */
@@ -357,7 +438,7 @@ export const BARE_SLASH = /^[a-z][a-z0-9-]*$/
 export const NAMESPACED_SLASH = /^([a-z0-9]+(?:[.-][a-z0-9]+)*)\.([a-z][a-z0-9-]*)$/
 
 /**
- * One venue's listing (F40 — every enabled action is reachable): the
+ * One venue's listing (every enabled action is reachable): the
  * **primary set**, the actions declaring `quick`, and the **overflow**, the
  * rest. Every action the venue holds is in exactly one of the two, so nothing
  * is reachable only by prominence and nothing is dropped. Placement is
@@ -365,6 +446,7 @@ export const NAMESPACED_SLASH = /^([a-z0-9]+(?:[.-][a-z0-9]+)*)\.([a-z][a-z0-9-]
  * entry. The host's `SessionActionVenues` is this shape with its entries
  * decorated (audience, the *new* mark, enablement).
  * @experimental
+ * @ruling F40
  */
 export interface VenueListing<A> {
 	primary: A[]
@@ -376,10 +458,10 @@ export type VenueListings<A> = Record<ListedVenueKind, VenueListing<A>>
 
 /**
  * Place actions into their venues for one channel — the placement rule every
- * listing applies (F40; R-15 *quick*). `quick` → the primary set, else the
+ * listing applies. `quick` → the primary set, else the
  * overflow; a venue naming another channel's slug is skipped (a bare slug
- * means every lane of it, 20 §7); a `form` venue is listed nowhere — the
- * block alone reaches it (U5d review, S1).
+ * means every lane of it); a `form` venue is listed nowhere — the
+ * block alone reaches it.
  *
  * Availability is decided BEFORE this: the genre's verbs, the preset's
  * included set and enabled-when say which actions a session offers, and the
@@ -388,8 +470,9 @@ export type VenueListings<A> = Record<ListedVenueKind, VenueListing<A>>
  * the conformance kit's `listActions` seam on it — the SDK's own host does
  * — and the kit itself never calls it: C19 judges the listing the HOST
  * returns, entry by entry, and a rule the kit applied for the host would be
- * a rule it could not see the host break (U7 review, C1).
+ * a rule it could not see the host break.
  * @experimental
+ * @ruling F40, R-15 *quick*, 20 §7, U5d review, S1, U7 review, C1
  */
 export function placeActions<A extends { venue: ReadonlyArray<Venue>; quick?: boolean }>(
 	actions: ReadonlyArray<A>,
@@ -421,8 +504,9 @@ export const isCoreNamespace = (ns: string): boolean => ns === 'core'
  * The slash name an action is called by: the declared one, else derived from
  * the key by the same rule a declared name must obey — `key` for core,
  * `<plugin>.<key>` for a plugin. Always defined, so every composer action is
- * reachable by `/` (F40) whether or not its author named one.
+ * reachable by `/` whether or not its author named one.
  * @experimental
+ * @ruling F40
  */
 export function slashNameOf(action: { key: string; slash?: string }, specId: string): string {
 	if (action.slash) return action.slash
@@ -436,12 +520,13 @@ const KEY = /^[a-z][a-z0-9-]*$/
  * The law one action finding comes from. Nearly every fault in a declaration
  * is its shape — a venue core does not offer, a slash name outside the
  * spec's namespace, a missing label — and is **R-15**'s. The two that are
- * not are **the effects line** (F41; U7 review, W3): a `world` action in a
+ * not are **the effects line** (`F41`): a `world` action in a
  * venue where a character could be asked to press it, or one whose `act`
  * audience names someone other than the owner or an administrator. The
  * validator labels each finding with its law, so a kit can key on `F41`
  * rather than on a word in the sentence.
  * @experimental
+ * @ruling U7 review, W3
  */
 export interface ActionFinding {
 	law: 'R-15' | 'F41'
@@ -468,7 +553,7 @@ const EFFECTS_LINE_FIX =
 	`if its result stays inside the story`
 
 /**
- * The effects line at a declaration (R-15 *The line*; F41): a `world` action
+ * The effects line at a declaration: a `world` action
  * is owner-only and never in a form, extra or widget venue. Judged one venue or one
  * reference at a time, so the sentence names the venue or the reference
  * that crossed.
@@ -479,6 +564,7 @@ const EFFECTS_LINE_FIX =
  * import graph and must not import it. The verdict calls this for a
  * `venue` or `actor` input; the door calls it directly and quotes it.
  * @experimental
+ * @ruling R-15 *The line*, F41
  */
 export function worldActionCrossing(input: EffectsLineDeclarationInput): VerdictResult {
 	if (input.effects !== 'world') return { ok: true }
@@ -507,11 +593,12 @@ export function worldActionCrossing(input: EffectsLineDeclarationInput): Verdict
 }
 
 /**
- * Every fault in one `ActionDecl.collects` (lair pass R3), as sentences: an
+ * Every fault in one `ActionDecl.collects`, as sentences: an
  * unknown key, a missing label, an `optional` text with no `ifEmpty`, a
  * `min` below 1 or a `max` below `min`. `where` is the field's address
  * (`contributes.actions[nudge].collects`).
  * @experimental
+ * @ruling lair pass R3
  */
 export function collectsFindings(raw: unknown, where: string): string[] {
 	const out: string[] = []
@@ -521,7 +608,7 @@ export function collectsFindings(raw: unknown, where: string): string[] {
 				out.push(`${at}: '${k}' is not something an action collects here — one of ${known.join(', ')}`)
 	}
 	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
-		return [`${where} is { text?, recipients? } — what the press asks for before it fires`]
+		return [`${where} is { text?, recipients?, clockStep? } — what the press asks for before it fires`]
 	const c = raw as Record<string, unknown>
 	unknownKeys(c, COLLECTS_KEYS, where)
 	if (c.text !== undefined) {
@@ -575,19 +662,37 @@ export function collectsFindings(raw: unknown, where: string): string[] {
 			}
 		}
 	}
-	if (c.text === undefined && c.recipients === undefined && !out.length)
-		out.push(`${where} collects nothing — declare text, recipients, or leave collects out`)
+	if (c.clockStep !== undefined) {
+		const at = `${where}.clockStep`
+		const k = c.clockStep as Record<string, unknown> | null
+		if (!k || typeof k !== 'object' || Array.isArray(k))
+			out.push(`${at} is { label, default? } — the amount of story time the modal's stepper asks for`)
+		else {
+			unknownKeys(k, COLLECTED_CLOCK_STEP_KEYS, at)
+			out.push(...i18nFindings(k.label, `${at}.label`, { required: true }))
+			if (k.default !== undefined) {
+				const why = clockStepRefusal(k.default)
+				const by = (k.default as { by?: unknown } | null)?.by
+				if (why) out.push(`${at}.default ${why}`)
+				else if ((by as number) < 0)
+					out.push(`${at}.default.by is above 0 — the stepper opens going forward; Back is the person's`)
+			}
+		}
+	}
+	if (c.text === undefined && c.recipients === undefined && c.clockStep === undefined && !out.length)
+		out.push(`${where} collects nothing — declare text, recipients, clockStep, or leave collects out`)
 	return out
 }
 
 /**
  * Every fault in one action declaration, as sentences — the teaching-error
- * pattern (15 §1.3). Empty when the declaration is sound.
+ * pattern. Empty when the declaration is sound.
  *
  * `specId` decides which slash grammar applies: a `core:` spec may not claim a
  * dotted name and a plugin spec may not claim a bare one, or a name outside its
  * own namespace. That rule is the whole collision guarantee.
  * @experimental
+ * @ruling 15 §1.3
  */
 export function actionFindings(raw: unknown, specId: string, at = 'contributes.actions'): string[] {
 	return actionFindingsByLaw(raw, specId, at).map((f) => f.message)
@@ -849,16 +954,16 @@ export {
 
 /**
  * A slash collision: two actions offered to one genre under one name. One
- * slash name means one action (plans/31 V2, ruled 2026-09-17): since the
+ * slash name means one action (ruled 2026-09-17): since the
  * identity `<spec>#<key>` is the only routing key, two specs claiming one
  * name are two actions a palette could not tell apart — a collision, not
- * alternatives. (Until V2 two specs sharing a *function* under one name were
+ * alternatives. (Until then two specs sharing a *function* under one name were
  * alternatives a binding selected among; the function is gone, and so is the
  * exemption.) A plugin's names are namespaced (`acme.roll`), so a plugin
  * declaring the same `key` as a core verb is a different identity under a
  * different name, and never shadows it.
  *
- * Core's verbs hold their names first (U5c review, S1): every genre the list
+ * Core's verbs hold their names first: every genre the list
  * touches is seeded with `CORE_ACTIONS` under `core`, so a core spec claiming
  * `/retry` collides with the verb rather than shadowing it in the palette. (A
  * plugin spec cannot claim a bare name at all — that is the grammar's job.)
@@ -867,6 +972,7 @@ export {
  * document, `announce.build()` inside one package, and the host across every
  * published spec of an install (a boot-time refusal).
  * @experimental
+ * @ruling plans/31 V2, U5c review, S1
  */
 export function slashCollisions(
 	actions: ReadonlyArray<NormalizedAction & { specId: string }>,
@@ -933,17 +1039,17 @@ export function actionDocumentFindingsByLaw(doc: {
  * Who core's message verbs are for and where they live — the same shape a
  * contributed action has, so the client renders one list.
  *
- * Every entry is a **built-in** (U5b): its `key` is the verb the
+ * Every entry is a **built-in**: its `key` is the verb the
  * message-verb handlers know (`sessionMessages:*`), never something
  * `sessions:fireAction` routes; its identity is `core#<key>`
  * (`CORE_ACTION_SPEC_ID`), which is what a genre's enabled-when default
- * and a session's override name it by (plans/31 V2). `retry` also lives in the
+ * and a session's override name it by. `retry` also lives in the
  * composer's *extra* venue (the turn controls), where it acts on the newest
  * reply. Availability is the genre's (`messageVerbs`): a host lists an entry
  * only when the genre offers it; the floors are always offered.
  *
  * Four entries are not message verbs but **turn controls**
- * (`TURN_CONTROLS`, lair pass B7 + B8, R2): **`advance`**, the composer's
+ * (`TURN_CONTROLS`): **`advance`**, the composer's
  * Continue, which fires the turn order's head; **`pick`**, Pick who speaks;
  * and **`narrate`**, a narrator turn — all `sessions:fireTurn` — and
  * **`retake`**, Regenerate the last turn as a whole (`sessions:retakeTurn`).
@@ -951,15 +1057,17 @@ export function actionDocumentFindingsByLaw(doc: {
  * `turnControls`, and they act on no row. ⚠ `advance` is not `extend` — the prefill verb that
  * extends one reply (`core#extend`, labelled Extend; renamed from
  * `continue` 2026-09-28 so Continue means one press).
+ * @ruling U5b, plans/31 V2, lair pass B7 + B8, R2
  */
 /**
- * A core verb is declared without a `genre` (U5c review, S-E): it is offered
+ * A core verb is declared without a `genre`: it is offered
  * in **every** genre — availability is the genre's `messageVerbs`, and the
  * floors are not even that — so a genre on the declaration would name one
  * and lie about the rest. `Omit` rather than a cast, so a verb missing a
  * required field is a compile error here and not a runtime surprise in the
  * host's list.
  * @experimental
+ * @ruling U5c review, S-E
  */
 export interface CoreActionDecl extends Omit<NormalizedAction, 'genre'> {
 	/** stop · branch · edit — present in every genre. */
@@ -968,12 +1076,13 @@ export interface CoreActionDecl extends Omit<NormalizedAction, 'genre'> {
 
 /**
  * The sentences beside a grey core verb, as locale maps — the `reason` of
- * each verb's enabled-when below (U5e). One vocabulary: the host's chips,
+ * each verb's enabled-when below. One vocabulary: the host's chips,
  * menus and palette read these through the verdict, and a refusal at the
  * door says the same words. The two conditions that are NOT published
  * values — an edit in progress, the audience — keep their sentences on the
  * client (`messageVerbState.ts`).
  * @internal
+ * @ruling U5e
  */
 export const CORE_VERB_REASONS = Object.freeze({
 	generating: { en: 'wait for the reply to finish' },
@@ -996,8 +1105,9 @@ const NEWEST: EnabledWhen = { on: 'item.isNewest', truthy: true, reason: CORE_VE
 /**
  * The row is a reply — retry, extend and swipe write a reply over the row,
  * so on the author's own line (`role: 'user'`) they would overwrite what the
- * author wrote with the narrator's prose (F1, every persona-less genre). Keyed
+ * author wrote with the narrator's prose (in every persona-less genre). Keyed
  * on the role, never on a persona: a persona-less author line has none.
+ * @ruling F1
  */
 const REPLY: EnabledWhen = { on: 'item.role', equals: 'assistant', reason: CORE_VERB_REASONS.ownLine }
 

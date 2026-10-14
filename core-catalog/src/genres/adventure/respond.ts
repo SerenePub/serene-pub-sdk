@@ -62,6 +62,7 @@
  */
 
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { adventureGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
 
@@ -227,8 +228,36 @@ export const ADVENTURE_KEEPER_SCHEMA = {
 				additionalProperties: false,
 			},
 		},
+		/**
+		 * 🚧 **A clock proposal** (live scenes §6, ★3, 2026-10-13): how much
+		 * story time the scene took, when its events took meaningful time — a
+		 * journey, a long search, a night's sleep. Never for ordinary dialogue,
+		 * and never written: `resolve-state-changes` (its `clock` port) turns
+		 * the first entry into a `{ kind: 'clock', by, unit }` change, which
+		 * `set-state` holds as a proposal — or, with Trust the narrator on,
+		 * *Advance story clock* moves the clock by it.
+		 *
+		 * A list (empty is the ordinary turn, as `values` and `inventory`)
+		 * rather than an optional object, because every property here is
+		 * required (see above): a grammar cannot leave a key out. Its own key
+		 * rather than another arm on `values`, because the keeper's `path`
+		 * is a preset value an install wrote once, and a new arm there would
+		 * never reach an install that already has its config.
+		 */
+		clock: {
+			type: 'array',
+			items: {
+				type: 'object',
+				properties: {
+					by: { type: 'integer' },
+					unit: { type: 'string', enum: ['minutes', 'hours', 'days', 'months', 'years'] },
+				},
+				required: ['by', 'unit'],
+				additionalProperties: false,
+			},
+		},
 	},
-	required: ['values', 'inventory'],
+	required: ['values', 'inventory', 'clock'],
 	additionalProperties: false,
 } as const
 
@@ -1079,7 +1108,9 @@ export const adventureRespondSpec = () =>
 				}),
 			)
 			/**
-			 * `{ values, inventory }`, asked for as a shape.
+			 * `{ values, inventory, clock }`, asked for as a shape (`clock`
+			 * since live scenes ★3: read by `keeperResolve`'s own port, never
+			 * by `path`).
 			 *
 			 * The step this change exists for. Asked as an ordinary reply it
 			 * was a roleplay continuation that had just read the PLANNER's
@@ -1155,8 +1186,39 @@ export const adventureRespondSpec = () =>
 					 * an unchanged state costs a turn nothing.
 					 */
 					plan: $.planWrite.json,
+					/**
+					 * 🚧 The keeper's whole answer, whose `clock` list is the
+					 * one clock move it may ask for (live scenes §6, ★3) —
+					 * the whole document because a reference has no
+					 * sub-path, as `plan` above. Resolved onto `changes` as
+					 * a `{ kind: 'clock', by, unit }` line for `propose` to
+					 * hold, and onto `clock` for the trusted arm's *Advance
+					 * story clock*.
+					 */
+					clock: $.keeperWrite.json,
 					scope: $.input.sessionScope,
 					supply: $.itemSupply.supply,
+				}),
+			)
+			/**
+			 * 🚧 The keeper's clock move, decided (live scenes §6, ★3): `moves`
+			 * when the resolver passed one through, else the step of nothing
+			 * (By 0). Pure; read only by the trusted arm below, because a
+			 * reviewed turn's clock move is a proposal `propose` holds.
+			 *
+			 * 🚧 An **extend** never moves the clock twice (`unless` on the
+			 * prefill it continues from): the move it extends stands. A
+			 * regenerate or a swipe does move it — the move the old reply
+			 * made went back with that reply (live scenes §15 G5: the clock
+			 * move is anchored like a value and retracted with it), so the
+			 * new reply's keeper says how long its own scene took, as it
+			 * says its own values.
+			 */
+			.task('keeperStep', ($: any) =>
+				C.clockStep.v1({
+					step: $.keeperResolve.clock,
+					unless: $.input.continuationPrefill,
+					params: slot.params(),
 				}),
 			)
 			/**
@@ -1173,17 +1235,47 @@ export const adventureRespondSpec = () =>
 			.junction('commit', { on: ($: any) => $.input.fields }, (r) =>
 				r
 					.when('trusted', { path: 'trustNarrator', truthy: true }, (c) =>
-						c.task(
-							'apply',
-							($: any) =>
-								C.setState.v1({
-									changes: $.keeperResolve.changes,
-									scope: $.input.sessionScope,
-									base: $.gather.state.read.version,
-									params: slot.params(),
-								}),
-							{ expose: { label: 'Apply the changes' } },
-						),
+						c
+							.task(
+								'apply',
+								($: any) =>
+									C.setState.v1({
+										changes: $.keeperResolve.changes,
+										scope: $.input.sessionScope,
+										base: $.gather.state.read.version,
+										params: slot.params(),
+									}),
+								{ expose: { label: 'Apply the changes' } },
+							)
+							/**
+							 * 🚧 The keeper's clock move, applied (★3): the
+							 * same *Advance story clock* outlet *Time passes…*
+							 * moves the clock through, behind a junction on
+							 * whether there is one. `apply` passes a clock
+							 * line over — a task has no seam to announce a
+							 * moved clock — so this is the only writer.
+							 * The keeper's move (`cause: 'keeper'`) is a
+							 * time action for the boundary watcher, and a
+							 * refusal skips the clock rather than halting a
+							 * turn whose reply and values already stand
+							 * (`onRefusal: 'skip'`, live scenes §15 G4/G7).
+							 */
+							.junction('keeperClock', { on: ($: any) => $.keeperStep.moves }, (j: any) =>
+								j.when('moves', { truthy: true }, (k: any) =>
+									k.outlet(
+										'advance',
+										($: any) =>
+											C.advanceStoryClock.v1({
+												by: $.keeperStep.by,
+												unit: $.keeperStep.unit,
+												cause: 'keeper',
+												onRefusal: 'skip',
+												params: slot.params(),
+											}),
+										{ expose: { label: 'Move the story clock' } },
+									),
+								),
+							),
 					)
 					.otherwise('reviewed', (c) =>
 						c.task(
@@ -1287,7 +1379,12 @@ export const adventureRespondSpec = () =>
 					.sampling('planWrite', { seedKey: 'sampling-background' })
 					.sampling('keeperWrite', {
 						seedKey: 'sampling-background',
-					}),
+					})
+					// Loadouts (I12): the narrator on Reply, the state keeper
+					// on Extraction — unfilled, it falls back to Reply.
+					.loadout('scene', slot.loadout(CORE_LOADOUT.reply))
+					.loadout('voices.item.say', slot.loadout(CORE_LOADOUT.reply))
+					.loadout('keeperWrite', slot.loadout(CORE_LOADOUT.extraction)),
 			)
 			.build(),
 	)

@@ -45,11 +45,12 @@ export interface TurnMessage {
 	speakerId: number | null
 	/**
 	 * The **turn** the message belongs to — the run that created it — when
-	 * the asker knows (lair pass R8, 2026-09-28). Optional: absent, the
+	 * the asker knows. Optional: absent, the
 	 * world's rule is the newest message alone, exactly as before. Present,
 	 * every row of the newest turn is open for the world (see
 	 * `isAnchorOpen`). A person's own line belongs to no run, so it carries
 	 * none.
+	 * @ruling lair pass R8 (2026-09-28)
 	 */
 	turn?: string | number | null
 }
@@ -92,7 +93,7 @@ export function openAnchorFor(messages: readonly TurnMessage[], owner: TurnOwner
  * character who has not spoken has no anchor, and a change filed against no
  * anchor is open until they do.
  *
- * **The world's newest turn, whole** (lair pass R8, 2026-09-28): a turn may
+ * **The world's newest turn, whole**: a turn may
  * write several rows — the Lair's Castellan posts its beats in the Sanctum
  * and then the party speak — and the world's changes are anchored to the
  * row that planned them, not to whichever delver happened to speak last. So
@@ -101,6 +102,7 @@ export function openAnchorFor(messages: readonly TurnMessage[], owner: TurnOwner
  * Nothing written after that turn by anybody else is sealed any later than
  * before; a caller that supplies no `turn` gets the newest-message rule.
  * @experimental
+ * @ruling lair pass R8 (2026-09-28)
  */
 export function isAnchorOpen(
 	messages: readonly TurnMessage[],

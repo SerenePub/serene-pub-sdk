@@ -1,5 +1,5 @@
 /**
- * The value-type system (24 §8).
+ * The value-type system.
  *
  * Authoring goes through a toolkit facade — `v.integer({})`, `v.weights({})`,
  * `v.stackedBar({})` — for ergonomics and dot-discoverability; the output is
@@ -14,7 +14,7 @@
  * Unknown keys degrade safely: consumers render a read-only fallback and
  * refuse writes to types they cannot validate.
  *
- * Constraints come in two tiers, both pure data (24 §8):
+ * Constraints come in two tiers, both pure data:
  *  - T1 declarative: min/max/step/pattern/options; group: sumTo/normalize.
  *  - T2 predicates: `requiredWhen`/`visibleWhen`/`enabledWhen`, reusing the
  *    route-predicate shape ({path, equals, truthy}) — declarations that read
@@ -24,16 +24,18 @@
  * Four consumers key off the same id — factory (here), validator (here),
  * control renderer (@serene-pub/controls), scaffold printer (cli) — and a
  * conformance canary asserts no shipped type is missing any of the four.
+ * @ruling 24 §8, 24 §8
  */
 
 import { i18nFindings, type I18n } from './i18n.js'
 
 /**
- * One condition over sibling values — the route-predicate shape (20 §10).
+ * One condition over sibling values — the route-predicate shape.
  * A settings-form field's gate, not the action-level **enabled-when** of
  * `predicates.ts` (which reads the session's published values and carries a
  * `reason`); the two share the shape, not the document.
  * @experimental
+ * @ruling 20 §10
  */
 export interface ValuePredicate {
 	/** Dot path into the sibling value map. */
@@ -46,12 +48,16 @@ export interface ValuePredicate {
 
 /** Fields every declaration may carry, regardless of kind. @experimental */
 export interface ValueCommon {
-	/** What a person reads beside the control — a string or a locale map with `en` (R-20). */
+	/**
+	 * What a person reads beside the control — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label?: I18n
 	description?: I18n
 	/**
 	 * No shipped default — a config MUST supply this value. Requiredness is
-	 * what makes "missing" a fact the coverage report can state (24 §7).
+	 * what makes "missing" a fact the coverage report can state.
+	 * @ruling 24 §7
 	 */
 	required?: boolean
 	requiredWhen?: ValuePredicate
@@ -100,11 +106,12 @@ function decl(definitionId: string, props: Record<string, unknown>): ValueDecl {
 }
 
 /**
- * The authoring door's half of R-20: a declaration's `label` and
+ * The authoring door's half of the display-text rule: a declaration's `label` and
  * `description`, and each select option's, are display text — a string or a
  * locale map with `en` — refused at the author's line otherwise. `decl()`
  * itself stays unchecked because `valueDeclOf` bridges stored schemas through
  * it at read time, and a panel is not the place to refuse a row.
+ * @ruling R-20
  */
 function declared(definitionId: string, props: Record<string, unknown>): ValueDecl {
 	const findings = [
@@ -389,8 +396,9 @@ export const valueValidators: Record<string, Validator> = {
 
 /**
  * Validate one value against its declaration. Unknown type ids refuse —
- * a consumer must never accept a write it cannot check (24 §8).
+ * a consumer must never accept a write it cannot check.
  * @experimental
+ * @ruling 24 §8
  */
 export function validateValue(declaration: ValueDecl, value: unknown): string[] {
 	const kind = valueKind(declaration)
@@ -400,10 +408,11 @@ export function validateValue(declaration: ValueDecl, value: unknown): string[] 
 }
 
 /**
- * A deliberate hole (24 §7): type-checks wherever a value goes, so authoring
+ * A deliberate hole: type-checks wherever a value goes, so authoring
  * can continue — but the coverage report lists it as a named gap, and
  * validation refuses it like any other unknown.
  * @experimental
+ * @ruling 24 §7
  */
 export function todo(note: string): { 'todo@1': { note: string } } {
 	return freeze({ 'todo@1': freeze({ note }) })
@@ -421,12 +430,13 @@ export const shippedValueKinds = Object.freeze(Object.keys(valueValidators))
 
 /**
  * The bridge from the settings-schema vocabulary (`{type:'integer', …}` on
- * node-type slots) to value declarations (24 T6c). Derived at read, never
+ * node-type slots) to value declarations. Derived at read, never
  * stored — no document or hash changes — so panels and controls can speak
  * the value-decl contract while the schemas migrate underneath at their own
  * pace. Unknown entry types map to nothing, and the caller keeps its
  * legacy rendering for them.
  * @experimental
+ * @ruling 24 T6c
  */
 export function valueDeclOf(entry: unknown): ValueDecl | null {
 	const e = entry as Record<string, any>

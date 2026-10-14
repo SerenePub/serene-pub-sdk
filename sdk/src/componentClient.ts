@@ -1,5 +1,5 @@
 /**
- * The component client's contract (§3.5, C3): what a remote component is
+ * The component client's contract: what a remote component is
  * handed. The host implements it in the page's UI worker over the widget
  * wire — the same sections a native widget reads off its context and a
  * frame is posted, and the same verbs back — and `@serene-pub/component-client`
@@ -7,45 +7,77 @@
  *
  * A component module exports one mount function: it draws into `root`
  * (placing elements from `SP_HOST_ELEMENTS`) and returns a cleanup.
+ *
+ * **A component never types `v1`.** `.v1` is the wire's version clock: the
+ * envelope ({@link WidgetData}) carries each section as `{ v1 }`, and the
+ * component client unwraps the current version — `ctx.messages` is
+ * `messages.v1`, `ctx.scope('session:state')` is `session_state.v1`. When a
+ * section ships a `v2`, the client is the one place that picks.
+ *
+ * New to the project's words (scope, section, grant, dossier)? See the
+ * vocabulary page, `guides/vocabulary.md`.
+ * @ruling §3.5, C3
  */
 
-import type { ViewerV1, WidgetRequestKind, WidgetRequests, WidgetScopedSectionValues, WidgetSectionScope } from './widgets.js'
-import type { TurnOrderV1 } from './turnOrder.js'
+import type {
+	MessageV1,
+	WidgetBaseSection,
+	WidgetData,
+	WidgetEvent,
+	WidgetRequestKind,
+	WidgetRequests,
+	WidgetScopedSections,
+	WidgetScopedSectionValues,
+	WidgetSectionScope,
+	WidgetWriteGrant,
+} from './widgets.js'
 
-/** Every section the host pushes, as the latest value received. @experimental */
-export interface ComponentSections {
-	session?: unknown
-	messages?: unknown[]
+/**
+ * Every base section of the envelope ({@link WidgetData}) but `channels`,
+ * flat: the section's current version, `undefined` until the host posts it.
+ * Derived, never hand-listed — a base section added to `WidgetData` is here
+ * at once, and the component wire does not compile until it hands it over.
+ * (`channels` differs on purpose: the envelope's is the declared slugs; a
+ * component is handed each lane's rows, below.)
+ * @experimental
+ */
+export type ComponentBaseSections = {
+	[S in Exclude<WidgetBaseSection, 'channels'>]?: WidgetData[S]['v1']
+}
+
+/**
+ * Every section the host pushes, as the latest value received.
+ *
+ * `session`, `messages`, `layout`, `actions`, `props`, `settings`, `annex`,
+ * `locale`, `viewer` (🚧 who is looking), `turnOrder`, `attendance` — each
+ * that section's `v1`, from {@link ComponentBaseSections}.
+ * @experimental
+ */
+export interface ComponentSections extends ComponentBaseSections {
 	/** Per-lane rows, when the widget declared channels. */
-	channels: Record<string, unknown[]>
-	settings?: Record<string, unknown>
-	actions?: unknown
-	annex?: Record<string, unknown>
-	props?: Record<string, unknown>
+	channels: Record<string, MessageV1[]>
 	theme?: { theme: string; mode: 'light' | 'dark' }
-	/** The viewer's language code — render a locale map with `i18nText(text, ctx.locale)`. */
-	locale?: string
-	/** 🚧 Who is looking: `{ userId, isAdmin, isGuest }`. */
-	viewer?: ViewerV1
-	/** The session's turn order: who is due, in order, and who could be (`turnOrder.v1`). */
-	turnOrder?: TurnOrderV1
 	/**
-	 * 🚧 The scoped sections this widget was granted, by their posted name
-	 * (`session_full`, `session_state`, …) — the SDK's one table
-	 * (`WidgetScopedSections`), each its section's `v1`.
+	 * 🚧 The raw bag: the scoped sections this widget was granted, by their
+	 * posted name (`session_full`, `session_state`, …) — the SDK's one table
+	 * (`WidgetScopedSections`), each its section's `v1`. Read one with
+	 * {@link ComponentContext.scope}, by the scope you declared; this bag is
+	 * for code that walks every section.
 	 */
 	scoped: Partial<WidgetScopedSectionValues>
 	/**
-	 * 🚧 The scopes this widget holds, BARE (`session:state`, never
+	 * 🚧 The scopes and write grants this widget holds, BARE
+	 * (`session:state`, `session:state:write`, `channel:main:write`; never
 	 * `widget:session:state`) — as the host last said (`grants`), on mount
 	 * and whenever an admin's review changes them. `undefined` until the host
 	 * says (and from a host that never does). So a component tells "this
 	 * scope was not granted" (drawn as such) from "its section has not been
 	 * posted yet" (drawn as loading) — both of which are an absent `scoped`
-	 * entry. Read one scope with {@link ComponentContext.granted}.
+	 * entry — and can hide a button whose write it does not hold. A write
+	 * grant ({@link WidgetWriteGrant}) pushes no section of its own. Read one
+	 * with {@link ComponentContext.granted}.
 	 */
-	grants?: readonly WidgetSectionScope[]
-	layout?: unknown
+	grants?: readonly (WidgetSectionScope | WidgetWriteGrant)[]
 	/** The view state this widget saved last time, handed back once on mount. */
 	state?: unknown
 	suspended: boolean
@@ -68,7 +100,7 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	/** Called with the section's name whenever the host pushes one. */
 	subscribe(fn: (section: ComponentSection) => void): () => void
 	/** Widget events (`message:created`, `layout:changed`, …). */
-	onEvent(fn: (event: unknown) => void): () => void
+	onEvent(fn: (event: WidgetEvent) => void): () => void
 	/** Press an action by key or identity, as the native `invoke` verb does. */
 	invoke(key: string, args?: ComponentInvokeArgs): void
 	/**
@@ -89,11 +121,22 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	 */
 	t(source: string): string
 	/**
-	 * 🚧 Was `scope` granted? `true` or `false` once the host has said
-	 * (`grants`); `undefined` before it has — so `false` is the one answer
-	 * that means "draw not granted", and `undefined` still means "wait".
+	 * 🚧 Was `scope` — or a write grant, `session:state:write`,
+	 * `channel:<slug>:write` — granted? `true` or `false` once the host has
+	 * said (`grants`); `undefined` before it has — so `false` is the one
+	 * answer that means "draw not granted", and `undefined` still means "wait".
+	 * A widget that asks `send`, `draft` or `set-attribute-value` checks its
+	 * write grant here before it offers the button.
 	 */
-	granted(scope: WidgetSectionScope): boolean | undefined
+	granted(scope: WidgetSectionScope | WidgetWriteGrant): boolean | undefined
+	/**
+	 * 🚧 The section a granted scope delivers, by the same string `scopes`
+	 * and `granted` take: `ctx.scope('session:state')` is the session's
+	 * stats and states. `undefined` when it is not granted, or not posted
+	 * yet — {@link granted} tells the two apart. (Not `scopes`: that is the
+	 * list a widget declares.)
+	 */
+	scope<S extends WidgetSectionScope>(scope: S): WidgetScopedSectionValues[WidgetScopedSections[S]['section']] | undefined
 }
 
 /** What a component module exports: mount into `root`; return a cleanup. @experimental */

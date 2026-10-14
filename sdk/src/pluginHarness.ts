@@ -1,5 +1,5 @@
 /**
- * The **plugin sandbox's context, in the author's harness** (plans 29 §14 D-3).
+ * The **plugin sandbox's context, in the author's harness**.
  *
  * The SDK's executor builds a node's context itself — `{ signal, progress,
  * status, log, countTokens }`, plus `read` for a Query, `call` for an Oracle and
@@ -32,6 +32,7 @@
  * reproduced is the *shape* — which members exist, which are withheld, what a
  * refusal says, and where the randomness and the clock come from — because that
  * is what a handler can be written against and get wrong.
+ * @ruling plans 29 §14 D-3
  */
 
 import { getDefinition } from './descriptors.js'
@@ -519,7 +520,10 @@ export interface PluginHandlerContextOptions {
 	 * to be able to reproduce.
 	 */
 	seed?: string
-	/** The hook kind, which decides the grants (R-3). Omitted: both granted. */
+	/**
+	 * The hook kind, which decides the grants. Omitted: both granted.
+	 * @ruling R-3
+	 */
 	kind?: HookCtxKind
 	/** Override the kind's grants — for pinning what a handler does without one. */
 	grants?: Partial<HookCtxGrants>
@@ -662,8 +666,9 @@ export interface PluginNodeBindingOptions {
  * place. Everything else it built — `read`, `call`, `commit`, `progress`,
  * `status`, `countTokens` — is dropped, because no sandbox has ever endowed it.
  * A plugin Query reaching for `ctx.read` therefore fails here exactly as it
- * fails at install, which is the whole reason this exists (G13).
+ * fails at install, which is the whole reason this exists.
  * @experimental
+ * @ruling G13
  */
 export function pluginNodeBindings(opts: PluginNodeBindingOptions): Bindings {
 	const storage = opts.storage ?? memoryStorage()

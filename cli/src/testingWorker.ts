@@ -1,5 +1,5 @@
 /**
- * The component harness's worker (C3b): the page's UI worker, in a Node
+ * The component harness's worker: the page's UI worker, in a Node
  * worker thread. Starts the same runtime the app's worker starts
  * (`@serene-pub/component-client/worker-runtime`), so a component under
  * test runs against the same DOM polyfill, event forwarding and control

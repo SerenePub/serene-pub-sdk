@@ -56,6 +56,9 @@ export * from './nudge.js'
 export * from './whisper.js'
 export * from './trap.js'
 export * from './reveal.js'
+// 🚧 Time passes… (live scenes §6): the graph is `shared/timePasses.ts`.
+export * from './advanceTime.js'
 
 export * from './answerForm.js'
 export * from './turnOrder.js'
+export * from './summarizeScene.js'

@@ -21,3 +21,5 @@ export * from './text.js'
 // and its shapes are the neutral `…/widgets` subpath's.
 export { WIDGET_CONTEXT_KEY, type WidgetContext, type WidgetContextRef } from '../widgetContext.js'
 export * from './composerTray.js'
+// 🚧 §15 G9: the conversation's dates, through the book's calendar.
+export * from './storyDays.js'

@@ -1,10 +1,10 @@
 /**
- * Turn order as state (PLAN-turn-order §4.2, ruled 2026-09-21).
+ * Turn order as state.
  *
  * The session's ordered list of prepared turns is a **document**, not a
  * decision a run makes on the way to a reply. It lives at
  * `sessions.metadata.turnOrder`, is written by `core:outlet/set-turn-order@1`
- * and nothing else, and survives refresh and reboot (R5). A page renders it;
+ * and nothing else, and survives refresh and reboot. A page renders it;
  * a socket fires an entry from it; the recompute is a pipeline
  * (`core:spec/<genre>-turn-order`, one per genre) that answers a session event and reads only.
  *
@@ -17,10 +17,11 @@
  *
  * ⚠ `TurnCandidateV1.ref` is a `ParticipantRef`, whose grammar today admits
  * `character:` · `envoy:` · `user:` and the roles — not `persona:`. A
- * persona is a character row flagged `is_persona` (NOMENCLATURE §23), so its
+ * persona is a character row flagged `is_persona`, so its
  * reference is `character:<id>` and `kind: 'persona'` is what says which;
- * whether the grammar grows a `persona:` form is an open question the plan
- * records (§8), not one this file answers.
+ * whether the grammar grows a `persona:` form is an open question still
+ * recorded, not one this file answers.
+ * @ruling PLAN-turn-order §4.2 (ruled 2026-09-21), R5, NOMENCLATURE §23, PLAN-turn-order §8
  */
 import type { ParticipantRef } from './participants.js'
 
@@ -109,10 +110,11 @@ const isCandidate = (v: unknown): v is TurnCandidateV1 =>
  * The turn order a session's `metadata` holds — `EMPTY_TURN_ORDER` when the
  * key is missing or the value is not a `TurnOrderV1`. Never throws: a
  * session that predates this build, or one whose metadata a hand edit
- * broke, has an empty order until its next event recomputes it (§4.1,
- * "no backfill"). The document is returned as stored, extra keys included;
+ * broke, has an empty order until its next event recomputes it (no
+ * backfill). The document is returned as stored, extra keys included;
  * only its shape is judged.
  * @experimental
+ * @ruling PLAN-turn-order §4.1
  */
 export function readTurnOrder(metadata: unknown): TurnOrderV1 {
 	if (!isRecord(metadata)) return EMPTY_TURN_ORDER
@@ -135,7 +137,8 @@ export function readTurnOrder(metadata: unknown): TurnOrderV1 {
  * `core:shape/messages@1` carries (the host's `session-history` projection),
  * reduced to what the rule needs. Rows may carry more; the rule ignores it.
  *
- * @experimental 🚧 provisional with the turn-order vocabulary (PLAN-turn-order §4.4).
+ * @experimental 🚧 provisional with the turn-order vocabulary.
+ * @ruling PLAN-turn-order §4.4
  */
 export interface TurnHistoryMessage {
 	role: string
@@ -161,7 +164,8 @@ const speakerRefOf = (m: TurnHistoryMessage): unknown =>
  * or `undefined` — a sparse or partially loaded history) is skipped, never a
  * throw: every reader of turn order goes through here, so it tolerates them once.
  *
- * @experimental 🚧 provisional with the turn-order vocabulary (PLAN-turn-order §4.4).
+ * @experimental 🚧 provisional with the turn-order vocabulary.
+ * @ruling PLAN-turn-order §4.4
  */
 export function countedTurns<M extends TurnHistoryMessage>(messages: readonly (M | null | undefined)[]): M[] {
 	return messages.filter((m): m is M => !!m && !m.isHidden && !m.isNarratorResponse)
@@ -183,7 +187,8 @@ const lastUserIndex = (turns: readonly TurnHistoryMessage[]): number => {
  * envoy's reply marks no character. Before any user row the whole history is
  * one round, so a greeting counts as its character's turn.
  *
- * @experimental 🚧 provisional with the turn-order vocabulary (PLAN-turn-order §4.4).
+ * @experimental 🚧 provisional with the turn-order vocabulary.
+ * @ruling PLAN-turn-order §4.4
  */
 export function spokenRefsSince(messages: readonly (TurnHistoryMessage | null | undefined)[]): Set<string> {
 	const turns = countedTurns(messages)
@@ -213,7 +218,8 @@ export function spokenRefsSince(messages: readonly (TurnHistoryMessage | null | 
  * This is the rule `core:task/turn-round-robin@1` runs, and the fallback a
  * plugin's own strategy should use rather than carry a copy of it.
  *
- * @experimental 🚧 provisional with the turn-order vocabulary (PLAN-turn-order §4.4).
+ * @experimental 🚧 provisional with the turn-order vocabulary.
+ * @ruling PLAN-turn-order §4.4
  */
 export function roundRobinOrder(
 	candidates: readonly TurnCandidateV1[],

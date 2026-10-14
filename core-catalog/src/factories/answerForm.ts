@@ -56,6 +56,7 @@
  */
 
 import { compile, handlebars, slot, spec, sessionEvents, type GenreDecl } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../loadouts.js'
 import * as C from '@serene-pub/contracts'
 
 /** @internal */
@@ -245,10 +246,13 @@ export const answerFormSpec = (id: string, genre: GenreDecl, options: AnswerForm
 				}),
 			)
 			.preset('answer-form', { label: 'Answer a form', default: true }, (p) => {
-				const templated = p.template('prompt', {
-					source: ANSWER_FORM_TEMPLATE,
-					engine: handlebars.id,
-				})
+				const templated = p
+					.template('prompt', {
+						source: ANSWER_FORM_TEMPLATE,
+						engine: handlebars.id,
+					})
+					// Form answers run on the Reply loadout (I12).
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply))
 				return options.prompt ? templated.prompts('context', options.prompt) : templated
 			})
 			.build(),

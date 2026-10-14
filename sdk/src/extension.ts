@@ -1,5 +1,5 @@
 /**
- * `defineExtension` — the one entry point a plugin author starts from (03, 09).
+ * `defineExtension` — the one entry point a plugin author starts from.
  *
  * Before this existed, the SDK could express a pipeline and nothing else. An author could
  * build a spec but had nowhere to say *"this is my plugin, here are its lifecycle
@@ -8,7 +8,7 @@
  * difference between authoring a pipeline and writing a plugin, and it is most of what
  * "download the SDK" has to mean.
  *
- * Since D-1 it says the rest of it too — the **genres**, **surfaces**, **presets**,
+ * It says the rest of it too — the **genres**, **surfaces**, **presets**,
  * **configs**, **prompts** and declared **permissions** that were only sayable through
  * `announce()`. One declaration, one build: `serene-pub build` emits a single manifest
  * carrying both halves, and a package no longer has to choose which half of itself to
@@ -17,9 +17,10 @@
  * announcement document a host syncs.
  *
  * Everything here is a **literal declaration**, because the compiler extracts it from the
- * source without executing it (F6, 03 §3, 13/§30). A registration assembled at runtime is
+ * source without executing it. A registration assembled at runtime is
  * a lint error rather than a silent omission — the manifest has to be a complete statement
  * of what a plugin can do, or the permission model is a guess.
+ * @ruling 03, 09, D-1, F6, 03 §3, 13/§30
  */
 
 import type { WidgetDecl } from './layout.js'
@@ -31,9 +32,11 @@ import type { PluginSettings, SettingsSchema } from './settings.js'
 import type { EventListener, LifecycleCallback, LifecycleMoment } from './hooks.js'
 import type { Result } from './executor.js'
 import { templateSeedProblems, type TemplateSeed } from './templateIds.js'
+import { loadoutDeclProblems, type LoadoutDecl } from './loadouts.js'
 import { i18nFindings, type I18n } from './i18n.js'
 import type { SpecDocument } from './document.js'
 import { isSessionEventDecl, type SessionEventDecl } from './events.js'
+import { listShapes, type ShapeDef } from './shapes.js'
 import {
 	preset,
 	storedConfig,
@@ -50,7 +53,7 @@ import {
 import type { GenreDecl } from './genres.js'
 import { annexFieldListFindings, type AnnexFieldDecl } from './annexFields.js'
 import type { SurfacesDecl } from './surfaces.js'
-import { pluginVariableFindings, type VariableDecl } from './variables.js'
+import { getVariable, pluginVariableFindings, type VariableDecl } from './variables.js'
 import {
 	declarationFindings,
 	storedSwap,
@@ -62,13 +65,14 @@ import {
 // ── Callable declarations ───────────────────────────────────────────────────
 
 /**
- * The **handler** implementing a node definition (R-1). Data in, expected shape out; the executor is the only caller
- * (01 §9). **Private** (the default) means only this extension's pipelines may use the
+ * The **handler** implementing a node definition. Data in, expected shape out; the executor is the only caller.
+ * **Private** (the default) means only this extension's pipelines may use the
  * node — not another package's, not one a person authors; **public** means any may, which
  * is how peer composition happens — as a node on the spine, never a peer call mid-run
- * (F10). The node's visibility is this, and only this (R62): the definition does not
+ * The node's visibility is this, and only this: the definition does not
  * say `public` itself. Enforced at install, at publish and at the run.
  * @experimental
+ * @ruling R-1, 01 §9, F10, R62
  */
 export interface HandlerDecl<D extends Descriptor<any, any, any> = Descriptor> {
 	readonly __decl: 'handler'
@@ -81,13 +85,14 @@ export interface HandlerDecl<D extends Descriptor<any, any, any> = Descriptor> {
 	 *
 	 * An extension hook running inside Serene Pub's process cannot be stopped —
 	 * a runaway loop or a blocking call takes the whole application with it, and
-	 * F36's promise that every hook invocation is bounded becomes unenforceable
-	 * (13 §7h). It also shares the host's memory, so a crash is the host's crash
+	 * the promise that every hook invocation is bounded becomes unenforceable.
+	 * It also shares the host's memory, so a crash is the host's crash
 	 * and a leak is the host's leak.
 	 *
 	 * Kept as a field rather than dropped because the *value* still travels into
 	 * the registry row, where install-time validation reads it without executing
-	 * the plugin (F6). A manifest claiming anything else is refused there.
+	 * the plugin. A manifest claiming anything else is refused there.
+	 * @ruling F36, 13 §7h, F6
 	 */
 	runtime?: 'process'
 }
@@ -133,7 +138,7 @@ export const lifecycleCallback = (
  *
  * There is deliberately nothing here for ordering or for using your return
  * value, and both absences are the same absence. Delivery is fire-and-forget
- * (01 §9c, 11 §3): your return is dropped, and dispatch order is **declaration
+ * your return is dropped, and dispatch order is **declaration
  * order** — the order you wrote your own subscriptions in, tie-broken across
  * extensions by plugin id. A `priority` field would manufacture an ordering
  * guarantee core does not give, and be a collision of its own the moment two
@@ -141,6 +146,7 @@ export const lifecycleCallback = (
  * extension rewrite what the next one is told. Neither is a thing you can ask
  * for, which is why neither is a thing you have to defend against.
  * @experimental
+ * @ruling 01 §9c, 11 §3
  */
 export interface EventListenerDecl {
 	readonly __decl: 'event-listener'
@@ -171,7 +177,7 @@ export const eventListener = (
 // ── Components ──────────────────────────────────────────────────────────────
 
 /**
- * The one unit of custom UI (§3.5, R25): a module the page's UI worker runs,
+ * The one unit of custom UI: a module the page's UI worker runs,
  * placing elements from the host vocabulary (`SP_HOST_ELEMENTS`), which the
  * host mirrors into the box it is mounted in. A {@link WidgetDecl} names one
  * by `component`; a page mount point will name one the same way.
@@ -180,12 +186,16 @@ export const eventListener = (
  * (core, or one plugin) per session page. Its only path to data is the
  * component client's port; it imports only `COMPONENT_IMPORTS`.
  * @experimental
+ * @ruling §3.5, R25
  */
 export interface ComponentDecl {
 	readonly __decl: 'component'
 	/** Unique within the package — a widget's `component` names it. */
 	slug: string
-	/** What an admin sees it called — a string or a locale map (R-20). */
+	/**
+	 * What an admin sees it called — a string or a locale map.
+	 * @ruling R-20
+	 */
 	label: I18n
 	/**
 	 * The component's source — `.svelte`, `.ts` or `.js` — relative to the
@@ -194,24 +204,30 @@ export interface ComponentDecl {
 	 */
 	entry: string
 	/**
-	 * Which adapter renders it (R35, R37): Svelte, compiled, and vanilla —
+	 * Which adapter renders it: Svelte, compiled, and vanilla —
 	 * plain DOM, which needs no compiler and proves the seam is not
 	 * Svelte-shaped. Preact, and React on `preact/compat`, come after 1.0.
+	 * @ruling R35, R37
 	 */
 	framework: ComponentFramework
 	/** Per-instance settings, delivered as a widget's are (`settings.v1`). */
 	settings?: SettingsSchema
 	/**
-	 * A clone records its upstream, so an update can be offered (R-fork):
+	 * A clone records its upstream, so an update can be offered:
 	 * the upstream component's slug, its package's version, and — experimental
-	 * (C6) — the `sourceHash` of the source it was cloned from (core's
+	 * — the `sourceHash` of the source it was cloned from (core's
 	 * `dist/components/<slug>.source.json` carries it), so "the upstream
 	 * changed since you cloned" is a hash comparison, not a version guess.
+	 * @ruling R-fork, C6
 	 */
 	basedOn?: { component: string; version: string; sourceHash?: string }
 }
 
-/** The component frameworks SDK 1.0 ships (R35). The list grows; it never shrinks. @experimental */
+/**
+ * The component frameworks SDK 1.0 ships. The list grows; it never shrinks.
+ * @experimental
+ * @ruling R35
+ */
 export const COMPONENT_FRAMEWORKS = ['svelte', 'vanilla'] as const
 /** @experimental */
 export type ComponentFramework = (typeof COMPONENT_FRAMEWORKS)[number]
@@ -325,9 +341,15 @@ const TEMPLATE_ENGINE_ID = /^([a-z0-9][a-z0-9.-]*):template\/([a-z0-9][a-z0-9-]*
 
 /** @experimental */
 export interface ExtensionDecl {
-	/** `vendor.plugin` — the owner segment of every id this plugin registers (F2). */
+	/**
+	 * `vendor.plugin` — the owner segment of every id this plugin registers.
+	 * @ruling F2
+	 */
 	slug: string
-	/** What the plugin is called where it is listed — a string or a locale map with `en` (R-20). */
+	/**
+	 * What the plugin is called where it is listed — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	name: I18n
 	version: string
 	description?: I18n
@@ -336,9 +358,12 @@ export interface ExtensionDecl {
 	/** Where its source lives, when it is public. */
 	repo?: string
 	/**
-	 * Supported SP range, separate from the SDK range (09) — npm-style
-	 * (`{ 'serene-pub': '>=0.7 <0.8' }`). Version ranges and nothing else: a
-	 * template engine this plugin ships is `templateEngines` (R1).
+	 * Supported SP range, separate from the SDK range — npm-style
+	 * (`{ 'serene-pub': '>=0.6.0-0 <0.8' }`). A prerelease instance is inside
+	 * a range only when the range names a prerelease of the same version, so a
+	 * floor meant to admit `0.6.0-pr-4` ends in `-0`. Version ranges and nothing else: a
+	 * template engine this plugin ships is `templateEngines`.
+	 * @ruling 09, R1
 	 */
 	engines?: { 'serene-pub'?: string }
 	/**
@@ -362,8 +387,8 @@ export interface ExtensionDecl {
 	/**
 	 * The hooks this package defines — points where other authored code may
 	 * run, by key (namespaced `<slug>:hook/<key>` in the announcement). Core
-	 * declares its own here. A plugin's do not reach its manifest yet, so the
-	 * packager refuses them until the manifest carries declared points.
+	 * declares its own here; a plugin's travel in its manifest's
+	 * `declaredHooks`, under the same fully-qualified ids.
 	 */
 	hooks?: Record<string, HookDeclaration>
 	/**
@@ -376,11 +401,12 @@ export interface ExtensionDecl {
 	events?: EventDeclarationInput[]
 	components?: ComponentDecl[]
 	/**
-	 * The widgets this package offers (R71) — `widget({ … })` values, each
+	 * The widgets this package offers — `widget({ … })` values, each
 	 * naming one of `components` and optionally scoped to genres. A genre
 	 * withholds any of them by value (`omitWidgets`); a session offers every
 	 * widget scoped to its genre or to all. The instance knows each under this
 	 * package's namespace (`<slug>:<id>`).
+	 * @ruling R71
 	 */
 	widgets?: WidgetDecl[]
 	/**
@@ -414,13 +440,16 @@ export interface ExtensionDecl {
 	 * @experimental
 	 */
 	variables?: VariableDecl[]
-	/** Pipelines shipped with the plugin — built specs, or documents already compiled. Compiled at build time (F6). */
+	/**
+	 * Pipelines shipped with the plugin — built specs, or documents already compiled. Compiled at build time.
+	 * @ruling F6
+	 */
 	pipelines?: Array<BuiltSpec | SpecDocument>
 	/**
-	 * Genres this plugin declares (24 §3, D-1) — a genre is a package-level
+	 * Genres this plugin declares — a genre is a package-level
 	 * declaration like a pipeline, so it belongs where the package is declared.
 	 *
-	 * Before D-1 a genre could only be declared through `announce()`, and a
+	 * Previously a genre could only be declared through `announce()`, and a
 	 * package with both a genre and its own node definitions had to export two
 	 * declarations and build only one of them: the artifact carried the genre
 	 * and not the handlers, or the handlers and not the genre. Every genre
@@ -432,10 +461,11 @@ export interface ExtensionDecl {
 	 * which is a reference rather than a claim of ownership. And a genre needs
 	 * exactly one create pipeline in `pipelines`, so the two fields are checked
 	 * against each other rather than separately.
+	 * @ruling 24 §3, D-1
 	 */
 	genres?: GenreDecl[]
 	/**
-	 * Frame surfaces this plugin ships (20 §12, 21 §7): documents an instance
+	 * Frame surfaces this plugin ships: documents an instance
 	 * mounts in opaque-origin iframes. Declared, never discovered — an instance
 	 * renders what the manifest says and `serene-pub ui` renders the same list,
 	 * so a surface a modder previewed is a surface an instance will offer.
@@ -443,16 +473,23 @@ export interface ExtensionDecl {
 	 * Distinct from `components`, and the difference is a trust decision: a
 	 * frame gets a document and a MessageChannel, a component gets the host's
 	 * own DOM.
+	 * @ruling 20 §12, 21 §7
 	 */
 	surfaces?: SurfacesDecl
-	/** Named configurations over this plugin's specs — typed deltas (24 §7), made by `config()`. */
+	/**
+	 * Named configurations over this plugin's specs — typed deltas, made by `config()`.
+	 * @ruling 24 §7
+	 */
 	configs?: ConfigInput<any>[]
 	/**
 	 * Presets: which pipelines a session of a genre runs. Each binds spec
 	 * values on the events their inlet locks answer.
 	 */
 	presets?: PresetInput[]
-	/** Authored prose for a node's prompts slot, shipped as rows (24 T6b). */
+	/**
+	 * Authored prose for a node's prompts slot, shipped as rows.
+	 * @ruling 24 T6b
+	 */
 	prompts?: PromptDecl[]
 	/**
 	 * This plugin's definitions, offered on another package's swappable nodes —
@@ -462,7 +499,7 @@ export interface ExtensionDecl {
 	 */
 	swaps?: SwapContribution[]
 	/**
-	 * What this plugin asks the sandbox for (12 §6): a storage quota, a network
+	 * What this plugin asks the sandbox for: a storage quota, a network
 	 * allowlist. **Declared, because nothing else can compile them** — the
 	 * packager derives the rest of the permission list from what the code
 	 * actually calls, but a quota is a number and a host is a name, and neither
@@ -477,11 +514,12 @@ export interface ExtensionDecl {
 	 * Folded in here so a package declares its permissions in the one place it
 	 * declares everything else. The separate `ManifestInput` the CLI's sandbox
 	 * compiler accepts still works for a package that has not moved.
+	 * @ruling 12 §6
 	 */
 	permissions?: DeclaredPermissions
 	/**
 	 * Template rows shipped with the plugin — prompts, context templates and
-	 * variable layouts, each under an owner-namespaced **template id** (R19).
+	 * variable layouts, each under an owner-namespaced **template id**.
 	 *
 	 * Beside `pipelines` because that is the gap: a plugin could ship a spec
 	 * whose configuration points at a prompt, and had no way to ship the prompt.
@@ -493,11 +531,24 @@ export interface ExtensionDecl {
 	 *
 	 * A new major of a template is a NEW entry under a new id; the old id keeps
 	 * resolving to the row every spec pinned to it was written against.
+	 * @ruling R19
 	 */
 	templates?: readonly TemplateSeed[]
 	/**
+	 * **Loadouts** shipped with the plugin (I12) — `<slug>:loadout/<name>@<major>`
+	 * declarations, each naming a sampling preset by seed key (a core one, or
+	 * one of the plugin's own). Never a pair: they arrive **unfilled** and
+	 * **unmerged**, so installing a plugin never changes which model runs —
+	 * an unfilled loadout falls back to its transform's default until an admin
+	 * fills or merges it. A spec of the plugin's names one on an oracle's
+	 * `loadout` slot (`p.loadout(node, slot.loadout(id))`), and may name core's.
+	 * @ruling DESIGN-image-generation §13
+	 */
+	loadouts?: readonly LoadoutDecl[]
+	/**
 	 * Dependencies on **public handlers** other plugins expose. Definition-level pins
-	 * only; runtime peer invocation is banned (F10, 01 §9b).
+	 * only; runtime peer invocation is banned.
+	 * @ruling F10, 01 §9b
 	 */
 	peerTypes?: string[]
 }
@@ -513,6 +564,14 @@ export interface Extension extends Omit<ExtensionDecl, 'configs' | 'presets' | '
 	presets?: PresetDecl[]
 	swaps?: StoredSwapContribution[]
 	events?: StoredEventDeclaration[]
+	/**
+	 * The shapes registered under this package's slug when it was declared
+	 * (`defineShape`, `<slug>:shape/…`) — what the packager writes into the
+	 * manifest's `shapes`. Captured here because the package's module may
+	 * resolve its own copy of the SDK, whose registry the packager cannot
+	 * read. Absent when there are none.
+	 */
+	shapes?: ShapeDef[]
 }
 
 /** @experimental */
@@ -535,7 +594,7 @@ export function defineExtension(d: ExtensionDecl): Extension {
 	}
 	if (!/^\d+\.\d+\.\d+/.test(d.version)) {
 		problems.push(
-			`'${d.version}' is not semver. A plugin upgrades by version comparison (12 §3b).`,
+			`'${d.version}' is not semver. A plugin upgrades by version comparison.`,
 		)
 	}
 	// The display text (R-20): the name the plugin list shows and the
@@ -611,8 +670,15 @@ export function defineExtension(d: ExtensionDecl): Extension {
 	for (const t of d.templates ?? []) {
 		problems.push(...templateSeedProblems(t, d.slug))
 		if (templateIds.has(t.id))
-			problems.push(`duplicate template id '${t.id}' — the id is the sync key (12 §3b).`)
+			problems.push(`duplicate template id '${t.id}' — the id is the sync key.`)
 		templateIds.add(t.id)
+	}
+	const loadoutIds = new Set<string>()
+	for (const l of d.loadouts ?? []) {
+		problems.push(...loadoutDeclProblems(l, d.slug))
+		if (loadoutIds.has(l.id))
+			problems.push(`duplicate loadout id '${l.id}' — the id is the sync key.`)
+		loadoutIds.add(l.id)
 	}
 
 	problems.push(...permissionFindings(d.permissions))
@@ -687,6 +753,10 @@ export function defineExtension(d: ExtensionDecl): Extension {
 		}).errors,
 	)
 
+	// Its own shapes, as data, for the manifest (core's travel with the app).
+	const shapes =
+		d.slug === 'core' ? [] : listShapes().filter((sh) => sh.id.startsWith(`${d.slug}:shape/`))
+
 	if (problems.length) {
 		throw new ExtensionError(
 			`invalid extension '${d.slug}':\n` + problems.map((p) => `  • ${p}`).join('\n'),
@@ -699,6 +769,7 @@ export function defineExtension(d: ExtensionDecl): Extension {
 		...(presets ? { presets } : {}),
 		...(events ? { events } : {}),
 		...(d.swaps ? { swaps: d.swaps.map(storedSwap) } : {}),
+		...(shapes.length ? { shapes } : {}),
 	} as Extension
 }
 
@@ -718,13 +789,20 @@ export const eventListenersOf = (e: Extension) =>
  * Every variable a package declares, as its manifest carries them: the
  * `variables` list first, then each variable a band of its handlers'
  * definitions holds (`Descriptor.bands`) — a band is a value holding its
- * variable, so the author never lists it twice. One entry per distinct
+ * variable, so the author never lists it twice — then each variable **of the
+ * package's own namespace** named by id in a `renders`: a handler
+ * definition's `variables` slot, or a node of one of its pipelines
+ * (2026-10-13). An id is resolved from the registry this package was built
+ * in; an instance refuses a `renders` naming a variable it was never handed,
+ * so a variable named only there must travel too. One entry per distinct
  * declaration: the same variable reached twice (two definitions declaring
  * one band) is one entry; one id with two different contents stays two, and
  * `pluginVariableFindings` refuses it.
  * @experimental
  */
-export function variablesOf(e: Pick<ExtensionDecl, 'variables' | 'handlers'>): VariableDecl[] {
+export function variablesOf(
+	e: Pick<ExtensionDecl, 'variables' | 'handlers'> & Partial<Pick<ExtensionDecl, 'slug' | 'pipelines'>>,
+): VariableDecl[] {
 	const out: VariableDecl[] = []
 	const seen = new Set<string>()
 	const add = (v: unknown) => {
@@ -735,11 +813,21 @@ export function variablesOf(e: Pick<ExtensionDecl, 'variables' | 'handlers'>): V
 		out.push(v as VariableDecl)
 	}
 	for (const v of e.variables ?? []) add(v)
+	const named: string[] = []
 	for (const h of e.handlers ?? []) {
 		if ((h as { __decl?: string }).__decl !== 'handler') continue
-		const bands = (h as HandlerDecl).type?.bands as Record<string, unknown> | undefined
+		const type = (h as HandlerDecl).type
+		const bands = type?.bands as Record<string, unknown> | undefined
 		for (const v of Object.values(bands ?? {})) add(v)
+		for (const s of Object.values((type?.slots ?? {}) as Record<string, { kind?: string; renders?: Record<string, string> }>))
+			if (s?.kind === 'variables') named.push(...Object.values(s.renders ?? {}))
 	}
+	for (const p of e.pipelines ?? [])
+		for (const n of (p as { nodes?: ReadonlyArray<{ renders?: Record<string, string> }> }).nodes ?? [])
+			named.push(...Object.values(n.renders ?? {}))
+	if (e.slug)
+		for (const id of named)
+			if (typeof id === 'string' && id.startsWith(`${e.slug}:`)) add(getVariable(id))
 	return out
 }
 

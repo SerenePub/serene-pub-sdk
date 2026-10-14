@@ -1,9 +1,10 @@
 /**
- * Receipts (01 §1, 02 §2). The first-class record of a run, and the thing the
+ * Receipts. The first-class record of a run, and the thing the
  * whole design's explicability claim rests on.
  *
- * Deliberately absent: progress messages (F34, ephemeral) and raw embedding
- * vectors (16 §1a, recorded by reference).
+ * Deliberately absent: progress messages (ephemeral) and raw embedding
+ * vectors (recorded by reference).
+ * @ruling 01 §1, 02 §2, F34, 16 §1a
  */
 
 import { renderPreview } from './preview.js'
@@ -25,12 +26,18 @@ export interface NodeReceipt {
 	elapsedMs: number
 	input?: unknown
 	output?: unknown
-	/** halt/err detail — "why did nothing happen" is otherwise unanswerable (01 §5). */
+	/**
+	 * halt/err detail — "why did nothing happen" is otherwise unanswerable.
+	 * @ruling 01 §5
+	 */
 	reason?: string
 	attempts?: number
 	cacheHit?: boolean
 	blockMode?: 'sequential' | 'parallel'
-	/** Which map iteration produced this entry (01 §4). */
+	/**
+	 * Which map iteration produced this entry.
+	 * @ruling 01 §4
+	 */
 	iteration?: number
 	timeoutMsApplied?: number
 	timedOut?: boolean
@@ -40,10 +47,16 @@ export interface NodeReceipt {
 	 * the flag that stops that reading as a success.
 	 */
 	recoveredAsEmpty?: boolean
-	/** Which sampler fields the adapter honoured vs dropped (12 §2). */
+	/**
+	 * Which sampler fields the adapter honoured vs dropped.
+	 * @ruling 12 §2
+	 */
 	samplingApplied?: Record<string, unknown>
 	samplingIgnored?: string[]
-	/** Provider only — recorded verbatim (F16). */
+	/**
+	 * Provider only — recorded verbatim.
+	 * @ruling F16
+	 */
 	request?: unknown
 	response?: unknown
 	tokens?: number
@@ -66,7 +79,10 @@ export interface NodeReceipt {
 	tokensCached?: number
 	/** Tokens WRITTEN to the cache, where a service bills the two halves apart. */
 	tokensCacheWrite?: number
-	/** Resolved config reference, e.g. oracleRef → 'generate' (16 §5b-i). */
+	/**
+	 * Resolved config reference, e.g. oracleRef → 'generate'.
+	 * @ruling 16 §5b-i
+	 */
 	resolvedRefs?: Record<string, string>
 	/**
 	 * Which layer each of this node's config values won at, per slot, per
@@ -92,18 +108,20 @@ export interface NodeReceipt {
 	 */
 	swap?: NodeSwap | null
 	/**
-	 * This outlet ran in a dry run and committed nothing (R-21 (1)). Its
+	 * This outlet ran in a dry run and committed nothing. Its
 	 * output carries a synthetic id, and the event it would have caused is
 	 * flagged the same way in `emitted`.
+	 * @ruling R-21 (1)
 	 */
 	dry?: true
 	notes?: string[]
 	/**
-	 * Script chains applied around this invocation (18 S5), one record per
+	 * Script chains applied around this invocation, one record per
 	 * link, in application order. `appliedBy` distinguishes the substrate
 	 * (executor-applied at a declared hook) from a binding invoking an
-	 * interior point (18 §4e). "Which of my thirty filters ate that word" is
+	 * interior point. "Which of my thirty filters ate that word" is
 	 * answered here, per link.
+	 * @ruling 18 S5, 18 §4e
 	 */
 	scripts?: ScriptApplicationRecord[]
 }
@@ -151,13 +169,14 @@ export interface ReceiptMeta {
 }
 
 /**
- * One script link's application, as the receipt keeps it (18 S2/S4/S5).
+ * One script link's application, as the receipt keeps it.
  *
  * A failing link is tolerated, not hidden: `result: 'err'` with the reason,
  * and the chain continues — recorded exactly like an optional node's absorbed
  * failure. A stop script's `verdict` is its index; `won: true` marks the
- * earliest, which is the answer to "why did my reply cut off" (S4).
+ * earliest, which is the answer to "why did my reply cut off".
  * @internal
+ * @ruling 18 S2/S4/S5, S4
  */
 export interface ScriptApplicationRecord {
 	scriptId: number
@@ -168,10 +187,11 @@ export interface ScriptApplicationRecord {
 	appliedBy: 'substrate' | 'binding'
 	/**
 	 * Where the link came from when it was not the node's own chain — the
-	 * provenance half of 18 §4c. `connection:KoboldCpp` marks a stop guard the
-	 * connection carries (18 §4b), which every pipeline using that connection
+	 * provenance half of this record. `connection:KoboldCpp` marks a stop guard the
+	 * connection carries, which every pipeline using that connection
 	 * inherits; absent means the pipeline-resolved chain. "Reply ended by
-	 * `connection:kobold / chatml-guard` at index 412" is this field plus S4.
+	 * `connection:kobold / chatml-guard` at index 412" is this field plus the stop script's `won`.
+	 * @ruling 18 §4c, 18 §4b, S4
 	 */
 	via?: string
 	result: 'ok' | 'err' | 'skip'
@@ -205,18 +225,23 @@ export interface Receipt {
 	outcome: Outcome
 	haltNodeKey?: string
 	haltReason?: string
-	/** Who stopped it, when an admin did (13 §3). `cancelled` is not `err`. */
+	/**
+	 * Who stopped it, when an admin did. `cancelled` is not `err`.
+	 * @ruling 13 §3
+	 */
 	cancelledBy?: string
 	/**
-	 * Time spent in the admin-visible queue before dequeue (13 §3). Recorded and
-	 * deliberately excluded from elapsed: queue wait consumes no budget (F13) and
-	 * trips no timeout (F36).
+	 * Time spent in the admin-visible queue before dequeue. Recorded and
+	 * deliberately excluded from elapsed: queue wait consumes no budget and
+	 * trips no timeout.
+	 * @ruling 13 §3, F13, F36
 	 */
 	queuedMs?: number
 	/**
 	 * True when this run halted before any effectful node and the receipt was
-	 * reduced to attribution only (13 §2). Default on for event-triggered runs,
+	 * reduced to attribution only. Default on for event-triggered runs,
 	 * which is where the per-message multiplier lives.
+	 * @ruling 13 §2
 	 */
 	compact?: boolean
 	/** How many node rows the compaction dropped — so the count is never a mystery. */
@@ -229,7 +254,7 @@ export interface Receipt {
 	preview?: import('./preview.js').PreviewReport
 	/**
 	 * Who portrays each participant this run asked about — resolved by the
-	 * host **once, at run start**, and pinned here like config (R-21 (4)).
+	 * host **once, at run start**, and pinned here like config.
 	 *
 	 * Keyed by participant reference (`character:12` → `{ by: 'ai' }`,
 	 * `character:7` → `{ by: 'person', userId: '3' }`, `owner` → …). The
@@ -243,16 +268,18 @@ export interface Receipt {
 	 * with no session behind it and on a preview that halts before any
 	 * oracle (a token count, the inspector's debug preview): nobody speaks
 	 * on those, so there is nobody to portray.
+	 * @ruling R-21 (4)
 	 */
 	portrayals?: import('./participants.js').Portrayals
 	/**
-	 * What the run was doing when it ended badly (R-19, R-21 "optional,
-	 * taken"): the last status a node set — *{speaker} is typing* — and the
+	 * What the run was doing when it ended badly:
+	 * the last status a node set — *{speaker} is typing* — and the
 	 * node that set it. Present only when the outcome is `halt`, `err` or
 	 * `cancelled`; never on `ok`, never on a preview's halt, and never as a
-	 * node row — statuses are ephemeral (F34) and this is the one exception.
+	 * node row — statuses are ephemeral and this is the one exception.
 	 * The host fills `{speaker}` before the receipt is stored; the client
 	 * resolves the locale.
+	 * @ruling R-19, R-21 ("optional, taken"), F34
 	 */
 	lastStatus?: import('./status.js').LastStatus
 	nodes: NodeReceipt[]
@@ -268,13 +295,14 @@ export interface Receipt {
 	 */
 	notes?: string[]
 	/**
-	 * One row per loop block that ran, and why it stopped (01 §4a).
+	 * One row per loop block that ran, and why it stopped.
 	 *
 	 * The note above says the same thing for the ceiling case in a sentence,
 	 * and a sentence is not a fact anything can switch on: "did the agent
 	 * finish, or did it run out of turns" is the question a tool loop's caller
 	 * asks, and reading it back out of prose is how a caller ends up matching
 	 * on wording. `iterations` counts the bodies that ran, whatever ended them.
+	 * @ruling 01 §4a
 	 */
 	loops?: Array<{
 		clauseId: string
@@ -288,11 +316,15 @@ export interface Receipt {
 		stopped: 'predicate' | 'ceiling' | 'interrupted'
 	}>
 	/**
-	 * Events core emitted as a consequence of writes in this run (01 §8).
+	 * Events core emitted as a consequence of writes in this run.
 	 * `dry` marks one a dry run recorded and never dispatched.
+	 * @ruling 01 §8
 	 */
 	emitted: Array<{ event: string; cause: string; subscribers: number; dry?: true }>
-	/** Gate decisions enter provenance; replay honours them (F15). */
+	/**
+	 * Gate decisions enter provenance; replay honours them.
+	 * @ruling F15
+	 */
 	reviews?: Array<{
 		nodeKey: string
 		position: string
@@ -311,7 +343,11 @@ export interface Receipt {
 	meta?: ReceiptMeta
 }
 
-/** Render a receipt the way the run inspector would (17 §4). Used in tests as documentation. @experimental */
+/**
+ * Render a receipt the way the run inspector would. Used in tests as documentation.
+ * @experimental
+ * @ruling 17 §4
+ */
 export function renderReceipt(r: Receipt): string {
 	const out: string[] = []
 	out.push(`run ${r.runId}  spec ${r.specId} v${r.specVersion}   seed ${r.seed}`)

@@ -2,21 +2,19 @@
  * Generate an image and post it, from a button in the composer.
  *
  * The end-to-end case for local image generation, and deliberately the smallest
- * spec that is one: a person presses the button, the run parks at the provider
- * for them to write the prompt, the image is rendered and stored, and a message
+ * spec that is one: a person presses the button, the action's own form asks what
+ * the image should show, the image is rendered and stored, and a message
  * carrying it is posted. Three nodes, no queries, no assembled context.
  *
- * ## Why the review gate is the prompt entry
+ * ## Where the prompt is written
  *
- * There is no bespoke "SD prompt" modal, and there should not be. The provider is
- * `effects: 'external'`, which makes it gate-eligible, and the shipped default
- * preset turns its review ON — so the executor parks there and infers a form from
- * the node's own payload. The prompt fields a person fills in ARE the payload the
- * run resumes with.
- *
- * The consequence worth stating: the modal is generated from the contract, so a
- * parameter added to the provider appears in it with no client change, and there
- * is no second place for the prompt to live and drift.
+ * The action's `collects` form is the one place the prompt is entered. The
+ * provider is `effects: 'external'`, which makes it gate-eligible, and a preset
+ * can turn its review ON so the executor parks there with a form inferred from
+ * the node's own payload. That is a second look at the same prompt, so it ships
+ * OFF (owner ruling 2026-10-11: a prompt the person just typed is not asked for
+ * again). A spec driven by an upstream text node instead of a person is the case
+ * that wants the review on.
  *
  * ## Why `caption` becomes the message text
  *
@@ -26,13 +24,14 @@
  * one has nowhere else to get it from.
  */
 import { compile, spec, sessionEvents, slot } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { chatGenre } from '../../registry/genres.js'
 
 /** @experimental */
 export const CHAT_GENERATE_IMAGE_SPEC_ID = 'core:spec/chat-generate-image'
 /** @internal */
-export const CHAT_GENERATE_IMAGE_VERSION = '1.0.0'
+export const CHAT_GENERATE_IMAGE_VERSION = '1.1.0'
 
 /** @experimental */
 export const generateImageSpec = () =>
@@ -82,6 +81,7 @@ export const generateImageSpec = () =>
 					prompt: $.input.text,
 					connection: slot.connection(),
 					sampling: slot.sampling(),
+					workflow: slot.workflow(),
 					prompts: slot.prompts(),
 					params: slot.params(),
 				}),
@@ -98,13 +98,19 @@ export const generateImageSpec = () =>
 				}),
 			)
 			/**
-			 * Review ON by default, because this is where the prompt is written.
-			 * Turning it off is a legitimate choice for a spec driven by an
-			 * upstream text node instead of by a person — which is why it is a
-			 * preset rather than a hardcoded setting.
+			 * Review OFF by default: the prompt was just typed into the action's
+			 * form, and asking again was the "two dialogs for one image" confusion
+			 * (2026-10-11). The preset stays as an opt-in for a spec whose prompt
+			 * comes from an upstream text node rather than a person.
 			 */
-			.preset('review-on', { label: 'Ask for the prompt', default: true }, (p) =>
-				p.settings('render', { review: 'on' }),
+			.preset('review-on', { label: 'Review the prompt before rendering' }, (p) =>
+				p
+					.settings('render', { review: 'on' })
+					.loadout('render', slot.loadout(CORE_LOADOUT.images)),
+			)
+			/** The render runs on the Images loadout (I12). */
+			.preset('default', { label: 'Default', default: true }, (p) =>
+				p.loadout('render', slot.loadout(CORE_LOADOUT.images)),
 			)
 			.build(),
 	)

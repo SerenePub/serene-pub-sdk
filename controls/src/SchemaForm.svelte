@@ -6,7 +6,7 @@
 	 * declare plugin settings in, the language `inferSchema` produces from a
 	 * paused node's payload, the language a surface declares its props in, and
 	 * the language arbitrary extension forms arrive in. One renderer for all
-	 * of them is the point (12 §6, "one renderer, three uses") — a control
+	 * of them is the point ("one renderer, three uses") — a control
 	 * fixed here is fixed for review pauses, plugin settings, surface props
 	 * and extension forms at once.
 	 *

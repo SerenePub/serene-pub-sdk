@@ -1,6 +1,6 @@
 {
 	"name": "serene-pub-sdk",
-	"version": "0.6.0-pr-4",
+	"version": "0.6.0-pr-5",
 	"private": true,
 	"description": "The Serene Pub pipeline SDK — four packages a plugin author builds against.",
 	"license": "Apache-2.0",
@@ -28,6 +28,7 @@
 		"docs:api": "npm run docs:api -w @serene-pub/api-docs",
 		"docs:examples": "cd sdk-tests && tsx ../cli/src/bin.ts docs --examples examples --goldens examples/goldens --out ../docs/generated/examples",
 		"typecheck": "npm run typecheck -w @serene-pub/sdk-tests",
+		"check": "npm run check -w @serene-pub/core-catalog",
 		"format": "prettier --write .",
 		"lint": "prettier --check .",
 		"gen:plugin-permissions": "tsx scripts/gen-plugin-permissions.ts",

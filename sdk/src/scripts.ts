@@ -1,10 +1,10 @@
 /**
- * Script **types** — the fourth paradigm's contracts (18 §1–§3).
+ * Script **types** — the fourth paradigm's contracts.
  *
  * A script is user-authored, typed text that transforms data at a declared
  * point in a run: no SDK, no manifest, no build step. This module declares the
  * *contracts* those texts conform to, not the texts themselves. The split is
- * the same one prompts and prompt slots already have, and 18 §2 states it
+ * the same one prompts and prompt slots already have, stated
  * plainly: few types, declared by core and extensions and versioned by a
  * content hash; many scripts, authored by users and stored as rows.
  *
@@ -21,15 +21,16 @@
  * The content segment is structural, not decorative: hook matching, chain
  * homogeneity, panel grouping and import validation all read it, which is why
  * it earns a delimiter rather than a hyphen convention. `text/stop` is
- * filterable; `text-stop` is a naming habit (18 §1).
+ * filterable; `text-stop` is a naming habit.
  *
  * ⚠ This is the **one** compound kind, and the extension stops here. Node kinds
  * are already segmented by kind and never grow qualifiers; scripts are
  * segmented by payload because that is what decides which chain a link may join
  * and which hook may accept it. Generalizing the grammar further is a non-goal.
  *
- * ⚠ The grammar is hard-frozen once the SDK publishes (07 §0g). Scripts are
+ * ⚠ The grammar is hard-frozen once the SDK publishes. Scripts are
  * unshipped, so this is the free moment to extend it additively.
+ * @ruling 18 §1–§3, 18 §2, 18 §1, 07 §0g
  */
 
 import type { I18n } from './descriptors.js'
@@ -41,12 +42,13 @@ import { refuseUnlessIdentical } from './hash.js'
 export type ScriptKindId = string
 
 /**
- * What a chain of this operation *does* with what its links return (18 §5).
+ * What a chain of this operation *does* with what its links return.
  *
  * Declared per operation rather than per hook, because it is a property of the
  * contract: two `text` operations differ precisely in whether their return
  * flows onward or is consumed as a judgement.
  * @experimental
+ * @ruling 18 §5
  */
 export type ChainSemantics =
 	/**
@@ -73,10 +75,11 @@ export interface ScriptKindDecl {
 	 * the same reason — copyediting a warning is not a contract change.
 	 *
 	 * Present on every type and deliberately blunt. Operations within a content
-	 * scope *are* the permission granularity (18 §3): `messages/inject` split
+	 * scope *are* the permission granularity: `messages/inject` split
 	 * from `messages/transform` so a cautious user can accept injection chains
 	 * while refusing rewrites, and that choice is only meaningful if the
 	 * difference is stated where the choice is made.
+	 * @ruling 18 §3
 	 */
 	blastRadius: I18n
 	semantics: ChainSemantics
@@ -87,10 +90,11 @@ export interface ScriptKindDecl {
 	 * variables exist at its point and what extras it supplies; the type says
 	 * what kind of thing flows. One `text/transform` therefore serves the input
 	 * hook, the write hook and the display hook — placement is the hook's
-	 * property, not the type's (18 §3).
+	 * property, not the type's.
 	 *
 	 * A `verdict` operation declares `out` as what the hook consumes, which is
 	 * never merged downstream.
+	 * @ruling 18 §3
 	 */
 	ports: { in: Record<string, ShapeId>; out: Record<string, ShapeId> }
 }
@@ -116,12 +120,13 @@ export const isScriptKindId = (id: string): boolean => SCRIPT_ID.test(id)
 /**
  * Parse, or throw with the grammar spelled out.
  *
- * Throwing beats returning null here for the reason 12 §2a gives about template
+ * Throwing beats returning null here for the same reason it does in template
  * engines: a caller that gets `undefined` from a malformed id writes a fallback,
  * and a fallback that half-works is how a script ends up attached to a hook
  * nobody meant. An id is either well-formed or it is a bug in the thing that
  * produced it.
  * @internal
+ * @ruling 12 §2a
  */
 export function parseScriptKindId(id: string): ParsedScriptKindId {
 	const m = SCRIPT_ID.exec(id)
@@ -145,13 +150,14 @@ export function parseScriptKindId(id: string): ParsedScriptKindId {
 }
 
 /**
- * `content/operation` — what every link in one chain must share (18 §5).
+ * `content/operation` — what every link in one chain must share.
  *
  * Checkable off the id, which is the point of putting content in the grammar: a
  * `candidates` script dropped into a `text/transform` chain refuses at attach
  * rather than at run time, and neither the registry nor the script body has to
  * be consulted to know it.
  * @experimental
+ * @ruling 18 §5
  */
 export const scriptSpace = (id: ScriptKindId): string => parseScriptKindId(id).space
 
@@ -248,6 +254,25 @@ export const textTransform = defineScriptKind({
 })
 
 /**
+ * The generic link: any JSON value in, any JSON value out. The body of a
+ * script step (`core:task/run-script@1`) — the one kind with no content scope
+ * of its own, so a step can carry a computation core never named.
+ * @experimental
+ */
+export const dataTransform = defineScriptKind({
+	id: 'core:script:data/transform@1',
+	i18n: {
+		name: { en: 'Transform data' },
+		description: {
+			en: 'Takes a JSON value and returns a JSON value — the body of a script step.',
+		},
+	},
+	blastRadius: { en: 'Rewrites one value' },
+	semantics: 'transform',
+	ports: { in: { value: JSON_SHAPE }, out: { value: JSON_SHAPE } },
+})
+
+/**
  * ⚠ A verdict, not a transform, and the difference is load-bearing.
  *
  * A stop script never rewrites the stream — it answers "where, in the text you
@@ -255,12 +280,13 @@ export const textTransform = defineScriptKind({
  * every attached script evaluates independently and the earliest index wins.
  * Order-free and commutative, which is exactly what makes merging the
  * connection's chain with the pipeline's and the chat's well-defined without a
- * precedence rule nobody would remember (18 §5).
+ * precedence rule nobody would remember.
  *
- * It is also the one type with a conformance law attached (S1): the verdict is
+ * It is also the one type with a conformance law attached: the verdict is
  * a function of the accumulated text only, never of chunk boundaries, or a
  * reply replays differently than it streamed.
  * @experimental
+ * @ruling 18 §5, S1
  */
 export const textStop = defineScriptKind({
 	id: 'core:script:text/stop@1',
@@ -350,7 +376,7 @@ export const contextTransform = defineScriptKind({
  * The extracted cast, after the model has answered and the host has parsed.
  *
  * Its own content scope rather than a `context` operation, because chain
- * homogeneity is keyed on content (18 §5) and a cast is not a template
+ * homogeneity is keyed on content and a cast is not a template
  * context — a chain that could hold both would let a context edit land on a
  * cast list by attachment mistake, silently. The scope is what makes the
  * mistake refusable at attach.
@@ -362,6 +388,7 @@ export const contextTransform = defineScriptKind({
  * rebind: a whole different extractor is a same-shaped provider, never a
  * script, because scripts are pure compute and extraction calls a model.
  * @experimental
+ * @ruling 18 §5
  */
 export const castTransform = defineScriptKind({
 	id: 'core:script:cast/transform@1',
@@ -377,7 +404,7 @@ export const castTransform = defineScriptKind({
 })
 
 /**
- * Who speaks next, as a script (plans/19 §5, second half; ruled 2026-09-21).
+ * Who speaks next, as a script.
  *
  * The one seam a plugin — or an admin, in the Scripts panel with no plugin at
  * all — has for turn detection of its own. Core's `core:task/turn-scripted@1`
@@ -397,6 +424,7 @@ export const castTransform = defineScriptKind({
  * naturally. Its own content scope for the reason `cast` has one: chain
  * homogeneity is keyed on content, and a selection is not a cast.
  * @experimental
+ * @ruling plans/19 §5 (second half; ruled 2026-09-21)
  */
 export const turnSelect = defineScriptKind({
 	id: 'core:script:turn/select@1',
@@ -416,10 +444,110 @@ export const turnSelect = defineScriptKind({
  *
  * Derived from the registry rather than restated, so a scope arrives the moment
  * a type using it is declared — including an extension's. A hand-written list
- * is the thing 18 §1 rule 3 warns against: a second taxonomy of what data is,
+ * is the thing to avoid: a second taxonomy of what data is,
  * kept in step by hand.
  * @experimental
+ * @ruling 18 §1 rule 3
  */
 export const scriptContentScopes = (): string[] => [
 	...new Set(allScriptKinds().map((t) => parseScriptKindId(t.id).content)),
 ]
+
+// ── Seam addresses (PLAN-script-placement D1) ───────────────────────────────
+
+/**
+ * A **seam** — a place a script chain may run — spelled as one string.
+ *
+ * Three forms, one per kind of seam:
+ *
+ * - `in:<port>` — a `scripts` slot with `phase: 'before'` on in-port
+ *   `<port>`: the chain runs over the value entering the binding
+ *   (`create-message` → `in:text`).
+ * - `out:<port>` — a `scripts` slot with `phase: 'after'` on out-port
+ *   `<port>`: the chain runs over what the binding published
+ *   (`user-message` → `out:text`, `extract-cast`'s `castScripts` → `out:cast`).
+ * - `<pointKey>` — an interior point (`scriptPoints`), invoked by the binding
+ *   through `ctx.scripts` (`each-draft`).
+ *
+ * The address is a *name*, not a storage address: chains stay stored at
+ * `config[nodeKey][slotName]['']` and `config[nodeKey].scripts[point]`.
+ * Typed as a plain string on its third branch, because a point key is any
+ * key a definition declares; `parseSeamAddress` is the reader.
+ * @experimental
+ */
+export type SeamAddress = `in:${string}` | `out:${string}` | string
+
+/** A parsed seam address. @experimental */
+export interface ParsedSeamAddress {
+	kind: 'in' | 'out' | 'point'
+	/** The port for `in`/`out`; the point key for `point`. */
+	name: string
+}
+
+/** A `scripts` slot's placement, as the seam address reads it. Structural, so a registry row's slot fits. @experimental */
+export interface SeamSlotPlacement {
+	port?: string
+	phase?: 'before' | 'after' | string
+}
+
+/** An interior point, as the seam address reads it. @experimental */
+export interface SeamPointPlacement {
+	key: string
+}
+
+// Loose on purpose: ports and point keys are whatever a definition declares, and
+// the executor resolves seams through this reader, so a stricter grammar would
+// refuse a run over a name `register()` accepted. Only what would make the
+// address ambiguous is refused: empty, whitespace, a second ':'.
+const SEAM_NAME = /^[^\s:]+$/
+
+const seamGrammar = (at: string): string =>
+	`'${at}' is not a valid seam address. The grammar is 'in:<port>' (a scripts slot, ` +
+	`phase 'before', on that in-port), 'out:<port>' (phase 'after', on that out-port) ` +
+	`or a bare '<pointKey>' (an interior script point) — 'in:text', 'out:cast', 'each-draft'. ` +
+	`A port name or point key is non-empty, with no whitespace and no ':'.`
+
+/**
+ * The seam address of a declaration: a `scripts` slot `{ port, phase }`
+ * (defaults `'main'` and `'before'`, the executor's) or an interior point
+ * `{ key }`. The one place the spelling is computed.
+ * @experimental
+ */
+export function seamAddressOf(decl: SeamSlotPlacement | SeamPointPlacement): SeamAddress {
+	if ('key' in decl && typeof (decl as SeamPointPlacement).key === 'string') {
+		const key = (decl as SeamPointPlacement).key
+		parseSeamAddress(key)
+		if (key.includes(':')) throw new Error(seamGrammar(key))
+		return key
+	}
+	const slot = decl as SeamSlotPlacement
+	const port = slot.port ?? 'main'
+	const phase = slot.phase ?? 'before'
+	if (phase !== 'before' && phase !== 'after')
+		throw new Error(
+			`A scripts slot's phase is 'before' or 'after', not '${String(phase)}' — ` +
+				`'before' runs over the in-port's value, 'after' over the out-port's.`,
+		)
+	const at = `${phase === 'before' ? 'in' : 'out'}:${port}`
+	parseSeamAddress(at)
+	return at
+}
+
+/**
+ * Parse a seam address, or throw with the grammar spelled out — for the
+ * reason `parseScriptKindId` gives: a fallback that half-works is how a chain
+ * ends up somewhere nobody meant.
+ * @experimental
+ */
+export function parseSeamAddress(at: string): ParsedSeamAddress {
+	if (typeof at !== 'string' || at.length === 0) throw new Error(seamGrammar(String(at)))
+	const colon = at.indexOf(':')
+	if (colon === -1) {
+		if (!SEAM_NAME.test(at)) throw new Error(seamGrammar(at))
+		return { kind: 'point', name: at }
+	}
+	const head = at.slice(0, colon)
+	const name = at.slice(colon + 1)
+	if ((head !== 'in' && head !== 'out') || !SEAM_NAME.test(name)) throw new Error(seamGrammar(at))
+	return { kind: head, name }
+}

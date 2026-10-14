@@ -88,7 +88,7 @@ export const sessionHistory = pin(
 					 *
 					 * ⚠ **Not read when `budget` is wired** (history window,
 					 * 2026-10-03): that read is sized by the context window,
-					 * which belongs to the sampling config (17 §1a) — a count
+					 * which belongs to the sampling config — a count
 					 * of rows beside it is the same number entered twice, and
 					 * the count is what moved the prompt's first line on every
 					 * turn once a session passed it. Every shipped reply wires
@@ -103,7 +103,7 @@ export const sessionHistory = pin(
 							'How many recent messages are read. Not used where the read is sized by the context window — every shipped reply — which reads as much as the window could hold twice over and lets the prompt decide where the conversation starts.',
 					},
 					/**
-					 * The channel this history reads (20 §7). A session's
+					 * The channel this history reads. A session's
 					 * lanes are the mode's declaration; a pipeline chooses
 					 * which one builds its context — the map narrator reads
 					 * `map`, the chat pipeline reads `main`, and a custom
@@ -116,7 +116,7 @@ export const sessionHistory = pin(
 							"Which of the session's channels this history reads. The chat log is 'main'.",
 					},
 					/**
-					 * **Only the unplayed talk** (lair re-plan R13, 2026-09-28):
+					 * **Only the unplayed talk** (2026-09-28):
 					 * the rows of a side channel written since the story's
 					 * newest generated line — the newest visible `main` row
 					 * whose role is not `user`. Of those it keeps a person's own
@@ -138,8 +138,7 @@ export const sessionHistory = pin(
 						},
 					},
 					/**
-					 * **Side channels as talk** (lair re-plan R10's fold-in of
-					 * the R9 follow-up, 2026-09-28): on every channel but
+					 * **Side channels as talk** (2026-09-28): on every channel but
 					 * `main`, keep only the talk — a person's own lines and the
 					 * replies a run fired ON that channel wrote there — by the
 					 * rule `unplayedOnly` uses, without its bound. A row a
@@ -163,14 +162,14 @@ export const sessionHistory = pin(
 					},
 					/**
 					 * The transcript's intent, on the node that produces the
-					 * transcript (R-7 P5, built 2026-09-16 — see
+					 * transcript (built 2026-09-16 — see
 					 * `bandIntentFields`). `weight: 0.4` and `minInclude: 6`
 					 * were here once, moved to the ranker's per-source map as
 					 * `share.messages` and `minEntries.messages`, and are back
-					 * where 16 §5a always said they belonged, at the numbers
+					 * on the source, where a source's intent belongs, at the numbers
 					 * the map held: half the window is `MESSAGE_FILL_FRACTION`,
 					 * and six is the minimum the map carried for the one band
-					 * R6 allows one.
+					 * allowed a minimum (recent conversation; lore has none).
 					 *
 					 * ⚠ **No shipped spec ranks a message candidate** —
 					 * `main` carries the transcript rows for
@@ -179,7 +178,7 @@ export const sessionHistory = pin(
 					 * keep it so: `entity-search`'s past lines publish on
 					 * their own `recalledLines` band, and `vector-search`
 					 * asks the index for lorebook entries only (the app's
-					 * binding names them; plan A1). Its intent
+					 * binding names them). Its intent
 					 * still reaches the ranker, on the `band` out-port a spec
 					 * concatenates in with the lore, and its `share` is what
 					 * halves the pool the lore sources divide: the
@@ -222,7 +221,7 @@ export const sessionHistory = pin(
 						},
 					},
 					/**
-					 * Read, at last (R-7 P5; it was declared and read by nothing
+					 * Read, at last (it was declared and read by nothing
 					 * from the day it was written, allow-listed in the
 					 * declared-reads guard until this landed). `normal` is no
 					 * ordering at all; see `BAND_PRIORITIES` in the SDK for
@@ -261,12 +260,12 @@ export const sessionHistory = pin(
 				 *
 				 * Not read with `unplayedOnly` (the talk keeps its `limit`)
 				 * or a wired `messageId` (one row). There was a `budget`
-				 * in-port once (culled 2026-09-16, R-12): declared and read by
+				 * in-port once (culled 2026-09-16): declared and read by
 				 * nothing. This one has a reader.
 				 */
 				budget: S.budget,
 				/**
-				 * **One row, by id** (lair re-plan R11, 2026-09-28): wired —
+				 * **One row, by id** (2026-09-28): wired —
 				 * `$.input.messageId`, the message a press on a message's ⋮
 				 * was made on — the read is exactly that row, whatever its
 				 * channel, as a one-row transcript; `limit`, `budget`,
@@ -282,10 +281,10 @@ export const sessionHistory = pin(
 			out: {
 				/**
 				 * Transcript rows, on both — `messages@1` (was
-				 * `context-candidates@1` until 2026-09-17, U5d review W9: the
+				 * `context-candidates@1` until 2026-09-17: the
 				 * value had always been rows, for `process-messages` and
 				 * `prose-transcript`, and the intent rides `band` alone).
-				 * Neither is a candidates list (R-a, the same day): a spec that
+				 * Neither is a candidates list (ruled the same day): a spec that
 				 * wires either into a merge, a concat or `assemble`'s
 				 * `candidates` gets a `validate()` warning naming `band` — the
 				 * host drops rows handed as candidates rather than ranking them.
@@ -491,12 +490,12 @@ const ADMIT_THRESHOLD = {
 } as const
 
 /**
- * Where a source's intent lives: **on the source** (16 §5a; R-7 P5, ruled
- * 2026-09-15, built 2026-09-16 — plans/30 U3b).
+ * Where a source's intent lives: **on the source** (ruled
+ * 2026-09-15, built 2026-09-16).
  *
  * `share`, `maxEntries`, `minEntries` and `priority` used to be five-band maps
- * on `core:task/rank-hybrid@1`. That was the design 16 §5a rejected and said
- * why: a per-source map on the ranker has to be kept in step by hand with
+ * on `core:task/rank-hybrid@1`. That design was rejected, and for this
+ * reason: a per-source map on the ranker has to be kept in step by hand with
  * whichever sources exist, goes silently stale when one is added, and a
  * plugin's retrieval definition cannot take part at all without somebody
  * editing the ranker. So each of the five retrieval definitions declares its
@@ -511,11 +510,11 @@ const ADMIT_THRESHOLD = {
  * that tuned nothing selects exactly what it selected before: `messages` 0.5
  * (which is `MESSAGE_FILL_FRACTION`), the three lore bands 0.1667 / 0.1667 /
  * 0.1666, relationships 0; ceilings 50 / 20 / 15 / 10 and none; a minimum of 6
- * on the conversation alone (R6). Migration 0135 moves every stored value to
+ * on the conversation alone. Migration 0135 moves every stored value to
  * the node that owns it now.
  *
- * ⚠ **`minEntries` is declared on `session-history` alone.** R6 (retrieval
- * plan §7): *per-source minimums are removed everywhere except recent
+ * ⚠ **`minEntries` is declared on `session-history` alone.** The ruling:
+ * *per-source minimums are removed everywhere except recent
  * conversation*. A minimum is a promise to spend budget on a source whether or
  * not it scored, and the one way an entry the ranker turned down could come
  * back in; declaring one on a lore lane would reopen exactly that door, so
@@ -624,7 +623,7 @@ export const lorebookTriggers = pin(
 		timeoutMs: 2000,
 		/**
 		 * All three lore lanes through one port, so all three bands — each a
-		 * top-level template name with its variable (typed templates P2).
+		 * top-level template name with its variable.
 		 * Policy, not contract: the candidates are the same either side of it.
 		 */
 		bands: { worldLore: varWorldLore, characterLore: varCharacterLore, history: varHistory },
@@ -636,7 +635,7 @@ export const lorebookTriggers = pin(
 			 * Nothing read it and nothing seeded a row for it, so it rendered as
 			 * an empty picker. A source template belongs on the node whose job
 			 * is the rendering — a `render-entries` task, when one is bound
-			 * (culled unbound, plans/29 R-2); two declarations of one idea, one
+			 * (culled: declared, never bound); two declarations of one idea, one
 			 * of them inert, is how they drift.
 			 */
 			params: {
@@ -644,8 +643,8 @@ export const lorebookTriggers = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * The three bands' intents, first, as on the lanes (R-7
-					 * P5; U3b review W1, 2026-09-16). This node produces world
+					 * The three bands' intents, first, as on the lanes
+					 * (2026-09-16). This node produces world
 					 * lore, character lore AND history through one port, so it
 					 * declares all three — namespaced, `worldLoreShare` … —
 					 * and publishes three band intents at the head of its
@@ -775,7 +774,7 @@ export const lorebookTriggers = pin(
 		ports: {
 			/**
 			 * ⚠ No `text` in-port, and this and the three lore lanes had one
-			 * (culled 2026-09-16, R-12). It was filled by no spec and read by
+			 * (culled 2026-09-16). It was filled by no spec and read by
 			 * no handler — the scan derives its window from `scope`, which is
 			 * where it actually comes from — and each of the four carried a
 			 * standing excuse in `wiring.test.ts` saying so.
@@ -784,7 +783,7 @@ export const lorebookTriggers = pin(
 				scope: S.sessionScope,
 				/**
 				 * **Whose private lore this read is for** — a participant
-				 * reference (`character:<id>`), additive, 2026-09-17 (W1).
+				 * reference (`character:<id>`), additive, 2026-09-17.
 				 *
 				 * Character-lore visibility is decided at the host read against
 				 * ONE subject, and until this port existed that subject was the
@@ -813,7 +812,7 @@ export const lorebookTriggers = pin(
 				/**
 				 * The entries this scan **found and then excluded** — an
 				 * entry's own selective logic said *not here* — as verdicts
-				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * `{ source, id, reason }` (2026-10-02). A copy of one that
 				 * another mechanism brings in (by meaning, by name) is the
 				 * same entry the author ruled out, and
 				 * `core:task/eligibility@1` marks it ineligible with this
@@ -832,7 +831,7 @@ export const lorebookTriggers = pin(
  * time they shared a weight, a minimum and a share of the window there. They
  * are not alike: character lore is bound to whoever is speaking and world
  * lore is not, and an install that wants a lot of one and little of the
- * other had no way to say so. (Since U3b's review it can on either shape:
+ * other had no way to say so. (Since 2026-09-16 it can on either shape:
  * that node declares one intent per band it produces, namespaced —
  * `bandIntentFieldsOf` — from the same `LORE_BANDS` table these read.)
  *
@@ -892,14 +891,14 @@ export const lorebookTriggers = pin(
 
 /**
  * The seven lore knobs, declared once and worn by all three lore lanes —
- * every one of them **`shared`** (R-7 P2, ruled 2026-09-15; the marker
+ * every one of them **`shared`** (ruled 2026-09-15; the marker
  * 2026-09-16, see `FieldDecl.shared`): a spec wires the three lanes' `params`
  * to ONE node — core's `respond` puts them on `gather.worldLore.read` and the
  * other two lanes read that slot through `slot.params({ node })` — so a person
  * tuning them tunes them once, for world lore, character lore and history
  * together. The wording below says so: it is the owner's label a panel shows,
  * and an owner labelled "world lore" while governing three sources was the
- * lie the U3 review found.
+ * lie a review found.
  *
  * The lane's own intent (`bandIntentFields` above) sits beside them in the
  * same slot, UNMARKED: through the same reference a lane's share is the
@@ -944,7 +943,7 @@ const loreScanFields = () => ({
 			'A ceiling on how far entries may trigger further entries via keywords found in their text, however deep an individual entry asks to go. It never follows links between entries.',
 	},
 	/**
-	 * Declared on all three lanes, held by one: since R-7 P2 a spec
+	 * Declared on all three lanes, held by one: since 2026-09-15 a spec
 	 * names ONE owner for the seven knobs and the other lanes read the
 	 * owner's slot, so this is one row governing world lore, character
 	 * lore and history alike — not one row per lane. World lore
@@ -984,7 +983,7 @@ const loreSlots = (band: { label: string; noun: string }, defaults: { share: num
 export const worldLore = pin(
 	describeQueryDefinition({
 		id: 'core:query/world-lore@1',
-		/** The band this lane publishes — a top-level template name (typed templates P2). */
+		/** The band this lane publishes — a top-level template name. */
 		bands: { worldLore: varWorldLore },
 		i18n: { name: { en: 'World lore' } },
 		timeoutMs: 2000,
@@ -1008,7 +1007,7 @@ export const worldLore = pin(
 				/**
 				 * The entries this scan **found and then excluded** — an
 				 * entry's own selective logic said *not here* — as verdicts
-				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * `{ source, id, reason }` (2026-10-02). A copy of one that
 				 * another mechanism brings in (by meaning, by name) is the
 				 * same entry the author ruled out, and
 				 * `core:task/eligibility@1` marks it ineligible with this
@@ -1024,7 +1023,7 @@ export const worldLore = pin(
 export const characterLore = pin(
 	describeQueryDefinition({
 		id: 'core:query/character-lore@1',
-		/** The band this lane publishes — a top-level template name (typed templates P2). */
+		/** The band this lane publishes — a top-level template name. */
 		bands: { characterLore: varCharacterLore },
 		i18n: { name: { en: 'Character lore' } },
 		timeoutMs: 2000,
@@ -1038,7 +1037,7 @@ export const characterLore = pin(
 				scope: S.sessionScope,
 				/**
 				 * **Whose private lore this read is for** — a participant
-				 * reference (`character:<id>`), additive, 2026-09-17 (W1).
+				 * reference (`character:<id>`), additive, 2026-09-17.
 				 *
 				 * Character-lore visibility is decided at the host read against
 				 * ONE subject, and until this port existed that subject was the
@@ -1067,7 +1066,7 @@ export const characterLore = pin(
 				/**
 				 * The entries this scan **found and then excluded** — an
 				 * entry's own selective logic said *not here* — as verdicts
-				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * `{ source, id, reason }` (2026-10-02). A copy of one that
 				 * another mechanism brings in (by meaning, by name) is the
 				 * same entry the author ruled out, and
 				 * `core:task/eligibility@1` marks it ineligible with this
@@ -1102,7 +1101,7 @@ export const characterLore = pin(
 export const historyEntries = pin(
 	describeQueryDefinition({
 		id: 'core:query/history-entries@1',
-		/** The band this lane publishes — a top-level template name (typed templates P2). */
+		/** The band this lane publishes — a top-level template name. */
 		bands: { history: varHistory },
 		i18n: { name: { en: 'History entries' } },
 		timeoutMs: 2000,
@@ -1122,7 +1121,7 @@ export const historyEntries = pin(
 				/**
 				 * The entries this scan **found and then excluded** — an
 				 * entry's own selective logic said *not here* — as verdicts
-				 * `{ source, id, reason }` (C2, 2026-10-02). A copy of one that
+				 * `{ source, id, reason }` (2026-10-02). A copy of one that
 				 * another mechanism brings in (by meaning, by name) is the
 				 * same entry the author ruled out, and
 				 * `core:task/eligibility@1` marks it ineligible with this
@@ -1136,7 +1135,7 @@ export const historyEntries = pin(
 
 /**
  * **Who is in the world, and when** — the cast's presences, as the session's
- * reading sees them (E-2, R4; built 2026-10-02).
+ * reading sees them (built 2026-10-02).
  *
  * A presence says *this member, at this point of their own life, is here from
  * this date until that one* (`cast_presences`). The host reads the scope
@@ -1153,7 +1152,7 @@ export const historyEntries = pin(
  *
  * What it is for: `core:task/eligibility@1`'s presence rule, which gates the
  * lore of a member who is not in the world at `at`. A custom retrieval reads it
- * the same way (plan E-11).
+ * the same way.
  * @experimental
  */
 export const castPresences = pin(
@@ -1305,7 +1304,7 @@ export const vectorSearch = pin(
 			in: {
 				/**
 				 * Several query vectors, one ranked list each — a list, so
-				 * `json@1` (was `vector@1` until 2026-09-17, U5d review W9):
+				 * `json@1` (was `vector@1` until 2026-09-17):
 				 * what `embed-text@1`'s `vectors` publishes and what the
 				 * host's search reads.
 				 */
@@ -1314,7 +1313,7 @@ export const vectorSearch = pin(
 				/**
 				 * **Whose private lore this search may return** — a participant
 				 * reference, with `core:query/character-lore@1`'s exact
-				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * semantics (2026-10-02): unwired, `null` or empty, the
 				 * scope decides as it always did; a `character:<id>` reads
 				 * that character's own private lore and nobody else's; any
 				 * other reference reads none. The leak guard for a search
@@ -1395,7 +1394,7 @@ export const entitySearch = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * **On by default — 5** (R5, ruled 2026-09-30: all supported
+					 * **On by default — 5** (ruled 2026-09-30: all supported
 					 * retrieval is on by default; built 2026-10-02). It was 0,
 					 * the `maxRecursionDepth` / `admitThreshold` convention of
 					 * "turned on rather than arrived at"; the ruling replaced
@@ -1425,8 +1424,8 @@ export const entitySearch = pin(
 							"How many earlier messages this may return, as recalled lines, for naming what the scene is naming. They reach the prompt only where a pipeline ranks them and its context template places {{{recalledLines}}}. 0 turns this half off.",
 					},
 					/**
-					 * The recalled lines' **share** — a band-namespaced field
-					 * (§7), because this definition publishes lore on `main`
+					 * The recalled lines' **share** — a band-namespaced field,
+					 * because this definition publishes lore on `main`
 					 * and its own band on `messages`. Published as the band's
 					 * intent at the head of `messages` whenever `maxMessages`
 					 * turns the half on; the cap is `maxMessages`, which
@@ -1480,7 +1479,7 @@ export const entitySearch = pin(
 			 * nothing filled and nothing read — `loreFor` derives its window
 			 * from `scope` — and this declaration refused to ship a fifth with
 			 * the same standing excuse written for it. Theirs are culled now
-			 * (2026-09-16, R-12); the window comes from `scope`, which is where
+			 * (2026-09-16); the window comes from `scope`, which is where
 			 * it actually comes from.
 			 */
 			in: {
@@ -1488,7 +1487,7 @@ export const entitySearch = pin(
 				/**
 				 * **Whose private lore this search may return** — a participant
 				 * reference, with `core:query/character-lore@1`'s exact
-				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * semantics (2026-10-02): unwired, `null` or empty, the
 				 * scope decides as it always did; a `character:<id>` reads
 				 * that character's own private lore and nobody else's; any
 				 * other reference reads none. The leak guard for a search
@@ -1518,8 +1517,8 @@ export const entitySearch = pin(
 )
 
 /**
- * Documentation search — the guide genre's one retrieval mechanism (plans/29
- * R-18; built 2026-09-16 as U5g).
+ * Documentation search — the guide genre's one retrieval mechanism (built
+ * 2026-09-16).
  *
  * The app compiles its docs — its own guides and the SDK's — into a section
  * index at build time (title, anchor, body text per heading). This reads the
@@ -1549,7 +1548,7 @@ export const docsSearch = pin(
 				en: "Finds the documentation sections that answer the person's latest question, so the guide can ground its answer in them — and finds none when the docs do not cover it.",
 			},
 		},
-		/** Its own band, a top-level template name (typed templates P2). */
+		/** Its own band, a top-level template name. */
 		bands: { docsExcerpts: varDocsExcerpts },
 		timeoutMs: 2000,
 		optional: true,
@@ -1617,7 +1616,7 @@ export const mentionSpans = pin(
 				facet: 'weights',
 				schema: {
 					/**
-					 * **On by default — 8** (R5, ruled 2026-09-30: all supported
+					 * **On by default — 8** (ruled 2026-09-30: all supported
 					 * retrieval is on by default; built 2026-10-02). It was 0.
 					 * Still the mechanism's one switch: 0 turns it off.
 					 *
@@ -1771,7 +1770,7 @@ export const entityLink = pin(
 				/**
 				 * **Whose private lore this search may return** — a participant
 				 * reference, with `core:query/character-lore@1`'s exact
-				 * semantics (C3, 2026-10-02): unwired, `null` or empty, the
+				 * semantics (2026-10-02): unwired, `null` or empty, the
 				 * scope decides as it always did; a `character:<id>` reads
 				 * that character's own private lore and nobody else's; any
 				 * other reference reads none. The leak guard for a search
@@ -1805,7 +1804,7 @@ export const network = pin(
  * A Task, not a Query, even though it reads the cast: what it *is* is the
  * resolution — which characters appear, which get named, which scenario wins —
  * and that is a decision anyone should be able to replace. The read reaches the
- * host like any other (F11 keeps the services out of the Task itself).
+ * host like any other (a Task never holds host services itself).
  *
  * Separate from Assemble on purpose. Assemble allocates a budget and renders;
  * this decides what there is to render. A plugin that wants different character
@@ -1823,8 +1822,8 @@ export const sessionCast = pin(
 				main: S.sessionCast,
 				cast: S.sessionCast,
 				/**
-				 * The seated envoys on their own (PLAN-turn-order §4.4,
-				 * additive 2026-09-21): `{ slug, key, origin, name, speaks,
+				 * The seated envoys on their own (additive
+				 * 2026-09-21): `{ slug, key, origin, name, speaks,
 				 * default, position, removedAt }` per seat, live and departed,
 				 * in seat order — the rows `main` already carries under
 				 * `envoys`, offered as a port so a pool or a strategy can be
@@ -1838,7 +1837,7 @@ export const sessionCast = pin(
 )
 
 /**
- * The session's settings document, re-read (PLAN-turn-order §4.12, R13).
+ * The session's settings document, re-read.
  *
  * Every core inlet that takes a session already publishes the document on
  * its `session` port, resolved once by the host at run start. This node is
@@ -2006,14 +2005,14 @@ export const relationshipsKnown = pin(
 )
 
 /**
- * The narrative graph as a retrieval **mechanism** (ruling 2026-09-10, Q1).
+ * The narrative graph as a retrieval **mechanism** (ruling 2026-09-10).
  *
  * ⚠ The ruling calls this an *arm*, and the id deliberately does not. Two
- * reasons, and the second is the stronger: NOMENCLATURE §22 retires *arm* in
+ * reasons, and the second is the stronger: the project's vocabulary retires *arm* in
  * favour of **mechanism**, and every sibling in this package is named for what
  * it retrieves rather than for the machinery — `entity-search`,
  * `vector-search`, `world-lore`. The word survives in the *descriptions* on
- * those siblings, which is prose a user reads (§23.6); an id is a frozen
+ * those siblings, which is prose a user reads; an id is a frozen
  * contract, which is the one place a retired word should not land.
  *
  * The two nodes above are a *dump*: they hand the whole graph section to the
@@ -2051,7 +2050,7 @@ export const relationshipsKnown = pin(
  * means exactly what it means on the two nodes above: on/off plus a ceiling,
  * with an absent value uncapped and 0 leaving it out altogether.
  *
- * ## Nobody speaking: the cast-wide read (genre plan F6(a), 2026-09-29)
+ * ## Nobody speaking: the cast-wide read (2026-09-29)
  *
  * The three sections are claims about a SPEAKER, and a scope whose
  * `currentCharacterId` is null has none — an Adventure turn is the narrator's
@@ -2086,7 +2085,7 @@ export const relationshipSearch = pin(
 				...relationshipSlots('graph relationships').params,
 				schema: {
 					/**
-					 * The band's intent (R-7 P5), on the one relationship read
+					 * The band's intent, on the one relationship read
 					 * that ranks. `share` is 0, which is what the ranker's map
 					 * held: the band ships inert and the share is its switch —
 					 * every candidate leaves as `excluded_group_disabled` with
@@ -2111,12 +2110,12 @@ export const relationshipSearch = pin(
 					/**
 					 * The lore-link hop: relationships one edge from an entry
 					 * this turn's keyword scan chose, with an entry at an end
-					 * (NOMENCLATURE §17 *lore link*).
+					 * (a *lore link*).
 					 *
 					 * `true` is what every run before it did, so the default
 					 * moves nothing. Off, the hop is not walked at all — no
 					 * link read, no second scan — and the band holds cast ties
-					 * only. Adventure's preset turns it off (F6(a)): a place
+					 * only. Adventure's preset turns it off: a place
 					 * link belongs to the place ("From here:"), and a hop would
 					 * spend the band on a door no section renders.
 					 */
@@ -2165,7 +2164,7 @@ export const relationshipSearch = pin(
 )
 
 /**
- * 🚧 **A transcript's attachments** (PLAN-composer-attachments §3.5, 2026-10-02).
+ * 🚧 **A transcript's attachments** (2026-10-02).
  *
  * Takes the history read's rows and publishes, per message id, the files its
  * active revision shows — `core:image` and `core:file` parts, in part order —
@@ -2255,15 +2254,15 @@ export const availableTools = pin(
  * Create a message.
  *
  * Split from the old `commitMessage`, which decided new-vs-update from whether an id
- * happened to be present (13 §10b). That was an implicit branch, and F25 exists because
+ * happened to be present. That was an implicit branch, and specs may not branch because
  * implicit branches are unreadable: two specs that did different things looked identical,
  * and the receipt could not tell you which had happened. Two ids, two names, no inference.
  *
- * Gate-eligible, so it publishes the discriminated write result rather than raw ids
- * (13 §7j-b). Under async review this is a proposal a reviewer may still reject.
+ * Gate-eligible, so it publishes the discriminated write result rather than raw ids.
+ * Under async review this is a proposal a reviewer may still reject.
  */
 /**
- * The create pipeline's read (24 §12, T8): what the session's cast wants to
+ * The create pipeline's read: what the session's cast wants to
  * say first — one entry per character in position order, each carrying the
  * full greeting history (the first text seeds the message, the rest become
  * swipes), interpolated against the session's first persona.
@@ -2286,8 +2285,8 @@ export const sessionGreetings = pin(
 )
 
 /**
- * A seated envoy's **declared greeting**, interpolated (lair re-plan R6,
- * 2026-09-28) — the line an envoy opens a new session with
+ * A seated envoy's **declared greeting**, interpolated
+ * (2026-09-28) — the line an envoy opens a new session with
  * (`EnvoyDecl.greeting`): the Lair's Castellan introduces the game.
  *
  * The create pipeline's read, beside `session-greetings@1`, which stays the
@@ -2378,7 +2377,7 @@ export const turnPlan = pin(
 )
 
 /**
- * The session's **annex** (PLAN-turn-order §4.3, R6): read one owner's
+ * The session's **annex**: read one owner's
  * document out of `sessions.annex`.
  *
  * The annex is the pipeline layer's free field, namespaced by owner key — a
@@ -2424,12 +2423,12 @@ export const sessionAnnex = pin(
 			in: {
 				scope: S.sessionScope,
 				/**
-				 * `'ai'` for the prompt-safe view (R57): only the values the
+				 * `'ai'` for the prompt-safe view: only the values the
 				 * model's context may carry — those whose audience holds `ai`,
 				 * `participant`, or the `speaker` below. Absent is everything,
 				 * as a pipeline reads it. A literal.
 				 *
-				 * `'template'` (typed templates P6) reads what a template may
+				 * `'template'` reads what a template may
 				 * reference: every DECLARED key of every owner in scope — core
 				 * and the enabled plugins, for the session's genre — as
 				 * `{ <owner>: { <key>: value } }`. `owner` and `sharedAnnex`
@@ -2447,8 +2446,8 @@ export const sessionAnnex = pin(
 
 // ── Summarization ───────────────────────────────────────────────────────────
 
-/** The messages a summary is drawn from, already scoped and ordered. @internal */
-export const summarizeSource = pin(
+/** The messages a summary is drawn from, already scoped and ordered (`@1`). */
+const summarizeSourceAt1 = pin(
 	describeQueryDefinition({
 		id: 'core:query/summarize-source@1',
 		i18n: { name: { en: 'Messages to summarize' } },
@@ -2459,6 +2458,111 @@ export const summarizeSource = pin(
 		},
 	}),
 )
+
+/**
+ * 🚧 A **scene's** messages, by range and lane — the source a genre-owned
+ * summarize-scene spec reads (live scenes §13–§14, 2026-10-13).
+ *
+ * ## Why a second version, not a widened first
+ *
+ * `@1` hands on one flat list of the rows a request named. A scene is a
+ * RANGE on one lane (`openedAt` … `closedAt`, message ids), and what the
+ * genre counts as story and as aside differs by genre: the Lair's Sanctum is
+ * talk the party never hear, which a summary should read as context and never
+ * as events. So this version splits its output — `messages` (the story) and
+ * `asides` (each side-channel row, attached by the host to the story line
+ * before it) — and that is a different contract, not a wider one. `@1`
+ * stays for the shared summarize specs that resolve against it.
+ *
+ * ## Who decides which channels
+ *
+ * The SPEC, through `params` (`channel`, `asides`) — the builder writes its
+ * genre's choice onto its Default preset, exactly as `session-history@1`'s
+ * `channel` already works. A request may name `channel` / `asides` too (the
+ * scene row's own lane, say), and a value the request carries wins over the
+ * param, because it is the narrower statement.
+ *
+ * ## The request
+ *
+ * `{ sceneId?, messageIds?, channel?, asides?: string[], openedAt?,
+ * closedAt?, limit? }` on the `summarize-request@1` payload. `openedAt` /
+ * `closedAt` are message ids bounding the range, inclusive; `closedAt` absent
+ * reads to the newest row (an open scene). `messageIds` is the transition
+ * path (`scenes:create`'s ticked rows) and wins when present. An empty span
+ * is not an error: the source hands on two empty lists and the drafting map
+ * runs zero times. A channel the session has never written is the same — an
+ * aside on a lane with no rows contributes nothing, never a refusal.
+ *
+ * ## The rows
+ *
+ * `@1`'s `summarize_source` row shape — `id`, `role`, `senderName` (the
+ * sender as the session names them), `content` — plus `channel` on every
+ * row, so the transcript template's `aside` section can say where a line was
+ * written. `render-transcript@1` reads these and nothing else.
+ * @experimental
+ */
+const summarizeSourceAt2 = pin(
+	describeQueryDefinition({
+		id: 'core:query/summarize-source@2',
+		i18n: { name: { en: 'Scene to summarize' } },
+		timeoutMs: 5000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					/** The story's lane — `main` for every core genre. */
+					channel: {
+						type: 'string',
+						default: 'main',
+						label: { en: 'Story channel' },
+						description: {
+							en: "Which of the session's channels holds the story. The chat log is 'main'.",
+						},
+					},
+					/**
+					 * Channels read as asides: rows matched by prefix
+					 * (`sanctum` matches `sanctum:2`), each attached to the
+					 * story line before it. Empty reads the story alone.
+					 */
+					asides: {
+						type: 'list',
+						item: { type: 'text' },
+						label: { en: 'Aside channels' },
+						description: {
+							en: "Side channels whose lines the summary reads as context, not as events — the Lair's 'sanctum'. Leave it empty to read the story alone.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { scope: S.sessionScope, request: S.summarizeRequest },
+			out: {
+				main: S.messages,
+				/** The story's rows on the story channel, oldest first. */
+				messages: S.messages,
+				/** The aside rows inside the range, oldest first, each carrying its channel. */
+				asides: S.messages,
+			},
+		},
+	}),
+)
+
+/**
+ * The messages a summary is drawn from — both pins on one export, the way a
+ * pinned constructor carries its version at the call site (04 §4b):
+ * `C.summarizeSource.v1(…)` for the shared summarize specs,
+ * `C.summarizeSource.v2(…)` for a genre's summarize-scene. `id` and
+ * `descriptor` stay `@1`'s, so nothing that held this export changes
+ * meaning; `@2`'s descriptor rides its constructor
+ * (`typeof C.summarizeSource.v2` types a binding).
+ * @internal
+ */
+export const summarizeSource = {
+	...summarizeSourceAt1,
+	v2: Object.assign(summarizeSourceAt2.v2, { descriptor: summarizeSourceAt2.descriptor }),
+}
 
 /**
  * The keywords an entry is proposed to be found by — **without a model**.
@@ -2662,8 +2766,7 @@ export const graphScenes = pin(
  * — this is the `current` view, and the temporal registry that would give the
  * other one is not built (see docs/stats-and-states.md).
  *
- * `version` is the session's **state version** (plans/29 R-15 *Staleness and
- * order*; 30 §U5f): a counter every applied change moves, in turn order,
+ * `version` is the session's **state version**: a counter every applied change moves, in turn order,
  * under a lock. A run that reads state here and later asks to change it
  * hands the version back as `base` on `resolve-state-changes@1` /
  * `set-state@1`, so a change proposed against a state that has since moved
@@ -2955,7 +3058,7 @@ export const statTrail = pin(
  *
  * ## Why `propose` is the default
  *
- * The three writers do not have equal authority (`DESIGN-stats-and-states.md`).
+ * The three writers do not have equal authority.
  * A person editing a bar is authoritative; a genre's own script rolling damage
  * is authoritative because the genre author wrote the arithmetic; a **model**
  * is neither, and a model that could set a number silently is a model that can
@@ -2967,7 +3070,7 @@ export const statTrail = pin(
  * ## Why it is a Task
  *
  * It writes, which a Task is not otherwise supposed to do, and the alternative
- * is worse: F7 allows a spec **one** write-class Consumer and that one is the
+ * is worse: the one-live-row rule allows a spec **one** write-class Consumer and that one is the
  * message. A damage roll that also saves a reply would be unspecifiable. What
  * makes it defensible rather than a hole is that these rows are not the run's
  * primary artifact — every one of them is anchored to a message and retracted
@@ -2980,6 +3083,14 @@ export const statTrail = pin(
  * item line survives on `resolve-state-changes@1`, which turns it into this). One
  * port because one turn's changes are one ordered list, and splitting them
  * would let a spec apply half of them.
+ *
+ * 🚧 A **clock line** `{ kind: 'clock', by, unit }` (live scenes §6, ★3) is
+ * the state-keeper asking to move the session's story clock forward. `propose`
+ * holds it as a **clock proposal** (`state_proposals.kind` `clock`), whose
+ * Accept advances the clock; `apply` passes it over — neither applied nor
+ * refused — because a moved clock is announced through a host seam a task does
+ * not have: a spec that applies the keeper's clock wires *Advance story clock*
+ * from `resolve-state-changes@1`'s `clock` out-port (Adventure's trusted arm).
  */
 /**
  * Changes a model NAMED, turned into changes `set-state` can write.
@@ -2988,7 +3099,7 @@ export const statTrail = pin(
  *
  * "Verity" becomes a cast row by looking her up in this session's cast, which
  * is a read of the host and therefore a Query's job — a Task is handed no
- * services (F11). That also buys the scoping refusal for free: the cast it
+ * services. That also buys the scoping refusal for free: the cast it
  * matches against is the cast of the session on the `scope` port and no other.
  *
  * ## Why this is a node and not a leniency inside `set-state`
@@ -3038,7 +3149,7 @@ export const resolveStateChanges = pin(
 				changes: S.json,
 				/**
 				 * Who a change that names no `owner` is for, as participant
-				 * references (lair re-plan R10, 2026-09-28): each such change
+				 * references (2026-09-28): each such change
 				 * is made once per reference, the same slot and value on each —
 				 * the Lair's Whisper writes its one line on every recipient the
 				 * press collected (`core:inlet/user-message@1.recipients`). A
@@ -3082,7 +3193,27 @@ export const resolveStateChanges = pin(
 				 */
 				plan: S.json,
 				/**
-				 * The **state version** this turn read (U5f): the session-state
+				 * 🚧 **A clock proposal** (live scenes §6, ★3, 2026-10-13): the
+				 * keeper's answer, whose `clock` list (`[{ by, unit }]`, empty
+				 * on the ordinary turn) is how much story time the scene took.
+				 * The whole answer for `plan`'s reason — a reference has no
+				 * sub-path — and a bare `{ by, unit }` reads the same. The
+				 * first entry resolves onto `changes` as `{ kind: 'clock', by,
+				 * unit }` (what `set-state` proposes) and onto the `clock`
+				 * out-port; forward only — a whole `by` above zero, within
+				 * `CLOCK_STEP_MAX`, in one of `STORY_TIME_UNITS` — and only
+				 * when the session's clock could move by it. Anything else is
+				 * a sentence on `refused`. 🚧 A well-formed ask the story
+				 * cannot take (no clock yet, a date the calendar cannot place)
+				 * also rides `changes` as `{ kind: 'clock', by, unit, skipped
+				 * }`, `skipped` saying why, for `set-state` to write to the
+				 * ledger (live scenes §15 G16) — never onto `clock`.
+				 * Optional: unwired, no clock move.
+				 * ⚠ Not the planner's `timeOfDay` hint, which is a world stat.
+				 */
+				clock: S.json,
+				/**
+				 * The **state version** this turn read: the session-state
 				 * query's `version`. Passed through onto every resolved change
 				 * as `base`, so `set-state` can tell a delta against the state
 				 * the model saw from one against a state that has since moved.
@@ -3107,6 +3238,14 @@ export const resolveStateChanges = pin(
 				changes: S.json,
 				/** One sentence per change that named something not here. */
 				refused: S.json,
+				/**
+				 * 🚧 The clock move the `clock` port resolved, `{ by, unit }` —
+				 * absent when there is none. What `core:task/clock-step@1`'s
+				 * `step` takes, so a spec that applies the keeper's clock
+				 * (Trust the narrator) moves it through *Advance story
+				 * clock*; the same move rides `changes` for `propose`.
+				 */
+				clock: S.json,
 			},
 		},
 	}),
@@ -3131,8 +3270,7 @@ export const resolveStateChanges = pin(
  * all to a genre that needs to see the book: on a **create** run there is no
  * conversation to scan, so the window is empty and only always-on entries are
  * admitted — and a genre asking *is there a room called the Cellar?*, *pick one
- * of these as the secret*, or *who are the suspects?* had no door at all
- * (plans/genres §10 G13/G14, §11 L4).
+ * of these as the secret*, or *who are the suspects?* had no door at all.
  *
  * This is that door, and it is deliberately dull: **no mechanism runs, nothing
  * is scored, nothing is ranked.** `main` and `entries` carry one bare list of
@@ -3150,7 +3288,7 @@ export const resolveStateChanges = pin(
  * `fingerprint`, and history's `year` / `month` / `day`. That is the contract
  * worth having: a task written against a retrieved entry reads a listed one
  * without a second shape to learn, and there is no second projection to keep in
- * step (R5 — the vocabularies are reconciled at the host's read, not merged).
+ * step (the vocabularies are reconciled at the host's read, not merged).
  * The one addition is asked for: `withLinks` puts each row's lore links on it
  * as `links` (`LoreLinkRow[]`), said from that row.
  *
@@ -3217,7 +3355,7 @@ export const lorebookEntries = pin(
 					 *
 					 * Empty or absent lists every entry type.
 					 *
-					 * Named `entryTypes` rather than `types` (R3): *type* alone
+					 * Named `entryTypes` rather than `types`: *type* alone
 					 * is the word four other vocabularies use — a node type, a
 					 * session type, a part type — and a parameter may not take
 					 * the bare noun.
@@ -3275,7 +3413,7 @@ export const lorebookEntries = pin(
 					},
 					/**
 					 * Each row's **lore links**, on the row as `links`
-					 * (`LoreLinkRow[]`) — places plan B2, 2026-09-29. Drizzle's
+					 * (`LoreLinkRow[]`) — 2026-09-29. Drizzle's
 					 * `with: { … }` in spirit: the listing stays a listing, and a
 					 * reader that wants a room's ways out says so.
 					 *
@@ -3331,3 +3469,33 @@ export const lorebookEntries = pin(
 )
 
 // ── core:query/lorebook-entries@1 ───────────────────────────────── end ──────
+
+// ── core:query/likeness-images@1 (DESIGN-image-generation §5, §6.4) ──────────
+
+/**
+ * 🚧 The **likeness images** of everyone on stage, as one media list — the
+ * Scene action's references.
+ *
+ * Stage order: the switched-on cast in seat order, then the personas in
+ * theirs — the order `core:var/likenesses@1` lays the tag lines out in, so
+ * the n-th picture and the n-th tag line are the same person. Each one's
+ * likeness image, else their avatar (`likenessOf`); someone with neither,
+ * or whose file is gone or is not an image, is skipped. Not capped here:
+ * the picture step's host caps references at the drawing sheet's maximum
+ * and says so.
+ * @experimental
+ */
+export const likenessImages = pin(
+	describeQueryDefinition({
+		id: 'core:query/likeness-images@1',
+		i18n: {
+			name: { en: 'Likeness images' },
+			description: { en: "Everyone on stage's likeness image, in stage order." },
+		},
+		timeoutMs: 2000,
+		ports: {
+			in: { scope: S.sessionScope },
+			out: { main: S.mediaList, references: S.mediaList },
+		},
+	}),
+)

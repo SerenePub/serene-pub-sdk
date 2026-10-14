@@ -1,5 +1,5 @@
 /**
- * Folded sections (B4; decision D5, 2026-09-27) — the checks a host makes on
+ * Folded sections — the checks a host makes on
  * the message outlets' `sections` in-port, the one reading of where a row keeps
  * them, and the one `core:section` part each becomes. Pure: the host's write,
  * its projection to parts and a widget's fallback all read through here, so
@@ -11,6 +11,7 @@
  * alternative's sections are the row's `sections` — the ones it had before
  * anybody swiped.
  * @experimental
+ * @ruling B4, decision D5 (2026-09-27)
  */
 import type { FoldedSectionPartDataV1, FoldedSectionV1 } from './widgets.js'
 
@@ -136,7 +137,7 @@ export function foldedSectionPart(section: FoldedSectionV1): {
 
 /**
  * The readable lines a document's lists make — what `core:task/list-section@1`
- * folds into one section's `items` (lair pass B5, decision D5, 2026-09-27).
+ * folds into one section's `items`.
  *
  * `path` names the keys to read, comma-separated and in order (`'beats,speakers'`);
  * empty reads the document itself. A list contributes one line per entry and
@@ -146,6 +147,7 @@ export function foldedSectionPart(section: FoldedSectionV1): {
  * Nested lists and objects inside an entry are left out rather than printed.
  * Blank lines are dropped, so a document with nothing to say makes no lines.
  * @experimental
+ * @ruling lair pass B5, decision D5 (2026-09-27)
  */
 export function sectionItemsOf(document: unknown, path = ''): string[] {
 	const keys = path

@@ -1,11 +1,12 @@
 /**
- * A minimal template engine, enough to demonstrate variable awareness (16 §4).
+ * A minimal template engine, enough to demonstrate variable awareness.
  *
  * Supports `{{ a.b.c }}` and `{% for x in items %}…{% endfor %}`. Not Jinja — just
  * enough surface to answer the question the docs make a promise about: *can the editor
  * tell an author which variables exist, and flag one that doesn't?*
  *
- * ⚠ Writing this surfaced a correction to 16 §4 — see `templateScope`.
+ * ⚠ Writing this surfaced a correction to the variable-awareness design — see `templateScope`.
+ * @ruling 16 §4, 16 §4
  */
 
 import type { I18n, SlotDecl } from './descriptors.js'
@@ -29,8 +30,9 @@ const IF = /\{%\s*if\s+([^%]+?)\s*%\}/g
  * Extract top-level variable references. Loop-bound names are marked so they are not
  * reported as unknown, and anything computed is marked dynamic rather than verified —
  * an editor that promises correctness and lets a typo through is worse than one that
- * says what it checks (16 §4).
+ * says what it checks.
  * @experimental
+ * @ruling 16 §4
  */
 export function extractRefs(src: string): TemplateRef[] {
 	const bound = new Set<string>()
@@ -137,7 +139,7 @@ function get(scope: Record<string, unknown>, path: string[]): unknown {
 }
 
 /**
- * ⚠ CORRECTION TO 16 §4.
+ * ⚠ CORRECTION TO THE VARIABLE-AWARENESS DESIGN.
  *
  * The docs say template variable awareness "falls out of typed ports with no new
  * mechanism." Building it shows that is only true for the **assembly** template, whose
@@ -150,6 +152,7 @@ function get(scope: Record<string, unknown>, path: string[]): unknown {
  * So the template slot must **declare its own variable scope**. That is one extra field on
  * the descriptor, not a new mechanism, but the docs currently claim something that isn't
  * quite true and would have been discovered by the first plugin author who tried it.
+ * @ruling 16 §4
  */
 /**
  * The kinds a declared value can be.
@@ -263,8 +266,9 @@ export type TemplateFindingKind = 'syntax' | 'unknown-name' | 'unknown-path' | '
  * What a host's engines register, as names — the checker's input
  * (`@serene-pub/sdk/template-check`). Declared here, on the barrel, so a
  * dependency-free module can take a checker as a value without importing the
- * engines (typed templates P5).
+ * engines.
  * @experimental
+ * @ruling typed templates P5
  */
 export interface TemplateCheckOptions {
 	/** Handlebars helpers the host registers beyond the built-ins. */

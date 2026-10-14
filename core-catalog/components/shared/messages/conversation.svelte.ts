@@ -23,6 +23,7 @@ import type { WidgetRequestKind, WidgetRequests } from "@serene-pub/sdk/componen
 import { canAnswerForm } from "@serene-pub/core-catalog/conversation"
 import { setStatusTextResolver, statusTextIn } from "@serene-pub/core-catalog/conversation"
 import type { RequestDeclineCode, StatusText } from "@serene-pub/sdk/component"
+import { boundaryOffer, laneOf, markedRun, type BoundaryOffer, type SceneMarkRow } from "./sceneMarks"
 
 const KEY = Symbol("sp-conversation")
 
@@ -30,6 +31,13 @@ export type Conversation = ReturnType<typeof createConversation>
 
 /** What a verb's subject is: a message, by id. */
 type Subject = { id: number }
+
+/**
+ * 🚧 Where a scene write was asked, so its refusal is said there: under a
+ * line, in a scene's divider, in the selection bar, or in a scene cue's chip
+ * (lane E).
+ */
+type SceneAsk = "line" | "scene" | "selection" | "cue"
 
 /**
  * A request declined because the view went away — the page's decline of what
@@ -55,6 +63,14 @@ export function createConversation(widget: WidgetContextRef) {
 	}
 
 	let editingId = $state<number | null>(null)
+	/**
+	 * 🚧 The last scene boundary the host refused, said where it was asked:
+	 * under a line (*Start scene here*, *End scene here*), in a scene's
+	 * divider, or in the selection bar (*Mark as scene*). One at a time.
+	 */
+	let sceneRefusal = $state<{ at: SceneAsk; id: number; text: string } | null>(null)
+	/** A scene boundary is being written: its presses wait. */
+	let sceneBusy = $state(false)
 	let menuFor = $state<number | undefined>(undefined)
 	let selecting = $state(false)
 	/** The lane the composer writes to, and the log shows (`main` by default). */
@@ -69,7 +85,7 @@ export function createConversation(widget: WidgetContextRef) {
 
 	// Through the context's own type — its scoped keys come from the SDK's
 	// one table — so a renamed section fails to compile here.
-	const dossier = $derived((ctx().session_full?.v1 ?? null) as ConversationDossierV1 | null)
+	const dossier = $derived((ctx().scope("session:full") ?? null) as ConversationDossierV1 | null)
 
 	/**
 	 * The channels this copy shows (lair re-plan S1): its composer's, which
@@ -118,6 +134,26 @@ export function createConversation(widget: WidgetContextRef) {
 
 	function request<K extends WidgetRequestKind>(kind: K, params: WidgetRequests[K]["params"]) {
 		return ctx().request(kind, params).catch(warn(kind))
+	}
+
+	/**
+	 * 🚧 One scene write (`scene-*`, a scene's `summarize`): its refusal is
+	 * said where it was asked (`sceneRefusal`), never dropped on stderr —
+	 * a view going away is no refusal. Resolves with the answer, or null.
+	 */
+	async function sceneWrite<K extends WidgetRequestKind>(
+		where: { at: SceneAsk; id: number },
+		kind: K,
+		params: WidgetRequests[K]["params"]
+	): Promise<WidgetRequests[K]["result"] | null> {
+		sceneRefusal = null
+		try {
+			return await ctx().request(kind, params)
+		} catch (e) {
+			if (!isUnmountDecline(e))
+				sceneRefusal = { ...where, text: e instanceof Error ? e.message : String(e) }
+			return null
+		}
 	}
 
 	return {
@@ -194,6 +230,17 @@ export function createConversation(widget: WidgetContextRef) {
 				.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
 				.join(" ")
 		},
+		/**
+		 * What a channel IS (`ChannelDecl.role`, PLAN-core-widgets §3.7):
+		 * `folio` for a manuscript-style channel, else `conversation` — the
+		 * default every channel has, and the answer while the host says
+		 * nothing (`composer.channelRoles` absent).
+		 */
+		channelRole(slug: string): "conversation" | "folio" {
+			return dossier?.composer?.channelRoles?.[slug] === "folio"
+				? "folio"
+				: "conversation"
+		},
 
 		/**
 		 * The lane the composer writes to; the log shows that lane's rows. It is
@@ -216,6 +263,148 @@ export function createConversation(widget: WidgetContextRef) {
 			},
 			set(id: number | undefined) {
 				menuFor = id
+			}
+		},
+
+		// ── 🚧 live scenes: the boundaries a person places (§7, §14 C) ─────
+		scenes: {
+			/** The viewer may place scene boundaries here (the dossier's verdict). */
+			get boundaries() {
+				return !!dossier?.sceneBoundaries
+			},
+			/** The last refusal, and where it is said. */
+			get refusal() {
+				return sceneRefusal
+			},
+			dismiss() {
+				sceneRefusal = null
+			},
+			/** A boundary write is in flight. */
+			get busy() {
+				return sceneBusy
+			},
+			/**
+			 * 🚧 A scene's summary may be asked for here — not when the
+			 * session's summaries are off (`sceneSummaryMode: 'never'`).
+			 */
+			get summarizes() {
+				return dossier?.sceneSummaryMode !== "never"
+			},
+			/**
+			 * 🚧 The scene cues waiting at lines — Suggested mode's *New
+			 * scene?* chips (lane E) — only where the viewer may place a
+			 * boundary.
+			 */
+			get cues() {
+				return dossier?.sceneBoundaries ? (dossier.sceneCues ?? []) : []
+			},
+			/** Which boundaries this line's menu offers (none without the verdict). */
+			offer(row: SceneMarkRow): BoundaryOffer {
+				if (!dossier?.sceneBoundaries) return { start: false, end: null }
+				return boundaryOffer(row, dossier.scenes ?? [])
+			},
+			/** *Start scene here*: a scene opens at this line, on its lane. */
+			async startAt(row: SceneMarkRow) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite({ at: "line", id: row.id }, "scene-open", {
+						messageId: row.id,
+						channel: laneOf(row.channel)
+					})
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/** *End scene here* (a line), or *End scene* (its divider: at the lane's newest line). */
+			async endAt(sceneId: number, row?: SceneMarkRow) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite(
+						row ? { at: "line", id: row.id } : { at: "scene", id: sceneId },
+						"scene-close",
+						row ? { sceneId, messageId: row.id } : { sceneId }
+					)
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/**
+			 * 🚧 Move where a live scene starts — a divider dragged between
+			 * lines, or its menu's *Move start up/down one line* (lane E).
+			 */
+			async moveStart(sceneId: number, openedAt: number) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite({ at: "scene", id: sceneId }, "scene-move", { sceneId, openedAt })
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/** 🚧 *Reopen scene*: a closed scene runs on to its lane's newest line again (lane E). */
+			async reopen(sceneId: number) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite({ at: "scene", id: sceneId }, "scene-move", { sceneId, closedAt: null })
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/** 🚧 A scene cue's **Yes** (a scene opens at its line) or **Not here** (lane E). */
+			async decideCue(cueId: number, accept: boolean) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite({ at: "cue", id: cueId }, "decide-scene-cue", { cueId, accept })
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/** A divider's name, renamed; whether the host took it. */
+			async rename(sceneId: number, name: string | null) {
+				const done = await sceneWrite({ at: "scene", id: sceneId }, "scene-rename", { sceneId, name })
+				return done !== null
+			},
+			/** *Remove boundary*: the host asks the person, then removes the scene. */
+			async remove(sceneId: number) {
+				if (sceneBusy) return
+				sceneBusy = true
+				try {
+					await sceneWrite({ at: "scene", id: sceneId }, "scene-remove", { sceneId })
+				} finally {
+					sceneBusy = false
+				}
+			},
+			/** *Summarize* a scene in the host's review. */
+			summarize(sceneId: number) {
+				void sceneWrite({ at: "scene", id: sceneId }, "summarize", { kind: "scene", sceneId })
+			},
+			/**
+			 * *Mark as scene* (the selection bar's boundary path): the picked run
+			 * becomes one closed live scene — opened at its first line and
+			 * closed at its last on that lane, in ONE write (`closeAt`, lane E),
+			 * so any run that overlaps no scene can be marked, an earlier one
+			 * included — and the selection ends. A refusal keeps it.
+			 */
+			async markSelection() {
+				const run = markedRun(selected, rows as SceneMarkRow[])
+				if (!run || sceneBusy) return
+				sceneBusy = true
+				try {
+					const opened = await sceneWrite({ at: "selection", id: run.first }, "scene-open", {
+						messageId: run.first,
+						channel: run.lane,
+						closeAt: run.last
+					})
+					if (!opened) return
+					selecting = false
+					selected.clear()
+				} finally {
+					sceneBusy = false
+				}
 			}
 		},
 

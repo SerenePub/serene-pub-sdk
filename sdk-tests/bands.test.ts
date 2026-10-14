@@ -35,9 +35,13 @@ import {
 	varHistory,
 	varRecalledLines,
 	varWorldLore,
+	templateLawFindings,
+	variableSeedFindings,
+	variablesOf,
 	type ScopeValues,
 	type VarValue,
 } from '@serene-pub/sdk'
+import { checkTemplateSourceReport } from '@serene-pub/sdk/template-check'
 import * as C from '@serene-pub/contracts'
 
 const PLUGIN = 'bandtest'
@@ -61,6 +65,31 @@ const pickClue = pin(
 		id: 'bandtest:task/pick-clue@1',
 		timeoutMs: 500,
 		bands: { clue: varClue },
+		ports: { in: {}, out: { main: S.json, candidates: S.candidates } },
+	}),
+)
+
+/** The same key as `pick-clue`, under a different variable. */
+const rivalClue = pin(
+	describeTaskDefinition({
+		id: 'bandtest:task/rival@1',
+		timeoutMs: 500,
+		bands: { clue: varOtherClue },
+		ports: { in: {}, out: { main: S.json, candidates: S.candidates } },
+	}),
+)
+
+/** A plugin's own data set under core's `characterLore` key. */
+const varPluginCharacterLore = definePluginVariable(PLUGIN, {
+	id: 'bandtest:var/character-lore@1',
+	scope: { characterLore: { type: 'record', of: { type: 'string' } } },
+	sample: { Oath: 'Sworn at the gate.' },
+})
+const pluginCharacterLore = pin(
+	describeTaskDefinition({
+		id: 'bandtest:task/plugin-character-lore@1',
+		timeoutMs: 500,
+		bands: { characterLore: varPluginCharacterLore },
 		ports: { in: {}, out: { main: S.json, candidates: S.candidates } },
 	}),
 )
@@ -112,35 +141,23 @@ describe('P2 · a band declaration is refused at definition, naming the fix', ()
 		)
 	})
 
-	test('a key another definition declares with a different variable is refused, naming both', () => {
-		assert.throws(
-			() =>
-				describeTaskDefinition({
-					id: 'bandtest:task/rival@1',
-					bands: { clue: varOtherClue },
-					ports: { out: { candidates: S.candidates } },
-				}),
-			(e: Error) =>
-				/'bandtest:task\/rival@1' declares band 'clue' as 'bandtest:var\/other-clue@1'/.test(e.message) &&
-				/'bandtest:task\/pick-clue@1' already declares 'clue' as 'bandtest:var\/clue@1'/.test(e.message),
+	test('a key another definition declares with a different variable is accepted (owner ruling 2026-10-13, ★1)', () => {
+		// One meaning per key is a per-document rule now: two definitions may
+		// each mean their own `clue`, and only meeting in one template's scope
+		// is refused — see "two sources meaning one key differently" below.
+		// Declared here, after `pick-clue` already holds `clue` as another variable.
+		assert.doesNotThrow(() =>
+			describeTaskDefinition({
+				id: 'bandtest:task/second-rival@1',
+				bands: { clue: varOtherClue },
+				ports: { out: { candidates: S.candidates } },
+			}),
 		)
+		assert.equal(rivalClue.descriptor.bands?.clue, varOtherClue)
 	})
 
-	test('a key a registered variable already renders is refused, naming both', () => {
-		const v = definePluginVariable(PLUGIN, {
-			id: 'bandtest:var/characters@1',
-			scope: { characters: 'any' },
-			sample: null,
-		})
-		assert.throws(
-			() =>
-				describeTaskDefinition({
-					id: 'bandtest:task/shadow@1',
-					bands: { characters: v },
-					ports: { out: { candidates: S.candidates } },
-				}),
-			/'bandtest:task\/shadow@1' declares band 'characters' as 'bandtest:var\/characters@1', which collides with 'core:var\/characters@1'/,
-		)
+	test('a key a core variable already renders is accepted at definition (★1)', () => {
+		assert.equal(pluginCharacterLore.descriptor.bands?.characterLore, varPluginCharacterLore)
 	})
 
 	test('an Assemble-own name is refused', () => {
@@ -350,6 +367,250 @@ describe('recalled lines · a band carried on one out-port (bandPorts, 2026-09-2
 					ports: { out: { candidates: S.candidates } },
 				}),
 			/band 'clue' is carried on 'elsewhere', which is not an out-port it declares \(it declares 'candidates'\)/,
+		)
+	})
+})
+
+const rendersGenre = genre('bandtest:genre/renders', {
+	name: { en: 'Renders' },
+	family: 'chat',
+	events: { [sessionEvents.messageRespond]: { required: true } },
+})
+
+/** A plugin source feeding Assemble, with or without core's lore beside it. */
+const pluginLoreSpec = (opts: { withCoreLore: boolean; renders?: Record<string, string> }) => {
+	const s = spec(opts.withCoreLore ? 'bandtest:spec/both-lore' : 'bandtest:spec/own-lore', { version: '1.0.0' })
+		.inlet('input', C.userMessage.v1(), { genre: rendersGenre, event: sessionEvents.messageRespond })
+	const withSources = opts.withCoreLore
+		? s
+				.query('lore', ($) => C.lorebookTriggers.v1({ scope: $.input.sessionScope }))
+				.task('mine', () => pluginCharacterLore.v1({}))
+				.task('pool', ($) => C.concatCandidates.v1({ sources: [$.lore.hits, $.mine.candidates] as never }))
+		: s
+				.task('mine', () => pluginCharacterLore.v1({}))
+				.task('pool', ($) => C.concatCandidates.v1({ sources: [$.mine.candidates] as never }))
+	return withSources
+		.task('rank', ($) => C.rankHybrid.v1({ candidates: $.pool.candidates }))
+		.task(
+			'prompt',
+			($) => C.assemble.v2({ candidates: $.rank.candidates, decisions: $.rank.decisions }),
+			opts.renders ? { renders: opts.renders } : undefined,
+		)
+		.build()
+}
+
+describe('one key, one variable — per template scope (owner ruling 2026-10-13, ★1)', () => {
+	test('two sources meaning one key differently are refused where they meet, naming both', () => {
+		const doc = compile(
+			spec('bandtest:spec/rivals', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1(), { genre: bandGenre, event: sessionEvents.messageRespond })
+				.task('pick', () => pickClue.v1({}))
+				.task('rival', () => rivalClue.v1({}))
+				.task('pool', ($) => C.concatCandidates.v1({ sources: [$.pick.candidates, $.rival.candidates] as never }))
+				.task('rank', ($) => C.rankHybrid.v1({ candidates: $.pool.candidates }))
+				.task('prompt', ($) => C.assemble.v2({ candidates: $.rank.candidates, decisions: $.rank.decisions }))
+				.build(),
+		)
+		assert.throws(
+			() => bandsReaching(doc, 'prompt', 'candidates'),
+			(e: Error) =>
+				e instanceof BandCollisionError &&
+				/'pick' \(bandtest:task\/pick-clue@1\)/.test(e.message) &&
+				/'rival' \(bandtest:task\/rival@1\)/.test(e.message),
+		)
+	})
+
+	test("a plugin's characterLore beside core's is refused where they meet, naming both", () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: true }))
+		assert.throws(
+			() => rendersAt(doc, 'prompt', C.assemble.descriptor.slots!.variables!),
+			(e: Error) =>
+				e instanceof BandCollisionError &&
+				/'lore' \(core:query\/lorebook-triggers@1\) as 'core:var\/character-lore@1'/.test(e.message) &&
+				/'mine' \(bandtest:task\/plugin-character-lore@1\) as 'bandtest:var\/character-lore@1'/.test(e.message),
+		)
+	})
+
+	test("a plugin's characterLore alone, with Assemble still meaning core's, is refused naming the spec-level fix", () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: false }))
+		assert.throws(
+			() => rendersAt(doc, 'prompt', C.assemble.descriptor.slots!.variables!),
+			(e: Error) =>
+				e instanceof BandCollisionError &&
+				/renders: \{ characterLore: 'bandtest:var\/character-lore@1' \}/.test(e.message),
+		)
+	})
+})
+
+describe("a spec's renders: what a placement's key means (owner rulings 2026-10-13, ★2 ★5)", () => {
+	test('re-points the key at the spec’s variable, and the band then agrees', () => {
+		const doc = compile(
+			pluginLoreSpec({ withCoreLore: false, renders: { characterLore: 'bandtest:var/character-lore@1' } }),
+		)
+		const prompt = doc.nodes.find((n) => n.key === 'prompt')!
+		assert.deepEqual(prompt.renders, { characterLore: 'bandtest:var/character-lore@1' })
+		const renders = rendersAt(doc, 'prompt', C.assemble.descriptor.slots!.variables!)
+		assert.equal(renders.characterLore, 'bandtest:var/character-lore@1')
+		assert.equal(renders.worldLore, 'core:var/world-lore@1')
+	})
+
+	test('a node that states none carries no renders key, so its document hashes as it did', () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: false }))
+		for (const n of doc.nodes) assert.equal('renders' in n, false, n.key)
+	})
+
+	test('saying a key means what its definition already says is not stored', () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: false, renders: { worldLore: 'core:var/world-lore@1' } }))
+		assert.equal('renders' in doc.nodes.find((n) => n.key === 'prompt')!, false)
+	})
+
+	test('is stated as a declaration or its id', () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: false, renders: { characterLore: varPluginCharacterLore.id } }))
+		assert.equal(doc.nodes.find((n) => n.key === 'prompt')!.renders?.characterLore, varPluginCharacterLore.id)
+	})
+
+	test('a key the definition does not render is refused — a spec says what a key means, never adds one', () => {
+		assert.throws(
+			() => pluginLoreSpec({ withCoreLore: false, renders: { secretEntry: varPluginCharacterLore.id } }),
+			/node 'prompt': renders names 'secretEntry', which 'core:task\/assemble@2' does not render/,
+		)
+	})
+
+	test('a variable whose scope does not declare the key is refused', () => {
+		assert.throws(
+			() => pluginLoreSpec({ withCoreLore: false, renders: { history: varPluginCharacterLore.id } }),
+			/renders 'history' as 'bandtest:var\/character-lore@1', whose scope does not declare 'history'/,
+		)
+	})
+
+	test('an unregistered variable is refused', () => {
+		assert.throws(
+			() => pluginLoreSpec({ withCoreLore: false, renders: { characterLore: 'bandtest:var/nobody@1' } }),
+			/'bandtest:var\/nobody@1', which is not registered/,
+		)
+	})
+
+	test('law T1 says the same of a document that did not come from the builder', () => {
+		const doc = compile(pluginLoreSpec({ withCoreLore: false }))
+		const edited = {
+			...doc,
+			nodes: doc.nodes.map((n) =>
+				n.key === 'prompt' ? { ...n, renders: { secretEntry: 'bandtest:var/clue@1', history: 'bandtest:var/clue@1' } } : n,
+			),
+		}
+		const t1 = templateLawFindings(edited).filter((f) => f.nodeKey === 'prompt')
+		assert.ok(t1.some((f) => /renders 'secretEntry', which 'core:task\/assemble' does not render/.test(f.message)), JSON.stringify(t1))
+		assert.ok(t1.some((f) => /renders 'history' as 'bandtest:var\/clue@1', whose scope does not declare 'history'/.test(f.message)), JSON.stringify(t1))
+	})
+})
+
+describe('static renders are checked at definition, like bands (2026-10-13)', () => {
+	const withRenders = (id: string, renders: Record<string, string>) => () =>
+		describeTaskDefinition({
+			id,
+			slots: { variables: { kind: 'variables', renders } },
+			ports: { in: {}, out: { main: S.json } },
+		} as never)
+
+	test('an unregistered variable is refused', () => {
+		assert.throws(withRenders('bandtest:task/r-ghost@1', { ghost: 'bandtest:var/ghost@1' }), /slot 'variables' renders 'ghost' as 'bandtest:var\/ghost@1', which is not registered/)
+	})
+
+	test('a key the variable’s scope does not declare is refused', () => {
+		assert.throws(withRenders('bandtest:task/r-scope@1', { hint: 'bandtest:var/clue@1' }), /renders 'hint' as 'bandtest:var\/clue@1', whose scope does not declare 'hint'.*it declares 'clue'/s)
+	})
+
+	test('an Assemble-own name is refused', () => {
+		const v = definePluginVariable(PLUGIN, { id: 'bandtest:var/r-budget@1', scope: { budget: 'any' }, sample: null })
+		assert.throws(withRenders('bandtest:task/r-budget@1', { budget: v.id }), /renders 'budget', which collides with Assemble's own 'budget'/)
+	})
+
+	test('a plugin variable under its own key is accepted', () => {
+		assert.doesNotThrow(withRenders('bandtest:task/r-ok@1', { clue: 'bandtest:var/clue@1' }))
+	})
+})
+
+describe('variable layout seeds are linted against their variable (2026-10-13, ★4)', () => {
+	const checking = { check: checkTemplateSourceReport }
+	const seed = (id: string, variableId: string, body: string) => ({
+		id,
+		kind: 'variables' as const,
+		variableId,
+		engine: 'core:template/handlebars@1',
+		body,
+	})
+
+	test("a package's layout for a core variable that reads only its scope passes", () => {
+		assert.deepEqual(
+			variableSeedFindings([seed('bandtest:template/prose-cast@1', 'core:var/characters@1', '{{#each characters}}{{name}}{{/each}}')], checking),
+			[],
+		)
+	})
+
+	test('a layout reading a name its variable does not declare is an error, naming it', () => {
+		const [f] = variableSeedFindings([seed('bandtest:template/typo@1', 'core:var/characters@1', '{{#each character}}{{name}}{{/each}}')], checking)
+		assert.equal(f?.severity, 'error')
+		assert.match(f!.message, /character/)
+	})
+
+	test("a variable not registered here is a warning — nothing can see its scope", () => {
+		const [f] = variableSeedFindings([seed('bandtest:template/elsewhere@1', 'other:var/thing@1', '{{{thing}}}')], checking)
+		assert.equal(f?.severity, 'warning')
+	})
+})
+
+describe('a variable named only in a renders travels in the manifest (variablesOf, 2026-10-13)', () => {
+	const varOnlyNamed = definePluginVariable(PLUGIN, {
+		id: 'bandtest:var/only-named@1',
+		scope: { onlyNamed: { type: 'string' } },
+		sample: 'x',
+	})
+	const varSpecNamed = definePluginVariable(PLUGIN, {
+		id: 'bandtest:var/spec-named@1',
+		scope: { characterLore: { type: 'record', of: { type: 'string' } } },
+		sample: {},
+	})
+	const namedByRenders = describeTaskDefinition({
+		id: 'bandtest:task/named-by-renders@1',
+		slots: { variables: { kind: 'variables', renders: { onlyNamed: varOnlyNamed.id, characters: 'core:var/characters@1' } } },
+		ports: { in: {}, out: { main: S.json } },
+	} as never)
+
+	test("a definition's static renders and a pipeline node's renders both reach it — own namespace only", () => {
+		const ids = variablesOf({
+			slug: PLUGIN,
+			handlers: [{ __decl: 'handler', type: namedByRenders } as never],
+			pipelines: [pluginLoreSpec({ withCoreLore: false, renders: { characterLore: varSpecNamed.id } })],
+		}).map((v) => v.id)
+		assert.ok(ids.includes(varOnlyNamed.id), JSON.stringify(ids))
+		assert.ok(ids.includes(varSpecNamed.id), JSON.stringify(ids))
+		assert.ok(!ids.includes('core:var/characters@1'), 'core variables never travel')
+	})
+
+	test('without the slug nothing is collected by id — a namespace cannot be guessed', () => {
+		assert.deepEqual(
+			variablesOf({ handlers: [{ __decl: 'handler', type: namedByRenders } as never] }).map((v) => v.id),
+			[],
+		)
+	})
+})
+
+describe('a Liquid variable layout using the instance’s filters is not refused at packaging', () => {
+	test('`jsonValue`, which the packager does not know, is a parse finding — never a refusal', () => {
+		assert.deepEqual(
+			variableSeedFindings(
+				[
+					{
+						id: 'bandtest:template/liquid-cast@1',
+						kind: 'variables',
+						variableId: 'core:var/characters@1',
+						engine: 'core:template/liquid@1',
+						body: '{% for c in characters %}{{ c.name | jsonValue }}{% endfor %}',
+					},
+				],
+				{ check: checkTemplateSourceReport },
+			),
+			[],
 		)
 	})
 })

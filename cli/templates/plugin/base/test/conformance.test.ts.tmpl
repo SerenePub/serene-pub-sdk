@@ -1,0 +1,85 @@
+// @vitest-environment happy-dom
+/**
+ * The conformance kit's package cases (C28–C33), over what `npm run package`
+ * built — `dist/plugin/`, not the sources. These are the checks an instance
+ * holds an installed package to: what it ships, its component modules, and
+ * the swaps it offers. Run `npm run package` first; this reads the build.
+ *
+ * The host below is the SDK's reference executor plus the package's own
+ * evidence, read off the manifest and the handler bundle. A component is
+ * mounted in a DOM — `happy-dom`, named on the first line — the way the page
+ * mounts it. C29 stays "not judged" here: the event map it checks is drawn
+ * from every installed package, which only a running instance has.
+ *
+ * ✎ CHANGE: nothing, usually. A red result names the requirement and what
+ *   breaks for a person when it fails.
+ */
+
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { describe, expect, it } from 'vitest'
+import { canonicalHash, importDocument, replay, run, validate } from '@serene-pub/sdk'
+import {
+	componentsFromManifest,
+	conformPackage,
+	manifestSeams,
+	pinnedDefinitionIn,
+	renderConformance,
+	type HostUnderTest,
+} from '@serene-pub/conformance'
+import { mountComponent } from '@serene-pub/cli/testing'
+import { coreSpec } from '@serene-pub/core-catalog'
+
+const root = resolve(import.meta.dirname, '..')
+const build = join(root, 'dist', 'plugin')
+/** Where a mounted module is written, so the harness can import it. */
+const aside = join(root, 'node_modules', '.cache', 'conformance')
+
+describe('the built package', () => {
+	it('passes the conformance kit’s package cases (C28–C33)', async () => {
+		expect(
+			existsSync(join(build, 'manifest.json')),
+			'no dist/plugin/manifest.json — run `npm run package` first; this checks the build',
+		).toBe(true)
+		const manifest = JSON.parse(readFileSync(join(build, 'manifest.json'), 'utf8'))
+		const bundle = existsSync(join(build, 'bundle.js'))
+			? readFileSync(join(build, 'bundle.js'), 'utf8')
+			: undefined
+
+		let written = 0
+		const writeAside = (code: string): string => {
+			mkdirSync(aside, { recursive: true })
+			const path = join(aside, `component-${written++}.js`)
+			writeFileSync(path, code)
+			return path
+		}
+
+		const host: HostUnderTest = {
+			name: `${manifest.slug} (built)`,
+			// The SDK's reference executor: the laws a package is judged under.
+			validate,
+			run,
+			replay,
+			canonicalHash,
+			importDocument,
+			// What the package ships and the swaps it offers, off the manifest.
+			...manifestSeams(manifest, bundle),
+			pinnedDefinition: (spec, node) => pinnedDefinitionIn(coreSpec(spec)?.build(), node),
+			// Each built module, with the grants and reads its widgets declare.
+			components: () => componentsFromManifest(manifest, (entry) => readFileSync(join(root, entry), 'utf8')),
+			mountComponent: async (code, sections, opts) =>
+				// The kit names grants as strings; the harness types them as scopes.
+				(await mountComponent({
+					root,
+					entry: writeAside(code),
+					context: sections as never,
+					grants: opts?.grants as never,
+					reads: opts?.reads as never,
+				})) as never,
+		}
+
+		const results = await conformPackage(host)
+		const failed = results.filter((r) => !r.pass)
+		expect(failed, renderConformance(results)).toEqual([])
+	}, 120_000)
+})

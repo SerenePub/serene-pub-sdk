@@ -1,5 +1,5 @@
 /**
- * What a built component was built AGAINST (F1): the host contract a
+ * What a built component was built AGAINST: the host contract a
  * compiled artifact assumes, recorded beside it so a host that has moved on
  * refuses it with a sentence instead of mounting it into a failure nobody can
  * read.
@@ -16,11 +16,15 @@
  * (`components[].builtAgainst`) and by the in-app compiler on each compile.
  * An entry WITHOUT one predates the record and is judged compatible — every
  * component built before it was built for protocol 2, vocabulary 1.
+ * @ruling F1
  */
 import { HOST_ELEMENTS_VERSION } from './hostElements.js'
 import { WIDGET_PROTOCOL } from './widgets.js'
 
-/** @experimental What a built component was built against (F1). Additive: a reader ignores fields it does not know. */
+/**
+ * @experimental What a built component was built against. Additive: a reader ignores fields it does not know.
+ * @ruling F1
+ */
 export interface ComponentBuiltAgainst {
 	/** The widget protocol (`WIDGET_PROTOCOL`) the artifact speaks. */
 	widgetProtocol: number
@@ -33,18 +37,25 @@ export interface ComponentBuiltAgainst {
 }
 
 /**
- * @experimental (F1)
+ * @experimental
  *
  * The widget protocols this host mounts a component built for. A host that
  * moves to a new protocol keeps the old one here for as long as it still
  * speaks it; one it drops is refused, by name.
+ * @ruling F1
  */
 export const HOST_WIDGET_PROTOCOLS: readonly number[] = Object.freeze([WIDGET_PROTOCOL])
 
-/** @experimental The host-element vocabulary majors this host mounts a component built for (F1). */
+/**
+ * @experimental The host-element vocabulary majors this host mounts a component built for.
+ * @ruling F1
+ */
 export const HOST_ELEMENTS_MAJORS: readonly number[] = Object.freeze([vocabularyMajor(HOST_ELEMENTS_VERSION)!])
 
-/** @experimental The contract this SDK's build records: the two versions that decide (F1). */
+/**
+ * @experimental The contract this SDK's build records: the two versions that decide.
+ * @ruling F1
+ */
 export function currentBuiltAgainst(versions: { sdk?: string; componentClient?: string } = {}): ComponentBuiltAgainst {
 	return {
 		widgetProtocol: WIDGET_PROTOCOL,
@@ -63,7 +74,7 @@ function vocabularyMajor(v: unknown): number | undefined {
 const list = (xs: readonly number[]) => (xs.length === 1 ? String(xs[0]) : `${xs.slice(0, -1).join(', ')} or ${xs[xs.length - 1]}`)
 
 /**
- * @experimental (F1)
+ * @experimental
  *
  * Why this host must NOT mount a component built against `builtAgainst`, as
  * a sentence — or `undefined` when it may. Absent (`undefined` / `null`) is
@@ -77,6 +88,7 @@ const list = (xs: readonly number[]) => (xs.length === 1 ? String(xs[0]) : `${xs
  *   {@link HOST_ELEMENTS_VERSION}).
  *
  * `host` defaults to this SDK's own contract.
+ * @ruling F1
  */
 export function componentBuiltAgainstFinding(
 	builtAgainst: unknown,

@@ -48,7 +48,12 @@ const retrievedReply = spec('example:retrieved-reply', { version: '1.0.0' })
 	// Render: weights and minimums are declared on the blocks themselves, so
 	// assembly reads them off its input rather than keeping a map in sync.
 	.task('prompt', ($) =>
-		C.assemble.v2({ candidates: $.rank.candidates, budget: $.budget.available }),
+		C.assemble.v2({
+			candidates: $.rank.candidates,
+			budget: $.budget.available,
+			template: slot.template(),
+			connection: slot.connectionOf('generate'),
+		}),
 	)
 	.oracle('generate', ($) =>
 		C.generateText.v1({

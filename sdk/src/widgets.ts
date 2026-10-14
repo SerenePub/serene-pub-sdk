@@ -1,6 +1,6 @@
 /**
  * The widget data contract — ONE envelope every session widget receives,
- * native and frame alike (PLAN 25, ruled 2026-08-30).
+ * native and frame alike.
  *
  * A native widget reads these sections through the host's in-document context
  * (live, reactive); a frame receives the same sections snapshotted over its
@@ -17,7 +17,7 @@
  * ## Two version clocks
  *
  *  - `WIDGET_PROTOCOL` versions the TRANSPORT — the verbs (`action` / `invoke`
- *    / `request` / `menu` / `on`) and the message kinds. Rev only when the wire
+ *    / `request` / `on`, and the retired ⏳ `menu`) and the message kinds. Rev only when the wire
  *    itself changes.
  *  - Each DATA section is a bag of versioned shapes (`layout: { v1 }`, …). When
  *    a pre-existing key inside a section changes meaning, emit `v2` alongside
@@ -28,9 +28,9 @@
  *
  * Base sections ({@link WIDGET_BASE_SECTIONS}: layout / session / channels /
  * messages / props / actions / settings / annex / locale / viewer /
- * turnOrder) are delivered to every widget that READS them (R75,
- * `WidgetDecl.reads`; a declaration without `reads` reads all of them, which
- * is every widget written before R75). Scoped sections
+ * turnOrder / attendance) are delivered to every widget that READS them
+ * (`WidgetDecl.reads`; a declaration without `reads` reads all of them, which
+ * is every widget written before `reads` existed). Scoped sections
  * ({@link WidgetScopedSections}, the one table) appear ONLY when the widget
  * declared the scope AND it was granted — the same deny-by-default a frame
  * gets, applied at projection so a native widget is no more privileged.
@@ -38,13 +38,17 @@
  * which of the two, the host says with `grants` (the scopes the widget
  * holds, on mount and on every change), so a widget draws "not granted"
  * rather than loading forever.
+ * @ruling PLAN 25 (ruled 2026-08-30), R75
  */
 
 import type { TurnOrderV1 } from './turnOrder.js'
+import type { SessionDossierV1 } from './sessionDossier.js'
 import type { SlotAppliesTo, SlotType, SlotValue } from './attributes.js'
 import type { FieldDecl } from './settings.js'
 import type { StatusText, WidgetActionReason } from './status.js'
 import type { EnabledWhen } from './predicates.js'
+import type { StoryTime, StoryTimeUnit } from './storyTime.js'
+import type { SceneSummaryMode } from './sceneSettings.js'
 
 /** Free-form data riding beside a verb or an event. Keys are the sender's. @experimental */
 export type WidgetPayload = Record<string, unknown>
@@ -132,6 +136,25 @@ export interface LayoutV1 {
 export interface SessionV1 {
 	id: number
 	name: string | null
+	/**
+	 * 🚧 The session's **backdrop** — the picture the Backdrop widget shows
+	 * (`sessions.backdropMediaId`), or null when none is set. Absent from a
+	 * host that does not know the field yet; read absent as null.
+	 * @ruling DESIGN-image-generation §6.4, §9.4
+	 */
+	backdrop?: SessionBackdropV1 | null
+}
+
+/**
+ * 🚧 A session's **backdrop** as a widget sees it: its file id and the
+ * address of its `fitted` representation (the whole picture, long edge
+ * ≤ 1568 px), resolved by the host. ⚠ Not the app background, not a message
+ * attachment.
+ * @experimental
+ */
+export interface SessionBackdropV1 {
+	mediaId: number
+	src: string
 }
 
 /**
@@ -200,6 +223,19 @@ export interface MessageV1 {
 	createdAt?: string
 	/** When the row last changed — a timestamp, as a string on the wire. */
 	updatedAt?: string
+	/**
+	 * 🚧 The **story clock stamp**: the session's story now as it stood when
+	 * the row was written (its own clock, else its line's present), as the
+	 * five stored columns. All null or absent on a row written before stamps,
+	 * or in a session with no dated story. What the conversation's **day
+	 * marks** read.
+	 * @ruling PROPOSAL-live-scenes §6, §8
+	 */
+	storyClockYear?: number | null
+	storyClockMonth?: number | null
+	storyClockDay?: number | null
+	storyClockHour?: number | null
+	storyClockMinute?: number | null
 	/** A person has edited this row's text. */
 	isEdited?: boolean
 	/** The host is not showing this row. */
@@ -213,9 +249,10 @@ export interface MessageV1 {
 	 */
 	generationOutcome?: string | null
 	/**
-	 * What the run filling this row is doing right now (R-19) — *{speaker} is
+	 * What the run filling this row is doing right now — *{speaker} is
 	 * typing* — as display text with its variables filled, NOT a string:
 	 * resolve it with `renderStatusText`. Null or absent when nothing runs.
+	 * @ruling R-19
 	 */
 	generationStatus?: StatusText | null
 	/** Why the last run on this row failed, when it did — shown in place of text. */
@@ -328,7 +365,7 @@ export interface MessagePartV1 {
 /**
  * @experimental 🚧 A **folded section**: a named piece of a reply shown
  * collapsed beside its body, never as the body — a narrator's Plan (beats and
- * speakers, as a list), a step's notes (B4; decision D5, 2026-09-27). What the
+ * speakers, as a list), a step's notes. What the
  * `sections` in-port of `core:outlet/create-message@1` and
  * `core:outlet/update-message@1` takes, as a list, and what the host stores per
  * swipe and serves to widgets as a `core:section` part.
@@ -340,6 +377,7 @@ export interface MessagePartV1 {
  * ⚠ Not a layout **fold** (a unit or zone giving way at a size), and not the
  * model's reasoning trace — that is the `reasoning` in-port, stored as a
  * `core:reasoning` part.
+ * @ruling B4, decision D5 (2026-09-27)
  */
 export interface FoldedSectionV1 {
 	/**
@@ -418,10 +456,66 @@ export interface ViewerV1 {
 }
 
 /**
- * One action as a venue lists it (plans/29 R-15) — transport-neutral here so a
+ * One person in the session's **attendance**: the session's owner or
+ * one of its guests — an account, never a cast member — whether they have
+ * the session open now, as whom they write, and whether they are typing.
+ *
+ * Not a cast **presence** (a cast member's dated span in the world): this is
+ * who has the session open, and nothing about the fiction.
+ * @experimental
+ * @ruling W10
+ */
+export interface AttendeeV1 {
+	userId: number
+	/** The account's display name (its username when it has none). */
+	name: string
+	/** The session's owner, or a guest the owner added. */
+	role: 'owner' | 'guest'
+	/**
+	 * The personas this person writes as in this session — `character:<id>`,
+	 * the grammar of `characters.v1` refs, so a widget granted `characters`
+	 * finds their faces. Empty when they write as none.
+	 */
+	personaRefs: `character:${number}`[]
+	/** One of their personas pinged *typing* within the last few seconds. */
+	typing: boolean
+	/**
+	 * When they last had the session open (ms since the epoch): now, while
+	 * they do; null when the server has not seen them since it started.
+	 */
+	lastSeenAt: number | null
+	/** They have the session open now — in any tab. */
+	here: boolean
+}
+
+/**
+ * The session's **attendance** (`attendance.v1`): its owner and guests,
+ * owner first, each with whether they have the session open now. A base
+ * section — who is in the room is something every widget may know.
+ * @experimental
+ * @ruling W10
+ */
+export interface AttendanceV1 {
+	v: 1
+	people: AttendeeV1[]
+}
+
+/**
+ * The attendance before the host's first push — and what a reader answers
+ * for a section it was not sent. Frozen.
+ * @experimental
+ */
+export const EMPTY_ATTENDANCE: AttendanceV1 = Object.freeze({
+	v: 1 as const,
+	people: Object.freeze([]) as unknown as AttendeeV1[],
+})
+
+/**
+ * One action as a venue lists it — transport-neutral here so a
  * frame and a native widget read the same rows. `specSlug` is `core` for one
  * of core's own message verbs.
  * @experimental
+ * @ruling plans/29 R-15
  */
 export interface WidgetAction {
 	key: string
@@ -447,11 +541,12 @@ export interface WidgetAction {
 	itemGated: boolean
 	isNew: boolean
 	/**
-	 * The enabled-when verdict (U5e), beside `canAct` — both shown, neither
+	 * The enabled-when verdict, beside `canAct` — both shown, neither
 	 * hides the action: every predicate the host could judge over the
 	 * session's published values holds. The `item.*` ones are not among
 	 * them (`itemPredicates`). The host always sends it; absent (a fixture,
-	 * a host before U5e) reads as enabled.
+	 * a host older than this field) reads as enabled.
+	 * @ruling U5e
 	 */
 	enabled?: boolean
 	/** Why it is grey when `enabled` is false — resolve with `renderStatusText`. */
@@ -466,21 +561,23 @@ export interface WidgetAction {
 
 /**
  * The session's actions per **venue**, each a primary set plus an overflow
- * that lists every enabled action (F38). Keyed by venue kind (`composer`,
+ * that lists every enabled action. Keyed by venue kind (`composer`,
  * `message`, `extra`, `widget`, …); a widget reads the venues it draws —
  * `widget` for its own controls, `message` when it renders a message's menu —
  * and fires one through `invoke(key)`. Empty venues when the host has no list
  * yet.
  * @experimental
+ * @ruling F38
  */
 export type ActionsV1 = Record<string, { primary: WidgetAction[]; overflow: WidgetAction[] }>
 
 /** The transport-neutral data half — the versioned sections. */
 /**
- * What this viewer may see of the session annex (R57): per owner, the values
+ * What this viewer may see of the session annex: per owner, the values
  * whose audience holds for them — never the annex itself. A value stored for
  * pipelines only is never here.
  * @experimental
+ * @ruling R57
  */
 export type AnnexV1 = Record<string, Record<string, unknown>>
 
@@ -488,7 +585,7 @@ export type AnnexV1 = Record<string, Record<string, unknown>>
 
 /**
  * 🚧 The session's stats and states, as a widget reads them —
- * `session_state.v1` (R72: a SCOPED section, scope `session:state`, which a
+ * `session_state.v1` (a SCOPED section, scope `session:state`, which a
  * plugin's widget is granted as `widget:session:state`, reviewed like
  * `session:full`). The viewer's view of the one resolved read (`state:get`):
  * what every member of the session reads today, until state gets per-viewer
@@ -497,6 +594,7 @@ export type AnnexV1 = Record<string, Record<string, unknown>>
  * `resolved`, never `state`: `state` on a component's context is the view
  * state it saved.
  * @experimental
+ * @ruling R72
  */
 export interface SessionStateV1 {
 	/** The session this answers for. */
@@ -506,7 +604,8 @@ export interface SessionStateV1 {
 	/**
 	 * Why the last READ failed, in words; null when it did not. A write a
 	 * widget asked for fails as that request's own rejection — errors are
-	 * per widget (R77), never one line every state widget shows.
+	 * per widget, never one line every state widget shows.
+	 * @ruling R77
 	 */
 	error: string | null
 	/** The values, resolved: what a template reads as `state`. */
@@ -534,7 +633,10 @@ export interface SessionResolvedStateV1 {
 	 * that predates locations holding state.
 	 */
 	locations?: Record<string, Record<string, unknown>>
-	/** The session's state version (U5f): moved by every applied change. */
+	/**
+	 * The session's state version: moved by every applied change.
+	 * @ruling U5f
+	 */
 	version?: number
 }
 
@@ -569,9 +671,15 @@ export interface SessionStateSlotV1 {
 	 */
 	field?: FieldDecl
 	appliesTo: SlotAppliesTo[]
-	/** A sheet says a session of this shape must have a value (R7): shown, never enforced here. */
+	/**
+	 * A sheet says a session of this shape must have a value: shown, never enforced here.
+	 * @ruling R7
+	 */
 	required?: boolean
-	/** Retired (R3): its values still resolve and nothing new is written; drawn greyed, never dropped. */
+	/**
+	 * Retired: its values still resolve and nothing new is written; drawn greyed, never dropped.
+	 * @ruling R3
+	 */
 	retired?: boolean
 	/** The sheet that first named it, when one did. */
 	sheetId?: string
@@ -599,19 +707,35 @@ export interface SessionStateOwnerV1 {
 }
 
 /**
- * 🚧 The session's cast, as a widget draws it — `characters.v1` (R76) — with
+ * 🚧 The session's cast, as a widget draws it — `characters.v1` — with
  * the scene images they picture riding along: images ride with their parent.
  * @experimental
+ * @ruling R76
  */
 export interface SessionCharactersV1 {
-	/** Everyone still in the session: its characters, then its personas. */
+	/**
+	 * Everyone still in the session: its characters, then its personas. A
+	 * **benched** character (switched off in Participants: still in the
+	 * session, out of the turns) is listed with `benched: true` — a reader that means "who is in the scene" leaves those
+	 * out itself.
+	 * @ruling W6 (2026-10-11)
+	 */
 	members: SessionCharacterV1[]
-	/** The portraits pinned beside the conversation, one per side; null for an empty side. */
+	/**
+	 * ⏳ The portraits pinned beside the conversation, one per side; null for
+	 * an empty side. The composer's **Pinned images** pane that set them is
+	 * gone: a Scene Portraits instance's **chosen images**
+	 * replace them, and the page only seeds those from a browser's old pins
+	 * once. Still projected this release for a widget that reads it.
+	 * @deprecated REMOVE in 0.7.0 — read `SessionCharacterV1` and ask
+	 * `character-images`; a chosen image is a widget setting.
+	 * @ruling W6 (2026-10-11)
+	 */
 	sceneImages: { left: SessionSceneImageV1 | null; right: SessionSceneImageV1 | null }
 }
 
 /**
- * One cast member, **cascaded cast over card** (R76): the character card's
+ * One cast member, **cascaded cast over card**: the character card's
  * fields overlaid by the cast member's, and **the cast member wins wherever
  * both speak** — its name, its face, its sprite set. The card owns the art;
  * the cast member picks the set. The host merges; a widget reads the merged
@@ -620,6 +744,7 @@ export interface SessionCharactersV1 {
  * The host also resolves every URL and the current sprite, so a widget draws
  * what it is handed and asks nothing of the page but its verbs.
  * @experimental
+ * @ruling R76
  */
 export interface SessionCharacterV1 {
 	/**
@@ -633,7 +758,8 @@ export interface SessionCharacterV1 {
 	isPersona: boolean
 	/**
 	 * The viewer's own persona in this session: what a widget draws for "your
-	 * persona" (R77 — the viewer's, never merely the first one listed).
+	 * persona" (the viewer's, never merely the first one listed).
+	 * @ruling R77
 	 */
 	mine: boolean
 	/** The name to show: the cast member's (a nickname) over the card's. */
@@ -660,12 +786,53 @@ export interface SessionCharacterV1 {
 	/**
 	 * The viewer may switch this member's set (`set-sprite-set`) — the
 	 * server's rule (the session's owner or the character's), answered by the
-	 * host so a menu is offered only where it will be allowed (R77).
+	 * host so a menu is offered only where it will be allowed.
+	 * @ruling R77
 	 */
 	canChangeSpriteSet: boolean
+	/**
+	 * 🚧 When this member last spoke (ms since the epoch): its newest visible
+	 * line on the session's line; null when it has spoken none. What a
+	 * widget ranks "who spoke last" by without reading the log.
+	 * Optional (additive): absent reads as null.
+	 * @ruling W6
+	 */
+	lastSpokeAt?: number | null
+	/**
+	 * 🚧 How many images the character's **gallery** holds, when the host
+	 * knows — what `character-images` would page through. Optional
+	 * (additive): absent means the host did not say, never that there are
+	 * none; ask `character-images` to find out.
+	 * @ruling W6
+	 */
+	galleryCount?: number
+	/**
+	 * 🚧 A **benched** character: still in the session, switched off in
+	 * Participants, out of the turns. Never a persona. Optional
+	 * (additive): absent reads as false.
+	 * @ruling W6
+	 */
+	benched?: boolean
 }
 
-/** A portrait pinned to one side of the conversation. @experimental */
+/**
+ * 🚧 One of the viewer's own personas in this session — `persona.v1` is a
+ * list of them: the `characters.v1` members that are `isPersona && mine`,
+ * the same objects (cascaded, resolved) cut from the same projection, so a
+ * widget granted `persona` alone never needs the cast to find "you".
+ *
+ * A list because a person may write as several; today `mine` marks the one
+ * the viewer is voicing (the composer's pick), so it holds at most one, and
+ * is empty — never absent — when the viewer writes as no persona.
+ * @experimental
+ */
+export type SessionPersonaV1 = SessionCharacterV1 & { isPersona: true }
+
+/**
+ * ⏳ A portrait pinned to one side of the conversation.
+ * @deprecated REMOVE in 0.7.0 with {@link SessionCharactersV1.sceneImages}.
+ * @experimental
+ */
 export interface SessionSceneImageV1 {
 	/** The image, as the host resolved it. */
 	src: string
@@ -694,23 +861,44 @@ export interface SessionSceneImageV1 {
  * empty — or, before the first post, "not yet"; the host's `grants`
  * (frame message `grants`, `ComponentContext.grants` / `granted(scope)`)
  * says which.
+ *
+ * Every `v1` is a named shape — never `unknown`.
  * @experimental
+ * @ruling C4 (2026-10-10)
  */
 export interface WidgetScopedSections {
-	/** 🚧 The whole conversation as core's own conversation sees it (the dossier); its shape settles with C7. */
-	'session:full': { section: 'session_full'; v1: unknown }
-	/** 🚧 The session's stats and states (R72). */
+	/**
+	 * 🚧 The whole conversation as core's own conversation sees it: the
+	 * dossier ({@link SessionDossierV1}). Its shape settles when the
+	 * conversation moves onto the public contract.
+	 * @ruling C8
+	 */
+	'session:full': { section: 'session_full'; v1: SessionDossierV1 }
+	/**
+	 * 🚧 The session's stats and states.
+	 * @ruling R72
+	 */
 	'session:state': { section: 'session_state'; v1: SessionStateV1 }
-	/** 🚧 The viewer's persona. Declared; no host supplies it yet. */
-	persona: { section: 'persona'; v1: unknown }
-	/** 🚧 The session's cast, cast over card, and the scene images they picture (R76). */
+	/**
+	 * 🚧 The viewer's own personas in this session ({@link SessionPersonaV1}):
+	 * the `characters.v1` members that are `isPersona && mine`, cut from the
+	 * same projection under this scope's own grant. Empty, never absent, when
+	 * the viewer writes as no persona.
+	 */
+	persona: { section: 'persona'; v1: SessionPersonaV1[] }
+	/**
+	 * 🚧 The session's cast, cast over card, and the scene images they picture.
+	 * @ruling R76
+	 */
 	characters: { section: 'characters'; v1: SessionCharactersV1 }
 	/**
-	 * 🚧 The session's lore. Declared and never pushed: it is the grant a
-	 * plugin's widget holds to ask `session-entries` (the lore is paged by
-	 * request, as messages are).
+	 * 🚧 The **lore grant marker**. The lore is not pushed: it is paged by
+	 * request (`session-entries`), as messages are, and this scope is the
+	 * grant a plugin's widget holds to ask. The section carries no data —
+	 * `{ granted: true }`, posted when the scope is granted and absent
+	 * otherwise — so present means granted, never "not yet".
 	 */
-	lore: { section: 'lore'; v1: unknown }
+	lore: { section: 'lore'; v1: { granted: true } }
 }
 
 /** A widget scope that delivers a scoped section — every scope but `channel:<slug>`. @experimental */
@@ -757,12 +945,13 @@ export const isWidgetScopedSectionName = (name: unknown): name is WidgetScopedSe
  * below, and the scoped half ({@link WidgetScopedData}) the table above
  * derives.
  *
- * A base section a widget does not READ (`WidgetDecl.reads`, R75) is never
+ * A base section a widget does not READ (`WidgetDecl.reads`) is never
  * sent to it: a remote or a frame never receives it, and a native widget is
  * handed its empty value (`[]`, `{}`) and never re-projected for it — so a
  * widget that does not read `messages` is not handed the log again on every
  * token.
  * @experimental
+ * @ruling R75
  */
 export interface WidgetData extends WidgetScopedData {
 	// base — delivered to every widget that reads it (R75)
@@ -772,8 +961,9 @@ export interface WidgetData extends WidgetScopedData {
 	messages: { v1: MessageV1[] }
 	props: { v1: WidgetPayload }
 	/**
-	 * The action model's venues (R-15) — base, so a widget need not declare a
+	 * The action model's venues — base, so a widget need not declare a
 	 * scope to offer a control.
+	 * @ruling R-15
 	 */
 	actions: { v1: ActionsV1 }
 	/**
@@ -783,27 +973,44 @@ export interface WidgetData extends WidgetScopedData {
 	 * than re-deriving its own defaults. Empty for a widget that declares none.
 	 */
 	settings: { v1: WidgetPayload }
-	/** The viewer's view of the session annex (R57) — `{}` when there is nothing to see. */
+	/**
+	 * The viewer's view of the session annex — `{}` when there is nothing to see.
+	 * @ruling R57
+	 */
 	annex: { v1: AnnexV1 }
 	/**
 	 * The viewer's language code (`en`, `fr`, …), so a widget renders a locale
 	 * map (`i18nText(text, locale.v1)`) in the language the page speaks.
 	 */
 	locale: { v1: string }
-	/** 🚧 Who is looking (C0b). */
+	/**
+	 * 🚧 Who is looking.
+	 * @ruling C0b
+	 */
 	viewer: { v1: ViewerV1 }
 	/**
-	 * The session's turn order (C5): who is due to speak, in order, and who
-	 * could — the stored order core and every strategy write (A9), never
+	 * The session's turn order: who is due to speak, in order, and who
+	 * could — the stored order core and every strategy write, never
 	 * recomputed by a reader. What the page already shows every member in
 	 * its "next" line; `EMPTY_TURN_ORDER` before the first recompute. An
 	 * entry is open: a strategy may add keys (a `reason`, …) and they arrive.
+	 * @ruling C5, A9
 	 */
 	turnOrder: { v1: TurnOrderV1 }
+	/**
+	 * The session's attendance: its owner and guests, who has it open
+	 * now and who left, as whom each writes, who is typing.
+	 * `EMPTY_ATTENDANCE` before the host's first push.
+	 * @ruling W10
+	 */
+	attendance: { v1: AttendanceV1 }
 	// scoped — present iff declared + granted: `WidgetScopedData`, from the table
 }
 
-/** A base section's name — what a widget lists in `WidgetDecl.reads` (R75). @experimental */
+/**
+ * A base section's name — what a widget lists in `WidgetDecl.reads`. @experimental
+ * @ruling R75
+ */
 export type WidgetBaseSection = Exclude<keyof WidgetData, WidgetScopedSectionName>
 
 // Every base section, once: typed off `WidgetData`, so a section added there
@@ -820,12 +1027,14 @@ const BASE_SECTIONS: { readonly [S in WidgetBaseSection]: true } = {
 	locale: true,
 	viewer: true,
 	turnOrder: true,
+	attendance: true,
 }
 
 /**
- * The base sections, in the order the envelope declares them (R75): what
+ * The base sections, in the order the envelope declares them: what
  * `WidgetDecl.reads` may name, and what a widget reads when it names none.
  * @experimental
+ * @ruling R75
  */
 export const WIDGET_BASE_SECTIONS: readonly WidgetBaseSection[] = Object.freeze(
 	Object.keys(BASE_SECTIONS) as WidgetBaseSection[],
@@ -833,46 +1042,79 @@ export const WIDGET_BASE_SECTIONS: readonly WidgetBaseSection[] = Object.freeze(
 
 // ─── Verbs (transport-specific; part of the protocol) ───────────────────────
 
-/** A menu for the host to render at a point the widget names. @experimental */
+/**
+ * ⏳ A menu for the host to render at a point the widget names — the argument
+ * of the retired `menu` verb ({@link WidgetVerbs.menu}). REMOVE in 0.7.0.
+ * @deprecated No host ever drew one. Place an `sp-menu` (or an `sp-popover`)
+ * in your component instead: the page draws it with its own controls.
+ * @experimental
+ */
 export interface MenuSpec {
 	at: { x: number; y: number }
 	items: Array<{ id: string; label: string; icon?: string; disabled?: boolean }>
 }
 
-/** What a person picked out of a `MenuSpec`. @experimental */
+/**
+ * ⏳ What a person picked out of a `MenuSpec` — the retired `menu` verb's
+ * answer. REMOVE in 0.7.0.
+ * @deprecated See {@link MenuSpec}.
+ * @experimental
+ */
 export interface MenuResult {
 	id: string
 }
 
 /**
- * 🚧 What a widget may ASK the host for (C0b) — by kind, with its params and
+ * 🚧 What a widget may ASK the host for — by kind, with its params and
  * what comes back. A request is not a grant: the host may decline, and the
  * promise rejects. The host-UI kinds open something of the host's own (a
  * panel, a viewer, a picker) and resolve once it is shown; the widget never
  * sees what the host draws.
  * @experimental
+ * @ruling C0b
  */
 export interface WidgetRequests {
-	/** A page of a lane's messages, older than `cursor`. */
+	/**
+	 * One page of the session's lines, for this widget's own window — never
+	 * the conversation's, so two paging widgets never take each other's
+	 * pages. Newest first on the first ask; `cursor` is the last page's
+	 * `nextCursor`, absent on the last page. `limit` is a wish the host clamps
+	 * (core: 1–100, 25 by default). `channel` is a channel string: a bare
+	 * slug reads the whole channel, `slug:n` one lane; absent, a widget that
+	 * declares one channel reads that one, any other reads every channel. A
+	 * plugin's widget that declares channels is held to them. Rows arrive
+	 * oldest first, as a log reads.
+	 */
 	messages: { params: { channel?: string; cursor?: string; limit?: number }; result: { rows: MessageV1[]; nextCursor?: string } }
 	/** The character's sheet in the host's panel. */
 	'open-character': { params: { characterId: number }; result: void }
 	/** A participant's avatar, full size. */
 	'view-avatar': { params: { ref: string }; result: void }
 	/**
-	 * An image a message shows, full size, in the page's lightbox. 🚧 `gallery`
-	 * (composer attachments §3.4): the other images it sits with — a message's
+	 * An image a message shows, full size, in the page's lightbox. 🚧 `gallery`:
+	 * the other images it sits with — a message's
 	 * media strip — so the lightbox pages through them (←/→, swipe); `index` is
 	 * where `src` sits in `srcs`, `captions` what each is called. Without it
 	 * the lightbox shows the one image.
+	 * @ruling composer attachments §3.4
 	 */
 	'view-image': {
 		params: { src: string; gallery?: { srcs: string[]; index: number; captions?: string[] } }
 		result: void
 	}
-	/** The lore panel at a history entry, a scene, or a new history entry. */
+	/**
+	 * The lore panel at a history entry, a scene, or a new history entry —
+	 * 🚧 or a place (`scope: 'places'`, an additive value).
+	 * @ruling W4 (2026-10-11)
+	 */
 	'open-lore': {
-		params: { lorebookId?: number; scope: 'history' | 'scenes'; entryId?: number; sceneId?: number; create?: boolean }
+		params: {
+			lorebookId?: number
+			scope: 'history' | 'scenes' | 'places'
+			entryId?: number
+			sceneId?: number
+			create?: boolean
+		}
 		result: void
 	}
 	/** The prompt a message was generated from (admins, when context debugging is on). */
@@ -881,16 +1123,90 @@ export interface WidgetRequests {
 	'inspect-run': { params: { messageId: number }; result: void }
 	/** The host's "who speaks next" picker; resolves once a turn was fired or it was closed. */
 	'pick-turn': { params: Record<string, never>; result: void }
-	/** The host's sprite picker for a character's line (DESIGN-sprites §6). */
+	/**
+	 * The host's sprite picker for a character's line.
+	 * @ruling DESIGN-sprites §6
+	 */
 	'change-sprite': { params: { messageId: number }; result: void }
 	/** The viewer has now seen these newly offered actions (their "new" mark clears). */
 	'actions-seen': { params: { keys: string[] }; result: void }
-	/** Summarize the selected messages into a scene, world lore or a character's lore. */
-	summarize: { params: { kind: 'scene' | 'world' | 'character'; messageIds: number[] }; result: void }
 	/**
-	 * 🚧 Core's own composer (C0b): send the viewer's line, as the persona and
-	 * on the lane named. A host answers it for core's widget only — a
-	 * plugin's widget writes through its own actions.
+	 * Summarize the selected messages into a scene, world lore or a character's lore.
+	 * 🚧 `messageIds` absent: the host starts the
+	 * conversation's own selection instead, and the person picks the lines —
+	 * what Chronicle's **Summarize scene** asks, since it holds no lines.
+	 * 🚧 `sceneId` (with `kind: 'scene'`): summarize that existing scene — a
+	 * live scene's range, or a captured one's lines — in the host's review;
+	 * `messageIds` is then ignored. What a scene divider's **Summarize** asks.
+	 * A scene whose run still runs or waits in `review` opens that run's
+	 * review instead of starting another — what a divider's and Chronicle's
+	 * **Ready to review** ask (§15 G8).
+	 * @ruling W3 (2026-10-11); PROPOSAL-live-scenes §7, §15 G8
+	 */
+	summarize: {
+		params: { kind: 'scene' | 'world' | 'character'; messageIds?: number[]; sceneId?: number }
+		result: void
+	}
+	/**
+	 * 🚧 **Live scenes** (PROPOSAL-live-scenes §3, §14 C): open a scene at
+	 * `messageId` on its channel lane — *Start scene here*. A scene already
+	 * open on that lane is closed first, at the line before. The session's
+	 * owner only, where the genre writes scenes and the session reads a
+	 * lorebook (`SessionDossierV1.sceneBoundaries`); the host's refusal is
+	 * the rejection, in words. Resolves with the opened scene's id; the
+	 * scene arrives in the dossier's `scenes`.
+	 */
+	'scene-open': {
+		params: {
+			messageId: number
+			channel?: string
+			/**
+			 * 🚧 The scene's last line: it opens and closes in one write — a
+			 * closed scene over `messageId … closeAt` (*Mark as scene*, lane
+			 * E). Any run that overlaps no live scene on its lane; one wholly
+			 * before the lane's open scene leaves that scene open.
+			 */
+			closeAt?: number
+		}
+		result: { sceneId: number }
+	}
+	/**
+	 * 🚧 Close the open scene `sceneId` at `messageId` — *End scene here* —
+	 * or, absent, at its lane's newest line. Owner only, as `scene-open`.
+	 */
+	'scene-close': { params: { sceneId: number; messageId?: number }; result: { sceneId: number } }
+	/**
+	 * 🚧 Move a live scene's **scene boundaries**: its opening to `openedAt`,
+	 * and (a closed scene only) its end to `closedAt` — message ids on the
+	 * scene's lane. `closedAt: null` **reopens** a closed scene: it runs on
+	 * to its lane's newest line again, refused while a later scene stands on
+	 * the lane (lane E). A move leaves the scene's summary out of date
+	 * (`summaryStatus` back to `none`, its text kept). Owner only, as
+	 * `scene-open`.
+	 */
+	'scene-move': {
+		params: { sceneId: number; openedAt?: number; closedAt?: number | null }
+		result: { sceneId: number }
+	}
+	/** 🚧 Rename a scene (a scene divider's name); null or blank clears it. Owner only. */
+	'scene-rename': { params: { sceneId: number; name: string | null }; result: void }
+	/**
+	 * 🚧 *Remove boundary* on a scene divider: the host asks the person
+	 * first (what goes, what stays), then removes the boundary. A scene with
+	 * one before it on its lane **joins** that scene (lane E: its lines
+	 * become that scene's, its own summary goes; `mergedInto` names the
+	 * survivor); the lane's first scene is removed, its lines staying in the
+	 * conversation outside any scene. Resolves `removed: false` when the
+	 * person kept it. Owner only.
+	 */
+	'scene-remove': { params: { sceneId: number }; result: { removed: boolean; mergedInto?: number } }
+	/**
+	 * 🚧 Send the viewer's line, as the persona and on the lane named — what
+	 * core's own composer asks. A plugin's widget may ask it too, holding the
+	 * **write grant** on that channel (`channel:<slug>:write`, reviewed as
+	 * `widget:channel:<slug>:write`) and naming one of its own declared
+	 * `channels`; a press must be behind it, and the line goes as the viewer.
+	 * @ruling C0b
 	 */
 	send: {
 		params: {
@@ -899,31 +1215,39 @@ export interface WidgetRequests {
 			channel: string
 			/**
 			 * 🚧 The composer's **tray items** to send as this line's
-			 * attachments (composer attachments §3.1), in tray order. With
+			 * attachments, in tray order. With
 			 * any, `content` may be empty. The host refuses the whole line
 			 * when one is not ready; the tray then stays as it was.
+			 * @ruling composer attachments §3.1
 			 */
 			trayItemIds?: string[]
 		}
 		result: void
 	}
 	/**
-	 * 🚧 Core's composer (composer attachments §3.3): upload these files into
+	 * 🚧 Core's composer: upload these files into
 	 * the session's composer tray — the files a person picked, dropped or
 	 * pasted (`sp-file-picker`, `sp-drop-zone`). Resolves once they are
 	 * queued; their progress, readiness and refusals arrive in the dossier's
 	 * `composer.tray`, never in the reply.
+	 * @ruling composer attachments §3.3
 	 */
 	'attach-files': { params: { files: File[] }; result: void }
 	/** 🚧 Core's composer: take one tray item out of the tray (its upload stops; nothing is sent). */
 	'remove-tray-item': { params: { trayItemId: string }; result: void }
 	/**
-	 * 🚧 Core's conversation (composer attachments D9, remove only): take one
+	 * 🚧 Core's conversation: take one
 	 * attachment — a `core:image` / `core:file` part, by its id — off a sent
 	 * message. Whoever may edit the message may; the file itself stays.
+	 * @ruling composer attachments D9 (remove only)
 	 */
 	'remove-attachment': { params: { messageId: number; partId: number }; result: void }
-	/** 🚧 Core's composer: the draft changed (the host keeps it, and counts its tokens). */
+	/**
+	 * 🚧 Core's composer: the draft changed (the host keeps it, and counts its
+	 * tokens). A plugin's widget may ask it too — the gentler `send` — holding
+	 * the write grant (`channel:<slug>:write`) on the channel the composer is
+	 * on, one of its declared `channels`; a press must be behind it.
+	 */
 	draft: { params: { content: string }; result: void }
 	/** 🚧 Core's composer: write as another of the viewer's personas. */
 	'switch-persona': { params: { personaId: number }; result: void }
@@ -931,19 +1255,24 @@ export interface WidgetRequests {
 	'add-persona': { params: Record<string, never>; result: void }
 	/**
 	 * 🚧 Core's conversation: Continue — fire the first entry of the session's
-	 * turn order on `channel`, the channel of the composer it was pressed in
-	 * (lair re-plan R5, 2026-09-28). Absent, the host answers for its own
+	 * turn order on `channel`, the channel of the composer it was pressed in.
+	 * Absent, the host answers for its own
 	 * composer's channel.
+	 * @ruling lair re-plan R5 (2026-09-28)
 	 */
 	'fire-turn': { params: { channel?: string }; result: void }
 	/** 🚧 Core's conversation: accept or reject a proposed change to the session's state. */
 	'decide-proposal': { params: { proposalId: number; accept: boolean }; result: void }
 	/**
-	 * 🚧 Core's state widgets (R21): set one owner's value for one slot, at
+	 * 🚧 Set one owner's value for one slot, as core's state widgets do, at
 	 * the session layer — the viewer's own edit, applied at once (the page's
 	 * `state:set`); `null` clears the session's value so the read inherits
 	 * again. The page names its own session. Resolves once written; the new
-	 * value arrives as a `session_state` push, never in the reply.
+	 * value arrives as a `session_state` push, never in the reply. A plugin's
+	 * widget may ask it too, holding the write grant `session:state:write`
+	 * (reviewed as `widget:session:state:write`) — a grant apart from the
+	 * `session:state` read; a press must be behind it.
+	 * @ruling R21
 	 */
 	'set-attribute-value': {
 		params: {
@@ -955,25 +1284,46 @@ export interface WidgetRequests {
 		result: void
 	}
 	/**
-	 * 🚧 Core's scene portraits (R21): show a character in another of its
+	 * 🚧 Core's scene portraits: show a character in another of its
 	 * sprite sets, for this session only; `null` goes back to the card's.
 	 * Offered where `SessionCharacterV1.canChangeSpriteSet` says so; the
 	 * server judges it again.
+	 * @ruling R21
 	 */
 	'set-sprite-set': { params: { characterId: number; set: string | null }; result: void }
 	/**
-	 * 🚧 Core's scene portraits (R21): take down the portrait pinned on one
-	 * side — the page's own pin, which the page keeps (R77: the page and the
-	 * widget never disagree about what is pinned).
+	 * ⏳ Take down the portrait pinned on one side — the page's own pin,
+	 * which the page keeps (the page and the widget never disagree
+	 * about what is pinned). Core's Scene Portraits no longer asks it (a
+	 * **chosen image** is the widget's own setting); still
+	 * answered this release.
+	 * @deprecated REMOVE in 0.7.0 with `SessionCharactersV1.sceneImages`.
+	 * @ruling R77, W6 (2026-10-11)
 	 */
 	'clear-scene-image': { params: { side: 'left' | 'right' }; result: void }
 	/**
+	 * 🚧 Core's Scene Portraits: a page of one
+	 * session member's **gallery** — the character's own images, in the
+	 * gallery's order, sprites left out — each by `ref` (the image's stable
+	 * id, what a **chosen image** stores) with its `src` resolved by the
+	 * host. `cursor` is the last page's `nextCursor`; none is the first page,
+	 * and no `nextCursor` is the last. Only a member of `characters.v1` may be
+	 * asked about; the host refuses anyone else. A widget shows one large by
+	 * `view-image` with the page as its `gallery`.
+	 * @ruling PLAN-core-widgets W6
+	 */
+	'character-images': {
+		params: { characterId: number; cursor?: string }
+		result: { images: Array<{ ref: string; src: string; caption?: string }>; nextCursor?: string }
+	}
+	/**
 	 * 🚧 A page of the session's lorebook, entry by entry, with what this
-	 * session's rankings made of each (R58) — searched by title and keys,
+	 * session's rankings made of each — searched by title and keys,
 	 * sorted, filtered, paged. The page names its own session. `lorebookId`
 	 * is null when the session reads into no book; `ownerOnly` when the viewer
 	 * is not the book's owner, and then `rows` is empty. `offset` is the page
 	 * actually served — pulled back when the one asked for ran past the end.
+	 * @ruling R58
 	 */
 	'session-entries': {
 		params: {
@@ -981,7 +1331,7 @@ export interface WidgetRequests {
 			 * 🚧 Text an entry's title or one of its keys contains — the
 			 * search box's words, matched as they are (`%` and `_` are
 			 * literal). Never `query`, a retired word here — the node kind
-			 * owns it (NOMENCLATURE, Retired words): the page reconciles this
+			 * owns it: the page reconciles this
 			 * with its socket's spelling.
 			 */
 			titleOrKey?: string
@@ -1006,7 +1356,7 @@ export interface WidgetRequests {
 		}
 	}
 	/**
-	 * 🚧 Core's lore entries (R58): an entry's **Off** and **Pin** marks, and
+	 * 🚧 Core's lore entries: an entry's **Off** and **Pin** marks, and
 	 * nothing else — never a re-embed. Resolves with both marks as the session
 	 * reads the entry — its line, at its clock. For the book's owner and
 	 * admins; the server judges it.
@@ -1014,6 +1364,7 @@ export interface WidgetRequests {
 	 * `heldBy` is present when a dated amendment still decides a mark asked
 	 * for, so it does not read as asked here: the entry itself was saved, and
 	 * the amendment wins from `date` on (spelled by the book's calendar).
+	 * @ruling R58
 	 */
 	'set-entry-marks': {
 		params: { entryId: number; off?: boolean; pinned?: boolean }
@@ -1032,6 +1383,398 @@ export interface WidgetRequests {
 	 * the note as it now reads.
 	 */
 	'set-authors-note': { params: { note: AuthorsNoteValueV1 }; result: AuthorsNoteV1 }
+	/**
+	 * 🚧 Core's Chronicle: where the
+	 * session stands in its story and what its lorebook has recorded of it —
+	 * its story clock, the history entry it reads now with this session's
+	 * scenes under it, and the entries before it. The page names its own
+	 * session. Read on the session's line, up to its own clock when it has
+	 * one. `earlierLimit` caps `earlier` (default 10).
+	 * @ruling PLAN-core-widgets W3 (2026-10-11)
+	 */
+	'history-entries': { params: { earlierLimit?: number }; result: HistoryEntriesV1 }
+	/**
+	 * 🚧 Core's Chronicle: move the session's **story clock** — never the
+	 * book's present. `{ follow: true }` clears it, so the session follows
+	 * its line's present again; `{ to }` sets it; `{ by, unit }` steps it
+	 * through the book's calendar (from the line's present when the session
+	 * follows it). The session's owner only; a date the calendar cannot
+	 * place, or a step that does not land, is refused with the reason.
+	 * Resolves with the clock as it now reads.
+	 */
+	'set-story-clock': {
+		params: { follow: true } | { to: StoryTime } | { by: number; unit: StoryTimeUnit }
+		result: StoryClockV1
+	}
+	/**
+	 * 🚧 Core's Chronicle: add the next history entry after the one the
+	 * session reads now (`HistoryEntriesV1.current`), on the session's line,
+	 * one step on by the book's calendar — the lorebook's *Add the next date
+	 * in sequence*. The book's owner only. Resolves with the new entry's id.
+	 */
+	'start-history-entry': { params: Record<string, never>; result: { entryId: number } }
+	/**
+	 * 🚧 Core's Chronicle: open the host's **Extend graph** review for this
+	 * session's scenes on its line that are not in the lorebook's
+	 * relationship graph yet. Resolves once it is shown; refused when there
+	 * is none to read.
+	 */
+	'extend-graph': { params: Record<string, never>; result: void }
+	/**
+	 * 🚧 Core's Chronicle: summarize scenes of this session in the
+	 * background, one after another, each through the host's summarize-scene
+	 * path (its activity card, then its review) — `sceneIds`, or, absent,
+	 * every closed scene whose summary has not run or failed: **Summarize all
+	 * (N)**. A scene row's *Summarize* and the open scene's *Close and
+	 * summarize* name one. The session's owner only, where the session's
+	 * summary mode is not `never` (`HistoryEntriesV1.summaryMode`); a scene
+	 * already summarizing, or still open, is skipped. Resolves once they are
+	 * queued, with how many.
+	 * @ruling PROPOSAL-live-scenes §5, §7 (2026-10-13)
+	 */
+	'summarize-scenes': { params: { sceneIds?: number[] }; result: { started: number } }
+	/**
+	 * 🚧 Decide a **scene cue** — Suggested mode's *New scene?* chip at a
+	 * line (`SessionDossierV1.sceneCues`). `accept` opens a scene at the
+	 * cue's line (the scene open on its lane, if any, closes at the line
+	 * before); `accept: false` is *Not here*: every cue at that line is
+	 * dismissed and never offered there again. The session's owner only.
+	 * Resolves with the scene it opened, or null.
+	 * @ruling PROPOSAL-live-scenes §4 (2026-10-13)
+	 */
+	'decide-scene-cue': { params: { cueId: number; accept: boolean }; result: { sceneId: number | null } }
+	/**
+	 * 🚧 Core's Places: the places of the
+	 * session's lorebook as the session reads them — on its line, at its
+	 * story clock, a place switched off, archived or renamed by then read as
+	 * the session has it — and the **ways** between them, the same ones its
+	 * prompt says as *From here:* (standing, never secret). The page names
+	 * its own session. Who stands where is not here: it is the session's
+	 * state (`session_state.v1`, each owner's `location`), which a widget
+	 * granted `session:state` reads itself.
+	 * @ruling PLAN-core-widgets W4 (2026-10-11)
+	 */
+	'session-places': { params: Record<string, never>; result: SessionPlacesV1 }
+	/**
+	 * 🚧 The **channel lanes** under one channel (ruled 2026-10-12): the
+	 * conversations a channel carries, numbered from 1 — a phone's several
+	 * threads. One entry per lane that holds at least one line, with how many
+	 * and the latest. Who is in a lane is the genre's to keep (its extension
+	 * data); this lists what the log itself shows. `channel` is a bare slug;
+	 * a lane string (`slug:n`) answers that one lane. A plugin's widget that
+	 * declares channels is held to them.
+	 */
+	'channel-lanes': { params: { channel: string }; result: { lanes: ChannelLaneV1[] } }
+	/**
+	 * 🚧 Core's Stats: one owner's
+	 * **stat trail** for one slot — the changes this session made to it,
+	 * oldest first, each with the message it was written at — read from the
+	 * ledger the *Stat trail* pipeline query reads. `slotId` is the full id
+	 * or its local name; `limit` keeps the newest that many (default 20, at
+	 * most 100). The page names its own session. A slot the session does not
+	 * track has no trail: `changes` is empty.
+	 * @ruling PLAN-core-widgets §3.10, F2 (2026-10-11)
+	 */
+	'stat-trail': {
+		params: {
+			owner: { kind: 'session' | 'session_cast' | 'session_location'; id: number }
+			slotId: string
+			limit?: number
+		}
+		result: { changes: StatTrailChangeV1[] }
+	}
+	/**
+	 * 🚧 Core's Scene Portraits: set the
+	 * **chosen image** this widget shows for one member (`character:<id>`),
+	 * by its image ref (what `character-images` answered as `ref`); `null`
+	 * takes it away, so the face falls back to the avatar. Written into the
+	 * asking widget's own settings (`chosenImages`), as the viewer's own
+	 * values; the new settings arrive as the widget's `settings` section,
+	 * never in the reply. Only a member of `characters.v1` may be named.
+	 * @ruling F2 (2026-10-11), W6 ruling 1
+	 */
+	'set-chosen-image': { params: { characterRef: string; mediaRef: string | null }; result: void }
+	/**
+	 * 🚧 Core's Backdrop widget: set the session's **backdrop** to one image,
+	 * by its image ref (what `character-images` answered as `ref`, a file's
+	 * uuid, or what `session-images` answered, a file's id); `null` clears it. The host asks the server, which lets the
+	 * session's owner or an admin; the new backdrop arrives on the `session`
+	 * section, never in the reply.
+	 * @ruling DESIGN-image-generation §6.4
+	 */
+	'set-backdrop': { params: { mediaRef: string | null }; result: void }
+	/**
+	 * 🚧 Core's Backdrop widget's *From this session*: a page of the
+	 * pictures generated in this session — the Album's `generated` source
+	 * over a page of the session's lines (the `messages` request's window),
+	 * newest first — each by `ref` (the file's id, which `set-backdrop`
+	 * takes as it takes a uuid) with its `src` resolved by the host.
+	 * `cursor` is the last page's `nextCursor`; none is the first page, and
+	 * no `nextCursor` is the last. A page may hold no picture and still have
+	 * a next one.
+	 * @ruling DESIGN-image-generation §16 follow-up D3 (2026-10-12)
+	 */
+	'session-images': {
+		params: { cursor?: string }
+		result: { images: Array<{ ref: string; src: string; caption?: string }>; nextCursor?: string }
+	}
+}
+
+/**
+ * 🚧 One change on a **stat trail** (`stat-trail`): what the slot read
+ * before it (`from`; null for the first the session made with nothing
+ * recorded before it) and after (`to`; null is a clear — the session's value
+ * taken away, so the read inherits again), the message it was written at
+ * (null when written before the session's first), when (ms since the epoch),
+ * and who wrote it: `user` — a person's own edit; `model` — a turn's run
+ * (what the reply said, or a proposal from it someone accepted);
+ * `pipeline` — anything else that writes state (a script).
+ * @experimental
+ * @ruling F2
+ */
+export interface StatTrailChangeV1 {
+	messageId: number | null
+	at: number
+	from: unknown
+	to: unknown
+	by: 'user' | 'model' | 'pipeline'
+}
+
+/**
+ * 🚧 One **channel lane** as the log shows it (`channel-lanes`): a numbered
+ * conversation under a channel. Lane 1 is the bare slug, by canon, and
+ * `channel` is always the canonical string a row carries.
+ * @experimental
+ */
+export interface ChannelLaneV1 {
+	/** The canonical channel string of this lane: `phone` for lane 1, `phone:2` after. */
+	channel: string
+	/** The channel's slug. */
+	slug: string
+	/** The lane number, from 1. */
+	lane: number
+	/** Lines in this lane, hidden ones included. */
+	count: number
+	/** The newest line, so a list can order and preview lanes. */
+	latest: {
+		messageId: number
+		/** ISO time the line was created. */
+		at: string
+		role: string
+		characterId?: number | null
+		personaId?: number | null
+	}
+}
+
+/**
+ * 🚧 What `session-places` answers. With no lorebook (`lorebookId`
+ * null) everything else is empty.
+ * @experimental
+ * @ruling W4
+ */
+export interface SessionPlacesV1 {
+	/** The session's book; null when it reads none. */
+	lorebookId: number | null
+	/** The moment the places are read at — the session's story clock; null at the head of its line. */
+	asOf: StoryTime | null
+	/** The places the session sees, in entry order. */
+	places: PlaceV1[]
+	/** The ways between them, by relationship id; both ends are always among `places`. */
+	ways: WayV1[]
+}
+
+/**
+ * 🚧 One place as a session reads it — a **place**, a
+ * `core:entry/location` lore entry.
+ * @experimental
+ * @ruling W4
+ */
+export interface PlaceV1 {
+	/** The place's lore entry id — what `open-lore` and a `location` value name. */
+	id: number
+	/** Its name as the session reads it (an amendment's, by then). */
+	name: string
+	/** Its category ("a floor, a district, a wing"); null when it has none. */
+	category: string | null
+	/**
+	 * Where its category falls among the book's categories, sorted as the
+	 * lorebook's Places lens sorts them (from 0) — what a tint is dealt by,
+	 * so a category keeps its hue when a filter hides the others. Null with
+	 * no category.
+	 */
+	tint: number | null
+	/** What else the book links to it — a cast member who keeps it, a faction — each said from the place. */
+	linked: PlaceLinkV1[]
+}
+
+/**
+ * 🚧 Something the book links to a place that is not another place: a
+ * cast member, or other lore. A link to a character's own lore is never
+ * here.
+ * @experimental
+ * @ruling W4
+ */
+export interface PlaceLinkV1 {
+	kind: 'cast' | 'entry'
+	/** The cast member's id, or the entry's. */
+	id: number
+	name: string
+	/** The link said from the place, as the lorebook says it ("Verity keeps the Crypt."). */
+	says: string
+}
+
+/**
+ * 🚧 One **way** between two places: a relationship with a place at
+ * each end, standing, and not secret.
+ * @experimental
+ * @ruling W4
+ */
+export interface WayV1 {
+	/** The relationship's id. */
+	id: number
+	/** The place it runs from — its `from` end. */
+	from: number
+	/** The place it runs to. */
+	to: number
+	/** It reads from both ends ("Both ways") — an arrowhead at each. */
+	bothWays: boolean
+	/** Its own name ("the rusted iron door"); null when it has none. */
+	name: string | null
+	/** Said from `from`: "The rusted iron door leads north to the Drowned Hall." */
+	fromSays: string
+	/** Said from `to`; null for a one-way way, which is no way out of there. */
+	toSays: string | null
+}
+
+/**
+ * 🚧 Where a session stands in its story: its **story clock** as read —
+ * its own, or its line's present when it follows the line. Dates are the
+ * SDK's `StoryTime`, spelled through the book's calendar by the host.
+ * @experimental
+ * @ruling W3
+ */
+export interface StoryClockV1 {
+	/** The session's present: its own clock, else its line's present; null when neither exists. */
+	present: StoryTime | null
+	/** `present` spelled through the book's calendar; empty when there is none. */
+	label: string
+	/** The session holds a clock of its own; false — it follows its line's present. */
+	own: boolean
+	/** The line's present (the line's clock, else its newest history entry); null when it has none. */
+	linePresent: StoryTime | null
+	/** `linePresent`, spelled; empty when there is none. */
+	linePresentLabel: string
+	/** The session's own clock stands before its line's present: it reads an earlier moment. */
+	behind: boolean
+}
+
+/**
+ * 🚧 One history entry as Chronicle reads it. A history entry is dated,
+ * not named: its date is its heading.
+ * @experimental
+ * @ruling W3
+ */
+export interface HistoryEntryV1 {
+	id: number
+	/** Its date: a year, and a month and a day where it has them. */
+	date: StoryTime
+	/** The date spelled through the book's calendar. */
+	label: string
+	/** The first line of what it says; empty when it says nothing yet. */
+	firstLine: string
+	/** How many of this session's scenes are filed under it. */
+	sceneCount: number
+}
+
+/**
+ * 🚧 One of the session's scenes under a history entry.
+ * @experimental
+ * @ruling W3
+ */
+export interface HistorySceneV1 {
+	id: number
+	/** Its name; null when it has none yet. */
+	name: string | null
+	/** How many of the session's lines it holds. */
+	lineCount: number
+	/**
+	 * Its place among the session's scenes, oldest first (from 0) — what a
+	 * scene's colour is chosen by.
+	 */
+	order: number
+	/** Its summary is written. */
+	summarized: boolean
+	/** It is in the lorebook's relationship graph. */
+	graphed: boolean
+	/**
+	 * 🚧 Where its summary stands — `none` · `running` · `review` (the run
+	 * finished and waits for the person's Apply, §15 G8) · `done` ·
+	 * `failed` — read off the scene row (a scene summarized before the
+	 * status existed reads `done`). Absent reads as `summarized`'s answer.
+	 */
+	summaryStatus?: 'none' | 'running' | 'review' | 'done' | 'failed'
+}
+
+/**
+ * 🚧 The session's **open scene**, as Chronicle's *Open scene* card reads it
+ * (`HistoryEntriesV1.openScene`): the scene opened at a line and not yet
+ * closed, on the session's main lane. Its cast is **proposed**, no model:
+ * who spoke, who the session's roster names, who the lines name — each with
+ * the evidence that put them there.
+ * @experimental
+ * @ruling PROPOSAL-live-scenes §7 (2026-10-13)
+ */
+export interface HistoryOpenSceneV1 {
+	id: number
+	/** Its name; null when it has none yet. */
+	name: string | null
+	/** The channel lane it runs on (`main`). */
+	channel: string
+	/** The story clock as it opened, spelled through the book's calendar; empty when it opened with none. */
+	since: string
+	/** How many of the session's lines it holds so far. */
+	lineCount: number
+	/** Its place among the session's scenes (from 0) — its colour. */
+	order: number
+	/** The proposed cast, each with its evidence ("spoke 4 times", "named twice"). */
+	cast: Array<{ name: string; evidence: string }>
+}
+
+/**
+ * 🚧 What `history-entries` answers. With no lorebook (`lorebookId`
+ * null) everything else is empty. A viewer who is not the session's owner
+ * reads the clock alone: the history entries and scenes are the book
+ * owner's (`ownerOnly`), and only the owner moves the clock.
+ * @experimental
+ * @ruling W3
+ */
+export interface HistoryEntriesV1 {
+	lorebookId: number | null
+	/** The viewer is not the session's owner: `current`, `scenes` and `earlier` are empty, and the clock is read-only. */
+	ownerOnly: boolean
+	clock: StoryClockV1
+	/** The newest history entry the session reads on its line, up to its own clock; null when none. */
+	current: HistoryEntryV1 | null
+	/** This session's scenes filed under `current`, oldest first. */
+	scenes: HistorySceneV1[]
+	/** The entries before `current`, newest first — at most `earlierLimit` of them. */
+	earlier: HistoryEntryV1[]
+	/** How many entries come before `current` in all. */
+	earlierTotal: number
+	/** This session's scenes on its line not yet in the lorebook's relationship graph — what Extend graph reads. */
+	ungraphedScenes: number
+	/** The session's genre captures scenes: **Summarize scene** is offered. */
+	opensScenes: boolean
+	/** 🚧 The session's open scene on its main lane; null when none is open. Absent on a host that predates it. */
+	openScene?: HistoryOpenSceneV1 | null
+	/**
+	 * 🚧 When this session's scenes are summarized (its scene settings):
+	 * `onClose`, `onRequest` or `never` — under `never`, no *Summarize* is
+	 * offered. Absent reads as `onRequest`.
+	 */
+	summaryMode?: SceneSummaryMode
+	/** 🚧 This session's closed scenes whose summary has not run, or failed — **Summarize all (N)**. */
+	unsummarizedScenes?: number
 }
 
 /**
@@ -1103,20 +1846,43 @@ export interface SessionEntryV1 {
 }
 
 /**
- * 🚧 Who a host answers a request kind for — its **askers** (F9):
+ * 🚧 Who a host answers a request kind for — its **askers**:
  *
  *  - `'any'` — any widget's, core's or a plugin's. The host still applies
  *    its own rules (an admin's view, an image off the app's origin).
- *  - `'core'` — core's own widgets only: a verb that acts as the viewer
- *    (sends, writes, marks), which a plugin's widget does through its own
- *    actions instead.
+ *  - `'core'` — core's own widgets only: a verb that acts on the session's
+ *    structure (a turn, a summary, a proposal, the lore), which a plugin's
+ *    widget does through its own actions instead.
  *  - `{ scope }` — core's, or a plugin's widget GRANTED that scope (reviewed
  *    as `widget:<scope>`, carried as the bare scope): a request that READS
  *    scoped data, so the scope that would have pushed it is what lets a
  *    widget page it.
+ *  - `{ scope, write: true }` — core's, or a plugin's widget holding the
+ *    **write grant** on that scope ({@link WidgetWriteGrant}): a request that
+ *    CHANGES what the scope covers, as the viewer. A write grant is a
+ *    permission apart from the read — `session:state:write` beside
+ *    `session:state` — so an admin who granted the read is asked once more.
+ *    `scope: 'channel'` is the channel the request writes to, which must be
+ *    one of the widget's declared `channels`, written `channel:<slug>:write`.
+ *    A host holds a plugin's write to a person's press behind it as well.
+ * @experimental
+ * @ruling F9
+ */
+export type WidgetRequestAskers =
+	| 'any'
+	| 'core'
+	| { scope: WidgetSectionScope; write?: never }
+	| { scope: WidgetSectionScope | 'channel'; write: true }
+
+/**
+ * 🚧 A **write grant** as a widget's grants carry it — BARE, like the read
+ * (`session:state:write`, `channel:main:write`), and reviewed as the
+ * permission `widget:<it>` (`widget:session:state:write`). A widget asks for
+ * one in its declaration's `scopes`. Not a scope of its own: it pushes no
+ * section, and holding it never grants the read.
  * @experimental
  */
-export type WidgetRequestAskers = 'any' | 'core' | { scope: WidgetSectionScope }
+export type WidgetWriteGrant = `${WidgetSectionScope}:write` | `channel:${string}:write`
 
 /**
  * The askers of every request kind — the marking a host enforces
@@ -1136,22 +1902,55 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'change-sprite': 'any',
 	'actions-seen': 'core',
 	summarize: 'core',
-	send: 'core',
+	// 🚧 Live scenes (PROPOSAL-live-scenes §14 C): every scene boundary is a
+	// write into the session's lorebook, as the viewer — core's only.
+	'scene-open': 'core',
+	'scene-close': 'core',
+	'scene-move': 'core',
+	'scene-rename': 'core',
+	'scene-remove': 'core',
+	// 🚧 A dice tray, a vote, a card draw: the result goes in as the viewer's line,
+	// on a channel the widget declares and holds the write grant on.
+	send: Object.freeze({ scope: 'channel' as const, write: true as const }),
 	'attach-files': 'core',
 	'remove-tray-item': 'core',
 	'remove-attachment': 'core',
-	draft: 'core',
+	// 🚧 The gentler send: prefill the composer, on a channel the widget may write.
+	draft: Object.freeze({ scope: 'channel' as const, write: true as const }),
 	'switch-persona': 'core',
 	'add-persona': 'core',
 	'fire-turn': 'core',
 	'decide-proposal': 'core',
-	'set-attribute-value': 'core',
+	// 🚧 A stat panel that edits: the write beside the `session:state` read.
+	'set-attribute-value': Object.freeze({ scope: 'session:state' as const, write: true as const }),
 	'set-sprite-set': 'core',
 	'clear-scene-image': 'core',
+	// 🚧 Scene Portraits (W6): a member's gallery is part of the cast it was granted.
+	'character-images': Object.freeze({ scope: 'characters' as const }),
 	'session-entries': Object.freeze({ scope: 'lore' as const }),
 	'set-entry-marks': 'core',
 	'authors-note': 'core',
 	'set-authors-note': 'core',
+	// 🚧 Chronicle (W3): reading the session's history is reading its lore;
+	// moving its clock, starting an entry and the graph review act as the viewer.
+	'history-entries': Object.freeze({ scope: 'lore' as const }),
+	'set-story-clock': 'core',
+	'start-history-entry': 'core',
+	'extend-graph': 'core',
+	'summarize-scenes': 'core',
+	'decide-scene-cue': 'core',
+	// 🚧 Places (W4): reading the session's places is reading its lore.
+	'session-places': Object.freeze({ scope: 'lore' as const }),
+	// 🚧 Channel lanes (2026-10-12): what the log shows of a channel; held to a plugin widget's declared channels by the page.
+	'channel-lanes': 'any',
+	// 🚧 Stats (F2): a stat's trail is the session's state, read.
+	'stat-trail': Object.freeze({ scope: 'session:state' as const }),
+	// 🚧 Scene Portraits (F2): writes the asking widget's own settings — core's only.
+	'set-chosen-image': 'core',
+	// 🚧 Backdrop (2026-10-12): writes session state — core's only.
+	'set-backdrop': 'core',
+	// 🚧 Backdrop (D3, 2026-10-12): the session's generated pictures, for its chooser — core's only.
+	'session-images': 'core',
 })
 
 /** Every request kind — what a host checks an incoming `request` against. @experimental */
@@ -1163,24 +1962,53 @@ export const WIDGET_REQUEST_KINDS: readonly WidgetRequestKind[] = Object.freeze(
  * Why a host must decline this request from this widget, as a sentence — or
  * null when {@link WIDGET_REQUEST_ASKERS} lets it ask. `owner` is `'core'` or
  * the widget's plugin id; `grants` the scopes that widget was granted, as
- * BARE scopes (`'lore'`, `'session:state'`) — never the permission keys they
- * are reviewed as (`'widget:lore'`), which match nothing here. Core's widgets
- * hold every scope. A request is still not a grant: null means the host MAY
- * answer, never that it must. Grants that are not a list — a stored string,
- * whose `includes` would match a substring — grant nothing.
+ * BARE scopes (`'lore'`, `'session:state'`, a write grant
+ * `'session:state:write'`) — never the permission keys they are reviewed as
+ * (`'widget:lore'`), which match nothing here. Core's widgets hold every
+ * scope. A request is still not a grant: null means the host MAY answer,
+ * never that it must. Grants that are not a list — a stored string, whose
+ * `includes` would match a substring — grant nothing.
+ *
+ * A channel write (`send`, `draft`) is judged against `channels`, the
+ * widget's declared channels, and `params.channel` when the request names
+ * one: a channel the widget did not declare is refused whatever it holds.
+ * A request naming none passes when the widget may write one of its
+ * channels, and the HOST holds it to one of those (the composer's channel,
+ * for a draft). A host also holds a plugin's write to a person's press.
  * @experimental
  */
 export function widgetRequestRefusal(
 	kind: string,
-	from: { owner: string; grants?: readonly string[] },
+	from: { owner: string; grants?: readonly string[]; channels?: readonly string[] },
+	params?: unknown,
 ): string | null {
 	if (!Object.hasOwn(WIDGET_REQUEST_ASKERS, kind)) return `'${kind}' is not something a host answers`
 	const askers = WIDGET_REQUEST_ASKERS[kind as WidgetRequestKind]
 	if (askers === 'any' || from.owner === 'core') return null
 	if (askers === 'core') return `only core's own widgets ask '${kind}'`
-	return Array.isArray(from.grants) && from.grants.includes(askers.scope)
+	const holds = (grant: string) => Array.isArray(from.grants) && from.grants.includes(grant)
+	if (askers.write !== true)
+		return holds(askers.scope)
+			? null
+			: `'${kind}' reads what the '${askers.scope}' scope covers, and this widget was not granted it`
+	if (askers.scope !== 'channel') {
+		const grant = `${askers.scope}:write`
+		return holds(grant)
+			? null
+			: `'${kind}' changes what the '${askers.scope}' scope covers, and this widget was not granted the write grant '${grant}'`
+	}
+	const declared = Array.isArray(from.channels) ? from.channels.filter((c) => typeof c === 'string') : []
+	const named = (params as { channel?: unknown } | null | undefined)?.channel
+	if (named !== undefined) {
+		if (typeof named !== 'string' || !declared.includes(named))
+			return `'${kind}' writes to '${String(named)}', which is not one of this widget's channels`
+		return holds(`channel:${named}:write`)
+			? null
+			: `'${kind}' writes to the '${named}' channel, and this widget was not granted the write grant 'channel:${named}:write'`
+	}
+	return declared.some((c) => holds(`channel:${c}:write`))
 		? null
-		: `'${kind}' reads what the '${askers.scope}' scope covers, and this widget was not granted it`
+		: `'${kind}' writes to a channel, and this widget was not granted the write grant 'channel:<slug>:write' on any channel it declares`
 }
 
 /** What rides beside an invocation: the subject message, entered values. @experimental */
@@ -1188,22 +2016,24 @@ export interface WidgetInvokeArgs {
 	messageId?: number
 	payload?: WidgetPayload
 	/**
-	 * The form the press answers — a block's id within `messageId` (R-15
-	 * *Forms*) — so the server reads the block off the row and holds the press
+	 * The form the press answers — a block's id within `messageId` —
+	 * so the server reads the block off the row and holds the press
 	 * to its addressee. Absent on every other press.
 	 *
 	 * The `invoke` spelling of {@link WidgetVerbs.action}'s fifth argument: a
 	 * widget drawing a message's form presses it by the declaration's identity
 	 * like any other action, and the block it answers rides here rather than
 	 * forcing that one press back onto the deprecated verb.
+	 * @ruling R-15 *Forms*
 	 */
 	blockId?: string
 	/**
-	 * The text the press already supplies (lair pass S2): the composer's
+	 * The text the press already supplies: the composer's
 	 * **slash argument**, `/nudge go north` → `go north`. The host hands it
 	 * to an action that collects text, as if the collect modal had — and
 	 * refuses the press, firing nothing, when the action collects none. An
 	 * action that also collects recipients still opens its modal, prefilled.
+	 * @ruling lair pass S2
 	 */
 	text?: string
 }
@@ -1217,6 +2047,7 @@ export interface WidgetInvokeArgs {
  * narrowing. A kind core does not ship is spelled `custom:<whatever>`, which
  * can never collide with a member added here later.
  * @experimental
+ * @ruling R56, R81, W3 (2026-10-11)
  */
 export type WidgetEvent =
 	| {
@@ -1279,7 +2110,7 @@ export type WidgetEvent =
 	 */
 	| { kind: 'layout:changed'; layout: LayoutV1 }
 	/**
-	 * A package's event was recorded in this session (R56) — everything in the
+	 * A package's event was recorded in this session — everything in the
 	 * session hears it, so every widget does. `event` is its id (compare with
 	 * the declaration: `e.event === guessed.id`); `payload` is what the
 	 * recording wrote; `at` the instant it was recorded. Names no channel: an
@@ -1288,7 +2119,7 @@ export type WidgetEvent =
 	 */
 	| { kind: 'event:recorded'; event: string; payload: unknown; at: number }
 	/**
-	 * 🚧 A turn in this session ranked its lore (R81): what the rankings made
+	 * 🚧 A turn in this session ranked its lore: what the rankings made
 	 * of the session's lore entries was written — the rollup `session-entries`
 	 * reads moved — so a lore reader asks again now, and only now. Carries
 	 * nothing: the rows are the request's. Sent after the write, never before
@@ -1316,6 +2147,15 @@ export type WidgetEvent =
 	 * page only (the one person who may change them); names no channel.
 	 */
 	| { kind: 'genreFields:changed' }
+	/**
+	 * 🚧 The session's story moved (Chronicle): its story
+	 * clock or its line (a pipeline step, the session's settings, a widget),
+	 * a history entry of its book was added or changed, or one of its scenes
+	 * was captured, changed or removed. A widget showing where the session
+	 * stands asks again (`history-entries`); carries nothing. Scoped like
+	 * `lore:ranked` ({@link WIDGET_EVENT_SCOPES}); names no channel.
+	 */
+	| { kind: 'story:moved' }
 	/** Anything core does not ship. Namespaced so it cannot shadow a member. */
 	| { kind: `custom:${string}`; payload?: WidgetPayload }
 
@@ -1323,16 +2163,18 @@ export type WidgetEvent =
 export type WidgetEventKind = WidgetEvent['kind']
 
 /**
- * 🚧 The scope a widget must hold to HEAR an event kind (R81) — a kind not
+ * 🚧 The scope a widget must hold to HEAR an event kind — a kind not
  * listed is heard by every widget its channel reaches. An event about scoped
  * data is scoped data: a widget that may not read the lore is not told when
  * it moved. Read by {@link widgetEventHeard}, which every host delivery of
  * widget events asks.
  * @experimental
+ * @ruling R81
  */
 export const WIDGET_EVENT_SCOPES: { readonly [K in WidgetEventKind]?: WidgetSectionScope } = Object.freeze({
 	'lore:ranked': 'lore',
 	'lore:marked': 'lore',
+	'story:moved': 'lore',
 })
 
 /**
@@ -1357,13 +2199,14 @@ export interface WidgetVerbs {
 	 * @deprecated Use {@link WidgetVerbs.invoke}. A press names a DECLARATION
 	 * by its identity: a bare key is resolved by the server to the genre's
 	 * sole declarer of it and refused — naming the identities — when several
-	 * specs declare it (plans/31 V2). Accepted for one release; `invoke`
+	 * specs declare it. Accepted for one release; `invoke`
 	 * resolves the identity for you.
 	 *
 	 * `action` is the identity of the declaration being fired
 	 * (`<spec slug>#<key>`) when one is in hand — `invoke` always supplies it —
 	 * so the server checks THAT action's audience and enablement and runs THAT
 	 * spec.
+	 * @ruling plans/31 V2
 	 */
 	action(
 		fn: string,
@@ -1371,33 +2214,45 @@ export interface WidgetVerbs {
 		payload?: WidgetPayload,
 		action?: string,
 		/**
-		 * The form the press answers — a block's id within `messageId` (R-15
-		 * *Forms*) — so the server reads the block off the row and holds the
+		 * The form the press answers — a block's id within `messageId` —
+		 * so the server reads the block off the row and holds the
 		 * press to its addressee. Absent on every other press.
+		 * @ruling R-15 *Forms*
 		 */
 		blockId?: string,
 	): void
 	/**
 	 * Fire an action from `actions.v1` by its **identity** (`<spec slug>#<key>`)
-	 * or, when only one action carries it, its bare **key** (R-15
-	 * `invoke(id, args)`): the host resolves it to the declaration and routes it
+	 * or, when only one action carries it, its bare **key**:
+	 * the host resolves it to the declaration and routes it
 	 * — one of core's verbs to the host's real handler (an `extend` is an
 	 * extend, never a function fire), a contributed one to the audited fire
 	 * with its identity. A key no venue lists, or a bare key several actions
 	 * share, throws: a widget cannot fire something the session does not offer —
 	 * or something ambiguous — and believe it did.
+	 * @ruling R-15 `invoke(id, args)`
 	 */
 	invoke(key: string, args?: WidgetInvokeArgs): void
 	/** Ask the host for something ({@link WidgetRequests}); rejects when it declines. */
 	request<K extends WidgetRequestKind>(kind: K, params: WidgetRequests[K]['params']): Promise<WidgetRequests[K]['result']>
 	/**
-	 * 🚧 The viewer's translation of an English UI string (C0b) — synchronous,
+	 * 🚧 The viewer's translation of an English UI string — synchronous,
 	 * the source itself until a translation arrives, then re-rendered. For
 	 * a widget's OWN literals; declared text (a label, a title) is a locale
 	 * map read with `i18nText(text, locale.v1)`.
+	 * @ruling C0b
 	 */
 	t(source: string): string
-	/** Host-rendered menu; resolves to the pick, or null if dismissed. */
+	/**
+	 * ⏳ RETIRED 2026-10-10.
+	 * REMOVE in 0.7.0. A host-rendered menu at a point: no host ever drew
+	 * one, and every host answers `null` (dismissed) at once. Kept, still
+	 * answering `null`, so a widget that calls it does not break before
+	 * 0.7.0. No frame message carries it.
+	 * @deprecated Place an `sp-menu` (or an `sp-popover`) in your component;
+	 * the page draws it with its own controls.
+	 * @ruling PLAN-widget-system-consolidation C4
+	 */
 	menu(spec: MenuSpec): Promise<MenuResult | null>
 	/**
 	 * Subscribe to a host event; returns an unsubscribe.

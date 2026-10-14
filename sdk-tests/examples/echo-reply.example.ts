@@ -39,7 +39,12 @@ const smallestReply = spec('example:echo-reply', { version: '1.0.0' })
 	// Query's context carries no `call`.
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	// Task: pure. It turns what was read into the context the oracle takes.
-	.task('prompt', () => C.assemble.v2())
+	// `template` is the context template an administrator picks, and
+	// `connectionOf('generate')` tells it which connection the prompt is
+	// written for — leave either out and the spec does not publish.
+	.task('prompt', () =>
+		C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }),
+	)
 	// Oracle: the one node that crosses the boundary. `connection` is a slot —
 	// which service answers is an admin's choice, not the document's.
 	.oracle('generate', ($) =>

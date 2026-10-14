@@ -135,6 +135,7 @@
  */
 
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { LAIR_CASTELLAN_KEY, lairGenre, POST_HISTORY_TOKEN_TRIGGER, SANCTUM_CHANNEL } from '../../registry/genres.js'
 import { LAIR_ROOM_ANSWER_SPEC_ID } from './roomAnswer.js'
@@ -2248,6 +2249,15 @@ export const lairRespondSpec = () =>
 					.sampling('keep.played.keeperWrite', {
 						seedKey: 'sampling-background',
 					})
+					// The state keeper on Extraction (I12) — unfilled, it falls
+					// back to Reply.
+					.loadout('keep.played.keeperWrite', slot.loadout(CORE_LOADOUT.extraction))
+					.loadout(`${CHARACTER_TURN}.keeperWrite`, slot.loadout(CORE_LOADOUT.extraction))
+					// Every spoken line on Reply.
+					.loadout('via.narrate.say', slot.loadout(CORE_LOADOUT.reply))
+					.loadout(`${SANCTUM}.say`, slot.loadout(CORE_LOADOUT.reply))
+					.loadout(`${DOOR}.play.speech.castellan.party.speaks.say`, slot.loadout(CORE_LOADOUT.reply))
+					.loadout(`${CHARACTER_TURN}.say`, slot.loadout(CORE_LOADOUT.reply))
 					// The scratchpad rewrite: nobody waits on it either (R13).
 					.sampling(`${SANCTUM}.padWrite`, { seedKey: 'sampling-background' }),
 			)

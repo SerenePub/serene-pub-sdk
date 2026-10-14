@@ -177,6 +177,19 @@ describe('79 · declaration-time refusals', () => {
 		const f = checkSchema({ k: { type: 'string', required: true, default: 'x' } })
 		assert.equal(f[0]!.severity, 'warning')
 	})
+
+	test('an enum declared by members (key + label) has its options; one with neither is refused', () => {
+		// Core's genre fields declare choices as `members[]` so each option has
+		// display text; `of` is the bare form. Both are options.
+		assert.deepEqual(
+			checkSchema({
+				detail: { type: 'enum', members: [{ key: 'full', label: 'Everything' }, { key: 'brief', label: 'Brief' }] },
+			} as never),
+			[],
+		)
+		const f = checkSchema({ detail: { type: 'enum' } } as never)
+		assert.match(f[0]!.message, /is an enum with no options/)
+	})
 })
 
 // ── 80 · What an update does to values that already exist ──────────────────

@@ -1,5 +1,5 @@
 /**
- * What a plugin may do, by kind (K1, R50): one table, rendered from the grant
+ * What a plugin may do, by kind: one table, rendered from the grant
  * table the sandboxes enforce (`hookCtxKeysFor`) and the rulings every door
  * refuses on, so the guide cannot claim more or less than the code does.
  *
@@ -9,6 +9,7 @@
  *
  * ⚠ Not a **capability** — that is what a *connection* can do (`capabilities.ts`).
  * These are a plugin's **permissions**: what its sandboxed code may do (canon).
+ * @ruling K1, R50
  */
 
 import { HOOK_CTX_KINDS, hookCtxKeysFor, type HookCtxKind } from './hookGrants.js'
@@ -51,6 +52,17 @@ export const PLUGIN_RULES: Record<PluginRule, { title: string; ruling: string; t
 		text:
 			'No node emits an event or starts a pipeline. A package records its own declared event with the ' +
 			'`record-event` write, within the scope its entry declares, and everything in the session hears it.',
+	},
+	'widget-writes': {
+		title: 'A widget writes only behind a write grant',
+		ruling: 'Q2',
+		text:
+			"A widget's scope lets it read (`session:state`, reviewed as `widget:session:state`); changing what the " +
+			'scope covers is a separate **write grant**, asked for in the same `scopes` and reviewed on its own: ' +
+			'`session:state:write` lets it ask `set-attribute-value`, and `channel:<slug>:write` lets it ask `send` ' +
+			"and `draft` on that channel, which it must also list in its `channels`. Holding the write never grants the " +
+			"read. Each write goes in as the viewer, only while a person is pressing in the widget, and with the " +
+			"viewer's own permissions. Every other change a widget wants goes through its plugin's own actions.",
 	},
 }
 

@@ -10,7 +10,7 @@
 import type { Descriptor, GenreDecl, PresetDecl } from '@serene-pub/sdk'
 import { getDefinition } from '@serene-pub/sdk'
 
-/** @experimental One swap a package offers (R28/R29), with the declaration of what it seats. */
+/** @experimental One swap a package offers, with the declaration of what it seats. */
 export interface SwapEvidence {
 	/** The spec the swap targets (`core:spec/chat-turn-order`). */
 	spec: string
@@ -67,7 +67,7 @@ export interface ManifestComponent {
  * `HostUnderTest.components` for a package, so C31 mounts every module the
  * way the page mounts it on a layout: granted the section scopes its widgets
  * ask for (`scopes`; a `channel:` scope is not a section grant) and handed
- * only the base sections they read (`reads`, R75).
+ * only the base sections they read (`reads`).
  *
  * A component more than one widget renders gets the union — the most any
  * placement hands it. When any of those widgets leaves `reads` out, it reads
@@ -84,7 +84,13 @@ export async function componentsFromManifest(
 	return Promise.all(
 		(manifest.components ?? []).map(async (c) => {
 			const widgets = (manifest.widgets ?? []).filter((w) => w.component === c.slug)
-			const grants = [...new Set(widgets.flatMap((w) => (w.scopes ?? []).filter((s) => !s.startsWith('channel:'))))]
+			// A bare `channel:<slug>` grants nothing (a widget's lanes are its `channels`);
+			// a channel's write grant (`channel:<slug>:write`) is a grant like any other.
+			const grants = [
+				...new Set(
+					widgets.flatMap((w) => (w.scopes ?? []).filter((s) => !s.startsWith('channel:') || s.endsWith(':write'))),
+				),
+			]
 			const everySection = !widgets.length || widgets.some((w) => !Array.isArray(w.reads))
 			const reads = everySection ? undefined : [...new Set(widgets.flatMap((w) => w.reads ?? []))]
 			return {

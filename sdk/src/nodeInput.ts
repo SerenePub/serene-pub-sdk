@@ -406,7 +406,7 @@ export interface TypedReads<P> {
 }
 
 /**
- * Attach a read declaration a contract has checked (ruling R-12, 2026-09-15).
+ * Attach a read declaration a contract has checked.
  *
  * ```ts
  * reads<typeof C.sessionHistory>(
@@ -441,6 +441,7 @@ export interface TypedReads<P> {
  * when the two pins read differently, and declare the intersection when they
  * do not. An identical redeclaration is a no-op, on the registry's own terms.
  * @experimental
+ * @ruling R-12 (2026-09-15)
  */
 export function reads<P>(hook: Hook, requires: TypedReads<P>): DeclaredHook<Hook> {
 	const plain: HandlerRequires = {

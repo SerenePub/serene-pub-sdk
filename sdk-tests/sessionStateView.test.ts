@@ -12,11 +12,15 @@ import {
 	clampToBounds,
 	enumValues,
 	formatSlotValue,
+	isBarSlot,
 	numberDraftValue,
 	pickedNames,
 	slotValueText,
 	slotWritable,
+	statsSettingsOf,
 	statsView,
+	statTrailByText,
+	statTrailRows,
 	textDraftValue,
 	worldStateView,
 } from '../core-catalog/src/shared/ui/session-state/index.js'
@@ -119,6 +123,10 @@ const state = (over: Partial<SessionStateV1> = {}): SessionStateV1 => ({
 	...over,
 })
 
+/** Every owner a shown Stats view draws, in order. */
+const keys = (v: { groups: Array<{ owners: Array<{ owner: { key: string } }> }> }) =>
+	v.groups.flatMap((g) => g.owners.map((o) => o.owner.key))
+
 describe('worldStateView', () => {
 	test('loading before the first read — never "nothing"', () => {
 		assert.equal(worldStateView(undefined, {}).status, 'loading')
@@ -132,6 +140,8 @@ describe('worldStateView', () => {
 		assert.deepEqual(statsView(state({ loaded: false, error: 'Could not read', slots: [] }), { density: 'compact' }), {
 			status: 'failed',
 			density: 'compact',
+			arrangement: 'cards',
+			owners: 'cast',
 		})
 	})
 	test("the world's slots, with its values and configs, laid out as a strip by default", () => {
@@ -189,9 +199,40 @@ describe('worldStateView — locations', () => {
 		}
 		assert.equal(worldStateView(withPlaces(), { slots: 'pick', pickSlots: ['hp'] }).status, 'empty')
 	})
-	test('Stats never draws a location', () => {
+	test('Stats with owners cast never draws a location', () => {
 		const v = statsView(withPlaces(), { members: 'all' })
-		if (v.status === 'shown') assert.deepEqual(v.members.map((m) => m.owner.key), ['mira', 'bram'])
+		assert.equal(v.status, 'shown')
+		if (v.status === 'shown') assert.deepEqual(keys(v), ['mira', 'bram'])
+	})
+	test('Stats with owners world draws what World State drew: the world, then each place in play, valued stats only', () => {
+		const ws = worldStateView(withPlaces(), {})
+		const v = statsView(withPlaces(), { owners: 'world', arrangement: 'strip' })
+		assert.equal(v.status, 'shown')
+		if (v.status !== 'shown' || ws.status !== 'shown') return
+		assert.deepEqual(
+			v.groups.map((g) => [g.kind, g.owners.map((o) => [o.owner.key, o.slots.map((s) => s.slot.key)])]),
+			[
+				['world', [['world', ['weather']]]],
+				['places', [['location:harbor', ['inventory']]]],
+			],
+		)
+		assert.deepEqual(v.groups[0]!.owners[0]!.slots, ws.slots)
+		assert.deepEqual(v.groups[1]!.owners.map((o) => o.slots), ws.places.map((p) => p.slots))
+	})
+	test('owners places: the places in play alone; all: world → cast → places', () => {
+		const p = statsView(withPlaces(), { owners: 'places' })
+		if (p.status === 'shown') assert.deepEqual(keys(p), ['location:harbor'])
+		const a = statsView(withPlaces(), { owners: 'all', castScope: 'all' })
+		assert.equal(a.status, 'shown')
+		if (a.status === 'shown') {
+			assert.deepEqual(a.groups.map((g) => g.kind), ['world', 'cast', 'places'])
+			assert.deepEqual(keys(a), ['world', 'mira', 'bram', 'location:harbor'])
+		}
+	})
+	test('pick names any owner, by label or key', () => {
+		const v = statsView(withPlaces(), { owners: 'pick', pickOwners: ['World', 'mira', 'Crypt'] })
+		if (v.status === 'shown') assert.deepEqual(keys(v), ['world', 'mira', 'location:crypt'])
+		assert.equal(statsView(withPlaces(), { owners: 'pick', pickOwners: ['nobody'] }).status, 'nothing-shown')
 	})
 })
 
@@ -199,33 +240,136 @@ describe('statsView', () => {
 	test('scene: only the cast members with a value in play', () => {
 		const v = statsView(state(), {})
 		assert.equal(v.status, 'shown')
-		if (v.status === 'shown') assert.deepEqual(v.members.map((m) => [m.owner.label, m.slots.map((s) => s.value)]), [['Mira', [14]]])
+		if (v.status === 'shown')
+			assert.deepEqual(v.groups.flatMap((g) => g.owners.map((m) => [m.owner.label, m.slots.map((s) => s.value)])), [['Mira', [14]]])
 	})
 	test('all: every cast member, the world never', () => {
-		const v = statsView(state(), { members: 'all', density: 'compact' })
+		const v = statsView(state(), { castScope: 'all', density: 'compact' })
 		assert.equal(v.density, 'compact')
-		if (v.status === 'shown') assert.deepEqual(v.members.map((m) => m.owner.key), ['mira', 'bram'])
+		if (v.status === 'shown') assert.deepEqual(keys(v), ['mira', 'bram'])
 	})
 	test('pick: by label or key; nobody matching says so', () => {
-		const v = statsView(state(), { members: 'pick', pickMembers: ['bram'] })
-		if (v.status === 'shown') assert.deepEqual(v.members.map((m) => m.owner.key), ['bram'])
-		assert.deepEqual(statsView(state(), { members: 'pick', pickMembers: ['nobody'] }), { status: 'no-members', density: 'full', members: 'pick' })
+		const v = statsView(state(), { owners: 'pick', pickOwners: ['bram'] })
+		if (v.status === 'shown') assert.deepEqual(keys(v), ['bram'])
+		assert.deepEqual(statsView(state(), { owners: 'pick', pickOwners: ['nobody'] }), {
+			status: 'nothing-shown',
+			density: 'full',
+			arrangement: 'cards',
+			owners: 'pick',
+			castScope: 'scene',
+		})
 	})
 	test('loading, and nothing declared', () => {
 		assert.equal(statsView(state({ loaded: false }), {}).status, 'loading')
 		assert.equal(statsView(state({ slots: [] }), {}).status, 'none-declared')
 		assert.deepEqual(statsView(state({ resolved: { world: {}, cast: {} } }), {}), {
-			status: 'no-members',
+			status: 'nothing-shown',
 			density: 'full',
-			members: 'scene',
+			arrangement: 'cards',
+			owners: 'cast',
+			castScope: 'scene',
 		})
+	})
+})
+
+// The Stats uplift (W7, 2026-10-11): owners × slots × arrangement, and the
+// settings written before it, read as today's.
+describe('statsView — slots: bars, arrangements, and the settings before W7', () => {
+	test('bars keeps the numbers with a floor and a ceiling above it, nothing else', () => {
+		const s = state({
+			slots: [slot('weather', 'enum'), slot('hp', 'integer'), slot('gold', 'integer'), slot('flat', 'integer')] as SessionStateV1['slots'],
+			resolved: { world: { 'core.weather': 'rain' }, cast: { mira: { 'core.hp': 14, 'core.gold': 3, 'core.flat': 1 } } },
+			owners: [
+				state().owners[0]!,
+				{
+					key: 'mira',
+					kind: 'session_cast',
+					id: 11,
+					label: 'Mira',
+					configs: { 'core:slot/hp@1': { min: 0, max: 20 }, 'core:slot/gold@1': { min: 0 }, 'core:slot/flat@1': { min: 5, max: 5 } },
+				},
+			],
+		})
+		const v = statsView(s, { owners: 'all', slots: 'bars' })
+		assert.equal(v.status, 'shown')
+		// The world's enum is not a bar, so the world has nothing to show and is left out.
+		if (v.status === 'shown') assert.deepEqual(v.groups.map((g) => [g.kind, g.owners.map((o) => o.slots.map((x) => x.slot.key))]), [['cast', [['hp']]]])
+	})
+	test('a list or a strip leaves out an owner with nothing to show; cards keep its card', () => {
+		const cards = statsView(state(), { castScope: 'all', slots: 'pick', pickSlots: ['weather'] })
+		if (cards.status === 'shown') assert.deepEqual(keys(cards), ['mira', 'bram'])
+		assert.equal(statsView(state(), { castScope: 'all', slots: 'pick', pickSlots: ['weather'], arrangement: 'strip' }).status, 'nothing-shown')
+	})
+	test('⏳ members, pickMembers and World State’s layout read as castScope, owners/pickOwners and arrangement', () => {
+		assert.deepEqual(statsSettingsOf({ members: 'all' }), statsSettingsOf({ castScope: 'all' }))
+		assert.deepEqual(statsSettingsOf({ members: 'pick', pickMembers: ['Bram'] }), statsSettingsOf({ owners: 'pick', pickOwners: ['bram'] }))
+		assert.equal(statsSettingsOf({ layout: 'list' }).arrangement, 'list')
+		// Written the new way, the new key wins.
+		assert.equal(statsSettingsOf({ members: 'all', castScope: 'scene' }).castScope, 'scene')
+		assert.equal(statsSettingsOf({ layout: 'list', arrangement: 'strip' }).arrangement, 'strip')
+		assert.deepEqual(statsSettingsOf({}), {
+			owners: 'cast',
+			castScope: 'scene',
+			slots: 'all',
+			arrangement: 'cards',
+			density: 'full',
+			pickOwners: [],
+			pickSlots: [],
+			trail: true,
+		})
+		assert.equal(statsSettingsOf({ trail: false }).trail, false)
+	})
+	test('isBarSlot: a number with both bounds, the ceiling above the floor', () => {
+		const hp = slot('hp', 'integer') as SessionStateV1['slots'][number]
+		assert.equal(isBarSlot(hp, { min: 0, max: 20 }), true)
+		assert.equal(isBarSlot(hp, { min: 0 }), false)
+		assert.equal(isBarSlot(hp, { min: 4, max: 4 }), false)
+		assert.equal(isBarSlot(slot('mood', 'enum') as SessionStateV1['slots'][number], { min: 0, max: 20 }), false)
+	})
+})
+
+describe('the stat trail (F2)', () => {
+	const hp = { type: 'integer', field: undefined } as unknown as SessionStateV1['slots'][number]
+	test('rows newest first, each value spelled as the slot draws it; nothing before reads empty', () => {
+		const rows = statTrailRows(
+			hp,
+			[
+				{ messageId: 4, at: 10, from: null, to: 18, by: 'model' },
+				{ messageId: null, at: 20, from: 18, to: null, by: 'user' },
+				{ messageId: 9, at: 30, from: null, to: 3, by: 'nobody' },
+				'not a change',
+			],
+			(s) => s,
+		)
+		assert.deepEqual(
+			rows.map((r) => [r.messageId, r.at, r.from, r.to, r.by]),
+			[
+				[9, 30, '', '3', 'pipeline'],
+				[null, 20, '18', 'cleared', 'user'],
+				[4, 10, '', '18', 'model'],
+			],
+		)
+		assert.equal(new Set(rows.map((r) => r.key)).size, 3)
+	})
+	test('an answer that is not a list is an empty trail; who changed it, in words', () => {
+		assert.deepEqual(statTrailRows(hp, undefined, (s) => s), [])
+		assert.deepEqual(statTrailRows(hp, { changes: [] }, (s) => s), [])
+		assert.deepEqual(
+			(['user', 'model', 'pipeline'] as const).map((by) => statTrailByText(by, (s) => s)),
+			['Edited', 'From the story', 'Automatic'],
+		)
 	})
 })
 
 describe('a scope not granted', () => {
 	test('is its own state — never loading — and only a definite `false` means it', () => {
 		assert.deepEqual(worldStateView(undefined, {}, false), { status: 'not-granted', layout: 'strip' })
-		assert.deepEqual(statsView(undefined, { density: 'compact' }, false), { status: 'not-granted', density: 'compact' })
+		assert.deepEqual(statsView(undefined, { density: 'compact' }, false), {
+			status: 'not-granted',
+			density: 'compact',
+			arrangement: 'cards',
+			owners: 'cast',
+		})
 		// Not said yet (`undefined`) is still loading; granted draws as ever.
 		assert.equal(worldStateView(undefined, {}, undefined).status, 'loading')
 		assert.equal(statsView(state(), {}, true).status, 'shown')

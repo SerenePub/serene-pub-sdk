@@ -1,5 +1,5 @@
 /**
- * `/contracts` generation (04 §2, §4b).
+ * `/contracts` generation.
  *
  * Every SP release publishes frozen, generated type declarations. This is the generator:
  * descriptors in, a TypeScript module out. In core the input is `pipeline_definition_registry` rows; here
@@ -14,7 +14,7 @@
  *
  * So the naming convention is enforced here rather than documented:
  *
- * - **Shapes are nouns** — what a thing *is*. They double as connection kinds (F17), so
+ * - **Shapes are nouns** — what a thing *is*. They double as connection kinds, so
  *   they read as categories: `text-gen`, `embeddings`, `row-ids`, `allocated-context`.
  * - **Task / Provider / Consumer types are verb phrases** — they *do* something:
  *   `generate-text`, `embed-text`, `render-image`, `create-message`, `assemble`.
@@ -203,7 +203,7 @@ export function generateContracts(
 
 /**
  * The manifest's view of a node definition: what an admin's audit screen and the
- * install-time permission check read, without loading any code (10 §10.2).
+ * install-time permission check read, without loading any code.
  * @internal
  */
 export interface DefinitionSummary {
@@ -233,7 +233,7 @@ export interface DefinitionSummary {
 	 * because two lists of definitions are two things that can disagree about
 	 * which definitions a package has. A descriptor is data: the instance reads
 	 * it exactly as it reads the pipeline documents, and never evaluates the
-	 * plugin to get it (F6).
+	 * plugin to get it.
 	 */
 	declaration?: Descriptor
 }

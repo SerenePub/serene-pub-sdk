@@ -1,6 +1,7 @@
 /**
- * Core's `stats` component (R21): one card per cast member, one row per stat
- * they carry, as the page's UI worker runs it. `npm run build` compiles it
+ * Core's `stats` component (R21): the session's stats — the world's, the
+ * cast's, the places' — as cards, a list or a strip (W7), as the page's UI
+ * worker runs it. `npm run build` compiles it
  * with the CLI's component bundler to `dist/components/stats.js`, the module
  * the app serves at `/core-ui/stats`.
  */

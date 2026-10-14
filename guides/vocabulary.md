@@ -197,6 +197,19 @@ The numbered checks a package is held to, each one runnable from a test.
   [What a plugin may do](plugin-permissions.md).
 - **subject**: what a pipeline serves (an event or an action), which decides what it may record.
   See [Events](events.md).
+- **base section**: a piece of session data every widget may read without asking (the messages,
+  its settings, who is looking). A widget names the ones it reads with `reads`. See
+  [Widgets](widgets.md).
+- **widget scope**: session data beyond the base sections, which a widget asks for with `scopes`
+  and an administrator grants: the stats, the cast, the lore, your persona. What a scope delivers
+  is its scoped section, read with `ctx.scope('session:state')`. See [Widgets](widgets.md).
+- **grant**: an administrator's yes to one widget scope, reviewed per plugin. A scope not granted
+  never arrives, and `ctx.granted(scope)` says so. A **write grant** (`session:state:write`,
+  `channel:main:write`) is reviewed apart from the read and lets the widget ask to change things.
+- **dossier**: everything the page tells core's own conversation widget about its session. It is
+  what the `session:full` scope delivers, and its shape is still settling.
+- **dowry**: what a character card brings into a world: its stat sheets and their values. You
+  meet it on a card's **Stats** tab; the word is only in code and on the wire.
 
 Where a value comes from (a node's options, a genre field, the node definition a session runs)
 is [its own page](where-values-come-from.md).

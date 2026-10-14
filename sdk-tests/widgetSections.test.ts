@@ -37,14 +37,24 @@ import {
 	widgetRequestRefusal,
 	type ComponentPort,
 	type ComponentSections,
+	type FrameHostMessage,
+	type HostFrameMessage,
+	type MenuResult,
+	type SessionCharacterV1,
 	type SessionCharactersV1,
+	type SessionDossierV1,
+	type SessionPersonaV1,
 	type SessionStateV1,
 	type WidgetData,
 	type WidgetRequests,
 	type WidgetScope,
 	type WidgetScopedSectionName,
+	type WidgetScopedSections,
+	type WidgetSectionScope,
+	type WidgetVerbs,
 } from '../sdk/src/index.js'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
+import type { ConversationDossierV1 } from '../core-catalog/src/shared/ui/conversation/index.js'
 
 // ── Types, held by the compiler (this file is in the suite's `tsc`) ─────────
 
@@ -53,6 +63,19 @@ const typed = <T extends true>(_: T) => {}
 typed<Same<WidgetScopedSectionName, 'session_full' | 'session_state' | 'persona' | 'characters' | 'lore'>>(true)
 typed<Same<NonNullable<WidgetData['session_state']>, { v1: SessionStateV1 }>>(true)
 typed<Same<NonNullable<WidgetData['characters']>, { v1: SessionCharactersV1 }>>(true)
+// C4 (2026-10-10): every scoped section's `v1` is a NAMED shape — `unknown`
+// (or `any`) in the table fails here, entry by entry.
+type Named<T> = unknown extends T ? false : true
+typed<Same<{ [S in WidgetSectionScope]: Named<WidgetScopedSections[S]['v1']> }[WidgetSectionScope], true>>(true)
+typed<Same<NonNullable<WidgetData['session_full']>, { v1: SessionDossierV1 }>>(true)
+typed<Same<NonNullable<WidgetData['persona']>, { v1: SessionPersonaV1[] }>>(true)
+typed<Same<SessionPersonaV1, SessionCharacterV1 & { isPersona: true }>>(true)
+typed<Same<NonNullable<WidgetData['lore']>, { v1: { granted: true } }>>(true)
+// The catalogue's old name is the SDK's dossier, not a second shape (⏳ REMOVE in 0.7.0).
+typed<Same<ConversationDossierV1, SessionDossierV1>>(true)
+// The retired ⏳ `menu` verb keeps its stub's signature until 0.7.0 — and no frame message carries it.
+typed<Same<ReturnType<WidgetVerbs['menu']>, Promise<MenuResult | null>>>(true)
+typed<Same<Extract<HostFrameMessage | FrameHostMessage, { t: 'menu' }>, never>>(true)
 typed<Same<ComponentSections['scoped']['session_state'], SessionStateV1 | undefined>>(true)
 typed<Same<Extract<WidgetScope, 'session:state'>, 'session:state'>>(true)
 typed<Same<WidgetRequests['set-entry-marks']['result'], { off: boolean; pinned: boolean; heldBy?: { mark: 'off' | 'pinned'; date: string } }>>(true)
@@ -69,6 +92,22 @@ describe('the one table of scoped sections', () => {
 			lore: 'lore',
 		})
 		assert.ok(Object.isFrozen(WIDGET_SCOPED_SECTIONS))
+	})
+
+	test('the retired menu verb, and its spec and result, say ⏳ and the release that removes them', async () => {
+		const src = await readFile(resolve(import.meta.dirname, '../sdk/src/widgets.ts'), 'utf8')
+		// The doc comment right above each declaration.
+		const docAbove = (decl: string) => {
+			const at = src.indexOf(decl)
+			assert.ok(at > 0, decl)
+			return src.slice(src.lastIndexOf('/**', at), at)
+		}
+		for (const decl of ['export interface MenuSpec', 'export interface MenuResult', 'menu(spec: MenuSpec)']) {
+			const doc = docAbove(decl)
+			assert.match(doc, /⏳/, decl)
+			assert.match(doc, /REMOVE in 0\.7\.0/, decl)
+			assert.match(doc, /@deprecated/, decl)
+		}
 	})
 
 	test('a posted name is recognised; a scope key, a base section or junk is not', () => {
@@ -145,6 +184,30 @@ describe('the one table of scoped sections', () => {
 		assert.deepEqual(heard, ['grants', 'grants'])
 		ctx.close()
 	})
+
+	test('`scope()` reads a section by the scope string — the table maps it to the posted name, every scope', () => {
+		let deliver: ((e: { data: unknown }) => void) | null = null
+		const port: ComponentPort = {
+			set onmessage(fn: ((e: never) => void) | null) {
+				deliver = fn as never
+			},
+			get onmessage() {
+				return deliver as never
+			},
+			postMessage() {},
+			close() {},
+		}
+		const ctx = createComponentContext(port)
+		for (const scope of Object.keys(WIDGET_SCOPED_SECTIONS) as WidgetSectionScope[]) {
+			assert.equal(ctx.scope(scope), undefined, scope)
+			const value = { marker: scope }
+			deliver!({ data: { t: 'scoped', section: WIDGET_SCOPED_SECTIONS[scope], value } })
+			assert.equal(ctx.scope(scope), value, scope)
+			deliver!({ data: { t: 'scoped', section: WIDGET_SCOPED_SECTIONS[scope], value: null } })
+			assert.equal(ctx.scope(scope), undefined, scope)
+		}
+		ctx.close()
+	})
 })
 
 describe('reads (R75)', () => {
@@ -161,6 +224,7 @@ describe('reads (R75)', () => {
 			'locale',
 			'viewer',
 			'turnOrder',
+			'attendance',
 		])
 	})
 
@@ -215,14 +279,50 @@ describe('who may ask what (F9)', () => {
 		assert.deepEqual([...WIDGET_REQUEST_KINDS].sort(), Object.keys(WIDGET_REQUEST_ASKERS).sort())
 		for (const kind of ['set-attribute-value', 'set-sprite-set', 'clear-scene-image', 'session-entries', 'set-entry-marks'])
 			assert.ok(WIDGET_REQUEST_KINDS.includes(kind as never), kind)
-		assert.equal(WIDGET_REQUEST_ASKERS['set-attribute-value'], 'core')
+		// 🚧 D4 (Q2): the one state write a plugin may ask, behind its own write grant.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS['set-attribute-value'], { scope: 'session:state', write: true })
 		assert.equal(WIDGET_REQUEST_ASKERS['set-sprite-set'], 'core')
 		assert.equal(WIDGET_REQUEST_ASKERS['clear-scene-image'], 'core')
 		assert.equal(WIDGET_REQUEST_ASKERS['set-entry-marks'], 'core')
 		assert.deepEqual(WIDGET_REQUEST_ASKERS['session-entries'], { scope: 'lore' })
-		// What the page already held to core's own widgets stays core's.
-		for (const kind of ['send', 'draft', 'switch-persona', 'add-persona', 'fire-turn', 'decide-proposal', 'actions-seen', 'summarize'] as const)
+		// 🚧 Chronicle (W3): its read is the lore scope's; its three writes are core's.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS['history-entries'], { scope: 'lore' })
+		for (const kind of ['set-story-clock', 'start-history-entry', 'extend-graph'] as const)
 			assert.equal(WIDGET_REQUEST_ASKERS[kind], 'core', kind)
+		assert.match(widgetRequestRefusal('history-entries', { owner: 'acme.dice' })!, /the 'lore' scope/)
+		assert.equal(widgetRequestRefusal('history-entries', { owner: 'acme.dice', grants: ['lore'] }), null)
+		// 🚧 Places (W4): reading the places is reading the lore.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS['session-places'], { scope: 'lore' })
+		assert.match(widgetRequestRefusal('session-places', { owner: 'acme.dice' })!, /the 'lore' scope/)
+		assert.equal(widgetRequestRefusal('session-places', { owner: 'acme.dice', grants: ['lore'] }), null)
+		// 🚧 Scene Portraits (W6): a member's gallery is the cast's scope's.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS['character-images'], { scope: 'characters' })
+		assert.match(widgetRequestRefusal('character-images', { owner: 'acme.dice' })!, /the 'characters' scope/)
+		assert.equal(widgetRequestRefusal('character-images', { owner: 'acme.dice', grants: ['characters'] }), null)
+		// 🚧 Stats (F2): a stat's trail is the session's state, read; the
+		// chooser's write is the asking widget's own settings — core's only.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS['stat-trail'], { scope: 'session:state' })
+		assert.match(widgetRequestRefusal('stat-trail', { owner: 'acme.dice' })!, /the 'session:state' scope/)
+		assert.equal(widgetRequestRefusal('stat-trail', { owner: 'acme.dice', grants: ['session:state'] }), null)
+		assert.equal(WIDGET_REQUEST_ASKERS['set-chosen-image'], 'core')
+		assert.equal(
+			widgetRequestRefusal('set-chosen-image', { owner: 'acme.dice', grants: ['characters'] }),
+			"only core's own widgets ask 'set-chosen-image'",
+		)
+		// 🚧 D4 (Q2): send and draft open on a channel the widget may write.
+		assert.deepEqual(WIDGET_REQUEST_ASKERS.send, { scope: 'channel', write: true })
+		assert.deepEqual(WIDGET_REQUEST_ASKERS.draft, { scope: 'channel', write: true })
+		// What acts on the session's structure stays core's.
+		for (const kind of ['switch-persona', 'add-persona', 'fire-turn', 'decide-proposal', 'actions-seen', 'summarize'] as const)
+			assert.equal(WIDGET_REQUEST_ASKERS[kind], 'core', kind)
+		// 🚧 Live scenes (§14 C): every scene boundary writes the session's lorebook — core's only.
+		for (const kind of ['scene-open', 'scene-close', 'scene-move', 'scene-rename', 'scene-remove'] as const) {
+			assert.equal(WIDGET_REQUEST_ASKERS[kind], 'core', kind)
+			assert.equal(
+				widgetRequestRefusal(kind, { owner: 'acme.dice', grants: ['lore', 'session:full'] }),
+				`only core's own widgets ask '${kind}'`,
+			)
+		}
 		assert.equal(WIDGET_REQUEST_ASKERS.messages, 'any')
 	})
 
@@ -231,8 +331,8 @@ describe('who may ask what (F9)', () => {
 		assert.equal(widgetRequestRefusal('session-entries', { owner: 'core' }), null)
 		assert.equal(widgetRequestRefusal('messages', { owner: 'acme.dice' }), null)
 		assert.equal(
-			widgetRequestRefusal('set-attribute-value', { owner: 'acme.dice', grants: ['session:state'] }),
-			"only core's own widgets ask 'set-attribute-value'",
+			widgetRequestRefusal('fire-turn', { owner: 'acme.dice', grants: ['session:state', 'channel:main:write'] }),
+			"only core's own widgets ask 'fire-turn'",
 		)
 		assert.match(widgetRequestRefusal('session-entries', { owner: 'acme.dice' })!, /the 'lore' scope/)
 		assert.match(widgetRequestRefusal('session-entries', { owner: 'acme.dice', grants: ['characters'] })!, /the 'lore' scope/)
@@ -249,6 +349,56 @@ describe('who may ask what (F9)', () => {
 		assert.equal(widgetRequestRefusal('transfer-possession', { owner: 'core' }), "'transfer-possession' is not something a host answers")
 		// Not an own key of the table: a prototype name is not a kind.
 		assert.match(widgetRequestRefusal('toString', { owner: 'core' })!, /is not something a host answers/)
+	})
+
+	test('🚧 a write is its own grant (D4): the read never grants it, nor the write the read', () => {
+		const plugin = 'acme.dice'
+		// set-attribute-value: `session:state:write`, never `session:state`.
+		assert.match(
+			widgetRequestRefusal('set-attribute-value', { owner: plugin, grants: ['session:state'] })!,
+			/not granted the write grant 'session:state:write'/,
+		)
+		assert.equal(widgetRequestRefusal('set-attribute-value', { owner: plugin, grants: ['session:state:write'] }), null)
+		// The permission key is not the bare grant.
+		assert.match(
+			widgetRequestRefusal('set-attribute-value', { owner: plugin, grants: ['widget:session:state:write'] })!,
+			/'session:state:write'/,
+		)
+		// The write does not grant the read.
+		assert.match(widgetRequestRefusal('stat-trail', { owner: plugin, grants: ['session:state:write'] })!, /the 'session:state' scope/)
+		// A stored string grants nothing, as for a read.
+		assert.ok(widgetRequestRefusal('set-attribute-value', { owner: plugin, grants: 'session:state:write' as never }))
+		// Core's own widget holds every write.
+		assert.equal(widgetRequestRefusal('set-attribute-value', { owner: 'core' }), null)
+		assert.equal(widgetRequestRefusal('send', { owner: 'core' }, { channel: 'anywhere' }), null)
+	})
+
+	test('🚧 send and draft are held to a channel the widget declares and may write (D4)', () => {
+		const from = { owner: 'acme.dice', channels: ['main', 'dice'], grants: ['channel:dice:write'] }
+		const send = (channel: unknown, f: Parameters<typeof widgetRequestRefusal>[1] = from) =>
+			widgetRequestRefusal('send', f, { content: '4', personaId: null, channel })
+		assert.equal(send('dice'), null)
+		// Declared, not written.
+		assert.match(send('main')!, /not granted the write grant 'channel:main:write'/)
+		// Written, not declared: refused whatever it holds.
+		assert.match(
+			send('ooc', { ...from, grants: ['channel:ooc:write'] })!,
+			/'ooc', which is not one of this widget's channels/,
+		)
+		// A widget declaring no channels writes none.
+		assert.match(send('dice', { owner: 'acme.dice', grants: ['channel:dice:write'] })!, /not one of this widget's channels/)
+		// The read scope, a bare channel scope or the permission key are not the write.
+		for (const grants of [['channel:dice'], ['widget:channel:dice:write'], ['session:state:write']])
+			assert.ok(send('dice', { ...from, grants }), JSON.stringify(grants))
+		// A channel that is not text is refused, not coerced.
+		assert.match(send(7)!, /not one of this widget's channels/)
+		// draft names no channel: one it declares and may write passes; the host holds it there.
+		assert.equal(widgetRequestRefusal('draft', from, { content: 'hi' }), null)
+		assert.match(
+			widgetRequestRefusal('draft', { ...from, grants: [] }, { content: 'hi' })!,
+			/'channel:<slug>:write' on any channel it declares/,
+		)
+		assert.ok(widgetRequestRefusal('draft', { ...from, channels: ['main'] }, { content: 'hi' }))
 	})
 })
 
@@ -331,9 +481,12 @@ describe("core's widgets read their scoped sections through the one table", () =
 			await view.push('scoped', { session_state: state, characters: cast })
 			assert.equal(view.query('.state')?.textContent, 'session 3, 1 slots')
 			assert.equal(view.query('.cast')?.textContent, 'Mira, Oren')
+			// `scope('session:state')` is `session_state.v1`, by the table.
+			assert.equal(view.query('.by-scope')?.textContent, 'same')
 			// `null` withdraws one section — the grant went away — and leaves the other.
 			await view.push('scoped', { session_state: null } as never)
 			assert.equal(view.query('.state')?.textContent, 'no state')
+			assert.equal(view.query('.by-scope')?.textContent, 'same')
 			assert.equal(view.query('.cast')?.textContent, 'Mira, Oren')
 			assert.deepEqual(view.errors, [])
 		} finally {

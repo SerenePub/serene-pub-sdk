@@ -1,19 +1,21 @@
 /**
- * Descriptors — the shared-scope declaration of a **node definition** (01 §1, 04 §3;
- * NOMENCLATURE §5 — *node type* is retired, ruled 2026-09-14).
+ * Descriptors — the shared-scope declaration of a **node definition**
+ * (*node type* is retired, ruled 2026-09-14).
  *
  * A descriptor is data: it can be listed, rendered and validated without loading
  * the handler that implements it. That is what lets the plugin manager and the
- * editor work from rows (10 §10.2).
+ * editor work from rows.
+ * @ruling 01 §1, 04 §3, NOMENCLATURE §5, 10 §10.2
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
 import type { ShapeId } from './shapes.js'
 import type { CapabilityId } from './capabilities.js'
 import type { ReviewPosition } from './review.js'
+import type { Prefers } from './loadouts.js'
 import type { TemplateScope, VarField } from './template.js'
 import type { VariableDecl } from './variables.js'
-import { checkBandDeclarations } from './bands.js'
+import { checkBandDeclarations, checkRendersDeclarations } from './bands.js'
 import { settingsSchemaFindings, type SettingsSchema, type FieldDecl } from './settings.js'
 import { i18nFindings, isI18n, localeMapOf, type I18n, type LocaleMap } from './i18n.js'
 import { eventById, notADeclaredEvent } from './events.js'
@@ -34,14 +36,17 @@ import { contentHash, declarationData, refuseUnlessSameHash, type DisplayKeys } 
 // author's; the contract material leaves it out by name (`authoredSlots`).
 // `settingsSlot.ts` imports nothing from here at runtime, so no cycle.
 import { authoredSlots } from './settingsSlot.js'
+// `scripts.ts` imports only types from here, so this runtime import starts no cycle.
+import { isScriptKindId, seamAddressOf, type SeamAddress } from './scripts.js'
 import { DEFAULT_CHANNEL, parseChannel } from './channels.js'
+import { assertSceneSettings, type SceneSettingsDecl } from './sceneSettings.js'
 // F39's registry door: `register()` hears `core:verdict/settings-travel` for
 // every declared out-port (01 §13). `verdicts.ts` reads only leaf
 // vocabulary, so this import starts no cycle.
 import { refusalText, settingsTravelVerdict } from './verdicts.js'
 
 /**
- * The node kinds (R-13, ruled 2026-09-14): **inlet** (where the run enters) ·
+ * The node kinds (ruled 2026-09-14): **inlet** (where the run enters) ·
  * **query** (reads) · **task** (pure transform) · **oracle** (calls out to an
  * external nondeterministic source — a model, TTS, image gen, embeddings, a human)
  * · **outlet** (the only effect-capable kind: writes, attaches, emits — the run
@@ -54,8 +59,9 @@ import { refusalText, settingsTravelVerdict } from './verdicts.js'
  * answer to "what kind of thing is this lorebook row". It is a Kind rather than
  * a registry of its own because everything downstream of a declaration is the
  * same machinery: one `snapshotRegistry`, one content hash, one boot sync, one
- * freeze rule (the argument 18 §2 makes for script kinds, one construct over).
+ * freeze rule (the argument made for script kinds, one construct over).
  * @experimental
+ * @ruling R-13, 18 §2
  */
 export type Kind = 'inlet' | 'query' | 'task' | 'oracle' | 'outlet' | 'entry'
 
@@ -65,18 +71,19 @@ export type Kind = 'inlet' | 'query' | 'task' | 'oracle' | 'outlet' | 'entry'
 export type { I18n, LocaleMap } from './i18n.js'
 
 /**
- * Slot kinds (12 §2). Siblings; only two are ever cross-referenced.
+ * Slot kinds. Siblings; only two are ever cross-referenced.
  *
- * `settings` (R-9, ruled 2026-09-15) is the one kind **no author declares**:
+ * `settings` (ruled 2026-09-15) is the one kind **no author declares**:
  * the substrate declares it, on every definition that is `optional`
  * (`enabled`), every one whose `effects` gate (`review`), and every gather
  * clause (`mode`). The slot name `settings` is reserved for it — `register`
  * refuses a descriptor that authors one, and an out-port of the name, since
- * `<node>.settings` is the address F39 reads as a switch — and it is projected into the
+ * `<node>.settings` is the address the settings-travel rule reads as a switch — and it is projected into the
  * registry row by `snapshotRegistry` rather than written on the descriptor,
  * so the executor keeps reading `config[key].settings.*` exactly as before
  * and the panel renders it from the row like any slot (`settingsSlot.ts`).
  * @experimental
+ * @ruling 12 §2, R-9, F39
  */
 export type SlotKind =
 	| 'connection'
@@ -88,6 +95,22 @@ export type SlotKind =
 	| 'variables'
 	| 'scripts'
 	| 'settings'
+	/**
+	 * 🚧 A **workflow** — a provider document one dialect consumes (a ComfyUI
+	 * API-format graph), stored as its own row in the host's `workflows`
+	 * table. The value is `{ id }`; the host's control is `workflow-ref`, a
+	 * sibling of `connection-ref`. Not a template slot: a workflow is not a
+	 * context template, and nothing else offers one.
+	 * @ruling DESIGN-image-generation §4.10 (2026-10-12)
+	 */
+	| 'workflow'
+	/**
+	 * A **loadout** reference: the engine a model call runs on — pair,
+	 * sampling, workflow — named by id. Control `loadout-ref`, value
+	 * `{ id }`. The `connection` and `sampling` slots beside it stay as
+	 * per-value overrides.
+	 */
+	| 'loadout'
 
 /** @experimental */
 export interface SlotDecl {
@@ -144,7 +167,10 @@ export interface SlotDecl {
 	optional?: readonly CapabilityId[]
 	/** What this slot is for, shown under its option. Display text — see FieldDecl. */
 	description?: I18n
-	/** Which lens renders it (05 §3). */
+	/**
+	 * Which lens renders it.
+	 * @ruling 05 §3
+	 */
 	facet?: string
 	/** For prompts: the authored text fields. */
 	fields?: Record<string, { type: 'text'; i18n?: I18n }>
@@ -186,35 +212,38 @@ export interface SlotDecl {
 	/**
 	 * For template slots: the variables this template may reference.
 	 *
-	 * ⚠ Required, and 16 §4 is wrong to imply otherwise. A *source* template renders one
+	 * ⚠ Required, whatever the design notes imply. A *source* template renders one
 	 * item out of a collection, and the item's shape lives inside the port's payload
 	 * rather than on the port — so typed ports alone cannot tell an author what
 	 * `{{ entry.title }}` is allowed to be. See src/template.ts.
+	 * @ruling 16 §4
 	 */
 	variables?: TemplateScope
 	/**
-	 * For `scripts` slots: which script types this hook accepts (18 §4a).
+	 * For `scripts` slots: which script types this hook accepts.
 	 *
 	 * Pinned ids — `core:script:text/transform@1` — and **part of the content
-	 * hash** (S3): widening or narrowing what a hook accepts changes what an
+	 * hash**: widening or narrowing what a hook accepts changes what an
 	 * untouched spec does, which is the `optional` lesson applied before it is
 	 * re-learned. Plain strings rather than the `ScriptKindId` alias, because
 	 * scripts.ts already imports from this module and a type-only cycle is
 	 * still a cycle.
 	 *
 	 * The value stored in a scripts slot is an ordered list of script row ids —
-	 * a chain. Transform chains fold; verdict chains reduce (18 §5). The chain
+	 * a chain. Transform chains fold; verdict chains reduce. The chain
 	 * is configuration like any slot value: resolved through the scope chain,
 	 * carried by presets, exported with the document.
+	 * @ruling 18 §4a, S3, 18 §5
 	 */
 	accepts?: string[]
 	/**
 	 * For `scripts` slots: where the chains apply, as (port, phase) — the
-	 * substrate declaration of 18 §4a. `before` transforms a value entering the
+	 * substrate's declaration of a port hook. `before` transforms a value entering the
 	 * named in-port; `after` transforms what left the named out-port. The
 	 * binding never sees a chain and cannot decline one; declaring is all a
 	 * type does, which is what makes a plugin's hook trustworthy without
-	 * trusting the plugin (03 §4 symmetry).
+	 * trusting the plugin.
+	 * @ruling 18 §4a, 03 §4 symmetry
 	 */
 	port?: string
 	phase?: 'before' | 'after'
@@ -222,10 +251,11 @@ export interface SlotDecl {
 	 * For `scripts` slots: read-only context this hook supplies beyond the
 	 * port's own variables — a speaker's name, the cast list. In-only **by
 	 * construction**: extras have no legal out declaration, so the general
-	 * in-but-not-out rule (18 §6a) covers them with no special case. The
+	 * in-but-not-out rule covers them with no special case. The
 	 * editor offers exactly `ports + extras` as the fixed choices for a
 	 * script's declared reads — never a freeform name, which would be a
 	 * declaration nothing supplies.
+	 * @ruling 18 §6a
 	 */
 	extras?: string[]
 	/**
@@ -247,7 +277,7 @@ export interface SlotDecl {
 	renders?: Record<string, string>
 	/**
 	 * For `variables` slots: the slot also renders every **band declared
-	 * upstream** of in-port `from` (typed templates P2) — each under its band
+	 * upstream** of in-port `from` — each under its band
 	 * key, through the variable the declaring source names
 	 * (`Descriptor.bands`). So `renders` is open: a plugin's source adds a
 	 * layout setting here by declaring its band, with no edit to this node.
@@ -257,6 +287,7 @@ export interface SlotDecl {
 	 * **Contract** — hashed with the slot: which bands a node renders is what
 	 * its template may place.
 	 * @experimental
+	 * @ruling typed templates P2
 	 */
 	rendersBands?: { from: string }
 }
@@ -285,7 +316,7 @@ export type { MemberDecl, FieldDecl, FieldType } from './settings.js'
 export { fieldLabel, fieldAccepts } from './settings.js'
 
 /**
- * One interior script point (18 §4e): a named moment inside a binding's work
+ * One interior script point: a named moment inside a binding's work
  * where a user chain may run, and which script kinds may be attached there.
  *
  * `accepts` is the attachment rule, on the same terms as `SlotDecl.accepts`
@@ -293,6 +324,7 @@ export { fieldLabel, fieldAccepts } from './settings.js'
  * than the `ScriptKindId` alias for the reason that field gives: scripts.ts
  * imports from this module. `label` is display text, stripped from the hash.
  * @experimental
+ * @ruling 18 §4e
  */
 export interface ScriptPointDecl {
 	key: string
@@ -316,11 +348,76 @@ export function scriptPointsOf(d: { scriptPoints?: ReadonlyArray<ScriptPointDecl
 }
 
 /**
- * The message verbs no genre may remove (R-15, ruled 2026-09-15): a person
+ * One seam of a definition: a place a script
+ * chain may run, named by its seam address.
+ * @experimental
+ * @ruling PLAN-script-placement D1
+ */
+export interface Seam {
+	/** `in:<port>` · `out:<port>` · `<pointKey>` — see `SeamAddress`. */
+	at: SeamAddress
+	kind: 'in' | 'out' | 'point'
+	/** The `scripts` slot carrying this seam; absent for an interior point. */
+	slot?: string
+	/** The port the slot hooks; absent for an interior point. */
+	port?: string
+	/** The script kind ids the seam accepts, as declared. */
+	accepts: string[]
+	/**
+	 * The seam's OWN extras: a slot's declared `extras`, a point's none. The
+	 * ambient set (`AMBIENT_SCRIPT_EXTRAS`) is the executor's to add, at every
+	 * site alike, so it is not repeated here.
+	 */
+	extras: string[]
+	description?: I18n
+}
+
+/**
+ * A definition's seams, in run order — the one place that order is computed:
+ * `in:` seams in slot declaration order, then interior points in declaration
+ * order, then `out:` seams in slot declaration order. Reads `scripts`-kind
+ * slots and `scriptPointsOf`; works on a registry row as well as a
+ * descriptor, since rows carry slot declarations verbatim.
+ * @experimental
+ */
+export function seamsOf(d: {
+	slots?: Record<string, unknown>
+	scriptPoints?: ReadonlyArray<ScriptPointDecl>
+}): Seam[] {
+	const ins: Seam[] = []
+	const outs: Seam[] = []
+	for (const [slot, raw] of Object.entries(d.slots ?? {})) {
+		const sd = raw as Partial<SlotDecl> | undefined
+		if (sd?.kind !== 'scripts') continue
+		const at = seamAddressOf({ port: sd.port, phase: sd.phase })
+		const seam: Seam = {
+			at,
+			kind: (sd.phase ?? 'before') === 'after' ? 'out' : 'in',
+			slot,
+			port: sd.port ?? 'main',
+			accepts: [...(sd.accepts ?? [])],
+			extras: [...(sd.extras ?? [])],
+			...(sd.description !== undefined ? { description: sd.description } : {}),
+		}
+		;(seam.kind === 'in' ? ins : outs).push(seam)
+	}
+	const points: Seam[] = scriptPointsOf(d).map((p) => ({
+		at: seamAddressOf({ key: p.key }),
+		kind: 'point' as const,
+		accepts: p.accepts,
+		extras: [],
+		...(p.description !== undefined ? { description: p.description } : {}),
+	}))
+	return [...ins, ...points, ...outs]
+}
+
+/**
+ * The message verbs no genre may remove (ruled 2026-09-15): a person
  * can always stop a reply, branch a session and rewrite a line. Not keys of
  * `SessionShape.messageVerbs`; a declaration naming one `false` is refused
  * at registration (`assertMessageVerbFloors`).
  * @experimental
+ * @ruling R-15
  */
 export const MESSAGE_VERB_FLOORS = ['stop', 'branch', 'edit'] as const
 /** @experimental */
@@ -346,7 +443,7 @@ export const MESSAGE_VERBS = [...MESSAGE_VERB_CONTENT, ...MESSAGE_VERB_BUILT_INS
 export type MessageVerb = (typeof MESSAGE_VERBS)[number]
 
 /**
- * The turn controls (lair pass B7 + B8, 2026-09-27) — the composer's presses
+ * The turn controls — the composer's presses
  * that move the story on, as opposed to the message verbs, which act on one
  * row. Keys of `SessionShape.turnControls`, in the order the extra venue
  * draws them.
@@ -360,8 +457,8 @@ export type MessageVerb = (typeof MESSAGE_VERBS)[number]
  * - `narrate` fires a **narrator turn** (`sessions:fireTurn` with a `null`
  *   ref the order does not hold) — only a `voice: 'narrator'` genre has a
  *   narrator to fire (`turnControlDefault`).
- * - `retake` is **Regenerate the last turn, as a whole** (lair pass R2,
- *   owner 2026-09-28; label _Regenerate_, `sessions:retakeTurn`): it
+ * - `retake` is **Regenerate the last turn, as a whole** (label
+ *   _Regenerate_, `sessions:retakeTurn`): it
  *   deletes the newest turn's **turn yield** — every row that turn's run
  *   created, on every channel, never a person's own line — and takes the
  *   same turn again. ⚠ Not `retry`, the message verb that rewrites ONE
@@ -369,6 +466,7 @@ export type MessageVerb = (typeof MESSAGE_VERBS)[number]
  *   declares it (`turnControlDefault`): a genre whose turn writes one row
  *   keeps `retry`.
  * @experimental
+ * @ruling lair pass B7 + B8 (2026-09-27), lair pass R2 (owner 2026-09-28)
  */
 export const TURN_CONTROLS = ['advance', 'pick', 'narrate', 'retake'] as const
 /** @experimental */
@@ -377,7 +475,7 @@ export type TurnControl = (typeof TURN_CONTROLS)[number]
 /**
  * What an undeclared turn control resolves to — read off the shape's own
  * declarations, so a genre that says nothing keeps what its shape already
- * means (R42: turn controls only where there is somebody to take a turn):
+ * means (turn controls only where there is somebody to take a turn):
  *
  * - `advance` and `pick` are on where the shape has a **character system**
  *   (`characters` declared with a `max` other than 0; an unreadable shape
@@ -387,6 +485,7 @@ export type TurnControl = (typeof TURN_CONTROLS)[number]
  * - `retake` is never on by default: nothing in a shape says a turn writes
  *   more than one row, so a genre opts in (`turnControls.retake: true`).
  * @experimental
+ * @ruling R42
  */
 export function turnControlDefault(shape: unknown, control: TurnControl): boolean {
 	const s = shape && typeof shape === 'object' ? (shape as Record<string, unknown>) : null
@@ -429,11 +528,12 @@ export type TurnControlPolicy = Record<TurnControl, TurnControlPresence>
  * (`turnControlDefault`), `false` takes it away, `true` or an object offers it. Pure, and
  * takes `unknown` for a stored shape.
  *
- * With a `channel` (a slug or `slug:lane`; lair re-plan R6), that channel's
+ * With a `channel` (a slug or `slug:lane`), that channel's
  * declared `ChannelDecl.turnControls` win over the genre's, key by key — the
  * `messageVerbs` merge. A channel the shape does not declare in the long
  * form answers the genre's policy.
  * @experimental
+ * @ruling lair re-plan R6
  */
 export function resolveTurnControls(shape: unknown, channel?: string): TurnControlPolicy {
 	const declared =
@@ -538,10 +638,11 @@ export function assertTurnControls(shape: SessionShape | undefined, who: string)
 }
 
 /**
- * The writes a genre may switch off (R-B, 2026-09-17) — what a session does
+ * The writes a genre may switch off — what a session does
  * *beyond messages*. Keys of `SessionShape.writes`, in the order a policy
  * reads them.
  * @experimental
+ * @ruling R-B (2026-09-17)
  */
 export const SESSION_WRITES = ['lore', 'scenes'] as const
 /** @experimental */
@@ -602,11 +703,11 @@ export function assertSessionWrites(shape: SessionShape | undefined, who: string
 }
 
 /**
- * The five built-in writes (R-15), by the verb a person knows them as: the
+ * The five built-in writes, by the verb a person knows them as: the
  * one-node spec core runs for each, and the outlet that spec ends in.
  *
  * Here rather than only in the core catalog because the **validator** needs
- * them (U5b review W8): a built-in outlet performs the item rule's write —
+ * them: a built-in outlet performs the item rule's write —
  * the handler judged who may act on which row before the run began — so a
  * spec that is not the built-in's own placing one would perform that write
  * with nobody having judged anything. `validate()` refuses the placement
@@ -615,6 +716,7 @@ export function assertSessionWrites(shape: SessionShape | undefined, who: string
  * permission letting a plugin spec place one is the future this leaves room
  * for; it is not granted today.
  * @internal
+ * @ruling R-15, U5b review W8
  */
 export const BUILTIN_SPEC_IDS = Object.freeze({
 	delete: 'core:spec/builtin-delete',
@@ -644,7 +746,7 @@ export const isBuiltInSpec = (specId: string): boolean =>
 	(Object.values(BUILTIN_SPEC_IDS) as string[]).includes(specId)
 
 /**
- * The form-answer pair (plans/29 R-15 *Forms*; 30 §U5d, built 2026-09-17):
+ * The form-answer pair (built 2026-09-17):
  * the inlet `core:event/form-addressed@1` lands on, and the outlet that
  * commits an oracle's answer exactly as a click would. The outlet may be
  * placed only in a document whose inlet is the form-addressed one
@@ -653,13 +755,14 @@ export const isBuiltInSpec = (specId: string): boolean =>
  * form to answer — a spec placing it elsewhere would fire an action as
  * somebody nobody asked.
  * @internal
+ * @ruling plans/29 R-15 *Forms*, 30 §U5d
  */
 export const FORM_ADDRESSED_INLET_ID = 'core:inlet/form-addressed@1'
 /** @experimental */
 export const ANSWER_FORM_OUTLET_ID = 'core:outlet/answer-form@1'
 
 /**
- * The review-fields rule (R-15 *The review gate*; 30 §U5d): a definition
+ * The review-fields rule: a definition
  * with `effects: 'write' | 'external'` declares `review: { fields }` — what a
  * reviewer may edit at the gate, `[]` when nothing (approve or refuse). A
  * definition that declares none still registers and still gates — the form
@@ -669,6 +772,7 @@ export const ANSWER_FORM_OUTLET_ID = 'core:outlet/answer-form@1'
  * to such a definition, so a shipped effectful definition without one is
  * visible rather than silent. Every core definition declares one.
  * @experimental
+ * @ruling R-15 *The review gate*, 30 §U5d
  */
 export function reviewFieldsFinding(d: {
 	id: string
@@ -736,13 +840,14 @@ export interface PortDecl {
  * open `PortDecl`, so nothing that ignores the generics changes.
  */
 /**
- * The chat-shape contract a mode-bearing input type carries (19 §1). See
+ * The chat-shape contract a mode-bearing input type carries. See
  * `Descriptor.shape` for the rules; this is the vocabulary.
  *
  * Bounds omit `max` for "unlimited" and omit the whole capability for "does
  * not exist here". Every field is optional so the standard mode can state
  * today's behaviour exactly and a prose mode can state almost nothing.
  * @experimental
+ * @ruling 19 §1
  */
 export interface SessionShape {
 	/** The character system: toggles, ordering, pickers, cast rows. */
@@ -765,23 +870,26 @@ export interface SessionShape {
 	// turn-order spec's `strategy` node and its `expose.swaps`, like any other
 	// swappable node — see `turnOrderSpec()` in `@serene-pub/core-catalog`.
 	/**
-	 * Does the session settings form offer a **Scenario** field (§4.11,
-	 * R12)? Declared, never assumed: core's chat, adventure and lair say
+	 * Does the session settings form offer a **Scenario** field? Declared,
+	 * never assumed: core's chat, adventure and lair say
 	 * `true`; guide says `false`. Absent = no field.
+	 * @ruling §4.11, R12
 	 */
 	scenario?: boolean
 	/**
-	 * Does the session settings form offer **Tags** (§4.11, R12)? `true` for
+	 * Does the session settings form offer **Tags**? `true` for
 	 * every core genre. Absent = no tags section.
+	 * @ruling §4.11, R12
 	 */
 	tags?: boolean
 	/**
 	 * Whether creating a chat of this mode seeds the cast's greeting messages,
-	 * and on which channel (20 §7). Absent means the default — **on, on
+	 * and on which channel. Absent means the default — **on, on
 	 * `main`** — so a custom input node gets the standard chat's welcoming
 	 * behaviour for free and turns it off or redirects it only if it wants to.
 	 * Core's `user-message` input declares it explicitly so the reusable case
 	 * reads at a glance.
+	 * @ruling 20 §7
 	 */
 	greeting?: {
 		/** Seed character greetings on creation. Default true. */
@@ -790,7 +898,7 @@ export interface SessionShape {
 		channel?: string
 	}
 	/**
-	 * Which message verbs sessions of this genre offer (20 §4; R-15, ruled
+	 * Which message verbs sessions of this genre offer (ruled
 	 * 2026-09-15). Absent means all on — the standard chat's posture. Core
 	 * owns the mechanics and integrity rules; this only declares
 	 * *availability*, checked server-side at the verb (presence is
@@ -815,6 +923,7 @@ export interface SessionShape {
 	 * ⚠ `extend` here is the **prefill** extend — carry one reply on. The
 	 * composer's Continue, which fires the next turn, is a turn control
 	 * (`turnControls.advance`), switched separately.
+	 * @ruling 20 §4, R-15
 	 */
 	messageVerbs?: {
 		retry?: boolean
@@ -826,7 +935,7 @@ export interface SessionShape {
 	}
 	/**
 	 * Which turn controls sessions of this genre offer, and when each is
-	 * present (lair pass B7 + B8, 2026-09-27). Absent is the shape's
+	 * present. Absent is the shape's
 	 * default (`turnControlDefault`: Continue and Pick where there is a
 	 * character system, narrate where there is a narrator). A
 	 * control is `true`, `false`, or `{ presentWhen }` — enabled-when
@@ -840,9 +949,10 @@ export interface SessionShape {
 	 * genre whose composed reply cannot be extended mid-sentence switches
 	 * that off and keeps this.
 	 *
-	 * `retake` is **Regenerate the last turn** (R2, 2026-09-28) — delete the
+	 * `retake` is **Regenerate the last turn** — delete the
 	 * newest turn's yield and take the turn again. Never on by default: a
 	 * genre whose turn writes several rows declares it.
+	 * @ruling lair pass B7 + B8 (2026-09-27), R2 (2026-09-28)
 	 */
 	turnControls?: {
 		advance?: TurnControlDecl
@@ -851,7 +961,7 @@ export interface SessionShape {
 		retake?: TurnControlDecl
 	}
 	/**
-	 * What sessions of this genre may write beyond messages (R-B, 2026-09-17).
+	 * What sessions of this genre may write beyond messages.
 	 * Absent = both on — the standard chat's posture. Enforced server-side at
 	 * the write, like `messageVerbs`: presence is presentation, refusal is the
 	 * law.
@@ -866,6 +976,7 @@ export interface SessionShape {
 	 * The lever is about what a **session** does. Editing the same lorebook
 	 * from the lorebook screens is untouched: that is a person at a book, not
 	 * a session writing through one.
+	 * @ruling R-B (2026-09-17)
 	 */
 	writes?: {
 		/** May a session of this genre add lore entries to its lorebook? */
@@ -874,17 +985,29 @@ export interface SessionShape {
 		scenes?: boolean
 	}
 	/**
-	 * Which surface renders sessions of this mode (20 §12). Absent means
+	 * 🚧 How sessions of this genre place their **scene boundaries** while
+	 * they are played, and when a scene's summary runs — the genre's default,
+	 * which a session may override (`resolveSceneSettings`). Absent is
+	 * `DEFAULT_SCENE_SETTINGS`: **Suggested**, with *day crossed*, *time
+	 * action* and *place changed* on, summaries **on request**. Refused at
+	 * the declaration when it does not read (`assertSceneSettings`). A genre
+	 * whose `writes.scenes` is `false` places nothing, whatever this says.
+	 * @ruling PROPOSAL-live-scenes §4, §5, ★1 (2026-10-13)
+	 */
+	scenes?: SceneSettingsDecl
+	/**
+	 * Which surface renders sessions of this mode. Absent means
 	 * core's log — today's behaviour exactly. A plugin id (`acme/crawl`)
 	 * names the plugin whose declared `session-view` frame surface replaces
 	 * the whole message section: the total-conversion lane. The frame gets
 	 * the session over the MessageChannel and returns actions as validated
 	 * requests; it forfeits core's in-log chrome deliberately. "Restyle the
 	 * standard chat" is blocks, never this.
+	 * @ruling 20 §12
 	 */
 	view?: string
 	/**
-	 * The session's channels beyond the implicit `main` (20 §7) — filter
+	 * The session's channels beyond the implicit `main` — filter
 	 * lanes inside one session. What renders a channel is the surface story
 	 * (a frame subscribes to it); what *stores* it is `messages.channel`; and
 	 * pipelines choose which lanes build their context through the history
@@ -906,16 +1029,17 @@ export interface SessionShape {
 	 * extension data — core stores a string. Parse and format one with
 	 * `parseChannel` / `formatChannel`.
 	 *
-	 * **A bare string, or a `ChannelDecl`** (R-C, 2026-09-17). The string is
+	 * **A bare string, or a `ChannelDecl`** (since 2026-09-17). The string is
 	 * the whole declaration for the ordinary case and keeps meaning exactly
 	 * what it meant — `'phone'` is `{ slug: 'phone', role: 'conversation' }`
 	 * with the genre's `voice` and `messageVerbs`. Read the normalised list
 	 * with `channelDecls`; a string stays a string in the declaration, so the
 	 * content hash of every genre written before this union is unmoved.
+	 * @ruling 20 §7, R-C (2026-09-17)
 	 */
 	channels?: (string | ChannelDecl)[]
 	/**
-	 * The panels a session of this mode offers in the surface grid (21). The
+	 * The panels a session of this mode offers in the surface grid. The
 	 * grid is container-responsive: panels flow into tracks that appear and
 	 * disappear with the *content box* width (not the viewport), so opening a
 	 * sidebar cascades panels the same way shrinking the window would.
@@ -937,7 +1061,7 @@ export interface SessionShape {
 }
 
 /**
- * One channel, declared in full (R-C, 2026-09-17) — the long form of an
+ * One channel, declared in full — the long form of an
  * element of `SessionShape.channels`, where the short form is the slug alone.
  *
  * Three things a genre may say about a channel that it cannot say about the
@@ -951,6 +1075,7 @@ export interface SessionShape {
  * which is what makes the union additive: a bare string is this object with
  * `role: 'conversation'`, the genre's `voice` and the genre's `messageVerbs`.
  * @experimental
+ * @ruling R-C (2026-09-17)
  */
 export interface ChannelDecl {
 	/**
@@ -981,20 +1106,22 @@ export interface ChannelDecl {
 	 */
 	messageVerbs?: SessionShape['messageVerbs']
 	/**
-	 * The channel's display name (lair re-plan R6, 2026-09-28) — what a
+	 * The channel's display name — what a
 	 * widget header and the composer's channel control call it: the Lair's
-	 * `sanctum` is _Sanctum_. Display text (R-20), normalised by
+	 * `sanctum` is _Sanctum_. Display text, normalised by
 	 * `channelDecls` to a locale map. Absent: readers show the slug, as
 	 * before the field existed.
+	 * @ruling lair re-plan R6 (2026-09-28), R-20
 	 */
 	label?: I18n
 	/**
 	 * Which turn controls this channel's composer offers, over the genre's
-	 * `turnControls` (lair re-plan R6) — the `messageVerbs` merge rule:
+	 * `turnControls` — the `messageVerbs` merge rule:
 	 * declared keys win, the rest keep the genre's answer. The Lair's
 	 * Sanctum takes Pick who speaks and Regenerate the last turn away and
 	 * keeps Continue and Narrate. Read one channel's policy with
 	 * `resolveTurnControls(shape, channel)`.
+	 * @ruling lair re-plan R6
 	 */
 	turnControls?: SessionShape['turnControls']
 }
@@ -1146,9 +1273,10 @@ export interface Descriptor<
 	Id extends string = string,
 > {
 	/**
-	 * `namespace:kind/name@N` — and the `@N` is the **type** version, which is a pin
-	 * (01 §3). Distinct from a spec's semver, which is an upgrade key (src/identity.ts).
+	 * `namespace:kind/name@N` — and the `@N` is the **type** version, which is a pin.
+	 * Distinct from a spec's semver, which is an upgrade key (src/identity.ts).
 	 * Carried in the type so a pinned constructor can expose `.v1()` at the call site.
+	 * @ruling 01 §3
 	 */
 	id: Id
 	kind: Kind
@@ -1156,20 +1284,24 @@ export interface Descriptor<
 	slots?: Record<string, SlotDecl>
 	ports: { in?: In; out?: Out }
 
-	/** Oracle/outlet only — the review gate keys on this, not on kind (01 §7). */
+	/**
+	 * Oracle/outlet only — the review gate keys on this, not on kind.
+	 * @ruling 01 §7
+	 */
 	effects?: 'none' | 'external' | 'write' | 'emit'
 	/**
 	 * An author may default review **on** for their own node. There is no value here
-	 * that forbids it — that is the enforcement, not a rule someone checks (F14).
+	 * that forbids it — that is the enforcement, not a rule someone checks.
 	 *
 	 * **Policy**, not contract (`DESCRIPTOR_POLICY_KEYS`): where the gate
 	 * starts is offered to the person who configures the node, and moving it
 	 * changes no port, shape or behaviour of the node itself.
+	 * @ruling F14
 	 */
 	reviewDefault?: ReviewPosition
 	/**
-	 * Which of this node's in-ports a reviewer may **edit** at the gate (R-15,
-	 * U5b review C1, 2026-09-16): an allow-list of port names. Absent, the
+	 * Which of this node's in-ports a reviewer may **edit** at the gate: an
+	 * allow-list of port names. Absent, the
 	 * form is inferred from the whole payload the node received, as it always
 	 * was — every field editable. Declared, the form shows these fields and
 	 * no other, and a decision that submits any other key is refused with a
@@ -1185,7 +1317,7 @@ export interface Descriptor<
 	 * among them. `fields: []` is a legitimate declaration: approve or
 	 * reject, nothing to edit (a delete).
 	 *
-	 * **Contract** (`DESCRIPTOR_CONTRACT_KEYS`, plans/31 V6): `fields` is the
+	 * **Contract** (`DESCRIPTOR_CONTRACT_KEYS`): `fields` is the
 	 * list a decision is validated against, so a pinned spec's review form
 	 * and the keys its decisions may carry run against it — widening or
 	 * narrowing the list moves the hash.
@@ -1193,14 +1325,16 @@ export interface Descriptor<
 	 * Read from the in-process definition, and carried on the registry row
 	 * (`RegistryEntry.review`) so a `transport: process` plugin outlet's form
 	 * can be read without loading the plugin.
+	 * @ruling R-15, U5b review C1 (2026-09-16), plans/31 V6
 	 */
 	review?: { fields: readonly string[] }
 	/** Connection kind for providers (== produced shape). Contract. */
 	shape?: ShapeId
 	/**
-	 * May this node be switched off? Requires shape transparency (01 §14
-	 * F-toggleable). **Policy** — what the panel offers; the switch itself is
+	 * May this node be switched off? Requires shape transparency. **Policy** —
+	 * what the panel offers; the switch itself is
 	 * a setting, and the node runs the same either side of it.
+	 * @ruling 01 §14 F-toggleable
 	 */
 	toggleable?: boolean
 	/**
@@ -1229,53 +1363,56 @@ export interface Descriptor<
 	 */
 	optional?: boolean
 	/**
-	 * Declares it consumes the run seed — keeps Tasks pure (F11). **Contract**:
+	 * Declares it consumes the run seed — keeps Tasks pure. **Contract**:
 	 * a replay with the same seed is only a replay while the set of nodes
 	 * drawing on it is the set the document was compiled against.
+	 * @ruling F11
 	 */
 	declaresRandomness?: boolean
 	/**
-	 * Declared, not bound (plans/29 R-2, 2026-09-17).
+	 * Declared, not bound.
 	 *
-	 * A definition core publishes because a plan owns it — `speak` (plans/14),
-	 * the two MCP oracles (plans/28) — while no handler implements it yet. The
+	 * A definition core publishes because a plan owns it — `speak`,
+	 * the two MCP oracles — while no handler implements it yet. The
 	 * flag is what stops the gap from being invisible: the registry row reads
 	 * `status: 'provisional'` and is badged; every listing that OFFERS
 	 * definitions leaves it out; `validate()` refuses a document placing it
-	 * (law R-2, *bind it or remove the node*); and the executor refuses to run
+	 * (the provisional-definition law: *bind it or remove the node*); and the executor refuses to run
 	 * the node with the same sentence, so a document that reached it by another
 	 * door halts legibly rather than on "no binding registered".
 	 *
-	 * **Policy, never hashed** (plans/31 V6, 2026-09-17 — reversing U6's
-	 * choice): what is *offered* is policy and what *runs* is contract, and
+	 * **Policy, never hashed** (since 2026-09-17): what is *offered* is policy
+	 * and what *runs* is contract, and
 	 * this flag decides only the first. The day the handler lands the pin
 	 * stays where it is; the registry row's `status` moves from
 	 * `provisional` to `live` on the next sync, and the receipts that named
 	 * the hash still describe the same contract. `true` or absent, never
 	 * `false`: a definition is either provisional or it is not.
+	 * @ruling plans/29 R-2 (2026-09-17), plans/14, plans/28, plans/31 V6 (2026-09-17 — reversing U6's choice)
 	 */
 	provisional?: true
 	/**
-	 * Interior script points (18 §4e): named moments *inside* the binding's
+	 * Interior script points: named moments *inside* the binding's
 	 * work where user text-transform chains may run — a drafting loop's
 	 * intermediate texts. Declared here so "which nodes can run scripts, and
 	 * where" is answerable from the document; the binding invokes one with
 	 * `ctx.scripts.applyText(key, text)` and gets no `ctx.scripts` at all
 	 * without a declaration. **Part of the hashed contract** — a point
 	 * appearing or vanishing, or what it `accepts`, changes what an untouched
-	 * spec's configuration can reach (S3's argument, one construct over).
+	 * spec's configuration can reach (the content-hash argument, one construct over).
 	 * `label`/`description` are display text and stripped from the hash as
 	 * everywhere.
 	 *
-	 * A point declares what it **accepts** (R-11, ruled 2026-09-15; 18 §4e):
+	 * A point declares what it **accepts** (ruled 2026-09-15):
 	 * the executor hands that list to the applier, which refuses a link of any
 	 * other kind — it hardcoded `text/transform` until 2026-09-16. Read the
 	 * list through `scriptPointsOf`. A bare-string point (`'each-draft'`) is
 	 * refused at `register()` — the spelling was retired without an alias.
+	 * @ruling 18 §4e, S3, R-11
 	 */
 	scriptPoints?: ScriptPointDecl[]
 	/**
-	 * The chat-shape contract (19 §0–§1) — present **only on input types**,
+	 * The chat-shape contract — present **only on input types**,
 	 * and its presence is what makes the input type a **chat mode**. The mode
 	 * id is this type's id; any spec pinning it and matching the primary-write
 	 * signature is in the mode's bucket, by construction.
@@ -1295,27 +1432,30 @@ export interface Descriptor<
 	 * through this input's published document. Duties and triggers are
 	 * deliberately NOT here: the shape is owner-only, and event functions
 	 * beyond the intrinsic composer are contributed by the specs that serve
-	 * them (19 §3–§4), so a mode never has to know its narrator exists.
+	 * them, so a mode never has to know its narrator exists.
 	 *
 	 * Named `sessionShape` because `shape` was already taken by the provider
 	 * connection kind above — renaming *that* would re-hash every provider
 	 * on the instance for a word.
+	 * @ruling 19 §0–§1, 19 §3–§4
 	 */
 	sessionShape?: SessionShape
 	/**
-	 * May finish before an upstream stream ends (01 §11). **Contract**: a
+	 * May finish before an upstream stream ends. **Contract**: a
 	 * stream consumer that may return early and one that must drain are two
 	 * different things to wire a stream into.
+	 * @ruling 01 §11
 	 */
 	earlyExit?: boolean
 	/**
-	 * Public pipeline hooks may be pinned by any spec (01 §9b). **Policy**:
+	 * Public pipeline hooks may be pinned by any spec. **Policy**:
 	 * who may pin it is decided at install, not run — a spec that already
 	 * pins it runs against the same contract either way.
+	 * @ruling 01 §9b
 	 */
 	public?: boolean
 	/**
-	 * F36 — every hook invocation is bounded. **Policy**, both of them: how
+	 * Every hook invocation is bounded. **Policy**, both of them: how
 	 * long the host waits is the host's to tune, and a spec's document is
 	 * indifferent to it.
 	 *
@@ -1326,14 +1466,16 @@ export interface Descriptor<
 	 * bounds the whole. Declare `'idle'` for work whose length is honest but
 	 * unknown — a streamed reply, a model loading — and `'wall'` for work
 	 * that should simply be quick.
+	 * @ruling F36
 	 */
 	timeoutMs?: number
 	timeoutKind?: 'wall' | 'idle'
 	/**
-	 * Which core event a write causes. Declared here, never per spec (01 §8).
+	 * Which core event a write causes. Declared here, never per spec.
 	 * Refused at registration unless that event's `causedBy` names this
-	 * definition (R33): `EventDef.causedBy` is the one authored statement of
+	 * definition: `EventDef.causedBy` is the one authored statement of
 	 * what causes what, and this field must agree with it.
+	 * @ruling 01 §8, R33
 	 */
 	causesEvent?: string
 	/**
@@ -1343,16 +1485,17 @@ export interface Descriptor<
 	 */
 	causesEventFrom?: string
 	/**
-	 * Inlet only (R33, PLAN-turn-order §4.14): the event payload shapes this
+	 * Inlet only: the event payload shapes this
 	 * inlet reads. A spec may lock one inlet to several events (`{ genre,
 	 * events }`) only when every listed event's `payload` is here; an inlet
 	 * that declares none answers one event. `core:inlet/session-event@1`
 	 * declares the session payloads.
+	 * @ruling R33, PLAN-turn-order §4.14
 	 */
 	payloads?: ShapeId[]
 	/**
 	 * Outlet only: the row this outlet commits becomes the run's **live row**
-	 * (R-21 (2)) — where core routes an oracle's stream, and what Stop
+	 * — where core routes an oracle's stream, and what Stop
 	 * finalises when a run is cancelled with nothing left to run.
 	 *
 	 * Declared rather than inferred from the event the write causes, because
@@ -1366,7 +1509,8 @@ export interface Descriptor<
 	 * it only when it is a row still being written — its `generating` in-port
 	 * fed truthy, or its `row` in-port claiming an existing row
 	 * (`LIVE_ROW_PORTS`, `opensLiveRow`). A complete message written by the
-	 * same outlet is an ordinary write (F7, W1).
+	 * same outlet is an ordinary write.
+	 * @ruling R-21 (2), F7, W1
 	 */
 	liveRow?: boolean
 	/**
@@ -1408,7 +1552,7 @@ export interface Descriptor<
 	entryShape?: EntryShape
 	/**
 	 * The bands this source publishes, each with the variable that lays it out
-	 * (typed templates P2, 2026-09-27) — `{ secretEntry: varSecretEntry }`.
+	 * — `{ secretEntry: varSecretEntry }`.
 	 *
 	 * A band is the ranker's word for one source's slice of the window, named
 	 * at the head of the source's candidates (`bandIntent`). Declared here, it
@@ -1427,9 +1571,10 @@ export interface Descriptor<
 	 * which bands a step produces moves the hash — hashed as `{ key:
 	 * variableId }`, key order ignored. It still rides the registry row's
 	 * `policy` as `{ key: variableId }`, so a host reads a plugin's bands
-	 * without loading the plugin (F6), and `definitionContract` reads it back
+	 * without loading the plugin, and `definitionContract` reads it back
 	 * from there to the same hash.
 	 * @experimental
+	 * @ruling typed templates P2 (2026-09-27), F6
 	 */
 	bands?: Record<string, VariableDecl>
 	/**
@@ -1451,7 +1596,7 @@ export interface Descriptor<
 	bandPorts?: Record<string, readonly string[]>
 	/**
 	 * What each out-port's payload looks like, in the template type language
-	 * (typed templates P1) — `{ out: { templateContext: { type: 'object', … } } }`.
+	 * — `{ out: { templateContext: { type: 'object', … } } }`.
 	 *
 	 * A port says which shape flows; this says what is inside it, which is what
 	 * a template editor needs to offer `{{ templateContext.char }}` with a type.
@@ -1462,8 +1607,20 @@ export interface Descriptor<
 	 * in the slots). Like `bands`, it rides the row's `policy` verbatim and is
 	 * hashed from there.
 	 * @experimental
+	 * @ruling typed templates P1
 	 */
 	portSchemas?: { out?: Record<string, VarField> }
+	/**
+	 * What this model call runs best on — the soft twin of `requires`:
+	 * a seeded sampling preset and a
+	 * tier. Grades and suggestions read it; nothing refuses on it. A spec may
+	 * state its own on the placement (`NodeOpts.prefers`), which wins.
+	 *
+	 * **Policy** (`DESCRIPTOR_POLICY_KEYS`): it is what is *suggested*, and
+	 * changing it moves no pin. Rides the registry row's `policy`.
+	 * @experimental
+	 */
+	prefers?: Prefers
 }
 
 const types = new Map<string, Descriptor>()
@@ -1499,7 +1656,7 @@ const types = new Map<string, Descriptor>()
 export const DESCRIPTOR_DISPLAY_KEYS: DisplayKeys = { display: ['label'] }
 
 /**
- * The two halves of a `Descriptor` (plans/31 V6, ruled 2026-09-17).
+ * The two halves of a `Descriptor` (ruled 2026-09-17).
  *
  * **Contract** is what a pinned spec runs against: the ports and shapes a
  * document was compiled against, the slots it configures and their schema,
@@ -1522,6 +1679,7 @@ export const DESCRIPTOR_DISPLAY_KEYS: DisplayKeys = { display: ['label'] }
  * is classified before it exists; `sdk-tests/contract.test.ts` gives the
  * one-line reason per field.
  * @experimental
+ * @ruling plans/31 V6
  */
 export const DESCRIPTOR_CONTRACT_KEYS = [
 	'id',
@@ -1557,6 +1715,7 @@ export const DESCRIPTOR_POLICY_KEYS = [
 	'timeoutMs',
 	'timeoutKind',
 	'usage',
+	'prefers',
 ] as const satisfies readonly (keyof Descriptor)[]
 
 /** @experimental */
@@ -1603,6 +1762,8 @@ export interface DefinitionPolicy {
 	bandPorts?: Record<string, string[]>
 	/** `Descriptor.portSchemas`, verbatim. */
 	portSchemas?: { out?: Record<string, VarField> }
+	/** `Descriptor.prefers`, verbatim. */
+	prefers?: Prefers
 }
 
 /** A definition's policy, projected — `undefined` keys dropped so a row and a re-read agree. @experimental */
@@ -1615,6 +1776,7 @@ export function definitionPolicy(d: {
 	bands?: Record<string, VariableDecl | string>
 	bandPorts?: Record<string, readonly string[]>
 	portSchemas?: { out?: Record<string, VarField> }
+	prefers?: Prefers
 }): DefinitionPolicy {
 	const policy: DefinitionPolicy = {}
 	if (d.provisional === true) policy.provisional = true
@@ -1633,6 +1795,7 @@ export function definitionPolicy(d: {
 	const bandPorts = bandPortsMaterial(d.bandPorts)
 	if (bandPorts) policy.bandPorts = bandPorts
 	if (d.portSchemas !== undefined) policy.portSchemas = d.portSchemas
+	if (d.prefers && Object.keys(d.prefers).length) policy.prefers = { ...d.prefers }
 	return policy
 }
 
@@ -1645,10 +1808,11 @@ export function definitionPolicy(d: {
  * from either, which is what lets core hash a row it read back and get the
  * hash it was written under.
  *
- * Script kinds ride the same registry rows (18 §2), so a row's `semantics` is
+ * Script kinds ride the same registry rows, so a row's `semantics` is
  * contract here too. Their own re-declaration guard (`scripts.ts`) hashes the
  * declaration whole and is not this function.
  * @experimental
+ * @ruling 18 §2
  */
 export interface ContractSource {
 	/** `ns:kind/name@N` on a descriptor; bare beside `version` on a row. */
@@ -1840,18 +2004,23 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 	checkNoAuthoredSettings(d as Descriptor)
 	checkNoSettingsPort(d as Descriptor)
 	checkScriptPointsAccept(d as Descriptor)
+	checkScriptsSlots(d as Descriptor)
 	checkCausesEvent(d as Descriptor)
 	checkNoAmbientExtras(d as Descriptor)
 	// Before the id is claimed, so a refused declaration can be fixed and retried.
 	checkModeTitled(d as Descriptor)
 	checkDisplayText(d as Descriptor)
-	// Bands (typed templates P2): identifier keys, a registered variable whose
-	// scope names the key, and one meaning per key across every definition.
-	checkBandDeclarations(d as Descriptor, types.values())
+	// Bands (typed templates P2) and static `renders` (2026-10-13): identifier
+	// keys, a registered variable whose scope names the key, never one of
+	// Assemble's own names. One meaning per key is a per-document rule
+	// (`rendersAt`, law T1), not a global one — owner ruling 2026-10-13, ★1.
+	checkBandDeclarations(d as Descriptor)
+	checkRendersDeclarations(d as Descriptor)
 	assertMessageVerbFloors((d as Descriptor).sessionShape, d.id)
 	assertSessionWrites((d as Descriptor).sessionShape, d.id)
 	assertTurnControls((d as Descriptor).sessionShape, d.id)
 	assertChannelDecls((d as Descriptor).sessionShape, d.id)
+	assertSceneSettings((d as Descriptor).sessionShape, d.id)
 	// A finding, not a refusal: the fallback is documented (inference), the
 	// omission is recorded, and `validate()` says it on every placement.
 	const reviewFinding = reviewFieldsFinding(d as Descriptor)
@@ -1862,12 +2031,13 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 }
 
 /**
- * The extras every script site is offered, whatever its slot lists (R32,
- * PLAN-turn-order §4.14): `session`, the run's settings document. The
+ * The extras every script site is offered, whatever its slot lists:
+ * `session`, the run's settings document. The
  * executor supplies them at every site — a slot's port hook and an interior
  * point alike — so a slot's `extras` names only what is particular to it,
- * and listing an ambient one is refused (one way to say it, R26).
+ * and listing an ambient one is refused (one way to say it).
  * @internal
+ * @ruling R32, PLAN-turn-order §4.14, R26
  */
 export const AMBIENT_SCRIPT_EXTRAS = ['session'] as const
 
@@ -1896,7 +2066,7 @@ const slotLine = (slots: Record<string, unknown> | undefined): string =>
 	Object.keys(authoredSlots(slots as never) ?? {}).sort().join(', ')
 
 /**
- * Can `swap` stand in for `pinned` at node `key` (R28)? A swap is seated with
+ * Can `swap` stand in for `pinned` at node `key`? A swap is seated with
  * the pin's node config, so it must be the same kind with the same in- and
  * out-ports (by name and shape) and the same slots — a slot the pin's node
  * does not wire would never reach the swap, and a person would pick an
@@ -1904,6 +2074,7 @@ const slotLine = (slots: Record<string, unknown> | undefined): string =>
  * chain is configured on the node key, whatever sits there. One sentence
  * for the builder and the package pass alike.
  * @experimental
+ * @ruling R28
  */
 export function swapFitFinding(
 	key: string,
@@ -1933,11 +2104,12 @@ export function swapFitFinding(
 }
 
 /**
- * Can one inlet answer every event of an `events` lock (R33)? Each listed
+ * Can one inlet answer every event of an `events` lock? Each listed
  * event must carry a payload the inlet declares it reads; an inlet that
  * declares none answers one event only. One sentence for the builder and
  * the package pass alike.
  * @experimental
+ * @ruling R33
  */
 export function eventsLockFindings(
 	inlet: Pick<Descriptor, 'id' | 'payloads'>,
@@ -1967,11 +2139,12 @@ export function eventsLockFindings(
 }
 
 /**
- * `causesEvent` agrees with the event's own `causedBy` (R33). The event side
+ * `causesEvent` agrees with the event's own `causedBy`. The event side
  * is the complete statement — `message-completed` is caused by three writes
  * whose own `causesEvent` names their primary event — so this field may only
  * name an event that already lists the definition. And only core defines
- * events (R30, F8): a package's outlet cannot cause one.
+ * events: a package's outlet cannot cause one.
+ * @ruling R33, R30, F8
  */
 function checkCausesEvent(d: Descriptor): void {
 	if (d.causesEventFrom !== undefined) {
@@ -1995,7 +2168,7 @@ function checkCausesEvent(d: Descriptor): void {
 }
 
 /**
- * A gate-eligible write publishes `write-result@1`, never raw ids (13 §7j-b).
+ * A gate-eligible write publishes `write-result@1`, never raw ids.
  *
  * Checked at registration rather than reviewed by hand, because the hand-written version
  * was already wrong: three core Consumers declared `row-ids@1` out ports while declaring
@@ -2003,6 +2176,7 @@ function checkCausesEvent(d: Descriptor): void {
  * row a reviewer had not approved yet — and under `async` review that row may never exist.
  * The failure lands long after the run that caused it, which is the worst kind to find by
  * reading.
+ * @ruling 13 §7j-b
  */
 function checkWritePublishes(d: Descriptor): void {
 	if (d.effects !== 'write') return
@@ -2020,7 +2194,7 @@ function checkWritePublishes(d: Descriptor): void {
 }
 
 /**
- * `settings` is the substrate's slot, never an author's (R-9).
+ * `settings` is the substrate's slot, never an author's.
  *
  * Refused at registration rather than merged, because the two would collide
  * at one address: the executor reads `config[key].settings.enabled` to skip
@@ -2028,6 +2202,7 @@ function checkWritePublishes(d: Descriptor): void {
  * the same name would be read as that switch. It is also what lets the
  * registry hash leave the projected slot out — a slot that is never authored
  * is never a change to what an author declared.
+ * @ruling R-9
  */
 function checkNoAuthoredSettings(d: Descriptor): void {
 	if (!d.slots) return
@@ -2052,17 +2227,18 @@ function checkNoAuthoredSettings(d: Descriptor): void {
 }
 
 /**
- * Nor an out-port of the name (F39; U7 review, S2).
+ * Nor an out-port of the name.
  *
  * `<nodeKey>.settings` and `<nodeKey>.settings.*` are the address the
  * validator and the executor read as the substrate's switches: a data edge
- * drawn from it is refused as a setting travelling (F39), and a reference to
+ * drawn from it is refused as a setting travelling, and a reference to
  * it resolves to nothing. A definition publishing an out-port of that name
  * would have every edge from the port refused under a law about something
  * else — a port nobody could wire — so the name is refused where the author
- * is, and the F39 edge rule can never mistake a declared port for a switch.
- * `register()` is F39's registry door: `core:verdict/settings-travel` judges
- * each declared out-port and this quotes it (01 §13).
+ * is, and the settings-travel edge rule can never mistake a declared port for a switch.
+ * `register()` is that rule's registry door: `core:verdict/settings-travel` judges
+ * each declared out-port and this quotes it.
+ * @ruling F39, U7 review, S2, 01 §13
  */
 function checkNoSettingsPort(d: Descriptor): void {
 	for (const port of Object.keys(d.ports?.out ?? {})) {
@@ -2072,10 +2248,11 @@ function checkNoSettingsPort(d: Descriptor): void {
 }
 
 /**
- * A script point names the kinds it accepts (R-11; U4 residual 2026-09-16).
+ * A script point names the kinds it accepts.
  * A point nothing can attach to is a control with no effect wearing a
  * contract: the panel would offer the hook and every kind would be refused
  * at it.
+ * @ruling R-11, U4 residual (2026-09-16)
  */
 function checkScriptPointsAccept(d: Descriptor): void {
 	for (const p of d.scriptPoints ?? []) {
@@ -2091,18 +2268,58 @@ function checkScriptPointsAccept(d: Descriptor): void {
 	}
 }
 
+/**
+ * A `scripts` slot is a seam the executor can actually reach. Its port
+ * must exist on the side its phase implies —
+ * `before` reads an in-port, `after` an out-port — or the chain is stored,
+ * shown and never run; and it accepts at least one well-formed script kind
+ * id. Kind *existence* is the conformance kit's to check: kinds may register
+ * after the definitions that name them.
+ * @ruling PLAN-script-placement D6
+ */
+function checkScriptsSlots(d: Descriptor): void {
+	for (const [name, raw] of Object.entries(d.slots ?? {})) {
+		const sd = raw as Partial<SlotDecl>
+		if (sd?.kind !== 'scripts') continue
+		const phase = sd.phase ?? 'before'
+		const port = sd.port ?? 'main'
+		const side = phase === 'after' ? 'out' : 'in'
+		const ports = (d.ports as { in?: Record<string, unknown>; out?: Record<string, unknown> } | undefined)?.[side] ?? {}
+		if (!(port in ports))
+			throw new Error(
+				`${d.id}: scripts slot '${name}' hooks ${side}-port '${port}' (phase '${phase}'), which the ` +
+					`definition does not declare — declared ${side}-ports: ${Object.keys(ports).join(', ') || '(none)'}; ` +
+					`name one of them in 'port', or set 'phase' to '${phase === 'after' ? 'before' : 'after'}' if the port is on the other side.`,
+			)
+		const accepts = sd.accepts
+		if (!Array.isArray(accepts) || accepts.length === 0)
+			throw new Error(
+				`${d.id}: scripts slot '${name}' accepts no script kind — list the kinds it takes in ` +
+					`'accepts' (e.g. ['core:script:text/transform@1']); a hook that accepts nothing is one nothing can attach to.`,
+			)
+		const bad = accepts.filter((id) => typeof id !== 'string' || !isScriptKindId(id))
+		if (bad.length)
+			throw new Error(
+				`${d.id}: scripts slot '${name}' accepts ${bad.map((b) => `'${String(b)}'`).join(', ')}, which ` +
+					`${bad.length === 1 ? 'is not a script kind id' : 'are not script kind ids'} — spell each as ` +
+					`'<namespace>:script:<content>/<operation>@<major>', e.g. 'core:script:text/transform@1'.`,
+			)
+	}
+}
+
 const shapeIdOf = (s: unknown): string | undefined =>
 	typeof s === 'string' ? s : ((s as { id?: string } | undefined)?.id ?? undefined)
 
 /**
  * Is there text a person reads — a non-blank string, or a map with a non-blank
  * `en`? A map carrying only `fr` is not titled: `en` is the locale every other
- * falls back to (R-20), so a card with no `en` has no face on an English install.
+ * falls back to, so a card with no `en` has no face on an English install.
+ * @ruling R-20
  */
 const hasDisplayText = (v: I18n | undefined): boolean => isI18n(v)
 
 /**
- * A chat mode ships titled (19 §2).
+ * A chat mode ships titled.
  *
  * A shape-bearing input type *is* a chat mode, and the New Chat picker renders one card
  * per mode from rows — `i18n.name` is that card's face. An untitled mode could only
@@ -2110,6 +2327,7 @@ const hasDisplayText = (v: I18n | undefined): boolean => isI18n(v)
  * where the author is, rather than at install, where the admin is. A missing
  * `description` is a poorer card rather than a broken one, so the packager warns about
  * that instead of this throwing (cli/src/compiler.ts, W_MODE_NO_DESCRIPTION).
+ * @ruling 19 §2
  */
 function checkModeTitled(d: Descriptor): void {
 	if (d.kind !== 'inlet' || !d.sessionShape) return
@@ -2123,7 +2341,7 @@ function checkModeTitled(d: Descriptor): void {
 }
 
 /**
- * Every display string a definition declares is `I18n` (R-20; U5i, ruled
+ * Every display string a definition declares is `I18n` (ruled
  * 2026-09-17): `i18n.name` and `i18n.description`; each slot's `description`,
  * its prompt `fields[].i18n` and its `schema` (through `settingsSchemaFindings`);
  * each script point's `label`, `description` and deprecated `i18n`; a session
@@ -2131,6 +2349,7 @@ function checkModeTitled(d: Descriptor): void {
  * kinds, not only a mode-bearing inlet — `checkModeTitled` keeps the one
  * strictness of its own (a mode must have a name); this refuses a blank or a
  * mis-shaped value anywhere, with the field named and the fix stated.
+ * @ruling R-20, U5i
  */
 function checkDisplayText(d: Descriptor): void {
 	const findings: string[] = []
@@ -2162,11 +2381,12 @@ function checkDisplayText(d: Descriptor): void {
 }
 
 /**
- * The display text of a list of widget declarations (R-20): each `title`
+ * The display text of a list of widget declarations: each `title`
  * (required — the chrome and the tray show it) and each `settings` schema.
  * Shared by a session shape's `panels` and a genre's shape, which carry the
  * same declarations.
  * @experimental
+ * @ruling R-20
  */
 export function widgetDeclsFindings(raw: unknown, where: string): string[] {
 	if (raw === undefined) return []
@@ -2404,12 +2624,13 @@ export type EntrySourceKind = (typeof ENTRY_SOURCE_KINDS)[number]
  *
  * Closed to the names the importer reads: the three every file has carried,
  * plus `location` and `item`, which the app's importer restores as a place and
- * an item (lorebooks plan A26 — written as world lore, a place reads back
+ * an item (written as world lore, a place reads back
  * without its links' meaning or its stats). A type outside them declares
  * nothing here: no marker is honest, where a marker no importer reads is a
  * file that round-trips into the wrong shape. Widening the list is a
  * deliberate act with an importer change beside it.
  * @experimental
+ * @ruling lorebooks plan A26
  */
 export const ENTRY_EXPORT_KEYS = ['world', 'character', 'history', 'location', 'item'] as const
 
@@ -2504,8 +2725,8 @@ export interface EntryShape {
 	 * in the one field language (settings.ts), rendered by the one form
 	 * renderer, and projected into constraints and indexes by one boot step.
 	 *
-	 * Only the **T1 declarative** subset projects into a constraint: required,
-	 * type, min/max, enum. T2 predicates (`showIf`) are UI-level and depend on
+	 * Only the **declarative** constraints project into a constraint: required,
+	 * type, min/max, enum. Predicates (`showIf`) are UI-level and depend on
 	 * state a row does not carry.
 	 */
 	fields?: SettingsSchema
@@ -2663,7 +2884,11 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 const unknownRoles = (shape: { roles?: EntryRoles }): string[] =>
 	Object.keys(shape.roles ?? {}).filter((r) => !(ENTRY_ROLES as readonly string[]).includes(r))
 
-/** A conformance finding. Every one names what to do, as everywhere here (15 §1.3). @experimental */
+/**
+ * A conformance finding. Every one names what to do, as everywhere here.
+ * @experimental
+ * @ruling 15 §1.3
+ */
 export interface EntryFinding {
 	severity: 'error'
 	code: 'E_UNKNOWN_ROLE' | 'E_DEAD_ROLE'
@@ -2730,9 +2955,10 @@ export function checkEntryTypes(
 
 /**
  * A pinned constructor. The builder method names the *kind*; this names the
- * *type and version* (04 §4b). Both are required — drop either and F21 or static
- * pin-checking goes with it.
+ * *type and version*. Both are required — drop either and pin-checking,
+ * at run or static, goes with it.
  * @experimental
+ * @ruling 04 §4b, F21
  */
 export interface NodeSpec<D extends Descriptor<any, any, any> = Descriptor> {
 	readonly __node: true
@@ -2749,7 +2975,7 @@ export type NodeCtor<D extends Descriptor<any, any, any>> = (
 ) => NodeSpec<D>
 
 /**
- * A pinned constructor (04 §4b).
+ * A pinned constructor.
  *
  * The builder method names the **kind**; this names the **type and version**, and the
  * version sits at the call site — `generateText.v1({ … })` — for three reasons that a
@@ -2760,6 +2986,7 @@ export type NodeCtor<D extends Descriptor<any, any, any>> = (
  *  - a deprecated pin **strikes through** on `generateText.v1` precisely, because the
  *    key is what carries the version
  * @experimental
+ * @ruling 04 §4b
  */
 export type Pinned<D extends Descriptor<any, any, any>> = {
 	readonly [K in `v${VersionOf<D['id']>}`]: NodeCtor<D>
@@ -2788,11 +3015,12 @@ export type OutPortsOf<N> =
 		: PortDecl
 
 /**
- * The in-ports that make a `liveRow` outlet's write the run's live row (F7,
- * W1): a placeholder (`generating`) or a claimed row (`row`). Anything else
+ * The in-ports that make a `liveRow` outlet's write the run's live row: a
+ * placeholder (`generating`) or a claimed row (`row`). Anything else
  * the outlet writes is a complete row — an ordinary write, as many as the
  * pipeline likes.
  * @experimental
+ * @ruling F7, W1
  */
 export const LIVE_ROW_PORTS = ['generating', 'row'] as const
 

@@ -28,13 +28,14 @@
  * any other, which is why the union a genre computes preserves the order rather
  * than sorting it.
  *
- * ⚠ **Not a layout sheet.** §26 uses *sheet* for what a side zone becomes below
+ * ⚠ **Not a layout sheet.** The shell layout uses *sheet* for what a side zone becomes below
  * `roomy`, and *More sheet* for the mobile overflow; those are places on a
  * screen. Prose says the qualified word — *attribute sheet* — exactly as it
  * does for an attribute slot, and the exported API says it too.
  *
  * ⚠ Never an *attachment* (that is a message part) and never a *template*
  * (taken three times over already).
+ * @ruling §26
  */
 
 import type { I18n } from './descriptors.js'
@@ -308,11 +309,12 @@ export function reviveAttributeSheet(id: SheetId): AttributeSheetDecl {
 }
 
 /**
- * The display-text findings of one sheet declaration (R-20): a sheet is
+ * The display-text findings of one sheet declaration: a sheet is
  * offered by its `label`, so the label is required; the `description` is what
  * a person reads under the offer. Run by the code door here and by the host's
  * **write** door for an authored sheet, never by a reload.
  * @experimental
+ * @ruling R-20
  */
 export function attributeSheetDisplayFindings(id: SheetId, props: AttributeSheetProps): string[] {
 	return [
@@ -332,9 +334,10 @@ function assertDisplayText(id: SheetId, props: AttributeSheetProps): AttributeSh
 
 /**
  * A stored row reloading at boot is never refused for its display text (ruled
- * 2026-09-17, U5i review): the offending field is dropped and a warning names
+ * 2026-09-17): the offending field is dropped and a warning names
  * the row — a sheet with no readable label is listed by its id, and a sheet
  * that vanished from every boot would be the worse answer.
+ * @ruling U5i review
  */
 function withDisplayTextTolerated(id: SheetId, props: AttributeSheetProps): AttributeSheetProps {
 	const findings = attributeSheetDisplayFindings(id, props)

@@ -95,6 +95,11 @@ jobs:
               if: ${{ !contains(github.ref_name, '-pr-') }}
               run: npm test --prefix sdk-tests
 
+            # Core's component sources, typed against the SDK's Svelte (the
+            # app's svelte-check used to be the only check they got).
+            - name: Check components
+              run: npm run check
+
             - name: Stage LICENSE and NOTICE
               run: node scripts/release.mjs stage
 
@@ -196,7 +201,7 @@ jobs:
                       echo '| Package | npm |'
                       echo '|---|---|'
                       for f in release-assets/*.tgz; do
-                          base="$(basename "$f" .tgz)"          # serene-pub-core-catalog-0.6.0-pr-4
+                          base="$(basename "$f" .tgz)"          # serene-pub-core-catalog-0.6.0-pr-5
                           name="${base%-$VERSION}"              # serene-pub-core-catalog
                           pkg="@serene-pub/${name#serene-pub-}" # @serene-pub/core-catalog
                           echo "| \`$pkg\` | [npm](https://www.npmjs.com/package/$pkg/v/$VERSION) |"

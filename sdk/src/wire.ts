@@ -1,6 +1,5 @@
 /**
- * Allocation and wire formatting are two jobs, and only one of them is modality-agnostic
- * (16 §7).
+ * Allocation and wire formatting are two jobs, and only one of them is modality-agnostic.
  *
  * The earlier draft fused them: Assemble owned a Jinja template and published
  * `assembled-context@1`, which forced that shape to mean *"a rendered string."* That is
@@ -18,9 +17,10 @@
  * - **The Provider formats**, through a declared `wire` slot whose default comes from the
  *   connection's adapter metadata. Swapping Ollama for OpenAI does not re-author a spec.
  *
- * A slot rather than adapter-internal logic, for the reason 16 §2 already gives about the
+ * A slot rather than adapter-internal logic, for the reason already given about the
  * retrieval-strategy switch: **a declared field is visible in config, rendered in a lens
  * and resolved in the receipt; logic inside a leaf is none of those.**
+ * @ruling 16 §7, 16 §2
  */
 
 import { refuseUnlessIdentical } from './hash.js'
@@ -34,14 +34,20 @@ export interface ContextBlock {
 	/** Which retrieval source produced it — the axis the weights lens groups by. */
 	sourceKey: string
 	role: BlockRole
-	/** Already text by the time it reaches Assemble (16 §3b, enforced by port shapes). */
+	/**
+	 * Already text by the time it reaches Assemble (enforced by port shapes).
+	 * @ruling 16 §3b
+	 */
 	rendered: string
 	/** Counted once, at render time. Allocation is then arithmetic over integers. */
 	tokens: number
 	weight?: number
 	priority?: 'low' | 'normal' | 'high' | 'always'
 	order?: number
-	/** Position inside the history, for depth insertion (16 §5e). */
+	/**
+	 * Position inside the history, for depth insertion.
+	 * @ruling 16 §5e
+	 */
 	depth?: number
 	included: boolean
 	/**
@@ -86,7 +92,8 @@ export interface WireFormat {
 	/**
 	 * Tokens the scaffolding adds — role markers, instruct sequences, JSON overhead.
 	 * Declared rather than measured after the fact, so Assemble can allocate against a
-	 * **ceiling** and the answer to "will this overspend" is provable (16 §7).
+	 * **ceiling** and the answer to "will this overspend" is provable.
+	 * @ruling 16 §7
 	 */
 	overhead(ctx: AllocatedContext, count: (s: string) => number): number
 }

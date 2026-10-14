@@ -6,15 +6,16 @@
  * mistyped port, a reference to a node that does not exist *yet*. All three were
  * publish-time findings. With a scope object accumulated as the chain is built, all
  * three become **compile errors**, which is the same move the kind-named methods made
- * for the five laws they enforce (04 §4a).
+ * for the five laws they enforce.
  *
  * The one that matters most is the third. `$` contains only the nodes declared *above*
- * the call, so a reference to a later node does not type-check — **"no back-edges" (F9)
+ * the call, so a reference to a later node does not type-check — **"no back-edges"
  * stops being a rule the validator checks and becomes a thing you cannot write.**
  *
  * Nothing about the compiled document changes. A scope access produces exactly the
  * `DataRef` that `$ref` produces, so the rows, the edges and the canonical hash are
- * byte-identical (F3, F6). This is authoring sugar over an unchanged value.
+ * byte-identical. This is authoring sugar over an unchanged value.
+ * @ruling 04 §4a, F9, F3, F6
  */
 
 import { $ref, type DataRef } from './refs.js'
@@ -31,12 +32,13 @@ export type NodeAccessor<Out extends PortDecl> = DataRef & {
 
 /**
  * Node keys accumulate **flat and dotted** — `'gather.semantic.embed'` — because that is
- * exactly what the row's `node_key` is (F21). The scope then expands them back into a
+ * exactly what the row's `node_key` is. The scope then expands them back into a
  * nested shape, so `$.gather.semantic.embed.vector` reads like the key it compiles to.
  *
  * Blocks are not nodes, so a block name alone is not a ref: `$.gather` is a path, and
  * only the leaf carries the accessor. That falls out of the split below rather than
  * needing a rule.
+ * @ruling F21
  */
 type Head<K extends string> = K extends `${infer H}.${string}` ? H : K
 

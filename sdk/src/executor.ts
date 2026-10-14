@@ -7,7 +7,8 @@
  */
 
 import { JUNCTION_CLAUSE_PORTS, envoyConfigKeysOf, type SpecDocument, type DocNode } from './document.js'
-import { AMBIENT_SCRIPT_EXTRAS, getDefinition, opensLiveRow, scriptPointsOf, type Kind } from './descriptors.js'
+import { AMBIENT_SCRIPT_EXTRAS, getDefinition, opensLiveRow, seamsOf, type Kind, type Seam } from './descriptors.js'
+import type { SeamAddress } from './scripts.js'
 import { packageEventById } from './events.js'
 import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
 import type {
@@ -136,19 +137,21 @@ export const cancelled = (reason: string): Result<never> => ({
 
 /**
  * One entry per branch, in **declaration order** — never completion order, which is
- * the same rule 11 §3 already applies to event dispatch, so the system has one
+ * the same rule event dispatch already follows, so the system has one
  * ordering rule rather than two.
  * @experimental
+ * @ruling 11 §3
  */
 export interface BranchResult {
 	branchKey: string
 	index: number
 	result: Result
 	/**
-	 * junction clauses only (20 §10): whether this branch's predicate selected it.
+	 * junction clauses only: whether this branch's predicate selected it.
 	 * A skipped branch publishes `halt('not selected')` with `fired: false`;
 	 * the union's `ok`/`values` read the fired branches. Absent on
 	 * async/map/loop, whose branches all ran by construction.
+	 * @ruling 20 §10
 	 */
 	fired?: boolean
 }
@@ -205,11 +208,14 @@ import { isStatusText, sameStatus, type LastStatus, type StatusText } from './st
 
 /** @experimental */
 export interface TaskCtx {
-	/** Only present when the descriptor declares randomness — keeps Tasks pure (F11). */
+	/**
+	 * Only present when the descriptor declares randomness — keeps Tasks pure.
+	 * @ruling F11
+	 */
 	random?: () => number
 	signal: AbortSignal
 	/**
-	 * Says this node is still making progress (F36).
+	 * Says this node is still making progress.
 	 *
 	 * A definition whose `timeoutKind` is `'idle'` is timed on the gap
 	 * between signs of progress rather than on its whole run: each `pulse()`
@@ -234,11 +240,12 @@ export interface TaskCtx {
 	 *
 	 * ⏳ Core handlers only today: a process-transport plugin hook's ctx
 	 * carries `{ input }` (see `status`), and its own timeout is the host's.
+	 * @ruling F36
 	 */
 	pulse?(): void
 	progress(message: string): void
 	/**
-	 * What this node is doing, for the person watching (R-19).
+	 * What this node is doing, for the person watching.
 	 *
 	 * Callable at any point, by any kind: a query says *{speaker} is
 	 * thinking*, the oracle five nodes later says *{speaker} is typing*. The
@@ -248,7 +255,7 @@ export interface TaskCtx {
 	 * or the run's end; the host hears each change through
 	 * `RunOptions.onStatus`.
 	 *
-	 * **Ephemeral** (F34): never a parameter, never declared on the
+	 * **Ephemeral**: never a parameter, never declared on the
 	 * definition, never a node row on the receipt. The one record the
 	 * receipt keeps is the *last* status, and only when the run ended
 	 * `halt`, `err` or `cancelled` — `Receipt.lastStatus`. A malformed text
@@ -263,9 +270,10 @@ export interface TaskCtx {
 	 *
 	 * ⏳ A process-transport plugin hook's ctx carries `{ input }` only
 	 * today; `ctx.status` is core-handler only until the sandbox ctx is
-	 * projected (U6). A plugin node calling it sees nothing throw — the
+	 * projected. A plugin node calling it sees nothing throw — the
 	 * optional-chain above is what makes that quiet rather than a crash —
 	 * it just has no status to set.
+	 * @ruling R-19, F34, U6
 	 */
 	status?(text: StatusText): void
 	/**
@@ -296,7 +304,7 @@ export interface TaskCtx {
 	 */
 	countTokens(value: unknown): number
 	/**
-	 * The interior-point broker (18 §4e) — present **only** when the
+	 * The interior-point broker — present **only** when the
 	 * descriptor declares `scriptPoints` and the host supplied an engine, the
 	 * `declaresRandomness` posture: which nodes can run scripts, and where, is
 	 * answerable from the document. The binding provides the *moment*; the
@@ -307,7 +315,8 @@ export interface TaskCtx {
 	 * `apply` is the broker: whatever the point's kinds flow — a string, a
 	 * selection, a cast — goes in and the chain's fold comes back, or the
 	 * input unchanged when nothing was attached. `applyText` is the
-	 * text-only spelling it began as (18 §4e, v1), kept as a typed alias.
+	 * text-only spelling it began as, kept as a typed alias.
+	 * @ruling 18 §4e, 18 §4e (v1)
 	 */
 	scripts?: {
 		apply(point: string, value: unknown): Promise<unknown>
@@ -317,7 +326,10 @@ export interface TaskCtx {
 /** @experimental */
 export interface QueryCtx extends TaskCtx {
 	read(table: string, q?: unknown): unknown
-	/** Deliberately absent: fetch. A Query may not reach the network (16 §1). */
+	/**
+	 * Deliberately absent: fetch. A Query may not reach the network.
+	 * @ruling 16 §1
+	 */
 }
 /** @experimental */
 export interface OracleCtx<Caps extends CapabilityId = CapabilityId> extends TaskCtx {
@@ -444,7 +456,8 @@ export interface NodeEvent {
 	/**
 	 * The node's kind, typed so a consumer that compares it against a
 	 * spelling the vocabulary has since retired fails to compile rather than
-	 * silently never matching (the U3 rename left one progress card dead).
+	 * silently never matching (a past rename left one progress card dead).
+	 * @ruling U3
 	 */
 	kind: Kind
 	/** Invocations begun so far — a done-count, monotonic within the run. */
@@ -470,6 +483,13 @@ export interface NodeEvent {
 export interface ScriptHookSite {
 	nodeKey: string
 	definitionId: string
+	/**
+	 * The seam's address — `in:<port>`, `out:<port>` or `<pointKey>`
+	 * (`SeamAddress`). The one spelling of where a
+	 * chain ran; `slot`/`phase`/`port` stay beside it for one release (⏳).
+	 * @ruling PLAN-script-placement D1
+	 */
+	at: SeamAddress
 	slot: string
 	phase: 'before' | 'after'
 	port: string
@@ -478,8 +498,9 @@ export interface ScriptHookSite {
 	/**
 	 * Who triggered the application: the executor at a declared port hook
 	 * (`substrate`, the default), or a binding invoking a declared interior
-	 * point through `ctx.scripts` (`binding`, 18 §4e). The applier records it
+	 * point through `ctx.scripts` (`binding`). The applier records it
 	 * per link, so hook interiors letting user policy in stay visible.
+	 * @ruling 18 §4e
 	 */
 	origin?: 'substrate' | 'binding'
 }
@@ -500,21 +521,50 @@ export interface ScriptChainOutcome {
 	 * other asides are rather than under a link that did nothing wrong.
 	 */
 	notes?: string[]
+	/**
+	 * The chain cannot be allowed to run on without it: the node halts with
+	 * this reason, and the run reports `outcome: 'halt'`, `haltReason`,
+	 * `haltNodeKey` as for a review rejection. Set by the host applier for one
+	 * case only — a `text/stop` guard whose seam no longer resolves;
+	 * a stop *verdict* still truncates.
+	 *
+	 * At a port seam the halt lands before the binding (`in:`) or in place of
+	 * its result (`out:`; an outlet's write has already happened). At an
+	 * interior point the broker throws so the binding stops where it stands,
+	 * and the node's result is `halt` even if the binding catches the throw.
+	 * @ruling PLAN-script-placement D4, R-O2
+	 */
+	halt?: { reason: string }
 }
 
 /**
- * The host's script engine, behind a seam (18 §4a, §7).
+ * Thrown out of `ctx.scripts.apply` when the applier asks the node to halt
+ * (`ScriptChainOutcome.halt`), so a binding mid-work stops at the point. The
+ * executor turns the node's result into `halt` whatever the binding does with
+ * it.
+ * @experimental
+ */
+export class ScriptSeamHalt extends Error {
+	constructor(readonly reason: string) {
+		super(reason)
+		this.name = 'ScriptSeamHalt'
+	}
+}
+
+/**
+ * The host's script engine, behind a seam.
  *
  * The executor owns *where* chains apply — the substrate placement that keeps
  * a binding unable to see or decline one — and the host owns *how* a script
  * runs, because the sandbox is an engine choice the SDK must not embed. The
- * contract the applier must keep is 18's law set: a failing link degrades
- * (S2 — skip it, record `err`, continue), transforms fold in order, verdicts
+ * contract the applier must keep is the script law set: a failing link degrades
+ * (skip it, record `err`, continue), transforms fold in order, verdicts
  * reduce to the earliest index, and every link comes back as an application
  * record whatever happened. A *thrown* applier is treated as engine failure:
  * the value passes through unchanged and the failure is recorded — a broken
  * engine must never cost somebody their reply, and must never vanish either.
  * @experimental
+ * @ruling 18 §4a, §7, 18, S2
  */
 export type ScriptChainApplier = (
 	site: ScriptHookSite,
@@ -547,9 +597,10 @@ export interface RunOptions {
 	/**
 	 * Who portrays each participant this run concerns — the host's answer,
 	 * resolved before `run` is called and stamped on the receipt at
-	 * construction, so it is pinned before the first node (R-21 (4)). The
+	 * construction, so it is pinned before the first node. The
 	 * executor never reads it and no node can: a definition that needs the
 	 * answer declares an in-port and the host wires it.
+	 * @ruling R-21 (4)
 	 */
 	portrayals?: Receipt['portrayals']
 	/**
@@ -570,33 +621,45 @@ export interface RunOptions {
 	 */
 	meta?: ReceiptMeta
 	/**
-	 * Where this run stands in a tree of runs (01 §8 *lineage*): the run
+	 * Where this run stands in a tree of runs (its *lineage*): the run
 	 * that dispatched it, the root of the tree, and how deep. Stamped on the
 	 * receipt at construction as `parentRunId`, `rootRunId` and `depth`; a
 	 * run nothing dispatched is its own root at depth 0. The host enforces
-	 * the per-root caps at dispatch (`form-addressed`, U5d) and reads these
+	 * the per-root caps at dispatch (`form-addressed`) and reads these
 	 * back off the receipt; the executor only records them.
+	 * @ruling 01 §8, U5d
 	 */
 	lineage?: RunLineage
 	/**
-	 * Instance ceiling — config may not exceed it (F36). Caps every
+	 * Instance ceiling — config may not exceed it. Caps every
 	 * definition's `timeoutMs`, and is also the absolute bound on an `idle`
 	 * definition's invocation: pulses restart its window, never this.
+	 * @ruling F36
 	 */
 	timeoutCeilingMs?: number
-	/** Force every clause sequential, as an admin may (01 §4). */
+	/**
+	 * Force every clause sequential, as an admin may.
+	 * @ruling 01 §4
+	 */
 	forceSequential?: boolean
 	budget?: { tokens?: number; nodeExecutions?: number }
 	/** Which subscribers core would dispatch to, for the emitted record. */
 	subscribers?: Record<string, number>
-	/** Simulated wait — never counted against a timeout (01 §5). */
+	/**
+	 * Simulated wait — never counted against a timeout.
+	 * @ruling 01 §5
+	 */
 	now?: () => number
-	/** Host-supplied review resolver. `sync` parks on it; waiting is free (F13). */
+	/**
+	 * Host-supplied review resolver. `sync` parks on it; waiting is free.
+	 * @ruling F13
+	 */
 	reviewer?: Reviewer
 	/**
-	 * Host-supplied script engine (18 §4a). Absent means no chains apply —
+	 * Host-supplied script engine. Absent means no chains apply —
 	 * a host that has not built the sandbox runs every spec exactly as before,
 	 * which is what makes this seam additive.
+	 * @ruling 18 §4a
 	 */
 	applyScripts?: ScriptChainApplier
 	/**
@@ -605,13 +668,14 @@ export interface RunOptions {
 	 * Fired as each node's invocation starts and again when it settles, with
 	 * enough identity to drive a progress card — never the payload. Progress is
 	 * not a second receipt: it carries no values, it is not recorded, and a
-	 * host that wants what ran reads the receipt afterwards (F34). Inherent to
+	 * host that wants what ran reads the receipt afterwards. Inherent to
 	 * every run rather than wired per trigger, which is what lets any UI show
 	 * "step 3 of 7" without knowing what the pipeline does.
+	 * @ruling F34
 	 */
 	onNode?: (event: NodeEvent) => void
 	/**
-	 * A node set its status (R-19) — `ctx.status` on any kind's ctx.
+	 * A node set its status — `ctx.status` on any kind's ctx.
 	 *
 	 * Fired with the node's key and the text as the handler wrote it: the
 	 * host fills `{speaker}` (`HOST_FILLED_STATUS_VARS`), routes the text to
@@ -619,32 +683,36 @@ export interface RunOptions {
 	 * resolves nothing — the locale is the client's. Fired only when the
 	 * text CHANGES: a second node repeating the status the first set is not
 	 * a new status, and six parallel retrieval reads all saying *thinking*
-	 * are one status, not six. Ephemeral like `onNode` (F34): not recorded,
+	 * are one status, not six. Ephemeral like `onNode`: not recorded,
 	 * except as `Receipt.lastStatus` on a run that did not end `ok`. An
 	 * observer that throws is its own problem.
+	 * @ruling R-19, F34
 	 */
 	onStatus?: (nodeKey: string, text: StatusText) => void
 	/**
-	 * Time this run sat in the admin-visible queue before being dequeued (13 §3).
+	 * Time this run sat in the admin-visible queue before being dequeued.
 	 * Recorded, and deliberately **not** added to any elapsed figure: queue wait
-	 * consumes no budget (F13) and trips no timeout (F36) — a run's clock starts
+	 * consumes no budget and trips no timeout — a run's clock starts
 	 * when it is dequeued.
+	 * @ruling 13 §3, F13, F36
 	 */
 	queuedMs?: number
 	/**
 	 * Checked between nodes. Returning a value stops the run as `cancelled`, with the
 	 * actor recorded — so "an admin stopped it" stays distinguishable from "it broke",
-	 * which is why there are four result kinds rather than three (13 §3).
+	 * which is why there are four result kinds rather than three.
+	 * @ruling 13 §3
 	 */
 	cancelSignal?: () => { by: string; reason: string } | undefined
 	/**
 	 * Compact a receipt that halts before any effectful node: trigger, spec version,
-	 * halt node/reason and elapsed, with no payloads and no node rows (13 §2).
+	 * halt node/reason and elapsed, with no payloads and no node rows.
 	 *
 	 * Defaults to on **for event-triggered runs only**. That is where the multiplier
 	 * lives — a hot event × every subscribed pipeline × every message, where most
-	 * subscribers halt immediately and that is success (01 §5). A run someone started
+	 * subscribers halt immediately and that is success. A run someone started
 	 * by clicking happens once per click and keeps its full detail.
+	 * @ruling 13 §2, 01 §5
 	 */
 	compactHaltReceipts?: boolean
 	/**
@@ -657,13 +725,14 @@ export interface RunOptions {
 	 * block — a preview that skipped retrieval would show a context nobody would get.
 	 *
 	 * A preview is a **dry run** unless `dry` says otherwise — see there. The
-	 * pipeline creates its own reply row now (R-17), as an outlet placed before
+	 * pipeline creates its own reply row now, as an outlet placed before
 	 * the oracle; a preview that committed it would leave a row behind for
 	 * every token estimate.
+	 * @ruling R-17
 	 */
 	preview?: boolean | { atNode?: string }
 	/**
-	 * Perform no writes (R-21 (1), F36).
+	 * Perform no writes.
 	 *
 	 * Every outlet still runs — its binding is invoked, its payload is formed,
 	 * the review gate still sees it — but `ctx.commit` returns a **synthetic
@@ -685,6 +754,7 @@ export interface RunOptions {
 	 * exist during a preview, that is a design to reconsider rather than a
 	 * flag to flip: there is no per-outlet exemption, and `dry: false` on a
 	 * preview is the host's call, not the document's.
+	 * @ruling R-21 (1), F36
 	 */
 	dry?: boolean
 	/**
@@ -761,22 +831,26 @@ export interface RunOptions {
  *
  * So the shape here is deliberate: **a binding describes the effect and the host
  * performs it.** An outlet returns what it wants written, and `commit` writes it. That
- * is already how a sidecar outlet has to work (F19 — no DB channel across a process
+ * is already how a sidecar outlet has to work (no DB channel across a process
  * boundary), and having in-process and out-of-process outlets obey the same rule
  * means the review gate sees the same thing in both cases: a payload, before anything
  * happened.
  * @experimental
+ * @ruling F19
  */
 export interface HostServices {
-	/** Scoped read for a Query. The node is passed so the host can enforce scope (F30). */
+	/**
+	 * Scoped read for a Query. The node is passed so the host can enforce scope.
+	 * @ruling F30
+	 */
 	read?(table: string, query: unknown, node: NodeRef): unknown | Promise<unknown>
 	/** Perform an outlet's described write and return the row identity. */
 	commit?(payload: unknown, node: NodeRef): Promise<Record<string, unknown>>
 	/**
-	 * Dispatch an oracle call. Credentials are injected here and never readable (F18).
+	 * Dispatch an oracle call. Credentials are injected here and never readable.
 	 *
 	 * `run` carries the run-level facts a call may need and a node may not
-	 * see — today the **live row** (R-21 (2)). Streaming is run-level: the
+	 * see — today the **live row**. Streaming is run-level: the
 	 * oracle publishes its stream and stays blind to messages; the host routes
 	 * it to the row this run's placeholder created, if there is one. Passed on
 	 * every call rather than kept anywhere a binding could read.
@@ -788,13 +862,18 @@ export interface HostServices {
 	 * passes them; optional so a host can still be driven directly, as a test
 	 * does, with no node clock behind the call. A host that wraps another
 	 * must forward them.
+	 * @ruling F18, R-21 (2)
 	 */
 	call?(payload: unknown, node: NodeRef, run: RunFacts, handles?: CallHandles): Promise<unknown>
-	/** Core emits; a node only names the handle (F8). */
+	/**
+	 * Core emits; a node only names the handle.
+	 * @ruling F8
+	 */
 	emit?(handle: string, payload: unknown, node: NodeRef): void
 	/**
 	 * Connection **metadata** for an oracle — readable. Material is never returned
-	 * here; it is applied inside `call` and never crosses into a binding (F18).
+	 * here; it is applied inside `call` and never crosses into a binding.
+	 * @ruling F18
 	 */
 	connection?(node: NodeRef): {
 		metadata?: Record<string, unknown>
@@ -830,8 +909,9 @@ export interface RunFacts {
 	/**
 	 * The row the most recent live-row outlet committed in this run
 	 * (`Descriptor.liveRow`), or undefined when none has. A create → update
-	 * pair on one row inside one run is one primary row (01 §7 restated, R-17);
+	 * pair on one row inside one run is one primary row;
 	 * this is that row while the run is between the two.
+	 * @ruling 01 §7 restated, R-17
 	 */
 	liveRow?: string | number
 	/** Whether this run performs writes — see `RunOptions.dry`. */
@@ -843,10 +923,11 @@ export interface RunFacts {
  * `RunFacts`, which are the run's.
  *
  * A request the host performs for an oracle is the oracle's work as far as
- * its clock is concerned (F36), and only the host sees that work happen: the
+ * its clock is concerned, and only the host sees that work happen: the
  * stream's chunks, the wait for a model server's queue, a model loading. So
  * the executor hands over both ends of the clock.
  * @experimental
+ * @ruling F36
  */
 export interface CallHandles {
 	/**
@@ -1003,10 +1084,11 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	/** Set the moment any node with declared effects is invoked — gates compaction. */
 	let effectfulNodeRan = false
 	/**
-	 * The status the run is showing right now (R-19): the last one any node
+	 * The status the run is showing right now: the last one any node
 	 * set. Ephemeral — it reaches the host through `onStatus` and lands on
 	 * the receipt only as `lastStatus`, and only when the run did not end
-	 * `ok` (R-21). Never on a node row (F34).
+	 * `ok`. Never on a node row.
+	 * @ruling R-19, R-21, F34
 	 */
 	let lastStatus: LastStatus | undefined
 
@@ -1361,7 +1443,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			if (targetKey === node.key) return resolveAt(node, ownSchema, () => true)
 
 			/**
-			 * A reference, and two addresses (R-7 P2, refined 2026-09-16 — see
+			 * A reference, and two addresses (see
 			 * `FieldDecl.shared`). The referencing node's OWN declaration says
 			 * which of its fields it holds in common with the owner: those
 			 * resolve at the owner — the owner's declared default under the
@@ -1379,6 +1461,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			 * referencing node's default, so a reference to an owner of a
 			 * different definition degrades to "own everywhere" rather than to
 			 * `undefined`.
+			 * @ruling R-7 P2 (2026-09-16)
 			 */
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
 			const ownerSchema = paramsSchemaOf(targetNode)
@@ -1459,48 +1542,66 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		// does, and a host with no engine (`applyScripts` absent) runs every
 		// spec exactly as before. Declared above the input branch because an
 		// input node has a hook of its own — see there.
-		const scriptHooks = Object.entries(d.slots ?? {}).filter(
-			([, sd]) => (sd as { kind?: string }).kind === 'scripts',
-		)
+		// Every seam this definition declares, in run order (`seamsOf`, D1).
+		// `portSeams` is "has any port seam" for the three gates below.
+		const seams = seamsOf(d)
+		const portSeams = seams.filter((sm) => sm.kind !== 'point')
+		/**
+		 * The one read path: resolve the chain at
+		 * the seam's storage address, build the site, invoke the applier and
+		 * record what it says. Storage is unchanged — a slot's chain at
+		 * `config[node][slot]['']`, a point's at `config[node].scripts[point]`.
+		 * Per-origin behaviour (engine-failure absorption, alias propagation,
+		 * the undeclared-point throw) stays with the callers, unchanged.
+		 *
+		 * An empty or absent chain still reaches the applier: the host may
+		 * carry seam-level sources of its own — a connection's stop guards
+		 * apply whether or not the pipeline configured a chain, and
+		 * the applier is the side that knows.
+		 * @ruling PLAN-script-placement D2, 18 §4b
+		 */
+		const applyAtSeam = async (
+			seam: Seam,
+			value: unknown,
+			origin: 'substrate' | 'binding',
+		): Promise<ScriptChainOutcome> => {
+			const point = seam.kind === 'point'
+			const site: ScriptHookSite = {
+				nodeKey: node.key,
+				definitionId: nr.definitionId,
+				at: seam.at,
+				slot: point ? 'scripts' : seam.slot!,
+				phase: seam.kind === 'out' ? 'after' : 'before',
+				port: point ? seam.at : seam.port!,
+				accepts: [...seam.accepts],
+				// A slot's own extras, then the ambient set; a point declares
+				// none of its own, so it is handed the ambient set (R32).
+				extras: withAmbientExtras(seam.extras),
+				...(origin === 'binding' ? { origin } : {}),
+			}
+			const chain = point
+				? config[node.key]?.['scripts']?.[seam.at]
+				: config[node.key]?.[seam.slot!]?.['']
+			const outcome = await opts.applyScripts!(site, chain, value)
+			if (outcome.applications.length)
+				nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
+			if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
+			return outcome
+		}
+		/** The port path: every `in:` or `out:` seam, in order, over a bag. */
 		const applyChainsAt = async (
 			phase: 'before' | 'after',
 			bag: Record<string, unknown>,
-		): Promise<Record<string, unknown>> => {
-			if (!opts.applyScripts) return bag
+		): Promise<{ bag: Record<string, unknown>; halt?: string }> => {
+			if (!opts.applyScripts) return { bag }
 			let out = bag
-			for (const [slotName, sdRaw] of scriptHooks) {
-				const sd = sdRaw as {
-					port?: string
-					phase?: string
-					accepts?: string[]
-					extras?: string[]
-				}
-				if ((sd.phase ?? 'before') !== phase) continue
-				// An empty or absent chain still reaches the applier: the host
-				// may carry hook-level sources of its own — a connection's stop
-				// guards (18 §4b) apply whether or not the pipeline configured a
-				// chain, and the applier is the side that knows.
-				const chain = config[node.key]?.[slotName]?.['']
-				const port = sd.port ?? 'main'
+			for (const seam of portSeams) {
+				if ((seam.kind === 'out' ? 'after' : 'before') !== phase) continue
+				const port = seam.port!
 				if (!(port in out)) continue
 				const before = (out as Record<string, unknown>)[port]
 				try {
-					const outcome = await opts.applyScripts(
-						{
-							nodeKey: node.key,
-							definitionId: nr.definitionId,
-							slot: slotName,
-							phase,
-							port,
-							accepts: sd.accepts ?? [],
-							extras: withAmbientExtras(sd.extras),
-						},
-						chain,
-						before,
-					)
-					if (outcome.applications.length)
-						nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
-					if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
+					const outcome = await applyAtSeam(seam, before, 'substrate')
 					// Alias-preserving: a task publishing {main, messages} as one
 					// value keeps agreeing with itself after the rewrite — a
 					// downstream edge may pull either name.
@@ -1508,6 +1609,8 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 					for (const [k, v] of Object.entries(out))
 						if (k !== port && v === before)
 							(out as Record<string, unknown>)[k] = outcome.value
+					// The applier asked the node to halt (D4): no further seam runs.
+					if (outcome.halt) return { bag: out, halt: outcome.halt.reason }
 				} catch (e) {
 					// Engine failure, absorbed like an optional node's failure
 					// (18 S2): the value passes through unchanged and the record
@@ -1529,7 +1632,19 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 					]
 				}
 			}
-			return out
+			return { bag: out }
+		}
+		/**
+		 * A node halted by a seam: settle the record, return the halt.
+		 * @ruling D4
+		 */
+		const haltAtSeam = (reason: string): Result => {
+			nr.endedAt = now()
+			nr.elapsedMs = nr.endedAt - nr.startedAt
+			nr.result = 'halt'
+			nr.reason = reason
+			receipt.nodes.push(nr)
+			return halt(reason)
 		}
 
 		if (node.kind === 'inlet') {
@@ -1539,12 +1654,15 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			// before the turn began, stays untouched by construction.
 			let published = opts.input
 			if (
-				scriptHooks.length &&
+				portSeams.length &&
 				published &&
 				typeof published === 'object' &&
 				!Array.isArray(published)
-			)
-				published = await applyChainsAt('after', published as Record<string, unknown>)
+			) {
+				const r = await applyChainsAt('after', published as Record<string, unknown>)
+				published = r.bag
+				if (r.halt !== undefined) return haltAtSeam(r.halt)
+			}
 			scope.set(node.key, published)
 			nr.output = published
 			nr.endedAt = now()
@@ -1583,7 +1701,11 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			return ok({})
 		}
 
-		if (scriptHooks.length) input = await applyChainsAt('before', input)
+		if (portSeams.length) {
+			const r = await applyChainsAt('before', input)
+			input = r.bag
+			if (r.halt !== undefined) return haltAtSeam(r.halt)
+		}
 
 		// ── The review gate (01 §7) ───────────────────────────────────────────
 		// Substrate placement: after the input resolves, before the binding is invoked.
@@ -1798,38 +1920,28 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		// user attached there (slot `scripts`, path = the point key) is what
 		// runs; applications land in the receipt marked `appliedBy: 'binding'`,
 		// so an interior letting user policy in stays visible from outside.
+		// Set when an interior point's applier asked the node to halt (D4); read
+		// after the binding settles, so the node halts even if the binding
+		// caught the `ScriptSeamHalt` and carried on.
+		let interiorHalt: string | undefined
 		if (opts.applyScripts && d.scriptPoints?.length) {
-			const applyScripts = opts.applyScripts
 			// The full shape, deprecated spellings folded — so `accepts` is
 			// always the point's own (R-11), never a literal written here.
-			const declared = scriptPointsOf(d)
+			const declared = seams.filter((sm) => sm.kind === 'point')
 			const apply = async (point: string, value: unknown): Promise<unknown> => {
-				const known = declared.find((sp) => sp.key === point)
+				const known = declared.find((sp) => sp.at === point)
 				if (!known)
 					throw new Error(
 						`'${point}' is not a script point '${nr.definitionId}' declares. ` +
-							`Declared: ${declared.map((sp) => sp.key).join(', ')}. ` +
+							`Declared: ${declared.map((sp) => sp.at).join(', ')}. ` +
 							`Points are part of the hashed contract — declare it on the descriptor.`,
 					)
-				const outcome = await applyScripts(
-					{
-						nodeKey: node.key,
-						definitionId: nr.definitionId,
-						slot: 'scripts',
-						phase: 'before',
-						port: point,
-						accepts: [...known.accepts],
-						// Interior points declare no extras of their own; what
-						// every point is handed is the ambient set (R32).
-						extras: withAmbientExtras(),
-						origin: 'binding',
-					},
-					config[node.key]?.['scripts']?.[point],
-					value,
-				)
-				if (outcome.applications.length)
-					nr.scripts = [...(nr.scripts ?? []), ...outcome.applications]
-				if (outcome.notes?.length) nr.notes!.push(...outcome.notes)
+				// No try/catch: an applier throw reaches the binding that asked.
+				const outcome = await applyAtSeam(known, value, 'binding')
+				if (outcome.halt) {
+					interiorHalt ??= outcome.halt.reason
+					throw new ScriptSeamHalt(outcome.halt.reason)
+				}
 				return outcome.value
 			}
 			base.scripts = {
@@ -1978,6 +2090,9 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 				res = err((e as Error).message)
 			}
 		}
+		// An interior point asked the node to halt (D4) — whatever the binding
+		// returned or threw after it.
+		if (interiorHalt !== undefined) res = halt(interiorHalt)
 
 		nr.endedAt = now()
 		nr.elapsedMs = nr.endedAt - nr.startedAt
@@ -2001,42 +2116,55 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			let published = res.value
 			// ── Script chains, after phase (18 §4a) — over what the binding
 			// published, before it reaches the scope any downstream edge reads.
+			let afterHalt: string | undefined
 			if (
-				scriptHooks.length &&
+				portSeams.length &&
 				published &&
 				typeof published === 'object' &&
 				!Array.isArray(published)
-			)
-				published = await applyChainsAt('after', published as Record<string, unknown>)
-			if (node.kind === 'outlet' && isGated(d.effects)) {
-				// Wrap only if it is not already discriminated — but publish
-				// either way. This used to skip publishing entirely when a
-				// binding returned a `WriteResult` itself, so the binding doing
-				// the *right* thing got the worse wiring: no `main`, and no
-				// port typed `write-result@1` populated. Nothing caught it
-				// because the only in-tree producer of `pending` was the
-				// executor's own async-review branch, which called
-				// `publishWriteResult` on its own; retiring that branch is what
-				// surfaced this.
-				const w: WriteResult = isWriteResult(published)
-					? published
-					: {
-							status: 'committed',
-							ids: (published ?? {}) as Record<string, unknown>,
-						}
-				published = publishWriteResult(w, d.ports.out)
+			) {
+				const r = await applyChainsAt('after', published as Record<string, unknown>)
+				published = r.bag
+				afterHalt = r.halt
 			}
-			// The run's live row (R-21 (2)): the row this outlet committed,
-			// when the declaration says its row is the one a stream goes to.
-			// A dry run's synthetic id counts — a downstream oracle in a dry
-			// run still streams to nothing, and the host is told so by `dry`
-			// rather than by the row's absence. Judged on the node's inputs,
-			// not on what its binding chose to commit: a complete message from
-			// the same outlet is an ordinary write, not the live row (F7, W1).
-			if (d.liveRow && opensLiveRow(input) && committedRow !== undefined) liveRow = committedRow
-			scope.set(node.key, published)
-			res = ok(published)
-			nr.output = redact(published)
+			if (afterHalt !== undefined) {
+				// Halted at an `out:` seam (D4): nothing reaches the scope. An
+				// outlet's write has already happened — the halt stops the run,
+				// it cannot unwrite.
+				nr.result = 'halt'
+				nr.reason = afterHalt
+				res = halt(afterHalt)
+			} else {
+				if (node.kind === 'outlet' && isGated(d.effects)) {
+					// Wrap only if it is not already discriminated — but publish
+					// either way. This used to skip publishing entirely when a
+					// binding returned a `WriteResult` itself, so the binding doing
+					// the *right* thing got the worse wiring: no `main`, and no
+					// port typed `write-result@1` populated. Nothing caught it
+					// because the only in-tree producer of `pending` was the
+					// executor's own async-review branch, which called
+					// `publishWriteResult` on its own; retiring that branch is what
+					// surfaced this.
+					const w: WriteResult = isWriteResult(published)
+						? published
+						: {
+								status: 'committed',
+								ids: (published ?? {}) as Record<string, unknown>,
+							}
+					published = publishWriteResult(w, d.ports.out)
+				}
+				// The run's live row (R-21 (2)): the row this outlet committed,
+				// when the declaration says its row is the one a stream goes to.
+				// A dry run's synthetic id counts — a downstream oracle in a dry
+				// run still streams to nothing, and the host is told so by `dry`
+				// rather than by the row's absence. Judged on the node's inputs,
+				// not on what its binding chose to commit: a complete message from
+				// the same outlet is an ordinary write, not the live row (F7, W1).
+				if (d.liveRow && opensLiveRow(input) && committedRow !== undefined) liveRow = committedRow
+				scope.set(node.key, published)
+				res = ok(published)
+				nr.output = redact(published)
+			}
 		} else if (res.kind === 'halt' || res.kind === 'err' || res.kind === 'cancelled') {
 			nr.reason = (res as any).reason
 		}
@@ -2066,8 +2194,9 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 	/**
 	 * The invocation, observed. `onNode` fires at start and settle with node
-	 * identity and never a payload (F34) — an observer that throws is the
+	 * identity and never a payload — an observer that throws is the
 	 * observer's problem, not the run's.
+	 * @ruling F34
 	 */
 	const invoke = async (
 		node: DocNode,
@@ -2098,7 +2227,10 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		return res
 	}
 
-	/** Admin kill (13 §3) — `cancelled`, not `err`, with the actor recorded. */
+	/**
+	 * Admin kill — `cancelled`, not `err`, with the actor recorded.
+	 * @ruling 13 §3
+	 */
 	const checkCancel = (): boolean => {
 		const c = opts.cancelSignal?.()
 		if (!c) return false
@@ -2116,7 +2248,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	type Level = { clauseId?: string; chain?: string }
 
 	/**
-	 * **The write order (01 §4, W1b — owner 2026-09-23).** A clause may run its
+	 * **The write order.** A clause may run its
 	 * chains in parallel, and its chains may write. A write-class outlet in
 	 * chain *i* starts only once every chain declared before it — in this
 	 * clause and in every enclosing parallel clause — has finished. So the
@@ -2126,7 +2258,8 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 	 *
 	 * A chain waits on lower-numbered chains only, so no wait is ever a
 	 * cycle. The wait sits before the node starts, so it is waiting, never
-	 * execution: no timeout clock runs on it (F36).
+	 * execution: no timeout clock runs on it.
+	 * @ruling 01 §4, W1b (owner 2026-09-23), F36
 	 */
 	type WriteGate = readonly Promise<unknown>[]
 	const writesOnLevel = (node: DocNode): boolean =>
@@ -2410,11 +2543,12 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		 *
 		 * A tool loop is only a loop if the next prompt can see the last
 		 * result, and the body cannot reference a node declared after it —
-		 * `makeScope` makes a back-edge unwritable (F9). What *is* declared
+		 * `makeScope` makes a back-edge unwritable. What *is* declared
 		 * before the body is the clause itself, so `$.tools.values` reads the
 		 * iterations that have already finished. Each iteration still runs in
 		 * a child of this, so an iteration's node values stay private to it
-		 * and a loop remains the same construct as a parallel map (F26).
+		 * and a loop remains the same construct as a parallel map.
+		 * @ruling F9, F26
 		 */
 		const carry = scope.child()
 		publish(carry)
@@ -2550,7 +2684,8 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 /**
  * Every out port a gate-eligible outlet declares as `write-result@1` resolves to the
  * *same* discriminated value. A port named `messageId` therefore hands downstream the
- * result, not an id — which is the point: there may not be an id yet (13 §7j-b).
+ * result, not an id — which is the point: there may not be an id yet.
+ * @ruling 13 §7j-b
  */
 function publishWriteResult(w: WriteResult, out?: Record<string, string>): Record<string, unknown> {
 	const published: Record<string, unknown> = { ...w, main: w }
@@ -2608,11 +2743,14 @@ async function sequential<T, R>(items: T[], fn: (t: T) => Promise<R>): Promise<R
 	return out
 }
 
-/** A node's own clock ran out (F36); the message is the receipt's reason. */
+/**
+ * A node's own clock ran out; the message is the receipt's reason.
+ * @ruling F36
+ */
 class NodeTimeout extends Error {}
 
 /**
- * One invocation's clock (F36), by the definition's `timeoutKind`.
+ * One invocation's clock, by the definition's `timeoutKind`.
  *
  * - `wall` — `ms` from the start of the invocation to its end, whatever the
  *   node does in between. `pulse` does nothing.
@@ -2628,6 +2766,7 @@ class NodeTimeout extends Error {}
  * what a host's in-flight request listens to (`CallHandles.signal`): a timeout
  * that let the request run on would leave a model server generating into
  * nothing, with the next request queued behind it.
+ * @ruling F36
  */
 function nodeClock(
 	limit: { ms: number; kind: 'wall' | 'idle'; ceilingMs: number },
@@ -2704,7 +2843,10 @@ function setPath(obj: any, path: string[], value: unknown) {
 	cur[path[path.length - 1]!] = value
 }
 
-/** Vectors, material and secrets never enter a receipt (16 §1a, 01 §10, 13 §6). */
+/**
+ * Vectors, material and secrets never enter a receipt.
+ * @ruling 16 §1a, 01 §10, 13 §6
+ */
 function redact(v: unknown): unknown {
 	if (Array.isArray(v) && v.length > 8 && v.every((x) => typeof x === 'number')) {
 		return { $vector: true, dims: v.length }
@@ -2728,7 +2870,11 @@ function redact(v: unknown): unknown {
 	return v
 }
 
-/** replay(receipt) — deterministic, never re-infers (F16). @experimental */
+/**
+ * replay(receipt) — deterministic, never re-infers.
+ * @experimental
+ * @ruling F16
+ */
 export async function replay(
 	doc: SpecDocument,
 	receipt: Receipt,

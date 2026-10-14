@@ -1,12 +1,12 @@
 /**
- * The one template checker (typed templates P4): does this Handlebars or
+ * The one template checker: does this Handlebars or
  * Liquid source parse, and does every name it reads exist in the scope it will
  * be rendered against?
  *
  * ## Why a separate entry point
  *
  * `@serene-pub/sdk/template-check`, not the barrel. The checker parses with
- * the real engines — `handlebars` and `liquidjs`, parse only (Q5) — and the
+ * the real engines — `handlebars` and `liquidjs`, parse only — and the
  * barrel is what every node author and plugin bundle imports; it has no
  * dependencies and stays that way. A host (the editor lint, a save, a
  * packager) imports this on purpose. Nothing here renders: the host keeps its

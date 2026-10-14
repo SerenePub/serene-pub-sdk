@@ -23,8 +23,11 @@
 	 * channel's entry. "Someone else" asks the page to open the turn picker.
 	 * With `mode: 'list'` the entries after the head follow as one quiet line.
 	 *
-	 * Its parts are `messages.next-up-*` (STYLE-GUIDE §6.16): the markup
-	 * carries no look; the default widget stylesheet draws it.
+	 * It draws the turn line's right half (`TurnLine`, PLAN-core-widgets
+	 * §3.16). Its parts are `messages.turn-line-*` (STYLE-GUIDE §6.16), each
+	 * beside its old name `messages.next-up-*`, ⏳ kept one release so a
+	 * person's style keeps matching: the markup carries no look; the default
+	 * widget stylesheet draws it, keyed on the new names.
 	 */
 	import type { NextUp } from "./MessagesWidget.svelte"
 	import { useConversation } from "./conversation.svelte"
@@ -102,44 +105,44 @@
 </script>
 
 {#if shouldShow && !order.length && candidates.length}
-	<div data-widget-part="messages.next-up-waiting">
-		<span data-widget-part="messages.next-up-text">
+	<div data-widget-part="messages.turn-line-waiting messages.next-up-waiting">
+		<span data-widget-part="messages.turn-line-text messages.next-up-text">
 			Waiting for a message — or pick who speaks next
 		</span>
-		<button type="button" data-widget-part="messages.next-up-pick" onclick={onSomeoneElse}>
+		<button type="button" data-widget-part="messages.turn-line-pick messages.next-up-pick" onclick={onSomeoneElse}>
 			<sp-icon name="users" size="14"></sp-icon>
 			<span>Pick</span>
 		</button>
 	</div>
 {:else if shouldShow && head}
 	<!-- One line: who is up, and what you can do about it. -->
-	<div data-widget-part="messages.next-up-head">
-		<div data-widget-part="messages.next-up-line">
+	<div data-widget-part="messages.turn-line-head messages.next-up-head">
+		<div data-widget-part="messages.turn-line-due messages.next-up-line">
 			{#if face}
 				<sp-avatar ref={head.ref} size="sm"></sp-avatar>
 			{:else if head.ref === null}
-				<sp-icon name="book-open-text" size="18" data-widget-part="messages.next-up-narrator"></sp-icon>
+				<sp-icon name="book-open-text" size="18" data-widget-part="messages.turn-line-narrator messages.next-up-narrator"></sp-icon>
 			{/if}
-			<span data-widget-part="messages.next-up-text">
+			<span data-widget-part="messages.turn-line-text messages.next-up-text">
 				{line}
 			</span>
-			<div data-widget-part="messages.next-up-controls">
+			<div data-widget-part="messages.turn-line-controls messages.next-up-controls">
 				{#if canChooseSomeoneElse}
 					<button
 						type="button"
-						data-widget-part="messages.next-up-pick"
+						data-widget-part="messages.turn-line-pick messages.next-up-pick"
 						onclick={onSomeoneElse}
 						title="Someone else"
 						aria-label="Pick someone else to continue"
 					>
 						<sp-icon name="users" size="14"></sp-icon>
-						<span data-widget-part="messages.next-up-pick-label">Someone else</span>
+						<span data-widget-part="messages.turn-line-pick-label messages.next-up-pick-label">Someone else</span>
 					</button>
 				{/if}
 				{#if !headIsPerson}
 					<button
 						type="button"
-						data-widget-part="messages.next-up-continue"
+						data-widget-part="messages.turn-line-continue messages.next-up-continue"
 						onclick={() => onContinue(channel)}
 						title="Continue"
 						aria-label="Continue with {headName}"
@@ -151,7 +154,7 @@
 			</div>
 		</div>
 		{#if after.length}
-			<p data-widget-part="messages.next-up-after">
+			<p data-widget-part="messages.turn-line-after messages.next-up-after">
 				Then {after.map((e) => nameOf(e.ref)).join(", ")}
 			</p>
 		{/if}

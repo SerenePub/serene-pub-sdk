@@ -1,6 +1,6 @@
 <script lang="ts">
 	/**
-	 * The safe degradation (24 §8): a value whose type id this build does not
+	 * The safe degradation: a value whose type id this build does not
 	 * know renders read-only with the id shown — recognition is key lookup,
 	 * so no misparse is possible, and the host refuses writes it cannot
 	 * validate.

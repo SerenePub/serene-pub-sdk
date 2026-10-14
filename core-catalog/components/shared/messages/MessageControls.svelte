@@ -146,6 +146,17 @@
 		`msg-${msg.id}-note-${actionIdentity(a).replace(/[^a-z0-9-]/g, "-")}`
 
 	/**
+	 * 🚧 *Start scene here* / *End scene here* (PROPOSAL-live-scenes §7): the
+	 * scene boundaries this line may take — none unless the viewer may place
+	 * them (the dossier's `sceneBoundaries`), and only where the host would
+	 * accept them (`boundaryOffer`), so nothing is offered then refused. A
+	 * line being written takes neither.
+	 */
+	const boundaries = $derived(
+		msg.isGenerating ? { start: false, end: null } : conv.scenes.offer(msg)
+	)
+
+	/**
 	 * "Inspect run" (R55: administrators only): the host finds the run that
 	 * wrote this reply and opens the inspector (`inspect-run`), or says there
 	 * is none.
@@ -238,6 +249,37 @@
 							>
 								<sp-icon name="book-marked" size="16"></sp-icon>
 								<span>Select for summary</span>
+							</button>
+						{/if}
+						{#if boundaries.start}
+							<button
+								data-widget-part="messages.scene-start messages.message-option"
+								title="Start a scene at this line; an open scene ends at the line before"
+								aria-disabled={conv.scenes.busy}
+								onclick={(e) => {
+									if (conv.scenes.busy) return e.preventDefault()
+									closeMenu()
+									void conv.scenes.startAt(msg)
+								}}
+							>
+								<sp-icon name="flag" size="16"></sp-icon>
+								<span>Start scene here</span>
+							</button>
+						{/if}
+						{#if boundaries.end !== null}
+							{@const sceneId = boundaries.end}
+							<button
+								data-widget-part="messages.scene-end messages.message-option"
+								title="End the open scene at this line; the next one begins after it (Automatic) or is suggested there (Suggested)"
+								aria-disabled={conv.scenes.busy}
+								onclick={(e) => {
+									if (conv.scenes.busy) return e.preventDefault()
+									closeMenu()
+									void conv.scenes.endAt(sceneId, msg)
+								}}
+							>
+								<sp-icon name="flag-off" size="16"></sp-icon>
+								<span>End scene here</span>
 							</button>
 						{/if}
 						{#if canChangeSprite}

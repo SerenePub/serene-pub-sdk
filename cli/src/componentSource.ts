@@ -1,5 +1,5 @@
 /**
- * The pure half of the component compiler (C6): its limits, its authored-path
+ * The pure half of the component compiler: its limits, its authored-path
  * grammar and its source hash — with no toolchain types. A host that only
  * stores and validates authored source imports this subpath
  * (`@serene-pub/cli/component-source`), never `…/component-compile`, whose
@@ -53,7 +53,7 @@ export function componentSourceHash(files: Readonly<Record<string, string>>): st
 /**
  * @internal Core's app reads it (the authored-component offer path).
  *
- * What a component compiled in-app was built against (F1), read back from
+ * What a component compiled in-app was built against, read back from
  * its toolchain fingerprint (`toolchainFingerprint`: `widget-protocol@<n>
  * host-elements@<major.minor> … sdk@<v> component-client@<v>`) — so a host
  * that stores only the fingerprint beside an artifact judges it with

@@ -110,6 +110,17 @@ disagree about what they mean.
 | C28 | §B3, R33 | **Every event a shipped genre lists is caused by a write or is a declared root.** Read off `HostUnderTest.shipped()`. A declared root (`declaredRoot: true` on the event) starts outside every pipeline: `session-created`, `message-respond`, `session-action`, `member-added`, `member-removed`, `cast-changed`, `session-updated`. | A preset binds a pipeline to an event nothing ever fires, and nothing says so. |
 | C29 | §B3, §3.2 | **Every loop in a genre's event map passes through a node with a termination policy.** Read off `HostUnderTest.eventMap(genre)`: the host's own map plus a termination policy per node — auto-advance's cause rule and cap, or the run caps that park a run tree, stated on the node where they actually bind (an event the host dispatches as a child of its run). A host without the seam is skipped, naming it. | One event starts a loop nothing stops: runs pile up and a model is called without end. |
 
+## A genre's summarize-scene (C34) 🚧
+
+Added 2026-10-13 (live scenes §13.5). Fixture: `summarizeScenes()` — the specs to judge, built
+by `summarizeScene()` from `@serene-pub/core-catalog` or ejected to their graph. The kit stands
+in for the source, the cast, the model calls and the save; the host's own bindings run
+`core:task/render-transcript@1` and `core:task/batch-messages@2`.
+
+| Id  | Law | Holds that | What breaks when it fails |
+| --- | --- | ---------- | ------------------------- |
+| C34 | live scenes §13.5 | **A genre's summarize-scene spec accepts `summarize-request@1`, ends in `save` (with `synth` and `naming` beside it), survives an empty span and an aside on an undeclared channel, and renders transcript units that each carry a message id of the span — every row in some unit.** | A scene of that genre cannot be summarized, or its summary cannot be traced to its rows. |
+
 ## A package's own artifact (C30–C33)
 
 C30 added 2026-09-24 (PLAN-sdk-1.0 §3.5); C31–C33 added 2026-09-26, from the gaps the Twenty
@@ -146,21 +157,63 @@ The helpers read the artifact the way an instance reads it at install — never 
 - **`conformPackage(host, only?)`** runs `PACKAGE_REQUIREMENTS` (C28–C33) with no fixtures;
   `conform(host, fx, { only })` runs any subset.
 
+`serene-pub scaffold plugin` writes this as `test/conformance.test.ts`. It reads the build, so
+run `npm run package` first. A component is mounted in a DOM, so the file runs under
+`happy-dom` (a devDependency: `npm i -D happy-dom`). Each result's verdict is `pass`.
+
 ```ts
-import { conformPackage, manifestSeams, pinnedDefinitionIn, renderConformance } from '@serene-pub/conformance'
+// @vitest-environment happy-dom
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join, resolve } from 'node:path'
+import { expect, it } from 'vitest'
+// The SDK's reference executor: the laws a package is judged under.
+import { canonicalHash, importDocument, replay, run, validate } from '@serene-pub/sdk'
+import {
+  componentsFromManifest,
+  conformPackage,
+  manifestSeams,
+  pinnedDefinitionIn,
+  renderConformance,
+  type HostUnderTest,
+} from '@serene-pub/conformance'
 import { mountComponent } from '@serene-pub/cli/testing'
 import { coreSpec } from '@serene-pub/core-catalog'
 
-const host = {
-  name: `${manifest.slug} (built)`,
-  validate, run, replay, canonicalHash, importDocument, // the SDK's reference executor
-  ...manifestSeams(manifest, bundleCode),
-  pinnedDefinition: (spec, node) => pinnedDefinitionIn(coreSpec(spec)?.build(), node),
-  components: async () => manifest.components.map((c) => ({ id: c.slug, code: codeOf(c), grants: ['session:full'] })),
-  mountComponent: (code, sections, opts) => mountComponent({ root, entry: writeAside(code), context: sections, ...opts }),
-}
-const results = await conformPackage(host)
-console.log(renderConformance(results))
+const root = resolve(import.meta.dirname, '..') // the package root
+const build = join(root, 'dist', 'plugin')
+const aside = join(root, 'node_modules', '.cache', 'conformance')
+
+it('passes the package cases (C28–C33)', async () => {
+  const manifest = JSON.parse(readFileSync(join(build, 'manifest.json'), 'utf8'))
+  const bundle = existsSync(join(build, 'bundle.js')) ? readFileSync(join(build, 'bundle.js'), 'utf8') : undefined
+  let n = 0
+  // The harness imports a module from disk, so a mounted module is written aside first.
+  const writeAside = (code: string) => {
+    mkdirSync(aside, { recursive: true })
+    const path = join(aside, `component-${n++}.js`)
+    writeFileSync(path, code)
+    return path
+  }
+
+  const host: HostUnderTest = {
+    name: `${manifest.slug} (built)`,
+    validate, run, replay, canonicalHash, importDocument,
+    ...manifestSeams(manifest, bundle),
+    pinnedDefinition: (spec, node) => pinnedDefinitionIn(coreSpec(spec)?.build(), node),
+    components: () => componentsFromManifest(manifest, (entry) => readFileSync(join(root, entry), 'utf8')),
+    // The kit names grants as strings; the harness types them as scopes.
+    mountComponent: async (code, sections, opts) =>
+      (await mountComponent({
+        root,
+        entry: writeAside(code),
+        context: sections as never,
+        grants: opts?.grants as never,
+        reads: opts?.reads as never,
+      })) as never,
+  }
+  const results = await conformPackage(host)
+  expect(results.filter((r) => !r.pass), renderConformance(results)).toEqual([])
+}, 120_000)
 ```
 
 C29 stays "not judged" outside the app: the event map is drawn from every installed package

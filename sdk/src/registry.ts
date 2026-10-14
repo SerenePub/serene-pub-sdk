@@ -1,5 +1,5 @@
 /**
- * The pipeline type registry — the ruling on 13 §10c.
+ * The pipeline type registry.
  *
  * ## Where a type's shape comes from, at three different moments
  *
@@ -10,11 +10,11 @@
  * | moment | source of truth | why |
  * |---|---|---|
  * | authoring | the `Descriptor` in code | the author is *defining* the type; nothing else knows it yet |
- * | compiling a spec | generated `/contracts` | frozen per release, so a pin resolves the same way forever (04 §2) |
+ * | compiling a spec | generated `/contracts` | frozen per release, so a pin resolves the same way forever |
  * | installing | **the registry row** | the only one core can read without executing the plugin |
  *
  * The third row is the whole point. Core must decide whether a plugin is installable
- * before it ever runs the plugin's code — F6 means core imports documents, never
+ * before it ever runs the plugin's code — core imports documents, never
  * authoring JS — so install-time validation reads two things that are both plain data:
  * the plugin's **manifest** (types summarized, permissions compiled from usage) and its
  * **documents** (nodes pinned by `definitionId@version`, edges carrying the shapes they were
@@ -27,6 +27,7 @@
  * every id still resolves but a port now produces a different shape. The document
  * records the shape each edge was compiled against, so comparing it to the registry
  * catches exactly that, and catches it at install rather than mid-run.
+ * @ruling 13 §10c, 04 §2, F6
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
@@ -46,15 +47,16 @@ import type { SettingsSchema } from './settings.js'
 import type { SpecDocument } from './document.js'
 
 /**
- * A `pipeline_definition_registry` row (02 §3), as data.
+ * A `pipeline_definition_registry` row, as data.
  *
- * Two halves, and the row carries both (plans/31 V6): every **contract**
+ * Two halves, and the row carries both: every **contract**
  * field of the `Descriptor` (`DESCRIPTOR_CONTRACT_KEYS`) — so a row read back
  * hashes to the `content_hash` it was written under, and a plugin can be
- * judged against rows without being executed (F6) — and the **policy** half,
+ * judged against rows without being executed — and the **policy** half,
  * on `policy`, `i18n` and `public`, which the hash never sees and a sync
  * refreshes in place.
  * @internal
+ * @ruling 02 §3, plans/31 V6, F6
  */
 export interface RegistryEntry {
 	id: string
@@ -69,10 +71,11 @@ export interface RegistryEntry {
 	optional?: boolean
 	/**
 	 * The four other contract flags and the three contract declarations that
-	 * had no column until plans/31 V6 — carried for the same reason `optional`
+	 * once had no column — carried for the same reason `optional`
 	 * is: each is in the hash, and a hashed field the row cannot carry is a
 	 * row that cannot reproduce its own pointer. `review.fields` is also what
 	 * a `transport: process` outlet's gate form is read from.
+	 * @ruling plans/31 V6
 	 */
 	declaresRandomness?: boolean
 	earlyExit?: boolean
@@ -82,21 +85,23 @@ export interface RegistryEntry {
 	shape?: string
 	media?: MediaCapability
 	/**
-	 * Interior script points (18 §4e) — carried into the row for the same
+	 * Interior script points — carried into the row for the same
 	 * reason `slots` is: the panel offers one chain option per point and must
-	 * render it without loading the plugin (F6). Keys and `accepts` are
+	 * render it without loading the plugin. Keys and `accepts` are
 	 * contract and hash; labels are display text, stripped like `i18n`
 	 * everywhere else. Always the full shape — the projection copies through
 	 * `scriptPointsOf`, and `register()` refuses a bare string or a point
 	 * without `accepts`, so a row never carries one.
+	 * @ruling 18 §4e, F6
 	 */
 	scriptPoints?: ScriptPointDecl[]
 	/**
-	 * The chat-shape contract (19 §1) — present only on mode-bearing input
+	 * The chat-shape contract — present only on mode-bearing input
 	 * types. Carried for the reason `slots` is: the mode picker and the chat
-	 * settings render from rows (F6), never from a loaded spec. Hashed —
+	 * settings render from rows, never from a loaded spec. Hashed —
 	 * widening a capability changes what existing sessions legally contain —
 	 * with any embedded `i18n`/`description` stripped like everywhere.
+	 * @ruling 19 §1, F6
 	 */
 	sessionShape?: unknown
 	ports: { in: Record<string, string | undefined>; out: Record<string, string | undefined> }
@@ -104,23 +109,24 @@ export interface RegistryEntry {
 	 * The **declarations**, not their names.
 	 *
 	 * This carried `string[]` until 0.6.0, and that quietly broke the promise the
-	 * column exists to keep. 12 §2 says slot declarations live in the type descriptor
+	 * column exists to keep. The design says slot declarations live in the type descriptor
 	 * *"so a plugin Provider's prompt fields render next to core's automatically, with
 	 * no UI work"*, and the table above says the registry row is what core reads
 	 * **without executing the plugin**. A name list satisfies neither: a form
 	 * generator given `['prompts', 'params']` knows a form exists and nothing about
 	 * what is in it, so it has to fall back to the in-process descriptor map — which
 	 * exists for core types, does not exist for a `transport: 'process'` plugin type,
-	 * and is the exact thing F6 forbids reaching for.
+	 * and is the exact thing core must never reach for.
 	 *
-	 * Storing the declaration makes the pipeline view (05 §0a) and the lens view
-	 * (05 §3) generated from rows, which is what lets a plugin's sliders appear beside
+	 * Storing the declaration makes the pipeline view and the lens view
+	 * generated from rows, which is what lets a plugin's sliders appear beside
 	 * core's with nothing authored twice.
 	 *
-	 * One of them the author did not write: `settings` (R-9), which the
+	 * One of them the author did not write: `settings`, which the
 	 * projection derives from `optional` / `effects` / `reviewDefault` so the
 	 * panel finds the switch and the gate here like any slot. It is left out
 	 * of the content hash — `authoredSlots` — for the reason that file gives.
+	 * @ruling 12 §2, F6, 05 §0a, 05 §3, R-9
 	 */
 	slots: Record<string, SlotDecl>
 	/**
@@ -128,11 +134,12 @@ export interface RegistryEntry {
 	 * entry types. Carried for the reason `slots` is: the ranker, the assembler
 	 * and the constraint projection all read the declaration from **rows**, and
 	 * the row is the only source that exists for a type this process never
-	 * loaded (F6).
+	 * loaded.
 	 *
 	 * Hashed whole. Roles decide where a row competes, how it sorts, who may
 	 * see it and where it renders, so moving one changes what an untouched
 	 * install does — `@N+1`, deliberately.
+	 * @ruling F6
 	 */
 	entryShape?: Omit<EntryShape, 'fields'>
 	/**
@@ -153,38 +160,47 @@ export interface RegistryEntry {
 	 * Outside the content hash, like every other piece of display text: naming
 	 * a node better is not a contract change. Carried in the row for the same
 	 * reason `slots` is — the pipeline builder renders from rows and never
-	 * loads the plugin (F6), so a name only the descriptor knows is a name no
+	 * loads the plugin, so a name only the descriptor knows is a name no
 	 * plugin's node can have.
+	 * @ruling F6
 	 */
 	i18n?: unknown
 	/**
 	 * Script types only: how a chain of this operation treats what its links
 	 * return — `transform` folds into the flowing bag, `verdict` is consumed by
-	 * the hook and reduced (18 §5).
+	 * the hook and reduced.
 	 *
 	 * Hashed, and it has to be. Flipping it moves no port and keeps every
 	 * attachment compiling, while turning "each link rewrites the text" into
 	 * "the earliest answer wins" — the same shape of silent behaviour change
 	 * `optional` was, and the reason that one is hashed.
+	 * @ruling 18 §5
 	 */
 	semantics?: string
 	effects?: string
 	causesEvent?: string
 	/** The in-port whose literal names the event a write causes. */
 	causesEventFrom?: string
-	/** Inlet only: the event payloads it reads (R33) — hashed with the contract. */
+	/**
+	 * Inlet only: the event payloads it reads — hashed with the contract.
+	 * @ruling R33
+	 */
 	payloads?: string[]
 	public?: boolean
 	/**
-	 * The policy half (plans/31 V6): `provisional` (plans/29 R-2 — the row
+	 * The policy half: `provisional` (the row
 	 * also reads it as `status: 'provisional'`), `reviewDefault`,
 	 * `timeoutMs`, `timeoutKind`, `toggleable`. Never hashed; a sync writes
 	 * it on insert and refreshes it in place when it moves, so flipping a
 	 * flag reaches every install without a pointer move. Absent on a script
 	 * kind's row, which declares none of them.
+	 * @ruling plans/31 V6, plans/29 R-2
 	 */
 	policy?: DefinitionPolicy
-	/** Null for core types; the plugin slug for plugin types (12 §3b). */
+	/**
+	 * Null for core types; the plugin slug for plugin types.
+	 * @ruling 12 §3b
+	 */
 	owner?: string
 	/** Which SP release seeded this row. */
 	release?: string
@@ -209,15 +225,16 @@ export function snapshotRegistry(
 /**
  * A script type as a registry row.
  *
- * ⚠ Projected through the *same* function as node types, deliberately. 18 §2
+ * ⚠ Projected through the *same* function as node types, deliberately. The design
  * puts scripts "under the same sync, conflict-refusal and re-projection rules
  * as node types", and the cheapest way to keep that true is for there to be one
  * projection, one hash and one sync rather than a parallel set that drifts.
  *
  * `blastRadius` rides inside `i18n` rather than earning a column, because that
  * is what it is: display text, stripped from the hash, read from the row by a
- * panel that must not load the plugin to render a badge (F6). `semantics` does
+ * panel that must not load the plugin to render a badge. `semantics` does
  * earn one — it is contract.
+ * @ruling 18 §2, F6
  */
 function scriptEntry(d: ScriptKindDecl, meta: { owner?: string; release?: string }): RegistryEntry {
 	return {
@@ -323,7 +340,10 @@ export interface InstallFinding {
 	severity: 'error' | 'warning'
 	code: InstallCode
 	message: string
-	/** What the admin or author does about it. Never omitted (15 §1.3). */
+	/**
+	 * What the admin or author does about it. Never omitted.
+	 * @ruling 15 §1.3
+	 */
 	fix: string
 	where?: string
 }

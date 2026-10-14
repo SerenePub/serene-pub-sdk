@@ -27,6 +27,7 @@
  */
 
 import { compile, spec, slot } from "@serene-pub/sdk"
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from "@serene-pub/contracts"
 
 // 1.1.0: the request travels to the drafting, synthesis and cast steps, so a
@@ -220,6 +221,20 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 						params: slot.params()
 					})
 				)
+				/**
+				 * Every model call of a summary runs on the Extraction
+				 * loadout (I12): it reads a passage and answers in a fixed
+				 * shape. Unfilled, it falls back to Reply.
+				 */
+				.preset("default", { label: "Default", default: true }, (p: any) => {
+					const named = p
+						.loadout("drafting.item.draft", slot.loadout(CORE_LOADOUT.extraction))
+						.loadout("synth", slot.loadout(CORE_LOADOUT.extraction))
+						.loadout("naming", slot.loadout(CORE_LOADOUT.extraction))
+					return extractsCast
+						? named.loadout("cast", slot.loadout(CORE_LOADOUT.extraction))
+						: named
+				})
 				.build()
 		})()
 	)

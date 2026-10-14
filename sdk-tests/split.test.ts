@@ -246,6 +246,7 @@ describe('107 · requiredConnections is derived from types, not from stored rows
 				// below about `prompt` is checking.
 				.task('prompt', ($) =>
 					C.assemble.v2({
+						template: slot.template(),
 						connection: slot.connectionOf('generate'),
 					}),
 				)

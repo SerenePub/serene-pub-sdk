@@ -259,7 +259,13 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 			const schema = node?.config?.schema
 			assert.ok(schema?.properties?.inventory, `${slug} ${key}`)
 			assert.ok(!('possessions' in schema.properties), slug)
-			assert.deepEqual(schema.required, ['values', 'inventory'], slug)
+			// 🚧 Adventure's keeper also answers a `clock` list (live scenes
+			// ★3, lane F, 2026-10-13); the Lair's does not.
+			assert.deepEqual(
+				schema.required,
+				slug === 'core:spec/adventure-respond' ? ['values', 'inventory', 'clock'] : ['values', 'inventory'],
+				slug,
+			)
 		}
 	})
 	test('every shipped preset selects `values,inventory` and no JSON path names `possessions`', async () => {
@@ -275,9 +281,12 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 	})
 	test('no shipped keeper prompt asks for `possessions`', async () => {
 		const { CORE_PROMPTS } = await import('@serene-pub/core-catalog')
-		// Every prompt that answers the two-armed document: the two keepers and
-		// Adventure's Rest and Advance time.
-		const keepers = (CORE_PROMPTS as any[]).filter((p) => JSON.stringify(p.fields).includes('holding two lists'))
+		// Every prompt that answers the keeper's document: the two keepers and
+		// Adventure's Rest and Advance time — Adventure's three hold a third
+		// list, `clock`, since live scenes ★3 (lane F, 2026-10-13).
+		const keepers = (CORE_PROMPTS as any[]).filter((p) =>
+			/holding (two|three) lists/.test(JSON.stringify(p.fields)),
+		)
 		assert.equal(keepers.length, 4)
 		for (const p of keepers) {
 			assert.ok(!JSON.stringify(p.fields).includes('possessions'), p.seedKey)

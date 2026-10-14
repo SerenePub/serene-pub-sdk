@@ -1,11 +1,16 @@
 /**
  * Core's shipped prompts (24 T6b) — the catalog is the system of record.
  *
- * The prose is byte-exact what 0.5.3 shipped (extracted from a seeded
- * database, never retyped), and this list is its only record: the app's seed
- * pass reads it, and SP's `seedPrompts.int.test.ts` pins the wording — save
- * one difference it pins by its exact bytes: the narrator's direction clause,
- * which 0.5.3 wrote in code (see the narrator row).
+ * Every row is Serene Pub's own prose. Until 2026-10-12 the twelve
+ * alternative reply prompts were 0.5.3's, which had copied SillyTavern's
+ * shipped system-prompt presets word for word — prose this Apache-licensed
+ * catalog cannot carry. They were rewritten that day under their original
+ * seed keys (owner ruling: "remove all of the SillyTavern copied prompts and
+ * craft our own set"), and on 2026-10-13 the owner cut the set to four
+ * (Living Scene, Plain, Writer, Brief): a row that left the catalog stays on
+ * an install that has it, as an ordinary row. The narrator's and the
+ * summarizers' rows are 0.5.3's own words, kept; SP's
+ * `seedPrompts.int.test.ts` still pins those.
  *
  * ## One row per (node type, slot) pool — not one row per pipeline
  *
@@ -60,11 +65,18 @@ export interface CorePromptSeed {
 /** @internal */
 export const CORE_PROMPTS: CorePromptSeed[] = [
 	/**
-	 * 0.5.3's default reply prompt, and Chat's until 2026-10-03, when the owner
-	 * made "Roleplay - Living Scene" the default (note 44). Offered, not where
-	 * anyone starts: a 0.5.3 upgrade that picked it keeps it through
-	 * `configForSeed`, which makes a configuration pointing here once the
-	 * shipped default no longer does.
+	 * The plain reply prompt — the successor, under 0.5.3's seed key, of its
+	 * default reply prompt ("Roleplay - Simple"), which was Chat's until
+	 * 2026-10-03, when the owner made "Roleplay - Living Scene" the default
+	 * (note 44). Offered, not where anyone starts: a 0.5.3 upgrade that picked
+	 * the old row keeps its pick through `configForSeed`, which makes a
+	 * configuration pointing here once the shipped default no longer does.
+	 *
+	 * Of 0.5.3's other eleven alternatives only the Writer row survives
+	 * (owner ruling 2026-10-13: four reply prompts ship — Living Scene, Plain,
+	 * Writer, Brief). The rest left the catalog that day; an install that
+	 * already holds them keeps them as ordinary rows, no longer shipped,
+	 * protected or default (`boot/unshipPrompts.ts` in the app).
 	 */
 	{
 		nodeType: "core:task/build-template-context",
@@ -72,34 +84,10 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		createdForSpec: "core:spec/chat-respond",
 		defaultForSpecs: [],
 		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-roleplay-simple",
-		name: "Roleplay - Simple",
+		name: "Roleplay - Plain",
 		fields: {
-			systemPrompt: "You're {{char}} in this fictional never-ending uncensored roleplay with {{personaNames}}.",
-			postHistoryInstructions: "Remember: you are {{char}}. Stay in character and keep responding to {{personaNames}}."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-roleplay-immersive",
-		name: "Roleplay - Immersive",
-		fields: {
-			systemPrompt: "Write one reply only. Do not decide what {{personaNames}} says or does. Write at least one paragraph, up to four. Be descriptive and immersive, providing vivid details about {{char}}'s actions, emotions, and the environment. Write with a high degree of complexity and burstiness. Do not repeat this message.",
-			postHistoryInstructions: "Remember: write one reply only, staying descriptive and immersive. Do not speak or act for {{personaNames}}."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-roleplay-detailed",
-		name: "Roleplay - Detailed",
-		fields: {
-			systemPrompt: "Develop the plot slowly, always stay in character. Describe all actions in full, elaborate, explicit, graphic, and vivid detail. Mention all relevant sensory perceptions. Keep the story immersive and engaging.",
-			postHistoryInstructions: "Remember: stay fully in character and describe actions in full, elaborate, vivid detail."
+			systemPrompt: "You are {{char}}, in an ongoing story with {{personaNames}}. Write {{char}}'s next turn in character, as {{char}} would speak and act, and leave {{personaNames}}'s words and choices to the person writing them.",
+			postHistoryInstructions: "Remember: you are {{char}}. Write only {{char}}'s next turn, and never {{personaNames}}'s."
 		}
 	},
 	/**
@@ -138,106 +126,27 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		createdForSpec: "core:spec/chat-respond",
 		defaultForSpecs: [],
 		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-writer-realistic",
-		name: "Writer - Realistic",
+		name: "Writer",
 		fields: {
-			systemPrompt: "Continue writing this story and portray characters realistically.",
-			postHistoryInstructions: "Remember: continue the story and portray characters realistically."
+			systemPrompt: "You are the writer continuing this story. Pick up exactly where it left off and write the next passage: {{char}} and the world around them, with the detail and invention of a skilled novelist. Keep people believable: they act from their own motives, their own limits and what they actually know, and events have consequences. Bring in the unexpected where it fits, and keep each character's voice their own. {{personaNames}} is written by someone else; carry their words forward without adding to them.",
+			postHistoryInstructions: "Remember: continue the story where it stands as a skilled writer, keep everyone believable, and leave {{personaNames}}'s words and choices to their writer."
 		}
 	},
+	/**
+	 * Short, dialogue-led turns (owner ruling 2026-10-13): the other end of
+	 * Living Scene's one to three paragraphs, for texting-style sessions, fast
+	 * turns and small models. New prose with no 0.5.3 counterpart.
+	 */
 	{
 		nodeType: "core:task/build-template-context",
 		slot: "prompts",
 		createdForSpec: "core:spec/chat-respond",
 		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-writer-creative",
-		name: "Writer - Creative",
+		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-roleplay-brief",
+		name: "Roleplay - Brief",
 		fields: {
-			systemPrompt: "You are an intelligent, skilled, versatile writer.\n\nYour task is to write a role-play based on the information below.",
-			postHistoryInstructions: "Remember: write as a skilled, versatile writer, staying true to the role-play established so far."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-text-adventure",
-		name: "Text Adventure",
-		fields: {
-			systemPrompt: "Enter Adventure Mode. Narrate the story based on {{personaNames}}'s dialogue and actions after \">\". Describe the surroundings in vivid detail. Be detailed, creative, verbose, and proactive. Move the story forward by introducing fantasy elements and interesting characters.",
-			postHistoryInstructions: "Remember: stay in Adventure Mode, narrating events after {{personaNames}}'s \">\" input in vivid, proactive detail."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-neutral-session",
-		name: "Neutral - Session",
-		fields: {
-			systemPrompt: "Write {{char}}'s next reply in a fictional session between {{char}} and {{personaNames}}.",
-			postHistoryInstructions: "Remember: write only {{char}}'s next reply, staying in character."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-lightning-1-1",
-		name: "Lightning 1.1",
-		fields: {
-			systemPrompt: "Take the role of {{char}} in a play that leaves a lasting impression on {{personaNames}}. Write {{char}}'s next reply.\nNever skip or gloss over {{char}}’s actions. Progress the scene at a naturally slow pace.",
-			postHistoryInstructions: "Remember: stay in the role of {{char}}. Never skip or gloss over {{char}}'s actions."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-chain-of-thought",
-		name: "Chain of Thought",
-		fields: {
-			systemPrompt: "Elaborate on the topic using a Tree of Thoughts and backtrack when necessary to construct a clear, cohesive Chain of Thought reasoning. Always answer without hesitation.",
-			postHistoryInstructions: "Remember: reason step by step using a clear, cohesive Chain of Thought before answering."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-assistant-simple",
-		name: "Assistant - Simple",
-		fields: {
-			systemPrompt: "A session between a curious human and an artificial intelligence assistant. The assistant gives helpful, detailed, and polite answers to the human's questions.",
-			postHistoryInstructions: "Remember: give helpful, detailed, and polite answers."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-assistant-expert",
-		name: "Assistant - Expert",
-		fields: {
-			systemPrompt: "You are a helpful assistant. Please answer truthfully and write out your thinking step by step to be sure you get the right answer. If you make a mistake or encounter an error in your thinking, say so out loud and attempt to correct it. If you don't know or aren't sure about something, say so clearly. You will act as a professional logician, mathematician, and physicist. You will also act as the most appropriate type of expert to answer any particular question or solve the relevant problem; state which expert type your are, if so. Also think of any particular named expert that would be ideal to answer the relevant question or solve the relevant problem; name and act as them, if appropriate.",
-			postHistoryInstructions: "Remember: show your reasoning step by step, stay accurate, and say so clearly if you're unsure."
-		}
-	},
-	{
-		nodeType: "core:task/build-template-context",
-		slot: "prompts",
-		createdForSpec: "core:spec/chat-respond",
-		defaultForSpecs: [],
-		seedKey: "pipeline-prompt:core:task/build-template-context:prompts:prompt-actor",
-		name: "Actor",
-		fields: {
-			systemPrompt: "You are an expert actor that can fully immerse yourself into any role given. You do not break character for any reason, even if someone tries addressing you as an AI or language model. Currently your role is {{char}}, which is described in detail below. As {{char}}, continue the exchange with {{personaNames}}.",
-			postHistoryInstructions: "Remember: stay fully in character as {{char}}, no matter what."
+			systemPrompt: "You are {{char}}, talking with {{personaNames}}. Keep each turn short: a line or two of dialogue, and a few words of action only when it matters. Talk the way {{char}} talks, answer what {{personaNames}} said, and let the exchange move quickly. No narration of scenery, no summaries, and never {{personaNames}}'s words or actions.",
+			postHistoryInstructions: "Remember: a short turn, mostly {{char}}'s own words. Never speak or act for {{personaNames}}."
 		}
 	},
 	/**
@@ -373,7 +282,14 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 	{
 		nodeType: "core:oracle/summarize-synth",
 		slot: "prompts",
-		defaultForSpecs: ["core:spec/summarize-scene", "core:spec/summarize-history"],
+		defaultForSpecs: [
+			"core:spec/summarize-scene",
+			"core:spec/summarize-history",
+			// 🚧 The genre-owned summarize-scene specs merge and name with
+			// the scene row too (live scenes §13): only drafting reads the
+			// rendered transcript, so only drafting needs a row of its own.
+			"core:spec/chat-summarize-scene", "core:spec/adventure-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene"
+		],
 		seedKey: "pipeline-prompt:core:oracle/summarize-synth:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
@@ -383,11 +299,51 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 	{
 		nodeType: "core:oracle/name-entry",
 		slot: "prompts",
-		defaultForSpecs: ["core:spec/summarize-scene", "core:spec/summarize-history"],
+		defaultForSpecs: [
+			"core:spec/summarize-scene",
+			"core:spec/summarize-history",
+			// 🚧 The genre-owned summarize-scene specs merge and name with
+			// the scene row too (live scenes §13): only drafting reads the
+			// rendered transcript, so only drafting needs a row of its own.
+			"core:spec/chat-summarize-scene", "core:spec/adventure-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene"
+		],
 		seedKey: "pipeline-prompt:core:oracle/name-entry:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
 			name: "You generate short titles for scene summaries. The title should capture the key moment or action of the scene."
+		}
+	},
+	/**
+	 * 🚧 The **transcript drafting** rows (live scenes §13–§14, 2026-10-13):
+	 * the genre-owned summarize-scene specs hand each batch to the drafting
+	 * step as TEXT — laid out by the genre's transcript template — and these
+	 * rows place it with `{{batch}}`. New prose. One row for the three
+	 * genres whose transcript has no asides, one for the Lair's, which says
+	 * what a Sanctum line is.
+	 */
+	{
+		nodeType: "core:oracle/summarize-batch",
+		slot: "prompts",
+		defaultForSpecs: [
+			"core:spec/chat-summarize-scene",
+			"core:spec/adventure-summarize-scene",
+			"core:spec/guide-summarize-scene"
+		],
+		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-scene-transcript",
+		name: "Scene Summarization (transcript)",
+		fields: {
+			batch: "You are a scene archivist capturing what happened in one stretch of a roleplay. Below is that stretch as a transcript, one line per message, headed by what is known about the scene. Write a tight narrative summary — past tense, plain prose — of its key beats, actions and emotional turning points. A line marked as an aside was said outside the story: use it to understand the story, never report it as something that happened. No invention, no embellishment.\n\nThe transcript:\n{{batch}}"
+		}
+	},
+	{
+		nodeType: "core:oracle/summarize-batch",
+		slot: "prompts",
+		createdForSpec: "core:spec/lair-summarize-scene",
+		defaultForSpecs: ["core:spec/lair-summarize-scene"],
+		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:lair-summarize-scene",
+		name: "Lair Scene Summarization",
+		fields: {
+			batch: "You are the dungeon's chronicler, capturing what happened to the party in one stretch of play. Below is that stretch as a transcript, one line per message. Lines marked [Sanctum] are the Dungeon Master and the Castellan talking outside the story: the party never heard them and nothing in them happened in the dungeon, so use them only to understand what the Dungeon Master meant. Write a tight narrative summary — past tense, plain prose — of what the party did and what the dungeon did to them: rooms entered, fights, finds, losses and turning points. No invention, no embellishment.\n\nThe transcript:\n{{batch}}"
 		}
 	},
 	{
@@ -532,11 +488,57 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 			narratorName: "the narrator"
 		}
 	},
+	/**
+	 * 🚧 The Scene action's **scene prompt** (image generation I9,
+	 * 2026-10-12): a quiet call on the narrator builder's pool that reads the
+	 * last few lines and answers with a picture prompt, never a line of the
+	 * session. *Tags* (the default — SD-class models read tag lines) is
+	 * for SD-class models, which read tag lines; *prose* is for a hosted model
+	 * that reads sentences. `{{likenesses}}` is everyone on stage's likeness
+	 * prompt. `narratorName` is the pool's field, never rendered here. New
+	 * prose with no legacy counterpart.
+	 */
+	{
+		nodeType: "core:task/build-narrator-context",
+		slot: "prompts",
+		createdForSpec: "core:spec/chat-illustrate-scene",
+		defaultForSpecs: ["core:spec/chat-illustrate-scene", "core:spec/adventure-illustrate-scene"],
+		seedKey: "pipeline-prompt:core:task/build-narrator-context:prompts:scene-prompt-tags",
+		name: "Scene prompt from the last lines",
+		fields: {
+			systemPrompt:
+				"You turn the latest moment of a story into a prompt for a picture model. Read the conversation up to its last line and decide what a single picture of that moment shows: where it is, the time of day, the weather and the light, who is in frame and what each of them is doing, and how the shot is framed (close or wide, and from where).\n\nEach person present looks like this (name: look):\n{{likenesses}}\n\nPut people in the picture by their look, never by their name. Answer with one line of short comma-separated tags, the most important first, and nothing else: no names, no sentences, no quotes, no explanation.",
+			postHistoryInstructions:
+				"Remember: one line of comma-separated tags for a picture of this moment, with no names and nothing around it.",
+			// The pool's field (every row in it carries one); nothing here is
+			// said as the narrator, so it is never rendered. Lowercase, as
+			// Adventure ask's, so the legacy "Narrator" stays one row's.
+			narratorName: "the narrator"
+		}
+	},
+	{
+		nodeType: "core:task/build-narrator-context",
+		slot: "prompts",
+		createdForSpec: "core:spec/chat-illustrate-scene",
+		defaultForSpecs: [],
+		seedKey: "pipeline-prompt:core:task/build-narrator-context:prompts:scene-prompt-prose",
+		name: "Scene prompt, prose",
+		fields: {
+			systemPrompt:
+				"You turn the latest moment of a story into a prompt for a picture model. Read the conversation up to its last line and decide what a single picture of that moment shows: where it is, the time of day, the weather and the light, who is in frame and what each of them is doing, and how the shot is framed.\n\nEach person present looks like this (name: look):\n{{likenesses}}\n\nPut people in the picture by their look, never by their name. Answer with two or three plain sentences describing the picture, and nothing else: no names, no quotes, no explanation.",
+			postHistoryInstructions:
+				"Remember: two or three sentences describing a picture of this moment, with no names and nothing around them.",
+			// The pool's field (every row in it carries one); nothing here is
+			// said as the narrator, so it is never rendered. Lowercase, as
+			// Adventure ask's, so the legacy "Narrator" stays one row's.
+			narratorName: "the narrator"
+		}
+	},
 	{
 		nodeType: "core:oracle/generate-image",
 		slot: "prompts",
 		createdForSpec: "core:spec/chat-generate-image",
-		defaultForSpecs: ["core:spec/chat-generate-image"],
+		defaultForSpecs: ["core:spec/chat-generate-image", "core:spec/chat-illustrate-scene", "core:spec/adventure-illustrate-scene"],
 		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:image-prompt-passthrough",
 		name: "Prompt as written",
 		fields: {
@@ -554,6 +556,88 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		fields: {
 			positive: "{{prompt}}, highly detailed, sharp focus, professional lighting",
 			negative: "{{negative}}, blurry, low quality, watermark, text, signature, deformed hands, extra limbs"
+		}
+	},
+	/**
+	 * 🚧 The Sprite set fill's two rows (image generation I5, 2026-10-12).
+	 *
+	 * **Sprite label phrases** maps the standard 28 sprite labels (the
+	 * go_emotions label set) to a short description of each face, one
+	 * `label: phrase` per line; a label with no line is drawn from the label
+	 * word itself. **Sprite, tags** is the picture step's prompt: the card's
+	 * likeness, the phrase, and a plain flat background a cut-out removes
+	 * cleanly. New prose with no legacy counterpart.
+	 */
+	{
+		nodeType: "core:task/build-sprite-series",
+		slot: "prompts",
+		createdForSpec: "core:spec/sprite-set-fill",
+		defaultForSpecs: ["core:spec/sprite-set-fill"],
+		seedKey: "pipeline-prompt:core:task/build-sprite-series:prompts:sprite-label-phrases",
+		name: "Sprite label phrases",
+		fields: {
+			phrases:
+				"admiration: admiring look, eyes wide, soft smile\namusement: amused grin, eyes crinkled\nanger: angry scowl, furrowed brows, clenched jaw\nannoyance: annoyed frown, narrowed eyes\napproval: approving nod, small smile\ncaring: caring expression, gentle eyes, warm smile\nconfusion: confused look, tilted head, raised eyebrow\ncuriosity: curious look, leaning forward, attentive eyes\ndesire: longing gaze, parted lips\ndisappointment: disappointed look, downcast eyes\ndisapproval: disapproving frown, arms crossed\ndisgust: disgusted grimace, wrinkled nose\nembarrassment: embarrassed blush, averted eyes\nexcitement: excited expression, wide smile, bright eyes\nfear: frightened look, wide eyes, tense shoulders\ngratitude: grateful smile, hand on chest\ngrief: grieving expression, tears, lowered head\njoy: joyful expression, smiling warmly, eyes bright\nlove: loving gaze, gentle smile, soft blush\nnervousness: nervous expression, biting lip, fidgeting\noptimism: hopeful smile, looking upward\npride: proud expression, chin raised, confident smile\nrealization: sudden realization, eyes widening, mouth open\nrelief: relieved sigh, relaxed shoulders, soft smile\nremorse: remorseful look, lowered eyes\nsadness: sad expression, downturned mouth, teary eyes\nsurprise: surprised expression, raised eyebrows, open mouth\nneutral: neutral expression, calm face"
+		}
+	},
+	{
+		nodeType: "core:oracle/generate-image",
+		slot: "prompts",
+		createdForSpec: "core:spec/sprite-set-fill",
+		defaultForSpecs: ["core:spec/sprite-set-fill"],
+		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:sprite-tags",
+		name: "Sprite, tags",
+		fields: {
+			positive: "{{likeness}}, {{labelPhrase}}, full body, standing, plain flat green background, no text",
+			negative: "{{likenessNegative}}, text, watermark, signature, busy background, scenery, cropped, multiple people"
+		}
+	},
+	/**
+	 * 🚧 Portrait's two rows (image generation I8, 2026-10-12) — the form's
+	 * **Style** picks one. `{{prompt}}` is the card's likeness as the spec
+	 * wires it (so a review edit reaches the picture); *tags* for SD-class
+	 * models, *prose* for hosted ones. New prose with no legacy counterpart.
+	 */
+	{
+		nodeType: "core:oracle/generate-image",
+		slot: "prompts",
+		createdForSpec: "core:spec/character-portrait",
+		defaultForSpecs: ["core:spec/character-portrait"],
+		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:portrait-tags",
+		name: "Portrait, tags",
+		fields: {
+			positive: "{{prompt}}, portrait, head and shoulders, looking at viewer, detailed face",
+			negative: "{{negative}}, text, watermark, signature, cropped head, multiple people, deformed face, blurry"
+		}
+	},
+	{
+		nodeType: "core:oracle/generate-image",
+		slot: "prompts",
+		createdForSpec: "core:spec/character-portrait",
+		defaultForSpecs: [],
+		seedKey: "pipeline-prompt:core:oracle/generate-image:prompts:portrait-prose",
+		name: "Portrait, prose",
+		fields: {
+			positive: "A head-and-shoulders portrait of one person, looking at the viewer, with a clear, detailed face. They look like this: {{prompt}}.",
+			negative: "{{negative}}, text, watermark, signature, a cropped head, more than one person, a deformed face, blur"
+		}
+	},
+	/**
+	 * 🚧 *Describe from image* (image generation §5, follow-up D1, 2026-10-12)
+	 * — the question a model that reads pictures is asked about a card's
+	 * likeness image: a person's look as tags an artist could redraw from;
+	 * the answer fills the Likeness prompt field. New prose.
+	 */
+	{
+		nodeType: "core:oracle/describe-image",
+		slot: "prompts",
+		createdForSpec: "core:spec/describe-likeness",
+		defaultForSpecs: ["core:spec/describe-likeness"],
+		seedKey: "pipeline-prompt:core:oracle/describe-image:prompts:describe-likeness",
+		name: "Describe a likeness",
+		fields: {
+			instruction:
+				"Look at the person in this image and list, as comma-separated tags, everything about their appearance that would let an artist draw them again: apparent sex and age, hair, eyes, skin, build and height, clothing and how it is worn, accessories, and any distinguishing marks. Appearance only: no name, no background, no mood, no sentences. Answer with the list and nothing else."
 		}
 	},
 	/* ── The Adventure genre's four agents ───────────────────────────────────
@@ -631,9 +715,9 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		name: "Adventure state keeper",
 		fields: {
 			systemPrompt:
-				"You keep the record. Read the scene that was just written and report only what it made true.\n\nThe scene:\n{{reply}}\n\nThe world as it stood before it:\n{{stateSummary}}\n\nNever invent a number. If the scene did not say somebody was hurt, their health did not change. If nothing changed, report nothing. An ordinary turn changes nothing, and that is the common case.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused and reported to nobody, so write the value in the words above or leave the slot alone.\n\nAnswer with one JSON object and nothing else, holding two lists:\n\n- values: every tracked value the scene changed. Each one names the owner (a name from the scene, or world), the slot it belongs to, and what that value IS now, written as text. Report the new value, never the difference.\n- inventory: anything that changed hands. Each one names the owner, the entry id the lore gave the item, and how many moved: positive to give, negative to take.\n\nEither list may be empty and usually one of them is. You are nobody in this scene and you write no prose.",
+				"You keep the record. Read the scene that was just written and report only what it made true.\n\nThe scene:\n{{reply}}\n\nThe world as it stood before it:\n{{stateSummary}}\n\nNever invent a number. If the scene did not say somebody was hurt, their health did not change. If nothing changed, report nothing. An ordinary turn changes nothing, and that is the common case.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused and reported to nobody, so write the value in the words above or leave the slot alone.\n\nAnswer with one JSON object and nothing else, holding three lists:\n\n- values: every tracked value the scene changed. Each one names the owner (a name from the scene, or world), the slot it belongs to, and what that value IS now, written as text. Report the new value, never the difference.\n- inventory: anything that changed hands. Each one names the owner, the entry id the lore gave the item, and how many moved: positive to give, negative to take.\n- clock: only when the scene's events took meaningful time (a journey, a long search, a night's sleep, a wait the scene says out loud), one entry saying how long they took: by, a whole number above zero, and unit, one of minutes, hours, days, months or years. Conversation takes no time worth recording, so an ordinary turn leaves this empty. It is a suggestion the player accepts or rejects; you never set the clock.\n\nAny list may be empty and usually most of them are. You are nobody in this scene and you write no prose.",
 			postHistoryInstructions:
-				"Remember: one JSON object, and nothing around it. Only what the scene made true, only the values listed above, and empty lists when it made nothing true."
+				"Remember: one JSON object, and nothing around it. Only what the scene made true, only the values listed above, a clock entry only when the scene took meaningful time, and empty lists when it made nothing true."
 		}
 	},
 	{
@@ -645,9 +729,9 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		name: "Adventure rest",
 		fields: {
 			systemPrompt:
-				"The party stops and rests. Say what that restores, given where they are and what shape they are in.\n\nThe world as it stands:\n{{stateSummary}}\n\nStamina comes back first and most; health comes back slowly and only somewhere safe. A rest takes time, so the clock moves on, and the weather may have turned while they slept. Somebody frightened or angry may be calmer afterwards, and may not be.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused, so write the value in the words above or leave the slot alone. Report what each value IS now, never the difference.\n\nAnswer with one JSON object and nothing else, holding two lists:\n\n- values: each one names the owner (a name from the scene, or world), the slot, and the new value written as text.\n- inventory: anything that changed hands, by the entry id the lore gave it. Resting rarely moves anything, so this list is usually empty.",
+				"The party stops and rests. Say what that restores, given where they are and what shape they are in.\n\nThe world as it stands:\n{{stateSummary}}\n\nStamina comes back first and most; health comes back slowly and only somewhere safe. A rest takes time, so the clock moves on, and the weather may have turned while they slept. Somebody frightened or angry may be calmer afterwards, and may not be.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused, so write the value in the words above or leave the slot alone. Report what each value IS now, never the difference.\n\nAnswer with one JSON object and nothing else, holding three lists:\n\n- values: each one names the owner (a name from the scene, or world), the slot, and the new value written as text.\n- inventory: anything that changed hands, by the entry id the lore gave it. Resting rarely moves anything, so this list is usually empty.\n- clock: one entry saying how long the rest took: by, a whole number above zero, and unit, one of minutes, hours, days, months or years. A short halt is an hour or two; a night's sleep is about eight hours. It is a suggestion the player accepts or rejects; you never set the clock.",
 			postHistoryInstructions:
-				"Remember: one JSON object, and nothing around it. Only what resting actually changes, and only the values listed above."
+				"Remember: one JSON object, and nothing around it. Only what resting actually changes, only the values listed above, and one clock entry for how long the rest took."
 		}
 	},
 	{
@@ -659,9 +743,9 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		name: "Adventure clock",
 		fields: {
 			systemPrompt:
-				"Time passes. Move the world clock on one step and say what the world does while it does.\n\nThe world as it stands:\n{{stateSummary}}\n\nThe order is morning, day, dusk, night, and then morning again. The weather may change with it or stay as it is. Nobody's health or mood changes just because time did, unless the scene already put them somewhere that would change it.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused, so write the value in the words above or leave the slot alone.\n\nAnswer with one JSON object and nothing else, holding two lists:\n\n- values: the owner (world, for the clock and the sky), the slot, and the new value written as text.\n- inventory: nothing changes hands when time passes, so leave this empty.",
+				"Time passes{{#if clockStep}}: {{clockStep}}{{/if}}. Say what the world is like once that time has gone by.\n\nThe world as it stands:\n{{stateSummary}}\n\nThe time of day runs morning, day, dusk, night, and then morning again. Move it on by as much as the span the player chose carries it: a few minutes may change nothing, a few hours can be a step or two, and a whole day brings it back round to where it started. If the time runs back, move it back the same way. The weather may turn over the span or stay as it is, and the longer the span, the likelier it turned. Nobody's health or mood changes just because time did, unless the scene already put them somewhere that would change it.\n\nThese are the only values this session tracks, and what each one accepts:\n{{slots}}\n\nA value outside what its slot accepts is refused, so write the value in the words above or leave the slot alone.\n\nAnswer with one JSON object and nothing else, holding three lists:\n\n- values: the owner (world, for the time of day and the sky), the slot, and the new value written as text. Leave out a value the span did not change.\n- inventory: nothing changes hands when time passes, so leave this empty.\n- clock: the player has already chosen how much time passes, so leave this empty.",
 			postHistoryInstructions:
-				"Remember: one JSON object, and nothing around it. One step of the clock, the weather only if it genuinely turns, and only the values listed above."
+				"Remember: one JSON object, and nothing around it. The time of day as it stands after {{#if clockStep}}{{clockStep}}{{else}}that span{{/if}}, the weather only if it genuinely turns, and only the values listed above."
 		}
 	},
 	/**

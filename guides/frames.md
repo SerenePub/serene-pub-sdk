@@ -107,7 +107,7 @@ never reaches a frame: your component reads it from `ctx` and passes on what the
 | `session` | The session's `{ id, name }`. |
 | `messages`, `message`, `channel` | A page of the log, one new message, or one channel's messages. |
 | `event`, `actions` | A session event; the actions the session offers. |
-| `annex`, `turn-order`, `viewer` | The viewer's view of the annex; who speaks next; who is looking. |
+| `annex`, `turn-order`, `viewer`, `attendance` | The viewer's view of the annex; who speaks next; who is looking; who has the session open. |
 | `theme`, `locale` | The theme id and `light` / `dark` mode, to set on your own `<html>`; the viewer's language. |
 | `suspend`, `resume` | The frame went off screen, or came back. |
 | `page`, `response`, `strings` | Answers to your `request` and `translate`. |

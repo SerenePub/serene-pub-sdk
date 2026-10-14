@@ -42,6 +42,7 @@
  */
 
 import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { chatGenre } from '../../registry/genres.js'
 
@@ -654,6 +655,10 @@ export const narrateSpec = () =>
 					pick: $.spritePick.main,
 					source: 'picker',
 				}),
+			)
+			/** The narration runs on the Reply loadout (I12). */
+			.preset('default', { label: 'Default', default: true }, (p) =>
+				p.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
 			)
 			.build(),
 	)

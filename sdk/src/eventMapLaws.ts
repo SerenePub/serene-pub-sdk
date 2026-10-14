@@ -1,19 +1,20 @@
 /**
- * The event map's two laws (PLAN-turn-order §B3), as pure functions the
- * conformance kit (C28, C29) and a host's boot check both call — one
+ * The event map's two laws, as pure functions the
+ * conformance kit and a host's boot check both call — one
  * judgement, two callers, so the kit and the warning cannot disagree.
  *
- * **C28 — every event a genre lists is caused or a declared root.** A
+ * **Every event a genre lists is caused or a declared root.** A
  * listed event that nothing writes and nobody starts is a slot a preset can
  * bind and nothing will ever fire.
  *
- * **C29 — every cycle has a termination policy.** The event map (events,
+ * **Every cycle has a termination policy.** The event map (events,
  * pipelines, listeners; binds · causes · listens) may loop: a reply completes a
  * message, the message recomputes the turn order, auto-advance asks for the
  * next reply. A loop is fine when something in it declares how it stops —
  * auto-advance's cause rule and cap, or the host's run caps, which park a
  * run tree for its owner. A loop where nothing does runs until the host
  * falls over.
+ * @ruling PLAN-turn-order §B3, C28, C29
  */
 
 import { eventById } from './events.js'
@@ -29,7 +30,11 @@ export interface EventGraph {
 	edges: ReadonlyArray<{ from: string; to: string; kind: EventGraphEdgeKind }>
 }
 
-/** One C28 finding: a genre lists an event that nothing causes and nobody starts. @experimental */
+/**
+ * One uncaused-event finding: a genre lists an event that nothing causes and nobody starts.
+ * @experimental
+ * @ruling C28
+ */
 export interface UncausedEventFinding {
 	genre: string
 	event: string
@@ -37,9 +42,10 @@ export interface UncausedEventFinding {
 }
 
 /**
- * C28 over one genre's event surface. An event the registry does not know
+ * The caused-or-root law over one genre's event surface. An event the registry does not know
  * is a finding too: it cannot be caused, because it does not exist.
  * @experimental
+ * @ruling C28
  */
 export function uncausedGenreEvents(genre: {
 	id: string
@@ -66,7 +72,11 @@ export function uncausedGenreEvents(genre: {
 	return out
 }
 
-/** One C29 finding: a cycle in which no node declares a termination policy. @experimental */
+/**
+ * One unterminated-cycle finding: a cycle in which no node declares a termination policy.
+ * @experimental
+ * @ruling C29
+ */
 export interface UnterminatedCycleFinding {
 	/** The cycle's members (one strongly connected component), sorted. */
 	members: string[]
@@ -74,11 +84,12 @@ export interface UnterminatedCycleFinding {
 }
 
 /**
- * C29 over one drawn map. `terminationOf(id)` is the host's termination
+ * The termination law over one drawn map. `terminationOf(id)` is the host's termination
  * policy for a loop through that node — auto-advance's cause rule and cap, the run
  * caps that park a tree — or undefined. Every strongly connected component
  * that holds a cycle must hold a node with a termination policy.
  * @experimental
+ * @ruling C29
  */
 export function unterminatedCycles(
 	graph: EventGraph,

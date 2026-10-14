@@ -38,7 +38,10 @@ const firstRun = spec('{{exampleSpecId}}', { version: '1.0.0' })
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	/** This package's own node. Everything else on this chain is core's. */
 	.task('echo', ($) => echoDefinition.v1({ text: $.input.text }))
-	.task('prompt', () => C.assemble.v2())
+	/** The template an admin picks, and the connection the prompt is written for. */
+	.task('prompt', () =>
+		C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('speak') }),
+	)
 	/** The one node that crosses the boundary. */
 	.oracle('speak', ($) =>
 		C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),

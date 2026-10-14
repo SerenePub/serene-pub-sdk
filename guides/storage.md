@@ -129,7 +129,7 @@ export function saveRoll(ctx: ComponentContext, roll: number) {
 	ctx.invoke(annexFieldAction('acme.dice', 'last-roll'), { payload: { value: roll } })
 }
 export const lastRoll = (ctx: ComponentContext) =>
-	(ctx.annex?.['acme.dice'] as { 'last-roll'?: number } | undefined)?.['last-roll']
+	ctx.annex?.['acme.dice']?.['last-roll'] as number | undefined
 ```
 
 - **`see`** says who may read the value: `person` (every human in the session), `ai` (the model's

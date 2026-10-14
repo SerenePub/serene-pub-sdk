@@ -42,7 +42,12 @@
 	 * never a part: `data-density`, `data-retired`, `data-slot-shape`,
 	 * `data-empty` (nothing to show), `aria-pressed` (a switch on, a row
 	 * chosen), `role="alert"` (refused).
+	 *
+	 * A widget may put something of its own at the end of the row — Stats'
+	 * **stat trail** (F2) — through `trail`; it carries that widget's parts,
+	 * not this control's.
 	 */
+	import type { Snippet } from "svelte"
 	import type { SessionStateSlotV1 } from "@serene-pub/core-catalog/widgets"
 	import {
 		barView,
@@ -87,9 +92,11 @@
 		onset: (value: SlotWriteValue) => void
 		/** Searches the session's lorebook for a list's picker; absent, a list adds words only. */
 		findEntries?: EntryFinder
+		/** The asking widget's own end of the row (Stats' stat trail); absent, none. */
+		trail?: Snippet
 	}
 
-	let { slot, config, value, density = "full", t, onset, findEntries }: Props = $props()
+	let { slot, config, value, density = "full", t, onset, findEntries, trail }: Props = $props()
 
 	/** A menu item's value for "not set" — never an option's, which are `opt:`-prefixed. */
 	const CLEAR = "clear"
@@ -597,4 +604,5 @@
 			</button>
 		{/if}
 	</div>
+	{@render trail?.()}
 </div>

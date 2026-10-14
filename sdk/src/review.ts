@@ -1,5 +1,5 @@
 /**
- * The review gate (01 §7).
+ * The review gate.
  *
  * The gate lives in the executor substrate, below the type layer, and keys on
  * **declared effects rather than kind** — so an effectful Provider (an MCP tool that
@@ -9,6 +9,7 @@
  *   · the gated party never implements the gate
  *   · plugin code cannot decline it, detect it, or tell an approved payload from an edited one
  *   · an author may default it **on** for their own node; forbidding it is not expressible
+ * @ruling 01 §7
  */
 
 import { inferSchema, type SettingsSchema } from './settings.js'
@@ -59,7 +60,11 @@ export interface ReviewRecord {
 	at?: number
 }
 
-/** Resolver supplied by the host. `sync` parks on this promise; waiting is free (F13). @experimental */
+/**
+ * Resolver supplied by the host. `sync` parks on this promise; waiting is free.
+ * @experimental
+ * @ruling F13
+ */
 export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
 
 /**
@@ -67,7 +72,7 @@ export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
  *
  * Inferred from the payload (`inferSchema`) — the one field language settings,
  * plugin forms and review pauses share — and then, when the definition
- * declares `review.fields`, narrowed to those names (U5b review C1). A
+ * declares `review.fields`, narrowed to those names. A
  * declared field the payload does not carry infers nothing and is simply
  * absent; an undeclared one is never offered. Absent declaration, the whole
  * payload is the form, as it always was.
@@ -78,6 +83,7 @@ export type Reviewer = (req: ReviewRequest) => Promise<ReviewDecision>
  * in `undeclaredReviewFields` is the second, independent guard: a submission
  * naming one is refused outright rather than dropped in silence.
  * @internal
+ * @ruling U5b review C1
  */
 export function reviewSchemaFor(
 	definition: { review?: { fields: readonly string[] } } | undefined,
@@ -109,8 +115,9 @@ export function undeclaredReviewFields(
 /**
  * There is deliberately no `'never'` position and no descriptor field that could produce
  * one. An author picks a default; the user's setting wins over it. Forbidding review is
- * not a value this type can hold, which is the enforcement (F14).
+ * not a value this type can hold, which is the enforcement.
  * @experimental
+ * @ruling F14
  */
 export const POSITIONS: readonly ReviewPosition[] = ['off', 'on'] as const
 
@@ -153,7 +160,11 @@ export function resolvePosition(
 	return 'off'
 }
 
-/** Which nodes the gate applies to — effects, not kind (01 §7, 14 §4a). @experimental */
+/**
+ * Which nodes the gate applies to — effects, not kind.
+ * @experimental
+ * @ruling 01 §7, 14 §4a
+ */
 export function isGated(effects: string | undefined): boolean {
 	return effects === 'write' || effects === 'external'
 }

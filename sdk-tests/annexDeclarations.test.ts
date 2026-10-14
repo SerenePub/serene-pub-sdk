@@ -10,6 +10,7 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+	aiHolds,
 	annexDeclarationOf,
 	annexField,
 	annexSchemaOf,
@@ -24,6 +25,7 @@ import {
 	use,
 	validate,
 	_withdrawAnnex,
+	type ParticipantRef,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { CORE_ANNEX_FIELDS, CORE_SPECS } from '@serene-pub/core-catalog'
@@ -186,11 +188,15 @@ describe("core's annex declaration", () => {
 		assert.equal(typeof (f!.label as { en?: string } | undefined)?.en, 'string')
 	})
 
-	test("declares the Castellan's scratchpad — the Castellan's alone to see, the owner's to set, the Lair's only (lair re-plan R13)", () => {
+	test("declares the Castellan's scratchpad — the Castellan's and the owner's to see, the owner's to set, the Lair's only (lair re-plan R13)", () => {
 		const f = CORE_ANNEX_FIELDS.find((x) => x.key === 'castellan-scratchpad')!
 		assert.deepEqual(f.shape, { type: 'text', default: '' })
-		// Hidden from every person's view; only the Castellan's own AI view holds it.
-		assert.deepEqual(f.see, ['envoy:castellan'])
+		// The owner's view carries it (ruled 2026-10-11, for the Annex widget);
+		// of the AI views only the Castellan's holds it — `owner` is no model's.
+		assert.deepEqual(f.see, ['envoy:castellan', 'owner'])
+		assert.equal(aiHolds(f.see as ParticipantRef[], 'envoy:castellan' as ParticipantRef), true)
+		assert.equal(aiHolds(f.see as ParticipantRef[], 'character:7' as ParticipantRef), false)
+		assert.equal(aiHolds(f.see as ParticipantRef[], null), false)
 		// Editable by the session owner, through its ready-made action.
 		assert.deepEqual(f.act, ['owner'])
 		assert.equal(f.genre, 'core:genre/lair')

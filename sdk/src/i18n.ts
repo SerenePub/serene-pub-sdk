@@ -1,12 +1,12 @@
 /**
- * Display text (plans/29 R-20; plans/30 U5i) — one type, one check, one
+ * Display text — one type, one check, one
  * resolver.
  *
  * Every string an author writes for a person to read — a definition's name, a
  * slot's description, an action's label, a preset's title, a status — is
  * `I18n`: a bare string or a **locale map**. The two spellings are one value:
  * `title: 'Title'` is `title: { en: 'Title' }` (ruled 2026-09-17, which
- * supersedes 09-B B11's "a bare string is refused"). A bare string reads as
+ * supersedes an earlier ruling that "a bare string is refused"). A bare string reads as
  * `en`, and `en` is the locale every other falls back to.
  *
  * ## Enforced at publish
@@ -42,6 +42,7 @@
  * answers the requested locale, else `en`. After publish enforcement a
  * malformed value cannot reach a reader, so a malformed value answers
  * `undefined` rather than being patched over — nothing swallows one silently.
+ * @ruling plans/29 R-20, plans/30 U5i, 09-B B11
  */
 
 /** A locale map: `en` required, any other language code beside it. @public */
@@ -86,7 +87,7 @@ const describe = (v: unknown): string => {
 
 /**
  * Every fault in one display-text value, as sentences that name the field and
- * say what to write instead (the teaching-error pattern, 15 §1.3). Empty when
+ * say what to write instead (the teaching-error pattern). Empty when
  * the value is sound, and for an absent optional value; `required` makes
  * absence a finding.
  *
@@ -94,6 +95,7 @@ const describe = (v: unknown): string => {
  * i18n.name`, `contributes.actions[roll].label`), so the sentence can be
  * acted on without a search.
  * @experimental
+ * @ruling 15 §1.3
  */
 export function i18nFindings(
 	v: unknown,

@@ -1,14 +1,14 @@
 /**
- * Configuration resolution (12 §2). Four layers, first hit wins, evaluated
+ * Configuration resolution. Four layers, first hit wins, evaluated
  * independently per path — which is what makes an admin's connection change reach a
- * user who has customized their prompts (F20).
+ * user who has customized their prompts.
  *
- * ## The chain (R-10, ruled 2026-09-15; 09-B B8)
+ * ## The chain (ruled 2026-09-15)
  *
  * **`session · config · defaults · author`.**
  *
  *  - `session` — a session's own override of a value (the *chat override* of
- *    12 §2's "pipeline → config → chat override").
+ *    the "pipeline → config → chat override").
  *  - `config` — the rows of the **selected config**: the config IS the
  *    instance's tuning. An administrator's edit lands in the config (ruled
  *    2026-08-24), so there is no separate `instance` layer for it to be shadowed
@@ -20,19 +20,20 @@
  *  - `author` — the definition's declared parameter defaults; the floor.
  *
  * `user` and `instance` stood in this list until 2026-09-16 and were pushed by
- * nothing: `world.ts` never projected a row at either (plans/29a §3). Their
+ * nothing: `world.ts` never projected a row at either. Their
  * semantics fold into `config` — the config an admin edits is the instance's
  * configuration — which is the 2026-08-24 ruling stated as a constant.
  *
  * Resolved run-wide *before* execution, which is why referencing another node's
- * config is not a data edge (F35).
+ * config is not a data edge.
  *
- * ## `config`, not `preset` (R1)
+ * ## `config`, not `preset`
  *
  * Two other things are called a preset — a **session preset** (the bundle a
  * session is born on) and an author's `.preset(…)` on a spec — and neither is
  * this layer, so the scope takes the canon's word for what it holds: the
  * **config**.
+ * @ruling 12 §2, F20, R-10, 09-B B8, 12 §2, plans/29a §3, F35, R1
  */
 
 import type { CapabilitySet } from './capabilities.js'
@@ -111,7 +112,10 @@ export interface ConnectionRecord {
 	id: string
 	name: string
 	kind: string
-	/** Readable — not a credential (01 §10). */
+	/**
+	 * Readable — not a credential.
+	 * @ruling 01 §10
+	 */
 	metadata: {
 		contextLength?: number
 		tokenizer?: string
@@ -213,7 +217,7 @@ export function slotConnectionModelId(value: unknown): string | number | null {
  * A resolved `connection` slot, as a binding receives it.
  *
  * `metadata` only — `material` is a credential and is injected by the executor
- * at call time (01 §10), so no node ever sees it.
+ * at call time, so no node ever sees it.
  *
  * `modelId` is the model half of the pair the slot named, carried through so a
  * host can honour the pick instead of reducing it to an endpoint. Null means
@@ -223,6 +227,7 @@ export function slotConnectionModelId(value: unknown): string | number | null {
  * whose own defaults are pairs resolves that half for itself, from the store
  * the default came out of.
  * @experimental
+ * @ruling 01 §10
  */
 export interface ResolvedConnection {
 	id: string
@@ -234,10 +239,11 @@ export interface ResolvedConnection {
 	 * (`ConfigWorld.models`); null when the slot named no model or the model
 	 * states none, in which case the sampling config's window decides.
 	 *
-	 * Carried here so the ONE window computation (R-8) can read it off the
+	 * Carried here so the ONE window computation can read it off the
 	 * same resolved slot the request is sent with — a budget sized to the
 	 * sampling config's window while the request went to a model with a
 	 * smaller one was wrong in the direction that truncates.
+	 * @ruling R-8
 	 */
 	contextWindow: number | null
 }
@@ -254,7 +260,10 @@ export interface ConfigWorld {
 	 * `contextWindow: null`, exactly as before this existed.
 	 */
 	models?: Array<{ id: string; connectionId: string; contextWindow?: number | null }>
-	/** Singleton kinds, e.g. embeddings (01 §10). */
+	/**
+	 * Singleton kinds, e.g. embeddings.
+	 * @ruling 01 §10
+	 */
 	activeConnection: Record<string, string | null>
 	/**
 	 * The instance's default sampling config per kind — the same keys
@@ -377,14 +386,15 @@ export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedC
 }
 
 /**
- * Which scopes may write which slot (12 §4). The admin cascade needs no mechanism:
+ * Which scopes may write which slot. The admin cascade needs no mechanism:
  * connection has no writable scope below the config for a non-admin, so an
  * admin's choice reaches everyone automatically.
  *
  * `config` here is the selected config — the one place an administrator's
- * edit lands (R-10 folded `instance` into it, 2026-09-16). A slot a session may
+ * edit lands (`instance` was folded into it, 2026-09-16). A slot a session may
  * not write is a slot only the config carries.
  * @internal
+ * @ruling 12 §4, R-10
  */
 export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
 	// A session names no connection (ruled 2026-09-30): the pair a step runs
@@ -410,6 +420,10 @@ export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
 	// reports cannot be compared. Same scopes as `template`; widening to
 	// session later is one entry here, additively (18 §4a).
 	scripts: ['config'],
+	// A loadout is the engine a step runs on (I12) — compute, like the
+	// connection beside it, so only the configuration may name one. A session
+	// never picks a loadout (09-30: a session never picks a connection).
+	loadout: ['config'],
 }
 
 /** @internal */
@@ -418,7 +432,11 @@ export function mayWrite(slot: string, scope: ScopeKind): boolean {
 	return kind !== undefined && (WRITE_MATRIX[slot] ?? []).includes(kind)
 }
 
-/** Reject a write the matrix forbids, with the reason (15 §1.3). @experimental */
+/**
+ * Reject a write the matrix forbids, with the reason.
+ * @experimental
+ * @ruling 15 §1.3
+ */
 export function assertWritable(slot: string, scope: ScopeKind): void {
 	if (!mayWrite(slot, scope)) {
 		throw new Error(

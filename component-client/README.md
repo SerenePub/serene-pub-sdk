@@ -14,7 +14,9 @@ export default defineComponent((root, ctx) => {
 })
 ```
 
-A Svelte component receives the context as its `ctx` prop:
+A Svelte component receives the context as its `ctx` prop, and `ctx` is reactive:
+`{ctx.messages?.length ?? 0}` in markup redraws when the host sends new messages, with no
+`subscribe`. The plain context is beside it as `raw`.
 
 ```ts
 import { svelteComponent } from '@serene-pub/component-client/svelte'
@@ -26,7 +28,7 @@ export default svelteComponent(Hello)
 | entry                                         | what it is                                                                                             |
 | --------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `@serene-pub/component-client`                | `defineComponent` and the context types                                                                |
-| `@serene-pub/component-client/svelte`         | `svelteComponent` — mount a Svelte component as a remote                                               |
+| `@serene-pub/component-client/svelte`         | `svelteComponent` — mount a Svelte component as a remote; `reactive(ctx)` — the reactive context       |
 | `@serene-pub/component-client/worker-runtime` | the host's side of the UI worker; hosts and the component harness start it, components never import it |
 
 `serene-pub scaffold plugin ./my-plugin --slug vendor.name --panel` scaffolds a package

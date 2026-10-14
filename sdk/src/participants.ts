@@ -1,7 +1,5 @@
 /**
- * Participant references — who an audience names, and who is speaking
- * (plans/29 R-15 *audience*, R-18 (3), R-21 (4); ruled 2026-09-15, built
- * 2026-09-16 as U5a).
+ * Participant references — who an audience names, and who is speaking.
  *
  * One grammar answers two questions that used to be answered by two
  * vocabularies: an action's **audience** (who may *see* it, who may *act* on
@@ -23,7 +21,7 @@
  * | `item`              | The **per-message ownership rule**: whoever the message belongs to, decided at the venue, never resolvable ahead of a message. |
  * | `run-owner`         | The person who started the run.                                                                          |
  *
- * `character:` and `envoy:` are the two forms a **speaker** takes (R-18 (3)):
+ * `character:` and `envoy:` are the two forms a **speaker** takes:
  * a character id for somebody in the library, an envoy slug for somebody who
  * exists nowhere but the genre. The slug is namespaced like a slash name when
  * an action contributes it (`<plugin>.<key>`), so it cannot collide with a
@@ -33,31 +31,32 @@
  *
  * A reference is a name; **who portrays it this turn** — a person, the AI, or
  * nobody — is the host's answer, resolved once at run start and pinned on
- * the receipt as `portrayals` (R-21 (4)), like config. The SDK declares the
+ * the receipt as `portrayals`, like config. The SDK declares the
  * question's shape (`Portrayal`) and never answers it: nodes stay blind to
  * it, and a definition that needs the answer declares an in-port.
  *
  * *Portrayal*, not *voice*: a **voice** is one cast member's step inside an
  * adventure turn (`.each('voices')`), and a connection's `voices` are TTS —
- * the resolver's answer is a third thing and gets its own word (ruled
- * 2026-09-16).
+ * the resolver's answer is a third thing and gets its own word.
  *
  * ## What this is not
  *
- * Not a *cast* row (a membership), not a *scope* (§6 config layering), and
+ * Not a *cast* row (a membership), not a *scope* (config layering), and
  * not *availability* (the genre's `messageVerbs`). A reference says *who*;
  * the venue says *where*; the resolver says *whether they are here*.
+ * @ruling plans/29 R-15 *audience*, R-18 (3), R-21 (4) (ruled 2026-09-15), U5a (2026-09-16), R-18 (3), R-21 (4), ruled 2026-09-16, §6
  */
 
 /**
  * The role-shaped references — no id, resolved against the session and the run.
  *
  * `participant` is everyone in the session: its people, and the model's
- * context. The two catch-alls split it (R57): `person` is every human member,
+ * context. The two catch-alls split it: `person` is every human member,
  * `ai` is the model's context — what goes into a prompt. A data audience
  * (`see` on a stored value) is written in these; an empty one is pipelines
  * only.
  * @experimental
+ * @ruling R57
  */
 export const PARTICIPANT_ROLES = ['owner', 'admin', 'participant', 'person', 'ai', 'item', 'run-owner'] as const
 /** @experimental */
@@ -86,9 +85,10 @@ export type ParsedParticipantRef =
 	| { kind: 'envoy'; slug: string }
 
 /**
- * Who may see, and who may act (R-15). Declared here for the action model;
- * consumed by the venue work (U5c) — no UI reads it yet.
+ * Who may see, and who may act. Declared here for the action model;
+ * consumed by the venue work — no UI reads it yet.
  * @experimental
+ * @ruling R-15, U5c
  */
 export interface Audience {
 	see: ParticipantRef[]
@@ -144,11 +144,12 @@ export function audienceHolds(
 }
 
 /**
- * Does the model's context hold any of these references (R57)? The prompt
+ * Does the model's context hold any of these references? The prompt
  * built for `speaker` — a `character:` or `envoy:` reference, when there is
  * one — may carry what everyone may see (`participant`), what the model may
  * (`ai`), and what that speaker may. `[]` holds for nobody.
  * @internal
+ * @ruling R57
  */
 export function aiHolds(refs: ReadonlyArray<ParticipantRef>, speaker?: ParticipantRef | null): boolean {
 	const who = speaker && isParticipantRef(speaker) ? canonicalParticipantRef(speaker) : null
@@ -163,15 +164,20 @@ export function aiHolds(refs: ReadonlyArray<ParticipantRef>, speaker?: Participa
 export const canonicalParticipantRef = (raw: string): ParticipantRef =>
 	formatParticipantRef(parseParticipantRef(raw))
 
-/** Who may see each stored value, by owner and key; a key with no entry is pipelines only (R59). @experimental */
+/**
+ * Who may see each stored value, by owner and key; a key with no entry is pipelines only.
+ * @experimental
+ * @ruling R59
+ */
 export type DataAudiences = Record<string, Record<string, ParticipantRef[]>>
 
 /**
- * One reader's view of an owner-keyed store (R57): the values whose audience
+ * One reader's view of an owner-keyed store: the values whose audience
  * `holds` for that reader, as one object per owner. An owner left with no
  * value the reader may see is left out. Pipelines read the store itself, not
  * this.
  * @internal
+ * @ruling R57
  */
 export function visibleTo(
 	values: Record<string, unknown>,
@@ -192,10 +198,11 @@ export function visibleTo(
 }
 
 /**
- * What is wrong with an audience a write names, or undefined (R57). A list of
+ * What is wrong with an audience a write names, or undefined. A list of
  * participant references; `item` and `run-owner` mean nothing for a stored
  * value — there is no message to own, and a value outlives the run.
  * @internal
+ * @ruling R57
  */
 export function dataAudienceFindings(raw: unknown): string | undefined {
 	if (raw === undefined) return undefined

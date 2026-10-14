@@ -102,7 +102,9 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 			assert.deepEqual(view.refused, [])
 			const root = view.query('[data-state-widget="world-state"]')!
 			assert.equal(root.getAttribute('data-owner-key'), 'world')
-			assert.equal(root.getAttribute('data-layout'), 'strip')
+			// Stats in World State's settings since W7: its layout is Stats' arrangement.
+			assert.equal(root.getAttribute('data-arrangement'), 'strip')
+			assert.equal(root.getAttribute('data-owners'), 'world')
 			assert.deepEqual(
 				view.queryAll('[data-widget-part~="stat-slot.root"]').map((s) => s.getAttribute('data-slot-type')),
 				['enum', 'boolean', 'text', 'integer', 'derived'],
@@ -132,7 +134,7 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 		const view = await mount('world-state', { state: null, settings: { layout: 'list' } })
 		try {
 			assert.match(text(view.query('[role="status"]'))!, /Loading the world's stats/)
-			assert.equal(view.query('[data-state-widget]')!.getAttribute('data-layout'), 'list')
+			assert.equal(view.query('[data-state-widget]')!.getAttribute('data-arrangement'), 'list')
 			await view.push('scoped', { session_state: sessionState({ slots: [] }) })
 			assert.match(text(view.root)!, /Nothing in this session declares world stats/)
 			await view.push('scoped', {
@@ -289,8 +291,10 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 		try {
 			assert.deepEqual(view.queryAll('[data-widget-part~="stats.card"]').map((c) => c.getAttribute('data-owner-key')), ['mira', 'bram'])
 			assert.equal(view.queryAll('[data-widget-part~="stats.card-body"][data-density="compact"]').length, 2)
+			// ⏳ Written before W7 (`members: pick`): read as `owners: pick`, which
+			// may name the world or a place too, so it says nothing matched at all.
 			await view.push('settings', { members: 'pick', pickMembers: ['nobody'] })
-			assert.match(text(view.root)!, /No cast member matches the names in this widget's settings/)
+			assert.match(text(view.root)!, /Nothing in this session matches the names in this widget's settings/)
 			await view.push('settings', {})
 			await view.push('scoped', { session_state: sessionState({ resolved: { world: {}, cast: {} } }) })
 			assert.match(text(view.root)!, /No one in the cast has a stat in play yet/)
@@ -312,6 +316,60 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 			assert.deepEqual(view.requested, [
 				{ kind: 'set-attribute-value', params: { owner: { kind: 'session_cast', id: 11 }, slotId: id('hp'), value: 20 } },
 			])
+		} finally {
+			await view.unmount()
+		}
+	})
+
+	test("a stat's trail (F2): asked when opened, newest first, who changed it; none when off or derived", async () => {
+		let refuse = false
+		const view = await mount('stats', {
+			settings: { owners: 'all', castScope: 'all' },
+			requests: (kind) => {
+				if (kind !== 'stat-trail') return undefined
+				if (refuse) throw new Error('This session is not one you are in.')
+				return {
+					changes: [
+						{ messageId: 4, at: 1_000, from: null, to: 18, by: 'model' },
+						{ messageId: 7, at: 2_000, from: 18, to: 14, by: 'user' },
+						{ messageId: 9, at: 3_000, from: 14, to: null, by: 'pipeline' },
+					],
+				}
+			},
+		})
+		try {
+			const hp = `[data-owner-key="mira"] [data-slot-id="${id('hp')}"]`
+			// One button per stat that has a trail — never on a derived one.
+			assert.ok(view.query(`${hp} [data-widget-part~="stats.trail-open"]`))
+			assert.equal(view.query(`[data-slot-id="${id('tension')}"] [data-widget-part~="stats.trail-open"]`), null)
+			assert.equal(view.query(`${hp} [data-widget-part~="stats.trail-open"]`)?.getAttribute('aria-label'), 'How Hp changed')
+			assert.equal(view.requested.length, 0, 'nothing is asked until a trail is opened')
+			await view.dispatch(`${hp} sp-popover`, 'open-change', { open: true })
+			assert.deepEqual(view.requested, [
+				{ kind: 'stat-trail', params: { owner: { kind: 'session_cast', id: 11 }, slotId: id('hp'), limit: 20 } },
+			])
+			const rows = view.queryAll(`${hp} [data-widget-part~="stats.trail-row"]`)
+			assert.deepEqual(
+				rows.map((r) => [r.getAttribute('data-message-id'), r.getAttribute('data-by'), text(r.querySelector('[data-widget-part~="stats.trail-value"]'))]),
+				[
+					['9', 'pipeline', '14 → cleared'],
+					['7', 'user', '18 → 14'],
+					['4', 'model', '18'],
+				],
+			)
+			assert.match(text(rows[1]!.querySelector('[data-widget-part~="stats.trail-by"]'))!, /^Edited · /)
+			assert.match(text(rows[2]!.querySelector('[data-widget-part~="stats.trail-by"]'))!, /^From the story · /)
+			assert.match(text(rows[0]!.querySelector('[data-widget-part~="stats.trail-by"]'))!, /^Automatic · /)
+			// Closed, then a refusal: said in the popover, not as the widget's alert.
+			await view.dispatch(`${hp} sp-popover`, 'open-change', { open: false })
+			assert.equal(view.queryAll(`${hp} [data-widget-part~="stats.trail-row"]`).length, 0)
+			refuse = true
+			await view.dispatch(`${hp} sp-popover`, 'open-change', { open: true })
+			assert.equal(text(view.query(`${hp} [data-widget-part~="stats.trail-note"][role="alert"]`)), 'This session is not one you are in.')
+			assert.equal(view.query('[data-widget-part~="stats.alert"]'), null)
+			// The setting off: no buttons at all.
+			await view.push('settings', { owners: 'all', castScope: 'all', trail: false })
+			assert.equal(view.queryAll('[data-widget-part~="stats.trail-open"]').length, 0)
 		} finally {
 			await view.unmount()
 		}

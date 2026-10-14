@@ -1,11 +1,11 @@
 /**
- * The packager (04 §5a, U24b).
+ * The packager.
  *
  * Two halves, and the split is a law rather than a convenience:
  *
  * **Static.** Hooks, components, settings and permissions are extracted by walking the
  * TypeScript AST — *without executing the author's code*. "Hooks are never discovered at
- * runtime" (13/§30), so a registration built by a loop or a variable is a **lint error,
+ * runtime", so a registration built by a loop or a variable is a **lint error,
  * never a silent omission**. The manifest has to be a complete statement of what a plugin
  * can do, or the permission model is a guess and the audit screen is fiction.
  *
@@ -33,12 +33,15 @@ import {
 	declarationFindings,
 	i18nFindings,
 	isI18n,
+	listShapes,
 	permissionFindings,
 	pluginVariableFindings,
 	storedSwap,
 	templateLawFindings,
 	templateSeedFindings,
+	variableSeedFindings,
 	variablesOf,
+	getVariable,
 	widgetOfInstance,
 } from '@serene-pub/sdk'
 import { checkTemplateSourceReport } from '@serene-pub/sdk/template-check'
@@ -47,8 +50,10 @@ import type {
 	CoverageReport,
 	DeclaredPermissions,
 	GenreDecl,
+	HookDeclaration,
 	PresetDecl,
 	PromptDecl,
+	ShapeDef,
 	StoredEventDeclaration,
 	StoredSwapContribution,
 	SurfacesDecl,
@@ -68,7 +73,7 @@ export interface CompileFinding {
 	line: number
 	code: string
 	message: string
-	/** Required on every error — a prohibition without an alternative is a bug (15 §1.3). */
+	/** Required on every error — a prohibition without an alternative is a bug. */
 	fix: string
 	/**
 	 * The definition id this finding is about, where it is about one.
@@ -157,17 +162,20 @@ export function matchesGlob(pattern: string, path: string): boolean {
 
 // ── The manifest ────────────────────────────────────────────────────────────
 
+/** A declared hook point's bare key — the manifest puts it under `<slug>:hook/`. */
+const HOOK_KEY = /^[a-z0-9]+(?:[-./][a-z0-9]+)*(?:@\d+)?$/
+
 /** @experimental */
 export interface Manifest {
 	schemaVersion: 1
 	slug: string
-	/** What the plugin is called where it is listed — a string or a locale map with `en` (R-20). */
+	/** What the plugin is called where it is listed — a string or a locale map with `en`. */
 	name: I18n
 	version: string
 	description?: I18n
 	/**
 	 * The Serene Pub range this plugin supports, npm-style —
-	 * `{ 'serene-pub': '>=0.7 <0.8' }`. Version ranges only (R1); template
+	 * `{ 'serene-pub': '>=0.7 <0.8' }`. Version ranges only; template
 	 * engines are `templateEngines`.
 	 */
 	engines?: { 'serene-pub'?: string }
@@ -180,11 +188,11 @@ export interface Manifest {
 	templateEngines?: Record<string, string>
 	/**
 	 * Node definitions this plugin registers — summarized for the audit screen
-	 * (10 §10.2), each carrying the declaration an instance registers it from
+	 * each carrying the declaration an instance registers it from
 	 * (`DefinitionSummary.declaration`, D-6b).
 	 */
 	nodeDefinitions: DefinitionSummary[]
-	/** The three extension callables (R-1): handlers, lifecycle callbacks, event listeners. */
+	/** The three extension callables: handlers, lifecycle callbacks, event listeners. */
 	hooks: {
 		handlers: Array<{
 			definitionId: string
@@ -215,7 +223,7 @@ export interface Manifest {
 		 */
 		nodeHandlers: Record<string, string>
 	}
-	/** Components (§3.5, R25): a widget names one by slug; it runs in the page's UI worker. */
+	/** Components: a widget names one by slug; it runs in the page's UI worker. */
 	components: Array<{
 		slug: string
 		label: unknown
@@ -223,7 +231,7 @@ export interface Manifest {
 		entry: string
 		settings?: Record<string, unknown>
 		basedOn?: { component: string; version: string; sourceHash?: string }
-		/** The declared source; `entry` is the BUILT module once `build` ran (C3). */
+		/** The declared source; `entry` is the BUILT module once `build` ran. */
 		source?: string
 		/** Third-party packages the build inlined into the module. */
 		bundled?: string[]
@@ -240,7 +248,7 @@ export interface Manifest {
 	/** Pipelines shipped, by identity — the documents travel beside the manifest. */
 	pipelines: Array<{ id: string; version: string; nodes: number; presets: string[] }>
 	/**
-	 * Template rows shipped (R19), **verbatim** rather than summarized.
+	 * Template rows shipped, **verbatim** rather than summarized.
 	 *
 	 * The pipelines above are summarized because their documents travel beside the
 	 * manifest as their own files; a template is a handful of fields and has no second
@@ -281,7 +289,7 @@ export interface Manifest {
 	 * manifest it emitted before.
 	 */
 	genres?: GenreDecl[]
-	/** The widgets this package offers (R71), ids local — the instance puts them under the package. */
+	/** The widgets this package offers, ids local — the instance puts them under the package. */
 	widgets?: WidgetDecl[]
 	/** Annex fields this package offers every session it is on (`annexField()`); the owner is the package slug. @experimental */
 	annexFields?: AnnexFieldDecl[]
@@ -296,7 +304,7 @@ export interface Manifest {
 	 */
 	variables?: VariableDecl[]
 	/**
-	 * The layouts this package's genres ship (R71), one entry per layout with
+	 * The layouts this package's genres ship, one entry per layout with
 	 * its genre, each a **session layout** with the package's own widget ids
 	 * already under its namespace — the shape the instance's layout reconciler
 	 * reads.
@@ -308,15 +316,34 @@ export interface Manifest {
 	prompts?: PromptDecl[]
 	/**
 	 * This plugin's definitions offered on other packages' swappable nodes
-	 * (R29), definitions as ids. The instance checks the node and the fit at
+	 * definitions as ids. The instance checks the node and the fit at
 	 * install and lists enabled contributions after the node's own swaps.
 	 */
 	swaps?: StoredSwapContribution[]
 	/**
-	 * Events this plugin declares, with who may record them (R52). The
+	 * Events this plugin declares, with who may record them. The
 	 * instance registers each and holds recordings to its scope.
 	 */
 	events?: StoredEventDeclaration[]
+	/**
+	 * The shapes this package declares (`defineShape`), each under its own
+	 * slug (`<slug>:shape/<name>@<version>`), as data — id, `assignableTo`,
+	 * `streaming`. An instance registers them from the stored manifest before
+	 * the events and ports that name them, which is what lets a package's
+	 * event carry a payload of its own shape. Omitted when there are none.
+	 * @experimental
+	 */
+	shapes?: ShapeDef[]
+	/**
+	 * The hook points this package declares (`ExtensionDecl.hooks`) — places
+	 * where other authored code may run — keyed by the fully-qualified id
+	 * `<slug>:hook/<key>`, exactly as the announcement's `hooks` carries them.
+	 * ⚠ Not `hooks` above: that block is the WIRE form of the code this
+	 * plugin runs (its handlers, lifecycle callbacks and event listeners).
+	 * Omitted when there are none.
+	 * @experimental
+	 */
+	declaredHooks?: Record<string, HookDeclaration>
 	/** Ids referenced but not declared here — the instance enforces these at install. */
 	requires?: string[]
 }
@@ -420,7 +447,7 @@ function locate(
 
 /**
  * Is there text a person reads — a non-blank string, or a map with a non-blank
- * `en`? The SDK's `isI18n` (R-20): a map carrying only `fr` has no face on an
+ * `en`? The SDK's `isI18n`: a map carrying only `fr` has no face on an
  * English install.
  */
 const hasDisplayText = (v: I18n | undefined): boolean => isI18n(v)
@@ -826,7 +853,7 @@ export function scanSource(files: readonly SourceFile[]): StaticScan {
 							fix:
 								`write the value literally at the call site — ${MUST_BE_STATIC[name]}. ` +
 								`A registration the packager cannot read is one core can never permit, so this ` +
-								`is an error rather than a silent omission (13/§30).`,
+								`is an error rather than a silent omission.`,
 						})
 					}
 				}
@@ -1148,24 +1175,109 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		return { documents: [], findings, ok: false }
 	}
 
+	// `core` is the app's own owner id — every instance refuses it at install
+	// (`pluginPackage.ts`), so say it here where the author can still rename.
+	// `defineExtension` cannot: core declares itself with it.
+	if (e.slug === 'core') {
+		const at = locate(input.sources, 'defineExtension')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_RESERVED_SLUG',
+			message: "slug 'core' is the app's own — a plugin cannot take it",
+			fix: "choose a slug of your own ('chariot.dice-tray') — it is the namespace every id the package registers sits under",
+		})
+	}
+
 	// `hooks` declares points (R54). An array there is the implementations
 	// list under its old name — an extension evaluated against an older SDK —
-	// and a record is a plugin's declared points, which no manifest carries yet.
-	const declaredHooks = (e as { hooks?: unknown }).hooks
-	if (Array.isArray(declaredHooks) || (declaredHooks && Object.keys(declaredHooks).length)) {
+	// and a record is the package's declared points, which travel in the
+	// manifest's `declaredHooks` (never its `hooks`, which is the wire form of
+	// the implementations).
+	const hookInput = (e as { hooks?: unknown }).hooks
+	if (Array.isArray(hookInput)) {
 		findings.push({
 			severity: 'error',
 			file: input.sources[0]?.path ?? '(none)',
 			line: 1,
 			code: 'E_HOOKS_FIELD',
-			message: Array.isArray(declaredHooks)
-				? "the extension lists its code under 'hooks' — that list is 'handlers' now"
-				: "the extension declares hooks of its own, which a plugin's manifest does not carry yet",
-			fix: Array.isArray(declaredHooks)
-				? 'rename hooks: [handler(…), …] to handlers: [handler(…), …] and rebuild against the current SDK'
-				: "remove 'hooks' — a plugin cannot define its own hook points before SDK 1.0; implement core's under 'handlers'",
+			message: "the extension lists its code under 'hooks' — that list is 'handlers' now",
+			fix: 'rename hooks: [handler(…), …] to handlers: [handler(…), …] and rebuild against the current SDK',
 		})
 		return { documents: [], findings, ok: false }
+	}
+	const declaredHooks: Record<string, HookDeclaration> = {}
+	for (const [key, raw] of Object.entries((hookInput ?? {}) as Record<string, unknown>)) {
+		const decl = raw as Partial<HookDeclaration> | null
+		const problem = !HOOK_KEY.test(key)
+			? `hook key '${key}' is not a bare key — write it lowercase and hyphenated ('before-shout'); ` +
+				`the manifest puts it under '${e.slug}:hook/'`
+			: !decl || typeof decl !== 'object' || typeof decl.event !== 'string' || !decl.event
+				? `hook '${key}' names no event — a declared point says which event it runs on`
+				: [decl.before, decl.after].some(
+							(l) => l !== undefined && !(Array.isArray(l) && l.every((x) => typeof x === 'string')),
+					  )
+					? `hook '${key}': 'before' and 'after' are lists of hook ids`
+					: undefined
+		if (problem) {
+			const at = locate(input.sources, key)
+			findings.push({
+				severity: 'error',
+				file: at.file,
+				line: at.line,
+				code: 'E_HOOK_DECLARATION',
+				message: problem,
+				fix: "declare each point as hooks: { '<key>': { event: '<event id>', before?: […], after?: […] } }",
+			})
+			continue
+		}
+		declaredHooks[`${e.slug}:hook/${key}`] = {
+			event: decl!.event!,
+			...(decl!.description !== undefined ? { description: decl!.description } : {}),
+			...(decl!.before ? { before: [...decl!.before] } : {}),
+			...(decl!.after ? { after: [...decl!.after] } : {}),
+		}
+	}
+
+	// The package's own shapes travel as data (`manifest.shapes`), so an
+	// instance can register them before the events and ports that name them.
+	// Read from what `defineExtension` captured and from this process's
+	// registry — the two are one registry unless the package resolved its own
+	// copy of the SDK. Only the package's own namespace travels; another
+	// package's shape is that package's to carry.
+	const ownShape = `${e.slug}:shape/`
+	const shapes = new Map<string, ShapeDef>()
+	const foreignShape = (id: string) => !id.startsWith('core:') && !id.startsWith(ownShape)
+	for (const raw of [...((e as { shapes?: ShapeDef[] }).shapes ?? []), ...listShapes()]) {
+		if (!raw || typeof raw.id !== 'string') continue
+		if (!raw.id.startsWith(ownShape)) continue
+		if (shapes.has(raw.id)) continue
+		shapes.set(raw.id, {
+			id: raw.id,
+			...(raw.assignableTo?.length ? { assignableTo: [...raw.assignableTo] } : {}),
+			...(raw.streaming === true ? { streaming: true } : {}),
+		})
+	}
+	const shapeRefusals = new Set<string>()
+	for (const raw of (e as { shapes?: ShapeDef[] }).shapes ?? [])
+		if (raw && typeof raw.id === 'string' && foreignShape(raw.id))
+			shapeRefusals.add(`the extension carries shape '${raw.id}', which is not under '${ownShape}'`)
+	for (const ev of e.events ?? [])
+		if (typeof ev?.payload === 'string' && foreignShape(ev.payload))
+			shapeRefusals.add(`event '${ev.event}' carries payload '${ev.payload}', which is not under '${ownShape}'`)
+	for (const refusal of shapeRefusals) {
+		const at = locate(input.sources, 'defineShape')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_SHAPE_NAMESPACE',
+			message: `${refusal} — a package carries only its own shapes`,
+			fix:
+				`declare the shape under your slug ('${ownShape}<name>@<version>') with defineShape, ` +
+				`or use one of core's (S.*)`,
+		})
 	}
 
 	const handlers = (e.handlers ?? []).filter((h) => h.__decl === 'handler') as any[]
@@ -1435,6 +1547,22 @@ export function compilePlugin(input: CompileInput): CompileResult {
 				fix: t1.fix,
 			})
 		}
+	// Variable layouts against the variable each lays out (2026-10-13, ★4) —
+	// including a layout this package ships for a variable it does not own.
+	// The package's own variables first — the ones its manifest carries —
+	// then this registry, for a core variable the layout is written for.
+	const ownVariable = (id: string) => variables.find((v) => v.id === id) ?? getVariable(id)
+	for (const seed of variableSeedFindings(e.templates ?? [], templateChecking, ownVariable)) {
+		const at = locate(input.sources, seed.template)
+		findings.push({
+			severity: seed.severity,
+			file: at.file,
+			line: at.line,
+			code: seed.severity === 'error' ? 'E_TEMPLATE_SCOPE' : 'W_VARIABLE_LAYOUT_UNCHECKED',
+			message: `variable layout '${seed.template}' for '${seed.variableId}': ${seed.message}`,
+			fix: seed.fix,
+		})
+	}
 	for (const seed of templateSeedFindings(e.templates ?? [], documents, templateChecking)) {
 		const at = locate(input.sources, seed.template)
 		findings.push({
@@ -1542,6 +1670,9 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		...(e.prompts?.length ? { prompts: e.prompts } : {}),
 		...(e.swaps?.length ? { swaps: e.swaps.map(storedSwap) } : {}),
 		...(e.events?.length ? { events: e.events } : {}),
+		// Shapes and declared hook points: omitted when none, so the manifest is byte-for-byte as before.
+		...(shapes.size ? { shapes: [...shapes.values()] } : {}),
+		...(Object.keys(declaredHooks).length ? { declaredHooks } : {}),
 		...(declared.requires.length ? { requires: declared.requires } : {}),
 	}
 
@@ -1556,7 +1687,7 @@ export function compilePlugin(input: CompileInput): CompileResult {
 }
 
 /**
- * The layouts a package's genres ship, as manifest entries (R71): each
+ * The layouts a package's genres ship, as manifest entries: each
  * **session layout** with the package's own widgets named under its namespace
  * (`<slug>:<id>`) and everyone else's ids as written.
  *

@@ -42,9 +42,13 @@ options:
 
 `main` can only be a conversation.
 
-A channel can also have **lanes**: `phone:2`, `phone:3`, for several private conversations
-under one slug. Lanes are not declared. Your pipelines create them by writing to them, and keep
-track of them. `phone` on its own is lane 1.
+A channel can also have **channel lanes**: `phone:2`, `phone:3`, for several private
+conversations under one slug — a persona texting three characters is one `phone` channel with
+three lanes. Lanes are not declared. Your pipelines create them by writing to them, and keep
+track of who is in each (your genre's extension data is the place). `phone` on its own is lane 1.
+A widget lists the lanes a channel holds with `request('channel-lanes', { channel: 'phone' })`,
+each with its line count and newest line, and pages one lane with
+`request('messages', { channel: 'phone:2' })`. See [Widgets](widgets.md).
 
 ## Where a reply lands
 

@@ -1,5 +1,5 @@
 /**
- * The component harness (§3.5, C3b): mount a component the way a session
+ * The component harness: mount a component the way a session
  * page does — built by the same bundler, run in a worker by the same
  * runtime, mirrored through the host-element vocabulary — with a canned
  * context, and assert on the DOM the page would show.
@@ -35,7 +35,7 @@
  * What the page adds that this does not: `sp-*` elements stay as
  * themselves (their attributes and children, not the app's rendering of
  * them), and the page's confirmations are not asked. What it keeps — the
- * base sections the widget `reads` and nothing else (R75), the page's invoke
+ * base sections the widget `reads` and nothing else, the page's invoke
  * gate (`invokeGate`: a plugin's box changes a message only with a person's
  * press in it, else `refusedInvokes`), ids prefixed per box (`idPrefix`) but
  * in core's conversation — and the page's own guard
@@ -66,6 +66,8 @@ import {
 	isPersonGatedAction,
 	personGateVerdict,
 	personPressAfter,
+	personPressCurrent,
+	WIDGET_REQUEST_ASKERS,
 	SP_HOST_ELEMENTS,
 	guardedConnection,
 	hostKeyEvent,
@@ -161,7 +163,14 @@ export interface MountComponentOptions {
 	 */
 	grants?: WidgetScope[]
 	/**
-	 * The base sections the widget reads — its `WidgetDecl.reads` (R75):
+	 * The widget's declared channels — its `WidgetDecl.channels`. A channel
+	 * write (`send`, `draft`) from a plugin's box is held to these, as the
+	 * page holds it: a channel it did not declare is refused whatever it
+	 * holds, and one it did needs the write grant `channel:<slug>:write`.
+	 */
+	channels?: string[]
+	/**
+	 * The base sections the widget reads — its `WidgetDecl.reads`:
 	 * pass the declaration's (`reads: myWidget.reads`). As on the page, a
 	 * base section it does not read is never posted (the SDK's `widgetReads`
 	 * clamps, as the page does), and neither is an event about one:
@@ -187,6 +196,8 @@ export interface MountComponentOptions {
 	 * name (`retry`, `core#retry`). `false` records every invoke, for a test
 	 * that only cares about the call. Core's box is never gated. The page's
 	 * confirmations (`retry`, `extend`, `advance`, a plugin's `edit`) are not asked.
+	 * The same press stands behind a plugin's write REQUEST (`send`, `draft`,
+	 * `set-attribute-value`): without one it is declined.
 	 */
 	invokeGate?: boolean
 	/**
@@ -204,7 +215,7 @@ export interface MountComponentOptions {
 	 */
 	built?: boolean
 	/**
-	 * The manifest entry's `builtAgainst` (F1): judged as a host judges it
+	 * The manifest entry's `builtAgainst`: judged as a host judges it
 	 * (`componentBuiltAgainstFinding`) before anything mounts — a component
 	 * built for a protocol this host does not speak, or a vocabulary major it
 	 * lacks, is refused with the host's sentence (thrown).
@@ -439,12 +450,13 @@ const PUSH_ORDER: Array<keyof HarnessContext> = [
 	'locale',
 	'viewer',
 	'turnOrder',
+	'attendance',
 	'scoped',
 ]
 
 /**
  * The events the page's widget wire raises about a base section, and the
- * section each is about: a widget that does not read it is not told (R75).
+ * section each is about: a widget that does not read it is not told.
  */
 const READ_GATED_EVENTS: Readonly<Record<string, WidgetBaseSection>> = {
 	'message:created': 'messages',
@@ -502,7 +514,7 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 	const invoked: InvokeRecord[] = []
 	const refusedInvokes: RefusedInvokeRecord[] = []
 	const owner = opts.owner ?? 'plugin'
-	/** The base sections the box is posted (R75), clamped as the page clamps them. */
+	/** The base sections the box is posted, clamped as the page clamps them. */
 	const reads = new Set<WidgetBaseSection>(widgetReads({ reads: opts.reads as WidgetBaseSection[] | undefined }))
 	const gated = owner !== 'core' && opts.invokeGate !== false
 	// When a person last acted in the box (a press the component heard), or
@@ -690,11 +702,17 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 						: {}
 			requested.push({ kind, params })
 			unanswered.set(requestId, kind)
-			const refusal = widgetRequestRefusal(kind, {
-				owner,
-				grants: currentGrants,
-			})
+			const refusal = widgetRequestRefusal(kind, { owner, grants: currentGrants, channels: opts.channels ?? [] }, params)
 			if (refusal) return decline(requestId, kind, refusal)
+			// A plugin's write goes in as the viewer: a person's press stands behind it, as on the page.
+			const askers = (WIDGET_REQUEST_ASKERS as Record<string, unknown>)[kind]
+			if (
+				gated &&
+				typeof askers === 'object' &&
+				(askers as { write?: unknown }).write === true &&
+				!personPressCurrent(lastPress, Date.now())
+			)
+				return decline(requestId, kind, `'${kind}' changes something as the viewer and needs a person's press behind it`)
 			if (!opts.requests) return
 			let out: unknown
 			try {
@@ -809,6 +827,13 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 		const heldScopes = (): WidgetSectionScope[] =>
 			currentGrants.filter((scope): scope is WidgetSectionScope => Object.hasOwn(WIDGET_SCOPED_SECTIONS, scope))
 		const heldSections = new Set<string>(heldScopes().map((scope) => WIDGET_SCOPED_SECTIONS[scope]))
+		// What the component is TOLD it holds: those scopes, and its write
+		// grants (`session:state:write`, `channel:<slug>:write`), as the page
+		// tells it — a write grant delivers no section.
+		const toldGrants = (): string[] => [
+			...heldScopes(),
+			...currentGrants.filter((grant) => grant.endsWith(':write')),
+		]
 		/** The scoped sections posted and not withdrawn — what a narrower grant takes back. */
 		const postedScoped = new Set<string>()
 		const pushSection = (section: string, value: unknown) => {
@@ -850,7 +875,7 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 		for (const section of PUSH_ORDER) {
 			if (initial[section] !== undefined) pushSection(section, initial[section])
 			// The grants after saved state, before any section — as the page posts them.
-			if (section === 'state') post({ t: 'grants', grants: heldScopes() })
+			if (section === 'state') post({ t: 'grants', grants: toldGrants() })
 		}
 		await settle()
 
@@ -894,7 +919,7 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 				currentGrants = [...grants]
 				heldSections.clear()
 				for (const scope of heldScopes()) heldSections.add(WIDGET_SCOPED_SECTIONS[scope])
-				post({ t: 'grants', grants: heldScopes() })
+				post({ t: 'grants', grants: toldGrants() })
 				// A worker keeps nothing it may no longer see, as the page withdraws it.
 				for (const name of [...postedScoped])
 					if (!heldSections.has(name)) {

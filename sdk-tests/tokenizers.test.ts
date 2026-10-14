@@ -41,7 +41,7 @@ const chat = () =>
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('merge', ($) => C.mergeCandidates.v1({ sources: [$.history.band] }))
 		.task('prompt', ($) =>
-			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available }),
+			C.assemble.v2({ candidates: $.merge.candidates, budget: $.budget.available, template: slot.template(), connection: slot.connectionOf('generate') }),
 		)
 		.oracle('generate', ($) =>
 			C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }),

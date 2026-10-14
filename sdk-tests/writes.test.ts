@@ -224,7 +224,10 @@ describe('the addition is additive', () => {
 		// speaker-only). Proven: a copy of core-catalog/src with just those two
 		// field lines removed from genres.ts hashes back to the old pin. (was '4e1033c247420')
 		// Moved 2026-09-28 (enum option labels on Adventure's tone/difficulty); removing those `members` restores the old pin exactly (was 'e611ef3a97923').
-		assert.equal(canonicalHash(adventureCreateSpec() as any), '17f29013f5ffc6')
+		// Moved 2026-10-13 (live scenes G2): Adventure declares its place,
+		// `shape.scenes.place: { stateKey: 'location' }`; the app's
+		// specHashes.test.ts records it. (was '17f29013f5ffc6')
+		assert.equal(canonicalHash(adventureCreateSpec() as any), '2b63bc55e3597')
 	})
 
 	test('Guide’s moved, once, because Guide now declares something', () => {

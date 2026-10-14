@@ -23,7 +23,7 @@ export const contextBudget = pin(
 			 * Where the window comes from.
 			 *
 			 * The context window belongs to the sampling config, never to a knob
-			 * on a node (17 §1a) — and the executor resolves a `sampling` slot to
+			 * on a node — and the executor resolves a `sampling` slot to
 			 * the config's switched-on *values*, so this stays a pure Task reading
 			 * data it was handed rather than a Query looking one up.
 			 *
@@ -34,14 +34,14 @@ export const contextBudget = pin(
 			sampling: { kind: 'sampling', quick: true },
 			/**
 			 * The connection the reply is sent on — for the model's own
-			 * context window (0114), which caps the sampling config's when
+			 * context window, which caps the sampling config's when
 			 * the model states one.
 			 *
 			 * Shared with the generating step in every shipped spec
 			 * (`slot.connectionOf('generate')`), on the same terms as
 			 * `sampling` above: the budget has to be sized to the window the
 			 * request is actually sent against, and the ONE computation of
-			 * that window (R-8) reads both halves off the same resolved pair.
+			 * that window reads both halves off the same resolved pair.
 			 */
 			connection: { kind: 'connection' },
 			params: {
@@ -154,7 +154,7 @@ export const concatCandidates = pin(
 
 /**
  * **Eligibility** — the hard gates between the mechanisms and the ranker
- * (C2; owner rulings R2 and R4, 2026-09-30; built 2026-10-02).
+ * (owner rulings of 2026-09-30; built 2026-10-02).
  *
  * Scoring and eligibility are separate on purpose: a hard rule must not compete
  * numerically with a soft one and lose. This node scores nothing. It takes the
@@ -172,7 +172,7 @@ export const concatCandidates = pin(
  * 2. **Secrecy.** A `relationships` candidate that is somebody's secret
  *    (`payload.secretOf`, the holder's participant reference) is ineligible for
  *    any other `speaker`. Unwired or null, the producers' own scope decided.
- * 3. **Presence** (R4). A candidate about a cast member (`payload.lorebookBindingId`)
+ * 3. **Presence.** A candidate about a cast member (`payload.lorebookBindingId`)
  *    whose member has presences on the line and none holding at `at` — the
  *    member is not in the world then. A member with no presences is always
  *    present.
@@ -227,9 +227,9 @@ const rankPorts = {
 		 * A declared out-port rather than an implementation detail, because it is
 		 * what Assemble allocates from — and because a ranker swapped in by a
 		 * plugin has to produce it too, or the budget panel goes blank the moment
-		 * anyone changes rankers (16 §5c).
+		 * anyone changes rankers.
 		 *
-		 * Shape `S.decisions` (R64): a node publishing it is recorded in the
+		 * Shape `S.decisions`: a node publishing it is recorded in the
 		 * ranking store automatically — a plugin's ranker included.
 		 */
 		decisions: S.decisions,
@@ -241,7 +241,7 @@ const rankPorts = {
  * **signal** matrix, which is cross-source and stays here.
  *
  * ⚠ No longer the members of `share` / `maxEntries` / `minEntries`: those are
- * per-source and live on the sources (R-7 P5, `bandIntentFields`), so a plugin
+ * per-source and live on the sources (`bandIntentFields`), so a plugin
  * adding a sixth band declares its own intent on its own definition and never
  * touches this list. Its candidates score by `presetScore` or by the ranker's
  * lore signal set — a per-band signal row for a plugin band is a follow-up,
@@ -283,9 +283,9 @@ const SOURCES = [
 
 /**
  * How the shares the sources declared are turned into token budgets — the one
- * thing about shares that is genuinely the ranker's (16 §5a: Assemble "keeps
- * only what is genuinely global: total budget, truncation policy, and how
- * weights normalize").
+ * thing about shares that is genuinely the ranker's (Assemble keeps only what
+ * is genuinely global: total budget, truncation policy, and how weights
+ * normalize).
  *
  * `relative` is what ships and is arithmetically what has always run: every
  * band with a share above zero gets `pool × share / Σ shares`, so only the
@@ -295,10 +295,10 @@ const SOURCES = [
  * scales them all down together only when they add up to more than one. In
  * both, whatever a band cannot spend is swept to the others in score order.
  *
- * ⚠ **The per-source maps this file used to declare here are gone** (R-7 P5,
- * 2026-09-16). `share`, `maxEntries` and `minEntries` — five-band maps keyed
- * `{messages, worldLore, characterLore, history, relationships}` — were the
- * per-source table 16 §5a rejected, kept on the ranker rather than on
+ * ⚠ **The per-source maps this file used to declare here are gone**
+ * (2026-09-16). `share`, `maxEntries` and `minEntries` — five-band maps keyed
+ * `{messages, worldLore, characterLore, history, relationships}` — were a
+ * per-source table the design rejects, kept on the ranker rather than on
  * Assemble. Each source declares its own now (`bandIntentFields`) and the
  * ranker reads them off the candidates it is handed (`BandIntent` in the SDK);
  * migration 0135 moved every stored value to the node that owns it. What is
@@ -350,8 +350,8 @@ const SHARE_NORMALISATION = {
  * not "cannot apply": the scorer has no per-source branches, so turning
  * `nameMatch` on for messages is moving a slider, not asking for a feature.
  *
- * On `rank-hybrid` alone, like its `scripts` hook and for the same reason
- * (S3): the `rank-recall` example ranks without signals, and widening a
+ * On `rank-hybrid` alone, like its `scripts` hook and for the same reason:
+ * the `rank-recall` example ranks without signals, and widening a
  * sibling's declared surface is a hash change on a type nobody meant to touch.
  */
 const SIGNAL_WEIGHT_FIELDS = {
@@ -394,8 +394,8 @@ const SIGNAL_WEIGHT_FIELDS = {
 	 * by construction, so the first question scores every present character's
 	 * private lore alike and distinguishes nothing.
 	 *
-	 * ⚠ **The world-lore half is graded now, and this weight moved with it**
-	 * (design §13.10, retrieval plan phase 3). It used to be a binary substring
+	 * ⚠ **The world-lore half is graded now, and this weight moved with it**.
+	 * It used to be a binary substring
 	 * test — does the entry's title or keys contain a cast name, `Al` firing on
 	 * `Alchemy` — worth exactly `{0, 0.2}`. It is now the rarity-weighted,
 	 * word-boundary, two-sided overlap the admission gate already used: what the
@@ -632,7 +632,7 @@ const SIGNAL_WEIGHT_FIELDS = {
 } as const
 
 /**
- * How much each way of *finding* an entry counts (retrieval plan §1, phase 3).
+ * How much each way of *finding* an entry counts.
  *
  * The signal weights above are the right data at the wrong altitude.
  * Nobody thinks in "tf-idf", and a reader who wants less guessing and more
@@ -667,7 +667,7 @@ const SIGNAL_WEIGHT_FIELDS = {
  * to say "keys only" or "stop guessing" — and is a thing to want.
  *
  * On `rank-hybrid` alone, like the signal matrix and `scoreLedAllocation` and for
- * the same reason (S3): the `rank-recall` example does not score with signals,
+ * the same reason: the `rank-recall` example does not score with signals,
  * and widening a sibling's declared surface is a hash change on a type nobody
  * meant to touch.
  */
@@ -710,13 +710,13 @@ const MECHANISM_WEIGHTS = {
 } as const
 
 /**
- * Which allocation precedence the selection runs under (design §7).
+ * Which allocation precedence the selection runs under.
  *
  * Off is what ships, and off is the shipped engine exactly: the shares split
  * the window into fixed bands and each source fills its own. A turn that needs
  * no history still reserves history's band, and one relevant world-lore entry
  * larger than a sixth of the window cannot be kept however it scored — which is
- * the thing design §7 calls backwards.
+ * the precedence the design calls backwards.
  *
  * On, the precedence inverts to *score allocates, minimums guarantee, shares
  * cap*: the minimums are met first exactly as before, then one pool is spent
@@ -741,7 +741,7 @@ const MECHANISM_WEIGHTS = {
  * is what leaves the parity corpus measuring the shipped path.
  *
  * On `rank-hybrid` alone, like the signal matrix and the `scripts` hook and for
- * the same reason (S3): the `rank-recall` example does not run this selection,
+ * the same reason: the `rank-recall` example does not run this selection,
  * and widening a sibling's declared surface is a hash change on a type nobody
  * meant to touch.
  */
@@ -764,7 +764,7 @@ export const rankHybrid = pin(
 				kind: 'parameters',
 				facet: 'weights',
 				schema: {
-					// Cross-source only (R-7 P5). Ahead of the nine, because it
+					// Cross-source only. Ahead of the nine, because it
 					// is the altitude a reader starts at: the grouped mechanisms
 					// first, the individual signals under them for anyone who
 					// wants that far in, then how the sources' shares divide
@@ -776,10 +776,10 @@ export const rankHybrid = pin(
 				},
 			},
 			/**
-			 * The post-retrieval hook (18 §4a): user chains over the candidate
+			 * The post-retrieval hook: user chains over the candidate
 			 * pool before ranking sees it. Spread onto this type alone rather
 			 * than into `rankSlots` — widening a sibling's accepted set is a
-			 * hash change on a type nobody meant to touch (S3).
+			 * hash change on a type nobody meant to touch.
 			 */
 			scripts: {
 				kind: 'scripts',
@@ -827,8 +827,8 @@ export const rankHybrid = pin(
 				 * while the numbers sat one node upstream.
 				 *
 				 * Spread onto this type alone rather than into `rankPorts` —
-				 * the same reason the `scripts` hook above is, one construct up
-				 * (S3). The `rank-recall` example computes no per-band usage;
+				 * the same reason the `scripts` hook above is, one construct up.
+				 * The `rank-recall` example computes no per-band usage;
 				 * giving it a port it cannot fill would move a hash to declare
 				 * a promise it does not keep.
 				 *
@@ -853,8 +853,8 @@ export const rankHybrid = pin(
  * first.
  *
  * And it carries the **semantic mechanism's one switch**, `searchByMeaning`,
- * because it is the first node of the mechanism's chain (2026-09-29, genre
- * uplift C3) — `auto | on | off`, shipping `auto`, which searches whenever an
+ * because it is the first node of the mechanism's chain (2026-09-29) —
+ * `auto | on | off`, shipping `auto`, which searches whenever an
  * embedding model is set up, wherever it runs (owner, 2026-09-30).
  * @experimental
  */
@@ -933,7 +933,7 @@ export const queryWindows = pin(
 					 * per turn in API mode. `maxEntries` is a ceiling now, and
 					 * ships non-zero so that turning this on does something.
 					 * It was then a boolean defaulting to off for one day
-					 * (C3), which spent nothing and searched nothing.
+					 * (2026-09-29), which spent nothing and searched nothing.
 					 */
 					searchByMeaning: {
 						type: 'enum',
@@ -1003,7 +1003,7 @@ export const queryWindows = pin(
  * to replace. The Query retrieves and computes similarity; this decides.
  *
  * `similarity` is a port because MMR needs to compare candidates to each other
- * and a Task cannot ask the host for anything (F11). It is a matrix of cosines,
+ * and a Task cannot ask the host for anything. It is a matrix of cosines,
  * not the embeddings — derived, bounded, and not reversible into the vectors.
  * @experimental
  */
@@ -1019,7 +1019,7 @@ export const rankSemantic = pin(
 				schema: {
 					/**
 					 * ⚠ No `currentWindow` / `recentWindow` here, and there
-					 * were (culled 2026-09-16, R-12). They size the two query
+					 * were (culled 2026-09-16). They size the two query
 					 * windows — how many messages form the 'current' and the
 					 * 'recent' question — which `core:task/query-windows@1`
 					 * cuts and declares as its own params. Declared here too,
@@ -1141,7 +1141,7 @@ export const rankSemantic = pin(
 )
 
 /**
- * A plugin's ranker — same kind, same shape, so the swap list offers it (16 §5c).
+ * A plugin's ranker — same kind, same shape, so the swap list offers it.
  *
  * Named `rankRecall`, not `rankSemantic`: binding names derive from the id's
  * name segment and ignore the namespace, so this and `core:task/rank-semantic@1`
@@ -1182,8 +1182,7 @@ const ASSEMBLE_TEMPLATE_SCOPE = {
 				name: { type: 'string' },
 				message: { type: 'string', optional: true },
 				/**
-				 * 🚧 The line's files, placed (PLAN-composer-attachments
-				 * §3.5): media markers, inlined text files and placeholders,
+				 * 🚧 The line's files, placed: media markers, inlined text files and placeholders,
 				 * from `core:task/place-attachments@1`. Absent on a line
 				 * with no files, and on every line of a spec with no
 				 * placement step.
@@ -1222,7 +1221,7 @@ const ASSEMBLE_TEMPLATE_SCOPE = {
 		},
 	},
 	/**
-	 * 🚧 The session's **author's note**, placed (2026-10-02, AN1) — the
+	 * 🚧 The session's **author's note**, placed (2026-10-02) — the
 	 * person's own steering text for this session, at its own depth, with no
 	 * token trigger. Not the post-history reminder: that one is the pipeline's
 	 * and the card's "how to respond"; this is the person's "what is true now".
@@ -1249,7 +1248,7 @@ export const assemble = pin(
 		timeoutMs: 1000,
 		slots: {
 			// An *assembly* template: its scope really is the input ports, so this half of
-			// 16 §4's claim holds.
+			// the claim holds.
 			template: {
 				kind: 'template',
 				// Handlebars FIRST, then Liquid: the first entry is what a new
@@ -1259,14 +1258,14 @@ export const assemble = pin(
 				// layout, not a dialect: the same arrangement is expressible in
 				// either, and a slot naming one makes the other unselectable
 				// everywhere. Jinja is absent because core renders neither
-				// parity nor helpers for it (12 §2a).
+				// parity nor helpers for it.
 				acceptedEngines: [handlebars.id, liquid.id],
 				facet: 'templates',
 				/**
 				 * Assemble's own names — what `render()` writes onto the context
 				 * AFTER spreading the prompts and the builder's context, so these
-				 * are the last word (typed templates P3, edited in place — owner
-				 * ruling Q4).
+				 * are the last word (typed templates, edited in place by owner
+				 * ruling).
 				 *
 				 * Corrected 2026-09-27: this declared `blocks`, `budget` as two
 				 * bare names and `prompts` — `blocks` is a param that reorders the
@@ -1309,7 +1308,7 @@ export const assemble = pin(
 					currentDate: 'core:var/current-date@1',
 				},
 				/**
-				 * Open (typed templates P2, edited in place — owner ruling Q4):
+				 * Open (typed templates, edited in place by owner ruling):
 				 * every band declared upstream of `candidates` is rendered too,
 				 * under its key and through its variable's layout — a plugin's
 				 * source adds its band here by declaring it.
@@ -1357,16 +1356,16 @@ export const assemble = pin(
 					 * ⚠ No `truncation` here, and there was one — an enum of
 					 * `oldest-first | lowest-weight`, "what gets dropped first
 					 * when the context is over budget" — declared, rendered,
-					 * and read by nothing (culled 2026-09-16, R-12). What LORE
+					 * and read by nothing (culled 2026-09-16). What LORE
 					 * fits is decided upstream by the ranker's `select`, per
 					 * band, against `share`, `maxEntries`, `minEntries` and
 					 * `scoreLedAllocation` on `core:task/rank-hybrid@1`, and
 					 * this node renders the decisions it is handed. A second
 					 * drop rule for lore here would be a second owner of one
-					 * decision. NOMENCLATURE §25 records the cull.
+					 * decision.
 					 *
 					 * ⚠ The TRANSCRIPT is the exception, because nobody else
-					 * owns it (B2, 2026-10-03): no shipped spec ranks a message
+					 * owns it (2026-10-03): no shipped spec ranks a message
 					 * candidate, so the conversation's rows were never fitted
 					 * at all and a long session went out larger than the
 					 * window. The host's binding measures what it rendered and,
@@ -1452,7 +1451,7 @@ export const assemble = pin(
 				 * shape on this edge got no finding, and a plugin ASSEMBLER had
 				 * nothing to read to learn the port existed.
 				 *
-				 * `S.decisions`, matching `rankPorts.out.decisions` (R64) — a
+				 * `S.decisions`, matching `rankPorts.out.decisions` — a
 				 * decision is a candidate with its arithmetic attached, and the
 				 * panel reads the same objects the allocator does. Typed, so a
 				 * plugin ranker wired here publishes the shape the ranking store
@@ -1497,15 +1496,15 @@ export const assemble = pin(
 				groups: S.json,
 				/**
 				 * The annex a template may read, as `annex.<owner>.<key>`
-				 * (typed templates P6, edited in place — owner ruling Q4).
+				 * (typed templates, edited in place by owner ruling).
 				 *
 				 * Fed ONLY by `core:query/session-annex@1` with `view:
 				 * 'template'`: every DECLARED key of every owner in scope —
 				 * core, the enabled plugins — for the session's genre, keyed by
 				 * owner. A key no declaration covers never arrives, and a
-				 * declaration refuses secrets at write time (R61), so what
+				 * declaration refuses secrets at write time, so what
 				 * reaches a template is what an owner said may be kept there
-				 * (owner ruling Q1: "nothing dangerous should ever be stored
+				 * (owner ruling: "nothing dangerous should ever be stored
 				 * there"). Law T2 refuses anything else wired here, and a
 				 * template-view read wired anywhere else.
 				 *
@@ -1529,7 +1528,7 @@ const contextPorts = {
 	in: {
 		cast: S.sessionCast,
 		/**
-		 * Whose voice the reply is, when a next-speaker node decided (19 §5).
+		 * Whose voice the reply is, when a next-speaker node decided.
 		 * Optional: unwired, the speaker still rides the cast bundle (the
 		 * scope's value), which is how every spec worked before the node
 		 * existed — and how the narrator's context, which has no speaker,
@@ -1578,7 +1577,7 @@ const VARIABLES_DESCRIPTION =
 
 /**
  * What a context builder's `templateContext` carries, in the template type
- * language (typed templates P3, 2026-09-27) — so a template editor offers
+ * language (typed templates, 2026-09-27) — so a template editor offers
  * `{{{characters}}}` with a type, and `templateScopeAt` puts these keys in
  * the scope of whatever template renders the builder's output.
  *
@@ -1608,6 +1607,8 @@ export const TEMPLATE_CONTEXT_SCHEMA = {
 		scenario: { type: 'string', description: 'The scenario, resolved and laid out.' },
 		characterNames: { type: 'string', description: '“A, B, and C” — every enabled character’s name (none at speaker-only detail).' },
 		personaNames: { type: 'string', description: '“A, B, and C” — every persona’s name.' },
+		/** 🚧 `core:var/likenesses@1` — everyone on stage's likeness prompt, laid out. */
+		likenesses: { type: 'string', description: 'Everyone on stage’s likeness prompt, by name, laid out (JSON by default).' },
 		exampleDialogue: { type: 'string', description: 'The speaker’s example dialogue.' },
 		postHistoryInstructions: { type: 'string', description: 'The post-history instructions, resolved.' },
 		relationshipsPerspectives: { type: 'string', description: 'How the speaker regards everyone.' },
@@ -1669,6 +1670,8 @@ const sharedRenders = {
 	postHistoryInstructions: 'core:var/post-history-instructions@1',
 	characterNames: 'core:var/character-names@1',
 	personaNames: 'core:var/persona-names@1',
+	/** 🚧 Everyone on stage's likeness prompt. */
+	likenesses: 'core:var/likenesses@1',
 } as const
 
 /**
@@ -1685,7 +1688,7 @@ const sharedRenders = {
  *
  * A type is the unit that declares a configurable surface — it is how a plugin
  * declares one, and `RegistryEntry.slots` carries the declaration precisely so
- * core can render a form without executing the plugin that owns it (12 §2, F6).
+ * core can render a form without executing the plugin that owns it.
  * Narrowing per-spec instead would have meant the row said one thing and the
  * running pipeline another, which is the defect widening that column fixed.
  *
@@ -1698,7 +1701,7 @@ export const buildTemplateContext = pin(
 		id: 'core:task/build-template-context@1',
 		i18n: { name: { en: 'Build template context' } },
 		timeoutMs: 2000,
-		/** What `templateContext` carries — typed templates P3; policy, so no pin moves. */
+		/** What `templateContext` carries — typed templates; policy, so no pin moves. */
 		portSchemas: { out: { main: TEMPLATE_CONTEXT_SCHEMA, templateContext: TEMPLATE_CONTEXT_SCHEMA } },
 		/**
 		 * The example-dialogue pick. Declaring it is what gets `ctx.random` — the
@@ -1744,7 +1747,7 @@ export const buildTemplateContext = pin(
 				},
 			},
 			/**
-			 * The pre-assemble context hook (18 §4a): user chains over the
+			 * The pre-assemble context hook: user chains over the
 			 * finished template context — conditional style guides, seeded
 			 * event tables — after this node resolves it and before anything
 			 * renders it.
@@ -1754,7 +1757,7 @@ export const buildTemplateContext = pin(
 			 * template-context *data* (`context.injections`, resolved to
 			 * `injectionsByIndex` beside `postHistory.targetIndex`), rendered
 			 * by the template's own message loop. Splicing them into the list
-			 * behind the template's back would be the §20 defect again, one
+			 * behind the template's back would repeat an old defect one
 			 * layer down: a position the template cannot express, an author
 			 * cannot see, and a corpus cannot check.
 			 */
@@ -1793,7 +1796,7 @@ export const buildTemplateContext = pin(
 				 * narrate spec never supplies these because graph context
 				 * needs a speaker's perspective and a narrator has none — so
 				 * widening the shared map would give it two ports it must
-				 * leave empty forever, and move its hash to say so (S3).
+				 * leave empty forever, and move its hash to say so.
 				 */
 				relationshipsPerspectives: S.json,
 				relationshipsKnown: S.json,
@@ -1823,8 +1826,8 @@ export const buildTemplateContext = pin(
 				speakerName: S.text,
 				speakerCharacter: S.json,
 				/**
-				 * Who is speaking, as a participant reference (R-18 (3); U5g,
-				 * 2026-09-16) — the turn strategy's `speaker`. Read for one
+				 * Who is speaking, as a participant reference (2026-09-16)
+				 * — the turn strategy's `speaker`. Read for one
 				 * thing: an **envoy** (`envoy:<slug>`) has no character row, so
 				 * its card — name and description, off the genre's declaration
 				 * the cast read carries — is compiled here where a cast
@@ -1856,23 +1859,22 @@ export const buildTemplateContext = pin(
 				state: S.json,
 				/**
 				 * What the person typed with the press, for an action that
-				 * reads its composer text as **direction** (lair pass B17,
-				 * 2026-09-27): the Lair's Trigger trap and Reveal, and
-				 * Whodunit's Search — what the detective is looking for (genre
-				 * uplift C2, 2026-09-29). Rendered as
+				 * reads its composer text as **direction** (2026-09-27): the
+				 * Lair's Trigger trap and Reveal, and Whodunit's Search — what
+				 * the detective is looking for (2026-09-29). Rendered as
 				 * `{{turnDirection}}` — the same name, and the same meaning,
-				 * `build-scene-context@1` gives the Lair's reply (B11). Absent
+				 * `build-scene-context@1` gives the Lair's reply. Absent
 				 * when blank, so a prompt writes `{{#if turnDirection}}…{{/if}}`
 				 * and a press with nothing typed leaves it to the prompt.
 				 * Declared here rather than in `contextPorts`, like `state`
 				 * above; the narrator and side-character builders declare
-				 * their own (C2). Unwired on every spec whose composer text is
+				 * their own. Unwired on every spec whose composer text is
 				 * a line somebody said.
 				 */
 				turnDirection: S.text,
 				/**
 				 * The places the lorebook holds, for an envoy that talks about
-				 * the world from outside it (lair re-plan R6, 2026-09-28): the
+				 * the world from outside it (2026-09-28): the
 				 * Lair's Castellan in the Sanctum. A
 				 * `core:query/lorebook-entries@1` listing, rendered exactly as
 				 * the planner's and the scene's port of this name is —
@@ -1883,7 +1885,7 @@ export const buildTemplateContext = pin(
 				locationEntries: S.json,
 				/**
 				 * The story's newest rows, for a speaker who talks ABOUT the
-				 * story from another channel (lair re-plan R6): the Castellan
+				 * story from another channel: the Castellan
 				 * in the Sanctum reads `main`'s last few rows. Transcript rows
 				 * (a `session-history@1` read), rendered as prose — one
 				 * `Name: line` per row, named as the transcript names them, no
@@ -1893,8 +1895,8 @@ export const buildTemplateContext = pin(
 				 */
 				recentStory: S.messages,
 				/**
-				 * The session's genre fields, by their own names (lair re-plan
-				 * R13, 2026-09-28): `{{sanctumSteers}}` for the Castellan in
+				 * The session's genre fields, by their own names (2026-09-28):
+				 * `{{sanctumSteers}}` for the Castellan in
 				 * the Sanctum, whose instructions say whether its talk shapes
 				 * the next turn. The planner's and the scene's `fields`, on the
 				 * same terms. Declared on THIS type alone, like `state`;
@@ -1902,7 +1904,7 @@ export const buildTemplateContext = pin(
 				 */
 				fields: S.json,
 				/**
-				 * The speaker's own running notes (lair re-plan R13, owner
+				 * The speaker's own running notes (owner ruling of
 				 * 2026-09-28): the Castellan's **scratchpad**, the Lair's annex
 				 * field `castellan-scratchpad`, read for it alone
 				 * (`session-annex@1`'s AI view, with its own reference as the
@@ -1974,12 +1976,12 @@ export const buildNarratorContext = pin(
 			in: {
 				...contextPorts.in,
 				/**
-				 * What the person asked this narration to do (genre uplift
-				 * C2, 2026-09-29): the narrator modal's text or `/narrate
+				 * What the person asked this narration to do (2026-09-29):
+				 * the narrator modal's text or `/narrate
 				 * <text>` — the turn's triggering text, `$.input.text`.
 				 * Rendered as `{{turnDirection}}`, the name and the meaning
 				 * `build-template-context@1` and `build-scene-context@1` give
-				 * it (B11); absent when blank, so a row writes
+				 * it; absent when blank, so a row writes
 				 * `{{#if turnDirection}}…{{/if}}` and an undirected narration
 				 * renders exactly what it did before.
 				 *
@@ -2035,7 +2037,7 @@ export const buildNarratorContext = pin(
  * the card; the id stays where the host can act on it.
  *
  * ⚠ **The OUT-port `speaker` is the other half of that sentence** (added
- * 2026-09-17, W1). The half-working control was a speaker id that changed the
+ * 2026-09-17). The half-working control was a speaker id that changed the
  * prompt's voice and not the lore; the repair is not an in-port but a lane
  * inside the same clause reading the answer this node already computed —
  * `core:query/character-lore@1` takes `speaker`, so the voice and its private
@@ -2086,8 +2088,8 @@ export const buildSideCharacterContext = pin(
 				 * because a typed name is all there is.
 				 *
 				 * `characterId` (a row id) or `ref` (a participant reference,
-				 * `character:<id>` — what a pressed option carries, plan A28
-				 * review) names the speaker BY ROW, and then the row is who
+				 * `character:<id>` — what a pressed option carries) names the
+				 * speaker BY ROW, and then the row is who
 				 * speaks: the name is a label, never a second lookup, so two
 				 * people sharing a name stay two people and a row the cast does
 				 * not seat is still the person it names. A fact with neither
@@ -2116,7 +2118,7 @@ export const buildSideCharacterContext = pin(
 				plan: S.json,
 				/**
 				 * The rooms, listed (`core:query/lorebook-entries@1`), as the
-				 * planner and the scene get them (lair pass R8, 2026-09-28):
+				 * planner and the scene get them (2026-09-28):
 				 * `{{knownLocations}}` and the one the party stand in as
 				 * `{{locationEntry}}`, so a voice can name the room it is in
 				 * now that nobody narrates it first. Unwired, neither renders.
@@ -2124,7 +2126,7 @@ export const buildSideCharacterContext = pin(
 				locationEntries: S.json,
 				/**
 				 * A place described only in prose, as `{{locationPassage}}`
-				 * (lair pass R9, 2026-09-28): the paragraph
+				 * (2026-09-28): the paragraph
 				 * `core:task/undescribed-name@1` found describing the room the
 				 * party are about to walk into (its `passage`), when no entry
 				 * describes it — that room's text for this turn. Blank or
@@ -2133,7 +2135,7 @@ export const buildSideCharacterContext = pin(
 				locationPassage: S.text,
 				/**
 				 * What the person asked this side character's turn to do
-				 * (genre uplift C2, 2026-09-29) — the narrator modal's text,
+				 * (2026-09-29) — the narrator modal's text,
 				 * which feeds both of its halves. `{{turnDirection}}`, on the
 				 * terms `build-narrator-context@1` states; wired by
 				 * `core:spec/chat-side-character` alone, so a genre's voices
@@ -2148,7 +2150,7 @@ export const buildSideCharacterContext = pin(
 				 * Who this voice is, as a **participant reference** — the row
 				 * the fact named (`characterId` or `ref`), else
 				 * `character:<id>` for a name the cast holds, else null for a
-				 * free-form one. Additive, 2026-09-17 (W1). A lore read wired
+				 * free-form one. Additive, 2026-09-17. A lore read wired
 				 * to it takes null as unwired, so the run's scope decides for
 				 * a free-form voice.
 				 *
@@ -2196,7 +2198,7 @@ export const buildSideCharacterContext = pin(
  * `SlotNamesOf<typeof buildPlannerContext>` `never`, so a handler bound to the
  * three surfaces could type-check reading NO slot and declare NO slot read,
  * which is the "declares least, checked least" hole `nodeInput.ts` warns about.
- * Found when the surfaces gained `reads` declarations (R-12, 2026-09-16).
+ * Found when the surfaces gained `reads` declarations (2026-09-16).
  */
 const agentContextSlots = (promptFields: Record<string, { type: 'text' }>) =>
 	({
@@ -2262,22 +2264,22 @@ export const buildPlannerContext = pin(
 				fields: S.json,
 				/**
 				 * What the person just sent, when the genre reads it as
-				 * **direction** rather than as a line somebody said (lair pass
-				 * B11, 2026-09-27) — the Lair's composer. On the template
+				 * **direction** rather than as a line somebody said
+				 * (2026-09-27) — the Lair's composer. On the template
 				 * context and in the prompt as `{{turnDirection}}`; empty or
 				 * absent on a turn nobody directed (a Continue), so a prompt
 				 * writes `{{#if turnDirection}}…{{/if}}`. A genre whose composer
 				 * text is a participant's line leaves it unwired: that line is
 				 * already in the transcript. *Turn* direction, never bare
 				 * `direction`: that word is the Lair's standing-note state slot
-				 * (`core:slot/direction@1`), a different fact (R1, renamed
-				 * 2026-09-27).
+				 * (`core:slot/direction@1`), a different fact (one word, one
+				 * meaning; renamed 2026-09-27).
 				 */
 				turnDirection: S.text,
 				/**
 				 * The places the lorebook holds — a
 				 * `core:query/lorebook-entries@1` listing of location entries
-				 * (lair pass B13, 2026-09-27). On the template context as
+				 * (2026-09-27). On the template context as
 				 * `{{knownLocations}}` (their names, one line) and
 				 * `{{locationEntry}}` (the entry whose name is the world's
 				 * `location` slot — where the party are, its exits included),
@@ -2287,7 +2289,7 @@ export const buildPlannerContext = pin(
 				 */
 				locationEntries: S.json,
 				/**
-				 * **Side talk** (lair re-plan R13, 2026-09-28): what was said on
+				 * **Side talk** (2026-09-28): what was said on
 				 * another channel since the story's last line — the Lair's
 				 * Sanctum talk, read by `session-history@1` with
 				 * `unplayedOnly`. Transcript rows, rendered as prose into
@@ -2299,15 +2301,15 @@ export const buildPlannerContext = pin(
 				 */
 				sideTalk: S.messages,
 				/**
-				 * The planner's own running notes (lair re-plan R13, owner
+				 * The planner's own running notes (owner ruling of
 				 * 2026-09-28): the Castellan's **scratchpad**, rendered as
 				 * `{{scratchpad}}`. Absent when unwired or blank; the Lair
 				 * wires it beside `sideTalk`.
 				 */
 				scratchpad: S.text,
 				/**
-				 * **How the cast stand with each other** (genre plan F6(a),
-				 * 2026-09-29): the ranker's allocated candidates, of which the
+				 * **How the cast stand with each other** (2026-09-29): the
+				 * ranker's allocated candidates, of which the
 				 * builder reads the `relationships` band's `castRelationships`
 				 * lane — `core:query/relationship-search@1` read with nobody
 				 * speaking. Rendered as `{{castRelationships}}`: JSON keyed by
@@ -2377,22 +2379,22 @@ export const buildSceneContext = pin(
 				fields: S.json,
 				/**
 				 * What the person just sent, when the genre reads it as
-				 * **direction** rather than as a line somebody said (lair pass
-				 * B11, 2026-09-27) — the Lair's composer. On the template
+				 * **direction** rather than as a line somebody said
+				 * (2026-09-27) — the Lair's composer. On the template
 				 * context and in the prompt as `{{turnDirection}}`; empty or
 				 * absent on a turn nobody directed (a Continue), so a prompt
 				 * writes `{{#if turnDirection}}…{{/if}}`. A genre whose composer
 				 * text is a participant's line leaves it unwired: that line is
 				 * already in the transcript. *Turn* direction, never bare
 				 * `direction`: that word is the Lair's standing-note state slot
-				 * (`core:slot/direction@1`), a different fact (R1, renamed
-				 * 2026-09-27).
+				 * (`core:slot/direction@1`), a different fact (one word, one
+				 * meaning; renamed 2026-09-27).
 				 */
 				turnDirection: S.text,
 				/**
 				 * The places the lorebook holds — a
 				 * `core:query/lorebook-entries@1` listing of location entries
-				 * (lair pass B13, 2026-09-27). On the template context as
+				 * (2026-09-27). On the template context as
 				 * `{{knownLocations}}` (their names, one line) and
 				 * `{{locationEntry}}` (the room the world's `location` names,
 				 * else the planner's location hint — where the party are, its
@@ -2403,7 +2405,7 @@ export const buildSceneContext = pin(
 				 */
 				locationEntries: S.json,
 				/**
-				 * **Side talk** (lair re-plan R13, 2026-09-28), on the
+				 * **Side talk** (2026-09-28), on the
 				 * planner's terms: the Lair's Sanctum talk since the story's
 				 * last line, rendered as prose into `{{sideTalk}}` — for the
 				 * Castellan's narration, wired while the session's _Sanctum
@@ -2413,7 +2415,7 @@ export const buildSceneContext = pin(
 				sideTalk: S.messages,
 				/**
 				 * How the cast stand with each other, on the narrator's terms
-				 * — the same port as the planner's (F6(a), 2026-09-29), rendered
+				 * — the same port as the planner's (2026-09-29), rendered
 				 * as `{{castRelationships}}`. See `buildPlannerContext`.
 				 */
 				castRelationships: S.candidates,
@@ -2519,6 +2521,16 @@ export const buildKeeperContext = pin(
 				 * prompt naming `{{tone}}` rendered a blank.
 				 */
 				fields: S.json,
+				/**
+				 * 🚧 **How much time the player chose** (live scenes §15 G6,
+				 * 2026-10-13): a collected clock step, `{ by, unit }` — the
+				 * inlet's `clockStep` on a *Time passes…* press. Spelled on the
+				 * template context as `{{clockStep}}` (`3 hours`, `1 day`,
+				 * `2 hours back`), so the keeper describes what the world does
+				 * over the span the player picked rather than one notch of
+				 * the time of day. Absent when unwired or not a step.
+				 */
+				clockStep: S.json,
 			},
 			out: contextPorts.out,
 		},
@@ -2541,11 +2553,11 @@ export const processMessages = pin(
 		timeoutMs: 1000,
 		slots: {
 			/**
-			 * The message-rewrite hook (18 §4a), on the *processed* list —
+			 * The message-rewrite hook, on the *processed* list —
 			 * names resolved, per-message interpolation done. `transform` only:
 			 * `messages/inject` deliberately does **not** live here. Injection
 			 * is a statement about *position in the rendered conversation*, and
-			 * position belongs to the template (§20, ruling of 2026-08-23) —
+			 * position belongs to the template (ruling of 2026-08-23) —
 			 * inject chains attach on the context builders, land as
 			 * `context.injections`, and the template's own loop renders them.
 			 * Splicing rows into this list would be a position the template
@@ -2568,8 +2580,7 @@ export const processMessages = pin(
 				seedName: S.text,
 				/**
 				 * Text the model is being asked to CONTINUE — the seed line's
-				 * body rather than a message of its own (ruling 2026-09-08,
-				 * D-2).
+				 * body rather than a message of its own (ruling 2026-09-08).
 				 *
 				 * ⚠ **Absent on an ordinary turn, and that is the normal case.**
 				 * There is no `optional` marker for a port: a port nothing wires
@@ -2639,8 +2650,7 @@ export const proseTranscript = pin(
 )
 
 /**
- * 🚧 **Where each line's attachments go** (PLAN-composer-attachments §3.5; owner
- * D2/D3, 2026-10-02).
+ * 🚧 **Where each line's attachments go** (owner rulings of 2026-10-02).
  *
  * Pure. Takes the processed lines and the attachments by message, and gives
  * each line an `attachments` string the template renders after the line's text
@@ -2711,11 +2721,11 @@ export const placeAttachments = pin(
 )
 
 /**
- * The turn-order pool, orderer and strategies (PLAN-turn-order §4.4, R3/R8;
- * re-ported in place 2026-09-22, pre-release).
+ * The turn-order pool, orderer and strategies (re-ported in place
+ * 2026-09-22, pre-release).
  *
- * Turn order is **state**, not a decision made inside the reply run
- * (§3). One spec per genre — `core:spec/<genre>-turn-order` — answers a session event by
+ * Turn order is **state**, not a decision made inside the reply run.
+ * One spec per genre — `core:spec/<genre>-turn-order` — answers a session event by
  * reading the cast and the history, pooling who *may* be seated, ordering
  * them, turning them into entries, and writing the result to
  * `sessions.metadata.turnOrder`. The reply run then fires an entry; it
@@ -2732,9 +2742,9 @@ export const placeAttachments = pin(
  * - **a strategy** turns candidates into *entries*: who speaks, where, and
  *   what to fire. It is the last node before the write.
  *
- * ⚠ **No `speaker` in-port, and no halt** (§4.4, §6). An explicit pick never
- * enters a strategy — a person's pick is fired directly (`fireTurnEntry`,
- * §4.6) and the next recompute sees the row it produced — and a strategy
+ * ⚠ **No `speaker` in-port, and no halt**. An explicit pick never
+ * enters a strategy — a person's pick is fired directly (`fireTurnEntry`)
+ * and the next recompute sees the row it produced — and a strategy
  * that seats nobody publishes an **empty order**, which is an answer. The
  * halt (`nobody is due`) and the `characterId` port went with the decider
  * they belonged to.
@@ -2771,7 +2781,7 @@ const turnStrategy = <Id extends string>(id: Id, label: string, extras: object =
  * in candidate order. A character spoke when a non-hidden, non-narrator row
  * after the last user row carries its id; an envoy when `metadata.speaker`
  * carries its reference; a persona when a user row carries its `personaId`
- * — which is how a session knows it is the person's turn (R15).
+ * — which is how a session knows it is the person's turn.
  * @experimental
  */
 export const turnRoundRobin = pin(turnStrategy('core:task/turn-round-robin@1', 'Round robin'))
@@ -2779,7 +2789,7 @@ export const turnRoundRobin = pin(turnStrategy('core:task/turn-round-robin@1', '
  * A seeded uniform pick over the not-yet-spoken candidates — one entry.
  * `declaresRandomness`, so a replayed run re-rolls identically; an
  * unrelated recompute may roll differently, which is documented rather than
- * prevented (§4.4).
+ * prevented.
  * @experimental
  */
 export const turnRandom = pin(
@@ -2833,7 +2843,7 @@ export const turnNarrator = pin(
 )
 
 /**
- * The pool (§4.4): who *may* be seated this recompute, from the settings
+ * The pool: who *may* be seated this recompute, from the settings
  * document's cast and the history.
  *
  * Its four params are the whole of a genre's or a session's say over
@@ -2945,7 +2955,7 @@ export const turnPool = pin(
 		},
 		ports: {
 			in: {
-				/** The settings document's cast, envoys included (§4.12). */
+				/** The settings document's cast, envoys included. */
 				cast: S.sessionCast,
 				/** The session's visible history, ascending. */
 				messages: S.messages,
@@ -2956,7 +2966,7 @@ export const turnPool = pin(
 )
 
 /**
- * The first orderer (R8): mentioned candidates sort to the front.
+ * The first orderer: mentioned candidates sort to the front.
  *
  * A composable node rather than a seventh strategy, because "who was named"
  * and "whose turn it is" are two questions — a session can have the
@@ -3000,7 +3010,67 @@ export const turnMentioned = pin(
 )
 
 /**
- * Tool calling's two pure halves (20 §9). A *tool* is any same-shaped
+ * Card strokes — marks each keyword stroke fired or not against the recent
+ * transcript; never ranks, never budgets.
+ *
+ * A card painted in strokes (`strokes.ts`) carries keyword strokes: prose that
+ * belongs in the prompt only when one of its keys was said. Unrun, every
+ * enabled stroke is in — the card's cached `description`/`personality` — and
+ * nothing is lost but room. Placed before the context builder, this stamps
+ * `fired` on every stroke of every cast member (`resolveStrokes`), and the
+ * builder then compiles `always` + fired ones only and puts the resolved list
+ * on the card (`core:var/characters@1`'s optional `strokes`).
+ *
+ * The host answers each keyword condition with the lore keyword **matcher**
+ * — the same match modes and regex time limit, one matcher at the seam — but
+ * a stroke is not a lorebook entry: it never reaches the ranker, the lore
+ * budget or `select`, and never competes with lore for room.
+ *
+ * `cast` in, `cast` out, so it slots between the cast read and the builder
+ * without either changing; a card with no strokes passes through as it came.
+ * The window is the last `scanDepth` rows of `messages`, defaulting to the
+ * lore scan's 10 for the reason given there: a round grows with the cast.
+ * Pure — the explicit step "no magic in core" asks for, placed in a spec.
+ *
+ * ⏸ Paused 2026-10-11 (owner): no core spec places this step and the app hides strokes behind `STROKES_ENABLED`; kept so stored documents and the registry hash stay stable.
+ * @experimental
+ */
+export const cardStrokes = pin(
+	describeTaskDefinition({
+		id: 'core:task/card-strokes@1',
+		i18n: {
+			name: { en: 'Card strokes' },
+			description: {
+				en: 'Marks each keyword stroke fired or not against the recent transcript; never ranks, never budgets.',
+			},
+		},
+		timeoutMs: 1000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					scanDepth: {
+						type: 'integer',
+						default: 10,
+						min: 1,
+						label: { en: 'Messages scanned for stroke keywords' },
+						description: {
+							en: "How many recent messages are read for a keyword stroke's keys.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { cast: S.sessionCast, messages: S.messages },
+			out: { main: S.sessionCast, cast: S.sessionCast },
+		},
+	}),
+)
+
+/**
+ * Tool calling's two pure halves. A *tool* is any same-shaped
  * provider — a sandboxed plugin hook canonically — and these tasks only
  * decide how the model learns about it and how its answer is read back.
  * Between them sits the ordinary generate step; around them sits the loop
@@ -3109,7 +3179,7 @@ export const joinText = pin(
 
 /**
  * A document's lists, as one **folded section** a reply carries collapsed
- * (lair pass B5, decision D5, 2026-09-27).
+ * (2026-09-27).
  *
  * The producer the message outlets' `sections` in-port was built for: a
  * planner's document is structure, and the person reading the reply wants its
@@ -3159,7 +3229,7 @@ export const listSection = pin(
 				sections: S.foldedSections,
 				/**
 				 * The same lines as a markdown list, one `- ` item per line
-				 * (lair pass R8, 2026-09-28) — for a message whose BODY is the
+				 * (2026-09-28) — for a message whose BODY is the
 				 * list: the Lair's beats row in the Sanctum. Empty when
 				 * nothing was listed.
 				 */
@@ -3170,8 +3240,8 @@ export const listSection = pin(
 )
 
 /**
- * A list, split into its **first** item and the **rest**, in order (lair pass
- * R8, 2026-09-28).
+ * A list, split into its **first** item and the **rest**, in order
+ * (2026-09-28).
  *
  * A data reference is `{node, port}` with no sub-path, and `parse-json@1`'s
  * `path` selects a key or an index but never a tail — so a spec that treats
@@ -3410,14 +3480,14 @@ export const makeChoices = pin(
 				/**
 				 * What the question is about, by name — stamped on the block
 				 * as its `referent` and handed back by `read-answer@1` to the
-				 * run the press fires (lair pass B12, 2026-09-27: the room the
+				 * run the press fires (2026-09-27: the room the
 				 * party knocked at). Blank or absent writes none.
 				 */
 				referent: S.text,
 				/**
 				 * Where the question was asked **from**, by name — stamped on
 				 * the block as its `vantage` and handed back by
-				 * `read-answer@1`, beside `referent` (plan A27, 2026-09-30:
+				 * `read-answer@1`, beside `referent` (2026-09-30:
 				 * the room the Lair's planner said the party stood in as
 				 * they knocked). JSON because it is usually read off a
 				 * model's document (`parse-json@1`'s `value`); anything but
@@ -3465,7 +3535,7 @@ export const readAnswer = pin(
 				question: S.text,
 				/**
 				 * What the question was about, by name — the block's
-				 * `referent`, as the asking run stamped it (lair pass B12);
+				 * `referent`, as the asking run stamped it;
 				 * empty when it named nothing, never null, so a write wired
 				 * to it still offers the field at its review gate (a review
 				 * form shows only the fields a payload carries).
@@ -3473,7 +3543,7 @@ export const readAnswer = pin(
 				referent: S.text,
 				/**
 				 * Where the question was asked from, by name — the block's
-				 * `vantage`, as the asking run stamped it (plan A27); null
+				 * `vantage`, as the asking run stamped it; null
 				 * when it named nowhere.
 				 */
 				vantage: S.json,
@@ -3494,7 +3564,7 @@ export const readAnswer = pin(
  * first parameter a user with long posts reaches for.
  * @internal
  */
-export const batchMessages = pin(
+const batchMessagesAt1 = pin(
 	describeTaskDefinition({
 		id: 'core:task/batch-messages@1',
 		i18n: { name: { en: 'Batch messages' } },
@@ -3505,7 +3575,7 @@ export const batchMessages = pin(
 			 * that the drafting step generates against.
 			 *
 			 * The context window belongs to the sampling config, never to a knob
-			 * on a node (17 §1a), and the executor resolves a `sampling` slot to
+			 * on a node, and the executor resolves a `sampling` slot to
 			 * the config's switched-on *values* — so this stays a pure Task
 			 * reading data it was handed rather than a Query looking one up. Same
 			 * shape and same reason as `core:task/context-budget@1`.
@@ -3571,6 +3641,184 @@ export const batchMessages = pin(
 	}),
 )
 
+/**
+ * 🚧 What a genre's **transcript template** may read, section by section
+ * (live scenes §12.1/§14). The template is one Handlebars source holding
+ * three inline partials — `{{#*inline "preamble"}}`, `{{#*inline "line"}}`
+ * and `{{#*inline "aside"}}` — and the binding renders each on its own:
+ * `preamble` once, `line` per story message, `aside` per aside row. Text
+ * outside the three partials is never rendered. A section the template does
+ * not define falls back to the shipped Default's.
+ */
+const TRANSCRIPT_TEMPLATE_SCOPE = {
+	scene: {
+		type: 'object',
+		optional: true,
+		description: 'The scene, in `preamble`: its name, place and date when the host knows them.',
+		fields: {
+			name: { type: 'string', optional: true },
+			place: { type: 'string', optional: true },
+			date: { type: 'string', optional: true },
+		},
+	},
+	cast: {
+		type: 'list',
+		description: 'Who was present, in `preamble`, by name.',
+		of: { type: 'object', fields: { name: { type: 'string' } } },
+	},
+	messageId: { type: 'number', description: 'In `line` and `aside`: the message this unit renders.' },
+	name: { type: 'string', description: 'In `line` and `aside`: who wrote the line, as the session names them.' },
+	role: { type: 'string', description: "In `line` and `aside`: 'user', 'assistant' or 'system'." },
+	text: { type: 'string', description: "In `line` and `aside`: the message's text." },
+	attachments: {
+		type: 'string',
+		description:
+			"In `line` and `aside`: the files the message shows, each named on a line of its own — `[image: cat.png — a grey cat]`, `[file: notes.txt]` — carrying its own leading line break when the message has text, so it renders straight after `{{{text}}}`, as `place-attachments@1`'s does. Empty when the message shows none. A summary is drafted from text, so a file reaches it as its name.",
+	},
+	channel: { type: 'string', description: 'In `aside`: the channel the row was written on — `sanctum`, `sanctum:2`.' },
+} as const satisfies Record<string, VarField>
+
+/**
+ * 🚧 Lay a scene's messages out as text, one **transcript unit** per message
+ * — the genre's own words for what a line and an aside look like (live
+ * scenes §12.1, §14, 2026-10-13).
+ *
+ * ## Why a template, and why it is the spec's
+ *
+ * A summary of the Lair has to say the Sanctum is talk the party never hear;
+ * a summary of Chat has nothing to say about it. That difference is
+ * presentation, so it is a template on this node's `template` slot, and the
+ * shipped template is the summarize-scene spec's Default — a genre ships its
+ * own by building its spec with `summarizeScene(…, { transcript })`, and an
+ * admin edits it in the Pipelines view like any other template.
+ *
+ * ## The outlet
+ *
+ * `preamble` — the rendered `preamble` section, once. `units` — every
+ * story line and aside in reading order (each aside after the story line it
+ * is attached to), `{ messageId, text, tokens }`: the batch cut needs the
+ * count, and the message id is what makes a draft traceable to its rows.
+ * Pure: no model, no write. An empty span renders an empty `units`.
+ * @experimental
+ */
+export const renderTranscript = pin(
+	describeTaskDefinition({
+		id: 'core:task/render-transcript@1',
+		i18n: { name: { en: 'Lay out the transcript' } },
+		timeoutMs: 2000,
+		slots: {
+			template: {
+				kind: 'template',
+				acceptedEngines: [handlebars.id],
+				facet: 'templates',
+				variables: TRANSCRIPT_TEMPLATE_SCOPE,
+				description:
+					'How the transcript a summary is drafted from reads: three sections — the preamble, a story line, and an aside. Leave empty to use the built-in layout.',
+			},
+		},
+		ports: {
+			in: {
+				/** The story's rows (`summarize-source@2`'s `messages`). */
+				messages: S.messages,
+				/** The aside rows (`summarize-source@2`'s `asides`). */
+				asides: S.messages,
+				/**
+				 * The files by message, from `core:query/history-attachments@1`
+				 * over the story rows — `batch-messages@1`'s port, for its
+				 * reason: a message that is only a picture still reaches the
+				 * draft as something. Each story line's files are named into
+				 * the `line` section's `attachments`. Unwired, or a message
+				 * with no files, and the line renders as it would without.
+				 */
+				attachments: S.mediaByMessage,
+				/**
+				 * 🚧 The aside rows' files by message, from a second
+				 * `core:query/history-attachments@1` over the asides (lane
+				 * E): each aside's files are named into the `aside`
+				 * section's `attachments`. Unwired, an aside renders as it
+				 * would without.
+				 */
+				asideAttachments: S.mediaByMessage,
+				/** Who was present — the session's cast read. */
+				cast: S.sessionCast,
+				/**
+				 * The scene being summarized: its name, place and date where the
+				 * host knows them. Wired to the summarize request in the shipped
+				 * specs; the binding reads the request's `scene` field.
+				 */
+				scene: S.json,
+			},
+			out: {
+				main: S.transcriptUnits,
+				preamble: S.text,
+				units: S.transcriptUnits,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 Cut a rendered transcript into batches a model can hold — `@1`'s cut,
+ * over **text** (live scenes §14, 2026-10-13).
+ *
+ * `@1` cuts message rows and formats them itself; this one is handed units the
+ * transcript template already laid out, counts each unit's `tokens`, and opens
+ * every batch with the `preamble` so each draft knows the scene it is in. A
+ * unit is never split. Out: `batches`, one string per batch, in order. An
+ * empty `units` cuts to no batches. `@1` stays for the shared summarize specs.
+ * @experimental
+ */
+const batchMessagesAt2 = pin(
+	describeTaskDefinition({
+		id: 'core:task/batch-messages@2',
+		i18n: { name: { en: 'Batch the transcript' } },
+		timeoutMs: 2000,
+		slots: {
+			/**
+			 * The window the cut is clamped to — wired by REFERENCE to the
+			 * drafting step's sampling, for `@1`'s reason: a batch cut against
+			 * one window and drafted against another overflows silently.
+			 */
+			sampling: { kind: 'sampling', quick: true },
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					batchTokens: {
+						type: 'integer',
+						default: 2560,
+						label: { en: 'How much chat each batch holds' },
+						description: {
+							en: 'Tokens of transcript one summary draft is written from. Capped by the drafting step\u2019s Context Tokens, less room for the prompt and the draft itself.',
+						},
+					},
+					minBatchMessages: {
+						type: 'integer',
+						default: 1,
+						description: 'Never cut a batch smaller than this many messages.',
+					},
+				},
+			},
+		},
+		ports: {
+			in: { preamble: S.text, units: S.transcriptUnits },
+			out: { main: S.drafts, batches: S.drafts },
+		},
+	}),
+)
+
+/**
+ * Cut a summary's material into batches — both pins on one export (04 §4b):
+ * `C.batchMessages.v1(…)` cuts message rows, `C.batchMessages.v2(…)` cuts a
+ * rendered transcript. `id` and `descriptor` stay `@1`'s; `@2`'s descriptor
+ * rides its constructor (`typeof C.batchMessages.v2` types a binding).
+ * @internal
+ */
+export const batchMessages = {
+	...batchMessagesAt1,
+	v2: Object.assign(batchMessagesAt2.v2, { descriptor: batchMessagesAt2.descriptor }),
+}
+
 // ── Stats and states ────────────────────────────────────────────────────────
 
 /** @experimental */
@@ -3612,13 +3860,19 @@ export const setState = pin(
 			// [{ owner: { kind, id }, slotId, value, base? } | { owner, entryId, delta, base? }]
 			// `scope` is what says which session, and therefore which message a
 			// change is anchored to — a change with no anchor is one a swipe
-			// could not take back.
+			// could not take back. 🚧 A clock line `{ kind: 'clock', by, unit }`
+			// (★3) is held by `propose` as a clock proposal and passed over by
+			// `apply` — see `resolve-state-changes@1`'s `clock` out-port. One
+			// marked `skipped` (a sentence: the story has no clock to take it,
+			// live scenes §15 G16) is written to the session's ledger as a
+			// skipped clock move in either mode — never proposed, never moved
+			// — and its row id rides `main.skipped`.
 			in: {
 				changes: S.json,
 				scope: S.sessionScope,
 				/**
-				 * The **state version** the changes are deltas against (plans/29
-				 * R-15 *Staleness and order*; U5f) — the session-state query's
+				 * The **state version** the changes are deltas against — the
+				 * session-state query's
 				 * `version`, for every change that does not carry its own
 				 * `base`. In `apply` mode a base behind the current version is
 				 * **rebased**: a change whose slot is untouched since the base
@@ -3631,8 +3885,8 @@ export const setState = pin(
 				 */
 				base: S.json,
 				/**
-				 * **The row the WORLD's changes are filed at** (lair pass R8,
-				 * 2026-09-28): a message this run wrote earlier, as that
+				 * **The row the WORLD's changes are filed at** (2026-09-28): a
+				 * message this run wrote earlier, as that
 				 * write's result. Optional, and only for world-owned changes
 				 * (the session and its places); a cast member's change still
 				 * files at that member's own latest line (the turn lock).
@@ -3659,12 +3913,12 @@ export const setState = pin(
 )
 
 /**
- * A room name, unless something already describes it (lair pass R7,
- * 2026-09-28; replaced `core:task/unlisted-name@1`).
+ * A room name, unless something already describes it (2026-09-28; replaced
+ * `core:task/unlisted-name@1`).
  *
  * The Lair's planner names the room the party are about to walk into when it
  * thinks nobody has built it, and the turn stops to ask the dungeon's master
- * to describe it (owner ruling 2, 2026-09-28: *ask, unless it is already
+ * to describe it (owner ruling, 2026-09-28: *ask, unless it is already
  * described in prose or the lorebook*). This is the deterministic check after
  * the planner's judgement. Lookups, in order; the first hit wins:
  *
@@ -3693,7 +3947,7 @@ export const setState = pin(
  * hard-codes a genre's slug: a spec that wants a side channel's prose to count
  * reads it and names it here.
  *
- * ## Which room is this one (places plan B6, 2026-09-29)
+ * ## Which room is this one (2026-09-29)
  *
  * The same lookup answers the Lair's other question: *which room do the party
  * stand in?* — the world's `location` stat, resolved against the rooms, so
@@ -3709,7 +3963,7 @@ export const setState = pin(
  *    find a namesake. So a value with an `entryId` is answered by the listed
  *    entry with that id (`describedBy` `entry`), and by nothing when no
  *    listing holds it — archived, or hidden from this read.
- *  - **`fallbackName`** (plan A27, 2026-09-30): what to look for when `name`
+ *  - **`fallbackName`** (2026-09-30): what to look for when `name`
  *    (at `path`) names nothing — for the Lair, the room its planner said the
  *    party stood in as they knocked (the knock's `vantage`). The world's
  *    value wins and the hint stands in only while it names nothing: the
@@ -3769,8 +4023,8 @@ export const undescribedName = pin(
 						},
 					},
 					/**
-					 * Where the name is inside `name`, as a dotted path (places
-					 * plan B6) — the Lair reads `world.location` off a
+					 * Where the name is inside `name`, as a dotted path — the
+					 * Lair reads `world.location` off a
 					 * session-state document. Empty reads `name` itself.
 					 */
 					path: {
@@ -3792,7 +4046,7 @@ export const undescribedName = pin(
 				 * `value`), or a document holding it at `path`; anything but a
 				 * string is no name, and nothing is undescribed — save a lore
 				 * reference (`{ entryId }`), which is the listed entry it
-				 * references (B6).
+				 * references.
 				 */
 				name: S.json,
 				/**
@@ -3863,8 +4117,9 @@ export const undescribedName = pin(
  *
  * A spec wires `$.input.sessionScope` (or a literal) — something durable. The
  * run's seed is a different string every turn and a pick keyed on it would
- * move between two questions. It is `scopeKey` and not `key` (R3, named
- * 2026-09-17, before anything shipped): *key* alone is the option key on a
+ * move between two questions. It is `scopeKey` and not `key` (a qualified
+ * name, never the bare noun; named 2026-09-17, before anything shipped):
+ * *key* alone is the option key on a
  * choice, the identity a candidate is scored under, and a settings field's
  * name, and this port is none of them — it is the scope the pick is made
  * within.
@@ -3946,7 +4201,7 @@ export const pickByHash = pin(
 				/**
 				 * Where it sat in the list **as handed in**, not among the
 				 * identifiable entries. `pickIndex` rather than `index`
-				 * (R3): a bare *index* is a database index, a message's
+				 * (qualified, never the bare noun): a bare *index* is a database index, a message's
 				 * position and a list offset all at once.
 				 */
 				pickIndex: S.json,
@@ -3977,7 +4232,7 @@ export const pickByHash = pin(
  *
  * ## The key is a participant reference
  *
- * `character:<id>`, the reference vocabulary (R-18 (3)) — not a name, which
+ * `character:<id>`, the reference vocabulary — not a name, which
  * two cast members can share and an author can edit, and not a bare id, which
  * says nothing about what it identifies. It survives the round trip: the key
  * lands on the pressed option, `core:task/read-answer@1` publishes it as
@@ -4026,7 +4281,7 @@ export const castChoices = pin(
 					/**
 					 * Which half of the room to leave out.
 					 *
-					 * A persona is a character the player voices (0132), so
+					 * A persona is a character the player voices, so
 					 * both halves are cast members and which one a question
 					 * is about depends entirely on the question: *who do you
 					 * accuse* is asked about the suspects and must not offer
@@ -4099,7 +4354,7 @@ export const castChoices = pin(
  * ## The gap it closes
  *
  * A junction branches on **one** port, and `equalsPath` compares two paths of
- * **one** document (D-4a). So the grammar can ask *is the accused the culprit?*
+ * **one** document. So the grammar can ask *is the accused the culprit?*
  * only once something has put the accused and the culprit in the same
  * document, and nothing in core did: no task merged two json ports, and the
  * obvious repair — a second in-port on the junction — is not a repair, it is a
@@ -4197,3 +4452,430 @@ export const pair = pin(
 )
 
 // ── Contracts batch 2: the two-document pair ────────────────────── end ──────
+
+// ── Pictures: the cut-out (image generation I4, 2026-10-12) ────────────────
+
+/**
+ * 🚧 Each picture, with its background removed — a **cut-out**.
+ *
+ * The step after `core:oracle/generate-image@1` when the pair could not draw a
+ * transparent background itself (`cutOut: native-or-task`). The host runs a
+ * local matting model (BiRefNet-lite, ONNX) over each picture and stores the
+ * result as a new PNG with an alpha channel; the source picture is left as it
+ * was.
+ *
+ * ## Same list in, same list out
+ *
+ * One item out per item in, in order. An item that was cut out is replaced by
+ * a reference to its cut-out; every other field the item carried — its series
+ * `key` included — travels across unchanged, so a keyed outlet downstream
+ * files each cut-out under the label it was drawn for. An item that is not an
+ * image passes through untouched.
+ *
+ * ## `mode`
+ *
+ *  - `auto` (default) skips a picture that already has a transparent
+ *    background: its media meta says `transparent: 'native'` (the pair drew
+ *    it), it is itself a cut-out (`cutOutOf`), or its pixels already carry
+ *    transparency.
+ *  - `always` cuts every picture out, whatever it says about itself.
+ *  - `off` hands the list on unchanged — the switch a spec author flips to see
+ *    the raw pictures without rewiring.
+ *
+ * Pure given its input: the same pictures make the same cut-outs (the media
+ * store dedupes identical bytes). The first run on a machine downloads the
+ * matting model once, which is why the timeout is idle rather than wall.
+ * @experimental
+ */
+export const cutOut = pin(
+	describeTaskDefinition({
+		id: 'core:task/cut-out@1',
+		i18n: {
+			name: { en: 'Cut out' },
+			description: {
+				en: 'Removes the background from each picture, leaving it transparent. Downloads a small background-removal model the first time.',
+			},
+		},
+		timeoutMs: 120000,
+		timeoutKind: 'idle',
+		slots: {
+			params: {
+				kind: 'parameters',
+				schema: {
+					mode: {
+						type: 'enum',
+						of: ['auto', 'always', 'off'],
+						members: [
+							{
+								key: 'auto',
+								label: { en: 'When needed' },
+								description: { en: 'Skips pictures that already have a transparent background.' },
+							},
+							{
+								key: 'always',
+								label: { en: 'Always' },
+								description: { en: 'Cuts every picture out, even one that is already transparent.' },
+							},
+							{
+								key: 'off',
+								label: { en: 'Off' },
+								description: { en: 'Hands the pictures on unchanged.' },
+							},
+						],
+						default: 'auto',
+						quick: true,
+						description: 'Which pictures get their background removed.',
+					},
+				},
+			},
+		},
+		ports: {
+			in: { media: S.mediaList },
+			out: { main: S.mediaList, media: S.mediaList },
+		},
+	}),
+)
+
+// ── Pictures: the sprite series (image generation I5, 2026-10-12) ──────────
+
+/**
+ * 🚧 The pictures a **Sprite set fill** asks for — one image series item per
+ * sprite label.
+ *
+ * Each item is `{ key, vars }`:
+ *
+ *  - `key` is the label made filename-safe (trimmed, case-folded, spaces to
+ *    `-`, anything else dropped, collisions suffixed `joy`, `joy-2`). A key
+ *    is an address, never prose: the picture's description comes from
+ *    `vars.labelPhrase`, never from the key.
+ *  - `vars.label` is the sprite label as the card spells it, which is what
+ *    `core:outlet/attach-sprite@1` files the picture under.
+ *  - `vars.labelPhrase` is the label's **sprite label phrase** — the
+ *    `phrases` prompt field, one `label: phrase` per line (*Sprite label
+ *    phrases*, editable like any prompt row). A label with no line falls back
+ *    to the label word itself.
+ *  - `vars.likeness` / `vars.likenessNegative` carry the card's likeness, so
+ *    the picture step's prompt rows can say `{{likeness}}` per item.
+ *
+ * The phrases and the sprite picker's labels stay two vocabularies, never
+ * merged: the picker never reads a phrase. Pure given its input — no read, no call.
+ * @experimental
+ */
+export const buildSpriteSeries = pin(
+	describeTaskDefinition({
+		id: 'core:task/build-sprite-series@1',
+		i18n: {
+			name: { en: 'Sprite series' },
+			description: {
+				en: 'Turns the sprite labels to draw into one picture request each, with a short description of each expression.',
+			},
+		},
+		timeoutMs: 5000,
+		slots: {
+			prompts: {
+				kind: 'prompts',
+				quick: true,
+				facet: 'prompts',
+				description: 'How each sprite label is described to the picture model: one "label: phrase" per line.',
+				fields: {
+					phrases: { type: 'text' },
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** The sprite labels to draw, as the card spells them. */
+				labels: S.json,
+				likeness: S.text,
+				likenessNegative: S.text,
+			},
+			out: {
+				main: S.imageSeries,
+				series: S.imageSeries,
+				/** The labels kept, in order — blanks and repeats dropped. */
+				labels: S.json,
+			},
+		},
+	}),
+)
+
+// ── Pictures: proofs (image generation I8, 2026-10-12) ─────────────────────
+
+/**
+ * 🚧 **Proofs** — *n* identical pictures to choose from, as an image
+ * series. A photographer's proof prints: the
+ * same shot several times, one kept. Not a retrieval **candidate**, which is
+ * something that might reach a prompt.
+ *
+ * Each item is `{ key, vars: {} }` with keys `"1"` … `"n"`: the same picture
+ * asked for *n* times, so every item renders the same prompt. That sameness
+ * is what lets the host pack the series as ONE batch call on a pair whose
+ * drawing sheet takes `perCall ≥ n` (a hosted API's `n`, a ComfyUI graph's
+ * batch size); a pair that draws one picture per call loops. The spec never
+ * knows which.
+ *
+ * `count` is read as a whole number and clamped to 1–8 (the default
+ * `seriesMax`); anything that is not a number is 1. The Portrait form offers
+ * 1–4. Pure given its input — no read, no call.
+ * @experimental
+ */
+export const buildProofs = pin(
+	describeTaskDefinition({
+		id: 'core:task/build-proofs@1',
+		i18n: {
+			name: { en: 'Proofs' },
+			description: {
+				en: 'Asks for the same picture several times, so there are a few to choose from.',
+			},
+		},
+		timeoutMs: 5000,
+		ports: {
+			in: {
+				/** How many pictures: a whole number, clamped to 1–8. */
+				count: S.json,
+			},
+			out: {
+				main: S.imageSeries,
+				series: S.imageSeries,
+			},
+		},
+	}),
+)
+
+// ── The Scene action (DESIGN-image-generation §6.4, I9, 2026-10-12) ─────────
+
+/**
+ * 🚧 A model's reply, cleaned into a picture prompt — the step between the
+ * Scene action's **scene prompt** (a quiet text call asked for a tag list)
+ * and the picture step.
+ *
+ * A text model asked for "a comma-separated tag list and nothing else"
+ * still answers with a fence, a `Prompt:` label, quotes round the whole
+ * line or a list one tag per line. Each is undone here: fences and the
+ * label dropped, wrapping quotes stripped, line breaks and bullets turned
+ * into commas, empty tags and repeated commas and spaces collapsed, a
+ * trailing full stop removed. Prose survives as prose — only its line
+ * breaks become commas. Pure: no read, no model.
+ *
+ * An empty result halts: a picture of nothing is not a picture.
+ * @experimental
+ */
+export const cleanImagePrompt = pin(
+	describeTaskDefinition({
+		id: 'core:task/clean-image-prompt@1',
+		i18n: {
+			name: { en: 'Clean picture prompt' },
+			description: { en: "Tidies a model's reply into one line a picture model can read." },
+		},
+		timeoutMs: 500,
+		ports: {
+			in: { text: S.text },
+			out: { main: S.text, prompt: S.text },
+		},
+	}),
+)
+
+/**
+ * 🚧 Where the Scene action's picture goes — its **placement**: posted as a
+ * message, set as the session's backdrop, or both.
+ *
+ * The `placement` parameter is the admin's (Admin › Pipelines, the Scene
+ * pipeline's config); a press may name its own in its payload
+ * (`{ placement: 'backdrop' }` — the Backdrop widget's *Illustrate*), and a
+ * named one wins. Published as two flags, `message` and `backdrop`, because
+ * a junction branch reads one truthy value: each outlet sits behind its own.
+ * Pure: no read, no model.
+ * @experimental
+ */
+export const picturePlacement = pin(
+	describeTaskDefinition({
+		id: 'core:task/picture-placement@1',
+		i18n: {
+			name: { en: 'Placement' },
+			description: { en: 'Decides whether the picture is posted, set as the backdrop, or both.' },
+		},
+		timeoutMs: 500,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					placement: {
+						type: 'enum',
+						of: ['message', 'backdrop', 'both'],
+						members: [
+							{
+								key: 'message',
+								label: { en: 'Post it' },
+								description: { en: 'Posts the picture in the session as a message.' },
+							},
+							{
+								key: 'backdrop',
+								label: { en: 'Backdrop' },
+								description: { en: "Sets the picture as the session's backdrop, and posts nothing." },
+							},
+							{
+								key: 'both',
+								label: { en: 'Both' },
+								description: { en: 'Posts the picture and sets it as the backdrop.' },
+							},
+						],
+						default: 'both',
+						label: { en: 'Placement' },
+						description: 'Where the picture goes. A press that names its own placement uses that.',
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** The press's payload; its `placement`, when one of the three, wins. */
+				payload: S.json,
+			},
+			out: {
+				main: S.json,
+				/** `message`, `backdrop` or `both` — what was decided. */
+				placement: S.text,
+				/** True when the picture is posted as a message. */
+				message: S.json,
+				/** True when the picture is set as the backdrop. */
+				backdrop: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 A **clock step**: how far the story clock moves, decided — `{ by, unit }`
+ * and whether it moves at all (2026-10-13, PROPOSAL-live-scenes §6).
+ *
+ * Two uses, one shape. *Time passes…* hands it the press's collected
+ * `step` (`input.clockStep`), which wins. Chat's reply hands it nothing and
+ * reads its own parameters — **By** (0, the default, is off) and **Unit** —
+ * exposed as the session setting *Each reply advances the clock by …*. Either
+ * way the step publishes `moves` (true when `by` is a whole number other than
+ * zero), and the *Advance story clock* outlet sits behind a junction on it,
+ * so a step of nothing is never written and never refused. Pure: no read, no
+ * model, never the clock itself.
+ * @experimental
+ */
+export const clockStep = pin(
+	describeTaskDefinition({
+		id: 'core:task/clock-step@1',
+		i18n: {
+			name: { en: 'Clock step' },
+			description: { en: 'Decides how far the story clock moves: a number of minutes, hours, days, months or years.' },
+		},
+		timeoutMs: 500,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					by: {
+						type: 'integer',
+						default: 0,
+						label: { en: 'By' },
+						description: { en: 'How many units the clock moves. 0 moves nothing; negative goes back.' },
+					},
+					unit: {
+						type: 'enum',
+						of: ['minutes', 'hours', 'days', 'months', 'years'],
+						members: [
+							{ key: 'minutes', label: { en: 'Minutes' } },
+							{ key: 'hours', label: { en: 'Hours' } },
+							{ key: 'days', label: { en: 'Days' } },
+							{ key: 'months', label: { en: 'Months' } },
+							{ key: 'years', label: { en: 'Years' } },
+						],
+						default: 'minutes',
+						label: { en: 'Unit' },
+						description: { en: 'What to count.' },
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** A collected step, `{ by, unit }` — wins over the parameters when it reads. */
+				step: S.json,
+				/**
+				 * When truthy, the clock does not move (`moves` false). Chat's
+				 * reply wires the row it re-drives (`input.messageId`), so a
+				 * regenerate, a swipe or an extend never ticks the clock twice.
+				 */
+				unless: S.json,
+			},
+			out: {
+				main: S.json,
+				/** True when the clock moves: `by` is a whole number other than zero. */
+				moves: S.json,
+				/** The signed amount — what *Advance story clock* takes on its `by` port. */
+				by: S.json,
+				/** The unit — what *Advance story clock* takes on its `unit` port. */
+				unit: S.text,
+			},
+		},
+	}),
+)
+
+/**
+ * **Run a script** — the script step (2026-10-12).
+ *
+ * The node itself does nothing: it passes its input through to `main`, and
+ * the `core:script:data/transform@1` scripts attached after `main` transform
+ * it in order, each handed the value the one before returned. That is what
+ * lets an admin write a custom task in-app without a plugin — the body is a
+ * sandboxed script, the contract is JSON in, JSON out.
+ * @experimental
+ */
+export const runScript = pin(
+	describeTaskDefinition({
+		id: 'core:task/run-script@1',
+		i18n: {
+			name: { en: 'Run a script' },
+			description: {
+				en: 'Passes its input through; the scripts attached after it transform the value, each handed what the one before returned.',
+			},
+		},
+		timeoutMs: 2000,
+		slots: {
+			scripts: {
+				kind: 'scripts',
+				accepts: ['core:script:data/transform@1'],
+				port: 'main',
+				phase: 'after',
+				description:
+					'The script, or scripts, this step runs over its input. Each is handed the value the one before returned.',
+			},
+			/**
+			 * The time each script in the chain may take.
+			 * Read by the HOST's script applier off the scope chain, not by the
+			 * binding — the binding never sees the chain. A script past it is
+			 * stopped and recorded `err` with the time in its reason, and the
+			 * value it was handed goes on. Unset, the seam default applies (the
+			 * same 250 ms).
+			 */
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					budgetMs: {
+						type: 'integer',
+						min: 1,
+						max: 1000,
+						default: 250,
+						label: { en: 'Script time limit (ms)' },
+						description: {
+							en: 'How long each script in this step may run. A script that runs longer is stopped, and the value it was handed goes on unchanged.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { input: S.json },
+			out: { main: S.json },
+		},
+	}),
+)

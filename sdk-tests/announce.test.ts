@@ -102,7 +102,8 @@ describe('announce (24 §6)', () => {
 		assert.equal(document.identity.ns, 'demo')
 		assert.deepEqual(Object.keys(document.hooks), ['demo:hook/trim-history'])
 		assert.equal(document.pipelines.length, 2)
-		assert.deepEqual(document.requires, [])
+		// Core events a pipeline locks on are requirements on the host's version.
+		assert.deepEqual(document.requires, ['core:event/message-respond@1', 'core:event/session-created@1'])
 		const slots = coverage.presets[0]!.slots
 		const respondSlot = slots.find((s) => s.event === sessionEvents.messageRespond)!
 		assert.equal(respondSlot.status, 'bound')
@@ -277,6 +278,8 @@ describe('announce (24 §6)', () => {
 			})
 			.build()
 		assert.deepEqual(document.requires, [
+			'core:event/message-respond@1',
+			'core:event/session-created@1',
 			'core:genre/chat',
 			'core:spec/chat-create',
 			'core:spec/chat-respond',
@@ -420,6 +423,11 @@ describe('a preset includes actions by identity (W-A)', () => {
 			'core:spec/chat-narrate#narrate',
 		])
 		// The spec, not the identity: an install resolves specs.
-		assert.deepEqual(document.requires, ['core:spec/chat-narrate'])
+		assert.deepEqual(document.requires, [
+			'core:event/message-respond@1',
+			'core:event/session-action@1',
+			'core:event/session-created@1',
+			'core:spec/chat-narrate',
+		])
 	})
 })

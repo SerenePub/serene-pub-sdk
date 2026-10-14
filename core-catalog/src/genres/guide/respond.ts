@@ -44,6 +44,7 @@
  *    capped at one call per turn the way Chat's reply is.
  */
 import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { GUIDE_MASCOT_KEY, guideGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
 
@@ -404,7 +405,8 @@ export const guideRespondSpec = () =>
 						source: GUIDE_RESPOND_TEMPLATE,
 						engine: handlebars.id,
 					})
-					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
+					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
 			)
 			.build(),
 	)

@@ -1,5 +1,5 @@
 /**
- * The component bundler (§3.5, C3): one declared component's source → one
+ * The component bundler: one declared component's source → one
  * self-contained ES module the page's UI worker imports.
  *
  * - `.svelte` files compile with the package's own Svelte (`svelte/compiler`,
@@ -34,7 +34,7 @@ export interface ComponentBundle {
 	warnings: string[]
 	/** Every source file the module was built from, absolute — what a host watches to rebuild it. */
 	inputs: string[]
-	/** The host contract the module was built against (F1), as the packager records it on the manifest entry. */
+	/** The host contract the module was built against, as the packager records it on the manifest entry. */
 	builtAgainst: ComponentBuiltAgainst
 }
 

@@ -10,8 +10,8 @@
  * rather than at 2am.
  *
  * ✎ CHANGE: add the retrieval, the ranking and the budget your genre needs
- *   between `cast` and `prompt`. `slot.prompts()`, `slot.connection()` and
- *   `slot.sampling()` are **slots**: what fills them is a configuration's
+ *   between `cast` and `prompt`. `slot.prompts()`, `slot.template()`,
+ *   `slot.connection()` and `slot.sampling()` are **slots**: what fills them is a configuration's
  *   answer and an administrator's, never this document's.
  */
 
@@ -43,10 +43,19 @@ export const respondSpec = () =>
 				prompts: slot.prompts(),
 			}),
 		)
+		/**
+		 * `template` is the context template an administrator picks for this
+		 * step, and `connectionOf('speak')` names the connection the prompt is
+		 * written for — chat messages or one text, whichever it takes. Leave
+		 * either out and `validate()` refuses the spec: unwired, it halts on a
+		 * real instance though the fixture host never notices.
+		 */
 		.task('prompt', ($) =>
 			C.assemble.v2({
 				messages: $.history.messages,
 				templateContext: $.context.templateContext,
+				template: slot.template(),
+				connection: slot.connectionOf('speak'),
 			}),
 		)
 		/**

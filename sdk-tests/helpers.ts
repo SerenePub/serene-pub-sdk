@@ -224,6 +224,10 @@ export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
 		'core:task/place-attachments@1': async (i: any) =>
 			ok({ main: i?.messages ?? [], messages: i?.messages ?? [], notes: [] }),
 
+		// Card strokes (DESIGN-card-strokes A.4): no fixture card carries
+		// strokes, so the cast passes through as the host's binding passes it.
+		'core:task/card-strokes@1': async (i: any) => ok({ main: i?.cast, cast: i?.cast }),
+
 		'core:task/assemble@2': async (i: any) => {
 			const budget = i.budget ?? i.params?.budget ?? 4096
 			const raw = i.candidates ?? []

@@ -1,6 +1,5 @@
 /**
- * What a template can reference at one node of one document, typed (typed
- * templates P3, 2026-09-27).
+ * What a template can reference at one node of one document, typed.
  *
  * ```ts
  * const scope = templateScopeAt(doc, 'prompt', { genre: 'showcase.twenty-questions:genre/game' })
@@ -17,7 +16,7 @@
  * | the `prompts` slot's fields | `slotToVarField`, followed through a slot reference (`slot.prompts({ node })`, an envoy's) |
  * | the context builder's keys | the declared out-port schema (`Descriptor.portSchemas`) of whatever feeds a template-context in-port |
  * | one per declared band | `rendersAt` over the node's `variables` slot — the laid-out string |
- * | `annex` | every declared annex key of every owner in scope (`annexVarFieldOf`), as `annex.<owner>.<key>` — only where the node's `annex` in-port is wired (P6) |
+ * | `annex` | every declared annex key of every owner in scope (`annexVarFieldOf`), as `annex.<owner>.<key>` — only where the node's `annex` in-port is wired |
  * | `state` | the builder's `state`, re-typed from the genre's attribute slots |
  *
  * **Order is `render()`'s.** The node's own names are the last word — Assemble
@@ -27,17 +26,18 @@
  * (`BandCollisionError`), because a template reading it would get one or the
  * other depending on spread order.
  *
- * **Safe (owner ruling Q1, 2026-09-27).** Everything rendered into the context
+ * **Safe.** Everything rendered into the context
  * may be in scope, and nothing dangerous is ever declared: annex declarations
- * refuse secrets at write time (R61). What this refuses on top is the
+ * refuse secrets at write time. What this refuses on top is the
  * *kinds* no template may reach by any door — a secret, connection / sampling
- * / endpoint / model identity (R53), debug metadata, embeddings — by name,
+ * / endpoint / model identity, debug metadata, embeddings — by name,
  * anywhere in the tree (`ForbiddenTemplateFieldError`).
  *
  * The runtime value of `annex` arrives on the node's `annex` in-port, from
- * `core:query/session-annex@1` with `view: 'template'` (P6, law T2); the
+ * `core:query/session-annex@1` with `view: 'template'`; the
  * scope carries it only where that port is wired.
  * @experimental
+ * @ruling typed templates P3 (2026-09-27), P6, owner ruling Q1 (2026-09-27), R61, R53, P6, law T2
  */
 
 import { annexOwners, annexVarFieldOf } from './annexFields.js'
@@ -56,8 +56,9 @@ const TEMPLATE_CONTEXT_SHAPE = 'core:shape/template-context@1'
  * What `templateScopeAt` needs from a node's definition. A `Descriptor`
  * satisfies it, and so does a registry row read as `{ slots, ports, bands:
  * policy.bands, portSchemas: policy.portSchemas }` — so a host answers from
- * rows without loading a plugin (F6).
+ * rows without loading a plugin.
  * @experimental
+ * @ruling F6
  */
 export interface ScopeSource extends BandSource {
 	slots?: Record<string, SlotDecl>
@@ -98,15 +99,20 @@ export interface TemplateScopeReport {
 	findings: string[]
 }
 
-/** A kind no template may reach by any door (typed templates §1 "safe" iv, R53). @experimental */
+/**
+ * A kind no template may reach by any door.
+ * @experimental
+ * @ruling typed templates §1 "safe" iv, R53
+ */
 export class ForbiddenTemplateFieldError extends Error {}
 
 /**
  * Names that ARE a forbidden kind, compared case-blind: a connection, sampling,
- * endpoint or model identity (R53), debug metadata, embeddings, a secret value.
+ * endpoint or model identity, debug metadata, embeddings, a secret value.
  * Deliberately names rather than shapes — a `VarField` has no kind for any of
  * these, which is exactly why one would arrive disguised as a `string`.
  * @experimental
+ * @ruling R53
  */
 export const FORBIDDEN_TEMPLATE_NAMES: readonly string[] = [
 	'apiKey',
@@ -191,11 +197,12 @@ const slotKeys = (id: string): [string, string] => {
 /**
  * `state`, typed from attribute slots: `state.world.<slot>`,
  * `state.cast.<member>.<slot>` beside the member's `id`, `key` and `name`,
- * and `state.locations.<place>.<slot>` likewise (P6 — what the host renders:
+ * and `state.locations.<place>.<slot>` likewise (what the host renders:
  * slug-keyed holders only, never the `byId` index).
  * A genre that lets sessions add attributes of their own (`customAttributes:
  * 'allow'`) — or no known genre at all — leaves the bags open: the honest
  * answer for a set nobody can list.
+ * @ruling P6
  */
 function stateVarField(slots: readonly AttributeSlotDecl[] | undefined, open: boolean, base?: VarField): VarField {
 	const bag = (applies: 'world' | 'cast' | 'location'): Record<string, VarField> => {
@@ -410,7 +417,11 @@ export function templateScopeReport(
 	return { scope, declarers, untyped, findings }
 }
 
-/** The in-port a template node reads the annex on (P6). @experimental */
+/**
+ * The in-port a template node reads the annex on.
+ * @experimental
+ * @ruling P6
+ */
 export const TEMPLATE_ANNEX_PORT = 'annex'
 
 /** Whether `node` declares the annex in-port and something feeds it. */

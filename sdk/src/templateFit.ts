@@ -1,13 +1,13 @@
 /**
- * Does this template fit this node? (typed templates P5, 2026-09-27)
+ * Does this template fit this node?
  *
- * The refusals of design §4, in one place: a template is checked against the
+ * The template-fit refusals, in one place: a template is checked against the
  * typed scope of the node that renders it (`templateScopeReport`), and a name
  * or path nothing there supplies is REFUSED — at selection (the host), at a
- * spec's save and publish (law T1, `validate()`), and at packaging (a plugin's
+ * spec's save and publish (`validate()`), and at packaging (a plugin's
  * shipped template seeds). Warnings never refuse, and nor does anything while
  * a producer upstream declares no types (`untyped`): its keys may still
- * arrive, so the checker only warns (owner Q6: refuse new selections and new
+ * arrive, so the checker only warns (refuse new selections and new
  * saves; a stored row becomes a notice, never a retroactive refusal).
  *
  * ## The checker is a value
@@ -16,7 +16,7 @@
  * which carries `handlebars` and `liquidjs`); this module is on the barrel,
  * which stays dependency-free. So every door here takes the checker as an
  * argument — `{ check: checkTemplateSourceReport }` — and a caller without one
- * gets the checker-free half of T1 (scope collisions, forbidden kinds, a band
+ * gets the checker-free half of the law (scope collisions, forbidden kinds, a band
  * with no variable) and no name check. One way to check; the engines stay
  * where they were imported on purpose.
  *
@@ -28,6 +28,7 @@
  * package do not carry; a host that passes its own vocabulary may widen
  * `refuse`.
  * @experimental
+ * @ruling typed templates P5 (2026-09-27), design §4, law T1, owner Q6, T1
  */
 
 import { BandCollisionError, rendersAt, type BandSource } from './bands.js'
@@ -231,7 +232,7 @@ function templateSourcesAt(
 }
 
 /**
- * Law T1 over one document (design §4.2):
+ * The template-fit law over one document:
  *
  * - a root two declarers claim at a template node, or a forbidden kind in its
  *   scope — refused, naming both declarers (`templateScopeReport`);
@@ -241,10 +242,11 @@ function templateSourcesAt(
  *   configured value, each preset's) is checked against the typed scope of
  *   the slot it fills, and a name or path nothing supplies is refused.
  *
- * Also law T2 (P6, `annexPortFindings`): the annex in-port.
+ * Also the annex in-port law (`annexPortFindings`).
  *
  * Errors only: a warning is the editor's and the receipt's to say.
  * @experimental
+ * @ruling law T1, design §4.2, law T2, P6
  */
 export function templateLawFindings(
 	doc: Doc & {
@@ -263,6 +265,38 @@ export function templateLawFindings(
 		const d = describe(node)
 		if (!d) continue
 		const slots = (d.slots ?? {}) as Record<string, SlotDecl>
+
+		// The spec's own `renders` on this node (owner ruling 2026-10-13): each
+		// key one of the definition's `variables` slots renders, each variable
+		// registered with the key in its scope — the builder refuses the same
+		// at authoring; this is the same check for a document from anywhere
+		// else (the canvas editor, an import).
+		const rendered = Object.values(slots)
+			.filter((s) => s.kind === 'variables')
+			.flatMap((s) => Object.keys(s.renders ?? {}))
+		for (const [key, id] of Object.entries(node.renders ?? {})) {
+			// Every lookup through `variable` — the caller's registry — and only
+			// that; the key is one the definition renders, so it is already an
+			// identifier and not one of Assemble's names (`register()` checked).
+			const v = variable(id)
+			const problem = !rendered.includes(key)
+				? `'${key}', which '${node.definitionId}' does not render — a spec says what a key means, it does not add one`
+				: !v
+					? `'${key}' as '${id}', which is not registered here`
+					: !Object.prototype.hasOwnProperty.call(v.scope, key)
+						? `'${key}' as '${id}', whose scope does not declare '${key}'`
+						: undefined
+			if (problem)
+				f.push({
+					law: 'T1',
+					severity: 'error',
+					nodeKey: node.key,
+					message: `'${node.key}' renders ${problem}`,
+					fix: rendered.includes(key)
+						? `name a registered variable whose scope declares '${key}', or drop '${key}' from the node's renders`
+						: `drop '${key}' from the node's renders — '${node.definitionId}' renders ${rendered.map((r) => `'${r}'`).join(', ') || 'nothing'}`,
+				})
+		}
 
 		for (const slot of Object.values(slots)) {
 			if (slot.kind !== 'variables' || !slot.rendersBands) continue
@@ -342,13 +376,14 @@ const isDataRef = (v: unknown): boolean =>
 	!!v && typeof v === 'object' && (v as { __ref?: unknown }).__ref === 'data'
 
 /**
- * Law T2 (typed templates P6, owner ruling Q1): a template node's `annex`
+ * The annex in-port law: a template node's `annex`
  * in-port is fed only by `core:query/session-annex@1` reading `view:
  * 'template'` — every declared key of every owner in scope, and nothing a
  * declaration does not cover — and a template-view read feeds nothing but
  * such a port. Either half broken would put undeclared data into a prompt, or
  * the prompt's data somewhere a prompt is not. Errors only.
  * @experimental
+ * @ruling law T2, typed templates P6, owner ruling Q1
  */
 export function annexPortFindings(
 	doc: Doc,
@@ -419,6 +454,74 @@ export function annexPortFindings(
 }
 
 // ── A plugin's template seeds ───────────────────────────────────────────────
+
+/** One variable-layout seed that does not fit its variable. @experimental */
+export interface VariableSeedFinding {
+	/** The seed's template id. */
+	template: string
+	variableId: string
+	/** `warning` when the variable is not registered here, so nothing could be checked. */
+	severity: 'error' | 'warning'
+	message: string
+	fix: string
+}
+
+/**
+ * Check a package's **variable layout** seeds (`TemplateSeed` kind
+ * `variables`) against the scope of the variable each one lays out (owner
+ * ruling 2026-10-13, ★4). A layout is rendered with its variable's scope and
+ * nothing else, so a name the scope does not declare renders nothing — the
+ * same silent failure the host's editor lints for, caught at packaging.
+ *
+ * A seed may lay out a variable the package does not own — a "prose cast"
+ * layout for `core:var/characters@1` — and is checked against that scope the
+ * same way. One whose variable is not registered where the package is built
+ * (another package's) is a warning: nothing here can see its scope.
+ * @experimental
+ */
+export function variableSeedFindings(
+	seeds: readonly TemplateSeed[],
+	checking: TemplateChecking,
+	variable: (id: string) => { scope: TemplateScope } | undefined = getVariable,
+): VariableSeedFinding[] {
+	const out: VariableSeedFinding[] = []
+	for (const seed of seeds) {
+		if (seed.kind !== 'variables' || typeof seed.body !== 'string' || !seed.engine || !seed.variableId)
+			continue
+		const decl = variable(seed.variableId)
+		if (!decl) {
+			out.push({
+				template: seed.id,
+				variableId: seed.variableId,
+				severity: 'warning',
+				message: `lays out '${seed.variableId}', which is not registered here, so its source was not checked`,
+				fix: `declare '${seed.variableId}' in this package, or check the layout on an instance that has it`,
+			})
+			continue
+		}
+		const result = checking.check(seed.engine, seed.body, decl.scope, checking.options)
+		const refuse = new Set(checking.refuse ?? SCOPE_FINDING_KINDS)
+		// Names and paths the scope does not supply — never a parse finding:
+		// the packager does not know the instance's helpers, filters and block
+		// tags, so a Liquid layout using core's `jsonValue` would read as a
+		// syntax error here and render fine there. The same rule
+		// `templateSeedFindings` follows.
+		const refusals = result.findings.filter(
+			(f) => f.severity === 'error' && f.kind !== undefined && refuse.has(f.kind),
+		)
+		if (!refusals.length) continue
+		out.push({
+			template: seed.id,
+			variableId: seed.variableId,
+			severity: 'error',
+			message: refusals.map((f) => f.message).join('; '),
+			fix:
+				refusals[0]!.fix ||
+				`read only what '${seed.variableId}' declares: ${Object.keys(decl.scope).map((k) => `'${k}'`).join(', ')}`,
+		})
+	}
+	return out
+}
 
 /** One refused seed: which, where, and the sentence. @experimental */
 export interface TemplateSeedFinding {

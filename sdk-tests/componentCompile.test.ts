@@ -250,9 +250,64 @@ test("a component's <style> is dropped with a warning; a run-time import() warns
 		'Styled.svelte': `<p>hi</p>\n<style>p { color: red; }</style>\n`,
 	})
 	assert.deepEqual(r.errors, [])
-	assert.match(r.warnings.join('\n'), /Styled\.svelte: its <style> is dropped/)
+	assert.match(r.warnings.join('\n'), /Styled\.svelte: A <style> block is dropped here/)
 	assert.match(r.warnings.join('\n'), /imports at run time/)
 	assert.doesNotMatch(r.code, /color: red/)
+	// Placed, so the editor's Problems can jump to it.
+	const style = r.warningsAt.find((w) => /<style> block is dropped/.test(w.text))
+	assert.deepEqual(style && [style.file, style.line, style.column], ['Styled.svelte', 2, 0])
+})
+
+const classed = (markup: string) => ({
+	'entry.ts': [
+		`import { svelteComponent } from '@serene-pub/component-client/svelte'`,
+		`import C from './Classed.svelte'`,
+		`export default svelteComponent(C)`,
+	].join('\n'),
+	'Classed.svelte': `<script>\n\tlet on = $state(true)\n\tconst x = 'class="not-markup"'\n</script>\n${markup}\n`,
+})
+const known = ['flex', 'gap-2', 'md:flex', 'text-sm', 'hover:underline', 'active']
+
+test('a class the app was not built with is a placed warning; a known class is quiet', async () => {
+	const r = await compile(
+		classed(`<div class="flex gap-2 md:flex">\n\t<p class="text-sm text-fuchsia-950 hover:underline" class:active={on} class:glow={on}>hi</p>\n</div>`),
+		{ knownClasses: known },
+	)
+	assert.deepEqual(r.errors, [])
+	const said = r.warningsAt.filter((w) => w.file === 'Classed.svelte')
+	assert.deepEqual(
+		said.map((w) => [w.line, w.column, w.text.match(/'([^']+)'/)?.[1]]),
+		[
+			[6, 19, 'text-fuchsia-950'],
+			[6, 77, 'glow'],
+		],
+	)
+	assert.match(said[0]!.text, /pick one core's widgets use, or give the widget a style/)
+	assert.match(r.warnings.join('\n'), /Classed\.svelte: the class 'text-fuchsia-950'/)
+	// The script's string is not markup; nothing is said without a list.
+	assert.ok(!said.some((w) => w.text.includes('not-markup')))
+	const quiet = await compile(classed(`<div class="flex nope"></div>`))
+	assert.deepEqual(quiet.warningsAt, [])
+	// A Set does as well as an array.
+	const asSet = await compile(classed(`<div class="flex nope"></div>`), { knownClasses: new Set(known) })
+	assert.equal(asSet.warningsAt.length, 1)
+})
+
+test('class expressions are not checked, and the file is told so once', async () => {
+	const r = await compile(
+		classed(`<div class={on ? 'a' : 'b'}>\n\t<p class="flex {on ? 'x' : 'y'} text-{on}-500 zap">hi</p>\n\t<p class={['q']}></p>\n</div>`),
+		{ knownClasses: known },
+	)
+	assert.deepEqual(r.errors, [])
+	const said = r.warningsAt.filter((w) => w.file === 'Classed.svelte')
+	const notes = said.filter((w) => /class expressions/.test(w.text))
+	assert.equal(notes.length, 1)
+	assert.deepEqual([notes[0]!.line, notes[0]!.column], [5, 5])
+	// Only the wholly static token outside the expressions is checked.
+	assert.deepEqual(
+		said.filter((w) => !/class expressions/.test(w.text)).map((w) => w.text.match(/'([^']+)'/)?.[1]),
+		['zap'],
+	)
 })
 
 test('the output is deterministic: same input, same code and hash', async () => {

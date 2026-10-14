@@ -7,7 +7,10 @@
 					"kind": "side",
 					"side": "left",
 					"pinned": false,
-					"widgets": []
+					"widgets": [
+						"chronicle",
+						"lore-entries"
+					]
 				},
 				"right": {
 					"kind": "side",
@@ -25,7 +28,7 @@
 			"cell": 44,
 			"widgets": [
 				{
-					"id": "world-state",
+					"id": "stats#world",
 					"zone": "middle",
 					"order": 0,
 					"size": {
@@ -58,8 +61,15 @@
 		},
 		"widgetSettings": {
 			"scene-portraits": {
-				"source": "scene",
+				"who": "scene",
+				"face": "sprite",
+				"arrangement": "grid",
 				"bars": true
+			},
+			"stats#world": {
+				"owners": "world",
+				"arrangement": "strip",
+				"title": "World State"
 			}
 		},
 		"arrangedGrid": {
@@ -102,7 +112,8 @@
 					"side": "right",
 					"pinned": true,
 					"widgets": [
-						"world-state",
+						"places",
+						"annex#castellan",
 						"messages#sanctum"
 					]
 				}
@@ -149,23 +160,38 @@
 				"rows": 12,
 				"items": [
 					{
-						"id": "world-state",
+						"id": "places",
 						"x": 0,
 						"y": 0,
+						"w": 1,
+						"h": 4
+					},
+					{
+						"id": "annex#castellan",
+						"x": 0,
+						"y": 4,
 						"w": 1,
 						"h": 2
 					},
 					{
 						"id": "messages#sanctum",
 						"x": 0,
-						"y": 2,
+						"y": 6,
 						"w": 1,
-						"h": 10
+						"h": 6
 					}
 				]
 			}
 		},
 		"widgetSettings": {
+			"places": {
+				"view": "list",
+				"highlight": "both"
+			},
+			"annex#castellan": {
+				"key": "core.castellan-scratchpad",
+				"title": "Castellan's scratchpad"
+			},
 			"messages#sanctum": {
 				"channel": "sanctum",
 				"composer": "minimal"

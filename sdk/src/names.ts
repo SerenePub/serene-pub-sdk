@@ -1,5 +1,5 @@
 /**
- * Names, compared the one way every reader agrees on (lair pass R7, 2026-09-28).
+ * Names, compared the one way every reader agrees on.
  *
  * `core:task/undescribed-name@1` asks whether a room the planner named is
  * already described: by a lorebook entry whose name or keys answer to it, or
@@ -37,6 +37,7 @@
  * ⚠ Hyphens separate words, so "well-lit" counts as two words toward
  * `minWords`. That is consistent on both sides, which is what matters.
  * @experimental
+ * @ruling lair pass R7 (2026-09-28)
  */
 
 /** The articles one strip removes from the front of a name. @experimental */

@@ -1,6 +1,6 @@
 # Your first plugin
 
-This page builds a small plugin: a pipeline that answers a [message], a node of your own, the
+This page shows how to write a plugin, a small one: a pipeline that answers a [message], a node of your own, the
 [declaration] that ties them together, and the commands that check and package it. It uses the
 words in the [vocabulary](vocabulary.md). For a map of everything else a plugin can add, see
 [What a plugin can do](extending.md).
@@ -62,6 +62,9 @@ import * as C from '@serene-pub/contracts'
 const greet = spec('acme.greeter:reply', { version: '1.0.0' })
 	// Exactly one inlet, first. The third argument is the usage lock: this spec
 	// answers one event, for one genre, and that is what the manifest lists.
+	// A lock takes `event` (one) or `events` (several; a `turnOrderSpec()`
+	// document is locked on every event it recomputes on), so code reading a
+	// compiled document's `input` checks both.
 	// A genre is passed by value: yours, imported, or another package's by `use()`.
 	.inlet('input', C.userMessage.v1(), {
 		genre: use('core:genre/chat'),
@@ -70,7 +73,13 @@ const greet = spec('acme.greeter:reply', { version: '1.0.0' })
 	// A query reads Serene Pub's own data and cannot reach the network.
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	// A task is pure: it turns what was read into the context the oracle takes.
-	.task('prompt', () => C.assemble.v2())
+	// `template` is the context template an administrator picks for this step;
+	// `connectionOf('generate')` says which connection the prompt is written
+	// for, so it comes out as chat messages or as one text, whichever that
+	// connection takes. Leave either out and the spec does not publish.
+	.task('prompt', () =>
+		C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }),
+	)
 	// The oracle is the one node that crosses the boundary. Which service
 	// answers is a slot: an admin's choice, never the document's.
 	.oracle('generate', ($) =>
@@ -89,6 +98,11 @@ the packager will emit; **Graph** is the same document drawn.
 Try breaking it: wire `$.input.text` straight into the oracle's `context` port. The spec
 does not build, and the error names the port that produced the value and the port that
 could not take it. That check runs when you build, not at two in the morning.
+
+Delete `template` or `connection` from `prompt` and `check` warns, with a fix that names
+`slot.template()` or `slot.connectionOf('generate')`. Without the template, `prompt` has nothing to
+render, whatever an administrator picks; without the [connection], a chat-style [connection] receives
+a prompt holding no [messages]. The playground cannot tell either way. On a real instance the reply never comes.
 
 ## Your own node definition
 
@@ -180,7 +194,7 @@ export default defineExtension({
 	name: 'Dice',
 	version: '1.0.0',
 	description: 'Roll dice in a session and let the model narrate the result.',
-	engines: { 'serene-pub': '>=0.7 <0.8' },
+	engines: { 'serene-pub': '>=0.6.0-0 <0.8' },
 	settings,
 	handlers: [handler(roll, rollHandler)],
 	pipelines: [diceTurn.build()],
@@ -193,7 +207,11 @@ gets, and anyone can change it for themselves in their own settings. Your handle
 administrator's, then the `default`. A field without `scope` (or with `scope: 'pub'`) is the [pub]'s, and only an
 administrator can change it.
 
-`engines` is the range of Serene Pub releases your plugin supports. The plugin's [slug] is the
+`engines` is the range of Serene Pub releases your plugin supports, read as an npm version range.
+`serene-pub scaffold plugin` writes one that starts at the release its SDK ships with. Mind
+prereleases: a prerelease such as `0.6.0-pr-4` is inside a range only when the range names a
+prerelease of that same version, so `>=0.6.0` leaves every 0.6 prerelease out and `>=0.6.0-0`
+lets them in, along with every release after them. The plugin's [slug] is the
 namespace every id above sits under. A node definition registered under someone else's slug is
 refused at `defineExtension`, while you are typing, rather than at install.
 
@@ -201,11 +219,11 @@ A node definition is **private** to your package unless its handler says otherwi
 `handler(roll, rollHandler, { visibility: 'public' })` lets any package's spec, or one a
 person makes, use it. A node definition you offer as a swap must be public, because a swap runs
 it in another package's spec. Private is the default, and it is enforced when a spec is
-installed, saved and run, so a node definition you may still change is never something another
+installed, stored and run, so a node definition you may still change is never something another
 package builds on. The node definition itself never says `public`; the build refuses it and
 points here.
 
-This plugin adds a pipeline to someone else's genre, so it needs no preset. A plugin that
+This plugin adds a pipeline to someone else's genre, so it declares no preset. A plugin that
 declares a **genre** must also declare at least one `preset()` for it: a custom pipeline must
 include a default preset, because a genre's pipelines are reached through its presets (it is
 where [sessions][session] start, and where the Pipelines view lists them). `defineExtension` refuses a genre
@@ -219,7 +237,7 @@ with your own prompts or settings instead of offering a replacement.
 ## A turn strategy of your own
 
 A turn strategy decides who speaks next. Its ports take the [turn candidates][turn candidate] (everyone who could
-speak) and the messages (`S.turnCandidates`, `S.messages`) and give the prepared entries of
+speak) and the [messages] (`S.turnCandidates`, `S.messages`) and give the prepared entries of
 the turn order (`main` and `order`, both `S.turnEntries`). Core's default is round robin
 (`core:task/turn-round-robin@1`), and it is the pin. Everyone who has not spoken since the
 person last did goes, in the order they came in. When everyone has spoken the turn order is empty,
@@ -240,7 +258,7 @@ const order = (candidates: TurnCandidateV1[], messages: TurnHistoryMessage[]): T
 ```
 
 `countedTurns` is the history the rule counts: it leaves out hidden rows and narration.
-`spokenRefsSince` is the set of references that have already had their turn this round. All
+`spokenRefsSince` is who has already had their turn this round. All
 three are `@experimental`, so they may still change before SDK 1.0.
 
 ## Keys and other secrets
@@ -279,13 +297,28 @@ definition is meant to spend your key for others.
 
 ```bash
 npx serene-pub check .     # what core would refuse, and the permissions this code requests
-npx serene-pub build .     # dist/plugin/: manifest.json plus one document per spec
+npx serene-pub build .     # dist/plugin/, and dist/<slug>-<version>.zip to install
 ```
 
 `check` prints the permissions the packager found in your code: network, storage, the
 events you listen to. If it lists one you did not expect, the code asked for it. `build`
-writes the manifest and the compiled documents; that folder is what an administrator
-installs. Serene Pub never runs your build.
+writes the manifest and the compiled documents to `dist/plugin/`, and packs them into
+`dist/<slug>-<version>.zip` (with your `ui/` files beside them). The zip is what an
+administrator installs. Serene Pub never runs your build.
+
+A scaffolded package also has `test/conformance.test.ts`, which runs the conformance kit's
+package cases (C28–C33) over `dist/plugin/`. Run `npm run package` before `npm test`. C29 is
+"not judged" outside a running instance, and that is expected.
+
+### Install it
+
+1. **Admin › Plugins › Install a package…**, and choose the zip. The installer reads
+   `dist/plugin/manifest.json` inside it and refuses a zip without one.
+2. **A new install starts disabled.** Go to the plugin's page, approve the permissions it asks
+   for, tick the switch that turns it on, and save. Installing an update disables it again.
+3. **Make its preset available.** A preset a plugin ships arrives hidden from users, so the
+   genre is listed but "No preset is available for this genre". In **Admin › Play › Presets**,
+   select it and choose **Make selected presets available**.
 
 ## Where to go next
 
@@ -306,6 +339,7 @@ installs. Serene Pub never runs your build.
 
 [run]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#4-pipeline
 [turn]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#4-pipeline
+[messages]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session
 [declaration]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#5-catalog
 [slug]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#5-catalog
 [message]: https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session

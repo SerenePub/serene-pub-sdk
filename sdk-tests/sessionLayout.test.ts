@@ -339,6 +339,14 @@ describe("core's genres declare the layouts they have always shipped", () => {
 	 * the one deliberate difference is the widget grid's retired `required`
 	 * flag (brief 7a retired it; nothing has read it since), which brief 1
 	 * dropped with the other catalog edits. Nothing else moved, byte for byte.
+	 *
+	 * Moved on purpose 2026-10-11 (PLAN-core-widgets §4, the core widgets'
+	 * default layouts): Adventure's left rail holds Chronicle and Lore
+	 * entries (unpinned, not arranged), its middle strip is `stats#world` (World State was
+	 * Stats for the world, W7) and Scene Portraits names `who`/`face`/
+	 * `arrangement` (W6); the Lair's right column is Places, the Castellan's
+	 * scratchpad (an Annex copy) and the Sanctum (W4, W9). Regenerated from
+	 * the genres, the `required` flags kept.
 	 */
 	const before = JSON.parse(readFileSync(join(import.meta.dirname, 'goldens/core-session-layouts.json'), 'utf8')) as Record<
 		string,

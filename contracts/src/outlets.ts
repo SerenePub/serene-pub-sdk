@@ -11,14 +11,14 @@ import { describeOutletDefinition, pin } from '@serene-pub/sdk'
 import type { WriteResult } from '@serene-pub/sdk'
 
 /**
- * An author defaulting review ON for their own consumer — and unable to forbid it (F14).
+ * An author defaulting review ON for their own consumer — and unable to forbid it.
  *
- * Bound 2026-09-17 (plans/29 R-2): the host's commit for it existed and no
+ * Bound 2026-09-17: the host's commit for it existed and no
  * binding reached it. `target` is the row the part lands on — the same port
  * `update-message` takes, fed from an earlier write in the document (the reply's
- * placeholder, R-17) or from the inlet's `messageId`. An update whose target is
+ * placeholder) or from the inlet's `messageId`. An update whose target is
  * an earlier write is the same row, so placing this after `create-message` is
- * one live row, not two (F7). The host reads the id off `target`, or off the
+ * one live row, not two. The host reads the id off `target`, or off the
  * media reference's own `messageId` where a caller outside the graph set one.
  * @experimental
  */
@@ -26,7 +26,7 @@ export const attachImage = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/attach-image@1',
 		effects: 'write',
-		/** The image is a reference to an asset this run rendered; nothing to retype (R-15 review fields). */
+		/** The image is a reference to an asset this run rendered; nothing to retype. */
 		review: { fields: [] },
 		timeoutMs: 5000,
 		reviewDefault: 'on',
@@ -36,7 +36,7 @@ export const attachImage = pin(
 )
 
 /**
- * The create pipeline's write (24 §12, T8): seed the collected greetings as
+ * The create pipeline's write: seed the collected greetings as
  * the session's first messages — one assistant message per entry, the full
  * list as its swipe history, redirected to the genre's declared greeting
  * channel when that is not `main`.
@@ -46,7 +46,7 @@ export const seedGreetings = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/seed-greetings@1',
 		effects: 'write',
-		/** The greetings are the cards' own text and the channel the genre's: approve or refuse (R-15 review fields). */
+		/** The greetings are the cards' own text and the channel the genre's: approve or refuse. */
 		review: { fields: [] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-created@1',
@@ -54,10 +54,10 @@ export const seedGreetings = pin(
 			in: {
 				greetings: S.json,
 				/**
-				 * The channel the greetings land on (20 §7) — the genre's
+				 * The channel the greetings land on — the genre's
 				 * declared greeting channel, written by the create specs as a
 				 * literal (`createChat.ts`, `adventure.ts`). Absent is `main`.
-				 * Declared 2026-09-16 (U2 residual): the host read it off the
+				 * Declared 2026-09-16: the host read it off the
 				 * payload while no declaration supplied it.
 				 */
 				channel: S.text,
@@ -68,22 +68,22 @@ export const seedGreetings = pin(
 )
 
 /**
- * Write a message — complete, or as the run's **placeholder** (R-17).
+ * Write a message — complete, or as the run's **placeholder**.
  *
  * A pipeline that wants a message creates it itself. The reply specs put this
  * node straight after the inlet with `generating: true`: the row it inserts is
  * empty and generating, it is the run's live row (`liveRow` — an oracle's
  * stream lands in it, and Stop finalises it), and the spec's last node is an
  * `update-message` that fills it. That create → update pair on one row inside
- * one run is the run's **one live row** (F7). Without `generating` (or a
+ * one run is the run's **one live row**. Without `generating` (or a
  * claimed `row`) the message is complete, and an ordinary write — a pipeline
  * may write as many as it likes, just never a second on the live row's
  * channel. `message-created` fires on the create, which is now genuinely the
  * moment the row exists.
  *
  * `reviewDefault: 'off'` — review of a reply, when an admin enables it, lands
- * on the *update* of the primary row and never on this create by default
- * (R-21 (3)): a placeholder is a write, and an admin who gates this node gets
+ * on the *update* of the primary row and never on this create by default:
+ * a placeholder is a write, and an admin who gates this node gets
  * a run that shows nothing until approved, which is honest and rarely wanted.
  * Turning it on is still the admin's to do.
  * @public
@@ -92,7 +92,7 @@ export const createMessage = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/create-message@1',
 		effects: 'write',
-		/** The text may be reviewed; who speaks, which row and which channel are the run's identity (R-15 review fields). */
+		/** The text may be reviewed; who speaks, which row and which channel are the run's identity. */
 		review: { fields: ['text'] },
 		reviewDefault: 'off',
 		liveRow: true,
@@ -100,12 +100,12 @@ export const createMessage = pin(
 		causesEvent: 'core:event/message-created@1',
 		slots: {
 			/**
-			 * The write hook (18 §4a): one chain rewrites the final output, the
+			 * The write hook: one chain rewrites the final output, the
 			 * other decides where a streamed reply stops. Stop is a verdict —
 			 * min-reduction across every attached script, and the connection's
-			 * own guards join the same union at dispatch (18 §4b), which is why
+			 * own guards join the same union at dispatch, which is why
 			 * order never needs ruling. `speakerName` and `castNames` are
-			 * extras: readable, never writable, by construction (18 §6a).
+			 * extras: readable, never writable, by construction.
 			 */
 			scripts: {
 				kind: 'scripts',
@@ -141,18 +141,18 @@ export const createMessage = pin(
 				 * cast row — the side-character fact `{ name, characterId, known }`
 				 * off `side-character-turn@1`'s `sideCharacter` port. Stored
 				 * beside the message under `metadata.sideCharacter` (was
-				 * `metadata.speaker` until U5g, 2026-09-16 — that key is the
-				 * participant reference now, on the row as on the inlet, R1),
+				 * `metadata.speaker` until 2026-09-16 — that key is the
+				 * participant reference now, on the row as on the inlet),
 				 * where the run and the receipt read it from; it never writes a
 				 * cast row and never enters the rotation.
 				 *
 				 * Was `speaker` until 2026-09-16 — the inlet's port of that
-				 * name is a participant reference now (R-18 (3)).
+				 * name is a participant reference now.
 				 */
 				sideCharacter: S.json,
 				/**
-				 * Who is speaking, as a **participant reference** (R-18 (3);
-				 * U5g, 2026-09-16) — `character:<id>` or `envoy:<slug>`, the
+				 * Who is speaking, as a **participant reference**
+				 * (2026-09-16) — `character:<id>` or `envoy:<slug>`, the
 				 * inlet's `speaker`. Stored beside the message as
 				 * `metadata.speaker`; it is the only identity an envoy's turn
 				 * carries, since an envoy has no row for `characterId` to name.
@@ -191,10 +191,10 @@ export const createMessage = pin(
 				 */
 				instructions: S.text,
 				/**
-				 * The channel the row lands on (20 §7). Absent is `main`, so a
+				 * The channel the row lands on. Absent is `main`, so a
 				 * pipeline that has never heard of channels writes where it
 				 * always did; a channel the session's genre never declared is
-				 * refused at the write. Declared 2026-09-16 (U2 residual) for
+				 * refused at the write. Declared 2026-09-16 for
 				 * the same reason `seed-greetings` declares its own.
 				 */
 				channel: S.text,
@@ -207,8 +207,8 @@ export const createMessage = pin(
 				 */
 				row: S.rowIds,
 				/**
-				 * Message **blocks** to post with the row (20 §6; R-15
-				 * *Forms*; U5d, 2026-09-17): a list of `MessageBlock` — text,
+				 * Message **blocks** to post with the row
+				 * (2026-09-17): a list of `MessageBlock` — text,
 				 * tables, meters, and the two interactive kinds, `choices` and
 				 * `form`, which are **forms** when they carry an `addressee`.
 				 * The host validates the tree (`checkMessageBlocks`), refuses
@@ -259,7 +259,7 @@ export const createMessage = pin(
  * Update an existing message — finish a placeholder, or edit a settled row.
  *
  * `target` takes `row-ids@1`, and a `write-result@1` from earlier in the same
- * run is assignable to it (09-B B4): the reply specs wire `$.placeholder.messageId`
+ * run is assignable to it: the reply specs wire `$.placeholder.messageId`
  * here, which is the create → update pair that makes the pipeline own its row.
  * The other case is unchanged — the id comes from outside the run because the
  * user clicked a message, so it is on the inlet.
@@ -270,7 +270,7 @@ export const createMessage = pin(
  * target is edited and marked so. That is the row's own state, not a flag a
  * spec could get wrong.
  *
- * Where review lands on a reply (R-21 (3)): when an admin turns review on
+ * Where review lands on a reply: when an admin turns review on
  * for a reply's message writes, it is THIS node that parks — the placeholder
  * ships `reviewDefault: 'off'` and declares no default here either, so nothing
  * gates by default and a reviewer who asks for one sees the content, not an
@@ -282,7 +282,7 @@ export const updateMessage = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/update-message@1',
 		effects: 'write',
-		/** The text may be reviewed; the row may not, nor the reasoning trace (R-15 review fields). */
+		/** The text may be reviewed; the row may not, nor the reasoning trace. */
 		review: { fields: ['text'] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-updated@1',
@@ -307,7 +307,7 @@ export const updateMessage = pin(
 				 * the model produced one. Stored beside the message as the
 				 * reasoning fold reads it; absent means none. Shown folded,
 				 * and never re-sent to the model: the prompt transcript reads
-				 * a row's text alone (decision D5, 2026-09-27).
+				 * a row's text alone (decided 2026-09-27).
 				 */
 				reasoning: S.text,
 				/**
@@ -382,7 +382,7 @@ export const deleteMessage = pin(
 )
 
 /**
- * Write the session's turn order (PLAN-turn-order §4.2, §4.4; R5) — the ONE
+ * Write the session's turn order — the ONE
  * write path for `sessions.metadata.turnOrder`, and the only outlet that
  * writes `metadata` at all.
  *
@@ -432,14 +432,14 @@ export const setTurnOrder = pin(
 )
 
 /**
- * Write one owner's document into the session's annex (§4.3).
+ * Write one owner's document into the session's annex.
  *
  * Merged into what is there by default — a spec that keeps one key does not
  * have to carry the rest — and written under
  * `pg_advisory_xact_lock(hashtext('annex'), sessionId)` through `jsonb_set`,
  * so two specs writing two owners' documents at once cannot lose each
- * other's. Causes `core:event/annex-changed@1` (R30, the modder pass,
- * reversing §4.3's "no causesEvent"): a package's state is the annex, and a
+ * other's. Causes `core:event/annex-changed@1` (a later
+ * ruling, reversing the original "no causesEvent"): a package's state is the annex, and a
  * genre that wants its turn order to answer that state binds the event in
  * the open, where the event map draws it — not through a back door.
  * @experimental
@@ -527,7 +527,7 @@ export const setAnnexField = pin(
 		effects: 'write',
 		causesEvent: 'core:event/annex-changed@1',
 		reviewDefault: 'off',
-		/** The payload was judged at the door and is judged again here — approve or refuse, never rewrite (R-15 review fields). */
+		/** The payload was judged at the door and is judged again here — approve or refuse, never rewrite. */
 		review: { fields: [] },
 		timeoutMs: 2000,
 		ports: {
@@ -675,6 +675,46 @@ export const branchSession = pin(
 	}),
 )
 
+// ── Backdrop (DESIGN-image-generation §6.4, ruling §9.4; 2026-10-12) ───────
+
+/**
+ * 🚧 Set the session's **backdrop**: `sessions.backdropMediaId`, the picture
+ * the Backdrop widget shows behind or beside the Stage — session state, a
+ * role pointer like a card's avatar, never a message part.
+ *
+ * `media` is a media list (what `core:oracle/generate-image@1` publishes);
+ * the host takes the FIRST image in it, keyed or not, and refuses a file
+ * that belongs to neither this session nor the user the run acts as (the
+ * rule `create-message`'s media keeps). A list with no image in it writes
+ * nothing, causes no event and publishes a null `mediaId` — it never
+ * clears: a person clears a backdrop, a pipeline replaces it. Runs in the
+ * session scope the run was started in.
+ *
+ * Causes `core:event/backdrop-set@1` when the pointer moved. Publishes the
+ * write result on `main` and the file id now set on `mediaId` (null when
+ * nothing was written).
+ *
+ * ⚠ Not the app background (`user_settings.background_media_id`), not a
+ * message attachment, and not the retired *scene image* pins.
+ * @experimental
+ */
+export const setBackdrop = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-backdrop@1',
+		i18n: { name: { en: 'Set backdrop' } },
+		effects: 'write',
+		causesEvent: 'core:event/backdrop-set@1',
+		reviewDefault: 'off',
+		/** A reference to a picture the run rendered; nothing to retype. */
+		review: { fields: [] },
+		timeoutMs: 5000,
+		ports: {
+			in: { media: S.mediaList },
+			out: { main: S.writeResult, mediaId: S.json },
+		},
+	}),
+)
+
 // ── Sprites (DESIGN-sprites §5, 2026-09-24; in-pipeline 2026-10-05) ─────────
 
 /**
@@ -736,6 +776,106 @@ export const showSprite = pin(
 	}),
 )
 
+/**
+ * 🚧 File pictures as a card's **sprites** — the end of the Sprite set fill.
+ *
+ * For every item of `media` that carries a series `key`: a `sprites` row in
+ * the set named `setName` (the card's default set when the name is blank or
+ * gone), under the sprite label that key was drawn for, with
+ * `source: 'generated'` and the picture as its file. The label comes from
+ * `series` (each item's `vars.label`); with no series the key is the label.
+ *
+ *  - An **empty sprite** waiting under the label is filled first.
+ *  - Otherwise the picture is added beside what is there — a **variant** —
+ *    so a second picture under one key, or a run that redraws a label, never
+ *    replaces a sprite.
+ *  - An item with **no key** (surplus the host kept) is ignored.
+ *  - A key in `series` that brought no picture is reported on `missing`.
+ *
+ * The picture becomes the card's file (provenance: `files.character_id`), so
+ * it carries the card's visibility and stays out of the card's gallery like
+ * every sprite. Refused unless the run's person owns the card or is an admin.
+ *
+ * Causes `core:event/sprites-attached@1` when at least one row was written.
+ * About a card, not a session: it writes no session row.
+ * @experimental
+ */
+export const attachSprite = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/attach-sprite@1',
+		i18n: { name: { en: 'Attach as sprites' } },
+		effects: 'write',
+		causesEvent: 'core:event/sprites-attached@1',
+		reviewDefault: 'off',
+		/** References to pictures the run drew; nothing to retype. */
+		review: { fields: [] },
+		timeoutMs: 15000,
+		ports: {
+			in: {
+				media: S.mediaList,
+				characterId: S.rowIds,
+				setName: S.text,
+				/** The series the pictures were drawn for — the key → sprite label map. */
+				series: S.imageSeries,
+			},
+			out: {
+				main: S.writeResult,
+				/** `[{ label, spriteId }]`, one per row written, in media order. */
+				attached: S.json,
+				/** Sprite labels the series asked for that came back with no picture. */
+				missing: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Offer** pictures to a card — put them in the card's **gallery** for a
+ * person to pick from (the end of Portrait).
+ *
+ * Each image in `media` becomes a picture of the card's gallery, after the
+ * pictures already there, in media order. Nothing is chosen for the person:
+ * the avatar and the likeness image are left as they are. *Use as avatar*
+ * and *Use as likeness image* on the gallery tile are the person's, later.
+ *
+ *  - An item that is not an image is skipped.
+ *  - A picture must be the run person's own file or already the card's — a
+ *    media reference is an address anyone could type, and the gallery would
+ *    re-publish whatever it names under the card's visibility.
+ *  - A picture that is already one of the card's files stays where it is.
+ *
+ * `offered` is `[{ mediaId, key }]`, one per picture placed, with the series
+ * key it was drawn for (`null` for surplus the host kept unkeyed). Refused
+ * unless the run's person owns the card or is an admin.
+ *
+ * Causes `core:event/media-offered@1` when at least one picture was placed.
+ * About a card, not a session: it writes no session row.
+ * @experimental
+ */
+export const offerMedia = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/offer-media@1',
+		i18n: { name: { en: 'Offer to the gallery' } },
+		effects: 'write',
+		causesEvent: 'core:event/media-offered@1',
+		reviewDefault: 'off',
+		/** References to pictures the run drew; nothing to retype. */
+		review: { fields: [] },
+		timeoutMs: 15000,
+		ports: {
+			in: {
+				media: S.mediaList,
+				characterId: S.rowIds,
+			},
+			out: {
+				main: S.writeResult,
+				/** `[{ mediaId, key }]`, one per picture placed, in media order. */
+				offered: S.json,
+			},
+		},
+	}),
+)
+
 // ── The story clock (DESIGN-story-time P3, 2026-09-28) ──────────────────────
 
 /**
@@ -746,14 +886,22 @@ export const showSprite = pin(
  *
  * Moves the session's clock only, never the book's or its line's present. A
  * session with no clock of its own starts from its line's present. Refused
- * with a sentence — the run halts — when the session has no lorebook, when
- * there is no present to start from, and when the result does not land in
- * the book's calendar; never clamped, never a silent no-op.
+ * with a sentence — the run halts, unless the spec says `onRefusal: 'skip'`
+ * — when the session has no lorebook, when there is no present to start
+ * from, and when the result does not land in the book's calendar; never
+ * clamped, never a silent no-op.
  *
  * `by` and `unit` in-ports, when wired, win over the parameters. To advance
  * once per reply, place it in a spec bound to the reply's event, which runs
  * after the reply is saved. (No ordering-only in-port: an unread port is a
  * declared control no run consults — `declaredReads`.)
+ *
+ * 🚧 Every move it makes is written to the session's state ledger, anchored
+ * where the world's changes are (live scenes §15 G5, 2026-10-13): the person
+ * reads it under the message ("Time passes: 3 hours (… → …)"), and a delete,
+ * swipe or regenerate of that message takes it back as it takes values back.
+ * Why the clock moved is the spec's to say (`cause`), never inferred from
+ * the run's inlet.
  * @experimental
  */
 export const advanceStoryClock = pin(
@@ -801,11 +949,49 @@ export const advanceStoryClock = pin(
 				by: S.json,
 				/** One of the units; wins over the `unit` parameter when wired. */
 				unit: S.text,
+				/**
+				 * 🚧 **Why the clock moves** (live scenes §15 G4, 2026-10-13),
+				 * a literal: `'action'` — a person's press (*Time passes…*);
+				 * `'keeper'` — the state-keeper's move under Trust the
+				 * narrator; `'tick'` — a reply's fixed tick. An action's and
+				 * the keeper's move are **time actions** the boundary watcher
+				 * may begin a new scene at; a tick never is. Unwired reads as
+				 * `'action'`.
+				 *
+				 * ## A port, not a parameter, and the call site is what decides
+				 *
+				 * As `show-sprite@1`'s `source`: a literal in the node's
+				 * config, because why a step moves the clock is a structural
+				 * fact of the document, not a knob for the panel. It was the
+				 * host's to infer from the run's inlet until 2026-10-13, and a
+				 * keeper's move on a reply turn was then never a time action.
+				 * It also decides what a swipe or a regenerate takes back: a
+				 * tick stands (the re-driven reply never ticks again), every
+				 * other move goes with the reply.
+				 */
+				cause: S.text,
+				/**
+				 * 🚧 **What a refusal does** (live scenes §15 G7), a literal:
+				 * `'halt'` (unwired) stops the run with the sentence;
+				 * `'skip'` moves nothing, puts the sentence on `skipped` and
+				 * on the session's state ledger, and lets the run finish — for
+				 * a step that runs after other changes already landed, which
+				 * a halt would leave looking like a failed turn. Every core
+				 * spec's skips: Adventure's keeper steps and its *Time
+				 * passes…*, Chat's reply tick, and Chat's and the Lair's *Time
+				 * passes…* (live scenes §15 G12).
+				 */
+				onRefusal: S.text,
 			},
 			out: {
 				main: S.writeResult,
 				/** The session's story clock as it now stands: `{ year, month?, day?, hour?, minute? }`. */
 				clock: S.json,
+				/**
+				 * 🚧 Why the clock did not move, under `onRefusal: 'skip'` —
+				 * the sentence the person reads; empty when it moved.
+				 */
+				skipped: S.text,
 				/** It spelled through the book's calendar. */
 				label: S.text,
 			},
@@ -837,16 +1023,16 @@ export const answerForm = pin(
 		i18n: { name: { en: 'Answer the form' } },
 		effects: 'write',
 		reviewDefault: 'off',
-		/** The answer may be corrected at the gate; which form, and who answers, may not (R-15 review fields). */
+		/** The answer may be corrected at the gate; which form, and who answers, may not. */
 		review: { fields: ['answer'] },
 		/**
-		 * A write's timeout, not a run's (was 600000 until 2026-09-17, U5d
-		 * review W2): the commit checks the answer, asks the cycle caps and
+		 * A write's timeout, not a run's (was 600000 until
+		 * 2026-09-17): the commit checks the answer, asks the cycle caps and
 		 * **collects** the fire — the action's run is dispatched by the host
 		 * after this run's receipt is saved, outside any node timeout, as
 		 * this run's child. A grandchild parked at review parks nothing here.
 		 *
-		 * Thirty seconds rather than a write's usual five (U5d review S-a,
+		 * Thirty seconds rather than a write's usual five (changed
 		 * the same day): the commit does database work of its own — the
 		 * block off the row, the session, the routing, a cap refusal's
 		 * receipt — and under PGlite contention (a full test run, a busy
@@ -885,7 +1071,7 @@ export const attachAudio = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/attach-audio@1',
 		effects: 'write',
-		/** A reference to rendered audio; nothing to retype (R-15 review fields). */
+		/** A reference to rendered audio; nothing to retype. */
 		review: { fields: [] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-updated@1',
@@ -898,7 +1084,7 @@ export const attachAudio = pin(
 /**
  * Write the finished entry. Gate-eligible, so it publishes a write result.
  *
- * ## Which kind of entry — the pipeline's decision, at last (L3, 2026-09-17)
+ * ## Which kind of entry — the pipeline's decision, at last (2026-09-17)
  *
  * The host's commit case has said since the four summarize namespaces were
  * written that *which kind of entry comes from the pipeline that ran*. It did
@@ -922,7 +1108,7 @@ export const attachAudio = pin(
  * ## `links`, or a second write
  *
  * Linking a new entry takes one of two shapes, and both exist on purpose.
- * (A pipeline may write many times — F7 limits only the live row — so
+ * (A pipeline may write many times — only the live row is limited to one — so
  * `core:outlet/link-lore-entries@1` may also follow this outlet in the same
  * run, each its own transaction.)
  *
@@ -937,7 +1123,7 @@ export const attachAudio = pin(
  *
  * Each entry of `links` is a name or an entry id, or a `LoreLinkInput` —
  * `{ to, linkType?, reverseLinkType?, name?, description? }` — for one that
- * says more (places plan B2, 2026-09-29). Absent on nearly every write, and an
+ * says more (2026-09-29). Absent on nearly every write, and an
  * empty list is the same as none. A link the list states twice, or one the
  * session already reads, is written once: see `linkLoreEntries` on idempotence.
  * @internal
@@ -949,7 +1135,7 @@ export const createLoreEntry = pin(
 		effects: 'write',
 		/**
 		 * Both the name and the content may be edited before the entry lands
-		 * (R-15 review fields). `links` is deliberately not among them: the
+		 *. `links` is deliberately not among them: the
 		 * gate's form edits values a reader can retype, and a list of
 		 * references is not one — a reviewer who disagrees with a room's exits
 		 * refuses the write.
@@ -978,7 +1164,7 @@ export const createLoreEntry = pin(
 				content: S.text,
 				/**
 				 * Links to write from this entry in the same commit — see the
-				 * note above on F7. Names, entry ids, or `LoreLinkInput`s.
+				 * note above on the live row. Names, entry ids, or `LoreLinkInput`s.
 				 */
 				links: S.json,
 			},
@@ -988,7 +1174,7 @@ export const createLoreEntry = pin(
 )
 
 /**
- * Link two lore entries (L2, 2026-09-17).
+ * Link two lore entries (2026-09-17).
  *
  * ## The gap it closes
  *
@@ -1003,7 +1189,7 @@ export const createLoreEntry = pin(
  * ## Both ends, and the one scope
  *
  * `from` is an entry id — or, straight off `create-lore-entry@1`, its
- * `entryId` write result, which is assignable to `row-ids@1` (09-B B4). `to`
+ * `entryId` write result, which is assignable to `row-ids@1`. `to`
  * is an id **or a name**, resolved within the session's own lorebook, case
  * and surrounding space ignored. A name is the half that makes the law below
  * survivable, and it is also the half that can be wrong in two ways, so both
@@ -1018,14 +1204,14 @@ export const createLoreEntry = pin(
  *
  * ## After a create
  *
- * It may follow `core:outlet/create-lore-entry@1` in the same run (F7 limits
- * only the live row), linking by name what that write created — which is why
+ * It may follow `core:outlet/create-lore-entry@1` in the same run (only the
+ * live row is limited to one), linking by name what that write created — which is why
  * `to` takes one; a later run can do the same. Each write is its own
  * transaction, so a failed link leaves the entry behind. When the entry and
  * its links are one thought, `create-lore-entry`'s own `links` in-port writes
  * the edges in the row's transaction instead — the shape a room-builder wants.
  *
- * ## What the link says (places plan B2, 2026-09-29)
+ * ## What the link says (2026-09-29)
  *
  * The row is a **relationship**, and it carries the relationship's whole
  * descriptor — the same four words the lorebook's own link form edits:
@@ -1078,7 +1264,7 @@ export const linkLoreEntries = pin(
 		effects: 'write',
 		/**
 		 * The link itself is what a reviewer judges, so its words both ways,
-		 * its name and its description may be retyped (R-15 review fields). The
+		 * its name and its description may be retyped. The
 		 * two ends may not: they are the run's own identity, and a reviewer
 		 * re-aiming them would link a pair nobody judged — the rule
 		 * `delete-message@1` states.
@@ -1131,7 +1317,7 @@ export const linkLoreEntries = pin(
 
 /**
  * One lore link a spec asks for — an element of
- * `core:outlet/create-lore-entry@1`'s `links` (places plan B2, 2026-09-29).
+ * `core:outlet/create-lore-entry@1`'s `links` (2026-09-29).
  *
  * The same four words as `core:outlet/link-lore-entries@1`'s ports and
  * parameters, and as the `LoreLinkRow` a listing reads back: what you write is
@@ -1158,7 +1344,7 @@ export interface LoreLinkInput {
 
 /**
  * One lore link on a `core:query/lorebook-entries@1` row, listed when the
- * spec asks for `withLinks` (places plan B2, 2026-09-29).
+ * spec asks for `withLinks` (2026-09-29).
  *
  * **Said from the listed entry**: `to` is the far end, whichever end of the
  * relationship the listed entry is. A relationship drawn from here reads by
@@ -1201,7 +1387,7 @@ export const graphProposal = pin(
 		id: 'core:outlet/graph-proposal@1',
 		i18n: { name: { en: 'Propose graph changes' } },
 		effects: 'write',
-		/** The proposal is what the review screen exists to edit (R-15 review fields). */
+		/** The proposal is what the review screen exists to edit. */
 		review: { fields: ['proposal'] },
 		timeoutMs: 10000,
 		causesEvent: 'core:event/graph-proposal-created@1',

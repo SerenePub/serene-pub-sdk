@@ -7,6 +7,7 @@
  * Shared by every core widget (R21); the conversation was the first.
  */
 import {
+	EMPTY_ATTENDANCE,
 	EMPTY_TURN_ORDER,
 	WIDGET_PROTOCOL,
 	type ComponentContext,
@@ -19,7 +20,8 @@ import {
 	WIDGET_SCOPED_SECTIONS,
 	type WidgetContext,
 	type WidgetContextRef,
-	type WidgetScopedData
+	type WidgetScopedData,
+	type WidgetSectionScope
 } from "@serene-pub/core-catalog/widgets"
 
 /** Every scoped section's posted name — the SDK's one table, read once. */
@@ -70,6 +72,7 @@ export function widgetRefFromComponent(
 			locale: { v1: ctx.locale ?? "en" },
 			viewer: { v1: ctx.viewer ?? NOBODY },
 			turnOrder: { v1: ctx.turnOrder ?? EMPTY_TURN_ORDER },
+			attendance: { v1: ctx.attendance ?? EMPTY_ATTENDANCE },
 			// What the host said this widget holds — absent until it has — so a
 			// widget can tell a scope never granted apart from a section not yet posted.
 			grants: ctx.grants,
@@ -79,13 +82,17 @@ export function widgetRefFromComponent(
 			action: (fn, messageId, payload, action, blockId) => ctx.action(fn, messageId, payload, action, blockId),
 			invoke: (key, args) => ctx.invoke(key, args),
 			request: ((kind, params) => ctx.request(kind, params)) as WidgetContext["request"],
-			// No host menu across the port yet: dismissed, as a native host without one answers.
+			// ⏳ The retired `menu` verb (C4, 2026-10-10; REMOVE in 0.7.0): no host
+			// draws one, so it answers dismissed. A component places `sp-menu`.
 			menu: async () => null,
 			on: (kind: WidgetEventKind | "*", cb: (e: WidgetEvent) => void) =>
 				ctx.onEvent((e) => {
 					const ev = e as WidgetEvent
 					if (kind === "*" || ev.kind === kind) cb(ev)
 				}),
+			// The scope string, by the table, to the section's `v1` — the same
+			// lookup `ComponentContext.scope` makes, so both answer alike.
+			scope: <S extends WidgetSectionScope>(scope: S) => scoped[WIDGET_SCOPED_SECTIONS[scope]],
 			t: (source) => ctx.t(source),
 			state: ctx.state,
 			saveState: (state) => ctx.saveState(state)

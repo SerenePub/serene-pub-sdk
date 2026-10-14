@@ -18,6 +18,23 @@ import { ADVENTURE_SHEET, ADVENTURE_SLOTS } from "./slots.js"
 import { LAIR_SHEET, LAIR_SLOTS } from "./slots.js"
 import { GUIDE_MASCOT_IMAGE } from "../seed/guideMascotImage.js"
 import { coreWidgets } from "./widgets.js"
+import {
+	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	CHAT_SUMMARIZE_SCENE_SPEC_ID,
+	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
+	LAIR_SUMMARIZE_SCENE_SPEC_ID
+} from "../shared/summarize/sceneIds.js"
+
+/*
+ * Widgets that read a lorebook — Chronicle, Places and Lore entries — are
+ * offered wherever a session may have one (`lorebook` in the genre's shape),
+ * which is every core genre today: optional in Chat and the Guide, required
+ * in Adventure and the Lair. So none omits them, and each genre's
+ * `omitWidgets` stays the Author's note alone (Chat's own). A genre with no
+ * lorebook omits all three — Dungeon Crawler, when it lands
+ * (PLAN-core-widgets §4), declares `omitWidgets: [coreWidgets.chronicle,
+ * coreWidgets.places, coreWidgets.loreEntries, …]`.
+ */
 
 /**
  * Auto-advance (PLAN-turn-order §4.6, R16): whether the head turn fires by
@@ -258,7 +275,9 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 	 * The layout this genre ships (R71): its default — the conversation, and
 	 * the Author's note tucked in the right rail (owner ruling 2026-10-03).
 	 */
-	layouts: [layout({ slug: "default", name: { en: "Chat" }, preset: CHAT_LAYOUT })]
+	layouts: [layout({ slug: "default", name: { en: "Chat" }, preset: CHAT_LAYOUT })],
+	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
+	summarize: { scene: CHAT_SUMMARIZE_SCENE_SPEC_ID }
 })
 
 /* ── Adventure ──────────────────────────────────────────────────────────── */
@@ -308,6 +327,14 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
 		 */
 		voice: "narrator",
 		greeting: { enabled: true, channel: "main" },
+		/**
+		 * 🚧 Where the story is (live scenes §15 G2): the world's `location`
+		 * (`core:slot/location@1`, on the world by this genre's sheet). A
+		 * scene is named `Scene N · <place>` and *the place changed* fires
+		 * when the party move. The rest of the scene settings are the
+		 * defaults (Suggested; on request).
+		 */
+		scenes: { place: { stateKey: "location" } },
 		// No turn-order swaps: the planner decides who speaks, so no Turn order
 		// control renders (PLAN-turn-order §4.5) — the narrator turn-order
 		// spec seats one narrator entry per send.
@@ -408,6 +435,8 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
 	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
 	layouts: [layout({ slug: "default", name: { en: "Adventure" }, preset: ADVENTURE_LAYOUT })],
+	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
+	summarize: { scene: ADVENTURE_SUMMARIZE_SCENE_SPEC_ID }
 })
 
 /* ── Guide ──────────────────────────────────────────────────────────────── */
@@ -536,7 +565,9 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
-	omitWidgets: [coreWidgets.authorsNote]
+	omitWidgets: [coreWidgets.authorsNote],
+	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
+	summarize: { scene: GUIDE_SUMMARIZE_SCENE_SPEC_ID }
 })
 
 /* ── Lair ───────────────────────────────────────────────────────────────── */
@@ -748,6 +779,13 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		 * `lair-create`.
 		 */
 		greeting: { enabled: false },
+		/**
+		 * 🚧 Where the story is (live scenes §15 G2): the room the party stand
+		 * in, the world's `location` — Adventure's place, for the same reason.
+		 * The Lair's own boundary trigger (a new floor) rides its
+		 * summarize-scene spec (`genres/lair/summarizeScene.ts`, ★9).
+		 */
+		scenes: { place: { stateKey: "location" } },
 		// No turn-order swaps: the planner decides who speaks — see Adventure's note.
 		fields: {
 			/**
@@ -906,4 +944,6 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
 	layouts: [layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT })],
+	/** 🚧 The spec this genre's scenes are summarized with — the one that reads the Sanctum (live scenes §13). */
+	summarize: { scene: LAIR_SUMMARIZE_SCENE_SPEC_ID }
 })

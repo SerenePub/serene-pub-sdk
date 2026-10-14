@@ -1,11 +1,12 @@
 /**
- * Document compilation (04 §5a, F3, F6).
+ * Document compilation.
  *
  * The builder chain is an *authoring format only*. SP imports the document and
  * never the JS — there is no importer path that evaluates a builder chain.
  *
  * Edges are derived here, 1:1 with pipeline_edges rows: the linear chain carries a
  * default edge, and every $ref becomes an explicit one.
+ * @ruling 04 §5a, F3, F6
  */
 
 import type { BuiltSpec, BuiltNode } from './builder.js'
@@ -44,16 +45,30 @@ export interface DocNode {
 	clauseKind?: string
 	clauseChain?: string
 	position: number
-	/** Config references resolved at publish and stored explicitly (16 §5b-i). */
+	/**
+	 * Config references resolved at publish and stored explicitly.
+	 * @ruling 16 §5b-i
+	 */
 	resolvedRefs?: Record<string, string>
 	/**
-	 * What the node shows beyond the admin panel — the session-settings mark
-	 * (PLAN-turn-order §4.11, R28), the streaming step and the step status
-	 * (lair pass B3/B18, 2026-09-27), and the step label and step purpose
-	 * the settings name it by (2026-09-30) — see `BuiltNode.expose`. Present
+	 * What the node shows beyond the admin panel — the session-settings mark,
+	 * the streaming step and the step status, and the step label and step
+	 * purpose the settings name it by — see `BuiltNode.expose`. Present
 	 * only when stated.
+	 * @ruling PLAN-turn-order §4.11, R28, lair pass B3/B18 (2026-09-27), 2026-09-30
 	 */
 	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n; label?: I18n; purpose?: I18n }
+	/**
+	 * What this placement's rendered keys **mean** (owner ruling 2026-10-13):
+	 * a key its definition's `variables` slot renders, re-pointed at another
+	 * registered variable — `{ characterLore: 'acme:var/ranked-lore@1' }`.
+	 * The key stays the template's word; the variable decides which layouts
+	 * the picker offers, the default row, the floor and the absence rule.
+	 * Stated by the spec's author, hashed with the document, never by a
+	 * config or a session. Present only when stated.
+	 * @ruling PROPOSAL-variable-layout-accounting ★2, ★5
+	 */
+	renders?: Record<string, string>
 }
 
 /** @experimental */
@@ -61,34 +76,55 @@ export interface SpecDocument {
 	schemaVersion: 1
 	id: string
 	version: string
-	/** The genre declaration a create pipeline carries (24 §3). */
+	/**
+	 * The genre declaration a create pipeline carries.
+	 * @ruling 24 §3
+	 */
 	genre?: unknown
-	/** Contributed surfaces (19 §3–§4) — content like `genre`, hashed with the document. */
+	/**
+	 * Contributed surfaces — content like `genre`, hashed with the document.
+	 * @ruling 19 §3–§4
+	 */
 	contributes?: unknown
-	/** Catalogue claims (ruled 2026-08-27) — content like the two above, hashed with the document. */
+	/**
+	 * Catalogue claims — content like the two above, hashed with the document.
+	 * @ruling ruled 2026-08-27
+	 */
 	taxonomy?: unknown
 	/**
-	 * The usage lock (24 §4): { genre, event } the inlet declared. Hashed with
-	 * the document. **The only subscription** (R-4) — `subscribes` was deleted
-	 * 2026-09-16 with `.on()`.
+	 * The usage lock: the genre the inlet declared, and **either** one
+	 * `event` **or** several `events` — never assume `event`: a
+	 * `turnOrderSpec()` document is locked on `events` (every event it
+	 * recomputes on). Read the first with `input.event ?? input.events?.[0]`.
+	 * Hashed with the document. **The only subscription** — `subscribes` was
+	 * deleted 2026-09-16 with `.on()`.
+	 * @ruling 24 §4, R-4
 	 */
 	input?: { genre?: string; event?: string; events?: string[] }
 	includes: Array<{ key: string; fragmentId: string }>
-	/** Author-shipped presets. Execution-affecting, so they round-trip (F4). */
+	/**
+	 * Author-shipped presets. Execution-affecting, so they round-trip.
+	 * @ruling F4
+	 */
 	presets: BuiltSpec['presets']
 	nodes: DocNode[]
 	edges: DocEdge[]
 	clauses: BuiltSpec['clauses']
 }
 
-/** A clause's own ports; a junction's fired-branch ports never shadow them (M4). @experimental */
+/**
+ * A clause's own ports; a junction's fired-branch ports never shadow them.
+ * @experimental
+ * @ruling M4
+ */
 export const JUNCTION_CLAUSE_PORTS: ReadonlySet<string> = new Set(['main', 'values', 'branches', 'ok'])
 
 /**
- * A junction's branch-end nodes (M4): the last node of each chain, by
+ * A junction's branch-end nodes: the last node of each chain, by
  * position. What a junction publishes beyond its clause ports is read off
  * these.
  * @experimental
+ * @ruling M4
  */
 export function junctionBranchEnds(
 	nodes: ReadonlyArray<{ key: string; clauseId?: string; clauseChain?: string; position: number; definitionId: string; definitionVersion: number }>,
@@ -109,7 +145,10 @@ export function junctionBranchEnds(
 	})
 }
 
-/** The shape every branch of junction `id` agrees `port` has, else undefined (M4). */
+/**
+ * The shape every branch of junction `id` agrees `port` has, else undefined.
+ * @ruling M4
+ */
 function junctionPortShape(built: BuiltSpec, id: string, port: string): string | undefined {
 	const clause = built.clauses.find((c) => c.id === id)
 	if (!clause || clause.kind !== 'junction' || JUNCTION_CLAUSE_PORTS.has(port))
@@ -150,6 +189,7 @@ export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
 		clauseChain: n.clauseChain,
 		position: n.position,
 		...(n.expose ? { expose: n.expose } : {}),
+		...(n.renders ? { renders: n.renders } : {}),
 	}))
 
 	const edges: DocEdge[] = []
@@ -287,9 +327,10 @@ export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
 
 /**
  * Follow the spine forward from `fromKey` to the first oracle. Linearity is what
- * makes this well-defined (F25). Ambiguity or absence is a publish error that names
- * the candidates — the teaching-error pattern (15 §1.3).
+ * makes this well-defined. Ambiguity or absence is a publish error that names
+ * the candidates — the teaching-error pattern.
  * @experimental
+ * @ruling F25, 15 §1.3
  */
 export function resolveDownstreamOracle(built: BuiltSpec, fromKey: string): string {
 	const ordered = built.nodes.slice().sort((a, b) => a.position - b.position)
@@ -310,23 +351,32 @@ export function resolveDownstreamOracle(built: BuiltSpec, fromKey: string): stri
 }
 
 /**
- * Canonical form — stable key order, for hashing and round-trip identity (F3).
+ * Canonical form — stable key order, for hashing and round-trip identity.
  *
  * The sort and the digest below moved to `hash.ts` unchanged, because the type
  * registries now need the same two and a document and a declaration must not
  * disagree about what identical content is. Same bytes in, same string out.
  * @experimental
+ * @ruling F3
  */
 export function canonical(doc: SpecDocument): string {
 	return canonicalize(doc)
 }
 
-/** Cheap deterministic content hash — stands in for the real canonical_hash (02 §3). @experimental */
+/**
+ * Cheap deterministic content hash — stands in for the real canonical_hash.
+ * @experimental
+ * @ruling 02 §3
+ */
 export function canonicalHash(doc: SpecDocument): string {
 	return contentHash(doc)
 }
 
-/** Import: document → the same in-memory form. `import(export(x))` is identity (F3). @experimental */
+/**
+ * Import: document → the same in-memory form. `import(export(x))` is identity.
+ * @experimental
+ * @ruling F3
+ */
 export function importDocument(doc: SpecDocument): SpecDocument {
 	return JSON.parse(JSON.stringify(doc)) as SpecDocument
 }
@@ -339,14 +389,15 @@ export interface ExportOptions {
 	 */
 	presets?: 'all' | 'none' | string[]
 	/**
-	 * How preset bindings travel — the same explicit fork pipeline export already offers
-	 * (02 §6), never decided silently.
+	 * How preset bindings travel — the same explicit fork pipeline export already offers,
+	 * never decided silently.
 	 *
 	 * - `base` keeps `$ref` references by slug. Portable only where the target is itself a
 	 *   seeded, slugged row; a reference to something a user made locally resolves to
 	 *   nothing on the far side.
 	 * - `flattened` inlines the values. Always portable, and it forks the config — the
 	 *   importing instance can no longer swap the named thing in one place.
+	 * @ruling 02 §6
 	 */
 	bindings?: 'base' | 'flattened'
 	/** Resolve a `$ref` when flattening. Absent values are dropped and reported. */
@@ -360,20 +411,22 @@ export interface ExportResult {
 	omitted: Array<{ what: string; reason: string }>
 	/**
 	 * Every connection the importing instance must wire, derived from the types rather
-	 * than from what this instance happened to have configured (13 §10a). Complete even
+	 * than from what this instance happened to have configured. Complete even
 	 * when the exporter never set one up.
+	 * @ruling 13 §10a
 	 */
 	requires: ConnectionRequirement[]
 }
 
 /**
- * Export a document, with the presets a user selected (12 §7).
+ * Export a document, with the presets a user selected.
  *
  * **A filtered export is a different document, not a lossy copy of the same one**, so its
- * canonical hash legitimately differs from the source's. F3's identity law is about a
+ * canonical hash legitimately differs from the source's. The identity law is about a
  * given export round-tripping — `import(export(x)) === export(x)` — and that still holds
  * exactly.
  * @experimental
+ * @ruling 12 §7, F3
  */
 export function exportDocument(doc: SpecDocument, opts: ExportOptions = {}): ExportResult {
 	const omitted: ExportResult['omitted'] = []

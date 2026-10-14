@@ -12,3 +12,7 @@ export * from './narrateCharacter.js'
 export * from './generateImage.js'
 export * from './answerForm.js'
 export * from './turnOrder.js'
+export * from './summarizeScene.js'
+export * from './illustrateScene.js'
+// 🚧 Time passes… (live scenes §6): the graph is `shared/timePasses.ts`.
+export * from './advanceTime.js'

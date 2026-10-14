@@ -35,14 +35,14 @@ export const userMessage = pin(
 			},
 		},
 		/**
-		 * The standard chat's shape (19 §1) — today's behaviour, *stated*.
-		 * This block is what makes the input type a **chat mode** (the F29
+		 * The standard chat's shape — today's behaviour, *stated*.
+		 * This block is what makes the input type a **chat mode** (the
 		 * floor: always present, special in availability and nothing else).
 		 * Both participant systems are optional and unbounded above, lorebooks
 		 * attach when wanted, the composer is a text box, and the seed line
 		 * carries the speaking character's name. Duties and triggers are not
 		 * here on purpose: the shape is owner-only, and the narrate button is
-		 * the narrate spec's contribution, not this type's knowledge (19 §3).
+		 * the narrate spec's contribution, not this type's knowledge.
 		 */
 		sessionShape: {
 			characters: { min: 0 },
@@ -58,7 +58,7 @@ export const userMessage = pin(
 		},
 		slots: {
 			/**
-			 * The input hook (18 §4a): user chains over the triggering text,
+			 * The input hook: user chains over the triggering text,
 			 * phase `after` on what this node publishes — which is what
 			 * lorebook scanning and the prompt's seed see. The stored user
 			 * message was written before the turn began and stays untouched
@@ -81,13 +81,13 @@ export const userMessage = pin(
 				sessionScope: S.sessionScope,
 				sessionId: S.rowIds,
 				/**
-				 * Whose turn it is, as a **participant reference** (R-18 (3)):
+				 * Whose turn it is, as a **participant reference**:
 				 * `character:<id>` for a library character, `envoy:<slug>` for
 				 * a speaker the genre brings with it. Null on a narrator turn —
 				 * nobody in particular is speaking. One port answers "who is
 				 * speaking" for both kinds, so nothing downstream branches on
 				 * which it received; who *portrays* them this turn is the
-				 * host's resolver's answer, pinned on the receipt (R-21 (4)).
+				 * host's resolver's answer, pinned on the receipt.
 				 */
 				speaker: S.participantRef,
 				/**
@@ -100,7 +100,7 @@ export const userMessage = pin(
 				characterId: S.rowIds,
 				/**
 				 * Who **pressed** — the reference of whoever sent the message
-				 * or fired the action this run answers (G9, 2026-09-17).
+				 * or fired the action this run answers (2026-09-17).
 				 *
 				 * `user:<id>` for a person with no presence in the session,
 				 * `character:<id>` when they hold a persona here — their
@@ -119,7 +119,7 @@ export const userMessage = pin(
 				 * the path (`speaker: 'user:<id>'` writes a user-role row) and
 				 * no inlet carried the reference to put in it, so a plugin that
 				 * wanted the player's own line had to ride it on the model's
-				 * reply as a block (Battleship, plan §12).
+				 * reply as a block (as the Battleship plugin did).
 				 *
 				 * Never null on a turn or a fire: a run has an owner, and the
 				 * owner is a person. Absent only where the inlet is resolved
@@ -127,8 +127,8 @@ export const userMessage = pin(
 				 */
 				presser: S.participantRef,
 				/**
-				 * The cast members a press collected (lair pass R3,
-				 * 2026-09-28): `character:<id>` references, for an action
+				 * The cast members a press collected
+				 * (2026-09-28): `character:<id>` references, for an action
 				 * declaring `collects.recipients` — picked in the collect
 				 * modal, and validated by the host (seated and enabled, no
 				 * duplicates, within the declared `min` and `max`) before
@@ -137,7 +137,18 @@ export const userMessage = pin(
 				 */
 				recipients: S.participantRefs,
 				/**
-				 * Values for the mode's declared `fields` (19 §1), filtered to
+				 * 🚧 The **clock step** a press collected (2026-10-13):
+				 * `{ by, unit }` — a whole number other than zero, signed
+				 * (back is negative), and one of the story-time units — for
+				 * an action declaring `collects.clockStep`, picked on the
+				 * collect modal's stepper and checked by the host before the
+				 * run starts. Absent on a turn and on every press of an
+				 * action that collects none. Core's *Time passes…* hands it
+				 * to `core:task/clock-step@1`.
+				 */
+				clockStep: S.json,
+				/**
+				 * Values for the mode's declared `fields`, filtered to
 				 * the declared schema keys — the supply side of the round
 				 * trip: declaration → chat settings → chat row → this port →
 				 * every downstream node.
@@ -145,7 +156,7 @@ export const userMessage = pin(
 				fields: S.json,
 				/**
 				 * Text an in-progress reply has already produced, when this turn
-				 * is an **extend** (ruling 2026-09-08, D-2; the verb was `continue`
+				 * is an **extend** (ruling 2026-09-08; the verb was `continue`
 				 * until 2026-09-28).
 				 *
 				 * Empty on every other turn, which is nearly all of them. It is
@@ -168,7 +179,7 @@ export const userMessage = pin(
 				 * swipe or an extend of a message that already exists. Null on
 				 * a fresh turn, which is nearly all of them.
 				 *
-				 * The pipeline owns its reply row (R-17): a fresh turn's row is
+				 * The pipeline owns its reply row: a fresh turn's row is
 				 * created by the spec's own placeholder outlet, and a verb that
 				 * re-drives an existing message hands that message to the same
 				 * outlet through this port — so the outlet claims it as the
@@ -179,7 +190,7 @@ export const userMessage = pin(
 				messageId: S.rowIds,
 				/**
 				 * What the built-ins did to this session since the last reply
-				 * (R-15, 2026-09-16): a list of session changes — `[{ event:
+				 * (2026-09-16): a list of session changes — `[{ event:
 				 * 'core:event/message-deleted@1', messageId, at, lost }, …]`,
 				 * oldest first, capped at the newest fifty — so a pipeline
 				 * knows the history it is about to read has moved: a line
@@ -194,15 +205,15 @@ export const userMessage = pin(
 				 * 'core:event/session-changes-truncated@1', dropped }` says
 				 * how many older ones did not.
 				 *
-				 * Was `changes` until 2026-09-16 (U5b review S4): that word is
+				 * Was `changes` until 2026-09-16: that word is
 				 * the state ledger's on `resolve-state-changes@1` and
 				 * `set-state@1` — a list of value changes — and a session
-				 * change is about a message, never a value (R1).
+				 * change is about a message, never a value (one word, one meaning).
 				 */
 				sessionChanges: S.json,
 				/**
-				 * What an action's fire sent along (R-15 *Forms*; U5d,
-				 * 2026-09-17): a form's answer — `{ choice }` for a choices
+				 * What an action's fire sent along
+				 * (2026-09-17): a form's answer — `{ choice }` for a choices
 				 * block, the entered values for a form block — or a widget's
 				 * `invoke(key, args)` arguments. Absent on a turn and on a
 				 * bare press. A press on an **addressed** block arrives with
@@ -222,7 +233,7 @@ export const userMessage = pin(
 				form: S.json,
 				/**
 				 * Which channel the message that triggered this turn is on
-				 * (R-C, 2026-09-17) — the stored string, lane included:
+				 * (2026-09-17) — the stored string, lane included:
 				 * `main`, `manuscript`, `phone:3`.
 				 *
 				 * `main` when the trigger named none, which is every session
@@ -241,10 +252,10 @@ export const userMessage = pin(
 				 * what a port carries.
 				 */
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -254,7 +265,7 @@ export const userMessage = pin(
 				session: S.sessionSettings,
 				channel: S.text,
 				/**
-				 * **How this turn was reached** (lair pass R8, 2026-09-28) —
+				 * **How this turn was reached** (2026-09-28) —
 				 * the fired turn entry's `via`: `strategy`, `script` or
 				 * `voice` for a prepared turn, `pick` for one a person chose,
 				 * and **`narrate`** when the press was the `core#narrate` turn
@@ -272,7 +283,7 @@ export const userMessage = pin(
 )
 
 /**
- * A built-in write's request (R-15, 2026-09-16) — what a person asked core to
+ * A built-in write's request (2026-09-16) — what a person asked core to
  * do to a message or a session: delete, hide, edit, swipe, branch.
  *
  * Core implements every state-altering write and runs each as its own
@@ -302,10 +313,10 @@ export const builtInRequest = pin(
 				/** A branch's fork point — the last message the copy keeps. */
 				fromMessage: S.rowIds,
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -317,7 +328,7 @@ export const builtInRequest = pin(
 				title: S.text,
 				/**
 				 * A person's sprite for the line: `{ set, label }`, or null to
-				 * clear it (DESIGN-sprites §6) — a `sprite-pick@1`, the shape a
+				 * clear it — a `sprite-pick@1`, the shape a
 				 * picker publishes, so `core:outlet/show-sprite@1` takes one
 				 * shape from both. Read by `core:spec/show-sprite`.
 				 */
@@ -332,7 +343,7 @@ export const builtInRequest = pin(
 // message's id arrives on `core:inlet/user-message@1`'s `messageId` port.
 
 /**
- * A session was just created — the create pipeline's trigger (24 §5, §12).
+ * A session was just created — the create pipeline's trigger.
  *
  * The genre's one required pipeline answers this event and seeds the
  * session's initial data: greetings per the genre's shape, initial channels,
@@ -341,7 +352,7 @@ export const builtInRequest = pin(
  * create pipeline does is *finish* what the request began.
  *
  * Not `user-message`: reusing the turn input here welded creation to the
- * chat turn's shape and was wrong (24 §12). A create run has no triggering
+ * chat turn's shape and was wrong. A create run has no triggering
  * text and no speaker; it has a request.
  * @public
  */
@@ -366,10 +377,10 @@ export const sessionCreated = pin(
 				 */
 				request: S.json,
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -385,7 +396,7 @@ export const sessionCreated = pin(
 )
 
 /**
- * A session event happened (PLAN-turn-order §4.1/§4.4, R1): the inlet every
+ * A session event happened: the inlet every
  * event-driven spec enters through, and the one core's turn-order spec
  * uses.
  *
@@ -398,7 +409,7 @@ export const sessionCreated = pin(
  * `cause` is why it fired (`EventCause`: user · run · edit · settings ·
  * system), and it is load-bearing beyond this node — the write this spec
  * ends in carries it into `turn-order-changed`, where the auto-advance
- * listener reads it to decide whether to fire the head turn (§4.6). A spec
+ * listener reads it to decide whether to fire the head turn. A spec
  * that drops it makes every recompute look like a system event.
  * @experimental
  */
@@ -432,20 +443,20 @@ export const sessionEvent = pin(
 				at: S.json,
 				sessionScope: S.sessionScope,
 				/**
-				 * The session's **settings document** (§4.12, R13), resolved
+				 * The session's **settings document**, resolved
 				 * once per run by the host after the write that caused this
 				 * event — so the cast below is the cast as it is now, and no
 				 * node needs a cast read of its own.
 				 */
 				session: S.sessionSettings,
 				/**
-				 * The settings document's **cast**, on its own port (PLAN
-				 * §8 (17)): what `core:query/session-cast@1` publishes,
+				 * The settings document's **cast**, on its own port:
+				 * what `core:query/session-cast@1` publishes,
 				 * envoys included, projected from `session` by the host.
 				 *
 				 * A port rather than a path, because an edge is `{ node,
 				 * port }` and nothing in the graph addresses a field inside
-				 * a port's value. §4.5 wires the pool's `cast` from the
+				 * a port's value. Core's turn-order spec wires the pool's `cast` from the
 				 * document; this is that wire, with the shape the pool's
 				 * in-port declares.
 				 */
@@ -500,13 +511,13 @@ export const sideCharacterTurn = pin(
 		},
 		slots: {
 			/**
-			 * The input hook (18 §4a), on the same terms as `user-message@1`:
+			 * The input hook, on the same terms as `user-message@1`:
 			 * user chains over the triggering text, phase `after` on what this
 			 * node publishes, which is what retrieval and the prompt see.
 			 *
 			 * ⚠ `extras` is what makes this the **new-name hook**. The three
 			 * names below are read-only context supplied by the host at the
-			 * hook (18 §6a) and are part of the fixed choice set the script
+			 * hook and are part of the fixed choice set the script
 			 * editor offers — so "this name is new" is a declared read rather
 			 * than a name typed on faith. `speakerIsKnown` is `false` exactly
 			 * when a free-form name matched nothing in the session's lorebook.
@@ -528,7 +539,7 @@ export const sideCharacterTurn = pin(
 				sessionScope: S.sessionScope,
 				sessionId: S.rowIds,
 				/**
-				 * Who is speaking, as a **participant reference** (R-18 (3)):
+				 * Who is speaking, as a **participant reference**:
 				 * `character:<id>` when the pick was a library character, null
 				 * for a free-form name — a name is not a participant reference,
 				 * and the fact below is where the name lives. On the same
@@ -557,15 +568,15 @@ export const sideCharacterTurn = pin(
 				 * run afterwards rather than from the trigger that started it.
 				 *
 				 * Was `speaker` until 2026-09-16: that name is the participant
-				 * reference now (R-18 (3), one word one meaning), and a fact
+				 * reference now (one word, one meaning), and a fact
 				 * carrying a free-form name is not a reference to anybody.
 				 */
 				sideCharacter: S.json,
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -587,7 +598,7 @@ export const sideCharacterTurn = pin(
 				/**
 				 * The built-ins' session changes since the last reply, on the
 				 * same terms as `user-message@1`'s port of this name (was
-				 * `changes` until 2026-09-16, U5b review S4).
+				 * `changes` until 2026-09-16).
 				 */
 				sessionChanges: S.json,
 			},
@@ -634,10 +645,10 @@ export const formAddressed = pin(
 				sessionScope: S.sessionScope,
 				sessionId: S.rowIds,
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -688,10 +699,10 @@ export const summarizeRequest = pin(
 				main: S.summarizeRequest,
 				scope: S.sessionScope,
 				/**
-				 * The session's **settings document** (PLAN-turn-order §4.12,
-				 * R13): every setting a person can see in session settings,
+				 * The session's **settings document**:
+				 * every setting a person can see in session settings,
 				 * resolved once per run by the host and handed in here —
-				 * title, guests, genre fields (cascade applied, §4.13),
+				 * title, guests, genre fields (cascade applied),
 				 * scenario, lorebook, tags, channels, the cast with its
 				 * envoys, the session-scope rebinds and param overrides per
 				 * bound spec, the turn-order state, `metadata` (read-only)
@@ -700,6 +711,64 @@ export const summarizeRequest = pin(
 				 */
 				session: S.sessionSettings,
 				request: S.summarizeRequest,
+			},
+		},
+	}),
+)
+
+// ── A card's own action (image generation I5, 2026-10-12) ──────────────────
+
+/**
+ * 🚧 A person pressed an action on a **card** — the Characters view, not a
+ * session: *Fill empty sprites* on the
+ * Sprites tab, and *Generate portrait* on the Gallery tab (`count`, widened
+ * in place 2026-10-12).
+ *
+ * ## No session
+ *
+ * A card action runs with no session in scope: nothing here is a session's,
+ * no live row is filled, no session event is written. The host checks the
+ * person may act on the card (its owner, or an admin) before the run starts,
+ * and resolves the card ONCE, here — its likeness as text and as the
+ * reference image — so no node re-reads the character for a setting.
+ *
+ * ## The form's answers
+ *
+ * `fields` is the whole of what the action's form collected. The fields a
+ * core action asks are also their own ports (`setName`, `labels`) because a
+ * data edge addresses a port, never a field inside one; another card action
+ * widens this in place with its own, every one optional.
+ *
+ * No lock and no shape: a card action is not a session mode, and no genre
+ * owns a card.
+ * @experimental
+ */
+export const cardAction = pin(
+	describeInletDefinition({
+		id: 'core:inlet/card-action@1',
+		ports: {
+			out: {
+				main: S.json,
+				/** The card the action was pressed on. */
+				characterId: S.rowIds,
+				/** The card's likeness prompt — its look as a tag line; empty when unset. */
+				likeness: S.text,
+				/** The card's likeness negative; empty when unset. */
+				likenessNegative: S.text,
+				/**
+				 * The likeness image as a one-item media list (the likeness
+				 * image, else the avatar); empty when the card has neither.
+				 * What a picture step's `references` port takes.
+				 */
+				likenessImage: S.mediaList,
+				/** The form's answers, whole. */
+				fields: S.json,
+				/** Sprite set fill: the sprite set to fill, by name. */
+				setName: S.text,
+				/** Sprite set fill: the sprite labels to draw. */
+				labels: S.json,
+				/** 🚧 Portrait: how many pictures to offer (a whole number, 1–4 on the form). */
+				count: S.json,
 			},
 		},
 	}),

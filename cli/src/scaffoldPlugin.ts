@@ -1,10 +1,10 @@
 /**
- * `scaffold plugin` (24 §7, D-5) — the whole package, deleted down.
+ * `scaffold plugin` — the whole package, deleted down.
  *
  * `scaffold config` and `scaffold preset` print one file: the space an author
  * is about to write into, commented, ready to delete down to the four lines
  * they mean. This does the same thing one level up. It writes a **complete,
- * buildable package** on the unified declaration (D-1): one `defineExtension`
+ * buildable package** on the unified declaration: one `defineExtension`
  * carrying the code half (node definitions and the handlers behind them) and
  * the declaration half (genres, pipelines, presets, prompts, surfaces,
  * permissions), one default export, one `serene-pub build`.
@@ -33,11 +33,43 @@
  * they can correct. See {@link render} for the three constructs they use.
  */
 
+import { readFileSync } from 'node:fs'
 import { mkdir, readFile, readdir, stat, writeFile } from 'node:fs/promises'
 import { dirname, join, relative, resolve } from 'node:path'
 
 /** Where the template tree lives, from `dist/` and from `src/` alike. */
 const TEMPLATE_ROOT = join(import.meta.dirname, '..', 'templates', 'plugin')
+
+/**
+ * The release this CLI ships with — its own `package.json` version, read once.
+ * The SDK packages are released together, so this is the SDK's version too.
+ */
+const SHIPPED_VERSION: string = JSON.parse(
+	readFileSync(join(import.meta.dirname, '..', 'package.json'), 'utf8'),
+).version
+
+/**
+ * The `engines['serene-pub']` range a scaffold writes: from the minor the SDK
+ * ships with, so the release it was built against is inside it (F3 docs gate,
+ * stall 7: the scaffold wrote `>=0.7 <0.8` from a 0.6 SDK).
+ *
+ * A prerelease floor carries `-0`: under npm's range rules a prerelease
+ * version (`0.6.0-pr-4`) only satisfies a comparator that names a prerelease
+ * of the same `major.minor.patch`, so `>=0.6.0` would shut out every 0.6
+ * prerelease while `>=0.6.0-0` admits them and everything after. The ceiling
+ * is the next breaking line: `<0.8` on 0.x (0.7 is the release SDK 1.0 ships
+ * with, so a plugin written now is meant to keep working there), the next
+ * major after that.
+ */
+function enginesRangeFor(version: string): string {
+	const m = /^(\d+)\.(\d+)\.\d+(-.+)?$/.exec(version)
+	if (!m) return '>=0.6.0-0 <0.8'
+	const major = Number(m[1])
+	const minor = Number(m[2])
+	const floor = `>=${major}.${minor}.0${m[3] ? '-0' : ''}`
+	const ceiling = major === 0 ? `<0.${Math.max(minor + 1, 8)}` : `<${major + 1}`
+	return `${floor} ${ceiling}`
+}
 
 /** Same rule as `defineExtension` — the namespace every declared id sits under. */
 const SLUG = /^[a-z0-9]+([.-][a-z0-9]+)*$/
@@ -154,6 +186,8 @@ export function scaffoldValues(opts: ScaffoldPluginOptions): Record<string, stri
 		panelEntry: 'ui/panel.html',
 		presetSlug: stem,
 		promptSlug: `${stem}-default`,
+		/** The releases this package runs on — from the SDK it was scaffolded with. */
+		enginesRange: enginesRangeFor(SHIPPED_VERSION),
 		/** 1 MiB: inside the band `permissions.storage.quotaBytes` accepts. */
 		quotaBytes: String(1024 * 1024),
 		genre: !!opts.genre,

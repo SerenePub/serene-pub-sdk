@@ -1,10 +1,10 @@
 /**
- * announce() — the serializer behind `defineExtension()` (R48, T1b). A package
+ * announce() — the serializer behind `defineExtension()`. A package
  * is authored with `defineExtension()`; `announcementOf()` compiles that to the
  * announcement document this builder produces. Kept exported for core's and
  * the CLI's use, and for one release of packages still exporting a builder.
  *
- * Was: "the ONE authoring surface" (24 §6).
+ * Was: "the ONE authoring surface".
  *
  * A package is an announcement: identity first, then everything it declares —
  * genres, hook declarations, pipelines, configs, presets. Plugins compile the
@@ -19,7 +19,8 @@
  * Cross-package references are ids with the referenced thing's owner in them
  * (`use()` handles compile down to these). Referencing something external is
  * allowed and recorded; what the instance enforces at install is the
- * requirement, not the bundle (24 §10).
+ * requirement, not the bundle.
+ * @ruling R48, T1b, 24 §6, 24 §10
  */
 import type { BuiltSpec } from './builder.js'
 import { compile, type SpecDocument } from './document.js'
@@ -30,13 +31,14 @@ export type AnnouncedSpec = BuiltSpec | SpecDocument
 const isDocument = (s: AnnouncedSpec): s is SpecDocument => 'schemaVersion' in s
 
 /**
- * A reference to something another package ships (24 §10): an id plus an
+ * A reference to something another package ships: an id plus an
  * optional semver range. `use()` handles compile to references in the
  * document and requirements in the manifest — never a bundle. The
  * fully-typed form (option autocomplete off the published declaration
  * artifact's generated .d.ts) rides the artifact work; this is the
  * reference primitive both share.
  * @experimental
+ * @ruling 24 §10
  */
 export interface ExternalRef {
 	readonly kind: 'external-ref'
@@ -49,9 +51,10 @@ export interface ExternalRef {
 /**
  * An external reference carrying its target's option space in the type —
  * what the generated typings (`serene-pub types`) produce, so a config over
- * another package's pipeline autocompletes node → slot → field (24 T7b).
+ * another package's pipeline autocompletes node → slot → field.
  * The phantom never exists at runtime; the document still stores the id.
  * @experimental
+ * @ruling 24 T7b
  */
 export interface TypedExternalRef<T> extends ExternalRef {
 	readonly __options?: T
@@ -134,7 +137,10 @@ export interface PackageIdentity {
 	/** The package namespace every declared id lives under — `core`, `acme.dice`. */
 	ns: string
 	author: string
-	/** What the package is called where it is listed — a string or a locale map with `en` (R-20). */
+	/**
+	 * What the package is called where it is listed — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	title: I18n
 	repo?: string
 	summary?: I18n
@@ -142,11 +148,12 @@ export interface PackageIdentity {
 }
 
 /**
- * A hook *declaration* (24 §11): identity, event, contract, ordering. The
+ * A hook *declaration*: identity, event, contract, ordering. The
  * implementation lives with its capabilities — core's in core, a plugin's in
  * its sandboxed bundle — and boot/install binds implementation to declared id
  * with a completeness check.
  * @experimental
+ * @ruling 24 §11
  */
 export interface HookDeclaration {
 	event: string
@@ -157,7 +164,7 @@ export interface HookDeclaration {
 }
 
 /**
- * A shipped prompt (24 T6b): authored prose for one NODE's prompts slot,
+ * A shipped prompt: authored prose for one NODE's prompts slot,
  * selectable wherever that node is used. The slug is the stable identity an
  * instance's seed pass matches on; the label is display.
  *
@@ -166,6 +173,7 @@ export interface HookDeclaration {
  * the prompts written for it, and one built from other nodes is offered none of
  * them. Spec scoping said the same thing less precisely and cost the reuse.
  * @experimental
+ * @ruling 24 T6b
  */
 export interface PromptDecl {
 	/**
@@ -180,18 +188,28 @@ export interface PromptDecl {
 	 */
 	slot: string
 	slug: string
-	/** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+	/**
+	 * The name a picker lists it by — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label: I18n
 	/** Field name → prose, exactly as that slot declares them. */
 	fields: Record<string, string>
 }
 
-/** A named configuration: a typed delta over a spec's author defaults (24 §7). @experimental */
+/**
+ * A named configuration: a typed delta over a spec's author defaults.
+ * @experimental
+ * @ruling 24 §7
+ */
 export interface ConfigDecl {
 	/** The spec it configures — may be external (another package's id). */
 	spec: string
 	slug: string
-	/** The name a picker lists it by — a string or a locale map with `en` (R-20). */
+	/**
+	 * The name a picker lists it by — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label: I18n
 	description?: I18n
 	/** nodeKey → slot → value. Only deviations; everything else inherits. */
@@ -241,9 +259,10 @@ export function storedConfig(c: ConfigInput<any>): ConfigDecl {
 }
 
 /**
- * The display text rule (R-20) as a throw for `config()` / `preset()`, where
+ * The display text rule as a throw for `config()` / `preset()`, where
  * the author is. `build()` collects the same findings instead, through the
  * shared declaration pass.
+ * @ruling R-20
  */
 function assertDisplayText(at: string, meta: { label?: unknown; description?: unknown }): void {
 	const findings = labelFindings(at, meta)
@@ -259,7 +278,7 @@ export interface PresetBinding {
 }
 
 /**
- * What a preset pre-fills the creation form with (23 §9).
+ * What a preset pre-fills the creation form with.
  *
  * Every key optional and every key advisory: the form applies the ones it
  * recognises, type-checks each, and ignores the rest — so a preset written
@@ -267,12 +286,13 @@ export interface PresetBinding {
  * genre's own fields ride along in `genreFields` rather than growing this
  * shape a key at a time.
  * @experimental
+ * @ruling 23 §9
  */
 export interface PresetDefaults {
 	name?: string
 	scenario?: string
 	/**
-	 * Swaps to seat the session with (R40): for each, a definition the named
+	 * Swaps to seat the session with: for each, a definition the named
 	 * spec offers on the named node — its pin or one of its `expose.swaps`,
 	 * or an enabled contribution. The same shape a package contributes with
 	 * (`SwapContribution`), stored with ids:
@@ -280,6 +300,7 @@ export interface PresetDefaults {
 	 * Written as the session's rebinds at create; an entry the node does not
 	 * offer is refused there, logged, and the session starts on the pin.
 	 * Replaced `speakerStrategy` (2026-09-23), which named one node.
+	 * @ruling R40
 	 */
 	swaps?: StoredSwapContribution[]
 	lorebookId?: number | null
@@ -287,33 +308,39 @@ export interface PresetDefaults {
 	/** The genre's declared fields, by key. */
 	genreFields?: Record<string, unknown>
 	/**
-	 * Envoys to seat on creation, by slug (R-18; U5g) — beside the genre's
+	 * Envoys to seat on creation, by slug — beside the genre's
 	 * `default: true` ones, which are seated with no choice. A slug the
 	 * genre (or an installed action) does not declare is ignored, on the
 	 * same advisory terms as every other key here.
+	 * @ruling R-18, U5g
 	 */
 	envoys?: string[]
 }
 
 /**
- * A preset populates a genre's event slots (24 §1): for each event the genre
+ * A preset populates a genre's event slots: for each event the genre
  * declares, which pipeline variant answers it, with which config.
  * @experimental
+ * @ruling 24 §1
  */
 export interface PresetDecl {
 	slug: string
 	genre: string
-	/** The name the picker lists it by — a string or a locale map with `en` (R-20). */
+	/**
+	 * The name the picker lists it by — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label: I18n
 	description?: I18n
 	bindings: Record<string, PresetBinding>
 	/**
 	 * For the open `session-action` slot: which actions come along, each by
-	 * its **identity** — `<spec slug>#<key>` (U5c review, W-A). A preset
+	 * its **identity** — `<spec slug>#<key>`. A preset
 	 * curates declarations, never functions: two specs contributing one
 	 * function are two entries, and including one says nothing about the
 	 * other. Absent means the host's companion rule (every action from the
 	 * genre owner's own namespace).
+	 * @ruling U5c review, W-A
 	 */
 	actions?: { include: string[] }
 	/** What starting from this preset pre-fills the creation form with. */
@@ -447,7 +474,10 @@ export type PresetDefaultsInput = Omit<PresetDefaults, 'swaps'> & { swaps?: Swap
 export interface PresetInput {
 	slug: string
 	genre: GenreDecl | ExternalRef
-	/** The name the picker lists it by — a string or a locale map with `en` (R-20). */
+	/**
+	 * The name the picker lists it by — a string or a locale map with `en`.
+	 * @ruling R-20
+	 */
 	label: I18n
 	description?: I18n
 	bindings: BindingEntry[]
@@ -584,7 +614,11 @@ export function preset(input: PresetInput): PresetDecl {
 	}
 }
 
-/** The compiled announcement — the package's declaration artifact (24 §10). @experimental */
+/**
+ * The compiled announcement — the package's declaration artifact.
+ * @experimental
+ * @ruling 24 §10
+ */
 export interface AnnouncementDocument {
 	schemaVersion: 1
 	identity: PackageIdentity
@@ -596,17 +630,22 @@ export interface AnnouncementDocument {
 	configs: ConfigDecl[]
 	presets: PresetDecl[]
 	/**
-	 * Frame surfaces this package ships (20 §12, 21 §7) — the documents an
+	 * Frame surfaces this package ships — the documents an
 	 * instance mounts in opaque-origin iframes. Absent means the package has
 	 * no UI of its own, which is the common case.
+	 * @ruling 20 §12, 21 §7
 	 */
 	surfaces?: SurfacesDecl
-	/** In-document components (10 §2, virtual tier). */
+	/**
+	 * In-document components (virtual tier).
+	 * @ruling 10 §2
+	 */
 	components: ComponentDecl[]
 	/**
-	 * Definitions this package offers on other packages' swappable nodes
-	 * (R29), definitions as ids. Absent when the package contributes none, so
+	 * Definitions this package offers on other packages' swappable nodes,
+	 * stored as ids. Absent when the package contributes none, so
 	 * a package that declares no swap announces exactly what it did before.
+	 * @ruling R29
 	 */
 	swaps?: StoredSwapContribution[]
 	/**
@@ -619,7 +658,11 @@ export interface AnnouncementDocument {
 	requires: string[]
 }
 
-/** One event slot's standing in a preset, for the coverage report (24 §7). @experimental */
+/**
+ * One event slot's standing in a preset, for the coverage report.
+ * @experimental
+ * @ruling 24 §7
+ */
 export interface CoverageSlot {
 	event: string
 	required: boolean
@@ -686,7 +729,10 @@ export class AnnouncementBuilder {
 		return this
 	}
 
-	/** Declarations only — implementations bind by id per trust domain (24 §11). */
+	/**
+	 * Declarations only — implementations bind by id per trust domain.
+	 * @ruling 24 §11
+	 */
 	hooks(map: Record<string, HookDeclaration>): this {
 		for (const [key, decl] of Object.entries(map))
 			this._hooks[`${this.identity.ns}:hook/${key}`] = decl
@@ -714,17 +760,21 @@ export class AnnouncementBuilder {
 	}
 
 	/**
-	 * The frame surfaces this package ships (20 §12): documents mounted in
+	 * The frame surfaces this package ships: documents mounted in
 	 * opaque-origin iframes. Declared, never discovered — an instance renders
 	 * what the manifest says and `serene-pub preview` renders the same list,
 	 * so a surface a modder previewed is a surface an instance will offer.
+	 * @ruling 20 §12
 	 */
 	surfaces(decl: SurfacesDecl): this {
 		this._surfaces = { ...this._surfaces, ...decl }
 		return this
 	}
 
-	/** In-document components (10 §2, virtual tier) — code trust at install. */
+	/**
+	 * In-document components (virtual tier) — code trust at install.
+	 * @ruling 10 §2
+	 */
 	components(...components: ComponentDecl[]): this {
 		this._components.push(...components)
 		return this
@@ -745,7 +795,8 @@ export class AnnouncementBuilder {
 
 	/**
 	 * Validate the announcement as a whole and compile it to the document.
-	 * Errors carry exact paths — the teaching-error pattern (15 §1.3).
+	 * Errors carry exact paths — the teaching-error pattern.
+	 * @ruling 15 §1.3
 	 */
 	build(): { document: AnnouncementDocument; coverage: CoverageReport } {
 		const errors: string[] = []

@@ -1,5 +1,5 @@
 /**
- * Executed examples (15 §1.6, 07 §0-i) — pages whose code was RUN to make them.
+ * Executed examples — pages whose code was RUN to make them.
  *
  * Every example on the docs site is a real module in `sdk-tests/examples`: it is
  * type-checked with the suite, built into a document, validated against the same
@@ -70,7 +70,7 @@ export interface Example {
 }
 
 /**
- * A component example (C3b): a component mounted by the harness with a canned
+ * A component example: a component mounted by the harness with a canned
  * context — and, optionally, a few presses — whose page shows its source and
  * the DOM the page would show. Exported as `componentExample` from a
  * `<slug>.example.ts`, in place of `example`.

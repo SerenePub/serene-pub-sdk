@@ -18,7 +18,8 @@
  *
  * Pure — no DOM, no clock: callers hand in the last press and `now`.
  *
- * @experimental 🚧 provisional with the widget invoke vocabulary (C7, R80).
+ * @experimental 🚧 provisional with the widget invoke vocabulary.
+ * @ruling C7, R80
  */
 
 /** Core's verbs that change a message or start a turn, and so need a person behind a widget's invoke of them. @experimental */

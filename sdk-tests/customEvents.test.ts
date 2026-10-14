@@ -342,9 +342,11 @@ describe('E1a review fixes', () => {
 		assert.throws(bad({ payload: 'dice:shape/nope@1' }), /not a registered shape/)
 		assert.throws(bad({ id: 'dice:event/checked@01' }), /not an event id a package may declare/)
 		assert.throws(bad({ name: '' }))
-		// A package's own shape is registered here but would not travel in the manifest.
+		// Another package's shape travels in nobody's manifest here; its own does (`manifest.shapes`).
+		defineShape({ id: 'cards:shape/hand@1' })
+		assert.throws(bad({ payload: 'cards:shape/hand@1' }), /another package's shape/)
 		defineShape({ id: 'dice:shape/roll@1' })
-		assert.throws(bad({ payload: 'dice:shape/roll@1' }), /your package's own shape/)
+		assert.equal(bad({ id: 'dice:event/rolled-own@1', payload: 'dice:shape/roll@1' })().payload, 'dice:shape/roll@1')
 	})
 
 	test('the host re-checks a recorded payload: plain JSON, within the cap, text where declared text', () => {
@@ -367,5 +369,55 @@ describe('E1a review fixes', () => {
 		assert.equal(eventById('dice:event/redeclared@1'), undefined)
 		defineSessionEvent({ id: 'dice:event/redeclared@1', payload: S.text, name: 'Twice', description: 'A test event.' })
 		assert.equal(eventById('dice:event/redeclared@1')?.name?.en, 'Twice')
+	})
+})
+
+describe("a package's own shapes travel in its manifest", () => {
+	test('an event on its own payload shape compiles, and the manifest carries the shape', async () => {
+		const { compilePlugin, renderFindings } = await import('@serene-pub/cli')
+		const tally = defineShape({ id: 'pebble:shape/tally@1', assignableTo: [S.json] })
+		const counted = defineSessionEvent({
+			id: 'pebble:event/counted@1',
+			payload: tally,
+			name: { en: 'Counted' },
+			description: 'A tally landed.',
+		})
+		const e = defineExtension({
+			slug: 'pebble',
+			name: 'Pebble',
+			version: '0.1.0',
+			events: [{ event: counted, genre: use('core:genre/chat'), recordedBy: 'any' }],
+		})
+		const r = compilePlugin({ sources: [{ path: 'index.ts', text: '' }], extension: e })
+		assert.ok(r.ok, renderFindings(r.findings))
+		assert.deepEqual(r.manifest!.shapes, [{ id: 'pebble:shape/tally@1', assignableTo: [S.json] }])
+		assert.equal(r.manifest!.events?.[0]?.payload, 'pebble:shape/tally@1')
+		// Only its own namespace travels: core's and other packages' shapes stay out.
+		assert.ok(r.manifest!.shapes!.every((s) => s.id.startsWith('pebble:shape/')))
+	})
+
+	test("an event whose payload is another package's shape is refused by the packager", async () => {
+		const { compilePlugin } = await import('@serene-pub/cli')
+		defineShape({ id: 'other:shape/thing@1' })
+		const e = {
+			__extension: true,
+			slug: 'pebble.b',
+			name: 'Pebble B',
+			version: '0.1.0',
+			events: [
+				{
+					event: 'pebble.b:event/thing@1',
+					payload: 'other:shape/thing@1',
+					name: { en: 'Thing' },
+					description: '',
+					domain: 'session',
+					genre: 'core:genre/chat',
+					recordedBy: 'any',
+				},
+			],
+		}
+		const r = compilePlugin({ sources: [{ path: 'index.ts', text: '' }], extension: e as never })
+		assert.equal(r.ok, false)
+		assert.match(r.findings.find((f) => f.code === 'E_SHAPE_NAMESPACE')!.message, /only its own shapes/)
 	})
 })

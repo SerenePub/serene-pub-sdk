@@ -87,3 +87,7 @@ A lifecycle callback: runs at startup, enable, disable, update, uninstall or shu
 ### Events
 
 **Events are caused by writes.** No node emits an event or starts a pipeline. A package records its own declared event with the `record-event` write, within the scope its entry declares, and everything in the session hears it.
+
+### Widget writes
+
+**A widget writes only behind a write grant.** A widget's scope lets it read (`session:state`, reviewed as `widget:session:state`); changing what the scope covers is a separate **write grant**, asked for in the same `scopes` and reviewed on its own: `session:state:write` lets it ask `set-attribute-value`, and `channel:<slug>:write` lets it ask `send` and `draft` on that channel, which it must also list in its `channels`. Holding the write never grants the read. Each write goes in as the viewer, only while a person is pressing in the widget, and with the viewer's own permissions. Every other change a widget wants goes through its plugin's own actions.

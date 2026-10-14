@@ -184,3 +184,235 @@ describe('R-11 · the executor hands the applier the point’s own list', () => 
 		assert.match(node.reason, /candidates, draft/)
 	})
 })
+
+// ── D2 · one read path (PLAN-script-placement 2026-10-10) ───────────────────
+//
+// `applyChainsAt` and `ctx.scripts.apply` now both go through `applyAtSeam`.
+// Pinned: the site each origin is handed (now carrying `at`) and the records
+// each lands on the receipt are what they were; the per-origin behaviour the
+// plan keeps — port path absorbs an engine throw, interior path lets it reach
+// the binding — and the new `outcome.halt` (D4) halting the run.
+
+describe('D2 · one read path, per-origin behaviour kept', () => {
+	const hooked = pin(
+		describeOracleDefinition({
+			id: 'test:oracle/drafter-with-seams@1',
+			shape: S.textGen,
+			ports: { in: { text: S.text }, out: { main: S.text } },
+			slots: {
+				hook: {
+					kind: 'scripts',
+					accepts: [TEXT],
+					port: 'text',
+					phase: 'before',
+					extras: ['speakerName'],
+				},
+			},
+			scriptPoints: [{ key: 'draft', accepts: [TEXT] }],
+		}),
+	)
+
+	const doc = compile(
+		spec('test:spec/seams-one-path', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.oracle('draft', ($: any) => hooked.v1({ text: $.input.text }))
+			.build(),
+	)
+
+	const go = async (
+		applyScripts: ScriptChainApplier,
+		opts: { chains?: boolean; binding?: (i: any, ctx: any) => Promise<any> } = {},
+	) =>
+		await run(doc, {
+			world: {
+				...world,
+				overrides:
+					opts.chains === false
+						? []
+						: [
+								{ nodeKey: 'draft', slot: 'hook', path: '', value: [3], scopeKind: 'session' as const },
+								{ nodeKey: 'draft', slot: 'scripts', path: 'draft', value: [7], scopeKind: 'session' as const },
+							],
+			},
+			input: { text: 'hi' },
+			seed: 'seams',
+			triggerSource: 'ui',
+			applyScripts,
+			bindings: {
+				'core:inlet/user-message@1': async (i: any) => ok(i),
+				[hooked.id]:
+					opts.binding ??
+					(async (i: any, ctx: any) => ok({ main: await ctx.scripts.applyText('draft', i.text) })),
+			},
+		})
+
+	/** A fake host applier: upper-cases at the port, appends at the point, one record per link. */
+	const recording = (sites: ScriptHookSite[]): ScriptChainApplier => async (site, chain, value) => {
+		sites.push(site)
+		const ids = Array.isArray(chain) ? (chain as number[]) : []
+		return {
+			value:
+				site.nodeKey !== 'draft' || typeof value !== 'string'
+					? value
+					: site.origin === 'binding'
+						? `${value}!`
+						: value.toUpperCase(),
+			applications: ids.map((id) => ({
+				scriptId: id,
+				name: `#${id}`,
+				scriptKind: TEXT,
+				phase: site.phase,
+				appliedBy: site.origin ?? 'substrate',
+				result: 'ok' as const,
+			})),
+		}
+	}
+
+	test('golden: the port hook and the interior point yield the sites and records they did, plus `at`', async () => {
+		const sites: ScriptHookSite[] = []
+		const receipt: any = await go(recording(sites))
+		assert.equal(receipt.outcome, 'ok')
+		const drafts = sites.filter((s) => s.nodeKey === 'draft')
+		assert.deepEqual(drafts, [
+			{
+				nodeKey: 'draft',
+				definitionId: hooked.id,
+				at: 'in:text',
+				slot: 'hook',
+				phase: 'before',
+				port: 'text',
+				accepts: [TEXT],
+				extras: ['speakerName', 'session'],
+			},
+			{
+				nodeKey: 'draft',
+				definitionId: hooked.id,
+				at: 'draft',
+				slot: 'scripts',
+				phase: 'before',
+				port: 'draft',
+				accepts: [TEXT],
+				extras: ['session'],
+				origin: 'binding',
+			},
+		])
+		const node = receipt.nodes.find((n: any) => n.nodeKey === 'draft')
+		assert.deepEqual(node.scripts, [
+			{ scriptId: 3, name: '#3', scriptKind: TEXT, phase: 'before', appliedBy: 'substrate', result: 'ok' },
+			{ scriptId: 7, name: '#7', scriptKind: TEXT, phase: 'before', appliedBy: 'binding', result: 'ok' },
+		])
+		// The port rewrite reached the binding; the point's rewrite reached its output.
+		assert.equal(node.output.main, 'HI!')
+		// The inlet's own out:text seam is offered as before, now named.
+		const inlet = sites.find((s) => s.nodeKey === 'input')!
+		assert.equal(inlet.at, 'out:text')
+		assert.equal(inlet.phase, 'after')
+	})
+
+	test('an empty/absent chain still reaches the applier at a port seam', async () => {
+		const seen: Array<{ at: string; chain: unknown }> = []
+		await go(
+			async (site, chain, value) => {
+				seen.push({ at: site.at, chain })
+				return { value, applications: [] }
+			},
+			{ chains: false },
+		)
+		const port = seen.find((s) => s.at === 'in:text')
+		assert.ok(port, 'the port seam was offered with no chain configured')
+		assert.equal(port!.chain, undefined)
+		assert.ok(seen.some((s) => s.at === 'out:text'), 'the inlet seam too')
+	})
+
+	test('port path: an applier throw is absorbed into an (engine) err record and the value passes through', async () => {
+		const receipt: any = await go(async (site, _chain, value) => {
+			if (site.nodeKey === 'draft' && site.origin !== 'binding') throw new Error('sandbox down')
+			return { value, applications: [] }
+		})
+		assert.equal(receipt.outcome, 'ok')
+		const node = receipt.nodes.find((n: any) => n.nodeKey === 'draft')
+		assert.deepEqual(node.scripts, [
+			{
+				scriptId: -1,
+				name: '(engine)',
+				scriptKind: '',
+				phase: 'before',
+				appliedBy: 'substrate',
+				result: 'err',
+				reason: 'sandbox down',
+			},
+		])
+		assert.equal(node.output.main, 'hi')
+	})
+
+	test('interior path: an applier throw reaches the binding (no absorption)', async () => {
+		const receipt: any = await go(async (site, _chain, value) => {
+			if (site.origin === 'binding') throw new Error('point engine down')
+			return { value, applications: [] }
+		})
+		assert.equal(receipt.outcome, 'err')
+		const node = receipt.nodes.find((n: any) => n.nodeKey === 'draft')
+		assert.equal(node.result, 'err')
+		assert.equal(node.reason, 'point engine down')
+		assert.equal(node.scripts, undefined)
+	})
+
+	test('outcome.halt at an in: seam halts the run before the binding, with its reason', async () => {
+		let invoked = false
+		const receipt: any = await go(
+			async (site, _chain, value) =>
+				site.at === 'in:text' && site.nodeKey === 'draft'
+					? {
+							value,
+							applications: [
+								{ scriptId: 9, name: 'guard', scriptKind: 'core:script:text/stop@1', phase: 'before', appliedBy: 'substrate', result: 'skip', reason: 'unplaced' },
+							],
+							halt: { reason: 'stop guard "guard" has no place to run on step draft' },
+						}
+					: { value, applications: [] },
+			{
+				binding: async () => {
+					invoked = true
+					return ok({ main: 'x' })
+				},
+			},
+		)
+		assert.equal(invoked, false)
+		assert.equal(receipt.outcome, 'halt')
+		assert.equal(receipt.haltReason, 'stop guard "guard" has no place to run on step draft')
+		assert.equal(receipt.haltNodeKey, 'draft')
+		const node = receipt.nodes.find((n: any) => n.nodeKey === 'draft')
+		assert.equal(node.result, 'halt')
+		assert.equal(node.scripts[0].name, 'guard')
+	})
+
+	test('outcome.halt at an out: seam (the inlet’s) halts the run there', async () => {
+		const receipt: any = await go(async (site, _chain, value) =>
+			site.at === 'out:text' ? { value, applications: [], halt: { reason: 'lost guard' } } : { value, applications: [] },
+		)
+		assert.equal(receipt.outcome, 'halt')
+		assert.equal(receipt.haltReason, 'lost guard')
+		assert.equal(receipt.haltNodeKey, 'input')
+		assert.ok(!receipt.nodes.some((n: any) => n.nodeKey === 'draft'), 'nothing downstream ran')
+	})
+
+	test('outcome.halt at an interior point halts the node even if the binding catches the throw', async () => {
+		const receipt: any = await go(
+			async (site, _chain, value) =>
+				site.origin === 'binding' ? { value, applications: [], halt: { reason: 'point lost' } } : { value, applications: [] },
+			{
+				binding: async (i: any, ctx: any) => {
+					try {
+						await ctx.scripts.applyText('draft', i.text)
+					} catch {
+						/* a binding swallowing it does not un-halt the node */
+					}
+					return ok({ main: i.text })
+				},
+			},
+		)
+		assert.equal(receipt.outcome, 'halt')
+		assert.equal(receipt.haltReason, 'point lost')
+		assert.equal(receipt.haltNodeKey, 'draft')
+	})
+})

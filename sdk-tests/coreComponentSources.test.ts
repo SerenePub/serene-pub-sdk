@@ -36,7 +36,7 @@ test('CORE_COMPONENTS validates, and names every core widget component — messa
 	)
 	assert.ok(CORE_COMPONENTS.every((c) => c.__decl === 'component' && c.framework === 'svelte' && !c.basedOn))
 	assert.deepEqual([...CORE_VIEW_ONLY_COMPONENTS], ['messages'])
-	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note'])
+	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
 })
 
 test("a clone's basedOn carries the upstream's sourceHash — optional, and SHA-256 hex when given", () => {
@@ -151,6 +151,14 @@ test('the import list grew additively by exactly the component kit — and nothi
 		'@serene-pub/core-catalog/session-state',
 		'@serene-pub/core-catalog/widgets',
 		'@serene-pub/core-catalog/authors-note',
+		'@serene-pub/core-catalog/turn-order',
+		'@serene-pub/core-catalog/actions',
+		'@serene-pub/core-catalog/annex',
+		'@serene-pub/core-catalog/album',
+		'@serene-pub/core-catalog/chronicle',
+		'@serene-pub/core-catalog/places',
+		'@serene-pub/core-catalog/attendance',
+		'@serene-pub/core-catalog/backdrop',
 	]
 	assert.deepEqual(COMPONENT_IMPORTS.slice(5), kit)
 	for (const s of kit) assert.equal(componentImportFinding(s), undefined, s)
@@ -194,14 +202,17 @@ describe('every core component compiles in-app from its source.json', { timeout:
 })
 
 /**
- * The cloneable five, mounted from the in-app build and put through the
+ * The cloneable five with a behaviour suite here (turn order's is the app's
+ * `remoteTurnOrder.dom.test.ts`, actions' its `remoteActions.dom.test.ts`, annex's its
+ * `remoteAnnex.dom.test.ts`, album's its `remoteAlbum.dom.test.ts`, places' its
+ * `remotePlaces.dom.test.ts`), mounted from the in-app build and put through the
  * SAME drivers the shipped modules pass: every behaviour test those files
  * hold runs again here (`SP_CORE_COMPONENT_BUILD=in-app` switches their
  * mount; `componentMount.ts`).
  */
 describe('the cloneable five, built in-app from source.json, behave as shipped', { timeout: 900_000 }, async () => {
 	process.env.SP_CORE_COMPONENT_BUILD = 'in-app'
-	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note'])
+	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
 	await import('./coreStateWidgets.test.js')
 	await import('./coreLoreEntriesComponent.test.js')
 	await import('./coreScenePortraitsComponent.test.js')

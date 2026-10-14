@@ -10,7 +10,7 @@
  * — the combinatorial growth this SDK avoids everywhere else by declaring data
  * rather than switching on it. The contracts file opens by noting that the LLM,
  * TTS and image-gen providers are structurally identical precisely *because*
- * nothing switches on modality (17 §1); sibling media shapes would undo that.
+ * nothing switches on modality; sibling media shapes would undo that.
  *
  * ## Why not simply "file", either
  *
@@ -24,6 +24,7 @@
  * accept stays specific (a real check). This is the same split the app's own
  * `files` table already makes — a coarse `kind` derived from the mime and
  * stored, so "every document" is an index scan rather than a string parse.
+ * @ruling 17 §1
  */
 
 /**
@@ -88,7 +89,27 @@ export interface MediaRef {
 }
 
 /**
- * 🚧 One file attached to one history message (PLAN-composer-attachments §3.5)
+ * 🚧 One picture an image step is asked for — an entry of
+ * `core:shape/image-series@1`, the `series` in-port of
+ * `core:oracle/generate-image@1`.
+ *
+ * `key` names the picture on the way out: every media item the step returns
+ * for this entry carries it, so a consumer (a sprite set's label, a
+ * candidate's slot) never has to guess which picture is which from its
+ * order or its pixels. Keys are sanitised by the host before rendering
+ * (trimmed, case-folded, spaces to `-`, collisions suffixed). `vars` are in
+ * scope when the prompt rows render for this entry — the phrase a template
+ * reads comes from here, never from the key.
+ * @experimental
+ * @ruling DESIGN-image-generation §4.7, §4.11
+ */
+export interface ImageSeriesItemV1 {
+	key: string
+	vars?: Record<string, unknown>
+}
+
+/**
+ * 🚧 One file attached to one history message
  * — an entry of `core:shape/media-by-message@1`, which
  * `core:query/history-attachments@1` publishes keyed by message id.
  *
@@ -98,6 +119,7 @@ export interface MediaRef {
  * a text file, its **body**, because a text file reaches every model as text
  * and a pure placement step cannot read a disk.
  * @experimental
+ * @ruling PLAN-composer-attachments §3.5
  */
 export interface HistoryAttachmentV1 extends MediaRef {
 	/** `image` / `text` / `pdf`, decided from the stored mime; `null` for any
@@ -110,12 +132,13 @@ export interface HistoryAttachmentV1 extends MediaRef {
 }
 
 /**
- * 🚧 What the pair behind a connection slot reads (PLAN-composer-attachments
- * §5.2) — `metadata.reads` on a resolved connection descriptor, computed by the
+ * 🚧 What the pair behind a connection slot reads —
+ * `metadata.reads` on a resolved connection descriptor, computed by the
  * host's ONE reading predicate (the same answer the composer's readers line
  * shows). A placement step reads it the way `assemble` reads
  * `metadata.promptFormat`, so it stays pure.
  * @experimental
+ * @ruling PLAN-composer-attachments §5.2
  */
 export interface ConnectionReadsV1 {
 	/** The pair sends images to its model on its wire mode. */

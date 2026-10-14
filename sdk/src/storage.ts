@@ -1,5 +1,5 @@
 /**
- * What an extension may do with its own data (13 §7c).
+ * What an extension may do with its own data.
  *
  * The surface this replaces was `readOwnRows` / `writeOwnRows` and nothing
  * else, which composed into a one-way door: a quota was declared in the
@@ -23,6 +23,7 @@
  * **Both count against one quota.** A single number is what an author can
  * reason about and what a consent screen can state; two budgets that can each
  * be under while the disk fills is the failure this avoids.
+ * @ruling 13 §7c
  */
 
 import type { Result } from './executor.js'

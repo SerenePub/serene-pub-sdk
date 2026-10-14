@@ -22,7 +22,9 @@
 
 import { test, describe, after } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
 import { join, relative } from 'node:path'
 import { tmpdir } from 'node:os'
 import { pathToFileURL } from 'node:url'
@@ -153,11 +155,26 @@ describe('105 · scaffold plugin writes a package the packager accepts', () => {
 			'package.json',
 			'src/index.ts',
 			'test/announcement.test.ts',
+			'test/conformance.test.ts',
 			'test/example.test.ts',
 			'tsconfig.check.json',
 			'tsconfig.json',
 			'vitest.config.ts',
 		])
+	})
+
+	test('the engines range includes the release the SDK ships with', async () => {
+		// F3 docs gate, stall 7: a 0.6 SDK scaffolded `>=0.7 <0.8`. The floor is
+		// the CLI's own minor, with `-0` when it is a prerelease — npm ranges
+		// admit a prerelease only through a comparator naming one.
+		const version: string = JSON.parse(
+			await readFile(join(import.meta.dirname, '..', 'cli', 'package.json'), 'utf8'),
+		).version
+		const [major, minor] = version.split('.').map(Number) as [number, number]
+		const index = (await scaffoldPlugin({ slug: 'demo.engines' })).find((f) => f.path === 'src/index.ts')!
+		const range = index.text.match(/engines: \{ 'serene-pub': '([^']+)' \}/)?.[1]
+		const floor = `>=${major}.${minor}.0${version.includes('-') ? '-0' : ''}`
+		assert.ok(range?.startsWith(`${floor} <`), `${range} does not start at ${floor} (CLI ${version})`)
 	})
 
 	test('each flag adds its own files and takes none away', async () => {
@@ -179,6 +196,160 @@ describe('105 · scaffold plugin writes a package the packager accepts', () => {
 		assert.deepEqual(await added('storage'), ['src/storage.ts'])
 	})
 })
+
+/* ── 105 · what the scaffold writes typechecks ──────────────────────────── */
+
+/**
+ * The packager reads syntax and announcements; it never asks TypeScript whether
+ * the template's code is *typed* right. A template that passed every test above
+ * once failed the author's first `npm run typecheck` — so this runs that script,
+ * as written: `tsc --noEmit -p tsconfig.check.json`, in the scaffolded directory,
+ * over the same `src`, `test` and `examples` the author's run covers.
+ *
+ * Which compiler: the scaffold pins `typescript` ^5 in its own devDependencies,
+ * and the repo's root TypeScript is 7. This borrows the TypeScript 5 copy nested
+ * under api-docs (the same copy `surface.test.ts` uses) and refuses to run if its
+ * major differs from the one the scaffold pins.
+ *
+ * What it resolves against: the scaffold is not npm-installed. Written inside
+ * this workspace, its `@serene-pub/*` imports and `@types/node` resolve through
+ * the workspace's root `node_modules` — to each package's **built `dist`** types,
+ * exactly as an installed copy would. (So an SDK source change shows here only
+ * after `npm run sdk:build`, as it does for an author.)
+ *
+ * ⚠ The one stand-in: `vitest` is not installed anywhere in this workspace, and
+ * the scaffold's `test/*.test.ts` import it. A minimal, typed `vitest` stub is
+ * written into the scaffold's own `node_modules` — the API surface the template
+ * tests use, nothing looser than `unknown`. A template that reaches for a matcher
+ * the stub lacks fails here loudly; extend the stub, it is not a finding.
+ */
+
+const TS5_TSC = join(import.meta.dirname, '..', 'api-docs', 'node_modules', 'typescript', 'bin', 'tsc')
+
+const VITEST_STUB = `// Stand-in written by sdk-tests/scaffoldPlugin.test.ts — see its comment.
+export interface Assertion<T = unknown> {
+	not: Assertion<T>
+	resolves: Assertion<Awaited<T>>
+	rejects: Assertion<unknown>
+	toBe(expected: unknown): void
+	toEqual(expected: unknown): void
+	toStrictEqual(expected: unknown): void
+	toMatchObject(expected: object): void
+	toMatch(expected: string | RegExp): void
+	toContain(expected: unknown): void
+	toHaveLength(length: number): void
+	toHaveProperty(path: string | readonly string[], value?: unknown): void
+	toBeTruthy(): void
+	toBeFalsy(): void
+	toBeDefined(): void
+	toBeUndefined(): void
+	toBeNull(): void
+	toBeGreaterThan(n: number | bigint): void
+	toBeGreaterThanOrEqual(n: number | bigint): void
+	toBeLessThan(n: number | bigint): void
+	toBeLessThanOrEqual(n: number | bigint): void
+	toThrow(expected?: string | RegExp | Error): void
+}
+type Body = () => void | Promise<void>
+export declare function describe(name: string, body: () => void): void
+export declare function it(name: string, body: Body, timeout?: number): void
+export declare const test: typeof it
+export declare function expect<T>(actual: T, message?: string): Assertion<T>
+export declare function beforeAll(body: Body): void
+export declare function afterAll(body: Body): void
+export declare function beforeEach(body: Body): void
+export declare function afterEach(body: Body): void
+`
+
+/** Run the scaffold's own `typecheck` script, with vitest stubbed; the compiler's output on failure. */
+async function typecheckScaffolded(dir: string): Promise<{ code: number; output: string }> {
+	const stub = join(dir, 'node_modules', 'vitest')
+	await mkdir(stub, { recursive: true })
+	await writeFile(join(stub, 'package.json'), JSON.stringify({ name: 'vitest', type: 'module', types: 'index.d.ts' }))
+	await writeFile(join(stub, 'index.d.ts'), VITEST_STUB)
+
+	// The script the author runs, not a paraphrase of it.
+	const pkg = JSON.parse(await readFile(join(dir, 'package.json'), 'utf8'))
+	assert.equal(pkg.scripts.typecheck, 'tsc --noEmit -p tsconfig.check.json', 'the typecheck script moved; follow it here')
+	const args = pkg.scripts.typecheck.split(' ').slice(1) as string[]
+
+	try {
+		const { stdout, stderr } = await promisify(execFile)(process.execPath, [TS5_TSC, ...args], { cwd: dir })
+		return { code: 0, output: stdout + stderr }
+	} catch (e) {
+		const err = e as { code?: number; stdout?: string; stderr?: string }
+		return { code: typeof err.code === 'number' ? err.code : 1, output: `${err.stdout ?? ''}${err.stderr ?? ''}` }
+	}
+}
+
+describe('105 · scaffold plugin writes a package that typechecks', () => {
+	test('the borrowed compiler is the major the scaffold pins', async () => {
+		const { stdout } = await promisify(execFile)(process.execPath, [TS5_TSC, '--version'])
+		const pinned = (await scaffoldPlugin({ slug: 'demo.tc-pin' })).find((f) => f.path === 'package.json')!
+		const range: string = JSON.parse(pinned.text).devDependencies.typescript
+		assert.equal(stdout.match(/Version (\d+)\./)?.[1], range.match(/(\d+)/)?.[1], `tsc ${stdout.trim()} vs scaffold's ${range}`)
+	})
+
+	// Every combination, for the reason the packager tests give.
+	const FLAGS = ['genre', 'action', 'panel', 'storage'] as const
+	for (let mask = 0; mask < 1 << FLAGS.length; mask++) {
+		const combination = FLAGS.filter((_f, i) => mask & (1 << i))
+		const name = `tc-${combination.length ? combination.join('-') : 'base'}`
+		test(`${name} passes its own npm run typecheck`, async () => {
+			const dir = await scaffold(name, combination.map((f) => `--${f}`))
+			const { code, output } = await typecheckScaffolded(dir)
+			assert.equal(code, 0, `${name} does not typecheck:\n${output}`)
+		})
+	}
+
+	test('the check is real: a type error in the scaffold fails it', async () => {
+		const dir = await scaffold('tc-broken', [])
+		const index = join(dir, 'src', 'index.ts')
+		await writeFile(index, `${await readFile(index, 'utf8')}\nexport const notANumber: number = 'text'\n`)
+		const { code, output } = await typecheckScaffolded(dir)
+		assert.notEqual(code, 0)
+		assert.match(output, /src\/index\.ts\(\d+,\d+\): error TS2322/)
+	})
+})
+
+/**
+ * A stored-entry zip, read through its central directory — enough to check
+ * what `serene-pub build` wrote (it writes no compressed entries). Each CRC is
+ * checked, so a corrupt archive fails here rather than at an install.
+ */
+function readStoredZip(zip: Uint8Array): Map<string, Uint8Array> {
+	const v = new DataView(zip.buffer, zip.byteOffset, zip.byteLength)
+	let end = zip.length - 22
+	while (end >= 0 && v.getUint32(end, true) !== 0x06054b50) end--
+	assert.ok(end >= 0, 'no end-of-central-directory record')
+	const count = v.getUint16(end + 10, true)
+	let at = v.getUint32(end + 16, true)
+	const crc = (d: Uint8Array) => {
+		let c = 0xffffffff
+		for (const b of d) {
+			c ^= b
+			for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1
+		}
+		return (c ^ 0xffffffff) >>> 0
+	}
+	const out = new Map<string, Uint8Array>()
+	for (let i = 0; i < count; i++) {
+		assert.equal(v.getUint32(at, true), 0x02014b50, 'central directory entry')
+		assert.equal(v.getUint16(at + 10, true), 0, 'a stored entry')
+		const size = v.getUint32(at + 24, true)
+		const nameLen = v.getUint16(at + 28, true)
+		const extraLen = v.getUint16(at + 30, true)
+		const commentLen = v.getUint16(at + 32, true)
+		const local = v.getUint32(at + 42, true)
+		const name = new TextDecoder().decode(zip.subarray(at + 46, at + 46 + nameLen))
+		const start = local + 30 + v.getUint16(local + 26, true) + v.getUint16(local + 28, true)
+		const data = zip.subarray(start, start + size)
+		assert.equal(crc(data), v.getUint32(at + 16, true), `${name}: crc`)
+		out.set(name, new Uint8Array(data))
+		at += 46 + nameLen + extraLen + commentLen
+	}
+	return out
+}
 
 describe('105 · what the built manifest carries', () => {
 	test('the whole scaffold builds to one manifest holding every half', async () => {
@@ -235,6 +406,30 @@ describe('105 · what the built manifest carries', () => {
 		])
 	})
 
+	test('it also writes the zip an administrator installs, in the layout the installer reads', async () => {
+		const dir = await scaffold('zipped', ['--genre', '--panel'])
+		assert.equal(await main(['build', dir]), 0)
+		// `dist/<slug>-<version>.zip`, beside the build folder (F3 docs gate,
+		// stall 8): Admin › Plugins › Install a package… takes a zip and
+		// refuses one with no `dist/plugin/manifest.json`.
+		const zip = await readFile(join(dir, 'dist', 'demo.zipped-0.1.0.zip'))
+		const entries = readStoredZip(zip)
+		assert.deepEqual([...entries.keys()].sort(), [
+			'dist/plugin/bundle.js',
+			'dist/plugin/components/panel.js',
+			'dist/plugin/manifest.json',
+			'dist/plugin/pipelines/demo.zipped_spec_create-session.json',
+			'dist/plugin/pipelines/demo.zipped_spec_respond.json',
+			'ui/panel.html',
+			'ui/panel.js',
+		])
+		// The bytes are the build's, not a re-serialisation.
+		assert.deepEqual(
+			entries.get('dist/plugin/manifest.json'),
+			new Uint8Array(await readFile(join(dir, 'dist', 'plugin', 'manifest.json'))),
+		)
+	})
+
 	test('an action with no genre of its own requires the genre it serves', async () => {
 		const dir = await scaffold('borrowed', ['--action'])
 		const out = join(dir, 'dist', 'plugin')
@@ -242,7 +437,7 @@ describe('105 · what the built manifest carries', () => {
 		const m = JSON.parse(await readFile(join(out, 'manifest.json'), 'utf8'))
 		// Never bundled: an id this package references and does not declare is
 		// enforced at install.
-		assert.deepEqual(m.requires, ['core:genre/chat'])
+		assert.deepEqual(m.requires, ['core:event/session-action@1', 'core:genre/chat'])
 	})
 })
 

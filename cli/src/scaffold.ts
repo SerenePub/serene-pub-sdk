@@ -1,5 +1,5 @@
 /**
- * Scaffolds (24 §7): show the author the whole space before they write into
+ * Scaffolds: show the author the whole space before they write into
  * it. `scaffold config` walks a spec document's nodes and prints every
  * declared slot and field as a commented skeleton — types, defaults,
  * `(required)` markers — so authoring a config is deleting down to the four
@@ -11,7 +11,7 @@
  * because it writes a tree rather than printing a file. It is re-exported here
  * so `./scaffold.js` stays the one import the CLI reaches for.
  *
- * Declarations resolve from a declaration artifact (24 §10): a local
+ * Declarations resolve from a declaration artifact: a local
  * announcement JSON, an HTTP URL serving one, or the installed
  * `@serene-pub/core-catalog` when nothing is named. The scaffold never
  * guesses — everything printed is read off documents.

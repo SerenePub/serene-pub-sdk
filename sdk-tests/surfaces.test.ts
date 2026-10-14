@@ -441,6 +441,8 @@ describe('the frame protocol is one union, exhaustively', () => {
 					return `viewer:${m.viewer.isAdmin}`
 				case 'turn-order':
 					return `turn-order:${m.turnOrder.order.length}`
+				case 'attendance':
+					return `attendance:${m.attendance.people.length}`
 				case 'scoped':
 					return `scoped:${m.section}`
 				case 'grants':
