@@ -11,7 +11,8 @@
  * keeps saying what it is, because a bar that reads `20/20` for a stored 35 is
  * the surface lying about the row underneath it.
  */
-import { isSlotLoreRef, slotListItemText, type SlotListItem } from '@serene-pub/sdk'
+import { isSlotLoreRef, isSlotPiece, slotListItemText, type SlotListItem } from '@serene-pub/sdk'
+import { pieceText } from './pieces.js'
 
 /** The half of a slot's configuration a bar reads. @experimental */
 export interface BarBounds {
@@ -68,7 +69,10 @@ export function formatSlotValue(value: unknown): string {
 	// A list reads as its items; a lore reference by the title a read filled
 	// in, or by its entry when nothing did (a ledger row is the stored value).
 	// With its held count when it holds more than one: `Rusty key ×2`.
-	if (Array.isArray(value)) return value.map((item) => slotListItemText(item as SlotListItem)).join(', ')
+	// 🚧 A piece reads by its name — a library row's, never its id
+	// (`potion-of-healing` is _Potion of healing_).
+	if (Array.isArray(value))
+		return value.map((item) => (isSlotPiece(item) ? pieceText(item) : slotListItemText(item as SlotListItem))).join(', ')
 	// 🚧 One reference on its own — a location that is a place entry.
 	if (isSlotLoreRef(value)) return slotListItemText(value)
 	return String(value)

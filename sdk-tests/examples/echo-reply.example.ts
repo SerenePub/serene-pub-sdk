@@ -14,7 +14,7 @@
 
 import { sessionEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 import type { Example } from '@serene-pub/cli'
 
 import { bindings, world } from '../helpers.js'
@@ -30,9 +30,9 @@ const smallestReply = spec('example:echo-reply', { version: '1.0.0' })
 	//
 	// The third argument is the usage lock (24 §4), and it is the whole
 	// subscription: this spec answers one event, for one genre. The core
-	// catalog exports `chatGenre` for the same id.
+	// catalog exports `storyGenre` for the same id.
 	.inlet('input', C.userMessage.v1(), {
-		genre: chatGenre,
+		genre: storyGenre,
 		event: sessionEvents.messageRespond,
 	})
 	// Query: reads Serene Pub's own data, and cannot reach the network — a

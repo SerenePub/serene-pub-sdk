@@ -172,8 +172,8 @@ describe('the declaration', () => {
 		assert.deepEqual(s.view!.of, ['list', 'map'])
 		assert.deepEqual(s.highlight!.of, ['world', 'cast', 'both'])
 		assert.equal(s.categories!.type, 'string[]')
-		assert.equal(s.categories!.group, 'behaviour')
-		assert.equal(s.showWays!.group, 'behaviour')
+		assert.equal(s.categories!.group, 'Map')
+		assert.equal(s.showWays!.group, 'Map')
 		assert.deepEqual(PLACES_DEFAULTS, {
 			view: s.view!.default,
 			highlight: s.highlight!.default,

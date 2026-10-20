@@ -14,7 +14,9 @@ import {
 	fieldForSlotType,
 	heldCountIn,
 	formatStoryTime,
+	i18nText,
 	isSlotLoreRef,
+	isSlotPiece,
 	slotLoreRefCount,
 	parseStoryTime,
 	slotValueForStorage,
@@ -28,6 +30,8 @@ import {
 	type StoryCalendar,
 } from '@serene-pub/sdk'
 import { clampToBounds, formatSlotValue, type BarBounds } from './barMath.js'
+import { formatStoryTimeAs, storyTimePartsOf } from './timeFormat.js'
+import { pieceKeyOf, pieceText } from './pieces.js'
 
 /** What a slot is drawn as: a stat shape's kind, or `derived` — computed, never edited. @experimental */
 export type SlotKind = StatShapeKind | 'derived'
@@ -75,6 +79,8 @@ export function listItemsOf(value: unknown): SlotListItem[] {
 
 /** One item as a person reads it: a word as itself, a lore entry by its title. @experimental */
 export function listItemText(item: SlotListItem, t: (source: string) => string = (s) => s): string {
+	// 🚧 A piece of a ruleset's list (a weapon, a potion) by its name and count.
+	if (isSlotPiece(item)) return pieceText(item)
 	if (isSlotLoreRef(item)) {
 		const title = item.name?.trim() || t('Lore entry {id}').replace('{id}', String(item.entryId))
 		const count = slotLoreRefCount(item)
@@ -85,7 +91,7 @@ export function listItemText(item: SlotListItem, t: (source: string) => string =
 
 /** A stable key for an item in a keyed `#each` — its position AND identity, since a list may repeat. @experimental */
 export const listItemKeyOf = (item: SlotListItem, index: number): string =>
-	`${index}:${isSlotLoreRef(item) ? `entry:${item.entryId}` : String(item)}`
+	isSlotPiece(item) ? pieceKeyOf(item, index) : `${index}:${isSlotLoreRef(item) ? `entry:${item.entryId}` : String(item)}`
 
 /** What a list edit writes: the new list, or why it was not made. @experimental */
 export interface ListEdit {
@@ -283,8 +289,21 @@ export function storyTimeDraftValue(draft: StoryTimeDraft): string | null | unde
 }
 
 /**
+ * 🚧 One option of a choice as a person reads it: its member's label
+ * (`FieldDecl.members` — Dungeon Crawler's "Taken out" for `taken-out`),
+ * else the stored value as it always read. A slot that labels its options
+ * reads as words; one that labels none is drawn exactly as before.
+ * @experimental
+ */
+export function choiceOptionText(slot: Pick<SessionStateSlotV1, 'type' | 'field'>, option: string): string {
+	const member = slotFieldOf(slot)?.members?.find((m) => m.key === option)
+	return i18nText(member?.label) ?? formatSlotValue(option)
+}
+
+/**
  * A slot's value as a person reads it, by its kind: a story time through the
- * book's calendar (free-form when none is given), a list as its items, everything else as `slotValueText` says.
+ * book's calendar (free-form when none is given), a list as its items, a
+ * choice as its option's words (`choiceOptionText`), everything else as `slotValueText` says.
  * @experimental
  */
 export function shownValueText(
@@ -293,14 +312,18 @@ export function shownValueText(
 	t: (source: string) => string,
 	/** The book's declared calendar; absent or `null` spells free-form. */
 	calendar?: StoryCalendar | null,
+	/** 🚧 The copy's `timeFormat` (`formatStoryTimeAs`); empty keeps the calendar's spelling. */
+	timeFormat?: string | null,
 ): string {
 	if (value === undefined) return ''
 	if (value === null || typeof value === 'boolean') return t(formatSlotValue(value))
 	const kind = slotKind(slot)
 	if (kind === 'story-time') {
 		const time = parseStoryTime(value)
-		return time ? formatStoryTime(time, calendar) : formatSlotValue(value)
+		if (!time) return formatSlotValue(value)
+		return formatStoryTimeAs(storyTimePartsOf(time, calendar), timeFormat) ?? formatStoryTime(time, calendar)
 	}
 	if (kind === 'list' || Array.isArray(value)) return listItemsOf(value).map((i) => listItemText(i, t)).join(', ')
+	if (kind === 'choice' && typeof value === 'string') return choiceOptionText(slot, value)
 	return formatSlotValue(value)
 }

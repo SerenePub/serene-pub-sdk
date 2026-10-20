@@ -13,12 +13,11 @@ import {
 	CORE_SPECS,
 	LAIR_TRANSCRIPT_TEMPLATE,
 	DEFAULT_TRANSCRIPT_TEMPLATE,
-	CHAT_SUMMARIZE_SCENE_SPEC_ID,
-	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	STORY_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
 	summarizeScene,
-	chatGenre,
+	storyGenre,
 	lairGenre,
 } from '@serene-pub/core-catalog'
 
@@ -63,8 +62,8 @@ describe("a genre's summarize field", () => {
 describe('the summarizeScene builder', () => {
 	test('refuses a channel the genre does not declare, and the story as an aside', () => {
 		assert.throws(
-			() => summarizeScene('test.sum:spec/s1', { version: '1.0.0', genre: chatGenre, channels: { story: 'main', asides: ['sanctum'] } }),
-			/'sanctum' is not a channel core:genre\/chat declares/,
+			() => summarizeScene('test.sum:spec/s1', { version: '1.0.0', genre: storyGenre, channels: { story: 'main', asides: ['sanctum'] } }),
+			/'sanctum' is not a channel core:genre\/story declares/,
 		)
 		assert.throws(
 			() => summarizeScene('test.sum:spec/s2', { version: '1.0.0', genre: lairGenre, channels: { story: 'main', asides: ['main'] } }),
@@ -98,7 +97,7 @@ describe('the summarizeScene builder', () => {
 		// The cast extraction stays on ice (ruled 2026-09-08) unless asked for.
 		const withCast: any = summarizeScene('test.sum:spec/s4', {
 			version: '1.0.0',
-			genre: chatGenre,
+			genre: storyGenre,
 			channels: { story: 'main' },
 			extractsCast: true,
 		})
@@ -108,8 +107,7 @@ describe('the summarizeScene builder', () => {
 
 describe("core's genres own their summarize-scene", () => {
 	const ids = {
-		'core:genre/chat': CHAT_SUMMARIZE_SCENE_SPEC_ID,
-		'core:genre/adventure': ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+		'core:genre/story': STORY_SUMMARIZE_SCENE_SPEC_ID,
 		'core:genre/guide': GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 		'core:genre/lair': LAIR_SUMMARIZE_SCENE_SPEC_ID,
 	}
@@ -132,7 +130,7 @@ describe("core's genres own their summarize-scene", () => {
 			asides: ['sanctum'],
 		})
 		assert.equal(lair.find((v) => v.nodeKey === 'render')!.value.source, LAIR_TRANSCRIPT_TEMPLATE)
-		for (const slug of [CHAT_SUMMARIZE_SCENE_SPEC_ID, ADVENTURE_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
+		for (const slug of [STORY_SUMMARIZE_SCENE_SPEC_ID, STORY_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
 			const v = presetValues(slug)
 			assert.deepEqual(v.find((x) => x.nodeKey === 'source')!.value, { channel: 'main', asides: [] })
 			assert.equal(v.find((x) => x.nodeKey === 'render')!.value.source, DEFAULT_TRANSCRIPT_TEMPLATE)
@@ -176,7 +174,7 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 			() =>
 				summarizeScene('test.sum:spec/b4', {
 					version: '1.0.0',
-					genre: chatGenre,
+					genre: storyGenre,
 					channels: { story: 'main' },
 					boundaries: [{ key: 'sanctumTalk', label: 'x', when: { channel: 'sanctum' } }],
 				}),
@@ -186,7 +184,7 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 			() =>
 				summarizeScene('test.sum:spec/b5', {
 					version: '1.0.0',
-					genre: chatGenre,
+					genre: storyGenre,
 					channels: { story: 'main' },
 					boundaries: [{ key: 'vibes', label: 'x', when: { mood: 'tense' } as never }],
 				}),
@@ -199,7 +197,7 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 		assert.deepEqual(lair.contributes?.boundaryTriggers, [
 			{ key: 'newFloor', label: { en: 'the party reached a new floor' }, when: { channel: 'main', stateKey: 'floor' } },
 		])
-		for (const id of [CHAT_SUMMARIZE_SCENE_SPEC_ID, ADVENTURE_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
+		for (const id of [STORY_SUMMARIZE_SCENE_SPEC_ID, STORY_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
 			const doc: any = CORE_SPECS.find((s: any) => s.slug === id)!.build()
 			assert.equal(doc.contributes, undefined, `${id} declares no trigger of its own`)
 		}

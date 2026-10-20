@@ -120,8 +120,8 @@ describe('the declaration', () => {
 			faces: s.faces!.default,
 			showBenched: s.showBenched!.default,
 		})
-		assert.equal(s.showStrategy!.group, 'behaviour')
-		assert.equal(s.showBenched!.group, 'behaviour')
+		assert.equal(s.showStrategy!.group, 'Behaviour')
+		assert.equal(s.showBenched!.group, 'Faces')
 		assert.deepEqual(readTurnOrderSettings(undefined), TURN_ORDER_DEFAULTS)
 		assert.deepEqual(readTurnOrderSettings({ faces: false, showStrategy: 'yes', showBenched: true }), {
 			faces: false,

@@ -64,8 +64,20 @@ export interface VerbContext {
 	/** Some message is in edit mode (this one or another). */
 	editing: boolean
 	hasGeneratingMessage: boolean
-	/** The item rule's answer for this message. */
+	/** The item rule's answer for this message: edit, hide, delete, an item-gated action. */
 	canControl: boolean
+	/**
+	 * 🚧 The rerun rule's answer (swipe, retry, extend) — the line's
+	 * `rerunnable`, wider than `canControl` for an envoy's line in a lane the
+	 * viewer is the member of (ruled 2026-10-15). Absent reads as `canControl`.
+	 */
+	canRerun?: boolean
+	/**
+	 * 🚧 The page's delete verdict for this line (`ConversationLineV1.deletable`):
+	 * false hides Delete — a kept turn's row the host would refuse (Honour mode
+	 * off, an older turn). Absent reads as true; `canControl` still greys it.
+	 */
+	canDelete?: boolean
 	/** Why Extend is unavailable in this session, when it is. */
 	extendRefusal?: string
 	/** The action list's own answer — `canAct` off `sessions:actions`. */
@@ -221,6 +233,7 @@ export function coreVerbState(key: string, ctx: VerbContext): VerbState {
 	const R = VERB_REASONS
 	const when = enabledWhenState(ctx)
 	const busy: Array<[boolean, string | undefined]> = [when, [ctx.editing, R.editing]]
+	const canRerun = ctx.canRerun ?? ctx.canControl
 	const shown = (visible: boolean, state: VerbState): VerbState =>
 		visible ? state : { ...state, shown: false }
 	switch (key) {
@@ -229,13 +242,13 @@ export function coreVerbState(key: string, ctx: VerbContext): VerbState {
 		case 'retry':
 			return shown(
 				isReply(m) && ctx.isLastMessage && !m.isGenerating,
-				off([!ctx.canControl, R.notYours], when),
+				off([!canRerun, R.notYours], when),
 			)
 		case 'extend':
 			return shown(
 				isReply(m) && ctx.isLastMessage && !m.isGenerating && !!m.content,
 				off(
-					[!ctx.canControl, R.notYours],
+					[!canRerun, R.notYours],
 					[!!ctx.extendRefusal, ctx.extendRefusal],
 					...busy,
 				),
@@ -247,11 +260,14 @@ export function coreVerbState(key: string, ctx: VerbContext): VerbState {
 		case 'swipe':
 			return shown(
 				isReply(m) && !m.isGenerating,
-				off([!ctx.canControl, R.notYours], [ctx.editing, R.editing], when),
+				off([!canRerun, R.notYours], [ctx.editing, R.editing], when),
 			)
 		case 'hide':
-		case 'delete':
 			return off([!ctx.canControl, R.notYours], ...busy)
+		case 'delete':
+			// 🚧 Hidden, never greyed, where the page says the host would refuse it
+			// (a kept turn under Honour mode off, owner ruling ★9, 2026-10-18).
+			return shown(ctx.canDelete !== false, off([!ctx.canControl, R.notYours], ...busy))
 		default: {
 			// An item-gated action's audience is decided on this row: the
 			// item rule's answer rides into the verdict beside the list's.

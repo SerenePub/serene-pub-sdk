@@ -1,0 +1,100 @@
+[
+	{
+		"id": "poisoned",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Poisoned",
+			"description": "Sick and shaky: attacks and checks come harder.",
+			"traits": [
+				"condition-poisoned"
+			],
+			"duration": {
+				"units": "hour",
+				"value": 1,
+				"expiry": "elapsed"
+			}
+		}
+	},
+	{
+		"id": "prone",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Prone",
+			"description": "On the ground: crawling, and easier to hit up close.",
+			"traits": [
+				"condition-prone"
+			],
+			"duration": {
+				"units": "until-removed",
+				"expiry": "never"
+			}
+		}
+	},
+	{
+		"id": "frightened",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Frightened",
+			"description": "Gripped by fear of a source in sight.",
+			"traits": [
+				"condition-frightened"
+			],
+			"duration": {
+				"units": "minute",
+				"value": 1,
+				"expiry": "turn-end"
+			}
+		}
+	},
+	{
+		"id": "restrained",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Restrained",
+			"description": "Bound or held fast: cannot move, and easy to hit.",
+			"traits": [
+				"condition-restrained"
+			],
+			"duration": {
+				"units": "until-removed",
+				"expiry": "never"
+			}
+		}
+	},
+	{
+		"id": "envenomed",
+		"version": "1.1.0",
+		"source": {
+			"document": "Vis Itineris",
+			"licence": "Apache-2.0"
+		},
+		"piece": {
+			"name": "Envenomed",
+			"description": "Venom in the blood: health drains each round until it is shaken off or cured.",
+			"traits": [
+				"condition-envenomed"
+			],
+			"duration": {
+				"units": "round",
+				"value": 3,
+				"expiry": "elapsed"
+			}
+		}
+	}
+]

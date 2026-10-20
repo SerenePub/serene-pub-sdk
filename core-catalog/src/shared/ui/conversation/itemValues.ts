@@ -10,7 +10,7 @@
  * door's.
  */
 
-import { envoySlugOfRef } from '@serene-pub/sdk'
+import { envoySlugOfRef, senderRefOf } from '@serene-pub/sdk'
 
 /** The message venue's per-row facts, as `item.<field>`. @experimental */
 export interface ItemValues {
@@ -49,8 +49,9 @@ export interface ItemValues {
 	 * Who spoke the row, as a **participant reference** (lair re-plan R11,
 	 * 2026-09-28): `envoy:<slug>` for an envoy's line (the Lair's
 	 * Castellan), `character:<id>` for a character's line or a person's
-	 * persona line, and null for a person's persona-less line and for a
-	 * reply nobody in particular spoke (the pipeline's own voice). Read off
+	 * persona line, 🚧 `player-seat:<id>` for a person's line from a card-less
+	 * seat, and null for any other persona-less line and for a reply nobody
+	 * in particular spoke (the pipeline's own voice). Read off
 	 * the row's columns and its `metadata.speaker`, never off a user id — a
 	 * widget is never sent one (`MESSAGE_HOST_FIELDS`), and this shape is
 	 * built on both sides.
@@ -83,7 +84,7 @@ export interface ItemRow {
 	metadata?: {
 		isGreeting?: boolean
 		swipes?: { currentIdx: number | null; history: string[] }
-		/** The speaker an envoy's line records (`envoy:<slug>`); any other value is not read. */
+		/** The speaker an envoy's line records (`envoy:<slug>`), or 🚧 a card-less player seat's (`player-seat:<id>`); any other value is not read. */
 		speaker?: unknown
 	} | null
 }
@@ -91,15 +92,15 @@ export interface ItemRow {
 /**
  * Who spoke a row, as a participant reference — see `ItemValues.speaker`.
  * An envoy's reference wins (an envoy has no character row to name), then
- * the persona a person wrote as, then the speaking character.
+ * the persona a person wrote as, then the speaking character, then 🚧 the
+ * card-less player seat a person wrote from.
  * @experimental
  */
 export function itemSpeakerOf(row: Pick<ItemRow, 'characterId' | 'personaId' | 'metadata'>): string | null {
 	const envoy = envoySlugOfRef(row.metadata?.speaker)
 	if (envoy) return `envoy:${envoy}`
-	if (row.personaId != null) return `character:${row.personaId}`
-	if (row.characterId != null) return `character:${row.characterId}`
-	return null
+	if (row.personaId == null && row.characterId != null) return `character:${row.characterId}`
+	return senderRefOf(row)
 }
 
 /** The `item` document for one message — pure, the same on both sides. @experimental */

@@ -73,9 +73,9 @@ import {
 	type SpecDocument,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre, coreAnnouncement, CORE_SPECS } from '@serene-pub/core-catalog'
+import { storyGenre, coreAnnouncement, CORE_SPECS } from '@serene-pub/core-catalog'
 
-const CHAT = chatGenre.id
+const CHAT = storyGenre.id
 
 const asked = (over: Record<string, unknown> = {}): MessageBlock =>
 	({
@@ -99,7 +99,7 @@ const action = (over: Record<string, unknown> = {}) => ({
 
 const actionSpec = (id: string, actions: Array<Record<string, unknown>>) =>
 	spec(id, { version: '1.0.0', contributes: { actions: actions as any } })
-		.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.sessionAction })
+		.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.sessionAction })
 		.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
 
 describe('R-15 · a form is a block with an addressee', () => {
@@ -360,7 +360,7 @@ describe('R-15 · the effects line', () => {
 		assert.throws(
 			() =>
 				announce({ ns: 'core', author: 'a', title: 't', repo: 'r', summary: 's' })
-					.genres({ chatGenre })
+					.genres({ storyGenre })
 					.pipelines(patched)
 					.build(),
 			(e: Error) =>
@@ -462,7 +462,7 @@ describe('R-15 · review fields are declared on every shipped effectful definiti
 		)
 		const doc = compile(
 			spec('acme:spec/loose', { version: '1.0.0' })
-				.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.sessionAction })
+				.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.sessionAction })
 				.outlet('save', ($) => loose.v1({ text: $.input.text }))
 				.build(),
 		)
@@ -474,7 +474,7 @@ describe('R-15 · review fields are declared on every shipped effectful definiti
 describe('R-15 · answer-form@1 belongs on form-addressed@1', () => {
 	test('the shipped answer pipelines place it where it belongs', () => {
 		const answering = CORE_SPECS.filter((s) => s.slug.endsWith('-answer-form'))
-		assert.equal(answering.length, 4, 'one per shipped genre')
+		assert.equal(answering.length, 5, 'one per shipped genre')
 		for (const entry of answering) {
 			const doc: SpecDocument = entry.build()
 			// R-15's own findings only: the gather-chain shape finding the
@@ -494,7 +494,7 @@ describe('R-15 · answer-form@1 belongs on form-addressed@1', () => {
 	test('placed under any other inlet it is refused', () => {
 		const doc = compile(
 			spec('acme:spec/sneaky', { version: '1.0.0' })
-				.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.sessionAction })
+				.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.sessionAction })
 				.outlet('answer', ($) =>
 					C.answerForm.v1({
 						form: $.input.payload,
@@ -542,16 +542,23 @@ describe('R-15 · staleness and order — the event and the ports (U5f)', () => 
 		assert.deepEqual(setState.out.sort(), ['applied', 'main', 'proposed', 'refused'])
 	})
 
-	test('the adventure graphs hand the version they read back as base', () => {
+	test('the keeper graphs hand the version they read back as base', () => {
+		// Story's reckoning (its words branch) and Rest (2026-10-19); Time
+		// passes is the shared stepper graph now, which reads no state.
 		for (const slug of [
-			'core:spec/adventure-respond',
-			'core:spec/adventure-rest',
-			'core:spec/adventure-advance-time',
+			'core:spec/story-respond',
+			'core:spec/story-rest',
 		]) {
 			const entry = CORE_SPECS.find((s) => s.slug === slug)
 			assert.ok(entry, slug)
 			const doc: SpecDocument = entry!.build()
-			const stateQuery = doc.nodes.find((n) => n.definitionId === 'core:query/session-state')
+			// The keeper's own read: since lane 2 (2026-10-19) story-respond also
+			// reads the state for *Read the scene*, which hands no `base` on.
+			const stateQuery = doc.nodes.find(
+				(n) =>
+					n.definitionId === 'core:query/session-state' &&
+					doc.edges.some((e) => e.from === n.key && e.toPort === 'base'),
+			)
 			assert.ok(stateQuery, `${slug} reads the state`)
 			const baseEdges = doc.edges.filter(
 				(e) => e.toPort === 'base' && e.from === stateQuery!.key && e.fromPort === 'version',
@@ -588,11 +595,14 @@ describe('R-15 · the events and the surface', () => {
 			assert.ok(decl, g.id)
 			assert.equal(decl!.required ?? false, false)
 		}
-		// Each its own genre's, named genre first (2026-10-05).
+		// Each its own genre's, named genre first (2026-10-05) — Chat's under
+		// `assistant`, its specs' stem (2026-10-19): the roleplay Chat's
+		// `chat-*` ids are Story's, and a new Chat never reuses one (§2-7 a).
+		const stem = (genre: string) => (genre === 'core:genre/chat' ? 'assistant' : genre.split('/').at(-1))
 		for (const p of document.presets)
 			assert.equal(
 				p.bindings[sessionEvents.formAddressed]?.spec,
-				`core:spec/${p.genre.split('/').at(-1)}-answer-form`,
+				`core:spec/${stem(p.genre)}-answer-form`,
 				p.slug,
 			)
 	})

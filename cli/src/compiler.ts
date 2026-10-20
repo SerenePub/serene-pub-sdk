@@ -26,7 +26,7 @@
  * every reader it has reads that.
  */
 
-import type { AnnexFieldDecl, Extension, Descriptor, I18n, SessionLayoutV1, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
+import type { AnnexFieldDecl, Extension, Descriptor, I18n, PanelV1, SessionLayoutV1, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import {
 	compile,
@@ -43,6 +43,8 @@ import {
 	variablesOf,
 	getVariable,
 	widgetOfInstance,
+	instanceNameOf,
+	INSTANCE_NAME_SEPARATOR,
 } from '@serene-pub/sdk'
 import { checkTemplateSourceReport } from '@serene-pub/sdk/template-check'
 import type {
@@ -1694,14 +1696,23 @@ export function compilePlugin(input: CompileInput): CompileResult {
  * A widget instance id is namespaced in its WIDGET half only: `map#north`
  * becomes `acme:map#north`, and a copy of core's widget (`messages#sanctum`)
  * is left alone. Every place a layout names an instance is rewritten the same
- * way — the zone lists, the grid, the arranged items and the tab-group ids
- * built from them, and the `widgetSettings` and `widgetStyles` keys — so the
- * id stays one string wherever the layout stores it.
+ * way — the `panels` slot's tabs and each panel's `open` tab, the ⏳ old
+ * slots (the zone lists, the grid, the arranged items and the tab-group ids
+ * built from them; manifests in the wild still carry them), and the
+ * `widgetSettings` and `widgetStyles` keys — so the id stays one string
+ * wherever the layout stores it. A panel's `key` is not an instance id and is
+ * left as written.
  * @internal
  */
 export function genreLayouts(e: Extension): NonNullable<Manifest['layouts']> {
 	const own = new Set((e.widgets ?? []).map((w) => w.id))
-	const q = (id: string): string => (own.has(widgetOfInstance(id)) ? `${e.slug}:${id}` : id)
+	// The widget half namespaced, the instance name (after `#`) kept as written.
+	const q = (id: string): string => {
+		const widget = widgetOfInstance(id)
+		if (!own.has(widget)) return id
+		const name = instanceNameOf(id)
+		return `${e.slug}:${widget}${name === null ? '' : `${INSTANCE_NAME_SEPARATOR}${name}`}`
+	}
 	// A tab group's id is `g:` + its members' ids, sorted and joined by `+`
 	// (what the app's layout editor mints); a member renamed renames the group.
 	const group = (g: unknown) =>
@@ -1710,6 +1721,24 @@ export function genreLayouts(e: Extension): NonNullable<Manifest['layouts']> {
 		m ? Object.fromEntries(Object.entries(m).map(([k, v]) => [q(k), v])) : undefined
 	const namespaced = (layout: SessionLayoutV1): SessionLayoutV1 => {
 		const out: SessionLayoutV1 = { ...layout }
+		// Every tab is a widget instance id, and so is the tab a panel has open.
+		const panel = (p: PanelV1): PanelV1 => ({
+			...p,
+			tabs: p.tabs.map(q),
+			...(p.open !== undefined ? { open: q(p.open) } : {}),
+		})
+		if (layout.panels)
+			out.panels = {
+				...layout.panels,
+				left: layout.panels.left.map(panel),
+				middle: {
+					...layout.panels.middle,
+					above: layout.panels.middle.above.map(panel),
+					primary: panel(layout.panels.middle.primary),
+					below: layout.panels.middle.below.map(panel),
+				},
+				right: layout.panels.right.map(panel),
+			}
 		if (layout.zoneLayout)
 			out.zoneLayout = {
 				...layout.zoneLayout,

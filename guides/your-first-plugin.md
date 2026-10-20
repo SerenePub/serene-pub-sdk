@@ -67,7 +67,7 @@ const greet = spec('acme.greeter:reply', { version: '1.0.0' })
 	// compiled document's `input` checks both.
 	// A genre is passed by value: yours, imported, or another package's by `use()`.
 	.inlet('input', C.userMessage.v1(), {
-		genre: use('core:genre/chat'),
+		genre: use('core:genre/story'),
 		event: sessionEvents.messageRespond,
 	})
 	// A query reads Serene Pub's own data and cannot reach the network.
@@ -139,7 +139,7 @@ const rollHandler = async (input: { notation: string }, ctx: { random(): number 
 
 const diceTurn = spec('acme.dice:roll-turn', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1(), {
-		genre: use('core:genre/chat'),
+		genre: use('core:genre/story'),
 		event: sessionEvents.messageRespond,
 	})
 	.task('roll', roll.v1({ notation: '1d20' }))

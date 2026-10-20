@@ -12,6 +12,8 @@
 	import SceneCueChip from "./SceneCueChip.svelte"
 	import MessageStateLedger from "./MessageStateLedger.svelte"
 	import { isLiveScene, laneOf, sceneMarks, type SceneMarks } from "./sceneMarks"
+	import { SvelteSet } from "svelte/reactivity"
+	import { anchorOf, foldHeadOf, foldRestOf } from "./interleave"
 	import { scopeNotGranted } from "@serene-pub/core-catalog/widgets"
 	import { useConversation } from "./conversation.svelte"
 	import type { MessageV1 } from "@serene-pub/sdk/component"
@@ -77,12 +79,15 @@
 		 * naming the speaker wherever the speaker changes.
 		 */
 		presentation?: "rows" | "folio"
+		/** 🚧 What an empty log says (the copy's `emptyState`); `null`, "Send a message to start". */
+		emptyState?: string | null
 	}
 
 	let {
 		order = "oldest-first",
 		showSceneMarkers = true,
-		presentation = "rows"
+		presentation = "rows",
+		emptyState = null
 	}: Props = $props()
 	const folio = $derived(presentation === "folio")
 
@@ -106,11 +111,28 @@
 	 */
 	const dossierNotGranted = $derived(scopeNotGranted(conv.ctx, "session:full"))
 
-	/** Older rows, asked for once per reach of the far end. */
+	/**
+	 * Older rows, asked for once per reach of the far end — 🚧 this copy's
+	 * own channels' (owner ruling ★7: a Story scrolled back loads Story
+	 * lines, never a page spent on the Planner lanes and the dice).
+	 */
 	function loadOlder() {
-		if (!conv.dossier?.hasOlder || conv.dossier.loadingOlder) return
-		void conv.request("messages", {})
+		if (!conv.hasOlder || conv.dossier?.loadingOlder) return
+		conv.loadOlder()
 	}
+	/**
+	 * 🚧 A copy whose channel has no row in the page's window while older
+	 * rows remain (the 100-turn walk, B11: a Planner lane read "Send a message
+	 * to start" once the story's rows filled the newest page) asks for older
+	 * rows itself — page by page, each ask after the last has landed — until
+	 * one of its rows is in or nothing older is left. An empty log has no far
+	 * end for the reader to reach.
+	 */
+	$effect(() => {
+		if (!loaded || conv.noLane || messages.length) return
+		if (!conv.hasOlder || conv.dossier?.loadingOlder) return
+		loadOlder()
+	})
 	/** The lore panel, at a history entry, a scene, or a new entry. */
 	const openLore = (params: {
 		lorebookId: number
@@ -193,19 +215,65 @@
 	)
 
 	/**
+	 * 🚧 Each line's place among the lines shown on this lane, oldest first
+	 * (PLAN-dc-after-walk2 Q3-6, the walk's #49): its accessible name counts
+	 * what the reader can reach here, never every channel's rows.
+	 */
+	let lanePlaces = $derived.by(() => {
+		const shown = messages.filter((m) => shownOnLane(m))
+		return new Map(shown.map((m, i) => [m.id, { n: i + 1, of: shown.length }]))
+	})
+
+	/**
+	 * 🚧 Interleaved rows (`interleave`, PLAN-rulesets §30): each is shown
+	 * where its anchor is — on the anchor's lane — and none is ever the
+	 * log's last line, so the anchor keeps the newest line's controls.
+	 */
+	const laneById = $derived(new Map(messages.map((m) => [m.id, m.channel || "main"])))
+	/**
+	 * 🚧 The **dice fold** (PLAN-sheet-widget §16, `interleaveAs: fold`): an
+	 * interleaved row is one head line — the host's summary, else its first
+	 * line — that opens into the whole row; closed by default (§6.13: a
+	 * full-width toggle, a glyph, the words, a chevron; 🚧 its lines are drawn
+	 * only while it is open — the lines after the head, one a line, Q3-2).
+	 * Which are open is this copy's own, by message id.
+	 */
+	const openFolds = new SvelteSet<number>()
+	const folded = (msg: MessageV1) => conv.interleaveAs === "fold" && conv.isInterleaved(msg)
+	const lastOwnId = $derived.by((): number | null => {
+		for (let i = messages.length - 1; i >= 0; i--)
+			if (!conv.isInterleaved(messages[i]!)) return messages[i]!.id
+		return null
+	})
+	function shownOnLane(msg: MessageV1): boolean {
+		const lane = conv.lane.current
+		if (!conv.isInterleaved(msg)) return (msg.channel || "main") === lane
+		const anchor = anchorOf(msg)
+		return (anchor !== null ? (laneById.get(anchor) ?? lane) : lane) === lane
+	}
+
+	/**
 	 * Who a line is from, as Folio names and compares it: the narrator by
 	 * its name, anyone else by their reference (a character, a persona), and
-	 * a role-named line with its member ("Dungeon Master · jody").
+	 * a role-named line with its member ("Dungeon Master · jody"). `narration`:
+	 * the narrator's flag, or a reply the page names no one for (an envoy).
 	 */
-	function folioSpeaker(msg: MessageV1): { key: string; name: string } {
+	function folioSpeaker(msg: MessageV1): { key: string; name: string; narration: boolean } {
 		if (msg.isNarratorResponse) {
 			const name = msg.metadata?.narratorName || "Narrator"
-			return { key: `narrator:${name}`, name }
+			return { key: `narrator:${name}`, name, narration: true }
 		}
 		const speaker = conv.line(msg.id).speaker
+		// The pipeline's own voice — a reply nobody in the cast speaks (the
+		// page names no `ref`): an envoy's line, the Dungeon Crawler's
+		// Narrator on its Journal (round 2: the old flag alone missed it, and
+		// the page opened with a NARRATOR rule). A person's line is never
+		// narration, even with no card behind it.
+		if (msg.role !== "user" && !speaker.ref)
+			return { key: `narrator:${speaker.name}`, name: speaker.name, narration: true }
 		const member = speaker.member?.trim()
 		const name = member ? `${speaker.name} · ${member}` : speaker.name
-		return { key: `${speaker.ref ?? `name:${speaker.name}`}|${member ?? ""}`, name }
+		return { key: `${speaker.ref ?? `name:${speaker.name}`}|${member ?? ""}`, name, narration: false }
 	}
 
 	/**
@@ -213,7 +281,10 @@
 	 * order drawn, each with the name its rule carries. The first line drawn
 	 * opens a run too, so the page says who begins. Lines on another lane of
 	 * this channel are drawn hidden, so they neither open nor break a run.
-	 * Empty in Rows.
+	 * The narrator's lines open no rule: on a page the narrator is the prose
+	 * itself, not a speaker to announce (a `voice: 'none'` folio — the
+	 * Dungeon Crawler's Journal — has no one else), though they still end
+	 * another speaker's run. Empty in Rows.
 	 */
 	let folioRules = $derived.by((): Map<number, string> => {
 		const out = new Map<number, string>()
@@ -223,7 +294,7 @@
 		for (const msg of drawnMessages) {
 			if ((msg.channel || "main") !== lane) continue
 			const speaker = folioSpeaker(msg)
-			if (speaker.key !== last) out.set(msg.id, speaker.name)
+			if (speaker.key !== last && !speaker.narration) out.set(msg.id, speaker.name)
 			last = speaker.key
 		}
 		return out
@@ -480,10 +551,17 @@
 					<sp-icon name="loader-2" size="28" data-widget-part="messages.log-floor-icon messages.log-loading-icon"></sp-icon>
 					<span data-widget-part="messages.log-floor-text">Loading session…</span>
 				</div>
+			{:else if conv.noLane}
+				<!-- 🚧 The viewer is in no lane of this copy's channel
+				     (`channelLaneFrom`): nothing here is theirs to read yet. -->
+				<div data-widget-part="messages.log-empty messages.log-floor empty" data-no-lane>
+					<sp-icon name="message-square-text" size="28" data-widget-part="messages.log-floor-icon"></sp-icon>
+					<span data-widget-part="messages.log-floor-text">{conv.t("Your conversation shows here once you join one.")}</span>
+				</div>
 			{:else if messages.length === 0}
 				<div data-widget-part="messages.log-empty messages.log-floor empty">
 					<sp-icon name="message-square-text" size="28" data-widget-part="messages.log-floor-icon"></sp-icon>
-					<span data-widget-part="messages.log-floor-text">Send a message to start</span>
+					<span data-widget-part="messages.log-floor-text">{emptyState ? conv.t(emptyState) : "Send a message to start"}</span>
 					<!-- 🚧 Time moved before anything was said (§15 G13). -->
 					<MessageStateLedger head />
 				</div>
@@ -504,7 +582,7 @@
 					{@render olderMessagesLoading()}
 					<!-- 🚧 The ledger head (§15 G13): before the first message,
 					     so only once there is nothing older to load. -->
-					{#if !conv.dossier?.hasOlder}<MessageStateLedger head />{/if}
+					{#if !conv.hasOlder}<MessageStateLedger head />{/if}
 				{/if}
 
 				<ul
@@ -518,10 +596,10 @@
 							messages.length,
 							order
 						)}
-						{@const isLastMessage =
-							index === messages.length - 1}
-						{@const onThisChannel =
-							(msg.channel || "main") === conv.lane.current}
+						{@const isLastMessage = conv.interleave
+							? msg.id === lastOwnId
+							: index === messages.length - 1}
+						{@const onThisChannel = shownOnLane(msg)}
 						{@const at = marks.sceneOf.get(msg.id)}
 						{@const color = at ? SCENE_COLORS[at.swatch] : null}
 						{@const entry = entryMarks.get(msg.id)}
@@ -574,14 +652,50 @@
 								loadingOlderMessages || !isLastMessage
 									? undefined
 									: "")}
+							data-row-kind={conv.rowKind(msg) ?? undefined}
 						>
-							<SessionMessage
-								{msg}
-								{index}
-								{isLastMessage}
-								sceneName={at ? at.name : null}
-								{folio}
-							/>
+							{#if folded(msg)}
+								{@const isOpen = openFolds.has(msg.id)}
+								<div data-widget-part="messages.table-fold messages.message-disclosure">
+									<button
+										type="button"
+										data-widget-part="messages.table-fold-toggle messages.message-disclosure-toggle"
+										aria-expanded={isOpen}
+										aria-controls="table-fold-{msg.id}"
+										onclick={() => (isOpen ? openFolds.delete(msg.id) : openFolds.add(msg.id))}
+									>
+										<sp-icon name="dices" size="14"></sp-icon>
+										<span data-widget-part="messages.table-fold-head">{foldHeadOf(msg)}</span>
+										<sp-icon name="chevron-down" size="14"></sp-icon>
+									</button>
+									<div
+										id="table-fold-{msg.id}"
+										data-widget-part="messages.message-disclosure-track"
+										data-expanded={isOpen ? "" : undefined}
+									>
+										<div data-widget-part="messages.message-disclosure-clip">
+											<!-- 🚧 The body is the lines AFTER the head, one result a
+											     line (Q3-2): never the head again, never one run-on line. -->
+											{#if isOpen}
+												<ul data-widget-part="messages.fold-list messages.table-fold-body">
+													{#each foldRestOf(msg) as line, j (j)}
+														<li>{line.replace(/^[-*]\s+/, "")}</li>
+													{/each}
+												</ul>
+											{/if}
+										</div>
+									</div>
+								</div>
+							{:else}
+								<SessionMessage
+									{msg}
+									{index}
+									{isLastMessage}
+									sceneName={at ? at.name : null}
+									{folio}
+									place={lanePlaces.get(msg.id)}
+								/>
+							{/if}
 						</li>
 
 						<!-- 🚧 A scene boundary this line was refused — *Start
@@ -643,7 +757,7 @@
 					{/each}
 				</ul>
 				{#if order === "newest-first"}
-					{#if !conv.dossier?.hasOlder}<MessageStateLedger head />{/if}
+					{#if !conv.hasOlder}<MessageStateLedger head />{/if}
 					{@render olderMessagesLoading()}
 				{/if}
 			{/if}

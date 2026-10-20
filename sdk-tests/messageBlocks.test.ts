@@ -108,8 +108,8 @@ describe('W-E · a block action carries the identity of the declaration it fires
 		id: 'acme:spec/lock',
 		contributes: {
 			actions: [
-				{ key: 'pick-lock', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Pick' } },
-				{ key: 'force', genre: 'core:genre/chat', venue: { kind: 'message' }, label: { en: 'Force' } },
+				{ key: 'pick-lock', genre: 'core:genre/story', venue: { kind: 'message' }, label: { en: 'Pick' } },
+				{ key: 'force', genre: 'core:genre/story', venue: { kind: 'message' }, label: { en: 'Force' } },
 			],
 		},
 	}

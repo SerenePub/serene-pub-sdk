@@ -59,6 +59,9 @@ declare const history: InputOf<typeof C.sessionHistory>
 // derivations agree"): a name missing here, or one too many, fails to compile.
 const _historyNames: Record<keyof typeof history, true> = {
 	budget: true,
+	// 🚧 2026-10-15: the channel lane a run reads, chosen at run time (the
+	// Dungeon Crawler Planner's own lane) — a port, never the `channel` param.
+	channelLane: true,
 	messageId: true,
 	params: true,
 	scope: true,

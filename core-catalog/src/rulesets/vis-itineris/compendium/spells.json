@@ -1,0 +1,429 @@
+[
+	{
+		"id": "fire-bolt",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Fire bolt",
+			"description": "A mote of flame hurled at a foe.",
+			"level": 0,
+			"school": "evocation",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 120
+			},
+			"focus": false,
+			"ritual": false,
+			"save": "none",
+			"attack": "ranged",
+			"damage": {
+				"formula": "1d10"
+			},
+			"damageType": "fire",
+			"cantripScaling": {
+				"add": "1d10"
+			},
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "light",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Light",
+			"description": "Makes an object shine like a torch.",
+			"traits": [
+				"light"
+			],
+			"level": 0,
+			"school": "evocation",
+			"components": {
+				"verbal": true,
+				"somatic": false,
+				"material": true,
+				"materials": "a firefly or phosphorescent moss"
+			},
+			"range": {
+				"kind": "touch"
+			},
+			"focus": false,
+			"ritual": false,
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "hour",
+				"value": 1
+			}
+		}
+	},
+	{
+		"id": "mage-hand",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Mage hand",
+			"description": "A spectral hand that lifts and carries small things.",
+			"traits": [
+				"utility"
+			],
+			"level": 0,
+			"school": "conjuration",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 30
+			},
+			"focus": false,
+			"ritual": false,
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "minute",
+				"value": 1
+			}
+		}
+	},
+	{
+		"id": "sacred-flame",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Sacred flame",
+			"description": "Radiance falls on a foe who fails to dodge it.",
+			"level": 0,
+			"school": "evocation",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 60
+			},
+			"focus": false,
+			"ritual": false,
+			"save": "dexterity",
+			"damage": {
+				"formula": "1d8"
+			},
+			"damageType": "radiant",
+			"cantripScaling": {
+				"add": "1d8"
+			},
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "cure-wounds",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Cure wounds",
+			"description": "A touch that mends flesh.",
+			"traits": [
+				"healing"
+			],
+			"level": 1,
+			"school": "abjuration",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "touch"
+			},
+			"focus": false,
+			"ritual": false,
+			"heals": "2d8",
+			"heighten": {
+				"perLevel": "2d8"
+			},
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "magic-missile",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Magic missile",
+			"description": "Three darts of force that never miss.",
+			"level": 1,
+			"school": "evocation",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 120
+			},
+			"focus": false,
+			"ritual": false,
+			"damage": {
+				"formula": "3d4+3"
+			},
+			"damageType": "force",
+			"heighten": {
+				"perLevel": "1d4+1"
+			},
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "shield",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Shield",
+			"description": "An unseen barrier snaps up as a blow lands.",
+			"traits": [
+				"force"
+			],
+			"level": 1,
+			"school": "abjuration",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "self"
+			},
+			"focus": false,
+			"ritual": false,
+			"activation": "reaction",
+			"actionCost": 1,
+			"effectDuration": {
+				"units": "round",
+				"value": 1
+			}
+		}
+	},
+	{
+		"id": "detect-magic",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Detect magic",
+			"description": "The caster senses magic nearby and what kind it is.",
+			"level": 1,
+			"school": "divination",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "self"
+			},
+			"area": {
+				"shape": "emanation",
+				"size": 30
+			},
+			"focus": true,
+			"ritual": true,
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "minute",
+				"value": 10
+			}
+		}
+	},
+	{
+		"id": "hold-person",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Hold person",
+			"description": "A humanoid locks in place unless it resists.",
+			"traits": [
+				"mental"
+			],
+			"level": 2,
+			"school": "enchantment",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": true,
+				"materials": "a straight piece of iron"
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 60
+			},
+			"focus": true,
+			"ritual": false,
+			"save": "wisdom",
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "minute",
+				"value": 1
+			}
+		}
+	},
+	{
+		"id": "misty-step",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Misty step",
+			"description": "The caster vanishes in silver mist and steps out up to 30 feet away.",
+			"traits": [
+				"teleport"
+			],
+			"level": 2,
+			"school": "conjuration",
+			"components": {
+				"verbal": true,
+				"somatic": false,
+				"material": false
+			},
+			"range": {
+				"kind": "self"
+			},
+			"focus": false,
+			"ritual": false,
+			"activation": "bonus-action",
+			"actionCost": 1,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "fireball",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Fireball",
+			"description": "A bead of flame that bursts into a roaring blast.",
+			"level": 3,
+			"school": "evocation",
+			"components": {
+				"verbal": true,
+				"somatic": true,
+				"material": true,
+				"materials": "a ball of bat guano and sulfur"
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 150
+			},
+			"area": {
+				"shape": "sphere",
+				"size": 20
+			},
+			"focus": false,
+			"ritual": false,
+			"save": "dexterity",
+			"damage": {
+				"formula": "8d6"
+			},
+			"damageType": "fire",
+			"heighten": {
+				"perLevel": "1d6"
+			},
+			"activation": "action",
+			"actionCost": 2,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	},
+	{
+		"id": "counterspell",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Counterspell",
+			"description": "The caster snuffs out another spell as it is cast.",
+			"level": 3,
+			"school": "abjuration",
+			"components": {
+				"verbal": false,
+				"somatic": true,
+				"material": false
+			},
+			"range": {
+				"kind": "feet",
+				"feet": 60
+			},
+			"focus": false,
+			"ritual": false,
+			"save": "constitution",
+			"activation": "reaction",
+			"actionCost": 1,
+			"effectDuration": {
+				"units": "instant"
+			}
+		}
+	}
+]

@@ -21,9 +21,15 @@ import {
 } from "@serene-pub/core-catalog/conversation"
 import type { WidgetRequestKind, WidgetRequests } from "@serene-pub/sdk/component"
 import { canAnswerForm } from "@serene-pub/core-catalog/conversation"
+import {
+	canonicalListedChannel,
+	isNoLaneChannel,
+	rowOnListedChannels
+} from "@serene-pub/core-catalog/conversation"
 import { setStatusTextResolver, statusTextIn } from "@serene-pub/core-catalog/conversation"
 import type { RequestDeclineCode, StatusText } from "@serene-pub/sdk/component"
 import { boundaryOffer, laneOf, markedRun, type BoundaryOffer, type SceneMarkRow } from "./sceneMarks"
+import { interleaveByAnchor, interleaveMode, interleaveSlug, isInterleavedRow, rowKindOf, rowKindsOf, rowsByKind } from "./interleave"
 
 const KEY = Symbol("sp-conversation")
 
@@ -88,6 +94,20 @@ export function createConversation(widget: WidgetContextRef) {
 	const dossier = $derived((ctx().scope("session:full") ?? null) as ConversationDossierV1 | null)
 
 	/**
+	 * 🚧 The channel this copy draws inline (`interleave`, PLAN-rulesets §30):
+	 * its rows sit straight after the line each is anchored to
+	 * (`metadata.anchorMessageId`), faceless. `''`: none.
+	 */
+	const interleave = $derived(
+		interleaveSlug((ctx().settings?.v1 as { interleave?: unknown } | undefined)?.interleave)
+	)
+	/** 🚧 How an interleaved row reads (`interleaveAs`, §16): a fold, closed by default, or open. */
+	const interleaveAs = $derived(
+		interleaveMode((ctx().settings?.v1 as { interleaveAs?: unknown } | undefined)?.interleaveAs)
+	)
+	/** 🚧 Which kinds of a folio's lines this copy draws (`rowKinds`, §16); none is every line. */
+	const rowKinds = $derived(rowKindsOf((ctx().settings?.v1 as { rowKinds?: unknown } | undefined)?.rowKinds))
+	/**
 	 * The channels this copy shows (lair re-plan S1): its composer's, which
 	 * the host narrows per mount — a copy pinned to the Sanctum is told
 	 * `['sanctum']`, the primary log the channels no pinned copy claims.
@@ -95,21 +115,39 @@ export function createConversation(widget: WidgetContextRef) {
 	 */
 	const channels = $derived.by((): string[] | null => {
 		const listed = dossier?.composer?.channels
-		return listed && listed.length ? listed : null
+		if (!listed || !listed.length) return null
+		// 🚧 The interleaved channel is drawn under its anchors, never a
+		// lane of this copy's own: its composer never writes there and its
+		// strip never offers it — unless it is all the copy shows.
+		const own = interleave ? listed.filter((c) => c !== interleave) : listed
+		return own.length ? own : listed
 	})
-	/** A row's channel slug: `main` when unset, a lane's slug for `slug:n`. */
-	const slugOf = (channel: unknown) =>
-		(typeof channel === "string" && channel ? channel : "main").split(":")[0]
+	/**
+	 * 🚧 The viewer is in no lane of the channel this copy claims (its
+	 * `channelLaneFrom` found none): the copy shows nothing and writes
+	 * nowhere. A display claim — who may read a lane is the genre's to keep.
+	 */
+	const noLane = $derived(!!channels && channels.every(isNoLaneChannel))
 	/**
 	 * The rows this log holds: the host's log narrowed to this copy's
-	 * channels. A row on a channel another copy claims is not drawn here at
-	 * all (never merely hidden), so two copies never hold the same line.
+	 * channels — a bare slug holds every lane of its channel, a listed lane
+	 * (`parley:2`) that lane alone (`rowOnListedChannels`). A row on a channel
+	 * another copy claims is not drawn here at all (never merely hidden), so
+	 * two copies never hold the same line.
 	 */
 	const rows = $derived.by(() => {
 		const all = ctx().messages.v1
-		if (!channels) return all
-		const shown = new Set(channels)
-		return all.filter((m) => shown.has(slugOf((m as { channel?: unknown }).channel)))
+		const listed = channels
+		const mine = listed
+			? all.filter(
+					(m) =>
+						rowOnListedChannels(listed, (m as { channel?: unknown }).channel) ||
+						isInterleavedRow(m as { id: number; channel?: unknown }, interleave)
+				)
+			: all
+		const anchored = interleave ? interleaveByAnchor(mine, interleave) : mine
+		// 🚧 A journal's kinds (§16): the named ones, a round under its `did` line.
+		return rowsByKind(anchored as Array<(typeof anchored)[number] & { metadata?: unknown }>, rowKinds)
 	})
 
 	// The host's summary finished: the selection it was handed ends.
@@ -217,6 +255,43 @@ export function createConversation(widget: WidgetContextRef) {
 			return channels
 		},
 		/**
+		 * 🚧 Older lines remain for THIS copy (owner ruling ★7): one of its
+		 * channels — or the channel it interleaves — is among the dossier's
+		 * `olderIn`; a host that predates it answers with `hasOlder`.
+		 */
+		get hasOlder(): boolean {
+			const olderIn = dossier?.olderIn
+			if (!Array.isArray(olderIn)) return !!dossier?.hasOlder
+			if (!channels) return olderIn.length > 0
+			const mine = interleave ? [...channels, interleave] : channels
+			return olderIn.some((c) => rowOnListedChannels(mine, c))
+		},
+		/** 🚧 Ask for the next older page of this copy's own channels (`load-older`, ★7). */
+		loadOlder(): void {
+			const mine = channels ? (interleave ? [...channels, interleave] : [...channels]) : null
+			void request("load-older", mine ? { channels: mine } : {})
+		},
+		/** 🚧 The channel this copy draws inline under its anchors, or `''`. */
+		get interleave() {
+			return interleave
+		},
+		/** 🚧 Whether `row` is drawn inline from the interleaved channel. */
+		isInterleaved(row: { id: number; channel?: unknown }): boolean {
+			return isInterleavedRow(row, interleave)
+		},
+		/** 🚧 How an interleaved row reads: `fold` (the default) or `open`. */
+		get interleaveAs() {
+			return interleaveAs
+		},
+		/** 🚧 A row's kind (`metadata.kind`), or `null` — a journal's `did`, `found`, `met`… */
+		rowKind(row: { metadata?: unknown }): string | null {
+			return rowKindOf(row)
+		},
+		/** 🚧 The viewer is in no lane of this copy's claimed channel: nothing to show or write. */
+		get noLane() {
+			return noLane
+		},
+		/**
 		 * What a channel is CALLED: its declared label in the viewer's language
 		 * (`ChannelDecl.label`, the Lair's _Sanctum_), else its slug, title-cased
 		 * (`manuscript` reads _Manuscript_).
@@ -249,7 +324,14 @@ export function createConversation(widget: WidgetContextRef) {
 		 */
 		lane: {
 			get current() {
-				return channels && !channels.includes(lane) ? channels[0] : lane
+				if (!channels) return lane
+				// A listed lane is written and compared in its canonical form
+				// (`parley:1` is the row stored `parley`); the no-lane marker is
+				// never a lane to write on while a real channel is listed.
+				const writable = channels.filter((c) => !isNoLaneChannel(c))
+				if (!writable.length) return channels[0]!
+				const pick = writable.includes(lane) ? lane : writable[0]!
+				return canonicalListedChannel(pick)
 			},
 			set(next: string) {
 				lane = next || "main"

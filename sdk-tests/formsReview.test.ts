@@ -53,17 +53,17 @@ import {
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
-	ADVENTURE_ANSWER_SPEC_ID,
-	chatGenre,
+	STORY_ANSWER_SPEC_ID,
+	storyGenre,
 	coreAnnouncement,
 	CORE_SPECS,
 } from '@serene-pub/core-catalog'
 
-const CHAT = chatGenre.id
+const CHAT = storyGenre.id
 
 const actionSpec = (id: string, actions: Array<Record<string, unknown>>) =>
 	spec(id, { version: '1.0.0', contributes: { actions: actions as any } })
-		.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.sessionAction })
+		.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.sessionAction })
 		.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
 
 describe("S1 · 'form' is a venue no listing offers", () => {
@@ -101,7 +101,7 @@ describe("S1 · 'form' is a venue no listing offers", () => {
 
 	test("the Adventure genre's Answer declares it", () => {
 		coreAnnouncement()
-		const answer = CORE_SPECS.find((s) => s.slug === ADVENTURE_ANSWER_SPEC_ID)!.build()
+		const answer = CORE_SPECS.find((s) => s.slug === STORY_ANSWER_SPEC_ID)!.build()
 		const [decl] = (answer.contributes as any).actions
 		assert.deepEqual(decl.venue, [{ kind: 'form' }])
 	})

@@ -115,7 +115,7 @@ describe('serene-pub clone', () => {
 	})
 
 	test('the printed declaration, evaluated, passes the SDK declaration findings', async () => {
-		for (const slug of ['stats', 'messages', 'lore-entries', 'scene-portraits', 'world-state']) {
+		for (const slug of ['stats', 'messages', 'lore-entries', 'scene-portraits']) {
 			const pkg = await scratch('decl')
 			const r = await cloneCoreComponent(pkg, { slug, as: `copy-of-${slug}` })
 			// Drop the import line; the rest is object-literal members with comments.

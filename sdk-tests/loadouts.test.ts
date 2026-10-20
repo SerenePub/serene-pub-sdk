@@ -104,7 +104,7 @@ describe("core's set", () => {
 	})
 
 	test("a reply spec's Default config names the Reply loadout", () => {
-		const doc = coreSpec('core:spec/chat-respond')!.build() as {
+		const doc = coreSpec('core:spec/story-respond')!.build() as {
 			presets?: { default?: boolean; values: { nodeKey: string; slot: string; value: unknown }[] }[]
 		}
 		const def = doc.presets?.find((p) => p.default)

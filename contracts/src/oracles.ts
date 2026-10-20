@@ -798,6 +798,22 @@ export const generateJson = pin(
 							'Sequences that end the reply the moment the model writes one. One per line.',
 					},
 					streaming: streamingParam(),
+					/**
+					 * 🚧 An empty answer read as an unreadable one (the Dungeon
+					 * Crawler 100-turn walk, B7): `json` null and `parseError`
+					 * saying the model returned nothing, and the step goes on —
+					 * so a check placed after it can ask once more and then go on
+					 * without the answer. Off (the default), an empty answer halts
+					 * the run, as it always has. `@1` evolves in place.
+					 */
+					emptyIsUnreadable: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'Go on after an empty answer' },
+						description: {
+							en: 'Read an empty answer as one that could not be read, and carry on, instead of stopping the run.',
+						},
+					},
 				},
 			},
 		},

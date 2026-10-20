@@ -56,8 +56,7 @@
 			],
 			"contextBudget": [
 				"Descriptor @experimental",
-				"Pinned @experimental",
-				"PortDecl @experimental"
+				"Pinned @experimental"
 			],
 			"createMessage": [
 				"Descriptor @experimental",

@@ -1,102 +1,123 @@
 <script lang="ts">
 	/**
-	 * One attribute slot, drawn as what it is and edited in place — shared by
-	 * core's World State and Stats widgets (R21).
+	 * One attribute slot, drawn as what it is and edited in place — core's
+	 * Stats widget's row (R21), and any widget's that draws a stat.
 	 *
 	 * The slot's STAT SHAPE decides the control (`slotKind`: its field, or its
 	 * type when the host predates shapes), and the configuration in force
 	 * decides its bounds: a bounded number is a bar, a choice is a chip over a
-	 * closed set (an `sp-menu` on the chip), a list opens to its items — add,
-	 * remove, move up and down — a story time is read through the calendar
-	 * and opens to its year, month, day and time, text is a line, a boolean is
-	 * a toggle. A derived slot is computed on every read and a retired one
-	 * takes nothing new, so both are shown greyed and never offered.
+	 * closed set (an `sp-menu` on the chip), a list opens to its items
+	 * (`ListEditor`: add, remove, move up and down, and the lorebook picker,
+	 * `LorePicker`), a story time opens to its year, month, day and time
+	 * (`StoryTimeEditor`), text is a line, a boolean is a toggle.
+	 *
+	 * One read-only branch (C9, 2026-10-17): a slot the viewer cannot write —
+	 * another player's sheet, a derived or retired stat, a locked one — is
+	 * drawn as plain words (spans, never disabled buttons), its bar a meter.
+	 * A locked slot (`config.lock`, `slotLocked`) also shows a small lock.
 	 *
 	 * Every edit here is the USER's, which is the one writer with authority: it
 	 * applies at once (`set-attribute-value`) rather than waiting at the review
 	 * gate. Nothing is applied optimistically — the new value arrives as a
-	 * `session_state` push, so what is drawn a beat later is the resolver's
-	 * answer and not this component's guess. A list is written whole, its
-	 * items in order.
+	 * `session_state` push. A write resolves to the host's refusal or `null`
+	 * (A21): an editor closes only once its write lands, and a refusal keeps
+	 * the draft and is said in the row's own `invalid` line, in plain words.
 	 *
 	 * A number or text field commits on Enter, and Escape puts the stored
 	 * value back (R80: the field's `keys`). Leaving the field commits what was
-	 * typed, and only closes it when nothing was — never a write of the value
-	 * already stored. A text field also commits on `change`; a number field
-	 * does not, because the browser raises `change` on every spinner step and
-	 * a person may step several times before they are done. A list's new item
-	 * is added on Enter; a story time is saved on Enter or its Save button —
-	 * it has four fields, so leaving one of them is not being done.
+	 * typed, and only closes it when nothing was. A text field also commits on
+	 * `change`; a number field does not, because the browser raises `change`
+	 * on every spinner step.
 	 *
-	 * A list that takes lore references (one not closed over words) also
-	 * picks from the session's lorebook (phase 3c): item entries first, then
-	 * the rest of the book, with how many to add — Enter in the count field
-	 * adds, Escape closes the picker. A held reference reads "Name ×N" and
-	 * steps up and down; one fewer than one takes it out.
+	 * 🚧 A list that holds a ruleset's pieces (`config.repertoire` — Weapons,
+	 * Gear, Features) draws a piece row per piece (`PieceList`, `PieceCard`),
+	 * and its row is **stacked** (`data-stacked`): the label a heading on its
+	 * own line, the trail at that line's end, the pieces full width under it.
 	 *
 	 * The markup carries no look. A shared control owns its parts under its own
-	 * name, so every element here is `stat-slot.<part>` in `data-widget-part`
-	 * (with a generic part where the element truly is one): a style draws a
-	 * slot once for every widget, and scopes it to one through the widget's
-	 * root (STYLE-GUIDE §6.16). A slot's state is its own `data-*` or ARIA,
-	 * never a part: `data-density`, `data-retired`, `data-slot-shape`,
-	 * `data-empty` (nothing to show), `aria-pressed` (a switch on, a row
-	 * chosen), `role="alert"` (refused).
+	 * name, `stat-slot.<part>` (STYLE-GUIDE §6.16). A slot's state is its own
+	 * `data-*` or ARIA, never a part: `data-density`, `data-retired`,
+	 * `data-slot-shape`, `data-stacked`, `data-locked`, `data-empty`,
+	 * `aria-pressed`, `role="alert"` (refused).
 	 *
 	 * A widget may put something of its own at the end of the row — Stats'
-	 * **stat trail** (F2) — through `trail`; it carries that widget's parts,
-	 * not this control's.
+	 * **stat trail** (F2) — through `trail`; it carries that widget's parts.
 	 */
 	import type { Snippet } from "svelte"
-	import type { SessionStateSlotV1 } from "@serene-pub/core-catalog/widgets"
+	import type { SessionStateOwnerV1, SessionStateSlotV1 } from "@serene-pub/core-catalog/widgets"
 	import {
 		barView,
+		choiceOptionText,
 		enumValues,
 		listItemKeyOf,
 		listItemRef,
 		listItemText,
 		listItemsOf,
 		listMoved,
-		countDraftFor,
 		listWithAdded,
-		listWithRefAdded,
 		listWithRefStep,
 		listWithout,
 		numberDraftFor,
-		pickableEntries,
+		slotHoldsPieces,
+		slotLocked,
 		slotTakesLoreRefs,
-		type PickableEntry,
 		shownValueText,
 		slotIsWhole,
 		slotKind,
 		slotWritable,
-		storyTimeDraftOf,
-		storyTimeDraftValue,
 		textDraftValue,
-		type SlotWriteValue,
-		type StoryTimeDraft
+		type GiveTarget,
+		type SlotWriteValue
 	} from "@serene-pub/core-catalog/session-state"
 	import type { HostKeyEventDetail } from "@serene-pub/sdk/component"
-	import type { EntryFinder, EntryFinds } from "./entryFinder"
+	import type { EntryFinder } from "./entryFinder"
+	import ListEditor from "./ListEditor.svelte"
+	import LorePicker from "./LorePicker.svelte"
+	import PieceList from "./PieceList.svelte"
+	import StoryTimeEditor from "./StoryTimeEditor.svelte"
+	import type { SlotRefusal, SlotWriteResult } from "./slotWriter.svelte"
 
 	interface Props {
 		slot: SessionStateSlotV1
-		/** The configuration in force for this owner: bounds, options, a list's limits. */
+		/** The configuration in force for this owner: bounds, options, a list's limits, its `lock`. */
 		config: Record<string, unknown>
 		value: unknown
 		/** Compact drops the label into the control's own line. */
 		density?: "compact" | "full"
 		/** The widget's language. */
 		t: (source: string) => string
-		/** `null` clears this layer, so the read inherits again. */
-		onset: (value: SlotWriteValue) => void
+		/** `null` clears this layer, so the read inherits again. Resolves to the refusal, or `null` once written. */
+		onset: (value: SlotWriteValue) => Promise<SlotWriteResult>
 		/** Searches the session's lorebook for a list's picker; absent, a list adds words only. */
 		findEntries?: EntryFinder
 		/** The asking widget's own end of the row (Stats' stat trail); absent, none. */
 		trail?: Snippet
+		/** 🚧 The copy's `timeFormat` for a story-time stat (`formatStoryTimeAs`); absent, the calendar's spelling. */
+		timeFormat?: string | null
+		/** 🚧 Not the viewer's to write (another player's seat): drawn, never edited. */
+		readonly?: boolean
+		/** 🚧 The repertoires in force, for a list of pieces (`PieceList`). */
+		repertoires?: SessionStateOwnerV1["repertoires"]
+		/** 🚧 Where a piece of this list may be given (`giveTargets`). */
+		targets?: readonly GiveTarget[]
+		ongive?: (index: number, target: GiveTarget, count: number) => Promise<SlotWriteResult>
 	}
 
-	let { slot, config, value, density = "full", t, onset, findEntries, trail }: Props = $props()
+	let {
+		slot,
+		config,
+		value,
+		density = "full",
+		t,
+		onset,
+		findEntries,
+		trail,
+		timeFormat = null,
+		readonly = false,
+		repertoires,
+		targets,
+		ongive
+	}: Props = $props()
 
 	/** A menu item's value for "not set" — never an option's, which are `opt:`-prefixed. */
 	const CLEAR = "clear"
@@ -105,182 +126,152 @@
 	let numberDraft = $state<number | null>(null)
 	let textDraft = $state("")
 	let itemDraft = $state("")
-	let timeDraft = $state<StoryTimeDraft>({ year: "", month: "", day: "", time: "" })
-	/** Why the editor's last attempt wrote nothing — a list over its limit, a time that is not one. */
-	let invalid = $state<string | null>(null)
+	/** Why the last write wrote nothing — the host's refusal, a list over its limit. */
+	let invalid = $state<SlotRefusal | null>(null)
+	let picking = $state(false)
+	/** A write is on its way: Enter, `change` and blur may all arrive for one edit. */
+	let committing = false
 	/** The drafts as the field opened, so leaving it untouched writes nothing. */
 	let numberOpened: number | null = null
 	let textOpened = ""
-
-	// The lorebook picker, inside a list's editor.
-	let picking = $state(false)
-	let pickWords = $state("")
-	let pickCount = $state<number | null>(1)
-	let pickFound = $state<EntryFinds | null>(null)
-	let pickChosen = $state<number | null>(null)
-	let pickBusy = $state(false)
-	/** The newest search owns the list: an older answer that lands late is dropped. */
-	let searches = 0
 
 	let kind = $derived(slotKind(slot))
 	let bar = $derived(kind === "number" ? barView(value, config as { min?: number; max?: number }) : null)
 	let options = $derived(enumValues(config))
 	let items = $derived(listItemsOf(value))
+	/** 🚧 A list of a ruleset's pieces (`config.repertoire`): a row per piece, never one line of words. */
+	let holdsPieces = $derived(kind === "list" && slotHoldsPieces(config))
+	let locked = $derived(slotLocked(config))
 	let canPick = $derived(!!findEntries && slotTakesLoreRefs(config))
-	let offered = $derived<PickableEntry[]>(pickFound ? pickableEntries(value, pickFound.pages) : [])
-	let offeredItems = $derived(offered.filter((e) => e.item))
-	let offeredOthers = $derived(offered.filter((e) => !e.item))
-	let chosen = $derived(offered.find((e) => e.entryId === pickChosen) ?? null)
-	let writable = $derived(slotWritable(slot))
-	let shown = $derived(shownValueText(slot, value, t))
-	let notSet = $derived(t("not set"))
+	let writable = $derived(!readonly && !locked && slotWritable(slot))
+	let shown = $derived(shownValueText(slot, value, t, null, timeFormat))
+	/**
+	 * 🚧 A list of word items — a thing and what it is, "Chain shirt — A shirt
+	 * of rings." — one to a line (PLAN-dc-after-walk3 R3-5, the walk's polish:
+	 * a Story sheet's gear ran together as "clothing., Shield — …").
+	 */
+	let itemLines = $derived.by(() => {
+		if (kind !== "list" || items.length < 2) return null
+		const lines = items.map((i) => listItemText(i, t))
+		return lines.some((x) => /\s—\s/.test(x)) ? lines : null
+	})
+	// 🚧 One word for a stat that holds nothing, a choice's and a list's alike
+	// (PLAN-dc-after-walk2 Q3-6, the walk's #45: Class "not set" beside a
+	// list's "none"); the menu's clearing item says the same.
+	let notSet = $derived(t("none"))
 	let fieldLabel = $derived(t("{label} value").replace("{label}", slot.label))
 	let editLabel = $derived(t("{label}, edit").replace("{label}", slot.label))
-	let barEditLabel = $derived(
-		bar ? t("{label} {value}, edit").replace("{label}", slot.label).replace("{value}", bar.label) : editLabel
-	)
+
+	/** One write, its answer kept: `null` clears the row's line, a refusal says it. */
+	async function write(next: SlotWriteValue): Promise<SlotWriteResult> {
+		invalid = null
+		const refused = await onset(next)
+		invalid = refused
+		return refused
+	}
 
 	function open() {
 		if (!writable) return
 		numberDraft = numberOpened = typeof value === "number" ? value : null
 		textDraft = textOpened = value === undefined || value === null ? "" : String(value)
 		itemDraft = ""
-		timeDraft = storyTimeDraftOf(value)
 		invalid = null
 		picking = false
 		editing = true
 	}
 
-	/** One commit per edit: Enter and `change` may both arrive for one. */
-	function commitNumber() {
-		if (!editing) return
-		editing = false
-		const next = numberDraftFor(numberDraft, config as { min?: number; max?: number }, slotIsWhole(slot))
-		if (next !== undefined) onset(next)
+	/** Write `next`, and close the field only once it lands. */
+	async function commit(next: SlotWriteValue | undefined) {
+		if (!editing || committing) return
+		if (next === undefined) {
+			editing = false
+			return
+		}
+		committing = true
+		try {
+			if (!(await write(next))) editing = false
+		} finally {
+			committing = false
+		}
 	}
 
-	function commitText() {
-		if (!editing) return
-		editing = false
-		onset(textDraftValue(textDraft, config as { maxLength?: unknown }))
-	}
+	const commitNumber = () =>
+		commit(numberDraftFor(numberDraft, config as { min?: number; max?: number }, slotIsWhole(slot)))
+	const commitText = () => commit(textDraftValue(textDraft, config as { maxLength?: unknown }))
 
 	/** Enter commits; Escape leaves the stored value as it was. */
-	function onkey(e: CustomEvent<HostKeyEventDetail>, commit: () => void) {
-		if (e.detail.key === "Enter") commit()
-		else if (e.detail.key === "Escape") editing = false
+	function onkey(e: CustomEvent<HostKeyEventDetail>, done: () => void) {
+		if (e.detail.key === "Enter") done()
+		else if (e.detail.key === "Escape") {
+			editing = false
+			invalid = null
+		}
 	}
 
 	/** Leaving the field: commit what was typed, or just close it. */
-	function onblur(unchanged: boolean, commit: () => void) {
-		if (!editing) return
+	function onblur(unchanged: boolean, done: () => void) {
+		if (!editing || committing) return
 		if (unchanged) editing = false
-		else commit()
+		else done()
 	}
 
 	function pick(e: CustomEvent<{ value: string }>) {
 		const v = e.detail.value
-		if (v === CLEAR) onset(null)
-		else if (v.startsWith("opt:")) onset(v.slice(4))
+		if (v === CLEAR) void write(null)
+		else if (v.startsWith("opt:")) void write(v.slice(4))
 	}
 
-	// ── A list: every change writes the whole list, and the editor stays open ──
+	// ── A list of words: every change writes the whole list; the editor stays open ──
 
-	function addItem() {
+	async function addItem() {
 		const edit = listWithAdded(value, itemDraft, config)
 		if (!edit) return
 		if (edit.refusal) {
-			invalid = edit.refusal
+			invalid = { text: edit.refusal, detail: null }
 			return
 		}
-		invalid = null
-		itemDraft = ""
-		onset(edit.value)
+		if (!(await write(edit.value))) itemDraft = ""
 	}
 
 	function onItemKey(e: CustomEvent<HostKeyEventDetail>) {
-		if (e.detail.key === "Enter") addItem()
+		if (e.detail.key === "Enter") void addItem()
 		else if (e.detail.key === "Escape") editing = false
 	}
 
-	// ── A list's lorebook picker: choose an entry, say how many, add ──
-
-	async function search() {
-		if (!findEntries) return
-		const mine = ++searches
-		pickBusy = true
-		try {
-			const found = await findEntries(pickWords)
-			if (mine !== searches) return
-			pickFound = found
-			if (pickChosen !== null && !found.pages.some((p) => p.some((r) => r.id === pickChosen))) pickChosen = null
-		} catch (e) {
-			if (mine !== searches) return
-			pickFound = { pages: [], notice: e instanceof Error ? e.message : String(e) }
-		} finally {
-			if (mine === searches) pickBusy = false
-		}
-	}
-
-	function openPicker() {
-		picking = true
-		pickWords = ""
-		pickCount = 1
-		pickChosen = null
-		pickFound = null
-		invalid = null
-		void search()
-	}
-
-	function closePicker() {
-		picking = false
-		pickChosen = null
-	}
-
-	function addPicked() {
-		if (!chosen) {
-			invalid = t("Choose an entry to add first.")
-			return
-		}
-		const count = countDraftFor(pickCount)
-		if (count === undefined) {
-			invalid = t("How many is a whole number, 1 or more.")
-			return
-		}
-		const edit = listWithRefAdded(value, chosen.entryId, count, config)
-		if (edit.refusal) {
-			invalid = edit.refusal
-			return
-		}
-		invalid = null
-		pickCount = 1
-		onset(edit.value)
-	}
-
-	function onPickKey(e: CustomEvent<HostKeyEventDetail>, enter: () => void) {
-		if (e.detail.key === "Enter") enter()
-		else if (e.detail.key === "Escape") closePicker()
-	}
-
-	// ── A story time: four fields, saved together ──
-
-	function commitTime() {
-		if (!editing) return
-		const next = storyTimeDraftValue(timeDraft)
-		if (next === undefined) {
-			invalid = t("That is not a story time: a year, then a month, a day and a time as hh:mm — each optional, a day only with a month.")
-			return
-		}
-		editing = false
-		invalid = null
-		onset(next)
-	}
-
-	function onTimeKey(e: CustomEvent<HostKeyEventDetail>) {
-		if (e.detail.key === "Enter") commitTime()
-		else if (e.detail.key === "Escape") editing = false
-	}
+	const itemText = (item: unknown) => listItemText(item as never, t)
 </script>
+
+{#snippet refusalLine()}
+	{#if invalid}<p data-widget-part="stat-slot.invalid" role="alert" title={invalid.detail ?? undefined}>{invalid.text}</p>{/if}
+{/snippet}
+
+{#snippet word(item: unknown)}
+	<span data-widget-part="stat-slot.item-text label">{itemText(item)}</span>
+{/snippet}
+
+{#snippet wordsFooter()}
+	<!-- svelte-ignore a11y_autofocus -->
+	<input
+		data-widget-part="stat-slot.add stat-slot.field"
+		type="text"
+		aria-label={t("Add to {label}").replace("{label}", slot.label)}
+		placeholder={t("Add an item, then Enter")}
+		keys="Escape Enter"
+		autofocus
+		bind:value={itemDraft}
+		onkey={onItemKey}
+	/>
+	{#if canPick && findEntries && !picking}
+		<button type="button" data-widget-part="stat-slot.pick-open" onclick={() => ((picking = true), (invalid = null))}>
+			<sp-icon name="book-open" size="12"></sp-icon>
+			<span>{t("Add from the lorebook")}</span>
+		</button>
+	{:else if canPick && findEntries}
+		<LorePicker label={slot.label} {value} {config} {findEntries} {t} onadd={write} onclose={() => (picking = false)} />
+	{/if}
+	{@render refusalLine()}
+	<button type="button" data-widget-part="stat-slot.done" onclick={() => (editing = false)}>{t("Done")}</button>
+{/snippet}
 
 <div
 	data-widget-part="stat-slot.root row"
@@ -289,6 +280,8 @@
 	data-slot-type={slot.type}
 	data-slot-shape={kind}
 	data-retired={slot.retired ? "" : undefined}
+	data-stacked={holdsPieces && density === "full" ? "" : undefined}
+	data-locked={locked ? "" : undefined}
 >
 	<span data-widget-part="stat-slot.label label" title={slot.description ?? slot.label}>
 		{slot.label}
@@ -300,18 +293,60 @@
 		{:else if kind === "derived"}
 			<sp-icon name="sigma" size="10"></sp-icon>
 		{/if}
+		{#if locked}
+			<span data-widget-part="stat-slot.lock" title={t("Locked: only the story changes this")}>
+				<sp-icon name="lock" size="10" label={t("locked")}></sp-icon>
+			</span>
+		{/if}
 	</span>
 
 	<div data-widget-part="stat-slot.control">
-		{#if kind === "boolean" && writable}
+		{#if holdsPieces}
+			<PieceList
+				{slot}
+				{config}
+				{value}
+				{t}
+				writable={!readonly && slotWritable(slot)}
+				{locked}
+				{density}
+				onset={write}
+				{repertoires}
+				{targets}
+				{ongive}
+			/>
+		{:else if !writable}
+			<!-- Read-only: words, never a disabled control. -->
+			{#if bar}
+				<span data-widget-part="stat-slot.bar" role="img" aria-label="{slot.label} {bar.label}">
+					<span data-widget-part="stat-slot.track meter">
+						<span data-widget-part="stat-slot.fill" style:--sp-fill="{bar.percent}%"></span>
+					</span>
+					<span data-widget-part="stat-slot.bar-value value">{bar.label}</span>
+				</span>
+			{:else if kind === "choice" || kind === "boolean"}
+				<span
+					data-widget-part="stat-slot.chip chip"
+					data-empty={value == null ? "" : undefined}
+					aria-pressed={kind === "boolean" ? value === true : undefined}
+				>
+					{shown || notSet}
+				</span>
+			{:else}
+				<span data-widget-part="stat-slot.line value" data-empty={value === undefined || (kind === "list" && !items.length) ? "" : undefined}>
+					{#if itemLines}{#each itemLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}{:else}{kind === "list" ? (items.length ? shown : t("none")) : shown || notSet}{/if}
+				</span>
+			{/if}
+		{:else if kind === "boolean"}
 			<button
 				type="button"
 				data-widget-part="stat-slot.chip chip"
 				aria-pressed={value === true}
-				onclick={() => onset(value === true ? false : true)}
+				onclick={() => void write(value === true ? false : true)}
 			>
 				{value === undefined ? notSet : shown}
 			</button>
+			{@render refusalLine()}
 		{:else if editing && kind === "number"}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -323,206 +358,34 @@
 				step={slotIsWhole(slot) ? "1" : "any"}
 				keys="Escape Enter"
 				autofocus
+				aria-invalid={invalid ? "true" : undefined}
 				bind:value={numberDraft}
 				onblur={() => onblur(numberDraft === numberOpened, commitNumber)}
 				onkey={(e: CustomEvent<HostKeyEventDetail>) => onkey(e, commitNumber)}
 			/>
+			{@render refusalLine()}
 		{:else if editing && kind === "list"}
-			<div data-widget-part="stat-slot.editor" role="group" aria-label={fieldLabel}>
-				{#if items.length}
-					<ol data-widget-part="stat-slot.items list">
-						{#each items as item, i (listItemKeyOf(item, i))}
-							{@const itemText = listItemText(item, t)}
-							{@const ref = listItemRef(item)}
-							<li data-widget-part="stat-slot.item row" data-item-index={i}>
-								<span data-widget-part="stat-slot.item-text label">{itemText}</span>
-								{#if ref}
-									<button
-										type="button"
-										data-widget-part="stat-slot.item-less"
-										aria-label={t("One fewer {item}").replace("{item}", itemText)}
-										onclick={() => onset(listWithRefStep(value, ref.entryId, -1))}
-									>
-										<sp-icon name="minus" size="11"></sp-icon>
-									</button>
-									<button
-										type="button"
-										data-widget-part="stat-slot.item-more"
-										aria-label={t("One more {item}").replace("{item}", itemText)}
-										onclick={() => onset(listWithRefStep(value, ref.entryId, 1))}
-									>
-										<sp-icon name="plus" size="11"></sp-icon>
-									</button>
-								{/if}
-								<button
-									type="button"
-									data-widget-part="stat-slot.item-up"
-									disabled={i === 0}
-									aria-label={t("Move {item} up").replace("{item}", itemText)}
-									onclick={() => onset(listMoved(value, i, -1))}
-								>
-									<sp-icon name="arrow-up" size="11"></sp-icon>
-								</button>
-								<button
-									type="button"
-									data-widget-part="stat-slot.item-down"
-									disabled={i === items.length - 1}
-									aria-label={t("Move {item} down").replace("{item}", itemText)}
-									onclick={() => onset(listMoved(value, i, 1))}
-								>
-									<sp-icon name="arrow-down" size="11"></sp-icon>
-								</button>
-								<button
-									type="button"
-									data-widget-part="stat-slot.item-remove"
-									aria-label={t("Remove {item}").replace("{item}", itemText)}
-									onclick={() => onset(listWithout(value, i))}
-								>
-									<sp-icon name="x" size="11"></sp-icon>
-								</button>
-							</li>
-						{/each}
-					</ol>
-				{:else}
-					<p data-widget-part="stat-slot.items-empty empty">{t("Nothing in the list yet.")}</p>
-				{/if}
-				<!-- svelte-ignore a11y_autofocus -->
-				<input
-					data-widget-part="stat-slot.add stat-slot.field"
-					type="text"
-					aria-label={t("Add to {label}").replace("{label}", slot.label)}
-					placeholder={t("Add an item, then Enter")}
-					keys="Escape Enter"
-					autofocus
-					bind:value={itemDraft}
-					onkey={onItemKey}
-				/>
-				{#if canPick && !picking}
-					<button type="button" data-widget-part="stat-slot.pick-open" onclick={openPicker}>
-						<sp-icon name="book-open" size="12"></sp-icon>
-						<span>{t("Add from the lorebook")}</span>
-					</button>
-				{:else if canPick}
-					<div
-						data-widget-part="stat-slot.picker"
-						role="group"
-						aria-label={t("Add to {label} from the lorebook").replace("{label}", slot.label)}
-					>
-						<!-- svelte-ignore a11y_autofocus -->
-						<input
-							data-widget-part="stat-slot.pick-search stat-slot.field"
-							type="text"
-							aria-label={t("Search the lorebook")}
-							placeholder={t("Search by name or key, then Enter")}
-							keys="Escape Enter"
-							autofocus
-							bind:value={pickWords}
-							onkey={(e: CustomEvent<HostKeyEventDetail>) => onPickKey(e, () => void search())}
-						/>
-						{#if !pickFound}
-							<p data-widget-part="stat-slot.pick-status" role="status">{t("Searching the lorebook…")}</p>
-						{:else if pickFound.notice}
-							<p data-widget-part="stat-slot.pick-status" role="status">{pickFound.notice}</p>
-						{:else if !offered.length}
-							<p data-widget-part="stat-slot.pick-status" role="status">{t("Nothing in the lorebook matches.")}</p>
-						{:else}
-							{#each [{ heading: t("Items"), rows: offeredItems, group: "items" }, { heading: t("Other entries"), rows: offeredOthers, group: "others" }] as part (part.group)}
-								{#if part.rows.length}
-									<p data-widget-part="stat-slot.pick-heading">{part.heading}</p>
-									<ul data-widget-part="stat-slot.pick-list list" aria-label={part.heading} data-pick-group={part.group}>
-										{#each part.rows as entry (entry.entryId)}
-											<li>
-												<button
-													type="button"
-													data-widget-part="stat-slot.pick-entry row"
-													data-entry-id={entry.entryId}
-													aria-pressed={pickChosen === entry.entryId}
-													onclick={() => (pickChosen = pickChosen === entry.entryId ? null : entry.entryId)}
-												>
-													<span data-widget-part="stat-slot.pick-title label">{entry.title}</span>
-													{#if entry.held}
-														<span data-widget-part="stat-slot.pick-held">{t("held ×{n}").replace("{n}", String(entry.held))}</span>
-													{/if}
-												</button>
-											</li>
-										{/each}
-									</ul>
-								{/if}
-							{/each}
-						{/if}
-						{#if pickBusy && pickFound}
-							<p data-widget-part="stat-slot.pick-status" role="status">{t("Searching the lorebook…")}</p>
-						{/if}
-						<div data-widget-part="stat-slot.pick-add toolbar">
-							<input
-								data-widget-part="stat-slot.pick-count stat-slot.field"
-								type="number"
-								min="1"
-								step="1"
-								aria-label={chosen ? t("How many {item} to add").replace("{item}", chosen.title) : t("How many to add")}
-								keys="Escape Enter"
-								bind:value={pickCount}
-								onkey={(e: CustomEvent<HostKeyEventDetail>) => onPickKey(e, addPicked)}
-							/>
-							<button type="button" data-widget-part="stat-slot.pick-confirm" disabled={!chosen} onclick={addPicked}>
-								{chosen ? t("Add {item}").replace("{item}", chosen.title) : t("Add")}
-							</button>
-							<button type="button" data-widget-part="stat-slot.pick-close" onclick={closePicker}>{t("Close")}</button>
-						</div>
-					</div>
-				{/if}
-				{#if invalid}<p data-widget-part="stat-slot.invalid" role="alert">{invalid}</p>{/if}
-				<button type="button" data-widget-part="stat-slot.done" onclick={() => (editing = false)}>{t("Done")}</button>
-			</div>
+			<ListEditor
+				{items}
+				keyOf={(item, i) => listItemKeyOf(item as never, i)}
+				label={fieldLabel}
+				{t}
+				item={word}
+				controls
+				textOf={itemText}
+				steps={(item) => !!listItemRef(item as never)}
+				onmove={(i, by) => void write(listMoved(value, i, by))}
+				onremove={(i) => void write(listWithout(value, i))}
+				onstep={(i, by) => {
+					const ref = listItemRef(items[i]!)
+					if (ref) void write(listWithRefStep(value, ref.entryId, by))
+				}}
+				empty={t("Nothing in the list yet.")}
+				footer={wordsFooter}
+				parts={{ root: "stat-slot.editor", list: "stat-slot.items", item: "stat-slot.item", empty: "stat-slot.items-empty" }}
+			/>
 		{:else if editing && kind === "story-time"}
-			<div data-widget-part="stat-slot.editor" role="group" aria-label={fieldLabel}>
-				<!-- svelte-ignore a11y_autofocus -->
-				<input
-					data-widget-part="stat-slot.year stat-slot.field"
-					type="number"
-					step="1"
-					aria-label={t("Year")}
-					placeholder={t("Year")}
-					keys="Escape Enter"
-					autofocus
-					bind:value={timeDraft.year}
-					onkey={onTimeKey}
-				/>
-				<input
-					data-widget-part="stat-slot.month stat-slot.field"
-					type="number"
-					min="1"
-					step="1"
-					aria-label={t("Month")}
-					placeholder={t("Month")}
-					keys="Escape Enter"
-					bind:value={timeDraft.month}
-					onkey={onTimeKey}
-				/>
-				<input
-					data-widget-part="stat-slot.day stat-slot.field"
-					type="number"
-					min="1"
-					step="1"
-					aria-label={t("Day")}
-					placeholder={t("Day")}
-					keys="Escape Enter"
-					bind:value={timeDraft.day}
-					onkey={onTimeKey}
-				/>
-				<input
-					data-widget-part="stat-slot.clock stat-slot.field"
-					type="text"
-					aria-label={t("Time of day")}
-					placeholder="hh:mm"
-					keys="Escape Enter"
-					bind:value={timeDraft.time}
-					onkey={onTimeKey}
-				/>
-				{#if invalid}<p data-widget-part="stat-slot.invalid" role="alert">{invalid}</p>{/if}
-				<button type="button" data-widget-part="stat-slot.save" onclick={commitTime}>{t("Save")}</button>
-				<button type="button" data-widget-part="stat-slot.cancel" onclick={() => (editing = false)}>{t("Cancel")}</button>
-			</div>
+			<StoryTimeEditor {value} label={fieldLabel} {t} onsave={write} oncancel={() => (editing = false)} />
 		{:else if editing}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -531,17 +394,18 @@
 				aria-label={fieldLabel}
 				keys="Escape Enter"
 				autofocus
+				aria-invalid={invalid ? "true" : undefined}
 				bind:value={textDraft}
 				onchange={commitText}
 				onblur={() => onblur(textDraft === textOpened, commitText)}
 				onkey={(e: CustomEvent<HostKeyEventDetail>) => onkey(e, commitText)}
 			/>
+			{@render refusalLine()}
 		{:else if bar}
 			<button
 				type="button"
 				data-widget-part="stat-slot.bar"
-				disabled={!writable}
-				aria-label={barEditLabel}
+				aria-label={t("{label} {value}, edit").replace("{label}", slot.label).replace("{value}", bar.label)}
 				onclick={open}
 			>
 				<span data-widget-part="stat-slot.track meter">
@@ -549,7 +413,8 @@
 				</span>
 				<span data-widget-part="stat-slot.bar-value value">{bar.label}</span>
 			</button>
-		{:else if kind === "choice" && writable}
+			{@render refusalLine()}
+		{:else if kind === "choice"}
 			<!-- The chip opens the closed set; picking one writes it. -->
 			<sp-menu label={fieldLabel} onselect={pick}>
 				<button
@@ -565,43 +430,23 @@
 				{#each options as option (option)}
 					<sp-menu-item value="opt:{option}" data-widget-part="stat-slot.option">
 						{#if value === option}<sp-icon name="check" size="12" label={t("current")}></sp-icon>{/if}
-						<span>{option}</span>
+						<span>{choiceOptionText(slot, option)}</span>
 					</sp-menu-item>
 				{/each}
 			</sp-menu>
-		{:else if kind === "choice"}
-			<button
-				type="button"
-				data-widget-part="stat-slot.chip chip"
-				data-empty={value == null ? "" : undefined}
-				disabled
-				aria-label={editLabel}
-			>
-				{shown || notSet}
-			</button>
-		{:else if kind === "list"}
-			<!-- A list reads as its items; opening it edits them. -->
-			<button
-				type="button"
-				data-widget-part="stat-slot.line value"
-				data-empty={items.length ? undefined : ""}
-				disabled={!writable}
-				aria-label={editLabel}
-				onclick={open}
-			>
-				{items.length ? shown : value === undefined ? notSet : t("none")}
-			</button>
+			{@render refusalLine()}
 		{:else}
+			<!-- Text, a list, a story time: the line reads as the value; opening it edits. -->
 			<button
 				type="button"
 				data-widget-part="stat-slot.line value"
-				data-empty={value === undefined ? "" : undefined}
-				disabled={!writable}
+				data-empty={value === undefined || (kind === "list" && !items.length) ? "" : undefined}
 				aria-label={editLabel}
 				onclick={open}
 			>
-				{shown || notSet}
+				{#if itemLines}{#each itemLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}{:else}{kind === "list" ? (items.length ? shown : t("none")) : shown || notSet}{/if}
 			</button>
+			{@render refusalLine()}
 		{/if}
 	</div>
 	{@render trail?.()}

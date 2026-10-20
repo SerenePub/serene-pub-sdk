@@ -1053,6 +1053,24 @@ export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 		return this.set(nodeKey, 'settings', value)
 	}
 	/**
+	 * 🚧 Script chains, named by **seed key** — `{ seedKey }` per link, in
+	 * order. A chain stores script row ids, and a row id is an instance fact a
+	 * shipped document cannot know, so an author names the row the way it
+	 * names a seeded sampling config: the host resolves each key to the row it
+	 * seeded (`CORE_SCRIPTS`) when it writes the shipped config, and a key it
+	 * seeded no row for is dropped from the chain with a warning.
+	 *
+	 * An array is a `scripts`-kind slot's whole chain; an object keys chains
+	 * by **interior point** (`{ select: [...] }` for `turn-scripted`'s
+	 * `select`), the address the executor reads them at.
+	 */
+	scripts(
+		nodeKey: keyof Nodes & string,
+		value: ScriptChainRef[] | Record<string, ScriptChainRef[]>,
+	) {
+		return this.set(nodeKey, 'scripts', value)
+	}
+	/**
 	 * The **loadout** this model call runs on — `slot.loadout(id)` or the
 	 * id itself. Unlike a connection this is allowed in an author preset: a
 	 * loadout names no compute of the user's (a shipped one has no pair), it
@@ -1072,6 +1090,15 @@ export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 	 * the write matrix exists to make.
 	 * @ruling 12 §4
 	 */
+}
+
+/**
+ * 🚧 One link of a shipped script chain, by the seeded row's key
+ * (`PresetBuilder.scripts`).
+ * @experimental
+ */
+export interface ScriptChainRef {
+	seedKey: string
 }
 
 /** @experimental */

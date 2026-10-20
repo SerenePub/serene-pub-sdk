@@ -13,6 +13,8 @@
  *   it): the viewer's, or not theirs. In the cast and nobody's presence: the
  *   AI's, so nobody clicks. Neither: nobody portrays them, and the **owner**
  *   may answer (W4; `docs/sessions.md`, *forms*).
+ * - 🚧 `player-seat:<id>` — a card-less player seat: the viewer's when they sit in it
+ *   (its `userId`); nobody else's.
  * - `envoy:<slug>` — the AI's, always.
  * - `user:<id>` · `owner` · `admin` · `participant` · `run-owner` — the
  *   viewer is, or is not, that person.
@@ -39,6 +41,10 @@ export interface FormViewer {
 /** @experimental */
 export interface FormSession {
 	sessionPersonas?: Array<{
+		/** 🚧 The seat's own id — what `player-seat:<id>` names. */
+		id?: number | null
+		/** 🚧 Who sits in the seat. */
+		userId?: number | null
 		personaId?: number | null
 		persona?: { userId?: number | null } | null
 	} | null> | null
@@ -50,6 +56,8 @@ export interface AnsweredMark {
 	by: string
 	at: string
 	choice?: string
+	/** A `form` block's answer, as words. */
+	value?: string
 }
 
 const rowId = (text: string): number | null => {
@@ -78,6 +86,13 @@ export function canAnswerForm(
 			const seated = (session?.sessionCharacters ?? []).some((c) => c?.characterId === id)
 			// The AI's while seated; nobody's otherwise, and then the owner's.
 			return seated ? false : viewer.isOwner
+		}
+		case 'player-seat': {
+			const id = rowId(rest)
+			// `player-seat:` names only a card-less player seat; a seat with a card is
+			// addressed by its card (`character:<id>`).
+			const seat = id === null ? undefined : (session?.sessionPersonas ?? []).find((p) => p?.id === id)
+			return seat?.personaId == null && seat?.userId != null && seat.userId === viewer.userId
 		}
 		case 'envoy':
 			return false
@@ -133,15 +148,16 @@ export function channelHeadOf(
 export interface StaleRow {
 	id: number
 	channel?: string | null
-	metadata?: { answersForm?: { messageId?: unknown } | null } | null
+	metadata?: { answersForm?: { messageId?: unknown } | null; tableLine?: unknown } | null
 }
 
 /**
  * The **staleness head** for the forms on row `rowId`, as the client holds
  * it (U5f) — `channelHeadOf` minus the row's own answers: a message whose
  * `metadata.answersForm.messageId` is `rowId` answers one of its questions
- * and does not move the conversation on from it. Mirrors the server's
- * `stalenessHead`.
+ * and does not move the conversation on from it; nor does a **table line**
+ * (`metadata.tableLine`), which is the table's, not conversation
+ * (2026-10-16). Mirrors the server's `stalenessHead`.
  * @experimental
  */
 export function stalenessHeadOf(
@@ -150,7 +166,7 @@ export function stalenessHeadOf(
 	rowId: number,
 ): number | null {
 	return channelHeadOf(
-		messages.filter((m) => m?.metadata?.answersForm?.messageId !== rowId),
+		messages.filter((m) => m?.metadata?.answersForm?.messageId !== rowId && m?.metadata?.tableLine !== true),
 		channel,
 	)
 }
@@ -184,5 +200,6 @@ export function answeredOf(block: { answered?: unknown }): AnsweredMark | null {
 		by: a.by,
 		at: a.at,
 		...(typeof a.choice === 'string' ? { choice: a.choice } : {}),
+		...(typeof a.value === 'string' && a.value ? { value: a.value } : {}),
 	}
 }

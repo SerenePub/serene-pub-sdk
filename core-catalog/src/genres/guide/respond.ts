@@ -6,7 +6,7 @@
  *
  * ## What `guide-respond` is
  *
- * `core:spec/chat-respond` with the lore machinery replaced by one mechanism. A
+ * `core:spec/story-respond` (the roleplay Chat's reply until 2026-10-19) with the lore machinery replaced by one mechanism. A
  * reply here is inlet → placeholder → (history, cast, docs) → speaker →
  * budget → rank → context → lines → assemble → generate → save: the same
  * spine, the same nodes, the same story string — so the parity of a reply
@@ -51,7 +51,7 @@ import { GUIDE_MASCOT_KEY, guideGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../
 /** @internal */
 export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond'
 // 1.1.0: the `speaker` node moved to `core:spec/turn-order` — see
-// `CHAT_RESPOND_VERSION`, same change, same reason.
+// `STORY_RESPOND_VERSION` (Chat's reply's until 2026-10-19), same change, same reason.
 // 1.2.0 (2026-09-27): the guide's own template, as the spec's default preset
 // — the docs arrive in their declared `docsExcerpts` band, framed as the only
 // source of truth, with an explicit line for a turn nothing matched. The

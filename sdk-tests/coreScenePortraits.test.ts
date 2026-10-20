@@ -9,19 +9,20 @@
  */
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
-import type { SessionCharacterV1, SessionCharactersV1 } from '@serene-pub/sdk'
+import type { SessionCharacterV1, SessionCharactersV1, SessionStateV1 } from '@serene-pub/sdk'
 import { WIDGET_REQUEST_ASKERS } from '@serene-pub/sdk'
 import {
 	SCENE_PORTRAITS_DEFAULTS,
 	chosenImagePair,
 	chosenImagesOf,
 	readScenePortraitsSettings,
+	sceneFiguresOf,
 	scenePortraitMembersOf,
 	scenePortraitsOf,
 	withChosenImage,
 	type ScenePortraitsSettings,
 } from '../core-catalog/src/shared/ui/scene-portraits/index.js'
-import { CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { CORE_WIDGETS, DUNGEON_CRAWLER_LAYOUT, coreWidgets } from '../core-catalog/src/index.js'
 
 const member = (
 	over: Partial<SessionCharacterV1> & Pick<SessionCharacterV1, 'characterId'>,
@@ -87,10 +88,16 @@ describe('the declaration (W6)', () => {
 				chosenImages: s.chosenImages!.default,
 				arrangement: s.arrangement!.default,
 				persona: s.persona!.default,
+				playerSeats: s.playerSeats!.default,
+				metPeople: s.metPeople!.default,
 				bars: s.bars!.default,
+				// 🚧 Whose faces carry bars (PLAN-dc-after-walk3 R3-3).
+				barsFor: s.barsFor!.default,
 			},
 			{ ...SCENE_PORTRAITS_DEFAULTS },
 		)
+		assert.deepEqual(s.barsFor!.of, ['everyone', 'seats'])
+		assert.deepEqual(s.barsFor!.showIf, { field: 'bars', equals: true })
 		assert.deepEqual([s.recentTurns!.min, s.recentTurns!.max], [1, 20])
 		assert.deepEqual(s.recentTurns!.showIf, { field: 'who', equals: 'recent' })
 		assert.deepEqual(s.pickMembers!.showIf, { field: 'who', equals: 'pick' })
@@ -105,8 +112,8 @@ describe('the declaration (W6)', () => {
 		assert.deepEqual(s.source!.showIf, { field: 'source', equals: 'pinned' })
 		assert.equal(s.sprites!.default, undefined)
 		assert.deepEqual(s.sprites!.showIf, { field: 'sprites', equals: false })
-		assert.equal(s.source!.group, 'behaviour')
-		assert.equal(s.sprites!.group, 'behaviour')
+		assert.equal(s.source!.group, 'Who')
+		assert.equal(s.sprites!.group, 'Look')
 	})
 
 	test('a gallery is asked by a widget granted the cast', () => {
@@ -268,5 +275,62 @@ describe('chosen images', () => {
 		])
 		assert.deepEqual(withChosenImage(list, 'character:4', null), ['character:3=a'])
 		assert.equal(chosenImagePair('character:7', 'u'), 'character:7=u')
+	})
+})
+
+describe('🚧 the scene figures: player seats and the people met (PLAN-dc-after-walk2 Q3-5)', () => {
+	const owner = (o: Record<string, unknown>) => ({ configs: {}, label: '', ...o })
+	const state = {
+		sessionId: 1,
+		loaded: true,
+		owners: [
+			owner({ key: 'world', kind: 'session', id: 1, label: 'World' }),
+			// A companion: cast, not a seat.
+			owner({ key: '3', kind: 'session_cast', id: 3, label: 'Ada' }),
+			// Another player's card, seated as a player seat.
+			owner({ key: '10', kind: 'session_cast', id: 10, label: 'Zed', seat: true, face: { src: '/media/zed', mediaRef: null } }),
+			// The viewer's card-less player seat.
+			owner({ key: 'player_seat:4', kind: 'player_seat', id: 4, label: 'Ash Fenwick', seat: true, mine: true }),
+		],
+		metPeople: [
+			{ entryId: 21, name: 'Moss' },
+			{ entryId: 22, name: 'ada' },
+			{ entryId: 23, name: 'Old Bram' },
+		],
+	} as unknown as SessionStateV1
+
+	test('off by default: the cast alone, as before', () => {
+		assert.deepEqual(sceneFiguresOf(cast, state, as({})), [])
+	})
+
+	test("every player seat, the viewer's own first, with its face and bars; then the people met by name, never one drawn already", () => {
+		const figures = sceneFiguresOf(cast, state, as({ playerSeats: true, metPeople: true }))
+		assert.deepEqual(
+			figures.map((f) => [f.kind, f.name, f.src, f.ownerKey]),
+			[
+				['player-seat', 'Ash Fenwick', null, 'player_seat:4'],
+				['player-seat', 'Zed', '/media/zed', '10'],
+				['met', 'Moss', null, null],
+				['met', 'Old Bram', null, null],
+			],
+		)
+		// The viewer's persona is one of the seats: never drawn twice.
+		const members = scenePortraitMembersOf(cast, as({ playerSeats: true, persona: true }))
+		assert.ok(!members.some((m) => m.isPersona))
+	})
+
+	test('the scene only: the latest speakers and a pick name cast members', () => {
+		assert.deepEqual(sceneFiguresOf(cast, state, as({ who: 'recent', playerSeats: true, metPeople: true })), [])
+		assert.deepEqual(sceneFiguresOf(cast, state, as({ who: 'pick', playerSeats: true, metPeople: true })), [])
+	})
+
+	test('read from settings; Dungeon Crawler pins both on for whoever adds the widget', () => {
+		const read = readScenePortraitsSettings({ playerSeats: true, metPeople: 'yes' })
+		assert.equal(read.playerSeats, true)
+		assert.equal(read.metPeople, false)
+		const pinned = readScenePortraitsSettings(
+			(DUNGEON_CRAWLER_LAYOUT.widgetSettings as Record<string, Record<string, unknown>>)['scene-portraits'],
+		)
+		assert.deepEqual([pinned.who, pinned.playerSeats, pinned.metPeople, pinned.bars], ['scene', true, true, true])
 	})
 })

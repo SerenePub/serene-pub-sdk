@@ -76,7 +76,7 @@ const dicePipeline = spec('chariot.dice-tray:roll-turn', { version: '1.2.0' })
 	// The inlet lock is the pipeline's one subscription (R-4): answering the
 	// standard genre's primary turn is what the manifest lists as a permission.
 	.inlet('input', C.userMessage.v1(), {
-		genre: use('core:genre/chat'),
+		genre: use('core:genre/story'),
 		event: sessionEvents.messageRespond,
 	})
 	.task('roll', rollDice.v1({ notation: '1d20' }))
@@ -1169,7 +1169,7 @@ describe('104 · serene-pub build emits one artifact', () => {
 		assert.deepEqual(m.requires, [
 			'core:event/message-respond@1',
 			'core:event/session-created@1',
-			'core:spec/chat-respond',
+			'core:spec/story-respond',
 		])
 
 		// the storage grant, in the flat taxonomy the app's permission model reads

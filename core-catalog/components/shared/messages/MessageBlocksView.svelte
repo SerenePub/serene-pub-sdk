@@ -262,6 +262,7 @@
 				<span>{t("Superseded — the conversation moved on")}</span>
 			</p>
 		{:else if block?.kind === "form" && answeredOf(block)}
+			{@const answered = answeredOf(block)}
 			<div
 				data-widget-part="messages.block-form"
 				data-answered="true"
@@ -273,6 +274,9 @@
 				<p data-widget-part="messages.block-answered">
 					<sp-icon name="check" size="14"></sp-icon>
 					<span data-widget-part="messages.block-answered-label">{t("Answered")}</span>
+					{#if answered?.value}
+						<span>· {answered.value}</span>
+					{/if}
 				</p>
 			</div>
 		{:else if block?.kind === "form" && !mayAnswer(block)}

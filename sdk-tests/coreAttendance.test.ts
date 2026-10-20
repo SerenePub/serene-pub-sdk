@@ -106,7 +106,7 @@ describe('the declaration', () => {
 			faces: s.faces!.default,
 		})
 		assert.deepEqual(ATTENDANCE_DEFAULTS, { showAway: true, faces: true })
-		assert.equal(s.showAway!.group, 'behaviour')
+		assert.equal(s.showAway!.group, undefined, 'a section of one field is no section')
 		assert.deepEqual(readAttendanceSettings(undefined), ATTENDANCE_DEFAULTS)
 		assert.deepEqual(readAttendanceSettings({ showAway: false, faces: 'no' }), {
 			showAway: false,

@@ -21,14 +21,14 @@
 
 import { SLOT_VALUE, sessionEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 import type { Example } from '@serene-pub/cli'
 
 import { bindings, world } from '../helpers.js'
 
 const retrievedReply = spec('example:retrieved-reply', { version: '1.0.0' })
 	.inlet('input', C.userMessage.v1(), {
-		genre: chatGenre,
+		genre: storyGenre,
 		event: sessionEvents.messageRespond,
 	})
 	// What the reply may spend, read off the oracle the budget is for.

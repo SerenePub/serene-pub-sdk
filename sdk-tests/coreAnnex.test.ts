@@ -307,6 +307,25 @@ describe('the view', () => {
 		})
 	})
 
+	test('🚧 a member that is a list is drawn item by item, never joined with commas (Q3-6, the leads)', () => {
+		const v = view({
+			annex: {
+				core: {
+					'dungeon-crawler-journal': {
+						goal: 'Ring the bells',
+						leads: ["Follow the bell's ringing below", 'Ask Moss about the king'],
+					},
+				},
+			},
+			key: 'core.dungeon-crawler-journal',
+		})
+		assert.equal(v.state, 'value')
+		if (v.state !== 'value' || v.drawn.as !== 'rows') return
+		const leads = v.drawn.rows.find((r) => r.key === 'leads')!
+		assert.deepEqual(leads.items, ["Follow the bell's ringing below", 'Ask Moss about the king'])
+		assert.equal(v.drawn.rows.find((r) => r.key === 'goal')!.items, undefined)
+	})
+
 	test("Edit: a text field the host lists as the viewer's to set, never a guest's, never a non-text one", () => {
 		const fields = annexWidgetFieldsFrom({
 			widget: {

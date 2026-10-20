@@ -29,9 +29,10 @@ export const userMessage = pin(
 		// Display only, both keys: stripped from the content hash, refreshed on
 		// existing rows by the boot sync — so copyediting this is never a bump.
 		i18n: {
-			name: { en: 'Chat' },
+			// 🚧 Was "Chat" until 2026-10-19 — the word is the assistant genre's now (R1).
+			name: { en: 'User message' },
 			description: {
-				en: 'The standard roleplay chat — bring characters and personas in any mix, attach a lorebook if you like, and type to talk.',
+				en: "A person's message in a session: what they wrote, who answers it, and everything the turn reads about the session.",
 			},
 		},
 		/**
@@ -211,6 +212,19 @@ export const userMessage = pin(
 				 * change is about a message, never a value (one word, one meaning).
 				 */
 				sessionChanges: S.json,
+				/**
+				 * 🚧 The **ruleset the session plays** (2026-10-17, PLAN-sheet
+				 * §15 C): `{ id, rigour, settings }` — the ruleset's id
+				 * (`core:ruleset/freeform@1`), the rigour in force (`prose`,
+				 * `mechanics`, `scripts`) and 🚧 (2026-10-18) its `settings`,
+				 * every setting at the session's value or its default (Vis
+				 * Itineris's `casting: 'points'`). Always supplied, for the reason
+				 * `channel` is: a junction compares against it. A genre that
+				 * recommends a ruleset branches here instead of assuming it —
+				 * the Dungeon Crawler's interview writes a kit as plain pieces
+				 * under Freeform and as the library's rows under Vis Itineris.
+				 */
+				ruleset: S.json,
 				/**
 				 * What an action's fire sent along
 				 * (2026-09-17): a form's answer — `{ choice }` for a choices
@@ -670,6 +684,61 @@ export const formAddressed = pin(
 				characterId: S.rowIds,
 				/** Values for the genre's declared fields, as on a turn. */
 				fields: S.json,
+			},
+		},
+	}),
+)
+
+// ── A person's message (owner ruling 2026-10-15) ────────────────────────────
+
+/**
+ * 🚧 A person sent a message: the save pipeline's trigger. **A person's
+ * message is always saved through the pipeline** — the host checks the door
+ * (access, the genre, the persona, the length, the channel) and dispatches
+ * `core:event/message-offered@1`; the bound spec writes the row. Core's
+ * default, `core:spec/save-message`, is this inlet and one
+ * `create-message@1` with `role: 'user'`.
+ *
+ * The payload is `core:shape/message-offered@1`; the ports below are it
+ * taken apart. No shape and no lock here: core's default serves every genre,
+ * and a genre's own save declares its own `(genre, event)`.
+ * @experimental
+ */
+export const messageOffered = pin(
+	describeInletDefinition({
+		id: 'core:inlet/message-offered@1',
+		i18n: {
+			name: { en: 'Message sent' },
+			description: {
+				en: 'A person sent a message. The pipeline that answers it saves the message — or refuses it with a sentence, and the person keeps their text.',
+			},
+		},
+		ports: {
+			out: {
+				main: S.messageOffered,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				/** The session's **settings document**, as on every session inlet. */
+				session: S.sessionSettings,
+				/** The message as written. */
+				text: S.text,
+				/** The person sending — `user:<id>`, the run's owner. */
+				person: S.participantRef,
+				/**
+				 * Who the message speaks as: `character:<id>` (the person's
+				 * persona), `player-seat:<id>` (their card-less seat), or null —
+				 * the person as themselves. Wired to `create-message@1`'s
+				 * `speaker`.
+				 */
+				speaker: S.participantRef,
+				/** The channel it was written on, canonical. */
+				channel: S.text,
+				/** The person's ready tray items, sent as its attachments — `create-message@1`'s `trayItems`. */
+				trayItemIds: S.json,
+				/** The message it answers, when the composer named one; null otherwise. */
+				replyTo: S.rowIds,
+				/** Why it fired (`EventCause`) — a person's send, `{ kind: 'user', userId }`. */
+				cause: S.json,
 			},
 		},
 	}),

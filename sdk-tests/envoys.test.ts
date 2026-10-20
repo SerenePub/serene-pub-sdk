@@ -153,7 +153,7 @@ describe('a genre declares envoys', () => {
 describe("an action's envoy", () => {
 	const base = {
 		key: 'roll',
-		genre: 'core:genre/chat',
+		genre: 'core:genre/story',
 		venue: { kind: 'composer' as const },
 		label: { en: 'Roll' },
 		description: { en: 'Roll the dice.' },
@@ -462,7 +462,7 @@ describe('core genres name their unclaimed lines', () => {
 		assert.equal(i18nText(genreFallbackEnvoy(cat.lairGenre)!.name, 'en'), 'Castellan')
 		// "The narrator is `voice`, not an envoy" (genres.ts): these fall to
 		// the session's narrator name, then UNCLAIMED_LINE_NAME, at the host.
-		for (const g of [cat.chatGenre, cat.adventureGenre])
+		for (const g of [cat.storyGenre, cat.storyGenre])
 			assert.equal(genreFallbackEnvoy(g), undefined, g.id)
 	})
 })

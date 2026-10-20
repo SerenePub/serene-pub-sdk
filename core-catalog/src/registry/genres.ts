@@ -9,31 +9,40 @@
  */
 import { genre, layout, sessionEvents } from "@serene-pub/sdk"
 import {
-	ADVENTURE_LAYOUT,
-	CHAT_LAYOUT,
-	LAIR_LAYOUT
+	DUNGEON_CRAWLER_LAYOUT,
+	LAIR_LAYOUT,
+	STORY_LAYOUT,
+	STORY_WORLD_LAYOUT
 } from "./layouts.js"
-import type { AttributeSlotDecl, FieldDecl } from "@serene-pub/sdk"
-import { ADVENTURE_SHEET, ADVENTURE_SLOTS } from "./slots.js"
+import type { AttributeSlotDecl, FieldDecl, TaskDecl } from "@serene-pub/sdk"
+import { STORY_SHEET, STORY_SLOTS } from "./slots.js"
 import { LAIR_SHEET, LAIR_SLOTS } from "./slots.js"
+import { DUNGEON_CRAWLER_SHEET, DUNGEON_CRAWLER_SLOTS } from "./slots.js"
+import {
+	DUNGEON_CRAWLER_GENRE_ID,
+	DUNGEON_CRAWLER_NARRATOR_KEY,
+	DUNGEON_CRAWLER_PLANNER_KEY,
+	PARLEY_CHANNEL,
+	TRAVELOGUE_CHANNEL
+} from "../genres/dungeon-crawler/names.js"
 import { GUIDE_MASCOT_IMAGE } from "../seed/guideMascotImage.js"
+// 🚧 The rulesets first: a genre recommending one nothing declares is refused.
+import { freeformRuleset, visItinerisRuleset } from "./rulesets.js"
 import { coreWidgets } from "./widgets.js"
 import {
-	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
-	CHAT_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
-	LAIR_SUMMARIZE_SCENE_SPEC_ID
+	LAIR_SUMMARIZE_SCENE_SPEC_ID,
+	STORY_SUMMARIZE_SCENE_SPEC_ID
 } from "../shared/summarize/sceneIds.js"
+import { TABLE_CHANNEL_DECL } from "../shared/ui/conversation/tableChannel.js"
 
 /*
  * Widgets that read a lorebook — Chronicle, Places and Lore entries — are
- * offered wherever a session may have one (`lorebook` in the genre's shape),
- * which is every core genre today: optional in Chat and the Guide, required
- * in Adventure and the Lair. So none omits them, and each genre's
- * `omitWidgets` stays the Author's note alone (Chat's own). A genre with no
- * lorebook omits all three — Dungeon Crawler, when it lands
- * (PLAN-core-widgets §4), declares `omitWidgets: [coreWidgets.chronicle,
- * coreWidgets.places, coreWidgets.loreEntries, …]`.
+ * offered wherever a session may have one (`lorebook` in the genre's shape):
+ * optional in Story, Chat and the Guide, required in the Lair. So none omits
+ * them, and each genre's `omitWidgets` stays the Author's note alone (Story's
+ * own). A genre with no lorebook omits all three — Dungeon Crawler does
+ * (PLAN-core-widgets §4).
  */
 
 /**
@@ -44,7 +53,7 @@ import {
  * column, not a metadata key, not a bespoke control. It is read from the
  * settings document like any other field, rendered by the session settings
  * form like any other field, and stored in `sessions.genre_fields` like any
- * other field. Core's layer of the cascade (§4.13) is `next`; chat
+ * other field. Core's layer of the cascade (§4.13) is `next`; Story
  * overrides it to `round` (R16), and a genre that wants a silent `off`
  * pins `settings: { autoAdvance: 'off' }` and declares no control at all.
  *
@@ -126,7 +135,7 @@ export const CHARACTER_DETAIL_FIELD: FieldDecl = {
 }
 
 /**
- * 🚧 The **author's note** (2026-10-02, AN1; Chat only, owner ruling) — the
+ * 🚧 The **author's note** (2026-10-02, AN1; Story only — the roleplay Chat's until 2026-10-19) — the
  * person's own steering text for one session: what is true now, where the
  * story should lean. Placed in the conversation like an inject script —
  * `depth` messages back from the reply — and repeated every `interval`-th
@@ -201,23 +210,260 @@ export const AUTHORS_NOTE_FIELD: FieldDecl = {
 	default: { text: "", depth: 0, interval: 1, role: "system" }
 }
 
-/** The one id every default session carries (was the create spec's slug). @experimental */
-export const CHAT_GENRE_ID = "core:genre/chat"
+/* ── Background tasks ───────────────────────────────────────────────────── */
 
-/** @public */
-export const chatGenre = genre(CHAT_GENRE_ID, {
-	name: { en: "Chat" },
-	family: "chat",
+/**
+ * 🚧 The session field that holds a session's **background tasks**
+ * (`TaskSettingsV1`, `@serene-pub/sdk`'s `tasks.ts`): one grouped control the
+ * host renders from the genre's `tasks`, grouped by when each runs. A preset
+ * pins its values (`PresetDecl.settings.tasks`); the genre's pipelines branch
+ * on what `core:task/resolve-tasks@1` resolves from it.
+ * @experimental
+ */
+export const TASKS_FIELD: FieldDecl = {
+	type: "tasks",
+	label: { en: "What happens around a reply" },
 	description: {
-		en: "The standard roleplay chat — bring characters and personas in any mix, attach a lorebook if you like, and type to talk."
+		en: "What the model does besides the reply: read the lorebook into it, note what it changed, file what happened every few turns. Each one is Full, Review (held for you to accept) or Off."
+	}
+}
+
+/**
+ * 🚧 The **Story** genre's background tasks (PLAN-genre-restructure §4,
+ * ruled 2026-10-19), by trigger group. Keys are what a session stores its
+ * choice under and what `core:spec/story-respond` branches on — never
+ * respelled. Living's and Rule Based's defaults are these defaults; Minimal
+ * pins every one off.
+ * @experimental
+ */
+export const STORY_TASKS: readonly TaskDecl[] = Object.freeze([
+	// ── In the reply: no extra call. ──
+	{
+		key: "lore-retrieval",
+		group: "reply",
+		kind: "prose",
+		default: "full",
+		reviewable: false,
+		label: { en: "Read the lorebook" },
+		description: { en: "Finds the lorebook entries the scene calls for and puts them in the reply's context." }
 	},
+	{
+		key: "scene-reading",
+		group: "reply",
+		kind: "prose",
+		default: "full",
+		reviewable: false,
+		label: { en: "Read the scene" },
+		description: {
+			en: "Puts where the story is — the place, what it is like, the ways out — into the reply's context. Writes nothing."
+		}
+	},
+	// ── After each turn: one extra call when anything here is on. ──
+	{
+		key: "attributes",
+		group: "reckoning",
+		kind: "both",
+		default: "full",
+		label: { en: "Keep the sheets" },
+		description: { en: "Notes what the reply changed about health, mood, belongings and the place, and updates the sheets." }
+	},
+	{
+		key: "time",
+		group: "reckoning",
+		kind: "prose",
+		default: "full",
+		label: { en: "Move the clock" },
+		description: { en: "Moves the story clock by as much time as the reply took." }
+	},
+	{
+		key: "conditions",
+		group: "reckoning",
+		kind: "script",
+		default: "full",
+		label: { en: "Track conditions" },
+		description: { en: "Puts conditions on and takes them off: hurt, tired, poisoned, inspired." }
+	},
+	// ── Every few turns: one batched call. ──
+	{
+		key: "summary",
+		group: "sweep",
+		kind: "prose",
+		default: "full",
+		label: { en: "Summarize the story" },
+		description: { en: "Files a summary of what happened in the lorebook's history." }
+	},
+	{
+		key: "lore",
+		group: "sweep",
+		kind: "prose",
+		default: "full",
+		label: { en: "Add to the lore" },
+		description: { en: "Files new facts the story established as lorebook entries." }
+	},
+	{
+		key: "cast",
+		group: "sweep",
+		kind: "prose",
+		default: "full",
+		label: { en: "Note new people" },
+		description: { en: "Files the people the story introduced as lorebook entries." }
+	},
+	{
+		key: "relationships",
+		group: "sweep",
+		kind: "prose",
+		default: "off",
+		label: { en: "Track relationships" },
+		description: { en: "Proposes how the characters now stand with each other, for you to look over." }
+	},
+	{
+		key: "world-state",
+		group: "sweep",
+		kind: "prose",
+		default: "full",
+		label: { en: "Keep the world" },
+		description: { en: "Updates the world's state from what happened: where the story is, the time of day, the weather." }
+	},
+	{
+		key: "scenes",
+		group: "sweep",
+		kind: "prose",
+		default: "off",
+		label: { en: "File the places" },
+		description: { en: "Files each place the story used as a place in the lorebook." }
+	},
+	{
+		key: "goals",
+		group: "sweep",
+		kind: "prose",
+		default: "off",
+		label: { en: "Track goals" },
+		description: { en: "Keeps a running note of what the characters are after and how close they are." }
+	},
+	// ── On an event. ──
+	{
+		key: "image-on-scene",
+		group: "events",
+		kind: "prose",
+		default: "off",
+		// A picture is drawn or it is not: nothing to hold for review (lane 2).
+		reviewable: false,
+		label: { en: "Picture each new scene" },
+		description: { en: "Draws a picture when the scene changes, with the Scene action." }
+	},
+	{
+		key: "places-on-move",
+		group: "events",
+		kind: "both",
+		default: "full",
+		label: { en: "Describe new places" },
+		description: { en: "When the story moves somewhere new, files the place and its ways out." }
+	},
+	{
+		key: "timed-expiry",
+		group: "events",
+		kind: "script",
+		default: "full",
+		label: { en: "End what runs out" },
+		description: { en: "Ends conditions and effects when their time is up." }
+	},
+	{
+		key: "goal-reached",
+		group: "events",
+		kind: "prose",
+		default: "off",
+		// Saying so is news, not a change to accept (lane 2).
+		reviewable: false,
+		label: { en: "Mark goals reached" },
+		description: { en: "When a goal in the goals note is ticked, says so in the story and tells everyone in the session." }
+	},
+	// ── Extra voices: more replies per turn. ──
+	{
+		key: "side-cast",
+		group: "voices",
+		kind: "prose",
+		default: "off",
+		reviewable: false,
+		label: { en: "Let others speak up" },
+		description: {
+			en: "After everyone has had their turn, one more character may speak up on their own before it is yours again."
+		}
+	},
+	{
+		key: "narrator-interjections",
+		group: "voices",
+		kind: "prose",
+		default: "off",
+		reviewable: false,
+		label: { en: "Narrator asides" },
+		description: { en: "After everyone has had their turn, the narrator may add a line of its own before it is yours again." }
+	}
+])
+
+/** 🚧 Every Story task key, in declaration order — what a preset pins. @experimental */
+export const STORY_TASK_KEYS: readonly string[] = Object.freeze(STORY_TASKS.map((t) => t.key))
+
+/* ── Story ──────────────────────────────────────────────────────────────── */
+
+/**
+ * 🚧 **Story** (PLAN-genre-restructure R4, 2026-10-19): the roleplay Chat and
+ * Adventure folded into one genre. Its reply is today's Chat reply, byte for
+ * byte — the prompts, the context template and the variable templates
+ * (ruled) — and the world keeps itself behind it as far as the session's
+ * **preset** says: Minimal (one call, nothing moves), Living (one after-turn
+ * call keeps the sheets, the clock and the conditions; a sweep every few
+ * turns files what happened) and Rule Based (Living, with the ruleset's
+ * scripts resolving the numbers). One pipeline, branching on the session's
+ * background tasks (`STORY_TASKS`, `core:task/resolve-tasks@1`).
+ *
+ * Adventure's own reply — a planner, a narrator, a voice per cast member and a
+ * state keeper, four calls and more a turn — was retired with the genre: its
+ * Look, Rest, Ask and Answer actions moved here.
+ * @experimental
+ */
+export const STORY_GENRE_ID = "core:genre/story"
+
+/** @experimental */
+export const storyGenre = genre(STORY_GENRE_ID, {
+	name: { en: "Story" },
+	family: "story",
+	description: {
+		en: "Roleplay and adventure in one: bring characters and personas in any mix — or none — and tell a story together. The world can keep itself as you play."
+	},
+	about: {
+		en: [
+			"Tell a story with the model: roleplay with your characters, run an adventure, or just write together.",
+			"Who's in the room: your characters and personas, in any mix. None are required: the model can tell the story on its own.",
+			"Who drives: you do. On Living the world keeps itself: after each reply it notes what changed — health, time, conditions — and every few turns it files what happened in your lorebook.",
+			"What it costs: one model call a turn on Minimal; two on Living and Rule Based (the reply, then a short look at what changed), plus a summary every few turns.",
+			"Required: nothing. Optional: a lorebook for the world, and a ruleset if you want rules and numbers.",
+			"Pick Chat to talk to the model as itself, the Lair to run the game yourself, or the Dungeon Crawler to let the AI run it.",
+			"Minimal: just the story, nothing tracked. Living: the world keeps itself, in words. Rule Based: Living, with a ruleset's rules deciding the numbers."
+		].join("\n\n")
+	},
+	members: "group",
 	/**
-	 * The standard chat's shape (19 §1) — today's behaviour, stated. Both
-	 * participant systems optional and unbounded above, lorebooks attach when
-	 * wanted, the composer is a text box, the seed line carries the speaking
-	 * character's name, and a new chat seeds the cast's greetings on `main`.
+	 * 🚧 An **open** grammar (PLAN-genre-restructure §11): the after-turn
+	 * reckoning takes whatever verbs the session's ruleset provides, so every
+	 * ruleset fits; dice, health, conditions and casting are used where the
+	 * ruleset has them and told in words where it does not.
 	 */
+	uses: {
+		verbs: "any",
+		dice: "optional",
+		optional: { slots: ["hp", "conditions"], conditions: true, casting: true }
+	},
+	tasks: STORY_TASKS,
+	/** 🚧 Freeform first and by default; Vis Itineris for numbers and dice; any ruleset allowed. */
+	rulesets: { recommended: [freeformRuleset.id, visItinerisRuleset.id], default: freeformRuleset.id },
+	/** 🚧 Words by default; a table may turn rules or scripts on (Rule Based pins `scripts`). */
+	rigour: { options: ["prose", "mechanics", "scripts"], default: "prose" },
 	shape: {
+		/**
+		 * Both participant systems optional and unbounded above — Chat's
+		 * shape, kept: a Minimal story may start with nobody in it (the
+		 * preset's `cast` floor says so on the card).
+		 */
 		characters: { min: 0 },
 		personas: { min: 0 },
 		lorebook: "optional",
@@ -225,37 +471,72 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 		voice: "character",
 		greeting: { enabled: true, channel: "main" },
 		// No `turnOrder` here (retired 2026-09-23, R28): the Turn order
-		// control is `core:spec/chat-turn-order`'s `strategy` node and the
-		// swaps it declares (genres/chat/turnOrder.ts), like any other swappable node.
-
+		// control is `core:spec/story-turn-order`'s `strategy` node and the
+		// swaps it declares (genres/story/turnOrder.ts).
+		/**
+		 * 🚧 Where the story is (live scenes §15 G2, from Adventure): the
+		 * world's `location`. A scene is named `Scene N · <place>` and *the
+		 * place changed* fires when the party move.
+		 */
+		scenes: { place: { stateKey: "location" } },
 		/** The session settings form's own sections (§4.11): declared, never automatic. */
 		scenario: true,
 		tags: true,
 		/**
-		 * Chat defaults to **`round`** (R16): a send runs the whole round —
-		 * every prepared turn in order — rather than one reply. The other
-		 * core genres declare no control and resolve to core's `next`
-		 * through the cascade (§4.13).
+		 * Chat's four (auto-advance on `round`, R16; the turn-order model
+		 * path; character detail; the author's note), Adventure's tone and
+		 * difficulty under Advanced, and the background tasks. Adventure's
+		 * *Trust the narrator* is gone: its meaning is a task's **Review**
+		 * mode now.
 		 */
 		fields: {
 			autoAdvance: { ...AUTO_ADVANCE_FIELD, default: "round" },
-			// Chat's turn order has the model path (R41, M4): rules by default.
 			turnMode: TURN_MODE_FIELD,
 			characterDetail: CHARACTER_DETAIL_FIELD,
-			// Chat only (owner ruling 2026-10-02): the person's own note.
-			authorsNote: AUTHORS_NOTE_FIELD
+			authorsNote: AUTHORS_NOTE_FIELD,
+			tone: {
+				type: "enum",
+				label: { en: "Tone" },
+				description: {
+					en: "How the story is told. Read by the prompts that name {{tone}}: the narrator's, Look's."
+				},
+				of: ["grounded", "pulpy", "grim", "whimsical"],
+				members: [
+					{ key: "grounded", label: { en: "Grounded" } },
+					{ key: "pulpy", label: { en: "Pulpy" } },
+					{ key: "grim", label: { en: "Grim" } },
+					{ key: "whimsical", label: { en: "Whimsical" } }
+				],
+				default: "grounded",
+				advanced: true
+			},
+			difficulty: {
+				type: "enum",
+				label: { en: "Difficulty" },
+				description: {
+					en: "How hard the world pushes back. Read when the world keeps the sheets after each reply."
+				},
+				of: ["story", "normal", "hard"],
+				members: [
+					{ key: "story", label: { en: "Gentle" } },
+					{ key: "normal", label: { en: "Normal" } },
+					{ key: "hard", label: { en: "Hard" } }
+				],
+				default: "normal",
+				advanced: true
+			},
+			tasks: TASKS_FIELD
 		}
 	},
-	/**
-	 * The event surface (24 §5): which session events exist for this genre
-	 * and which a preset must bind. `session-created` is implicitly required
-	 * for every genre.
-	 */
+	/** Adventure's eight, as the sheet a session may track (`STORY_SHEET`). */
+	slots: STORY_SLOTS as unknown as AttributeSlotDecl[],
+	sheets: [STORY_SHEET],
+	// Its sessions may carry in their world's attributes and add their own.
+	customAttributes: "allow",
 	events: {
 		/**
-		 * The turn-order events (PLAN-turn-order §4.5): a genre that binds
-		 * its turn-order spec (`core:spec/<genre>-turn-order`) lists every event it binds it to, all
-		 * optional. Nine here — anything that can change whose turn it is.
+		 * The turn-order events (PLAN-turn-order §4.5) — Chat's nine: anything
+		 * that can change whose turn it is.
 		 */
 		[sessionEvents.messageCompleted]: {},
 		[sessionEvents.messageEdited]: {},
@@ -272,157 +553,170 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/**
-	 * The layout this genre ships (R71): its default — the conversation, and
-	 * the Author's note tucked in the right rail (owner ruling 2026-10-03).
+	 * The layouts this genre ships (R71): Chat's — the conversation, and the
+	 * Author's note tucked in the right rail — first and by default;
+	 * Adventure's world arrangement beside it, for a story that keeps sheets.
 	 */
-	layouts: [layout({ slug: "default", name: { en: "Chat" }, preset: CHAT_LAYOUT })],
+	layouts: [
+		layout({ slug: "default", name: { en: "Story" }, preset: STORY_LAYOUT }),
+		layout({ slug: "world", name: { en: "World" }, preset: STORY_WORLD_LAYOUT })
+	],
 	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
-	summarize: { scene: CHAT_SUMMARIZE_SCENE_SPEC_ID }
+	summarize: { scene: STORY_SUMMARIZE_SCENE_SPEC_ID }
 })
 
-/* ── Adventure ──────────────────────────────────────────────────────────── */
+/* ── Chat (the assistant) ───────────────────────────────────────────────── */
 
 /**
- * The flagship genre (DESIGN-adventure-genre.md): chat with a **narrator who
- * plans, a cast who speak for themselves, and a state-keeper who writes the
- * numbers down.** Four agents, one turn, one receipt.
+ * 🚧 **Chat** (PLAN-genre-restructure §1, R2, R4; 2026-10-19): the model as
+ * itself — a plain assistant, no characters, no personas, no story, no
+ * ruleset. The id kept its name with the new meaning (ruled: no alias); the
+ * roleplay that answered to it until 2026-10-19 is the Story genre's, and the
+ * app's migration moves those sessions there before this genre's specs are
+ * seeded (§2-7). The only speaker is the **Assistant**, the genre's envoy.
  *
- * The one-LLM-call rule is Chat's, not this one's. Everything a player sees on
- * screen — bars, the world strip, the ledger under a reply — is a
- * consequence of the state-keeper's proposals, never of prose parsing.
+ * Solo (ruled ★I): never a group session. Two presets: Basic — one call, no
+ * tools — and Agentic, the same reply with the session's tools.
  * @experimental
  */
-export const ADVENTURE_GENRE_ID = "core:genre/adventure"
+export const CHAT_GENRE_ID = "core:genre/chat"
 
-/** @experimental */
-export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
-	name: { en: "Adventure" },
-	family: "adventure",
-	description: {
-		en: "A narrated world with a cast that acts on its own, stats and an inventory that change as you play, and a story clock that moves."
+/** The Assistant's key — the address `envoy:assistant`. @internal */
+export const ASSISTANT_ENVOY_KEY = "assistant"
+
+/**
+ * 🚧 The Assistant's instructions — the assistant register, never a branch
+ * of the roleplay prompts (§1-1). Read through the envoy's `prompts` like
+ * the Guide's Serene.
+ * @internal
+ */
+export const ASSISTANT_SYSTEM_PROMPT = [
+	"You are a helpful assistant, talking with the person directly and as yourself. You are not a character and this is not a story: do not roleplay and do not narrate.",
+	"Be accurate. When you are not sure of something, say so plainly; never invent facts, figures, quotes, sources or links. If a question is ambiguous, ask one short clarifying question.",
+	"When excerpts from the person's lorebook are supplied, treat them as their own reference notes: use them when they answer the question, and say which entry you used. When tool results are supplied, answer from them and say where a fact came from.",
+	"Keep your answers as short as the question allows. Use lists, tables or code blocks only when they make the answer clearer."
+].join("\n\n")
+
+/**
+ * 🚧 Chat's tool kinds (§1-8), each off or on per session through the
+ * `tools` field: the host maps each kind onto the tools that serve it
+ * (`core:query/available-tools@1`'s `kinds`). R53 holds: no tool sees a
+ * connection. Not offered: code execution, a shell, app administration —
+ * those are the Guide's, and the Guide stays solo.
+ * @experimental
+ */
+export const CHAT_TOOL_KINDS = Object.freeze([
+	"web",
+	"lore",
+	"lorebook-write",
+	"image",
+	"clock",
+	"calculator",
+	"history"
+] as const)
+
+/** 🚧 Chat's background tasks: the lorebook read into the reply, and a memory it may keep (off; ★K). @experimental */
+export const CHAT_TASKS: readonly TaskDecl[] = Object.freeze([
+	{
+		key: "lore-retrieval",
+		group: "reply",
+		kind: "prose",
+		default: "full",
+		reviewable: false,
+		label: { en: "Read the lorebook" },
+		description: { en: "Finds the lorebook entries your message calls for and puts them in the reply's context." }
 	},
+	{
+		key: "memory",
+		group: "sweep",
+		kind: "prose",
+		default: "off",
+		label: { en: "Remember things" },
+		description: { en: "Every few turns, keeps notes of what you told it in a notes lorebook, so it remembers next time." }
+	}
+])
+
+/** @public */
+export const chatGenre = genre(CHAT_GENRE_ID, {
+	name: { en: "Chat" },
+	family: "assistant",
+	description: {
+		en: "The model as itself — a plain assistant, no characters or story. Add tools to let it search, read your lorebooks and make images."
+	},
+	about: {
+		en: [
+			"Talk to the model as itself: a plain assistant, with no characters and no story.",
+			"Who's in the room: you and the Assistant. Chat is just for you; it is never a group session.",
+			"What it costs: one model call a turn on Basic. On Agentic the Assistant may use tools — search the web, read your lorebooks, make a picture — and each tool it uses costs another call, a few at most.",
+			"Required: nothing. Optional: a lorebook it reads from.",
+			"Pick Story to roleplay or tell a story, or the Guide for help with Serene Pub itself.",
+			"Basic: the model, no tools. Agentic: the model with the tools you switch on."
+		].join("\n\n")
+	},
+	members: "solo",
+	tasks: CHAT_TASKS,
 	shape: {
-		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
-		scenario: true,
-		tags: true,
-		/**
-		 * At least one of each, unlike Chat. A world with nobody in it has no
-		 * cast for the voices step to give a turn to, and no persona means
-		 * nothing for the planner to plan around.
-		 */
-		characters: { min: 1 },
-		personas: { min: 1 },
-		/**
-		 * Required, and it is the one hard requirement this genre adds. The
-		 * world lives in the lorebook: places, the items an inventory
-		 * references, the history the timeline is read from. An adventure without one
-		 * is a narrator describing nothing.
-		 */
-		lorebook: "required",
+		/** Nobody from the library sits here: the one speaker is the Assistant (§1-8). */
+		characters: { min: 0, max: 0 },
+		/** No persona either: the person speaks as themselves (a cardless seat). */
+		personas: { min: 0, max: 0 },
+		lorebook: "optional",
 		composer: "text",
+		voice: "character",
 		/**
-		 * The seed line carries the narrator, not a character. A turn here is
-		 * scene prose first and speech second, and the cast get their own
-		 * generate calls in the voices step rather than owning the reply.
+		 * Lore writes only through the `memory` task or the `lorebook-write`
+		 * tool, each Review or Off unless the person turns it Full (★J); no
+		 * scenes — a conversation with an assistant has none to open.
 		 */
-		voice: "narrator",
-		greeting: { enabled: true, channel: "main" },
-		/**
-		 * 🚧 Where the story is (live scenes §15 G2): the world's `location`
-		 * (`core:slot/location@1`, on the world by this genre's sheet). A
-		 * scene is named `Scene N · <place>` and *the place changed* fires
-		 * when the party move. The rest of the scene settings are the
-		 * defaults (Suggested; on request).
-		 */
-		scenes: { place: { stateKey: "location" } },
-		// No turn-order swaps: the planner decides who speaks, so no Turn order
-		// control renders (PLAN-turn-order §4.5) — the narrator turn-order
-		// spec seats one narrator entry per send.
-		/**
-		 * Session-level fields, and deliberately few. Each one is read by a
-		 * shipped prompt or by the spec's own wiring — a field nothing reads is
-		 * a control that looks configured and is not.
-		 */
+		writes: { lore: true, scenes: false },
+		/** No greeting: a new Chat opens empty (★C). */
+		greeting: { enabled: false },
+		scenario: false,
+		tags: true,
 		fields: {
-			tone: {
-				type: "enum",
-				label: { en: "Tone" },
+			tools: {
+				type: "string[]",
+				label: { en: "Tools" },
 				description: {
-					en: "How the narrator writes. Interpolated into the narrator's own instructions."
+					en: "What the Assistant may use while it answers. Each tool it uses is another model call; none means one call a turn."
 				},
-				of: ["grounded", "pulpy", "grim", "whimsical"],
+				of: [...CHAT_TOOL_KINDS],
 				members: [
-					{ key: "grounded", label: { en: "Grounded" } },
-					{ key: "pulpy", label: { en: "Pulpy" } },
-					{ key: "grim", label: { en: "Grim" } },
-					{ key: "whimsical", label: { en: "Whimsical" } }
+					{ key: "web", label: { en: "Search the web" } },
+					{ key: "lore", label: { en: "Read your lorebooks" } },
+					{ key: "lorebook-write", label: { en: "Write to a lorebook" } },
+					{ key: "image", label: { en: "Make pictures" } },
+					{ key: "clock", label: { en: "Date and time" } },
+					{ key: "calculator", label: { en: "Calculator" } },
+					{ key: "history", label: { en: "Search this conversation" } }
 				],
-				default: "grounded",
-				quick: true
+				default: []
 			},
-			difficulty: {
-				type: "enum",
-				label: { en: "Difficulty" },
-				description: {
-					en: "How hard the world pushes back. The planner reads it when it decides what a scene costs."
-				},
-				of: ["story", "normal", "hard"],
-				members: [
-					{ key: "story", label: { en: "Story" } },
-					{ key: "normal", label: { en: "Normal" } },
-					{ key: "hard", label: { en: "Hard" } }
-				],
-				default: "normal",
-				quick: true
-			},
-			trustNarrator: {
-				type: "boolean",
-				label: { en: "Trust the narrator" },
-				description: {
-					en: "Apply the state-keeper's changes as they are made, instead of holding each one for you to accept. Off is the safe default: a model that can set a number silently can rewrite the fiction between two messages."
-				},
-				default: false,
-				quick: true
-			},
-			// Read by the voices step and the narrator's context alike: every
-			// prompt built through `build-template-context@1` trims the cast's
-			// cards by it.
-			characterDetail: CHARACTER_DETAIL_FIELD
+			tasks: TASKS_FIELD
 		}
 	},
-	/**
-	 * The declarations, not ids (`GenreDecl.slots`): a genre that named a slot
-	 * nothing declared would be a session whose stats validate against nothing.
-	 */
-	slots: ADVENTURE_SLOTS as unknown as AttributeSlotDecl[],
-	/**
-	 * The same eight again, as the one bundle an owner can be given in a
-	 * gesture. `genreSlots` dedups the union by id, so declaring both changes
-	 * nothing a session has — it is what lets the sheet arrive without the
-	 * list above it changing shape.
-	 */
-	sheets: [ADVENTURE_SHEET],
-	// Its sessions may carry in their world's attributes and add their own.
-	customAttributes: 'allow',
-	/**
-	 * No enabled-when defaults (plans/29 R-15; U5e). A `look` default over
-	 * `state.world.location` was shipped and withdrawn the same day (review
-	 * W8): Look is the opening scene of a fresh session, and a location
-	 * slot with no default meant every new session began with its opening
-	 * button grey. The mechanism stands (`GenreDecl.enabledWhen`); a genre
-	 * that wants one declares it.
-	 */
+	envoys: [
+		{
+			key: ASSISTANT_ENVOY_KEY,
+			name: { en: "Assistant" },
+			description: {
+				en: "The model as itself: a plain, careful assistant that answers directly and says when it is unsure."
+			},
+			prompts: { systemPrompt: ASSISTANT_SYSTEM_PROMPT },
+			default: true,
+			// A line nobody claims here is the Assistant's.
+			fallback: true,
+			speaks: "in-turn"
+		}
+	],
 	events: {
-		/**
-		 * The turn-order events (§4.5). Four, not nine: this genre's order
-		 * is one narrator entry or none, decided by whether the newest
-		 * visible row is a person's, so only a row landing or leaving
-		 * (deleted, hidden, shown) and a branch move it. A cast change or a
-		 * settings save cannot (lair pass B9).
-		 */
+		/** The turn-order events (PLAN-turn-order §4.5): a one-speaker order, written once and kept (canon A9). */
 		[sessionEvents.messageCompleted]: {},
+		[sessionEvents.messageEdited]: {},
 		[sessionEvents.messageDeleted]: {},
 		[sessionEvents.messageHidden]: {},
+		[sessionEvents.castChanged]: {},
+		[sessionEvents.sessionUpdated]: {},
 		[sessionEvents.sessionBranched]: {},
 		[sessionEvents.messageRespond]: { required: true },
 		[sessionEvents.sessionAction]: { open: true },
@@ -431,12 +725,8 @@ export const adventureGenre = genre(ADVENTURE_GENRE_ID, {
 		/** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
 		[sessionEvents.formAddressed]: {}
 	},
-	/** The layout this genre ships (R71): its default. */
-	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
-	omitWidgets: [coreWidgets.authorsNote],
-	layouts: [layout({ slug: "default", name: { en: "Adventure" }, preset: ADVENTURE_LAYOUT })],
-	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
-	summarize: { scene: ADVENTURE_SUMMARIZE_SCENE_SPEC_ID }
+	/** No author's note: there is no story to steer (it is Story's). */
+	omitWidgets: [coreWidgets.authorsNote]
 })
 
 /* ── Guide ──────────────────────────────────────────────────────────────── */
@@ -496,6 +786,11 @@ export const GUIDE_MASCOT_GREETING =
 export const guideGenre = genre(GUIDE_GENRE_ID, {
 	name: { en: "Guide" },
 	family: "assistant",
+	/**
+	 * 🚧 Solo (R2 ruling 3, 2026-10-19): never a group session — the Guide's
+	 * tools reach the app, so guests, invites and lanes are refused for it.
+	 */
+	members: "solo",
 	description: {
 		en: "Talk to Serene, Serene Pub's guide, about the app itself — no characters, no story; just questions and answers grounded in the docs."
 	},
@@ -527,6 +822,21 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		 */
 		greeting: { enabled: false },
 		// No turn-order swaps: one in-turn envoy and no characters, nothing to choose between.
+		/**
+		 * 🚧 The tools Serene may use (2026-10-19): the web tool alone, on by
+		 * default. Web search is offered to the Guide and Chat and to no other
+		 * genre (R4).
+		 */
+		fields: {
+			tools: {
+				type: "string[]",
+				label: { en: "Tools" },
+				description: { en: "What Serene may use while she answers." },
+				of: ["web"],
+				members: [{ key: "web", label: { en: "Search the web" } }],
+				default: ["web"]
+			}
+		}
 	},
 	envoys: [
 		{
@@ -564,7 +874,7 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		/** A form put to a participant the AI portrays (R-15 *Forms*; U5d). Optional. */
 		[sessionEvents.formAddressed]: {}
 	},
-	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
+	/** The author's note is Story's alone (Chat's until 2026-10-19; owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
 	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
 	summarize: { scene: GUIDE_SUMMARIZE_SCENE_SPEC_ID }
@@ -690,9 +1000,24 @@ export const LAIR_CASTELLAN_GREETING = [
 export const lairGenre = genre(LAIR_GENRE_ID, {
 	name: { en: "Lair" },
 	family: "adventure",
+	members: "group",
+	/**
+	 * 🚧 What the Lair uses of a ruleset (PLAN-genre-restructure §11): nothing
+	 * it cannot do without — its keeper sets values and moves items itself,
+	 * and the ruleset's health, conditions and casting are read where they
+	 * exist.
+	 */
+	uses: {
+		verbs: [],
+		dice: "optional",
+		optional: { slots: ["hp"], conditions: true, casting: true }
+	},
 	description: {
 		en: "You are the dungeon. Build the rooms, point the party at them, and watch an AI delve into what you made."
 	},
+	/** 🚧 Vis Itineris recommended, any ruleset allowed; rules without dice by default (rulesets plan §13). */
+	rulesets: { recommended: [visItinerisRuleset.id], default: visItinerisRuleset.id },
+	rigour: { options: ["prose", "mechanics", "scripts"], default: "mechanics" },
 	shape: {
 		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
 		scenario: true,
@@ -941,9 +1266,256 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/** The layout this genre ships (R71): its default. */
-	/** The author's note is Chat's alone (owner ruling 2026-10-02, AN1). */
+	/** The author's note is Story's alone (Chat's until 2026-10-19; owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
 	layouts: [layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT })],
 	/** 🚧 The spec this genre's scenes are summarized with — the one that reads the Sanctum (live scenes §13). */
 	summarize: { scene: LAIR_SUMMARIZE_SCENE_SPEC_ID }
+})
+
+/* ── Dungeon Crawler 🚧 ─────────────────────────────────────────────────────
+ *
+ * PLAN-dungeon-crawler-2026-10-14. A light, self-running table where the AI is
+ * the whole Dungeon Master and each person only ever plays their character.
+ * The world is generated, not written: no lorebook, nothing added to anybody's
+ * library. Foundation only so far — the declaration, its names, its slots, its
+ * layout and its turn order. ⚠ Not yet in `coreExtension().genres` nor in
+ * `TURN_ORDER_BY_GENRE`: a genre is listed from its published create spec, and
+ * a turn-order spec cannot be published before it, so the create lane adds
+ * both, with a preset, in the same change.
+ */
+
+/** @experimental */
+export { DUNGEON_CRAWLER_GENRE_ID }
+
+/**
+ * 🚧 The Planner's instructions — its out-of-character voice in each player's
+ * Planner lane. Its hidden per-turn bookkeeping is the respond spec's prompt,
+ * which the spec lane writes.
+ * @experimental
+ */
+export const DUNGEON_CRAWLER_PLANNER_SYSTEM_PROMPT = [
+	"You are {{char}}, the Planner at a dungeon crawler's table. The AI runs the whole game; each person at the table plays only their own character, and the Narrator tells the story.",
+	"You talk with one player at a time, out of character, in their own private channel. Before play you interview them: the kind of adventure, how hard, whether the goal is shared or secret, and who their character is. During play you answer their questions, note what they ask the story for, adjust their character when they ask, and take their preferences — and, at a table of several, their standing order.",
+	"You keep the secrets of the world. Never reveal planning notes, hidden rooms, a secret goal or another player's private business, unless the session's owner asks you to reveal the planning notes.",
+	"Be brief, warm and practical. Ask one question at a time."
+].join("\n\n")
+
+/**
+ * 🚧 The Planner's opening line on the Planner channel: the tavern, leading
+ * into the first interview question (the form's own heading). Interpolated at create (`{{char}}`,
+ * `{{playerLabel}}`).
+ * @experimental
+ */
+export const DUNGEON_CRAWLER_PLANNER_GREETING = [
+	"Welcome in, {{playerLabel}}. Pull up a stool by the fire. I'm the {{char}}, and I set up the adventure you're about to walk into: the Narrator tells the story, and I keep the books and hold the secrets.",
+	// AUDIT E: the Planner never claims to roll (the table does), and typing
+	// "just play" did nothing — the form's button is what skips.
+	"This channel is just the two of us, out of character. Ask me anything here, now or once we're playing. If you'd rather skip the questions, press **Just play** and I'll choose everything.",
+	// The question itself is the form's heading, under this line (round 2:
+	// said twice, in prose and as the heading).
+	"Let's start with the world."
+].join("\n\n")
+
+/**
+ * 🚧 The Narrator's instructions. The two lines it must never cross are the
+ * genre's (feature 4, feature 6): it never plays a person's character, and it
+ * never kills one without a roll.
+ * @experimental
+ */
+export const DUNGEON_CRAWLER_NARRATOR_SYSTEM_PROMPT = [
+	"You are {{char}}, the Narrator of a dungeon crawl. You describe the world, the places, the dangers and everyone in it who is not a player's character, including the companions travelling with the party.",
+	"Never decide what a player's character does, says, thinks or feels. Tell what happens around them and because of what they did, then stop where they would choose.",
+	"Never kill a player's character unless death's door decided it. Show the stakes before a risky moment, and let the result land honestly.",
+	"Keep the story moving: within a few turns of a quiet moment, the party should find, fight or meet something."
+].join("\n\n")
+
+/** @experimental */
+export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
+	name: { en: "Dungeon Crawler" },
+	family: "adventure",
+	members: "group",
+	/**
+	 * 🚧 What the Dungeon Crawler uses of a ruleset (PLAN-genre-restructure
+	 * §11), confirmed against its delta grammar (`story.ts`,
+	 * `DUNGEON_CRAWLER_DELTA_OPS`: add · spend · set · remove · hit · use ·
+	 * traverse). Those ops are the handler's own, not a ruleset's verbs: what
+	 * a ruleset must provide is what a `hit` and a `use` resolve through —
+	 * harm, heal, cure, consume — and the repertoires its kits hand pieces
+	 * out of (`DUNGEON_CRAWLER_REPERTOIRE_SLOTS`, ways out excepted: a way out
+	 * is written inside its place). Health, level and class are the genre's
+	 * own slots, read from the ruleset where it has them.
+	 */
+	uses: {
+		verbs: ["harm", "heal", "cure", "consume"],
+		pieces: ["weapons", "armour", "gear", "consumables", "spells", "features", "conditions"],
+		conditions: true,
+		dice: "optional",
+		optional: { slots: ["hp", "level", "character-class"], casting: true }
+	},
+	description: {
+		en: "The AI is the whole Dungeon Master. Make a character, walk into a world it generates, and play only your own part — alone or with friends."
+	},
+	/** 🚧 Vis Itineris recommended, any ruleset allowed; rules and dice by default (rulesets plan §13). */
+	rulesets: { recommended: [visItinerisRuleset.id], default: visItinerisRuleset.id },
+	rigour: { options: ["prose", "mechanics", "scripts"], default: "scripts" },
+	shape: {
+		scenario: false,
+		tags: true,
+		/**
+		 * The characters you add join as companions, for this session only.
+		 * None is fine. 🚧 The form says so (`hint`, 2026-10-18, the 100-turn
+		 * walk #26: "Add the characters you'll talk to." read wrong here).
+		 */
+		characters: {
+			min: 0,
+			hint: { en: "No companions yet. Characters you add travel with the party, in the story only." }
+		},
+		/**
+		 * One player seat per person (feature 16) — ⚠ not expressible: `max`
+		 * bounds the session's total, and the SDK has no "per person". Left
+		 * unbounded; a person's one seat is the seat machinery's (a player
+		 * opens their own), not the shape's.
+		 *
+		 * `preselectDefault: false` — a persona here is only a seed for the
+		 * character the Planner builds ("from my persona / work it out with
+		 * me / surprise me"); the player is the seat. The new-session form
+		 * starts with no persona chosen, so none is attached unless picked.
+		 */
+		personas: { min: 0, preselectDefault: false },
+		/**
+		 * **No `lorebook`**: absent is "this genre has no lorebook" — the
+		 * session forms show no picker and the validator refuses one
+		 * (`sessionGenres.ts`). `'optional'` would offer the picker. The world
+		 * is generated and kept in the annex (★A).
+		 *
+		 * `lore: true` (2026-10-17): the world now lives in the session's
+		 * notes (the phantom lorebook), so the loop writes lore. No scenes.
+		 */
+		writes: { lore: true, scenes: false },
+		composer: "text",
+		voice: "narrator",
+		turnControls: {
+			/** Continue resolves the round — early, when not everyone has declared (features 17, ★verification 2). */
+			advance: true,
+			pick: false,
+			narrate: false,
+			/** A story turn writes the Planner's books and the Narrator's line; undo takes all of it back (feature 12). */
+			retake: true
+		},
+		channels: [
+			{
+				slug: "main",
+				label: { en: "Story" },
+				role: "conversation",
+				/**
+				 * No row regenerate on Story (owner ruling 2026-10-15): a story
+				 * turn is taken again whole — Regenerate in the composer, the
+				 * retake, with a new plan and new dice. A swipe or an extend
+				 * re-voices the Narrator alone on the stored plan and rolls.
+				 */
+				messageVerbs: { retry: false }
+			},
+			{
+				slug: PARLEY_CHANNEL,
+				label: { en: "Planner" },
+				role: "conversation",
+				turnControls: { pick: false, narrate: false, retake: false },
+				/**
+				 * 🚧 One lane per person, core's (owner ruling 2026-10-17): the
+				 * host opens each person's lane on its first `channel-lane`
+				 * ask (create, welcome) and sends it to that person and the
+				 * session's owner alone.
+				 */
+				lanes: "personal"
+			},
+			{ slug: TRAVELOGUE_CHANNEL, label: { en: "Journal" }, role: "folio", voice: "none" },
+			/**
+			 * 🚧 The table (PLAN-rulesets §30): the rolls, the stakes and the
+			 * rest's reckoning, each anchored to the Narrator's line it
+			 * belongs to — never Story's history, which the Narrator reads.
+			 * Story draws them inline (`interleave: "table"`, the layout).
+			 */
+			{ ...TABLE_CHANNEL_DECL }
+		],
+		/** No card greetings: the Planner opens the session on the Planner channel. */
+		greeting: { enabled: false },
+		fields: {
+			/**
+			 * 🚧 **Honour mode** (owner ruling 2026-10-15). A key core reads,
+			 * the way it reads `autoAdvance`: a genre that declares it keeps
+			 * its story turns — an older turn on a channel that offers the
+			 * retake is never deleted (retake from the latest instead), and
+			 * the latest is deleted by the session owner alone, only while
+			 * this is on (`turnDeleteVerdict`, app `messages/verbs.ts`). The
+			 * retake is the owner's whatever it says. 🚧 And (2026-10-16) a
+			 * player edits their own sheet by hand only while this is on; the
+			 * host always may, and the pipeline is untouched
+			 * (`assertSessionOwner`, app `state/write.ts`).
+			 */
+			honorMode: {
+				type: "boolean",
+				label: { en: "Honour mode" },
+				description: { en: "Lets the host delete the latest turn, and lets players edit their own sheets by hand. Off: turns can only be retaken." },
+				default: false
+			}
+		},
+	},
+	slots: DUNGEON_CRAWLER_SLOTS as unknown as AttributeSlotDecl[],
+	sheets: [DUNGEON_CRAWLER_SHEET],
+	customAttributes: "allow",
+	/** A person's line before their character has a name. */
+	playerLabel: { en: "Adventurer" },
+	envoys: [
+		{
+			key: DUNGEON_CRAWLER_PLANNER_KEY,
+			name: { en: "Planner" },
+			description: {
+				en: "Sets up the adventure with you, keeps the books every turn, holds the world's secrets, and talks with you out of character in your Planner channel."
+			},
+			prompts: { systemPrompt: DUNGEON_CRAWLER_PLANNER_SYSTEM_PROMPT },
+			speaks: "in-turn",
+			/**
+			 * Written by the create spec only while the Planner is seated —
+			 * the preset seats it (`defaults.envoys`); the Narrator is the one
+			 * `default`.
+			 */
+			greeting: { channel: PARLEY_CHANNEL, text: { en: DUNGEON_CRAWLER_PLANNER_GREETING } }
+		},
+		{
+			key: DUNGEON_CRAWLER_NARRATOR_KEY,
+			name: { en: "Narrator" },
+			description: {
+				en: "Tells the story. Never decides what your character does, says or feels."
+			},
+			prompts: { systemPrompt: DUNGEON_CRAWLER_NARRATOR_SYSTEM_PROMPT },
+			default: true,
+			fallback: true,
+			speaks: "in-turn"
+		}
+	],
+	events: {
+		[sessionEvents.messageCompleted]: {},
+		[sessionEvents.messageDeleted]: {},
+		[sessionEvents.messageHidden]: {},
+		[sessionEvents.sessionBranched]: {},
+		[sessionEvents.messageRespond]: { required: true },
+		[sessionEvents.sessionAction]: { open: true },
+		[sessionEvents.memberAdded]: {},
+		[sessionEvents.memberRemoved]: {},
+		/** The bookkeeping moving (who is out of the round) re-runs the turn order. */
+		[sessionEvents.annexChanged]: {},
+		/** The interview's questions are forms addressed to players. */
+		[sessionEvents.formAddressed]: {}
+	},
+	/** No lorebook, so nothing that reads one; and the Author's note is Chat's. */
+	omitWidgets: [
+		coreWidgets.authorsNote,
+		coreWidgets.chronicle,
+		coreWidgets.places,
+		coreWidgets.loreEntries
+	],
+	layouts: [
+		layout({ slug: "default", name: { en: "Dungeon Crawler" }, preset: DUNGEON_CRAWLER_LAYOUT })
+	]
 })

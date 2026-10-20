@@ -81,6 +81,8 @@ export type FieldType =
 	 *  totalling 100%, so there is no invalid state to explain. Zero is a
 	 *  member's off switch. */
 	| 'share'
+	/** 🚧 Background tasks grouped by trigger (`TaskSettingsV1`, `tasks.ts`): one grouped control. */
+	| 'tasks'
 	/** A plain number per band over `members` — a ceiling, a minimum, a count. */
 	| 'perMember'
 	/**
@@ -166,6 +168,8 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 * plugin. Presentation, not permission — nothing is hidden by it.
 	 */
 	quick?: boolean
+	/** 🚧 Folded under "Advanced" until opened (2026-10-19): genre pins the fold, the host owns it. */
+	advanced?: true
 	/**
 	 * Which lens renders this one field, when it is not the slot's.
 	 *

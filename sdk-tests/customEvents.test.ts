@@ -207,7 +207,7 @@ describe("the package entry's recording scope (R52)", () => {
 	test("an event another package declares is a requirement; its scope is that package's to check", () => {
 		const other = defineSessionEvent({ id: 'cards:event/drawn@1', payload: S.json, name: { en: 'Drawn' }, description: 'A test event.' })
 		const draw = spec('dice:spec/draw', { version: '1.0.0' })
-			.inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.messageRespond })
+			.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.messageRespond })
 			.outlet('drawn', ($) => C.recordEvent.v1({ event: other as never, payload: $.input.text as never }))
 			.build()
 		const e = defineExtension({ slug: 'dice', name: 'Dice', version: '0.1.0', pipelines: [draw] })
@@ -386,7 +386,7 @@ describe("a package's own shapes travel in its manifest", () => {
 			slug: 'pebble',
 			name: 'Pebble',
 			version: '0.1.0',
-			events: [{ event: counted, genre: use('core:genre/chat'), recordedBy: 'any' }],
+			events: [{ event: counted, genre: use('core:genre/story'), recordedBy: 'any' }],
 		})
 		const r = compilePlugin({ sources: [{ path: 'index.ts', text: '' }], extension: e })
 		assert.ok(r.ok, renderFindings(r.findings))
@@ -411,7 +411,7 @@ describe("a package's own shapes travel in its manifest", () => {
 					name: { en: 'Thing' },
 					description: '',
 					domain: 'session',
-					genre: 'core:genre/chat',
+					genre: 'core:genre/story',
 					recordedBy: 'any',
 				},
 			],

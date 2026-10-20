@@ -217,6 +217,10 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 		for (const w of writes) {
 			if (liveRows.includes(w) || raced.has(w.key)) continue
 			if (!desc(w.key)?.ports.in?.channel) continue
+			// A MESSAGE write: a `channel` port alone is not one — opening a
+			// composer names a lane and writes no row (`set-composer-state@1`,
+			// 2026-10-15).
+			if (desc(w.key)?.causesEvent !== 'core:event/message-created@1') continue
 			if (channelOf(w) !== liveChannel) continue
 			if (exclusiveSteps(pathClauses, live, w)) continue
 			if (finishers.some((f) => runsStrictlyAfter(doc, w, f))) continue
@@ -1044,8 +1048,32 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 			// the user sees the preset "not working" with no error anywhere. The
 			// substrate's `settings` counts as declared where the substrate declares
 			// it (R-9): on an optional or gated node, and nowhere else.
+			// 🚧 `scripts` on a node with interior points: the chains live under
+			// the `scripts` facet keyed by point (`PresetBuilder.scripts`), so a
+			// node declaring points accepts the slot though no `scripts` slot
+			// is declared — but only at points it declares.
+			const points = (d?.scriptPoints ?? []).map((sp) => sp.key)
+			const pointChains =
+				v.slot === 'scripts' &&
+				!d?.slots?.scripts &&
+				points.length > 0 &&
+				!!v.value &&
+				typeof v.value === 'object' &&
+				!Array.isArray(v.value)
+			if (pointChains)
+				for (const key of Object.keys(v.value as Record<string, unknown>))
+					if (!points.includes(key))
+						f.push({
+							law: '12 §3a',
+							severity: 'error',
+							nodeKey: v.nodeKey,
+							message: `preset '${p.slug}' sets scripts at '${key}' on '${v.nodeKey}', which declares the points ${points.join(', ')}`,
+							fix: `name a script point the node declares`,
+						})
 			const declared =
-				!!d?.slots?.[v.slot] || (v.slot === 'settings' && d && !!settingsSlotFor(d))
+				!!d?.slots?.[v.slot] ||
+				(v.slot === 'settings' && d && !!settingsSlotFor(d)) ||
+				pointChains
 			if (d && !declared && v.slot !== 'connection') {
 				f.push({
 					law: '12 §3a',

@@ -40,7 +40,7 @@ import type {
 	TurnOrderV1,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre, guideGenre, adventureGenre } from '@serene-pub/core-catalog'
+import { storyGenre, guideGenre} from '@serene-pub/core-catalog'
 
 // ── §4.1 · Events ────────────────────────────────────────────────────────────
 
@@ -86,8 +86,9 @@ describe('A1 · the four events (§4.1)', () => {
 		// and the backdrop's `backdrop-set` (DESIGN-image-generation §6.4,
 		// 2026-10-12) makes 29, and the Sprite set fill's `sprites-attached`
 		// (DESIGN-image-generation §6.3, 2026-10-12) makes 30, and Portrait's
-		// `media-offered` (DESIGN-image-generation §6.2, 2026-10-12) makes 31.
-		assert.equal(allEvents().length, 31)
+		// `media-offered` (DESIGN-image-generation §6.2, 2026-10-12) makes 31,
+		// and a person's Send, `message-offered` (owner ruling 2026-10-15), makes 32.
+		assert.equal(allEvents().length, 32)
 	})
 
 	test('sessionEvents names every event a genre may bind the turn-order spec to, by registered id', () => {
@@ -223,20 +224,20 @@ describe('A1 · inlet lock: { genre, events }', () => {
 		const built = spec('acme:spec/order', { version: '1.0.0' })
 			// session-event@1: the inlet that reads every one of the nine's
 			// payloads (R33 refuses an `events` lock on one that does not).
-			.inlet('event', C.sessionEvent.v1(), { genre: chatGenre, events: nine })
+			.inlet('event', C.sessionEvent.v1(), { genre: storyGenre, events: nine })
 			.build()
-		assert.deepEqual(built.input, { genre: chatGenre.id, events: nine })
-		assert.deepEqual(compile(built).input, { genre: chatGenre.id, events: nine })
+		assert.deepEqual(built.input, { genre: storyGenre.id, events: nine })
+		assert.deepEqual(compile(built).input, { genre: storyGenre.id, events: nine })
 	})
 
 	test('the one-event form is byte-for-byte what it was', () => {
 		const built = spec('acme:spec/one', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1(), {
-				genre: chatGenre,
+				genre: storyGenre,
 				event: sessionEvents.messageRespond,
 			})
 			.build()
-		assert.deepEqual(built.input, { genre: chatGenre.id, event: sessionEvents.messageRespond })
+		assert.deepEqual(built.input, { genre: storyGenre.id, event: sessionEvents.messageRespond })
 		assert.equal('events' in built.input!, false)
 	})
 
@@ -244,7 +245,7 @@ describe('A1 · inlet lock: { genre, events }', () => {
 		assert.throws(
 			() =>
 				spec('acme:spec/empty', { version: '1.0.0' }).inlet('e', C.userMessage.v1(), {
-					genre: chatGenre,
+					genre: storyGenre,
 					events: [],
 				}),
 			/lists them/,
@@ -252,7 +253,7 @@ describe('A1 · inlet lock: { genre, events }', () => {
 		assert.throws(
 			() =>
 				spec('acme:spec/dup', { version: '1.0.0' }).inlet('e', C.userMessage.v1(), {
-					genre: chatGenre,
+					genre: storyGenre,
 					events: [sessionEvents.messageCompleted, sessionEvents.messageCompleted],
 				}),
 			/each event once/,
@@ -275,7 +276,7 @@ describe('A1 · node expose: { session: true }', () => {
 	test('lands on the built node and in the document only when stated', () => {
 		const built = spec('acme:spec/marked', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1(), {
-				genre: chatGenre,
+				genre: storyGenre,
 				event: sessionEvents.messageRespond,
 			})
 			.query('history', C.sessionHistory.v1({ scope: { $ref: 'input.sessionScope' } as any }))
@@ -369,6 +370,9 @@ describe('A1 · SessionSettingsV1 / SessionCastV1 / the turn types compile', () 
 			sessionPersonas: [
 				{
 					persona: { id: 7, name: 'Bob' },
+					seatId: 1,
+					seatName: null,
+					seatUserId: null,
 					enabled: true,
 					position: 0,
 					removedAt: null,
@@ -409,7 +413,7 @@ describe('A1 · SessionSettingsV1 / SessionCastV1 / the turn types compile', () 
 			sessionId: 1,
 			title: 'A session',
 			guests: [2],
-			genreId: chatGenre.id,
+			genreId: storyGenre.id,
 			presetId: null,
 			fields: { autoAdvance: 'round' },
 			scenario: null,
@@ -438,7 +442,7 @@ describe('A1 · SessionSettingsV1 / SessionCastV1 / the turn types compile', () 
 
 describe('A1 · SessionShape.turnOrder (retired 2026-09-23, R28)', () => {
 	test('no core shape declares turnOrder or speakerStrategies — the control is the spec node’s swaps', () => {
-		for (const g of [chatGenre, guideGenre, adventureGenre]) {
+		for (const g of [storyGenre, guideGenre, storyGenre]) {
 			assert.equal('turnOrder' in (g.shape ?? {}), false, `${g.id} declares no turnOrder`)
 			assert.equal('speakerStrategies' in (g.shape ?? {}), false, `${g.id} declares no speakerStrategies`)
 		}

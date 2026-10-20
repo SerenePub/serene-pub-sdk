@@ -24,6 +24,7 @@
  */
 import type { SessionCastV1 } from './participants.js'
 import type { TurnOrderV1 } from './turnOrder.js'
+import type { ComposerStatesV1 } from './composerStates.js'
 
 /** @experimental */
 export interface SessionSettingsV1 {
@@ -32,6 +33,14 @@ export interface SessionSettingsV1 {
 	title: string | null
 	/** User ids. Server-side only; never in the widget projection. */
 	guests: number[]
+	/**
+	 * 🚧 The session owner's user id — who `owner` resolves to, and the one
+	 * person a genre's script may need to name as `user:<id>` (Dungeon
+	 * Crawler keys each person's Planner lane by it). Server-side only, like
+	 * `guests`; never in the widget projection. Absent on a document resolved
+	 * before it existed.
+	 */
+	ownerUserId?: number
 	genreId: string
 	presetId: number | null
 	/** Every declared genre field: default, then the session's value over it. */
@@ -68,6 +77,13 @@ export interface SessionSettingsV1 {
 	metadata: Record<string, unknown>
 	/** The whole annex; a spec reads its own key. */
 	annex: Record<string, unknown>
+	/**
+	 * 🚧 The session's composer states (`sessions.composer_states`): which
+	 * channel lanes' composers the genre closed, for whom, and why — written
+	 * by `core:outlet/set-composer-state@1` alone; absent or empty is every
+	 * composer open. Read one with `composerClosureFor`. Server-side only.
+	 */
+	composerStates?: ComposerStatesV1
 	/** Open. */
 	[k: string]: unknown
 }

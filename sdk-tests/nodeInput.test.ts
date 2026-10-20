@@ -56,7 +56,8 @@ describe('suppliesOf — the runtime twin of InputOf', () => {
 			[...s.params].sort(),
 			// `unplayedOnly` 2026-09-28 (lair re-plan R13): the side channel's
 			// talk since the story's last line.
-			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'talkOnly', 'unplayedOnly'],
+			// 🚧 `tableLines` 2026-10-15: off, the table's own lines (roll lines) are left out.
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'tableLines', 'talkOnly', 'unplayedOnly'],
 		)
 		assert.equal(s.ports.includes('limit'), false)
 		assert.equal(s.ports.includes('channel'), false)
@@ -169,12 +170,14 @@ describe('the two derivations agree', () => {
 		// `budget` sizes the read by the context window (every shipped reply
 		// wires it); `messageId` reads one row, by id. The compile-time list is
 		// `_historyNames` in nodeInput.assert.ts.
-		assert.deepEqual([...s.ports].sort(), ['budget', 'messageId', 'params', 'scope'])
+		// 🚧 `channelLane` 2026-10-15: one channel lane, chosen at run time.
+		assert.deepEqual([...s.ports].sort(), ['budget', 'channelLane', 'messageId', 'params', 'scope'])
 		assert.deepEqual(
 			[...s.params].sort(),
 			// `unplayedOnly` 2026-09-28 (lair re-plan R13): the side channel's
 			// talk since the story's last line.
-			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'talkOnly', 'unplayedOnly'],
+			// 🚧 `tableLines` 2026-10-15: off, the table's own lines (roll lines) are left out.
+			['channel', 'limit', 'maxEntries', 'minEntries', 'priority', 'share', 'tableLines', 'talkOnly', 'unplayedOnly'],
 		)
 	})
 

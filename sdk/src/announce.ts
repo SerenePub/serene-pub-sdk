@@ -118,6 +118,7 @@ const actionKeysOf = (v: SpecRef): string[] | undefined => {
 import { genre as makeGenre, genreIdOf, sessionEvents, type GenreDecl, type GenreProps } from './genres.js'
 import { eventById, isEventId, isSessionEventDecl, type SessionEventDecl } from './events.js'
 import { makeValueToolkit, type ValueToolkit } from './values.js'
+import { SAVE_MESSAGE_SPEC_ID } from './descriptors.js'
 import { ACTION_IDENTITY, actionsOf } from './actions.js'
 import type { ComponentDecl, Extension } from './extension.js'
 import type { SurfacesDecl } from './surfaces.js'
@@ -345,6 +346,12 @@ export interface PresetDecl {
 	actions?: { include: string[] }
 	/** What starting from this preset pre-fills the creation form with. */
 	defaults?: PresetDefaults
+	/** 🚧 Model calls one turn costs on this preset, as the card prints it (PLAN-genre-restructure §3, 2026-10-19); the host's parity test measures a real turn against it. Absent means "as the genre". */
+	callsPerTurn?: number
+	/** 🚧 The cast floor this preset lowers (never raises) the shape's to — `{ characters: 0 }` lets a Minimal story start with nobody in it. */
+	cast?: { characters?: number; personas?: number }
+	/** 🚧 Values this preset pins, keyed by setting key — the preset layer of the cascade: `session > preset > genre > core`. A `tasks` key pins the background tasks (`TaskSettingsV1`). Never stored per session. */
+	settings?: Readonly<Record<string, unknown>>
 	/**
 	 * Whether the instance should offer this preset the moment the package is
 	 * enabled. **Absent means no**, and that is the interesting half.
@@ -484,6 +491,12 @@ export interface PresetInput {
 	/** Absent means the host's companion rule — see `PresetDecl.actions`. */
 	actions?: { include: ActionPick[] }
 	defaults?: PresetDefaultsInput
+	/** 🚧 See `PresetDecl.callsPerTurn`. */
+	callsPerTurn?: number
+	/** 🚧 See `PresetDecl.cast`. */
+	cast?: { characters?: number; personas?: number }
+	/** 🚧 See `PresetDecl.settings`. */
+	settings?: Readonly<Record<string, unknown>>
 	/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
 	enabled?: boolean
 }
@@ -556,6 +569,17 @@ export function preset(input: PresetInput): PresetDecl {
 		}
 	}
 
+	/**
+	 * 🚧 A person's message is always saved through a pipeline (owner ruling
+	 * 2026-10-15). A preset that binds nothing on `message-offered` binds
+	 * core's default save, `core:spec/save-message` — written into the
+	 * stored preset here, so the preset shows what saves a message rather
+	 * than a host deciding it out of sight. A preset that binds its own spec
+	 * there (a genre that refuses, rewrites or routes a message) keeps it.
+	 */
+	if (!bindings[sessionEvents.messageOffered])
+		bindings[sessionEvents.messageOffered] = { spec: SAVE_MESSAGE_SPEC_ID }
+
 	const include = (pick: ActionPick, n: number): string[] => {
 		const at = `${where} action ${n + 1}`
 		if (typeof pick === 'string')
@@ -611,7 +635,25 @@ export function preset(input: PresetInput): PresetDecl {
 		// nothing hashes as it always did — the announcement is content-hashed
 		// like every other declaration here.
 		...(input.enabled === undefined ? {} : { enabled: input.enabled }),
+		...(input.callsPerTurn !== undefined ? { callsPerTurn: assertCallsPerTurn(input.callsPerTurn, where) } : {}),
+		...(input.cast ? { cast: assertCastFloor(input.cast, where) } : {}),
+		...(input.settings && Object.keys(input.settings).length ? { settings: { ...input.settings } } : {}),
 	}
+}
+
+const assertCallsPerTurn = (v: unknown, where: string): number => {
+	if (typeof v !== 'number' || !Number.isInteger(v) || v < 0)
+		throw new Error(`${where}.callsPerTurn is a whole number of model calls (0 or more)`)
+	return v
+}
+
+const assertCastFloor = (v: { characters?: number; personas?: number }, where: string) => {
+	for (const k of ['characters', 'personas'] as const) {
+		const n = v[k]
+		if (n !== undefined && (typeof n !== 'number' || !Number.isInteger(n) || n < 0))
+			throw new Error(`${where}.cast.${k} is a whole number (0 or more)`)
+	}
+	return { ...(v.characters !== undefined ? { characters: v.characters } : {}), ...(v.personas !== undefined ? { personas: v.personas } : {}) }
 }
 
 /**

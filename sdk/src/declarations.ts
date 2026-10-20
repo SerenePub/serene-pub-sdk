@@ -36,7 +36,7 @@ import type {
 import { COMPONENT_FRAMEWORKS, type ComponentDecl } from './extension.js'
 import { CONVERSATION_WIDGET_ID, TURN_ORDER_CHANGED_IS_INTERNAL, sessionEvents, type GenreDecl } from './genres.js'
 import { drawnWidgetIds, validateSessionLayout, widgetOfInstance } from './sessionLayout.js'
-import { eventsLockFindings, getDefinition, swapFitFinding } from './descriptors.js'
+import { SAVE_MESSAGE_SPEC_ID, eventsLockFindings, getDefinition, swapFitFinding } from './descriptors.js'
 import { eventById, isEventId, notADeclaredEvent } from './events.js'
 import type { SpecDocument } from './document.js'
 import { actionDocumentFindings, actionsOf, slashCollisions } from './actions.js'
@@ -495,8 +495,9 @@ export function presetFindings(
 		errors.push(...labelFindings(`preset '${p.slug}'`, p))
 		const g = declaredGenres.get(p.genre)
 		if (!g) requires.add(p.genre)
+		// 🚧 Every genre has `message-offered`, listed or not (`genreHasEvent`).
 		const surface: Record<string, { required?: boolean; open?: boolean }> = g
-			? { ...g.events }
+			? { [sessionEvents.messageOffered]: {}, ...g.events }
 			: {}
 		// Slots the preset binds beyond the declared surface are errors when
 		// the genre is ours to know; recorded when it is not.
@@ -539,6 +540,19 @@ export function presetFindings(
 					event,
 					required,
 					status: required ? 'MISSING' : 'unbound',
+				})
+				continue
+			}
+			// 🚧 Core's default save (owner ruling 2026-10-15): no lock, every
+			// genre — `preset()` writes it in when a preset binds nothing of its
+			// own on `message-offered`. Core ships it with the app, so it is no
+			// requirement on an install.
+			if (event === sessionEvents.messageOffered && binding.spec === SAVE_MESSAGE_SPEC_ID) {
+				slots.push({
+					event,
+					required: !!declared?.required,
+					binding,
+					status: declaredSpecs.has(binding.spec) ? 'bound' : 'bound-external',
 				})
 				continue
 			}

@@ -1,61 +1,53 @@
 {
-	"core:genre/adventure": {
-		"zoneLayout": {
+	"core:genre/story": {
+		"panels": {
 			"version": 1,
-			"zones": {
-				"left": {
-					"kind": "side",
-					"side": "left",
-					"pinned": false,
-					"widgets": [
-						"chronicle",
+			"left": [
+				{
+					"key": "p3",
+					"tabs": [
+						"chronicle"
+					],
+					"pinned": false
+				},
+				{
+					"key": "p4",
+					"tabs": [
 						"lore-entries"
+					],
+					"pinned": false
+				}
+			],
+			"middle": {
+				"above": [
+					{
+						"key": "p2",
+						"tabs": [
+							"stats#world"
+						],
+						"height": "fit"
+					}
+				],
+				"primary": {
+					"key": "p1",
+					"tabs": [
+						"messages"
 					]
 				},
-				"right": {
-					"kind": "side",
-					"side": "right",
-					"pinned": true,
-					"widgets": [
-						"scene-portraits",
+				"below": []
+			},
+			"right": [
+				{
+					"key": "p5",
+					"tabs": [
+						"scene-portraits"
+					]
+				},
+				{
+					"key": "p6",
+					"tabs": [
 						"stats"
 					]
-				}
-			}
-		},
-		"widgetGrid": {
-			"version": 1,
-			"cell": 44,
-			"widgets": [
-				{
-					"id": "stats#world",
-					"zone": "middle",
-					"order": 0,
-					"size": {
-						"w": "grow",
-						"h": "fixed"
-					},
-					"anchor": {
-						"top": true,
-						"left": true,
-						"right": true
-					}
-				},
-				{
-					"id": "messages",
-					"zone": "middle",
-					"order": 1,
-					"size": {
-						"w": "grow",
-						"h": "grow"
-					},
-					"anchor": {
-						"top": true,
-						"bottom": true,
-						"left": true,
-						"right": true
-					},
-					"required": true
 				}
 			]
 		},
@@ -71,117 +63,58 @@
 				"arrangement": "strip",
 				"title": "World State"
 			}
-		},
-		"arrangedGrid": {
-			"right": {
-				"cols": 1,
-				"rows": 12,
-				"items": [
-					{
-						"id": "scene-portraits",
-						"x": 0,
-						"y": 0,
-						"w": 1,
-						"h": 6
-					},
-					{
-						"id": "stats",
-						"x": 0,
-						"y": 6,
-						"w": 1,
-						"h": 6
-					}
-				]
-			}
 		}
 	},
 	"core:genre/lair": {
-		"zoneLayout": {
+		"panels": {
 			"version": 1,
-			"zones": {
-				"left": {
-					"kind": "side",
-					"side": "left",
-					"pinned": true,
-					"widgets": [
+			"left": [
+				{
+					"key": "p2",
+					"tabs": [
 						"stats"
 					]
-				},
-				"right": {
-					"kind": "side",
-					"side": "right",
-					"pinned": true,
-					"widgets": [
-						"places",
-						"annex#castellan",
-						"messages#sanctum"
-					]
 				}
-			}
-		},
-		"widgetGrid": {
-			"version": 1,
-			"cell": 44,
-			"widgets": [
+			],
+			"middle": {
+				"above": [],
+				"primary": {
+					"key": "p1",
+					"tabs": [
+						"messages"
+					]
+				},
+				"below": []
+			},
+			"right": [
 				{
-					"id": "messages",
-					"zone": "middle",
-					"order": 0,
-					"size": {
-						"w": "grow",
-						"h": "grow"
-					},
-					"anchor": {
-						"top": true,
-						"bottom": true,
-						"left": true,
-						"right": true
-					},
-					"required": true
+					"key": "p3",
+					"tabs": [
+						"places"
+					],
+					"height": {
+						"share": 4
+					}
+				},
+				{
+					"key": "p4",
+					"tabs": [
+						"annex#castellan"
+					],
+					"height": {
+						"share": 2
+					}
+				},
+				{
+					"key": "p5",
+					"tabs": [
+						"messages#sanctum"
+					],
+					"height": {
+						"share": 6
+					}
 				}
 			]
-		},
-		"arrangedGrid": {
-			"left": {
-				"cols": 1,
-				"rows": 12,
-				"items": [
-					{
-						"id": "stats",
-						"x": 0,
-						"y": 0,
-						"w": 1,
-						"h": 12
-					}
-				]
-			},
-			"right": {
-				"cols": 1,
-				"rows": 12,
-				"items": [
-					{
-						"id": "places",
-						"x": 0,
-						"y": 0,
-						"w": 1,
-						"h": 4
-					},
-					{
-						"id": "annex#castellan",
-						"x": 0,
-						"y": 4,
-						"w": 1,
-						"h": 2
-					},
-					{
-						"id": "messages#sanctum",
-						"x": 0,
-						"y": 6,
-						"w": 1,
-						"h": 6
-					}
-				]
-			}
 		},
 		"widgetSettings": {
 			"places": {

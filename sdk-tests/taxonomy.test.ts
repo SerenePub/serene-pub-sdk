@@ -26,10 +26,10 @@ const built = (taxonomy?: any, lockGenre?: string) =>
 
 describe('spec taxonomy', () => {
 	test('rides the document and round-trips (F3) — its genre copied from the inlet lock (R48)', () => {
-		const doc = compile(built({ role: 'action' }, 'core:genre/chat'))
+		const doc = compile(built({ role: 'action' }, 'core:genre/story'))
 		assert.deepEqual(doc.taxonomy, {
 			role: 'action',
-			genre: 'core:genre/chat',
+			genre: 'core:genre/story',
 		})
 		const back = importDocument(doc)
 		assert.deepEqual(back.taxonomy, doc.taxonomy)
@@ -43,7 +43,7 @@ describe('spec taxonomy', () => {
 	})
 
 	test('taxonomy never states a genre (R48)', () => {
-		assert.throws(() => built({ genre: 'core:genre/chat' }), /states taxonomy.genre — drop it/)
+		assert.throws(() => built({ genre: 'core:genre/story' }), /states taxonomy.genre — drop it/)
 	})
 
 	test('a create spec carries its genre declaration — name, family, shape (24 §3)', () => {

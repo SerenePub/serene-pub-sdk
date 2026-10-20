@@ -26,6 +26,10 @@
 	const open = $derived(conv.menu.open === msg.id)
 	const onOpenChange = (next: boolean) => conv.menu.set(next ? msg.id : undefined)
 	const canControl = $derived(conv.line(msg.id).controllable)
+	// 🚧 Swipe, retry and extend read the rerun verdict (ruled 2026-10-15).
+	const canRerun = $derived(conv.line(msg.id).rerunnable ?? canControl)
+	// 🚧 A kept turn's row the host would refuse to delete (owner ruling ★9).
+	const canDelete = $derived(conv.line(msg.id).deletable ?? true)
 	const extendRefusal = $derived(conv.dossier?.extendRefusal)
 	const hasGeneratingMessage = $derived(
 		(conv.ctx.messages.v1 as Array<{ isGenerating?: boolean }>).some((m) => m.isGenerating)
@@ -91,6 +95,8 @@
 		editing: conv.edit.id !== null,
 		hasGeneratingMessage,
 		canControl,
+		canRerun,
+		canDelete,
 		extendRefusal
 	})
 	// `itemGated` rides with `canAct` (W6): a contributed action whose

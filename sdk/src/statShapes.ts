@@ -70,7 +70,14 @@ export type StatShapeKind = 'number' | 'choice' | 'list' | 'story-time' | 'text'
  * host's projection and the widgets all ask it here.
  * @experimental
  */
-export function statShapeKindOf(field: FieldDecl | undefined): StatShapeKind | undefined {
+export function statShapeKindOf(
+	field: FieldDecl | undefined,
+	/**
+	 * 🚧 What the slot around the field says: a list naming a `repertoire`
+	 * holds pieces, so its item may be an object (the piece shape).
+	 */
+	context: { repertoire?: unknown } = {},
+): StatShapeKind | undefined {
 	switch (field?.type) {
 		case 'integer':
 		case 'number':
@@ -90,6 +97,7 @@ export function statShapeKindOf(field: FieldDecl | undefined): StatShapeKind | u
 			if (!item) return 'list'
 			if ((item.type === 'string' || item.type === 'text') && item.format === undefined) return 'list'
 			if (item.type === 'enum') return 'list'
+			if (item.type === 'object' && typeof context.repertoire === 'string' && context.repertoire) return 'list'
 			return undefined
 		}
 		default:

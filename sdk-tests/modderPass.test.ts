@@ -39,17 +39,17 @@ import {
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
-	ADVENTURE_TURN_ORDER_SPEC_ID,
-	CHAT_TURN_ORDER_SPEC_ID,
+	ASSISTANT_TURN_ORDER_SPEC_ID,
+	STORY_TURN_ORDER_SPEC_ID,
 	CORE_SPECS,
 	GUIDE_TURN_ORDER_SPEC_ID,
 	LAIR_TURN_ORDER_SPEC_ID,
 	TURN_ORDER_BY_GENRE,
 	TURN_ORDER_EVENTS,
 	TURN_ORDER_NARRATOR_EVENTS,
-	adventureGenre,
-	corePresets,
+	storyGenre,
 	chatGenre,
+	corePresets,
 	guideGenre,
 	lairGenre,
 	turnOrderSpec,
@@ -60,7 +60,7 @@ import { world } from './helpers.js'
 const strategySpec = (swaps: unknown[], id = 'test:spec/swaps') =>
 	spec(id, { version: '1.0.0' })
 		.inlet('event', C.sessionEvent.v1(), {
-			genre: chatGenre,
+			genre: storyGenre,
 			events: [sessionEvents.messageCompleted],
 		})
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.event.sessionScope }))
@@ -88,7 +88,7 @@ describe('M1 · expose.swaps (R28)', () => {
 	test('swaps imply session: true', () => {
 		const built = spec('test:spec/implied', { version: '1.0.0' })
 			.inlet('event', C.sessionEvent.v1(), {
-				genre: chatGenre,
+				genre: storyGenre,
 				events: [sessionEvents.messageCompleted],
 			})
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.event.sessionScope }))
@@ -136,7 +136,7 @@ describe('M1 · expose.swaps (R28)', () => {
 	})
 
 	test('SessionShape.turnOrder is gone: chat declares no Turn order list on its shape', () => {
-		assert.equal('turnOrder' in (chatGenre.shape ?? {}), false)
+		assert.equal('turnOrder' in (storyGenre.shape ?? {}), false)
 	})
 })
 
@@ -153,9 +153,10 @@ describe('M1 · turnOrderSpec (R27)', () => {
 		doc.presets.find((p) => p.default)?.values.find((v) => v.nodeKey === 'pool')?.value
 
 	const table = [
-		{ genre: chatGenre, id: CHAT_TURN_ORDER_SPEC_ID, slug: 'core:spec/chat-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: ['core:task/turn-user-split@1', 'core:task/turn-random@1', 'core:task/turn-scripted@1', 'core:task/turn-manual@1', 'core:task/turn-narrator@1'], pool: {} },
+		{ genre: storyGenre, id: STORY_TURN_ORDER_SPEC_ID, slug: 'core:spec/story-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: ['core:task/turn-user-split@1', 'core:task/turn-random@1', 'core:task/turn-scripted@1', 'core:task/turn-manual@1', 'core:task/turn-narrator@1'], pool: {} },
 		{ genre: guideGenre, id: GUIDE_TURN_ORDER_SPEC_ID, slug: 'core:spec/guide-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: undefined, pool: { characters: 'none', envoys: 'in-turn' } },
-		{ genre: adventureGenre, id: ADVENTURE_TURN_ORDER_SPEC_ID, slug: 'core:spec/adventure-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'none', envoys: 'none' } },
+		// 🚧 Chat, the assistant (2026-10-19): the Assistant alone, as the Guide's Serene.
+		{ genre: chatGenre, id: ASSISTANT_TURN_ORDER_SPEC_ID, slug: 'core:spec/assistant-turn-order', events: TURN_ORDER_EVENTS, pin: 'core:task/turn-round-robin', swaps: undefined, pool: { characters: 'none', envoys: 'in-turn' } },
 		// The Lair seats its active delvers: a standing plan prepares their character turns (owner ruling 2026-09-30).
 		{ genre: lairGenre, id: LAIR_TURN_ORDER_SPEC_ID, slug: 'core:spec/lair-turn-order', events: TURN_ORDER_NARRATOR_EVENTS, pin: 'core:task/turn-narrator', swaps: undefined, pool: { characters: 'active', envoys: 'none' } },
 	] as const
@@ -208,8 +209,8 @@ describe('M1 · turnOrderSpec (R27)', () => {
 	})
 
 	test('a turn-order spec binds like any spec — on every event its lock lists (R48)', () => {
-		const chat = corePresets().find((p) => p.slug === 'chat-default')!
-		for (const e of TURN_ORDER_EVENTS) assert.equal(chat.bindings[e]?.spec, CHAT_TURN_ORDER_SPEC_ID)
+		const story = corePresets().find((p) => p.slug === 'story-minimal')!
+		for (const e of TURN_ORDER_EVENTS) assert.equal(story.bindings[e]?.spec, STORY_TURN_ORDER_SPEC_ID)
 	})
 })
 
@@ -253,7 +254,7 @@ describe('M1 · annex-changed and no package-defined events (R30)', () => {
 
 	const lockedTo = (event: string) =>
 		spec('acme:spec/dice', { version: '1.0.0' }).inlet('input', C.userMessage.v1(), {
-			genre: chatGenre,
+			genre: storyGenre,
 			event,
 		})
 
@@ -268,7 +269,7 @@ describe('M1 · annex-changed and no package-defined events (R30)', () => {
 
 	test('the package pass refuses the same lock in a hand-built document, with the same sentence', () => {
 		const doc = compile(lockedTo(sessionEvents.messageRespond).build())
-		const forged = { ...doc, input: { genre: 'core:genre/chat', event: 'acme:event/dice-rolled@1' } }
+		const forged = { ...doc, input: { genre: 'core:genre/story', event: 'acme:event/dice-rolled@1' } }
 		const { errors } = declarationFindings({ ns: 'acme', pipelines: [forged] })
 		assert.ok(errors.some((e) => refusal.test(e)), errors.join('\n'))
 	})
@@ -306,7 +307,7 @@ describe('M1 · member events carry cast-change@1 (R31)', () => {
 describe('M1 · an events lock is checked against its inlet (R33)', () => {
 	const lock = (inlet: unknown, events: string[]) =>
 		spec('test:spec/lock', { version: '1.0.0' }).inlet('input', inlet as never, {
-			genre: chatGenre,
+			genre: storyGenre,
 			events,
 		})
 
@@ -342,7 +343,7 @@ describe('M1 · an events lock is checked against its inlet (R33)', () => {
 	test('the one-event form is not checked — the inlet was written for its event', () => {
 		assert.doesNotThrow(() =>
 			spec('test:spec/one', { version: '1.0.0' }).inlet('input', C.userMessage.v1(), {
-				genre: chatGenre,
+				genre: storyGenre,
 				event: sessionEvents.messageRespond,
 			}),
 		)
@@ -474,10 +475,10 @@ describe('M1 · swap contributions (R29)', () => {
 	test('announce().swaps() lands on the document, the definition as its id', () => {
 		const natural = { id: 'acme:task/turn-natural@1' }
 		const { document } = pkg()
-			.swaps({ spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: natural })
+			.swaps({ spec: use(STORY_TURN_ORDER_SPEC_ID), node: 'strategy', definition: natural })
 			.build()
 		assert.deepEqual(document.swaps, [
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'acme:task/turn-natural@1' },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'acme:task/turn-natural@1' },
 		])
 	})
 
@@ -485,7 +486,7 @@ describe('M1 · swap contributions (R29)', () => {
 		assert.throws(
 			() =>
 				pkg()
-					.swaps({ spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: C.turnRandom })
+					.swaps({ spec: use(STORY_TURN_ORDER_SPEC_ID), node: 'strategy', definition: C.turnRandom })
 					.build(),
 			/swap 'core:task\/turn-random@1' is owned by 'core' — a package contributes its own definitions/,
 		)
@@ -502,23 +503,23 @@ describe('M1 · swap contributions (R29)', () => {
 	})
 
 	test('a duplicate contribution is refused', () => {
-		const one = { spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: { id: 'acme:task/turn-natural@1' } }
-		assert.throws(() => pkg().swaps(one, one).build(), /contributes 'acme:task\/turn-natural@1' to 'core:spec\/chat-turn-order#strategy' twice/)
+		const one = { spec: use(STORY_TURN_ORDER_SPEC_ID), node: 'strategy', definition: { id: 'acme:task/turn-natural@1' } }
+		assert.throws(() => pkg().swaps(one, one).build(), /contributes 'acme:task\/turn-natural@1' to 'core:spec\/story-turn-order#strategy' twice/)
 	})
 
 	test('a string spec or definition is refused, and a spec value checks the node key (R48)', () => {
 		assert.throws(
-			() => pkg().swaps({ spec: CHAT_TURN_ORDER_SPEC_ID as never, node: 'strategy', definition: { id: 'acme:task/turn-natural@1' } }),
-			/names the spec 'core:spec\/chat-turn-order' as a string — pass the spec value, or use/,
+			() => pkg().swaps({ spec: STORY_TURN_ORDER_SPEC_ID as never, node: 'strategy', definition: { id: 'acme:task/turn-natural@1' } }),
+			/names the spec 'core:spec\/story-turn-order' as a string — pass the spec value, or use/,
 		)
 		assert.throws(
-			() => pkg().swaps({ spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: 'acme:task/turn-natural@1' as never }),
+			() => pkg().swaps({ spec: use(STORY_TURN_ORDER_SPEC_ID), node: 'strategy', definition: 'acme:task/turn-natural@1' as never }),
 			/names the definition 'acme:task\/turn-natural@1' as a string — pass its pin/,
 		)
-		const chat = TURN_ORDER_BY_GENRE.find((t) => t.genre === chatGenre)!.build()
+		const chat = TURN_ORDER_BY_GENRE.find((t) => t.genre === storyGenre)!.build()
 		assert.throws(
 			() => pkg().swaps({ spec: chat, node: 'strategy', definition: { id: 'acme:task/turn-natural@1' } }),
-			/swap names node 'strategy', which 'core:spec\/chat-turn-order' does not have/,
+			/swap names node 'strategy', which 'core:spec\/story-turn-order' does not have/,
 		)
 	})
 
@@ -559,7 +560,7 @@ describe('M1 review · refusals at every door', () => {
 			presets: [
 				{
 					slug: 'p',
-					genre: 'core:genre/chat',
+					genre: 'core:genre/story',
 					label: { en: 'P' },
 					bindings: { 'acme:event/guessed@1': { spec: 'other:spec/x' } },
 				} as never,
@@ -572,17 +573,17 @@ describe('M1 review · refusals at every door', () => {
 		assert.throws(
 			() =>
 				spec('acme:spec/loop', { version: '1.0.0' }).inlet('event', C.sessionEvent.v1(), {
-					genre: chatGenre,
+					genre: storyGenre,
 					event: sessionEvents.turnOrderChanged,
 				}),
 			/core-internal/,
 		)
 		const doc = compile(
 			spec('acme:spec/loop', { version: '1.0.0' })
-				.inlet('event', C.sessionEvent.v1(), { genre: chatGenre, event: sessionEvents.messageCompleted })
+				.inlet('event', C.sessionEvent.v1(), { genre: storyGenre, event: sessionEvents.messageCompleted })
 				.build(),
 		)
-		const forged = { ...doc, input: { genre: 'core:genre/chat', event: sessionEvents.turnOrderChanged } }
+		const forged = { ...doc, input: { genre: 'core:genre/story', event: sessionEvents.turnOrderChanged } }
 		const { errors } = declarationFindings({ ns: 'acme', pipelines: [forged] })
 		assert.ok(errors.some((e) => /core-internal/.test(e)), errors.join('\n'))
 	})
@@ -590,12 +591,12 @@ describe('M1 review · refusals at every door', () => {
 	test('a compiled document gets the events-payload check the builder gives', () => {
 		const doc = compile(
 			spec('acme:spec/two', { version: '1.0.0' })
-				.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.messageRespond })
+				.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.messageRespond })
 				.build(),
 		)
 		const forged = {
 			...doc,
-			input: { genre: 'core:genre/chat', events: [sessionEvents.messageCompleted, sessionEvents.messageEdited] },
+			input: { genre: 'core:genre/story', events: [sessionEvents.messageCompleted, sessionEvents.messageEdited] },
 		}
 		const { errors } = declarationFindings({ ns: 'acme', pipelines: [forged] })
 		assert.ok(errors.some((e) => /'core:inlet\/user-message@1' declares no payloads/.test(e)), errors.join('\n'))
@@ -621,7 +622,7 @@ describe('M1 review · refusals at every door', () => {
 describe('M1 review · expose edge cases', () => {
 	const withExpose = (expose: unknown) =>
 		spec('test:spec/edge', { version: '1.0.0' })
-			.inlet('event', C.sessionEvent.v1(), { genre: chatGenre, events: [sessionEvents.messageCompleted] })
+			.inlet('event', C.sessionEvent.v1(), { genre: storyGenre, events: [sessionEvents.messageCompleted] })
 			.query('history', ($) => C.sessionHistory.v1({ scope: $.event.sessionScope }))
 			.task('pool', ($) => C.turnPool.v1({ cast: $.event.cast, messages: $.history.main }))
 			.task('strategy', ($) => C.turnRoundRobin.v1({ candidates: $.pool.main, messages: $.history.main }), {
@@ -668,7 +669,7 @@ describe('M1 review · expose edge cases', () => {
 		)
 		const doc = turnOrderSpec({
 			id: 'acme:spec/pick-turn-order',
-			genre: chatGenre,
+			genre: storyGenre,
 			events: [sessionEvents.messageCompleted],
 			strategy: pick2,
 			swaps: [C.turnRoundRobin],
@@ -714,13 +715,13 @@ describe('M2 · preset-seeded swaps (R40)', () => {
 	test('defaults.swaps lands with each definition as its id; speakerStrategy is gone', () => {
 		const p = preset({
 			slug: 'seeded',
-			genre: chatGenre,
+			genre: storyGenre,
 			label: 'Seeded',
-			bindings: [{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] }],
-			defaults: { swaps: [{ spec: use(CHAT_TURN_ORDER_SPEC_ID), node: 'strategy', definition: C.turnManual }] },
+			bindings: [{ spec: use('core:spec/story-create'), events: [sessionEvents.sessionCreated] }],
+			defaults: { swaps: [{ spec: use(STORY_TURN_ORDER_SPEC_ID), node: 'strategy', definition: C.turnManual }] },
 		})
 		assert.deepEqual(p.defaults?.swaps, [
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'core:task/turn-manual@1' },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'core:task/turn-manual@1' },
 		])
 		assert.equal('speakerStrategy' in (p.defaults ?? {}), false)
 	})
@@ -731,7 +732,7 @@ describe('M2 · preset-seeded swaps (R40)', () => {
 			presets: [
 				{
 					slug: 'bad',
-					genre: 'core:genre/chat',
+					genre: 'core:genre/story',
 					label: { en: 'Bad' },
 					bindings: {},
 					defaults: { swaps: [{ spec: 'strategy', node: '', definition: 'core:task/turn-manual@1' }] },
@@ -756,13 +757,13 @@ describe('M2 · turn controls follow swaps (R42)', () => {
 	}
 
 	test('chat, which offers swaps, exposes pool, mentioned and strategy', () => {
-		const e = exposed(CHAT_TURN_ORDER_SPEC_ID)
+		const e = exposed(STORY_TURN_ORDER_SPEC_ID)
 		assert.deepEqual(e.pool, { session: true })
 		assert.deepEqual(e.mentioned, { session: true })
 		assert.equal((e.strategy as { swaps?: string[] }).swaps?.length, 5)
 	})
 
-	for (const slug of [GUIDE_TURN_ORDER_SPEC_ID, ADVENTURE_TURN_ORDER_SPEC_ID, LAIR_TURN_ORDER_SPEC_ID])
+	for (const slug of [GUIDE_TURN_ORDER_SPEC_ID, ASSISTANT_TURN_ORDER_SPEC_ID, LAIR_TURN_ORDER_SPEC_ID])
 		test(`${slug} exposes no turn control`, () => {
 			assert.deepEqual(exposed(slug), { pool: null, mentioned: null, strategy: null })
 		})
@@ -772,14 +773,14 @@ describe('M2 · turn controls follow swaps (R42)', () => {
 
 describe('M2 review · swaps and seeds refused where they would do nothing', () => {
 	test('a contribution naming no definition gets a sentence, not a TypeError', () => {
-		const { errors } = declarationFindings({ ns: 'acme', swaps: [{ spec: CHAT_TURN_ORDER_SPEC_ID, node: 'strategy' } as never] })
+		const { errors } = declarationFindings({ ns: 'acme', swaps: [{ spec: STORY_TURN_ORDER_SPEC_ID, node: 'strategy' } as never] })
 		assert.ok(errors.some((e) => /names definition '', which is not a pinned id/.test(e)), errors.join('\n'))
 	})
 
 	test('an unversioned definition id is refused', () => {
 		const { errors } = declarationFindings({
 			ns: 'acme',
-			swaps: [{ spec: CHAT_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'acme:task/turn-natural' }],
+			swaps: [{ spec: STORY_TURN_ORDER_SPEC_ID, node: 'strategy', definition: 'acme:task/turn-natural' }],
 		})
 		assert.ok(errors.some((e) => /'acme:task\/turn-natural', which is not a pinned id/.test(e)), errors.join('\n'))
 	})
@@ -801,7 +802,7 @@ describe('M2 review · swaps and seeds refused where they would do nothing', () 
 	test('a preset seeding a swap its own spec does not offer is refused at build', () => {
 		const own = turnOrderSpec({
 			id: 'acme:spec/tavern-turn-order',
-			genre: chatGenre,
+			genre: storyGenre,
 			events: [sessionEvents.messageCompleted],
 			strategy: C.turnRoundRobin,
 			swaps: [C.turnRandom],
@@ -813,7 +814,7 @@ describe('M2 review · swaps and seeds refused where they would do nothing', () 
 				presets: [
 					{
 						slug: 'p',
-						genre: 'core:genre/chat',
+						genre: 'core:genre/story',
 						label: { en: 'P' },
 						bindings: {},
 						defaults: { swaps: [{ spec: 'acme:spec/tavern-turn-order', node, definition }] },
@@ -836,7 +837,7 @@ describe('M2 review · swaps and seeds refused where they would do nothing', () 
 
 describe('M4 · turnOrderSpec({ advise }) builds the decide junction', () => {
 	const chat = () =>
-		CORE_SPECS.find((c) => c.slug === CHAT_TURN_ORDER_SPEC_ID)!.build() as ReturnType<typeof turnOrderSpec>
+		CORE_SPECS.find((c) => c.slug === STORY_TURN_ORDER_SPEC_ID)!.build() as ReturnType<typeof turnOrderSpec>
 
 	test('chat: decide on the session, model → advise, otherwise rules → strategy', () => {
 		const doc = chat()
@@ -854,13 +855,16 @@ describe('M4 · turnOrderSpec({ advise }) builds the decide junction', () => {
 		const strategy = doc.nodes.find((n) => n.key === 'decide.rules.strategy')!
 		assert.equal(strategy.definitionId, 'core:task/turn-round-robin')
 		assert.equal(strategy.expose?.swaps?.length, 5)
-		// The write reads the junction's own result port.
+		// The junction's own result port feeds the order — through Story's
+		// unprompted turns (lane 2, 2026-10-19), which the write reads.
+		const voiced = doc.edges.find((e) => e.to === 'unprompted' && e.toPort === 'order')!
+		assert.deepEqual([voiced.from, voiced.fromPort, voiced.shape], ['decide', 'order', S.turnEntries])
 		const edge = doc.edges.find((e) => e.to === 'write' && e.toPort === 'order')!
-		assert.deepEqual([edge.from, edge.fromPort, edge.shape], ['decide', 'order', S.turnEntries])
+		assert.deepEqual([edge.from, edge.fromPort, edge.shape], ['unprompted', 'order', S.turnEntries])
 	})
 
 	test('chat declares turnMode (rules | model), rules by default', () => {
-		const field = (chatGenre.shape?.fields as Record<string, any>)?.turnMode
+		const field = (storyGenre.shape?.fields as Record<string, any>)?.turnMode
 		assert.equal(field?.type, 'enum')
 		assert.deepEqual(field?.members?.map((m: any) => m.key), ['rules', 'model'])
 		assert.equal(field?.default, 'rules')
@@ -868,7 +872,7 @@ describe('M4 · turnOrderSpec({ advise }) builds the decide junction', () => {
 
 	test('every table entry names the node its Turn order control swaps', () => {
 		const byGenre = Object.fromEntries(TURN_ORDER_BY_GENRE.map((t) => [t.genre.id, t.strategyNode]))
-		assert.equal(byGenre['core:genre/chat'], 'decide.rules.strategy')
+		assert.equal(byGenre['core:genre/story'], 'decide.rules.strategy')
 		assert.equal(byGenre['core:genre/guide'], 'strategy')
 		for (const t of TURN_ORDER_BY_GENRE)
 			assert.ok(t.build().nodes.some((n) => n.key === t.strategyNode), t.spec)

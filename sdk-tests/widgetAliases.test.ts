@@ -23,7 +23,7 @@ import {
 	widgetOfInstance,
 	type SessionLayoutV1,
 } from '../sdk/src/index.js'
-import { ADVENTURE_LAYOUT, LAIR_LAYOUT } from '../core-catalog/src/registry/layouts.js'
+import { STORY_WORLD_LAYOUT, LAIR_LAYOUT } from '../core-catalog/src/registry/layouts.js'
 import { CORE_WIDGETS } from '../core-catalog/src/registry/widgets.js'
 
 const IMPLIED = { owners: 'world', arrangement: 'strip', title: 'World State' }
@@ -178,31 +178,33 @@ describe('resolveDrawn through the alias', () => {
 		const every = drawnInstances(resolveDrawn(layout, { inline: 1300 }))
 		assert.deepEqual(
 			every.map((i) => [i.instanceId, i.widgetId, i.impliedSettings ?? null]),
+			// The top strip is the first panel above the conversation, then the
+			// grid's middle entry ordered before it; the right column last.
 			[
+				['world-state#3', 'stats', IMPLIED],
 				['world-state', 'stats', IMPLIED],
 				['messages', 'messages', null],
 				['world-state#2', 'stats', IMPLIED],
-				['world-state#3', 'stats', IMPLIED],
 			],
 		)
 		assert.deepEqual(drawnWidgetIds(layout), [
+			'world-state#3',
 			'world-state',
 			'messages',
 			'world-state#2',
-			'world-state#3',
 		])
 	})
 })
 
 describe("core's shipped layouts", () => {
 	test('place the world as stats#world by name, never the alias', () => {
-		for (const layout of [ADVENTURE_LAYOUT, LAIR_LAYOUT])
+		for (const layout of [STORY_WORLD_LAYOUT, LAIR_LAYOUT])
 			assert.equal(drawnWidgetIds(layout).includes('world-state'), false)
-		const strip = resolveDrawn(ADVENTURE_LAYOUT, { inline: 1300 }).middle.instances[0]!
+		const strip = resolveDrawn(STORY_WORLD_LAYOUT, { inline: 1300 }).middle.instances[0]!
 		assert.equal(strip.instanceId, 'stats#world')
 		assert.equal(strip.widgetId, 'stats')
 		assert.equal('impliedSettings' in strip, false)
-		assert.deepEqual(ADVENTURE_LAYOUT.widgetSettings?.['stats#world'], IMPLIED)
+		assert.deepEqual(STORY_WORLD_LAYOUT.widgetSettings?.['stats#world'], IMPLIED)
 	})
 })
 

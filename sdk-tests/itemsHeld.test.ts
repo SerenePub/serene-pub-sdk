@@ -187,10 +187,11 @@ describe('the inventory slot', () => {
 		assert.equal(slotPickable(inventorySlot), true)
 	})
 
-	// Phase 3b: Adventure and Lair carry it on their sheets (possessions-as-
-	// edges retired onto it); every other genre still does not.
-	test('Adventure and Lair carry it; no other genre switches it on — Chat above all', () => {
-		for (const id of ['core:genre/adventure', 'core:genre/lair']) {
+	// Phase 3b: Story (Adventure's sheet, 2026-10-19) and Lair carry it on
+	// their sheets (possessions-as-edges retired onto it); every other genre
+	// still does not.
+	test('Story and Lair carry it; no other genre switches it on — Chat above all', () => {
+		for (const id of ['core:genre/story', 'core:genre/lair']) {
 			assert.ok(genreSlots(id).some((s) => s.id === inventorySlot.id), id)
 			const sheet = getGenre(id)!.sheets?.[0] as { slots?: Array<{ id: string }> } | undefined
 			assert.ok(sheet?.slots?.some((s) => s.id === inventorySlot.id), `${id}'s sheet`)
@@ -204,21 +205,11 @@ describe('the inventory slot', () => {
 	})
 })
 
-// Phase 3b: supply is a genre pipeline's to enforce, and Adventure does — its
-// respond spec reads the item supply into the keeper's resolver, which refuses
-// an item line past what is left.
-describe("Adventure enforces item supply (phase 3b)", () => {
-	test('the respond spec wires core:query/item-supply@1 into keeperResolve.supply', async () => {
-		const { coreAnnouncement } = await import('@serene-pub/core-catalog')
-		const respond = (coreAnnouncement().document as any).pipelines.find(
-			(p: any) => p.id === 'core:spec/adventure-respond',
-		)
-		const supplyNode = respond.nodes.find((n: any) => n.definitionId === 'core:query/item-supply')
-		assert.ok(supplyNode, 'an item-supply query')
-		const resolve = respond.nodes.find((n: any) => n.key === 'keeperResolve')
-		assert.deepEqual(resolve.config.supply, { __ref: 'data', node: supplyNode.key, port: 'supply' })
-	})
-})
+// Phase 3b's supply check rode Adventure's keeper (`keeperResolve.supply`),
+// retired with its reply on 2026-10-19: Story's reckoning hands a thing
+// gained or lost to the ruleset handler as a piece, never an inventory line
+// by entry id, so it has no item line to check. Rest's keeper writes none
+// either. (Lane 1 report: supply for Story is the handler's, or a follow-up.)
 
 // 2026-09-27 (owner ruling): Lair checks item supply like Adventure — its
 // keeper's resolver reads `core:query/item-supply@1` inside the `keep.played`
@@ -247,7 +238,8 @@ describe('Lair enforces item supply (2026-09-27)', () => {
 // preset, with no alias (owner: the SDK is undistributed, keep it clean).
 describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 	const KEEPERS: Array<[slug: string, nodeKey: string]> = [
-		['core:spec/adventure-respond', 'keeperWrite'],
+		// Story's Rest (Adventure's keeper action until 2026-10-19).
+		['core:spec/story-rest', 'write'],
 		['core:spec/lair-respond', 'keep.played.keeperWrite'],
 	]
 	test('each keeper schema names `inventory`, required, and never `possessions`', async () => {
@@ -259,11 +251,11 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 			const schema = node?.config?.schema
 			assert.ok(schema?.properties?.inventory, `${slug} ${key}`)
 			assert.ok(!('possessions' in schema.properties), slug)
-			// 🚧 Adventure's keeper also answers a `clock` list (live scenes
-			// ★3, lane F, 2026-10-13); the Lair's does not.
+			// 🚧 Rest's keeper also answers a `clock` list (live scenes ★3,
+			// lane F, 2026-10-13); the Lair's does not.
 			assert.deepEqual(
 				schema.required,
-				slug === 'core:spec/adventure-respond' ? ['values', 'inventory', 'clock'] : ['values', 'inventory'],
+				slug === 'core:spec/story-rest' ? ['values', 'inventory', 'clock'] : ['values', 'inventory'],
 				slug,
 			)
 		}
@@ -281,13 +273,13 @@ describe("the keeper's item arm is `inventory` (2026-09-27)", () => {
 	})
 	test('no shipped keeper prompt asks for `possessions`', async () => {
 		const { CORE_PROMPTS } = await import('@serene-pub/core-catalog')
-		// Every prompt that answers the keeper's document: the two keepers and
-		// Adventure's Rest and Advance time — Adventure's three hold a third
-		// list, `clock`, since live scenes ★3 (lane F, 2026-10-13).
+		// Every prompt that answers the keeper's document: Story's Rest (a
+		// third list, `clock`, since live scenes ★3) and the Lair's keeper.
+		// Adventure's keeper and Advance time left with it (2026-10-19).
 		const keepers = (CORE_PROMPTS as any[]).filter((p) =>
 			/holding (two|three) lists/.test(JSON.stringify(p.fields)),
 		)
-		assert.equal(keepers.length, 4)
+		assert.equal(keepers.length, 2)
 		for (const p of keepers) {
 			assert.ok(!JSON.stringify(p.fields).includes('possessions'), p.seedKey)
 			assert.ok(JSON.stringify(p.fields).includes('- inventory:'), p.seedKey)

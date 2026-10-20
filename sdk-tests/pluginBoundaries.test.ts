@@ -42,7 +42,7 @@ describe('R53 · a plugin never stands in for a node that uses a connection', ()
 describe('R62 and R53 at build: a swap contribution is judged where it is written', () => {
 	const talk = compile(
 		spec('other:spec/talk', { version: '1.0.0' })
-			.inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: 'core:event/message-respond@1' })
+			.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: 'core:event/message-respond@1' })
 			.task('merge', ($) => C.concatCandidates.v1({ sources: [$.input.text] as never }))
 			.oracle('speak', () => C.generateText.v1({} as never))
 			.build(),

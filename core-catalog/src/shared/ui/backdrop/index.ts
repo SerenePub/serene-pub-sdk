@@ -70,12 +70,12 @@ export function mayChangeBackdrop(viewer: ViewerV1 | undefined): boolean {
 
 /**
  * 🚧 The Scene action the widget's **Illustrate** fires (DESIGN-image-
- * generation §6.5, I9): `core:spec/chat-illustrate-scene#illustrate-scene`,
+ * generation §6.5, I9): `core:spec/story-illustrate-scene#illustrate-scene`,
  * spelled out rather than imported so this half stays free of the spec
  * builder. The app's Scene test holds the two together.
  * @experimental
  */
-export const BACKDROP_ILLUSTRATE_ACTION = 'core:spec/chat-illustrate-scene#illustrate-scene'
+export const BACKDROP_ILLUSTRATE_ACTION = 'core:spec/story-illustrate-scene#illustrate-scene'
 
 /**
  * 🚧 Every genre's Scene action, Chat's first (§16 follow-up D3): Adventure
@@ -84,7 +84,7 @@ export const BACKDROP_ILLUSTRATE_ACTION = 'core:spec/chat-illustrate-scene#illus
  */
 export const BACKDROP_ILLUSTRATE_ACTIONS: readonly string[] = Object.freeze([
 	BACKDROP_ILLUSTRATE_ACTION,
-	'core:spec/adventure-illustrate-scene#illustrate-scene',
+	'core:spec/story-illustrate-scene#illustrate-scene',
 ])
 
 /** What a press of Illustrate sends: the picture becomes the backdrop and nothing is posted. @experimental */

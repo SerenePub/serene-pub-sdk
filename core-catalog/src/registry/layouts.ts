@@ -20,49 +20,48 @@
  * A widget id with no component renders as a labelled placeholder, by design:
  * uninstalling a plugin or mistyping a key strands nothing. So naming `stats`
  * here is safe whether or not this build has a Stats widget.
+ *
+ * ## The arrangement is `panels`
+ *
+ * Each layout says where its widgets sit in ONE slot, `panels`
+ * (PLAN-session-panels-2026-10-14): three zones — `left`, `middle`, `right` —
+ * of panels, each panel a box holding widget instances as tabs. A side panel
+ * is docked unless it says `pinned: false` (in the rail, an icon); its height
+ * is `fill` unless it says otherwise. The middle is the `primary` panel (the
+ * conversation, filling) with panels `above` and `below` it. Keys run `p1…pn`
+ * in the order the converter discovers them — the primary, above, below,
+ * left, right — so a layout converted from the old slots and the literal
+ * here agree key for key.
+ *
+ * ⏳ The three older slots — `zoneLayout`, `widgetGrid`, `arrangedGrid` — are
+ * gone from these literals. A stored layout or a plugin manifest may still
+ * carry them; readers go through the SDK's `panelsOf`, which converts them
+ * (`panelsFromSlots`) when `panels` is absent. They are dropped at the 0.7
+ * squash. `widgetSettings` and `widgetStyles` are not arrangement and stay.
  */
 import type { SessionLayoutV1 } from '@serene-pub/sdk'
 
 /**
- * Chat's (owner ruling 2026-10-03): the conversation in the middle, and the
+ * Story's default — the roleplay Chat's until 2026-10-19 (owner ruling
+ * 2026-10-03): the conversation in the middle, and the
  * Author's note tucked in the right column — an icon in the rail, unpinned,
  * opened when wanted — so the conversation stays the page on a narrow
  * screen, where the note waits in **Session panels** without arriving open.
  * @internal
  */
-export const CHAT_LAYOUT: SessionLayoutV1 = {
-	zoneLayout: {
+export const STORY_LAYOUT: SessionLayoutV1 = {
+	panels: {
 		version: 1,
-		zones: {
-			left: { kind: "side", side: "left", pinned: false, widgets: [] },
-			right: { kind: "side", side: "right", pinned: false, widgets: ["authors-note"] }
-		}
-	},
-	widgetGrid: {
-		version: 1,
-		cell: 44,
-		widgets: [
-			{
-				id: "messages",
-				zone: "middle",
-				order: 0,
-				size: { w: "grow", h: "grow" },
-				anchor: { top: true, bottom: true, left: true, right: true }
-			}
-		]
-	},
-	arrangedGrid: {
-		right: {
-			cols: 1,
-			rows: 12,
-			items: [{ id: "authors-note", x: 0, y: 0, w: 1, h: 12, pinned: false }]
-		}
+		left: [],
+		middle: { above: [], primary: { key: "p1", tabs: ["messages"] }, below: [] },
+		right: [{ key: "p2", tabs: ["authors-note"], pinned: false }]
 	}
 }
 
 
 /**
- * Adventure: the world above the conversation, the party down the right, the
+ * Story's **World** layout — Adventure's until 2026-10-19: the world above the
+ * conversation, the party down the right, the
  * lore within reach on the left.
  *
  * **Middle.** The world's stats are a strip above the messages — where you
@@ -72,8 +71,8 @@ export const CHAT_LAYOUT: SessionLayoutV1 = {
  * world as a strip and titled as World State was (PLAN-core-widgets W7: World
  * State became Stats drawn for the world; `world-state` is now an alias a
  * stored layout may still place). `messages` — the log and the field you
- * write into, one widget — fills everything under it, anchored to all four
- * edges. Placement is free, so a person may move it to a side; a session
+ * write into, one widget — is the primary panel and fills everything under
+ * it; the strip is a panel above it, sized to `fit`. Placement is free, so a person may move it to a side; a session
  * always keeps one (the primary floor).
  *
  * **Right, docked and pinned.** Scene Portraits showing who is in the SCENE,
@@ -82,8 +81,9 @@ export const CHAT_LAYOUT: SessionLayoutV1 = {
  * the cast's cards. (Inventory sat under Stats until R79 removed that widget
  * for now.)
  *
- * **Left, unpinned.** An unpinned rail is an icon strip that pops over the
- * conversation when you click it, which is what "collapsed to the rail" means:
+ * **Left, in the rail.** Both panels are `pinned: false`: an icon each in
+ * the rail, popping over the conversation when you click it, which is what
+ * "collapsed to the rail" means:
  * the lore is one click away and costs no width until you want it. It holds
  * the Chronicle (the story's history and its clock) and Lore entries (what
  * the book has, and what was read) — an adventure's lorebook is required, so
@@ -94,47 +94,28 @@ export const CHAT_LAYOUT: SessionLayoutV1 = {
  * first paint.
  * @internal
  */
-export const ADVENTURE_LAYOUT: SessionLayoutV1 = {
-	zoneLayout: {
+export const STORY_WORLD_LAYOUT: SessionLayoutV1 = {
+	/**
+	 * The right column docked — two panels with no `pinned` field, which is
+	 * what makes it open on the first paint rather than a strip of icons the
+	 * player has to click — Scene Portraits over Stats, sharing the column
+	 * (`fill`, the absent height). The left in the rail: a side whose every
+	 * panel is `pinned: false` takes a rail's width, never a column's.
+	 */
+	panels: {
 		version: 1,
-		zones: {
-			left: {
-				kind: "side",
-				side: "left",
-				pinned: false,
-				widgets: ["chronicle", "lore-entries"]
-			},
-			right: {
-				kind: "side",
-				side: "right",
-				pinned: true,
-				widgets: ["scene-portraits", "stats"]
-			}
-		}
-	},
-	widgetGrid: {
-		version: 1,
-		cell: 44,
-		widgets: [
-			{
-				id: "stats#world",
-				zone: "middle",
-				order: 0,
-				size: { w: "grow", h: "fixed" },
-				anchor: { top: true, left: true, right: true }
-			},
-			{
-				id: "messages",
-				zone: "middle",
-				order: 1,
-				size: { w: "grow", h: "grow" },
-				anchor: {
-					top: true,
-					bottom: true,
-					left: true,
-					right: true
-				}
-			}
+		left: [
+			{ key: "p3", tabs: ["chronicle"], pinned: false },
+			{ key: "p4", tabs: ["lore-entries"], pinned: false }
+		],
+		middle: {
+			above: [{ key: "p2", tabs: ["stats#world"], height: "fit" }],
+			primary: { key: "p1", tabs: ["messages"] },
+			below: []
+		},
+		right: [
+			{ key: "p5", tabs: ["scene-portraits"] },
+			{ key: "p6", tabs: ["stats"] }
 		]
 	},
 	/**
@@ -157,40 +138,6 @@ export const ADVENTURE_LAYOUT: SessionLayoutV1 = {
 			bars: true
 		},
 		"stats#world": { owners: "world", arrangement: "strip", title: "World State" }
-	},
-	/**
-	 * The right column, ARRANGED — which is what makes it open on the first
-	 * paint rather than a strip of icons the player has to click.
-	 *
-	 * The left is NOT arranged: its zone's `pinned: false` makes it an icon
-	 * strip on the width ladder, which costs no width, and the layout
-	 * editor's Done keeps a side it was opened on un-arranged unless a hand
-	 * moves something in it. (An arrangement whose cards are all unpinned
-	 * would draw the same: a rail-only side counts a rail's width, never a
-	 * column's — `sideFlowPx` in the app's `sessionLayout/sideSlot`.)
-	 *
-	 * A side is drawn from its arrangement when it has one, and a group in an
-	 * arrangement is expanded by default exactly when it is PINNED: `pinned` is
-	 * a field on these items and absent means pinned (`pinnedOf`, the SDK's
-	 * one pin rule), so two items with no `pinned` field is two panels open,
-	 * in this order, with nothing transient deciding it. A side with NO
-	 * arrangement falls back to the width ladder instead, which leaves its
-	 * docked-or-icons state to whatever the session box happens to measure.
-	 *
-	 * One column and twelve rows because a rail is one column; the two
-	 * heights are the share each panel takes of it, and `seedPositions` clamps
-	 * the whole thing to however many whole cells the window actually gives the
-	 * column.
-	 */
-	arrangedGrid: {
-		right: {
-			cols: 1,
-			rows: 12,
-			items: [
-				{ id: "scene-portraits", x: 0, y: 0, w: 1, h: 6 },
-				{ id: "stats", x: 0, y: 6, w: 1, h: 6 }
-			]
-		}
 	}
 }
 
@@ -234,52 +181,21 @@ export const ADVENTURE_LAYOUT: SessionLayoutV1 = {
  * @internal
  */
 export const LAIR_LAYOUT: SessionLayoutV1 = {
-	zoneLayout: {
+	/**
+	 * Both sides docked: Stats alone on the left; on the right the rooms, the
+	 * note and the talk, a panel each, top to bottom — the Sanctum its own
+	 * panel, never a tab of the story's, so both conversations stay in view.
+	 */
+	panels: {
 		version: 1,
-		zones: {
-			left: { kind: "side", side: "left", pinned: true, widgets: ["stats"] },
-			right: {
-				kind: "side",
-				side: "right",
-				pinned: true,
-				widgets: ["places", "annex#castellan", "messages#sanctum"]
-			}
-		}
-	},
-	widgetGrid: {
-		version: 1,
-		cell: 44,
-		widgets: [
-			{
-				id: "messages",
-				zone: "middle",
-				order: 0,
-				size: { w: "grow", h: "grow" },
-				anchor: {
-					top: true,
-					bottom: true,
-					left: true,
-					right: true
-				}
-			}
+		left: [{ key: "p2", tabs: ["stats"] }],
+		middle: { above: [], primary: { key: "p1", tabs: ["messages"] }, below: [] },
+		right: [
+			// The old 4/2/6 row split, kept as shares: the Sanctum's talk takes the most room.
+			{ key: "p3", tabs: ["places"], height: { share: 4 } },
+			{ key: "p4", tabs: ["annex#castellan"], height: { share: 2 } },
+			{ key: "p5", tabs: ["messages#sanctum"], height: { share: 6 } }
 		]
-	},
-	arrangedGrid: {
-		left: {
-			cols: 1,
-			rows: 12,
-			items: [{ id: "stats", x: 0, y: 0, w: 1, h: 12 }]
-		},
-		right: {
-			cols: 1,
-			rows: 12,
-			// The rooms, a short note, and the talk taking the most.
-			items: [
-				{ id: "places", x: 0, y: 0, w: 1, h: 4 },
-				{ id: "annex#castellan", x: 0, y: 4, w: 1, h: 2 },
-				{ id: "messages#sanctum", x: 0, y: 6, w: 1, h: 6 }
-			]
-		}
 	},
 	/**
 	 * The right column's settings: the room list's, the note's key, and the
@@ -292,5 +208,145 @@ export const LAIR_LAYOUT: SessionLayoutV1 = {
 			title: "Castellan's scratchpad"
 		},
 		"messages#sanctum": { channel: "sanctum", composer: "minimal" }
+	}
+}
+
+/**
+ * 🚧 Dungeon Crawler (PLAN-dungeon-crawler-2026-10-14): the Planner, the
+ * story and the planning notes as tabs of the middle, the Planner first;
+ * your character and the journal on the right.
+ *
+ * **Middle — tabs, the Planner first** (DC walkthrough 2026-10-15). A session
+ * opens on the Planner's interview: until it ends the Story is empty, so the
+ * first thing anyone sees must be the Planner. A layout has one arrangement
+ * for every width, and on a phone the sides are hidden behind *Session
+ * panels* — a Planner docked on the left left a phone on an empty Story
+ * ("Send a message to start"), the interview out of sight; in a narrow side
+ * its choices and composer had no room either. So the Planner lane is the
+ * primary panel's first tab: a Messages copy on `parley` that shows each
+ * viewer their own lane (`channelLane: 'mine'`, which the host resolves from
+ * `SessionV1.channels`; `parley` is declared `lanes: 'personal'`, so the
+ * server sends each lane to its person and the session's owner alone —
+ * owner ruling 2026-10-17). **Story** (the
+ * conversation, titled so by its copy's `title`) is the second tab; the open tab is saved with the session's
+ * layout, so once someone moves to Story it stays there. The third tab is
+ * the revealed **Planning notes** (an Annex copy): empty until the owner has
+ * them revealed, then readable by everyone — the tab the reveal's line on
+ * Story names. 🚧 Every later rewrite of the notes writes the revealed key
+ * too (AUDIT A24), so the tab never goes stale; ⏳ reading the live key
+ * behind a `revealed` flag waits on an annex key whose `see` can open up. A tab never shares the panel's height with another, so
+ * opening the notes can no longer squeeze the Planner to its composer.
+ *
+ * **Right.** The character sheet: 🚧 every player seat's, as the **faces
+ * strip** (`owners: seats`, `arrangement: faces`, 2026-10-18 — the 100-turn
+ * walk: a host could not see the sheet they had just given a potion to),
+ * the viewer's own first and chosen, so a guest still opens on their own;
+ * alone at the table there is one sheet and no strip. Companions keep no
+ * sheet, so they are not chips. It leaves out the core `abilities` and
+ * `inventory` rows that Vis Itineris's features and gear replaced
+ * (`hideSlots`). Under it the
+ * goal and the open leads — an Annex copy titled **Goal & leads**
+ * (`annex#journal`) — and the **Journal**: a Messages copy pinned to the
+ * `travelogue` folio with no composer (`messages#journal`), the log the
+ * story turn's books keep — never the Narrator's (AUDIT E) — its rows drawn
+ * by kind (`rowKinds`: the round's `did` line, then what it found, met,
+ * changed, the time it took and its new leads). Two panels, two names
+ * (round 2: both read "Journal").
+ *
+ * **Copy and clock** (owner ruling 2026-10-15: formats and empty-state copy
+ * are widget settings, pinned here — never genre or channel fields). Story,
+ * Journal and the sheet each say why they are empty in the crawl's words
+ * (`emptyState`; the Planner tab keeps the widget's own); Story's change
+ * lines and the sheet's clock read `Day 1, 08:30` (`timeFormat`), the
+ * crawl counting days, not calendar dates.
+ *
+ * **Dice** (🚧 PLAN-rulesets §30, 2026-10-16): the rolls, stakes and rest
+ * lines are the `table` channel's, never the Story's — Story draws them
+ * inline under the Narrator's line each belongs to (`interleave: "table"`),
+ * faceless. 🚧 The **Dice** tab beside the Journal (`messages#table`,
+ * 2026-10-18) is the whole table as a log, newest last, with no composer:
+ * nobody writes there. Story still draws each line inline under its anchor
+ * — an interleaved row is drawn whichever copy claims its channel.
+ * @internal
+ */
+export const DUNGEON_CRAWLER_LAYOUT: SessionLayoutV1 = {
+	panels: {
+		version: 1,
+		left: [],
+		middle: {
+			above: [],
+			primary: { key: "p1", tabs: ["messages#parley", "messages", "annex#planning-notes"] },
+			below: []
+		},
+		right: [
+			{ key: "p2", tabs: ["stats"], height: { share: 4 } },
+			{ key: "p3", tabs: ["annex#journal"], height: { share: 2 } },
+			{ key: "p4", tabs: ["messages#journal", "messages#table"], height: { share: 4 } }
+		]
+	},
+	widgetSettings: {
+		stats: {
+			owners: "seats",
+			arrangement: "faces",
+			castScope: "all",
+			// 🚧 The trained skills too (★4, after walk #3): the derive script's
+			// to read, spelled as keys; a check names its proficiency itself.
+			hideSlots: ["abilities", "inventory", "itineris-skill-training"],
+			title: "Character sheet",
+			emptyState: "Your sheet appears once your character is made.",
+			timeFormat: "Day {day}, {hh}:{mm}"
+		},
+		messages: {
+			title: "Story",
+			emptyState:
+				"The Planner is getting to know you on the Planner tab — the story starts after the interview.",
+			timeFormat: "Day {day}, {hh}:{mm}",
+			// 🚧 The dice under the Narrator's line they decided (PLAN-rulesets
+			// §30): the `table` channel's rows, drawn inline by their anchor.
+			interleave: "table"
+		},
+		"annex#journal": { key: "core.dungeon-crawler-journal", title: "Goal & leads" },
+		"messages#journal": {
+			channel: "travelogue",
+			showComposer: false,
+			emptyState: "Your journal fills as the story unfolds.",
+			// 🚧 The journal's line kinds (PLAN-sheet-widget-redesign §16):
+			// `DUNGEON_CRAWLER_JOURNAL_KINDS` (`genres/dungeon-crawler/journal.ts`)
+			// — all but `time`, off by default (PLAN-dc-after-walk3 R3-5, the
+			// walk's #42: bare "Day 1, 08:15 → Day 1, 08:20" lines between the
+			// story's own); a person ticks it back on.
+			rowKinds: ["did", "found", "met", "changed", "lead"]
+		},
+		"messages#table": {
+			channel: "table",
+			title: "Dice",
+			showComposer: false,
+			emptyState: "The rolls and the table's notes show here as the story is played.",
+			// 🚧 The crawl's clock as the Story spells it (PLAN-dc-after-walk3
+			// R1-6, the walk's NEW-14: a Rest's time line here read "Year 1,
+			// Mo. 1, Day 1, 09:06 → …").
+			timeFormat: "Day {day}, {hh}:{mm}"
+		},
+		"messages#parley": {
+			channel: "parley",
+			channelLane: "mine",
+			// …and the Planner's lane, where a new sheet's changes are filed.
+			timeFormat: "Day {day}, {hh}:{mm}"
+		},
+		"annex#planning-notes": {
+			key: "core.dungeon-crawler-planning-notes-revealed",
+			title: "Planning notes"
+		},
+		// 🚧 Scene Portraits, for whoever adds it (PLAN-dc-after-walk2 Q3-5,
+		// the walk's #29): not placed, but a crawl's scene is its heroes —
+		// player seats, not cast — and the people met, never only a companion.
+		"scene-portraits": {
+			who: "scene",
+			playerSeats: true,
+			metPeople: true,
+			bars: true,
+			// 🚧 Only the heroes keep sheets (R3-3, the walk's NEW-13).
+			barsFor: "seats"
+		}
 	}
 }

@@ -53,7 +53,7 @@ import * as C from '@serene-pub/contracts'
 -->
 ```ts
 const reply = spec('acme.greeter:reply', { version: '1.0.0' })
-	.inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.messageRespond })
+	.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.messageRespond })
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	.task('prompt', () => C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }))
 	.oracle('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
@@ -74,7 +74,7 @@ what the step is allowed to do. Your own node definitions can be any kind but th
 | **query** | Reads. | `storage`: your plugin's own rows and files. | `session-history` |
 | **task** | Computes. Data in, data out, nothing else. | Nothing more. A task gets no storage and no network. | `assemble` |
 | **oracle** | Calls out to something outside the run. | `storage`, and `fetch` for the hosts your plugin declares. | `generate-text` |
-| **outlet** | Writes. | `storage`. A plugin's outlet declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets do the writing to the session. | `create-message`, `set-session-annex`, `record-event` |
+| **outlet** | Writes. | `storage`. A plugin's outlet declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets do the writing to the session. | `create-message`, `set-session-annex`, `set-stat-config`, `record-event` |
 
 A handler takes `(input, ctx)` and returns `ok({ <port>: value })`, or `err('a sentence')`. A
 thrown error or a bare value is not a result. Declaring the wrong kind is the mistake everyone
@@ -109,7 +109,7 @@ The exact `ctx` each kind is handed, and the rules every kind shares, are in
 
 ## Genres
 
-A **genre** is a kind of session: Chat, Adventure, Guide and the Lair are core's. A plugin genre says how
+A **genre** is a kind of session: Story, Chat, the Guide, the Lair and the Dungeon Crawler are core's. A plugin genre says how
 many characters a session needs, whether it has a composer, which channels it has, which widgets
 it leaves out and how its screen is laid out. It owns the pipelines its sessions run.
 
@@ -160,7 +160,7 @@ const roll = spec('acme.dice:spec/roll', {
 			},
 		],
 	},
-}).inlet('input', C.userMessage.v1(), { genre: use('core:genre/chat'), event: sessionEvents.sessionAction })
+}).inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.sessionAction })
 ```
 
 The venues drawn today are `composer`, `message` (a message's menu), `extra` (the turn controls

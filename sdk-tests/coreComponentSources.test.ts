@@ -36,7 +36,7 @@ test('CORE_COMPONENTS validates, and names every core widget component — messa
 	)
 	assert.ok(CORE_COMPONENTS.every((c) => c.__decl === 'component' && c.framework === 'svelte' && !c.basedOn))
 	assert.deepEqual([...CORE_VIEW_ONLY_COMPONENTS], ['messages'])
-	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
+	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
 })
 
 test("a clone's basedOn carries the upstream's sourceHash — optional, and SHA-256 hex when given", () => {
@@ -212,7 +212,7 @@ describe('every core component compiles in-app from its source.json', { timeout:
  */
 describe('the cloneable five, built in-app from source.json, behave as shipped', { timeout: 900_000 }, async () => {
 	process.env.SP_CORE_COMPONENT_BUILD = 'in-app'
-	assert.deepEqual(CLONEABLE, ['world-state', 'stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
+	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance'])
 	await import('./coreStateWidgets.test.js')
 	await import('./coreLoreEntriesComponent.test.js')
 	await import('./coreScenePortraitsComponent.test.js')

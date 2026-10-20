@@ -38,10 +38,10 @@ import {
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
-	adventureCreateSpec,
-	adventureGenre,
+	createStorySpec,
+	createAssistantSpec,
+	storyGenre,
 	chatGenre,
-	createChatSpec,
 	createGuideSpec,
 	guideGenre,
 } from '@serene-pub/core-catalog'
@@ -156,11 +156,13 @@ describe('the core genres', () => {
 		assert.deepEqual(resolveWrites(guideGenre.shape), { lore: false, scenes: false })
 	})
 
-	test('chat and adventure declare nothing, so both writes stay on', () => {
-		for (const g of [chatGenre, adventureGenre]) {
-			assert.equal(g.shape?.writes, undefined, g.id)
-			assert.deepEqual(resolveWrites(g.shape), { lore: true, scenes: true }, g.id)
-		}
+	test('Story declares nothing, so both writes stay on', () => {
+		assert.equal(storyGenre.shape?.writes, undefined)
+		assert.deepEqual(resolveWrites(storyGenre.shape), { lore: true, scenes: true })
+	})
+
+	test('Chat, the assistant, writes lore (its memory, its tools) and never scenes (2026-10-19)', () => {
+		assert.deepEqual(resolveWrites(chatGenre.shape), { lore: true, scenes: false })
 	})
 })
 
@@ -195,7 +197,7 @@ describe('the addition is additive', () => {
 	 * existed. Two must still match — chat and adventure declare no writes —
 	 * and Guide's is the one that moved, because Guide's declaration changed.
 	 */
-	test('chat and adventure hash exactly as they did before writes existed', () => {
+	test('Story hashes as it was moved; Chat (the assistant) is pinned', () => {
 		// Both moved on 2026-09-21, twice: when `shape.speakerStrategies`
 		// replaced `nextSpeaker` (were "1bc0b0f6dc8999" and "240458abb4e3b",
 		// then "11f6c592f98eee" and "1e295d10acfa23"), and again the same day
@@ -214,20 +216,18 @@ describe('the addition is additive', () => {
 		// Moved 2026-10-03 (placed text at the end): the author's note field's
 		// `depth` default is 0; the app's specHashes.test.ts records it. (was '1566992a444e50')
 		// Moved 2026-10-05 (spec ids genre first, ruling C4): the id is
-		// `core:spec/chat-create`, was `core:spec/create-chat`. Proven: the
+		// `core:spec/story-create`, was `core:spec/create-chat`. Proven: the
 		// document with only its id set back hashes to the old pin. (was '18b84026deb74b')
-		assert.equal(canonicalHash(createChatSpec() as any), '1cd1222a275dec')
-		// Adventure moved 2026-09-27 (lair pass B9): its genre's events
-		// gained message-deleted and message-hidden (was "4b16999c12ab3").
-		// Moved 2026-09-27 (characterDetail genre field): Chat and Adventure
-		// declare `fields.characterDetail` (CHARACTER_DETAIL_FIELD: full / brief /
-		// speaker-only). Proven: a copy of core-catalog/src with just those two
-		// field lines removed from genres.ts hashes back to the old pin. (was '4e1033c247420')
-		// Moved 2026-09-28 (enum option labels on Adventure's tone/difficulty); removing those `members` restores the old pin exactly (was 'e611ef3a97923').
-		// Moved 2026-10-13 (live scenes G2): Adventure declares its place,
-		// `shape.scenes.place: { stateKey: 'location' }`; the app's
-		// specHashes.test.ts records it. (was '17f29013f5ffc6')
-		assert.equal(canonicalHash(adventureCreateSpec() as any), '2b63bc55e3597')
+		// Moved 2026-10-19 (PLAN-genre-restructure R4): the roleplay Chat is
+		// the Story genre — `core:spec/story-create`, its declaration Story's
+		// (name, family, description, the fields Adventure brought, the
+		// background tasks). (was '1cd1222a275dec')
+		assert.equal(canonicalHash(createStorySpec() as any), '1244f17da8e07b')
+		// Adventure's create spec retired 2026-10-19 (folded into Story; its
+		// last pin was '2b63bc55e3597'). 🚧 Chat, the assistant, is new: a
+		// fresh id that declares `writes`, so it is no witness to the claim
+		// above; pinned here so a change to it is seen.
+		assert.equal(canonicalHash(createAssistantSpec() as any), '63c78ba748cb9')
 	})
 
 	test('Guide’s moved, once, because Guide now declares something', () => {
@@ -243,6 +243,8 @@ describe('the addition is additive', () => {
 		// back to it; "6b6c45bf731ba" until 2026-10-05, when the id became
 		// `core:spec/guide-create` (spec ids genre first, ruling C4) — proven:
 		// the document with only its id set back hashes to it)
-		assert.equal(canonicalHash(createGuideSpec() as any), '1cb7b0cfc1ae44')
+		// "1cb7b0cfc1ae44" until 2026-10-19, when the Guide declared
+		// `members: 'solo'` and its `tools` field (web search, on by default).
+		assert.equal(canonicalHash(createGuideSpec() as any), '16fb2ead93ba5')
 	})
 })

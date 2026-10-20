@@ -15,25 +15,24 @@
  *  · the **order** — the entries, the candidates they were chosen from, and
  *    what the recompute answered.
  *
- * ⚠ `TurnCandidateV1.ref` is a `ParticipantRef`, whose grammar today admits
- * `character:` · `envoy:` · `user:` and the roles — not `persona:`. A
- * persona is a character row flagged `is_persona`, so its
- * reference is `character:<id>` and `kind: 'persona'` is what says which;
- * whether the grammar grows a `persona:` form is an open question still
- * recorded, not one this file answers.
+ * ⚠ `TurnCandidateV1.ref` is a `ParticipantRef`; there is no `persona:`
+ * form. `kind: 'persona'` names the ROLE — a person's seat, shown as their
+ * turn and never fired — and the ref names who sits there: the voiced card
+ * (`character:<id>`, a persona being a character row flagged `is_persona`),
+ * or 🚧 `player-seat:<id>` for a seat that voices no card.
  * @ruling PLAN-turn-order §4.2 (ruled 2026-09-21), R5, NOMENCLATURE §23, PLAN-turn-order §8
  */
 import type { ParticipantRef } from './participants.js'
 
 /** @experimental */
 export interface TurnCandidateV1 {
-	/** character:11 | persona:7 | envoy:mascot — see the file note on `persona:`. */
+	/** `character:11` · `player-seat:4` · `envoy:mascot` — see the file note on `persona`. */
 	ref: ParticipantRef
 	kind: 'character' | 'persona' | 'envoy' | (string & {})
 	name: string
 	nickname?: string
 	position: number
-	/** Characters and personas: whose library row this is. */
+	/** Characters and personas: whose library row this is — for a card-less player seat, whose seat. */
 	ownerUserId?: number
 	/** Open: orderers and plugins may add keys; core passes them through. */
 	[k: string]: unknown
@@ -147,16 +146,34 @@ export interface TurnHistoryMessage {
 	isHidden?: boolean | null
 	isNarratorResponse?: boolean | null
 	/**
-	 * The row's participant reference (`envoy:<slug>`), as `session-history`
-	 * publishes it. A raw row keeps it in `metadata.speaker` instead; both are read.
+	 * The row's participant reference — `envoy:<slug>` on an envoy's reply,
+	 * 🚧 `player-seat:<id>` on a person's line sent from a card-less player seat — as
+	 * `session-history` publishes it. A raw row keeps it in
+	 * `metadata.speaker` instead; both are read.
 	 */
 	speaker?: string | null
 	metadata?: unknown
 }
 
 /** Who voiced a row, by reference: the projected `speaker`, else the raw `metadata.speaker`. */
-const speakerRefOf = (m: TurnHistoryMessage): unknown =>
+const speakerRefOf = (m: Pick<TurnHistoryMessage, 'speaker' | 'metadata'>): unknown =>
 	m.speaker ?? (m.metadata as { speaker?: unknown } | undefined)?.speaker
+
+/**
+ * The seat a person's row was sent from, as a reference: its persona
+ * (`character:<id>`), else 🚧 the `player-seat:<id>` a card-less player seat's line
+ * carries; null for a row from neither. The one reading of a sender —
+ * the row that opens a round (`spokenRefsSince`) is read by it.
+ *
+ * @experimental 🚧 provisional with the turn-order vocabulary.
+ */
+export function senderRefOf(
+	m: Pick<TurnHistoryMessage, 'personaId' | 'speaker' | 'metadata'>,
+): `character:${number}` | `player-seat:${number}` | null {
+	if (m.personaId != null) return `character:${m.personaId}`
+	const ref = speakerRefOf(m)
+	return typeof ref === 'string' && /^player-seat:[1-9][0-9]*$/.test(ref) ? (ref as `player-seat:${number}`) : null
+}
 
 /**
  * The rows that count as turns: not hidden, not narration. Hidden rows and
@@ -178,12 +195,13 @@ const lastUserIndex = (turns: readonly TurnHistoryMessage[]): number => {
 
 /**
  * Which participants have already spoken since the person last did, as
- * references (`character:<id>`, `envoy:<slug>`).
+ * references (`character:<id>`, `player-seat:<id>`, `envoy:<slug>`).
  *
  * Three readings, one per kind, each the fact that kind leaves in the
  * history: a character's id on a reply row, an envoy's reference on a reply
- * row (`speaker`, else `metadata.speaker`), a persona's id on the user row
- * that opened the window — the person's own send is their turn, consumed. An
+ * row (`speaker`, else `metadata.speaker`), and on the user row that opened
+ * the window its persona's id — or, from a card-less player seat, its `player-seat:`
+ * reference — the person's own send is their turn, consumed. An
  * envoy's reply marks no character. Before any user row the whole history is
  * one round, so a greeting counts as its character's turn.
  *
@@ -201,10 +219,8 @@ export function spokenRefsSince(messages: readonly (TurnHistoryMessage | null | 
 		const ref = speakerRefOf(m)
 		if (typeof ref === 'string' && ref.startsWith('envoy:')) out.add(ref)
 	}
-	if (at >= 0) {
-		const sender = turns[at]!.personaId
-		if (sender != null) out.add(`character:${sender}`)
-	}
+	const sender = at >= 0 ? senderRefOf(turns[at]!) : null
+	if (sender) out.add(sender)
 	return out
 }
 

@@ -69,6 +69,15 @@ export * from './attributes.js'
 // Beside attributes because it is the same registry discipline one level up:
 // a slot says what one value is, a sheet says which values a thing has.
 export * from './sheets.js'
+// 🚧 Rulesets — namespaced bundles of mechanics: repertoires and their pieces,
+// the bridges a foreign field declares, and conversions between rulesets.
+// Beside sheets because a ruleset's stats are a sheet's entries and its
+// repertoires are list slots that know their item's shape.
+export * from './rulesets.js'
+export * from './primers.js'
+export * from './repertoires.js'
+export * from './bridges.js'
+export * from './conversions.js'
 // Card strokes — a card's description and personality as ordered prose
 // pieces, and the card dowry — the stats a card carries between installs.
 // Beside sheets because the dowry is sheets and slots on the card; strokes
@@ -98,6 +107,8 @@ export * from './eventMapLaws.js'
 export * from './rankingDecisions.js'
 export * from './values.js'
 export * from './genres.js'
+export * from './tasks.js'
+export * from './fit.js'
 export * from './announce.js'
 // The checks both authoring surfaces run over what a package declares (D-1).
 // After announce.js, because its declaration types are the ones these read.
@@ -116,6 +127,10 @@ export * from './widgets.js'
 // The conversation dossier (`session_full.v1`, C4): the one scoped section
 // whose shape is large enough for a file of its own. Imports nothing.
 export * from './sessionDossier.js'
+// 🚧 Composer states (owner ruling 2026-10-15): whether a person's composer
+// is open on a channel lane — the session row's document, its resolvers and
+// the sentences the door and the composer say. Imports channels only.
+export * from './composerStates.js'
 // The person gate on a widget's invoke of a message-changing core verb — the
 // page's and the harness's one table (imports nothing).
 export * from './personGate.js'

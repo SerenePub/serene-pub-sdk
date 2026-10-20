@@ -564,7 +564,11 @@ describe('R-2 · a provisional definition is declared, not bound, and cannot be 
 			.inlet('input', C.userMessage.v1())
 			.oracle('pending', ($) => pending.v1({ text: $.input.text }))
 
-	test('the three core definitions plans 14 and 28 own carry the flag, and no other core one does', () => {
+	test('the core definitions their plans own carry the flag, and no other core one does', () => {
+		// 2026-10-16: + `core:task/ruleset-resolve@1` — the rulesets programme's
+		// handler, published as a contract stub (P1-B); the host binds it later.
+		// 2026-10-17: − `core:task/ruleset-resolve@1` — the app binds it now, and
+		// the Dungeon Crawler create spec refuses to seed a provisional node.
 		const flagged = ['core:oracle/speak@1', 'core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']
 		for (const id of flagged) assert.equal(getDefinition(id)?.provisional, true, id)
 		assert.deepEqual(

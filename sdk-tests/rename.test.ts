@@ -120,7 +120,7 @@ describe('R-14 · clauses are gather · each · loop · junction', () => {
 	})
 
 	test('a junction declares `branches`, not `routes`', () => {
-		const adv = built('core:spec/adventure-respond')
+		const adv = built('core:spec/story-respond')
 		const j = adv.clauses.find((c) => c.kind === 'junction')!
 		assert.ok(j.branches && Object.keys(j.branches).length > 0)
 		assert.equal('routes' in j, false)
@@ -148,7 +148,7 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 			const doc: SpecDocument = s.build()
 			assert.equal('subscribes' in doc, false, s.slug)
 		}
-		const respond = built('core:spec/chat-respond')
+		const respond = built('core:spec/story-respond')
 		assert.equal(respond.input?.event, 'core:event/message-respond@1')
 	})
 
@@ -254,14 +254,14 @@ describe('R-7 P2 · one params owner per setting per spec', () => {
 	})
 
 	test('the lore lanes and the embed pair are one owner each in the shipped reply specs', () => {
-		for (const slug of ['core:spec/chat-respond', 'core:spec/adventure-respond']) {
+		for (const slug of ['core:spec/story-respond', 'core:spec/story-respond']) {
 			const doc = built(slug)
 			for (const key of ['gather.characterLore.read', 'gather.historyEntries.read']) {
 				const n = doc.nodes.find((x) => x.key === key)!
 				assert.equal(n.resolvedRefs?.['params'], 'gather.worldLore.read', `${slug} ${key}`)
 			}
 		}
-		for (const slug of ['core:spec/chat-respond', 'core:spec/chat-narrate', 'core:spec/chat-side-character']) {
+		for (const slug of ['core:spec/story-respond', 'core:spec/story-narrate', 'core:spec/story-side-character']) {
 			const doc = built(slug)
 			const n = doc.nodes.find((x) => x.key === 'names.arm.embed')!
 			assert.equal(n.resolvedRefs?.['params'], 'semantic.arm.embed', slug)

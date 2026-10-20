@@ -21,13 +21,12 @@ import '@serene-pub/contracts'
 import {
 	ADVANCE_TIME_ACTION_KEY,
 	TIME_PASSES_COLLECTS,
-	adventureAdvanceTimeSpec,
-	adventureRestSpec,
-	chatAdvanceTimeSpec,
-	chatGenre,
+	storyAdvanceTimeSpec,
+	storyRestSpec,
+	storyGenre,
 	coreSpec,
 	lairAdvanceTimeSpec,
-	respondSpec,
+	storyRespondSpec,
 } from '@serene-pub/core-catalog'
 
 describe('the clock step a press collects', () => {
@@ -70,7 +69,7 @@ describe('the clock step a press collects', () => {
 
 describe('Time passes… — every genre, no model', () => {
 	for (const [name, build, id] of [
-		['Chat', chatAdvanceTimeSpec, 'core:spec/chat-advance-time'],
+		['Story', storyAdvanceTimeSpec, 'core:spec/story-advance-time'],
 		['the Lair', lairAdvanceTimeSpec, 'core:spec/lair-advance-time'],
 	] as const)
 		test(`${name}'s: the stepper, the step, and the clock behind a junction on whether it moves`, () => {
@@ -94,33 +93,23 @@ describe('Time passes… — every genre, no model', () => {
 			assert.equal(coreSpec(id)?.name, 'Time passes')
 		})
 
-	test("Adventure's keeps its keeper and gains the same stepper — the clock last; Rest collects no step", () => {
-		const doc = adventureAdvanceTimeSpec() as any
-		const [a] = actionsOf(doc)
-		assert.equal(a!.key, 'advance-time')
-		assert.deepEqual(a!.collects, TIME_PASSES_COLLECTS)
-		const keys = doc.nodes.filter((n: any) => !n.clauseId).map((n: any) => n.key)
-		assert.ok(keys.includes('write'), 'the keeper still runs')
-		assert.equal(keys.at(-1), 'step', 'the clock step after the keeper’s commit')
-		assert.ok(doc.nodes.some((n: any) => n.key === 'clock.moves.advance' && n.definitionId === 'core:outlet/advance-story-clock'))
-		// The keeper's own clock is never read under Time passes: the amount
-		// is the player's (live scenes ★3, lane F).
-		assert.ok(!('clock' in doc.nodes.find((n: any) => n.key === 'resolve').config))
-		assert.ok(!doc.nodes.some((n: any) => n.key === 'keeperStep'))
-		const rest = adventureRestSpec() as any
+	// 🚧 2026-10-19: Adventure's keeper-run Time passes retired with the genre;
+	// Story's is the shared stepper graph above. Rest still collects no step.
+	test("Rest collects no step; its one clock move is its keeper's, when the sheets apply", () => {
+		const rest = storyRestSpec() as any
 		assert.equal(actionsOf(rest)[0]!.collects, undefined)
-		// 🚧 Rest's one clock move is its keeper's, and only under Trust the
-		// narrator (★3, lane F): the trusted arm's outlet, nothing at the top.
+		// 🚧 Rest's one clock move is its keeper's, and only when *Keep the
+		// sheets* is Full (★3, lane F; the task replaced Trust the narrator).
 		assert.deepEqual(
 			rest.nodes.filter((n: any) => n.definitionId === 'core:outlet/advance-story-clock').map((n: any) => n.key),
-			['commit.trusted.keeperClock.moves.advance'],
+			['commit.applied.keeperClock.moves.advance'],
 		)
 	})
 })
 
-describe("Chat's reply tick", () => {
+describe("Story's reply tick (the roleplay Chat's)", () => {
 	test('a session setting, off by default (By 0), gating Advance story clock behind a junction', () => {
-		const doc = respondSpec() as any
+		const doc = storyRespondSpec() as any
 		const tick = doc.nodes.find((n: any) => n.key === 'tick')
 		assert.equal(tick.definitionId, 'core:task/clock-step')
 		assert.equal(tick.expose?.session, true)
@@ -128,6 +117,6 @@ describe("Chat's reply tick", () => {
 		assert.ok(doc.nodes.some((n: any) => n.key === 'clock.moves.advance' && n.definitionId === 'core:outlet/advance-story-clock' && n.clauseId))
 		const by = (getDefinition('core:task/clock-step@1')!.slots as any).params.schema.by
 		assert.equal(by.default, 0, 'off unless the session sets it')
-		assert.equal(doc.input?.genre, chatGenre.id)
+		assert.equal(doc.input?.genre, storyGenre.id)
 	})
 })

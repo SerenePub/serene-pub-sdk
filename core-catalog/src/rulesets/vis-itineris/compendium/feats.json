@@ -1,0 +1,71 @@
+[
+	{
+		"id": "alert",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Alert",
+			"description": "Always ready: quicker to act when trouble starts.",
+			"traits": [
+				"feat-alert"
+			],
+			"category": "origin",
+			"repeatable": false
+		}
+	},
+	{
+		"id": "tough",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Tough",
+			"description": "Harder to bring down than most.",
+			"traits": [
+				"feat-tough"
+			],
+			"category": "origin",
+			"repeatable": false
+		}
+	},
+	{
+		"id": "grappler",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Grappler",
+			"description": "Skilled at seizing and holding foes.",
+			"traits": [
+				"feat-grappler"
+			],
+			"category": "general",
+			"prerequisite": "Level 4; Strength or Dexterity 13",
+			"repeatable": false
+		}
+	},
+	{
+		"id": "archery",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Archery",
+			"description": "A steady aim with bows and crossbows.",
+			"traits": [
+				"feat-archery"
+			],
+			"category": "fighting-style",
+			"repeatable": false
+		}
+	}
+]

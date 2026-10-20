@@ -1,0 +1,54 @@
+[
+	{
+		"key": "lead-failing-lanterns",
+		"title": "The failing lanterns",
+		"content": "Each night one or two lanterns of the ring go dark, and the fog creeps closer. Captain Talbot will pay for an answer: is someone fouling the oil, or is something putting the lights out? Find the cause and the ring holds and the Lamplighters owe the party; leave it and the fog takes the ford, one lane at a time.",
+		"involves": [
+			"wren-talbot",
+			"faction-lamplighters",
+			"premise-lanterns",
+			"lantern-ford"
+		]
+	},
+	{
+		"key": "lead-quiet-mine",
+		"title": "Copperdeep has gone quiet",
+		"content": "No cart has come down from the mine in three days. Corvin Ashby swears all is well, but the guards at the gate turn everyone away and the winding house is dark. Open the mine and Copperdeep's wages flow again and the Ledger House answers for its silence; ignore it and the town's coin dries up and Corvin buys what others must sell.",
+		"involves": [
+			"corvin-ashby",
+			"faction-ledger-house",
+			"copperdeep-mine"
+		]
+	},
+	{
+		"key": "lead-bell-below",
+		"title": "A bell under the chapel",
+		"content": "Brother Anselm has heard a bell ringing faintly beneath the crypt at midnight, though the chapel bell has no rope. The sound comes from behind the stones. Go below and the chapel learns what it was built over; leave the stones shut and the bell rings louder each night until something answers it.",
+		"involves": [
+			"anselm-hale",
+			"chapel-quiet-bell",
+			"grey-sisters-barrow"
+		]
+	},
+	{
+		"key": "lead-lights-in-the-mire",
+		"title": "Lights in the mire",
+		"content": "Pell has seen blue lights moving on the reed path, too steady to be marsh-fire. Mother Sedge says the Mire Kin carry no lights after dark. Follow the lights and the Mire Kin learn who stood with them; look away and the reed path closes, and the town loses its only friends in the fog.",
+		"involves": [
+			"pell",
+			"mother-sedge",
+			"ashfen-mire",
+			"faction-mire-kin"
+		]
+	},
+	{
+		"key": "lead-debt-due",
+		"title": "A debt falls due",
+		"content": "Hester Vane must pay the Ledger House by the full moon or lose the toll house. Corvin has offered her a way out: tell him who crosses the bridge at night, and keep quiet about what he carries. Help Hester and the bridge stays hers and Corvin loses his eyes on the road; do nothing and the Ledger House holds the crossing and names its price for every traveller.",
+		"involves": [
+			"hester-vane",
+			"corvin-ashby",
+			"toll-bridge"
+		]
+	}
+]

@@ -178,6 +178,68 @@ test("core's conversation component renders, streams and edits", { timeout: 120_
 	}
 })
 
+/* ── 🚧 a copy's emptyState and timeFormat (owner ruling 2026-10-15) ─── */
+
+test("a copy's emptyState is its empty log's words, and its timeFormat spells the change lines' story times", { timeout: 120_000 }, async () => {
+	const head = [
+		{
+			ownerKey: 'world',
+			ownerLabel: 'Proof',
+			lines: [
+				{
+					key: 'c7',
+					text: 'Time passes: 30 minutes (Year 1, Mo. 1, Day 1, 08:00 → Year 1, Mo. 1, Day 1, 08:30)',
+					updatedBy: 'run:1',
+					// The parts beside the words (core-catalog's `LedgerStoryTime`).
+					storyTime: {
+						kind: 'clock',
+						head: 'Time passes: 30 minutes',
+						from: { year: 1, month: 1, day: 1, hour: 8, minute: 0 },
+						to: { year: 1, month: 1, day: 1, hour: 8, minute: 30 },
+					},
+				},
+			],
+		},
+	]
+	const mount = (settings: Record<string, unknown>) =>
+		mountComponent({
+			root: CORE_CATALOG,
+			entry: 'components/shared/messages/messages.ts',
+			owner: 'core',
+			coreConversation: true,
+			timeoutMs: 60_000,
+			context: {
+				session: { id: 1, name: 'Proof' },
+				messages: [],
+				settings,
+				viewer: { userId: 1, isAdmin: false, isGuest: false },
+				scoped: { session_full: { ...dossier, state: { ...dossier.state, head } } as ConversationDossierV1 },
+			},
+		})
+	const floor = (view: { queryAll(s: string): Element[] }) =>
+		view.queryAll('[data-widget-part~="messages.log-floor-text"]')[0]?.textContent?.trim()
+	const headText = (view: { queryAll(s: string): Element[] }) =>
+		view.queryAll('[data-widget-part~="messages.ledger-change"]').map((n) => n.textContent?.replace(/\s+/g, ' ').trim())
+
+	const plain = await mount({})
+	try {
+		assert.equal(floor(plain), 'Send a message to start')
+		assert.deepEqual(headText(plain), ['Time passes: 30 minutes (Year 1, Mo. 1, Day 1, 08:00 → Year 1, Mo. 1, Day 1, 08:30)'])
+	} finally {
+		await plain.unmount()
+	}
+	const pinned = await mount({
+		emptyState: 'Your journal fills as the story unfolds.',
+		timeFormat: 'Day {day}, {hh}:{mm}',
+	})
+	try {
+		assert.equal(floor(pinned), 'Your journal fills as the story unfolds.')
+		assert.deepEqual(headText(pinned), ['Time passes: 30 minutes (Day 1, 08:00 → Day 1, 08:30)'])
+	} finally {
+		await pinned.unmount()
+	}
+})
+
 /* ── the ledger head (live scenes §15 G13) ───────────────────────────── */
 
 test('time moved before anything was said is the ledger head: drawn on the empty log, then above the first line', { timeout: 120_000 }, async () => {
@@ -622,6 +684,19 @@ test('answered beats stale: an answered form stays answered when the channel has
 	assert.doesNotMatch(out, /<button/)
 })
 
+test('an answered text form shows its answer beside Answered, as a choice shows its option', { timeout: 120_000 }, async () => {
+	const out = await blocksHtml([
+		form({ answered: { by: 'character:12', at: '2026-10-15T00:00:00Z', value: 'Ann' } }),
+	])
+	assert.match(out, /data-answered="true"/)
+	assert.match(out, /Answered<\/span>[^·]{0,40}· Ann/)
+	assert.doesNotMatch(out, /<input/)
+	// Answered before the value was stamped: the bare word, no dangling dot.
+	const bare = await blocksHtml([form({ answered: { by: 'character:12', at: '2026-10-15T00:00:00Z' } })])
+	assert.match(bare, /Answered/)
+	assert.doesNotMatch(bare, /· /)
+})
+
 test('the verdict is asked per block, a block inside a group too', { timeout: 120_000 }, async () => {
 	const { html: out, asked } = await drawBlocks(
 		[
@@ -980,6 +1055,10 @@ test('the primary log draws the channels no copy claims; the strip names a chann
 		assert.deepEqual(strip, ['Main', 'Sanctum'])
 		// The log shows the lane it writes on; the other lane's rows stay hidden, as before.
 		assert.equal(whole.queryAll('[data-widget-part~="messages.message"]').length, 3)
+		// 🚧 A line's accessible name counts the lines on its lane, never every
+		// channel's rows (PLAN-dc-after-walk2 Q3-6, the walk's #49).
+		const main = whole.query('#message-1')
+		assert.match(main?.getAttribute('aria-label') ?? '', /^Message 1 of 1 from /)
 	} finally {
 		await whole.unmount()
 	}
@@ -1172,6 +1251,104 @@ test('a Folio copy read newest-first keeps the order, and its rules follow the r
 	}
 })
 
+test("a Folio page announces no envoy either: the Dungeon Crawler's Journal opens on its prose, no NARRATOR rule", { timeout: 120_000 }, async () => {
+	// The genre's Narrator writes the journal as an envoy (\`envoy:narrator\`):
+	// a reply with no card and no narrator flag, which the page names with no
+	// reference. Round 2's screenshot had it open under a NARRATOR rule.
+	const envoy = { channel: 'travelogue', characterId: null, metadata: { speaker: 'envoy:narrator' } }
+	const journal = [
+		row(30, 'assistant', 'Ann went up the wall.', envoy),
+		row(31, 'assistant', 'The party rests. Day 1, 16:30 → Day 2, 00:30.', envoy),
+	]
+	const view = await mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		requests: () => undefined,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: journal,
+			settings: { channel: 'travelogue', presentation: 'auto' },
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: {
+				session_full: {
+					...dossier,
+					lines: { 30: line('Narrator'), 31: line('Narrator') },
+					composer: {
+						...dossier.composer,
+						channels: ['main', 'travelogue'],
+						channelLabels: { travelogue: 'Journal' },
+						channelRoles: { travelogue: 'folio' },
+					},
+				},
+			},
+		},
+	})
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.equal(presentationOf(view), 'folio', 'the folio channel reads as Folio under auto')
+		assert.deepEqual(folioSequence(view), ['line:message-30', 'line:message-31'])
+		assert.equal(view.queryAll(part('messages.folio-rule')).length, 0)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a Folio page announces no narrator: its lines open no rule, but end the run before them', { timeout: 120_000 }, async () => {
+	const journal = [
+		row(20, 'assistant', 'You wake in the dark.', { channel: 'manuscript', isNarratorResponse: true }),
+		row(21, 'assistant', 'Water drips somewhere.', { channel: 'manuscript', isNarratorResponse: true }),
+		row(22, 'user', 'I listen.', { channel: 'manuscript' }),
+		row(23, 'assistant', 'Silence answers.', { channel: 'manuscript', isNarratorResponse: true }),
+		row(24, 'user', 'I listen again.', { channel: 'manuscript' }),
+	]
+	const view = await mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		requests: () => undefined,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: journal,
+			settings: { channel: 'manuscript' },
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: {
+				session_full: {
+					...manuscriptDossier({ manuscript: 'folio' }),
+					lines: {
+						20: line('Narrator'),
+						21: line('Narrator'),
+						22: speakerLine('Ann', 'persona:9'),
+						23: line('Narrator'),
+						24: speakerLine('Ann', 'persona:9'),
+					},
+				},
+			},
+		},
+	})
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.equal(presentationOf(view), 'folio')
+		assert.deepEqual(folioSequence(view), [
+			'line:message-20',
+			'line:message-21',
+			'rule:Ann',
+			'line:message-22',
+			'line:message-23',
+			'rule:Ann',
+			'line:message-24',
+		])
+	} finally {
+		await view.unmount()
+	}
+})
+
 test('unset, Presentation follows the claimed channel; a stored value wins', { timeout: 120_000 }, async () => {
 	const drawn = async (settings: Record<string, unknown>, roles?: Record<string, 'conversation' | 'folio'>) => {
 		const view = await mountManuscript(settings, manuscriptDossier(roles))
@@ -1284,13 +1461,16 @@ test('the turn line is one row: what the last run did beside who is next', { tim
 	}
 })
 
-test('while the reply streams the pill is live and the right half is Stop', { timeout: 120_000 }, async () => {
+test('while the reply streams the pill is live, and the one Stop is the composer\'s', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine({ reply: { isGenerating: true, content: '' } })
 	try {
 		assert.equal(text(view, 'messages.turn-line-status'), 'Wren is thinking')
 		assert.equal(view.query(part('messages.turn-line-status'))?.getAttribute('data-turn-state'), 'live')
-		assert.equal(view.query(part('messages.turn-line-continue')), null)
-		await view.click(part('messages.turn-line-stop'))
+		assert.ok(!view.query(part('messages.turn-line-continue')), 'no Continue while the reply streams')
+		// 🚧 One Stop per run (2026-10-18, the 100-turn walk #28): the composer
+		// right under the line already offers it, so the line does not.
+		assert.ok(!view.query(part('messages.turn-line-stop')), 'no second Stop on the turn line')
+		await view.click(part('messages.composer-stop'))
 		assert.equal(view.invoked.at(-1)?.key, 'stop')
 	} finally {
 		await view.unmount()
@@ -1343,6 +1523,33 @@ test('Review N changes appears when proposals wait; an administrator gets Inspec
 	}
 })
 
+test('one proposal is ONE Review on screen: none under each ledger, none beside a pill that already says it (DC walk 6)', { timeout: 120_000 }, async () => {
+	const proposal = { id: 14, status: 'pending', messageId: 2, text: 'Ann Health → -2', proposedBy: 'Narrator', moved: null }
+	const ledger = [{ ownerKey: 'seat:1', ownerLabel: 'Ann', lines: [{ key: 'h', text: 'Health 12 → 10', updatedBy: 'run:1' }] }]
+	const reviews = (view: TurnView) =>
+		view.queryAll('button').filter((b) => /^Review \d+ changes?$/.test(b.textContent?.replace(/\s+/g, ' ').trim() ?? ''))
+	const d = turnDossier({ state: { ledgers: { 1: ledger, 2: ledger }, pending: { 2: [proposal] }, waiting: [proposal] } })
+	const replied = await mountTurnLine({ d })
+	try {
+		assert.equal(view_count(replied, 'messages.ledger'), 2, 'both ledgers drawn')
+		assert.equal(replied.query(part('messages.ledger-review')), null, 'no Review under a ledger')
+		assert.equal(reviews(replied).length, 1)
+		assert.equal(text(replied, 'messages.turn-line-review'), 'Review 1 change')
+	} finally {
+		await replied.unmount()
+	}
+	// No reply yet: the pill itself says it, and nothing repeats it beside.
+	const quiet = await mountTurnLine({ d, reply: { metadata: { isGreeting: true } } })
+	try {
+		assert.equal(reviews(quiet).length, 1)
+		assert.equal(text(quiet, 'messages.turn-line-status'), 'Review 1 change')
+		assert.equal(quiet.query(part('messages.turn-line-review')), null)
+	} finally {
+		await quiet.unmount()
+	}
+})
+const view_count = (view: TurnView, name: string) => view.queryAll(part(name)).length
+
 test('a greeting is no run: a log with only one has no left half', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine({ reply: { metadata: { isGreeting: true } } })
 	try {
@@ -1359,6 +1566,124 @@ test('a run this view saw start and end is timed on the pill', { timeout: 120_00
 		await view.event({ kind: 'generation:start', messageId: 2 })
 		await view.event({ kind: 'generation:end', messageId: 2, aborted: false })
 		assert.match(text(view, 'messages.turn-line-status') ?? '', /^Wren replied · \d+(\.\d)? s$/)
+	} finally {
+		await view.unmount()
+	}
+})
+
+/* ── 🚧 a table line (owner screenshot 2026-10-15) ───────────────────────── */
+
+test('a table line — a roll line — is drawn in no voice: no face, no name, no controls; its own glyph the marker', { timeout: 120_000 }, async () => {
+	const ROLL = '⚄ Jandir, Speak to the ghost: d20 9 + 0 = 9 vs DC 5 — success'
+	const view = await mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: [
+				row(1, 'user', 'I greet the ghost.'),
+				row(2, 'assistant', ROLL, { characterId: null, metadata: { speaker: 'envoy:narrator', tableLine: true } }),
+				row(3, 'assistant', 'The ghost bows.'),
+			],
+			settings: {},
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: { session_full: dossier },
+		},
+	})
+	try {
+		assert.deepEqual(view.refused, [])
+		const lines = view.queryAll('[data-widget-part~="messages.message"]')
+		assert.equal(lines.length, 3)
+		const roll = lines[1]!
+		assert.equal(roll.hasAttribute('data-msg-table-line'), true)
+		assert.equal(lines[2]!.hasAttribute('data-msg-table-line'), false)
+		// Content alone: no face, no name, no controls cell.
+		for (const part of ['messages.message-avatar', 'messages.message-identity', 'messages.message-controls', 'messages.message-name'])
+			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`), null, part)
+		assert.equal(roll.querySelector('sp-message-body')?.getAttribute('text'), ROLL)
+		assert.match(roll.getAttribute('aria-label') ?? '', /from the table: ⚄ Jandir/)
+		// The other lines keep their speakers.
+		assert.deepEqual(
+			view.queryAll('[data-widget-part~="messages.message-name"]').map((n) => n.textContent?.trim()),
+			['You', 'Mira'],
+		)
+	} finally {
+		await view.unmount()
+	}
+})
+
+/* ── 🚧 interleave: the table channel under its anchors (PLAN-rulesets §30) ── */
+
+test('interleave: the table channel’s rows are drawn under the line each belongs to, faceless; the composer never offers the channel', { timeout: 120_000 }, async () => {
+	const ROLL = '⚄ Ann, climb the wall: d20 9 + 0 = 9 vs DC 10 — failure'
+	const view = await mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			// The roll is written after the Narrator's row — and after the next
+			// person's line here — yet it reads under the row it belongs to.
+			messages: [
+				row(1, 'user', 'I climb the wall.'),
+				row(2, 'assistant', 'Loose stone bites your hands.'),
+				row(3, 'user', 'I try again.'),
+				row(4, 'assistant', ROLL, { channel: 'table', characterId: null, metadata: { anchorMessageId: 2 } }),
+			],
+			// Drawn open, a line as any line (`interleaveAs: open`); the fold is below.
+			settings: { interleave: 'table', interleaveAs: 'open' },
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			// The primary log: no copy claims `table`, so it is listed.
+			scoped: {
+				session_full: {
+					...dossier,
+					lines: { ...dossier.lines, 4: line('') },
+					composer: { ...dossier.composer, channels: ['main', 'table'], channelRoles: { table: 'folio' } },
+				},
+			},
+		},
+	})
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.deepEqual(
+			view.queryAll('sp-message-body').map((b) => b.getAttribute('text')),
+			['I climb the wall.', 'Loose stone bites your hands.', ROLL, 'I try again.'],
+		)
+		const lines = view.queryAll('[data-widget-part~="messages.message"]')
+		const roll = lines[2]!
+		// Faceless, as a table line is drawn, and shown on the anchor's lane.
+		assert.equal(roll.hasAttribute('data-msg-table-line'), true)
+		for (const part of ['messages.message-avatar', 'messages.message-name'])
+			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`), null, part)
+		assert.equal(roll.closest('[data-widget-part~="messages.message-row"]')?.hasAttribute('hidden'), false)
+		// The channel is drawn inline, never a lane to write on: no channel strip.
+		assert.equal(view.queryAll('[data-widget-part~="messages.composer-channels"]').length, 0)
+
+		// 🚧 As a fold (the default): one head line under its anchor, and opened, only the lines
+		// after the head, one a line — never the head again (PLAN-dc-after-walk2 Q3-2, N14).
+		await view.push('settings', { interleave: 'table' })
+		assert.deepEqual(
+			view.queryAll('sp-message-body').map((b) => b.getAttribute('text')),
+			['I climb the wall.', 'Loose stone bites your hands.', 'I try again.'],
+		)
+		const rows = view.queryAll('[data-widget-part~="messages.message-row"]')
+		assert.equal(rows[2]!.querySelector('[data-widget-part~="messages.table-fold-head"]')?.textContent?.trim(), ROLL)
+		await view.click('[data-widget-part~="messages.table-fold-toggle"]')
+		assert.equal(view.queryAll('[data-widget-part~="messages.table-fold-body"] li').length, 0)
+
+		// Without the setting the row keeps its own place — and its own lane.
+		await view.push('settings', {})
+		assert.deepEqual(
+			view.queryAll('sp-message-body').map((b) => b.getAttribute('text')),
+			['I climb the wall.', 'Loose stone bites your hands.', 'I try again.', ROLL],
+		)
 	} finally {
 		await view.unmount()
 	}

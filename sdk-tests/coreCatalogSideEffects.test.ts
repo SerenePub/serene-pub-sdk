@@ -41,6 +41,7 @@ process.stdout.write(JSON.stringify({
 	slots: ids(sdk.attributeSlots()),
 	statShapes: ids(sdk.statShapes()),
 	sheets: ids(sdk.attributeSheets()),
+	rulesets: ids(sdk.rulesets()),
 	genres: ids(sdk.genres()),
 	annexOwners: [...sdk.annexOwners()].sort(),
 	coreWidgets: [...sdk.coreWidgetIds()].sort(),

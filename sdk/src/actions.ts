@@ -410,6 +410,18 @@ export interface ActionDecl {
 	 * @ruling lair pass R3 (2026-09-28), S2
 	 */
 	collects?: { text?: CollectedText; recipients?: CollectedRecipients; clockStep?: CollectedClockStep }
+	/**
+	 * 🚧 A question asked before the action fires (2026-10-18, the 100-turn
+	 * walk: _Reveal the planning notes_ cannot be taken back, and fired on
+	 * one press). Every press — a chip, the palette, a widget's invoke —
+	 * opens the host's confirmation (an `alertdialog`) with `question` as
+	 * its title, `description` under it saying what goes and what stays,
+	 * and a confirm button reading `confirmLabel` (absent: the action's
+	 * `label`); Cancel fires nothing. A press that answers a form (a block)
+	 * is not asked again: the form was the question. Display text, all of it.
+	 * @experimental
+	 */
+	confirm?: { question: I18n; description?: I18n; confirmLabel?: I18n }
 }
 
 /** A declaration after normalisation: venues and predicates always lists, no alias spellings, no `function`. @experimental */
@@ -491,7 +503,7 @@ export function placeActions<A extends { venue: ReadonlyArray<Venue>; quick?: bo
 	return listings
 }
 
-/** The namespace of a spec id — `core:spec/chat-narrate` → `core`, `acme:spec/roll` → `acme`. @experimental */
+/** The namespace of a spec id — `core:spec/story-narrate` → `core`, `acme:spec/roll` → `acme`. @experimental */
 export function specNamespace(specId: string): string {
 	const i = specId.indexOf(':')
 	return i === -1 ? '' : specId.slice(0, i)
@@ -758,7 +770,7 @@ export function actionFindingsByLaw(
 							shape(
 								`${where}: audience.${half} names '${String(r)}', which is not a participant ` +
 									`reference — one of ${PARTICIPANT_ROLES.join(', ')}, or user:<id>, ` +
-									`character:<id>, envoy:<slug>`,
+									`character:<id>, player-seat:<id>, envoy:<slug>`,
 							)
 			}
 	}
@@ -804,6 +816,16 @@ export function actionFindingsByLaw(
 				`({ en: 'Roll the dice and post the result.' })`,
 		)
 	else shape(...i18nFindings(a.description, `${where}.description`))
+	if (a.confirm !== undefined) {
+		const c = a.confirm as { question?: unknown; description?: unknown; confirmLabel?: unknown } | null
+		if (!c || typeof c !== 'object' || Array.isArray(c))
+			shape(`${where}.confirm is { question, description?, confirmLabel? } — the question asked before the action fires`)
+		else {
+			shape(...i18nFindings(c.question, `${where}.confirm.question`, { required: true }))
+			if (c.description !== undefined) shape(...i18nFindings(c.description, `${where}.confirm.description`))
+			if (c.confirmLabel !== undefined) shape(...i18nFindings(c.confirmLabel, `${where}.confirm.confirmLabel`))
+		}
+	}
 	if (a.iconAlt !== undefined) {
 		shape(...i18nFindings(a.iconAlt, `${where}.iconAlt`))
 		if (a.icon === undefined)

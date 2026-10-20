@@ -524,9 +524,10 @@ export interface ScriptChainOutcome {
 	/**
 	 * The chain cannot be allowed to run on without it: the node halts with
 	 * this reason, and the run reports `outcome: 'halt'`, `haltReason`,
-	 * `haltNodeKey` as for a review rejection. Set by the host applier for one
-	 * case only — a `text/stop` guard whose seam no longer resolves;
-	 * a stop *verdict* still truncates.
+	 * `haltNodeKey` as for a review rejection. Set by the host applier for two
+	 * cases — a `text/stop` guard whose seam no longer resolves, and 🚧 a
+	 * script STEP (`core:task/run-script@1`) whose script failed: its answer
+	 * is its script's (2026-10-19). A stop *verdict* still truncates.
 	 *
 	 * At a port seam the halt lands before the binding (`in:`) or in place of
 	 * its result (`out:`; an outlet's write has already happened). At an

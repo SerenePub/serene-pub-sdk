@@ -201,19 +201,101 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				description:
 					"Show one channel only, by its slug (the Lair's is sanctum). " +
 					'Empty shows every channel no other Messages widget shows.',
-				group: 'behaviour',
+				group: 'Channel',
+			},
+			/**
+			 * 🚧 Which lane of the claimed `channel` this copy shows (owner
+			 * ruling 2026-10-17, lanes by person on the server): `mine` — the
+			 * viewer's own lane on a channel declared `lanes: 'personal'`,
+			 * which the host resolves (`SessionV1.channels[].mine`) and sends
+			 * to that person and the session's owner alone; a number — that
+			 * lane of a shared channel; empty — the whole channel. ⏳ Replaces
+			 * `channelLaneFrom` (an annex map, a display claim, never privacy);
+			 * a stored `channelLaneFrom` reads as `mine` until the owner
+			 * re-saves the layout.
+			 */
+			channelLane: {
+				type: 'string',
+				default: '',
+				label: 'Channel lane',
+				description:
+					"Which lane of the channel this copy shows: 'mine' for the viewer's own lane on a channel of personal lanes, " +
+					'a number for one lane of a shared channel. Empty shows the whole channel.',
+				group: 'Channel',
+			},
+			/**
+			 * 🚧 **Interleave** (PLAN-rulesets §30, 2026-10-16): another
+			 * channel's rows drawn inline in this copy, each straight after the
+			 * line it belongs to (`metadata.anchorMessageId`), faceless — the
+			 * Dungeon Crawler's rolls under the Narrator's line they decided
+			 * (the `table` channel). Empty draws no other channel's rows. A
+			 * copy pinned to that channel itself shows them as a log.
+			 */
+			interleave: {
+				type: 'string',
+				default: '',
+				label: 'Show another channel inline',
+				description:
+					"Draw that channel's lines under the line each belongs to, by its slug (table: the dice). " +
+					'Empty draws none.',
+				group: 'Channel',
+			},
+			/**
+			 * 🚧 How an interleaved line is drawn (owner ruling 2026-10-17,
+			 * "under the fold"): a **fold** — one line's head that opens into
+			 * the whole trace, closed by default — or open, the whole line as
+			 * it was.
+			 */
+			interleaveAs: {
+				type: 'enum',
+				of: ['fold', 'open'],
+				members: [
+					{ key: 'fold', label: 'A fold', description: 'One line that opens into the whole trace. The default.' },
+					{ key: 'open', label: 'Open', description: 'The whole line, as it was written.' },
+				],
+				default: 'fold',
+				label: 'Interleaved lines read as',
+				group: 'Channel',
+			},
+			/**
+			 * 🚧 Which **kinds** of a folio's lines this copy shows
+			 * (2026-10-17): a folio row may carry `metadata.kind` — the
+			 * Dungeon Crawler's journal writes `did` · `found` · `met` ·
+			 * `changed` · `time` · `lead` — and a copy pinned to it names the
+			 * kinds it draws, comma-separated. Empty draws every line. A row
+			 * with no kind always shows.
+			 */
+			// 🚧 Ticked, never typed (2026-10-18, the 100-turn walk #46): the
+			// kinds of line core's genres write (the Dungeon Crawler's journal,
+			// `DUNGEON_CRAWLER_JOURNAL_KINDS`), one box each. ⏳ A copy stored
+			// before this as one comma-separated string still reads.
+			rowKinds: {
+				type: 'string[]',
+				default: [],
+				label: 'Line kinds',
+				description: 'Which kinds of line to show. None ticked shows every line; a line with no kind always shows.',
+				of: ['did', 'found', 'met', 'changed', 'time', 'lead'],
+				members: [
+					{ key: 'did', label: 'What the round did' },
+					{ key: 'found', label: 'Places found' },
+					{ key: 'met', label: 'People met' },
+					{ key: 'changed', label: 'What changed' },
+					{ key: 'time', label: 'Time passing' },
+					{ key: 'lead', label: 'New leads' },
+				],
+				group: 'Channel',
 			},
 			/**
 			 * The furniture around a turn, all of it on by default and all of
-			 * it behind the advanced fold: a person who wants a barer log says
-			 * so one piece at a time, and a person who never opens the fold
-			 * sees the whole of it, which is what a session looks like.
+			 * it under Reading: a person who wants a barer log says so one
+			 * piece at a time, and a person who never opens the section sees
+			 * the whole of it, which is what a session looks like.
 			 */
 			showAvatars: {
 				type: 'boolean',
 				label: 'Show avatars',
 				default: true,
-				group: 'behaviour',
+				group: 'Reading',
 			},
 			/**
 			 * The face beside each line (DESIGN-sprites §7): the character's
@@ -234,20 +316,46 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					{ key: 'sprite', label: 'The line\'s sprite' },
 				],
 				default: 'avatar',
-				group: 'behaviour',
+				group: 'Reading',
 				showIf: { field: 'showAvatars', equals: true },
 			},
 			showTimestamps: {
 				type: 'boolean',
 				label: 'Show times',
 				default: true,
-				group: 'behaviour',
+				group: 'Reading',
 			},
 			showSceneMarkers: {
 				type: 'boolean',
 				label: 'Show scenes and dates',
 				default: true,
-				group: 'behaviour',
+				group: 'Reading',
+			},
+			/**
+			 * 🚧 What an empty log says (owner ruling 2026-10-15: copy is a
+			 * widget setting, pinned per genre in its layout — never a field
+			 * on a channel). Empty keeps "Send a message to start".
+			 */
+			emptyState: {
+				type: 'string',
+				default: '',
+				label: 'When empty',
+				description: 'What the log says before anything is written. Empty says “Send a message to start”.',
+				group: 'Reading',
+			},
+			/**
+			 * 🚧 How the change lines spell a story time — a clock stat's
+			 * move, the story clock's — in tokens (`formatStoryTimeAs`).
+			 * Empty keeps the book calendar's spelling (`Year 1, Mo. 1, Day 1, 08:00`).
+			 */
+			timeFormat: {
+				type: 'string',
+				default: '',
+				label: 'Story time format',
+				description:
+					'How times in change lines read, with {year}, {month}, {monthName}, {day}, {dayName}, {hh} and {mm} — ' +
+					'e.g. Day {day}, {hh}:{mm}. Empty spells them through the calendar.',
+				group: 'Reading',
 			},
 			/**
 			 * Who is due next (PLAN-turn-order §4.9): the head of the stored
@@ -266,13 +374,13 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					{ key: 'hidden', label: 'Nothing' },
 				],
 				default: 'head',
-				group: 'behaviour',
+				group: 'Turns',
 			},
 			showActions: {
 				type: 'boolean',
 				label: 'Show the Actions label',
 				default: true,
-				group: 'behaviour',
+				group: 'Turns',
 			},
 		},
 	},
@@ -374,7 +482,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					'A character with none shows its avatar.',
 				default: [],
 				showIf: { field: 'face', equals: 'chosen' },
-				group: 'behaviour',
+				group: 'Look',
 			},
 			arrangement: {
 				type: 'enum',
@@ -403,6 +511,30 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: false,
 			},
 			/**
+			 * 🚧 Every player seat's character (PLAN-dc-after-walk2 Q3-5, the
+			 * walk's #29: a crawl's heroes are player seats, not cast). Read by
+			 * `scene` only. Off by default; Dungeon Crawler pins it on.
+			 */
+			playerSeats: {
+				type: 'boolean',
+				label: "Include every player's character",
+				description: "Put each player's character beside the cast, yours among them.",
+				default: false,
+				showIf: { field: 'who', equals: 'scene' },
+			},
+			/**
+			 * 🚧 The people the story has met (`session_state.v1.metPeople`),
+			 * by name: a lorebook entry has no picture. Read by `scene` only.
+			 * Off by default; Dungeon Crawler pins it on.
+			 */
+			metPeople: {
+				type: 'boolean',
+				label: 'Include the people met',
+				description: 'Put the people the story has met after the cast, by name.',
+				default: false,
+				showIf: { field: 'who', equals: 'scene' },
+			},
+			/**
 			 * The common case for stats is one row of bars under a face, so it
 			 * is a setting here rather than a second widget beside this one.
 			 * Off by default: a genre that declares no slots would otherwise
@@ -413,6 +545,23 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Show stat bars',
 				description: "Draw each portrait's bounded stats as a mini bar row under it.",
 				default: false,
+			},
+			/**
+			 * 🚧 Whose faces carry them (PLAN-dc-after-walk3 R3-3, the walk's
+			 * NEW-13): a crawl's companions keep no sheet, so Dungeon Crawler
+			 * pins `seats`.
+			 */
+			barsFor: {
+				type: 'enum',
+				label: 'Bars for',
+				description: "Everyone with stats, or only the players' characters.",
+				of: ['everyone', 'seats'],
+				members: [
+					{ key: 'everyone', label: 'Everyone with stats' },
+					{ key: 'seats', label: "Players' characters only" },
+				],
+				default: 'everyone',
+				showIf: { field: 'bars', equals: true },
 			},
 			/**
 			 * ⏳ The old `source`. No default, so a value is only ever one a
@@ -428,7 +577,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				description: 'Replaced by Show, Picture and Arrangement.',
 				of: ['pinned', 'scene'],
 				showIf: { field: 'source', equals: 'pinned' },
-				group: 'behaviour',
+				group: 'Who',
 			},
 			/**
 			 * ⏳ The old sprites switch, moved to `face` by every prune (`false`
@@ -439,7 +588,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Show sprites (old setting)',
 				description: 'Replaced by Picture.',
 				showIf: { field: 'sprites', equals: false },
-				group: 'behaviour',
+				group: 'Look',
 			},
 		},
 	},
@@ -486,7 +635,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: 25,
 				min: 5,
 				max: 100,
-				group: 'behaviour',
 			},
 		},
 	},
@@ -532,14 +680,20 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					"Cast draws the cast's; World the world's, with any place that " +
 					'has a stat in play under it; Places every place in play; All ' +
 					'draws the world, the cast and the places, each under its own ' +
-					'heading; Pick draws the ones you name.',
-				of: ['cast', 'world', 'places', 'all', 'pick'],
+					'heading; Pick draws the ones you name; Mine draws only the ' +
+					"viewer's own character; Player seats draws every player's " +
+					"character, the viewer's own first.",
+				// 🚧 `mine` (2026-10-17): the viewer's own player seat or persona.
+				// 🚧 `seats` (2026-10-18): every player seat (`owner.seat`).
+				of: ['cast', 'world', 'places', 'all', 'pick', 'mine', 'seats'],
 				members: [
 					{ key: 'cast', label: 'Cast' },
 					{ key: 'world', label: 'World' },
 					{ key: 'places', label: 'Places' },
 					{ key: 'all', label: 'All' },
 					{ key: 'pick', label: 'Pick' },
+					{ key: 'mine', label: 'Mine' },
+					{ key: 'seats', label: 'Player seats' },
 				],
 				default: 'cast',
 			},
@@ -551,15 +705,14 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				showIf: { field: 'owners', equals: 'pick' },
 			},
 			/**
-			 * Read when `owners` is Cast or All. Always shown: `showIf` holds one
-			 * `equals`, and hiding it under All would hide what All reads.
+			 * Read under `owners: cast` alone, the one place it shows (AUDIT B,
+			 * 2026-10-17): All draws the cast in play, Mine the viewer's own.
 			 */
 			castScope: {
 				type: 'enum',
 				label: 'Which cast members',
-				description:
-					'With Cast or All: Scene shows whoever has a stat in play; All ' +
-					'shows every cast member.',
+				description: 'Scene shows whoever has a stat in play; All shows every cast member.',
+				showIf: { field: 'owners', equals: 'cast' },
 				of: ['scene', 'all'],
 				members: [
 					{ key: 'scene', label: 'Scene' },
@@ -588,23 +741,45 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: [],
 				showIf: { field: 'slots', equals: 'pick' },
 			},
+			/**
+			 * 🚧 The stats this copy leaves out (2026-10-17): a genre pins the
+			 * ones its rules replaced, so an old empty row does not sit beside
+			 * the list that took its place.
+			 */
+			hideSlots: {
+				type: 'string[]',
+				label: 'Leave out',
+				description: "One name per line, as the stat is labelled ('abilities'). These are not drawn.",
+				default: [],
+			},
+			/**
+			 * 🚧 `faces` (PLAN-sheet-widget §10, 2026-10-17): a strip of owner
+			 * chips — a face or an initial, a name, a dot when that sheet
+			 * changed since the viewer last looked — over ONE sheet; the
+			 * viewer's own seat first and chosen. Which chip is chosen is the
+			 * viewer's own (the widget's saved view state), never the layout's.
+			 */
 			arrangement: {
 				type: 'enum',
 				label: 'Arrangement',
 				description:
 					'Cards draws a card per owner; List one labelled row per stat ' +
-					'down a column; Strip one line across the top of the messages.',
-				of: ['cards', 'list', 'strip'],
+					'down a column; Strip one line across the top of the messages; ' +
+					'Faces a row of faces over one sheet — pick a face to read that sheet.',
+				of: ['cards', 'list', 'strip', 'faces'],
 				members: [
 					{ key: 'cards', label: 'Cards' },
 					{ key: 'list', label: 'List' },
 					{ key: 'strip', label: 'Strip' },
+					{ key: 'faces', label: 'Faces' },
 				],
 				default: 'cards',
 			},
+			/** No core layout pins it (AUDIT B): shown under Cards only, where it reads. */
 			density: {
 				type: 'enum',
 				label: 'Density',
+				showIf: { field: 'arrangement', equals: 'cards' },
 				description:
 					'Full draws a labelled row per stat; Compact fits them on ' +
 					'as few lines as the card allows.',
@@ -623,11 +798,32 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			trail: {
 				type: 'boolean',
 				label: 'Show changes',
+				// No core layout pins it (AUDIT B): offered under Cards, kept on elsewhere.
+				showIf: { field: 'arrangement', equals: 'cards' },
 				description:
 					'A button beside each stat lists how it changed in this ' +
 					'session: what it was, what it became, and who changed it.',
 				default: true,
-				group: 'behaviour',
+			},
+			/**
+			 * 🚧 What the widget says when there is nothing to draw (owner
+			 * ruling 2026-10-15: copy is a widget setting, pinned per genre).
+			 * Empty keeps the widget's own sentence for the case.
+			 */
+			emptyState: {
+				type: 'string',
+				default: '',
+				label: 'When empty',
+				description: 'What the widget says when there are no stats to show. Empty explains why in its own words.',
+			},
+			/** 🚧 How a story-time stat (a clock) reads, in tokens (`formatStoryTimeAs`). */
+			timeFormat: {
+				type: 'string',
+				default: '',
+				label: 'Story time format',
+				description:
+					'How a story time (a clock) reads, with {year}, {month}, {monthName}, {day}, {dayName}, {hh} and {mm} — ' +
+					'e.g. Day {day}, {hh}:{mm}. Empty spells it through the calendar.',
 			},
 		},
 	},
@@ -635,12 +831,15 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 	 * ⏳ World State — Stats drawn for the world as a strip, now an ALIAS of
 	 * `stats` (`WIDGET_ID_ALIASES`, W7 2026-10-11): every reader resolves a
 	 * placed `world-state` to Stats with `owners: world, arrangement: strip`,
-	 * so nothing mounts this declaration, and no tray offers it. It stays
-	 * declared for one release only so its `widget_styles` rows are not
-	 * pruned as undeclared (`syncWidgetStyles`' `pruneUndeclared`) and its
-	 * module still serves at `/core-ui/world-state` (a thin wrapper of
-	 * Stats). Its settings are the ones a stored row may still hold; the
-	 * settings reader reads `layout` as Stats' `arrangement`.
+	 * so nothing mounts this declaration, and no tray offers it. Its wrapper
+	 * module is gone (AUDIT B, 2026-10-17): `/core-ui/world-state` serves
+	 * Stats' own module, a redirect, and the settings the alias implies come
+	 * from the host's alias table, never from a component. The declaration
+	 * stays one more release ONLY so its `widget_styles` rows are not pruned
+	 * as undeclared at boot (`syncWidgetStyles`' `pruneUndeclared` — a
+	 * person's styles) and the app's `world-state.source.json` import keeps
+	 * resolving. Its settings are the ones a stored row may still hold; the
+	 * app's settings reader reads `layout` as Stats' `arrangement`.
 	 * @deprecated REMOVE in 0.7.0 — place `stats#world` with `owners: 'world'`
 	 * and `arrangement: 'strip'`.
 	 */
@@ -648,7 +847,8 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 		id: 'world-state',
 		title: 'World State',
 		icon: 'CloudSun',
-		component: 'world-state',
+		// Stats' own module: the wrapper is gone (AUDIT B).
+		component: 'stats',
 		layout: { span: { ideal: 2 }, minInline: 240, minBlock: 60 },
 		/** The session's state (R72): the world owner's slots and values — never the log. */
 		scopes: ['session:state'],
@@ -727,7 +927,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Show the strategy',
 				description: 'Name the strategy that set the order (Round robin, Manual, …) under the controls.',
 				default: true,
-				group: 'behaviour',
+				group: 'Behaviour',
 			},
 			/**
 			 * 🚧 W6 (2026-10-11): `characters.v1` lists a benched character
@@ -739,7 +939,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Show benched characters',
 				description: 'List the characters switched off in Participants under the order.',
 				default: false,
-				group: 'behaviour',
+				group: 'Faces',
 			},
 		},
 	},
@@ -809,7 +1009,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					'List the questions put to your characters that wait for your ' +
 					'answer. Not drawn yet: the widget cannot see them.',
 				default: true,
-				group: 'behaviour',
 			},
 		},
 	},
@@ -940,7 +1139,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				description:
 					"Show one channel's pictures only, by its slug (the Lair's is sanctum). " +
 					'Empty shows every channel.',
-				group: 'behaviour',
 			},
 		},
 	},
@@ -1040,7 +1238,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: 10,
 				min: 5,
 				max: 50,
-				group: 'behaviour',
 			},
 		},
 	},
@@ -1108,14 +1305,14 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Categories',
 				description: "One category per line, as the places are filed ('Upper floor'). Empty shows every place.",
 				default: [],
-				group: 'behaviour',
+				group: 'Map',
 			},
 			showWays: {
 				type: 'boolean',
 				label: 'Show ways out',
 				description: "Write each place's ways out under its name in the list, and in a place's detail.",
 				default: true,
-				group: 'behaviour',
+				group: 'Map',
 			},
 		},
 	},
@@ -1153,7 +1350,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Show who is away',
 				description: 'List the people with a seat who do not have the session open, with when they were last here.',
 				default: true,
-				group: 'behaviour',
 			},
 			faces: {
 				type: 'boolean',
@@ -1164,14 +1360,14 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 		},
 	},
 	/**
-	 * 🚧 The author's note (2026-10-02, AN1; owner ruling: Chat only): the
+	 * 🚧 The author's note (2026-10-02, AN1; owner ruling: Story only — the roleplay Chat's until 2026-10-19): the
 	 * session's own note to the model, edited and saved here, with what the
 	 * newest reply did with it. It reads no section — the note, who may
 	 * change it and the last reply's verdict are all asked of the page
-	 * (`authors-note`, `set-authors-note`). Offered by Chat alone among core's
+	 * (`authors-note`, `set-authors-note`). Offered by Story alone among core's
 	 * genres (the others omit it); in a plugin genre that declares no note it
-	 * says so in one line. Chat's default layout places it, unpinned, in the
-	 * right rail (owner ruling 2026-10-03; `CHAT_LAYOUT`).
+	 * says so in one line. Story's default layout places it, unpinned, in the
+	 * right rail (owner ruling 2026-10-03; `STORY_LAYOUT`).
 	 */
 	{
 		id: 'authors-note',
@@ -1211,7 +1407,7 @@ export const coreWidgets = {
 	 * @deprecated REMOVE in 0.7.0 — place `stats#world` with those settings.
 	 */
 	worldState: coreWidget('world-state'),
-	/** 🚧 The author's note (AN1) — Chat's; the other core genres omit it. */
+	/** 🚧 The author's note (AN1) — Story's; the other core genres omit it. */
 	authorsNote: coreWidget('authors-note'),
 	/** 🚧 Turn order (W1): whose turn it is, who follows, Continue and Pick who speaks. */
 	turnOrder: coreWidget('turn-order'),
@@ -1243,14 +1439,10 @@ export const coreWidgets = {
  */
 export const CORE_COMPONENTS: ComponentDecl[] = [
 	component({ slug: 'messages', label: 'Messages', entry: 'components/shared/messages/messages.ts', framework: 'svelte' }),
-	// ⏳ REMOVE in 0.7.0 with the `world-state` declaration: a thin wrapper of
-	// Stats in World State's settings, kept so `/core-ui/world-state` serves.
-	component({
-		slug: 'world-state',
-		label: 'World State',
-		entry: 'components/shared/world-state/world-state.ts',
-		framework: 'svelte',
-	}),
+	// ⏳ No `world-state` component since 2026-10-17 (AUDIT B): the alias
+	// resolves to Stats everywhere, and `/core-ui/world-state` answers with
+	// Stats' module through the app's alias read. Two entries on one file
+	// would be one bundle output and one missing module.
 	component({ slug: 'stats', label: 'Stats', entry: 'components/shared/stats/stats.ts', framework: 'svelte' }),
 	component({
 		slug: 'lore-entries',
@@ -1267,7 +1459,7 @@ export const CORE_COMPONENTS: ComponentDecl[] = [
 	component({
 		slug: 'authors-note',
 		label: "Author's note",
-		entry: 'components/genres/chat/authors-note/authors-note.ts',
+		entry: 'components/genres/story/authors-note/authors-note.ts',
 		framework: 'svelte',
 	}),
 	component({

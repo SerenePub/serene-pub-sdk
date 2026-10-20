@@ -3,20 +3,22 @@
  * its settings — the reading the native World State and Stats widgets did
  * against the page's store, as plain functions over the section, so the
  * remote widget and its tests share one answer. World State is Stats now
- * (W7, 2026-10-11): `statsView` reads every owner; `worldStateView` ⏳ stays
- * for one release.
+ * (W7, 2026-10-11): `statsView` reads every owner, the world's among them
+ * (`owners: world`, `arrangement: strip` is what World State drew).
  *
  * A value is looked up by its slot's QUALIFIED key (every value is filed
  * under it; the bare key is the first claimant's display name), and an owner
  * carries a slot exactly when the slot's id is a key of its `configs`.
  */
 import type {
+	SessionStateOfferV1,
 	SessionStateOwnerV1,
 	SessionStateSlotV1,
 	SessionStateV1,
 	SlotListItem,
 	StatTrailChangeV1,
 } from '@serene-pub/sdk'
+import { slotWordsFor } from '@serene-pub/sdk'
 import { clampToBounds, formatSlotValue, type BarBounds } from './barMath.js'
 import { shownValueText, slotKind } from './shapes.js'
 
@@ -68,104 +70,84 @@ function slotPicked(slot: SessionStateSlotV1, mode: string, picked: readonly str
 	return mode !== 'pick' || picked.includes(slot.key) || picked.includes(slot.label.toLowerCase())
 }
 
-function shown(state: SessionStateV1, owner: SessionStateOwnerV1, mode: string, picked: readonly string[]): ShownSlot[] {
-	return slotsFor(state, owner)
-		.filter((slot) => slotPicked(slot, mode, picked))
-		.map((slot) => ({ slot, config: owner.configs[slot.slotId] ?? {}, value: valueOf(state, owner, slot) }))
+function shown(
+	state: SessionStateV1,
+	owner: SessionStateOwnerV1,
+	mode: string,
+	picked: readonly string[],
+	hidden: readonly string[] = [],
+): ShownSlot[] {
+	return (
+		slotsFor(state, owner)
+			.filter((slot) => slotPicked(slot, mode, picked))
+			// 🚧 A copy's `hideSlots`: the stats it leaves out, by key or label.
+			.filter((slot) => !hidden.includes(slot.key) && !hidden.includes(slot.label.toLowerCase()))
+			.map((slot) => ({ slot, config: owner.configs[slot.slotId] ?? {}, value: valueOf(state, owner, slot) }))
+			// 🚧 A retired stat with nothing in it says nothing: it takes no new
+			// value, so its "not set" row is a row that can never fill (DC walk
+			// 5, 2026-10-17). One that still holds a value is drawn, greyed.
+			.filter((s) => !(s.slot.retired && s.value === undefined))
+			// 🚧 Nor does a stat whose own ceiling is none and that holds none
+			// (PLAN-dc-after-walk2 Q1-6): a class that casts nothing holds a
+			// spell-point pool of 0 of 0 — a row that can never fill.
+			.filter((s) => !(s.config.max === 0 && (s.value === undefined || s.value === null || s.value === 0)))
+			// 🚧 Nor a stat drawn only while it holds something (`shownWhenSet`,
+			// PLAN-dc-after-walk2 Q3-8): a crawl's death saves, between dyings.
+			.filter(
+				(s) =>
+					!(
+						s.slot.shownWhenSet &&
+						(s.value === undefined || s.value === null || (typeof s.value === 'string' && !s.value.trim()))
+					),
+			)
+			// 🚧 At a table that keeps no numbers (Q2-3, owner ruling ★3): a number
+			// reads in its words, worked out and never edited — "Health: Hurt" —
+			// and a number with none is not drawn (a Story sheet's Level).
+			.flatMap((s) => (state.wordsOnly ? inWords(s) : [s]))
+	)
+}
+
+/** A number at a table of words: its words, as a derived row draws them; nothing when it has none. */
+function inWords(s: ShownSlot): ShownSlot[] {
+	if (s.slot.type !== 'integer') return [s]
+	const said = slotWordsFor(s.slot.words, s.value, s.config.max)
+	if (said === null && s.slot.words?.length && s.value === undefined) {
+		// Never set: the stat's own top band — a fresh sheet is whole.
+		return [{ ...s, slot: { ...s.slot, type: 'derived' }, value: s.slot.words[s.slot.words.length - 1]!.label }]
+	}
+	return said === null ? [] : [{ ...s, slot: { ...s.slot, type: 'derived' }, value: said }]
 }
 
 const pickEnum = <T extends string>(raw: unknown, of: readonly T[], fallback: T): T =>
 	typeof raw === 'string' && (of as readonly string[]).includes(raw) ? (raw as T) : fallback
 
-// ─── World State ────────────────────────────────────────────────────────────
-
-/**
- * 🚧 One location drawn under the world (attributes phase 4): a
- * `session_location` owner and the slots it shows.
- * @experimental
- */
-export interface WorldStatePlace {
-	owner: SessionStateOwnerV1
-	slots: ShownSlot[]
-}
-
-/**
- * The World State widget's drawing. `loading` until the first read lands
- * (empty then means "not yet", never "nothing"); `failed` when that first
- * read was refused — the section's error says why, and nothing is coming, so
- * no loading line may stay beside it; `empty` says which of two
- * sentences — `none-declared` (nothing in the session declares a stat at all)
- * or `none-shown` (stats exist, none of them the world's, or none picked).
- * `not-granted` when the host said the widget does not hold `session:state`
- * (`granted === false`): the section will never come, so it is said rather
- * than waited for.
- *
- * ⏳ World State is Stats now (W7, 2026-10-11): `statsView` with `owners:
- * world` and a list or strip arrangement draws exactly this. Kept for one
- * release for a reader that still calls it.
- * @deprecated REMOVE in 0.7.0 — read {@link statsView}.
- * @experimental
- */
-export type WorldStateView =
-	| { status: 'not-granted'; layout: 'strip' | 'list' }
-	| { status: 'loading'; layout: 'strip' | 'list' }
-	| { status: 'failed'; layout: 'strip' | 'list' }
-	| { status: 'empty'; layout: 'strip' | 'list'; reason: 'none-declared' | 'none-shown' }
-	| {
-			status: 'shown'
-			layout: 'strip' | 'list'
-			owner: SessionStateOwnerV1
-			slots: ShownSlot[]
-			/**
-			 * 🚧 Each location in play — one with a value in a slot this
-			 * widget shows — under the world's own slots (phase 4). A place
-			 * nothing has been said about is not drawn: an empty card is not
-			 * a stat.
-			 */
-			places: WorldStatePlace[]
-	  }
-
-/** @deprecated REMOVE in 0.7.0 — read {@link statsView} with `owners: 'world'`. @experimental */
-export function worldStateView(
-	state: SessionStateV1 | undefined,
-	settings: Record<string, unknown>,
-	/** Does the widget hold `session:state` — `undefined` until the host says (`ctx.granted`). */
-	granted?: boolean,
-): WorldStateView {
-	const layout = pickEnum(settings.layout, ['strip', 'list'], 'strip')
-	if (granted === false) return { status: 'not-granted', layout }
-	if (state && !state.loaded && state.error) return { status: 'failed', layout }
-	if (!state || !state.loaded) return { status: 'loading', layout }
-	const mode = pickEnum(settings.slots, ['all', 'pick'], 'all')
-	const picked = pickedNames(settings.pickSlots)
-	const world = state.owners.find((o) => o.kind === 'session' && o.key === 'world') ?? null
-	const slots = world ? shown(state, world, mode, picked) : []
-	const places = state.owners
-		.filter((o) => o.kind === 'session_location')
-		.map((owner) => ({ owner, slots: shown(state, owner, mode, picked).filter((s) => s.value !== undefined) }))
-		.filter((place) => place.slots.length)
-	if (!world || (!slots.length && !places.length))
-		return { status: 'empty', layout, reason: state.slots.length ? 'none-shown' : 'none-declared' }
-	return { status: 'shown', layout, owner: world, slots, places }
-}
-
 // ─── Stats ──────────────────────────────────────────────────────────────────
 
-/** Whose stats a Stats widget draws — its `owners` setting (W7). @experimental */
-export type StatsOwners = 'cast' | 'world' | 'places' | 'all' | 'pick'
-/** How it draws them — its `arrangement` setting: a card per owner, a list down a rail, a strip across the top. @experimental */
-export type StatsArrangement = 'cards' | 'list' | 'strip'
+/**
+ * Whose stats a Stats widget draws — its `owners` setting (W7). 🚧 `mine`
+ * (2026-10-17): the viewer's own — their player seat or persona, as the host
+ * marks it (`owner.mine`), else the first cast member in play.
+ * @experimental
+ */
+export type StatsOwners = 'cast' | 'world' | 'places' | 'all' | 'pick' | 'mine' | 'seats'
+/**
+ * How it draws them — its `arrangement` setting: a card per owner, a list
+ * down a rail, a strip across the top, or 🚧 `faces` (PLAN-sheet-widget §10,
+ * 2026-10-17): a strip of owner chips over ONE sheet, the viewer's own first.
+ * @experimental
+ */
+export type StatsArrangement = 'cards' | 'list' | 'strip' | 'faces'
 /** Which stats — its `slots` setting: every one, the bounded numbers only (a HUD), or the named. @experimental */
 export type StatsSlots = 'all' | 'bars' | 'pick'
 /** One kind of owner, in the order `owners: all` draws them, each under its own heading. @experimental */
 export type StatsOwnerGroup = 'world' | 'cast' | 'places'
 
-const STATS_OWNERS: readonly StatsOwners[] = ['cast', 'world', 'places', 'all', 'pick']
+const STATS_OWNERS: readonly StatsOwners[] = ['cast', 'world', 'places', 'all', 'pick', 'mine', 'seats']
 
 /** A Stats widget's settings, read (W7). @experimental */
 export interface StatsSettings {
 	owners: StatsOwners
-	/** Which cast members, when `owners` is `cast` or `all`. */
+	/** Which cast members, when `owners` is `cast` (the setting shows only then; `all` reads `scene`). */
 	castScope: 'scene' | 'all'
 	slots: StatsSlots
 	arrangement: StatsArrangement
@@ -173,19 +155,25 @@ export interface StatsSettings {
 	/** `pickOwners`, read as {@link pickedNames}. */
 	pickOwners: string[]
 	pickSlots: string[]
+	/** 🚧 `hideSlots`, read as {@link pickedNames}: the stats this copy leaves out, by key or label. */
+	hideSlots: string[]
 	/** 🚧 Offer each stat's **stat trail** (F2): a button beside it opens its changes. */
 	trail: boolean
+	/** 🚧 What the widget says when there is nothing to draw; `null` keeps its own sentence. */
+	emptyState: string | null
+	/** 🚧 How a story-time stat is spelled (`formatStoryTimeAs`); `null` keeps the calendar's spelling. */
+	timeFormat: string | null
 }
 
 /**
  * A Stats widget's settings as it reads them, every one defaulted. A host
  * hands it effective settings (each key present), so the fallbacks here are
  * for a settings object written before the Stats uplift (W7, 2026-10-11)
- * and handed raw — a bare mount, World State's wrapper: ⏳ `members: scene |
- * all` reads as `castScope`, `members: pick` as `owners: pick` (with
- * `pickMembers` as `pickOwners`), World State's `layout: strip | list` as
- * `arrangement`. The app's settings reader makes the same reading of a
- * stored row. REMOVE the fallbacks in 0.7.0.
+ * and handed raw — a bare mount: ⏳ `members: scene | all` reads as
+ * `castScope`, `members: pick` as `owners: pick` (with `pickMembers` as
+ * `pickOwners`). World State's stored `layout` is the host's to read as
+ * `arrangement` (the app's settings reader moves it), never this one's.
+ * REMOVE the fallbacks in 0.7.0.
  * @experimental
  */
 export function statsSettingsOf(settings: Record<string, unknown>): StatsSettings {
@@ -194,11 +182,14 @@ export function statsSettingsOf(settings: Record<string, unknown>): StatsSetting
 		owners: pickEnum(settings.owners, STATS_OWNERS, legacyMembers === 'pick' ? 'pick' : 'cast'),
 		castScope: pickEnum(settings.castScope, ['scene', 'all'], pickEnum(legacyMembers, ['scene', 'all'], 'scene')),
 		slots: pickEnum(settings.slots, ['all', 'bars', 'pick'], 'all'),
-		arrangement: pickEnum(settings.arrangement, ['cards', 'list', 'strip'], pickEnum(settings.layout, ['strip', 'list'], 'cards')),
+		arrangement: pickEnum(settings.arrangement, ['cards', 'list', 'strip', 'faces'], 'cards'),
 		density: pickEnum(settings.density, ['compact', 'full'], 'full'),
 		pickOwners: pickedNames(settings.pickOwners !== undefined ? settings.pickOwners : settings.pickMembers),
 		pickSlots: pickedNames(settings.pickSlots),
+		hideSlots: pickedNames(settings.hideSlots),
 		trail: typeof settings.trail === 'boolean' ? settings.trail : true,
+		emptyState: typeof settings.emptyState === 'string' && settings.emptyState.trim() ? settings.emptyState.trim() : null,
+		timeFormat: typeof settings.timeFormat === 'string' && settings.timeFormat.trim() ? settings.timeFormat : null,
 	}
 }
 
@@ -221,6 +212,38 @@ export interface StatsShownOwner {
 	owner: SessionStateOwnerV1
 	group: StatsOwnerGroup
 	slots: ShownSlot[]
+}
+
+/**
+ * 🚧 An owner's **derived values** as a sheet draws them (2026-10-18,
+ * `SessionStateOwnerV1.derived`): read-only rows — no edit, no trail —
+ * each with a label and a value that reads as words. Anything malformed is
+ * left out; a host that sends none draws none.
+ * @experimental
+ */
+export function derivedRowsOf(owner: SessionStateOwnerV1): Array<{ key: string; label: string; value: string }> {
+	const raw = (owner as SessionStateOwnerV1 & { derived?: unknown }).derived
+	if (!Array.isArray(raw)) return []
+	const out: Array<{ key: string; label: string; value: string }> = []
+	for (const d of raw) {
+		if (!d || typeof d !== 'object') continue
+		const { key, label, value } = d as { key?: unknown; label?: unknown; value?: unknown }
+		if (typeof key !== 'string' || !key || typeof label !== 'string' || !label.trim()) continue
+		if (!(typeof value === 'string' ? value.trim() : finiteNumber(value))) continue
+		out.push({ key, label: label.trim(), value: String(value) })
+	}
+	return out
+}
+
+/**
+ * 🚧 Where an owner's derived rows sit among its slots: right after the
+ * leading bars (health first, armour class under it), else at the top.
+ * @experimental
+ */
+export function derivedRowsAt(slots: readonly ShownSlot[]): number {
+	let i = 0
+	while (i < slots.length && isBarSlot(slots[i]!.slot, slots[i]!.config)) i++
+	return i
 }
 
 /** One kind's owners, in the order drawn. Only `owners: all` heads them. @experimental */
@@ -257,17 +280,37 @@ export interface StatsViewBase {
  * value in play; `all`: everyone); `world` — the world's own stats, and
  * under them each place with a value in play, its valued stats only (what
  * World State drew); `places` — the places in play, likewise; `all` — the
- * world, the cast by `castScope`, the places in play; `pick` — the owners
+ * world, the cast in play, the places in play (`castScope` is read under
+ * `cast` alone, the one place its setting shows); `pick` — the owners
  * named, by label or key (`World` names the world), every stat shown. The
  * world is drawn only with a stat to show (or when picked). In a list or a
  * strip an owner with nothing to show is left out: an empty line is not a
- * stat; a card says so instead.
+ * stat; a card (and a sheet under `faces`) says so instead.
  * @experimental
  */
 export type StatsView =
 	| (StatsViewBase & { status: 'not-granted' | 'loading' | 'failed' | 'none-declared' })
 	| (StatsViewBase & { status: 'nothing-shown'; castScope: 'scene' | 'all' })
 	| (StatsViewBase & { status: 'shown'; groups: StatsGroup[] })
+
+/**
+ * 🚧 The viewer's own cast owner (`owners: mine`): the one the host marks
+ * theirs (`mine` — their player seat, or the card their persona voices),
+ * else the first cast member in play, else the first cast member; `null`
+ * with no cast. A guest's sheet is then their own, never the host's.
+ * @experimental
+ */
+export function mineOf(
+	state: SessionStateV1,
+	cast: readonly SessionStateOwnerV1[] = state.owners.filter((o) => o.kind === 'session_cast' || o.kind === 'player_seat'),
+): SessionStateOwnerV1 | null {
+	return (
+		cast.find((o) => (o as SessionStateOwnerV1 & { mine?: boolean }).mine === true) ??
+		cast.find((o) => hasAnyValue(state, o)) ??
+		cast[0] ??
+		null
+	)
+}
 
 /** @experimental */
 export function statsView(
@@ -285,20 +328,21 @@ export function statsView(
 
 	const slotMode = read.slots === 'pick' ? 'pick' : 'all'
 	const show = (owner: SessionStateOwnerV1): ShownSlot[] =>
-		shown(state, owner, slotMode, read.pickSlots).filter((s) => read.slots !== 'bars' || isBarSlot(s.slot, s.config))
+		shown(state, owner, slotMode, read.pickSlots, read.hideSlots).filter((s) => read.slots !== 'bars' || isBarSlot(s.slot, s.config))
 	const as = (group: StatsOwnerGroup, slots: (owner: SessionStateOwnerV1) => ShownSlot[]) => (owner: SessionStateOwnerV1) => ({
 		owner,
 		group,
 		slots: slots(owner),
 	})
 	const world = state.owners.find((o) => o.kind === 'session' && o.key === 'world') ?? null
-	const cast = state.owners.filter((o) => o.kind === 'session_cast')
+	// A card-less player seat (`player_seat`) is a cast member with no card: its values ride in `resolved.cast` too.
+	const cast = state.owners.filter((o) => o.kind === 'session_cast' || o.kind === 'player_seat')
 	const places = state.owners.filter((o) => o.kind === 'session_location')
 	/** The world's own stats — only with one to show. */
 	const worldShown = (): StatsShownOwner[] => (world ? [as('world', show)(world)].filter((o) => o.slots.length) : [])
-	/** The cast by `castScope`. Scene: a member nobody has given a value to has nothing to show. */
-	const castShown = (): StatsShownOwner[] =>
-		cast.filter((o) => read.castScope === 'all' || hasAnyValue(state, o)).map(as('cast', show))
+	/** The cast by `scope`. Scene: a member nobody has given a value to has nothing to show. */
+	const castShown = (scope: 'scene' | 'all'): StatsShownOwner[] =>
+		cast.filter((o) => scope === 'all' || hasAnyValue(state, o)).map(as('cast', show))
 	/** The places in play: each with a value in a stat shown, its valued stats only. */
 	const placesShown = (): StatsShownOwner[] =>
 		places
@@ -319,7 +363,8 @@ export function statsView(
 		case 'all':
 			groups = [
 				{ kind: 'world', owners: worldShown() },
-				{ kind: 'cast', owners: castShown() },
+				// The cast by `castScope` here too: a layout that says `all` means everyone.
+				{ kind: 'cast', owners: castShown(read.castScope) },
 				{ kind: 'places', owners: placesShown() },
 			]
 			break
@@ -330,15 +375,180 @@ export function statsView(
 				{ kind: 'places', owners: places.filter(picked).map(as('places', show)) },
 			]
 			break
+		case 'mine': {
+			const own = mineOf(state, cast)
+			groups = own ? [{ kind: 'cast', owners: [as('cast', show)(own)] }] : []
+			break
+		}
+		case 'seats': {
+			// 🚧 Every player seat (2026-10-18), the viewer's own first; never a
+			// companion or an NPC card. A host that marks no seat (older) reads
+			// every card-less seat, and the viewer's own.
+			const seated = cast.filter(
+				(o) =>
+					(o as SessionStateOwnerV1 & { seat?: boolean }).seat === true ||
+					o.kind === 'player_seat' ||
+					(o as SessionStateOwnerV1 & { mine?: boolean }).mine === true,
+			)
+			const mineFirst = [
+				...seated.filter((o) => (o as SessionStateOwnerV1 & { mine?: boolean }).mine === true),
+				...seated.filter((o) => (o as SessionStateOwnerV1 & { mine?: boolean }).mine !== true),
+			]
+			groups = mineFirst.length ? [{ kind: 'cast', owners: mineFirst.map(as('cast', show)) }] : []
+			break
+		}
 		default:
-			groups = [{ kind: 'cast', owners: castShown() }]
+			groups = [{ kind: 'cast', owners: castShown(read.castScope) }]
 	}
 	// A line of a list or a strip with nothing on it is not drawn.
-	if (read.arrangement !== 'cards')
+	if (read.arrangement !== 'cards' && read.arrangement !== 'faces')
 		groups = groups.map((g) => ({ ...g, owners: g.owners.filter((o) => o.slots.length) }))
 	groups = groups.filter((g) => g.owners.length)
 	if (!groups.length) return { ...base, status: 'nothing-shown', castScope: read.castScope }
 	return { ...base, status: 'shown', groups }
+}
+
+// ─── Faces, locks, gives (PLAN-sheet-widget §10, 2026-10-17) ────────────────
+
+/**
+ * 🚧 Every owner a `faces` arrangement offers as a chip, in the order drawn:
+ * the viewer's own (`owner.mine`) first, then the rest as the groups have
+ * them. The sheet under the strip is one of these.
+ * @experimental
+ */
+export function facesOwners(view: StatsView): StatsShownOwner[] {
+	if (view.status !== 'shown') return []
+	const all = view.groups.flatMap((g) => g.owners)
+	const mine = all.filter((o) => o.owner.mine === true)
+	return [...mine, ...all.filter((o) => o.owner.mine !== true)]
+}
+
+/**
+ * 🚧 A short, stable fingerprint of what one owner's sheet holds — its
+ * values, slot by slot — so a faces chip can say "changed since you looked"
+ * without the widget keeping the values themselves. Not a hash anyone
+ * compares across installs: only this viewer's last look.
+ * @experimental
+ */
+export function ownerSheetHash(state: SessionStateV1, owner: SessionStateOwnerV1): string {
+	const parts: string[] = []
+	for (const slot of slotsFor(state, owner)) {
+		const v = valueOf(state, owner, slot)
+		if (v !== undefined) parts.push(`${slot.slotId}=${JSON.stringify(v)}`)
+	}
+	let h = 5381
+	const text = parts.join('\u0001')
+	for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) | 0
+	return (h >>> 0).toString(36)
+}
+
+/** 🚧 Who may hand-edit one slot (`config.lock`, set by `core:outlet/set-stat-config@1`). @experimental */
+export type SlotLock = 'none' | 'people' | 'all'
+
+/** 🚧 The slot's lock as its configuration in force says it; `none` when unsaid. @experimental */
+export const slotLockOf = (config: Record<string, unknown> | undefined): SlotLock =>
+	config?.lock === 'people' || config?.lock === 'all' ? config.lock : 'none'
+
+/**
+ * 🚧 Is this slot closed to a person's hand edit? `people` and `all` both
+ * are — the host still lets a pipeline (and, under `people`, the session's
+ * owner) write it, and refuses the rest with its own sentence. A widget
+ * draws it with a small lock and no edit controls.
+ * @experimental
+ */
+export const slotLocked = (config: Record<string, unknown> | undefined): boolean => slotLockOf(config) !== 'none'
+
+/**
+ * 🚧 The repertoires a piece list is drawn against: the section's own map
+ * when the host sends one there (C10: one copy, not one per owner), else
+ * the owner row's.
+ * @experimental
+ */
+export function repertoiresFor(
+	state: SessionStateV1 | undefined,
+	owner: SessionStateOwnerV1,
+): SessionStateOwnerV1['repertoires'] {
+	const section = (state as { repertoires?: SessionStateOwnerV1['repertoires'] } | undefined)?.repertoires
+	if (section && typeof section === 'object' && Object.keys(section).length) {
+		return owner.repertoires ? { ...owner.repertoires, ...section } : section
+	}
+	return owner.repertoires
+}
+
+/**
+ * 🚧 Where a piece may be **given** (PLAN-sheet-widget §10; owner ruling ★4,
+ * 2026-10-19): every other owner that carries the same slot — another seat
+ * or cast member, or a place ("Drop at …"). `direct` when the viewer may
+ * write both sides: the host gives it at once. Otherwise it is an **offer**
+ * the receiver accepts or declines (`give-piece`, {@link SessionStateV1}'s
+ * `offers`) — only ever to a person: a place the viewer may not write has
+ * nobody to accept, and is not offered. Nothing is offered from a sheet the
+ * viewer may not change.
+ * @experimental
+ */
+export interface GiveTarget {
+	owner: SessionStateOwnerV1
+	/** A place: the piece is put down there, not handed over. */
+	place: boolean
+	/** The viewer may write both sides, so the give lands at once; else it is an offer. */
+	direct: boolean
+}
+
+/**
+ * 🚧 The owners a piece in `from`'s `slotId` may be given to, people first,
+ * then places. A player's character (`from.seat`) gives to another player's
+ * character or puts it down at a place — never to a cast member nobody
+ * plays: a companion keeps no sheet a gift could land on, and is handed
+ * things in the story (owner ruling ★4; the host refuses it the same way,
+ * `state/give.ts`). @experimental
+ */
+export function giveTargets(state: SessionStateV1, from: SessionStateOwnerV1, slotId: string): GiveTarget[] {
+	if (from.editable === false || slotLocked(from.configs[slotId])) return []
+	const out: GiveTarget[] = []
+	for (const owner of state.owners) {
+		if (owner.key === from.key || owner.kind === 'session') continue
+		if (!Object.hasOwn(owner.configs, slotId)) continue
+		const place = owner.kind === 'session_location'
+		if (!place && from.seat === true && owner.seat !== true) continue
+		const direct = owner.editable !== false && !slotLocked(owner.configs[slotId])
+		if (place && !direct) continue
+		out.push({ owner, place, direct })
+	}
+	return [...out.filter((t) => !t.place), ...out.filter((t) => t.place)]
+}
+
+/**
+ * 🚧 The offers on one owner's sheet ({@link SessionStateV1.offers}):
+ * `incoming` — offered to it, the receiver's to accept or decline;
+ * `outgoing` — offered from it, waiting on somebody else. @experimental
+ */
+export function offersOf(
+	state: SessionStateV1 | undefined,
+	owner: SessionStateOwnerV1,
+): { incoming: SessionStateOfferV1[]; outgoing: SessionStateOfferV1[] } {
+	const all = Array.isArray(state?.offers) ? state!.offers : []
+	return {
+		incoming: all.filter((o) => o.to.key === owner.key),
+		outgoing: all.filter((o) => o.from.key === owner.key),
+	}
+}
+
+/**
+ * 🚧 A host refusal in plain words (A21). A sentence that names the
+ * machinery — a slot id (`core:slot/hp@1`), an owner kind (`player_seat`),
+ * a code path — reads as "You can't change this right now.", its own words
+ * kept as `detail` for a tooltip; a sentence written for people stays as it
+ * is ("Your sheet is kept by the Narrator…").
+ * @experimental
+ */
+export function plainRefusal(message: string, t: (source: string) => string = (s) => s): { text: string; detail: string | null } {
+	const said = message.trim()
+	const internal =
+		!said ||
+		/[a-z][\w-]*:[a-z][\w-]*\/[\w.-]+(@\d+)?/i.test(said) ||
+		/\b(session_cast|player_seat|session_location|slotId|ownerKind|owner kind|undefined|NaN|TypeError|Error:|SQL|constraint|\bat\s+\S+\s+\()/.test(said) ||
+		/\b[a-z]+_[a-z_]+\b/.test(said)
+	return internal ? { text: t("You can't change this right now."), detail: said || null } : { text: said, detail: null }
 }
 
 // ─── Editing one slot ───────────────────────────────────────────────────────

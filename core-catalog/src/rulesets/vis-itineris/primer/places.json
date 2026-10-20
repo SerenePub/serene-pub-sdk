@@ -1,0 +1,347 @@
+[
+	{
+		"key": "brackenvale",
+		"title": "Brackenvale",
+		"content": "Rolling bracken and sheep-walks between the river and the hills, crossed by the old drove road. Wide, open and empty after dark.",
+		"keys": [
+			"the vale",
+			"drove road"
+		],
+		"fields": {
+			"category": "region"
+		},
+		"exits": [
+			{
+				"name": "The drove road south",
+				"description": "The old road down to the toll bridge and the town beyond.",
+				"traits": [],
+				"towards": "toll-bridge",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 60
+			},
+			{
+				"name": "The hill track",
+				"description": "A steep track up to the watchtower on Kestrel Rise.",
+				"traits": [],
+				"towards": "kestrel-rise",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 90
+			},
+			{
+				"name": "The reed path",
+				"description": "A raised path of packed reed that leads into the mire.",
+				"traits": [
+					"difficult"
+				],
+				"towards": "ashfen-mire",
+				"way": "passage",
+				"state": "open",
+				"travelMinutes": 45
+			},
+			{
+				"name": "The mine road",
+				"description": "A rutted cart road up to the Copperdeep workings.",
+				"traits": [],
+				"towards": "copperdeep-mine",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 120
+			}
+		]
+	},
+	{
+		"key": "lantern-ford",
+		"title": "Lantern Ford",
+		"content": "A small market town of grey stone around a ford on the river Lisk, ringed by iron lanterns on tall posts. Its square holds a well, a market cross and too many worried faces.",
+		"keys": [
+			"Lantern Ford",
+			"the town",
+			"the square"
+		],
+		"fields": {
+			"category": "town",
+			"priority": 3
+		},
+		"exits": [
+			{
+				"name": "The Oxbow's door",
+				"description": "A low oak door under a painted sign of a sleeping ox.",
+				"traits": [],
+				"towards": "drowsy-oxbow",
+				"way": "door",
+				"state": "open"
+			},
+			{
+				"name": "Chapel Lane",
+				"description": "A narrow lane up to the chapel and its bell tower.",
+				"traits": [],
+				"towards": "chapel-quiet-bell",
+				"way": "passage",
+				"state": "open",
+				"travelMinutes": 5
+			},
+			{
+				"name": "The bridge road",
+				"description": "The road north out of town to the old toll bridge.",
+				"traits": [],
+				"towards": "toll-bridge",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 20
+			},
+			{
+				"name": "The mill lane",
+				"description": "A lane along the river to the mill.",
+				"traits": [],
+				"towards": "seven-wheel-mill",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 15
+			}
+		]
+	},
+	{
+		"key": "drowsy-oxbow",
+		"title": "The Drowsy Oxbow",
+		"content": "The town's only inn: low beams, a wide hearth, a cellar of cider and a landlady who hears everything.",
+		"keys": [
+			"Oxbow",
+			"inn",
+			"tavern"
+		],
+		"fields": {
+			"category": "inn",
+			"priority": 2
+		},
+		"exits": [
+			{
+				"name": "The front door",
+				"description": "Back out to the square.",
+				"traits": [],
+				"towards": "lantern-ford",
+				"way": "door",
+				"state": "open"
+			}
+		]
+	},
+	{
+		"key": "chapel-quiet-bell",
+		"title": "The Chapel of the Quiet Bell",
+		"content": "A small chapel whose great bell has not been rung in living memory. The Ford Lantern burns in a niche by the altar, and the crypt is older than the chapel above it.",
+		"keys": [
+			"chapel",
+			"Quiet Bell",
+			"crypt"
+		],
+		"fields": {
+			"category": "chapel",
+			"priority": 2
+		},
+		"exits": [
+			{
+				"name": "Chapel Lane",
+				"description": "Down the lane to the square.",
+				"traits": [],
+				"towards": "lantern-ford",
+				"way": "passage",
+				"state": "open",
+				"travelMinutes": 5
+			},
+			{
+				"name": "The crypt stair",
+				"description": "A worn stair behind a loose flagstone in the crypt, cold air rising from below.",
+				"traits": [
+					"secret"
+				],
+				"towards": "grey-sisters-barrow",
+				"way": "stair",
+				"state": "hidden",
+				"noticeDc": 15,
+				"travelMinutes": 30
+			}
+		]
+	},
+	{
+		"key": "seven-wheel-mill",
+		"title": "The Mill of Seven Wheels",
+		"content": "A tall timber mill with seven water-wheels turning in the race. The miller is laid up with a fever and his apprentice runs the place alone.",
+		"keys": [
+			"mill",
+			"Seven Wheels"
+		],
+		"fields": {
+			"category": "mill"
+		},
+		"exits": [
+			{
+				"name": "The mill lane",
+				"description": "Back along the river to town.",
+				"traits": [],
+				"towards": "lantern-ford",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 15
+			}
+		]
+	},
+	{
+		"key": "toll-bridge",
+		"title": "The Old Toll Bridge",
+		"content": "A humped stone bridge over the Lisk with a toll house at its town end. The toll is a copper a head, and the keeper takes it whatever the hour.",
+		"keys": [
+			"toll bridge",
+			"bridge",
+			"toll house"
+		],
+		"fields": {
+			"category": "crossing"
+		},
+		"exits": [
+			{
+				"name": "The bridge road",
+				"description": "South into Lantern Ford.",
+				"traits": [],
+				"towards": "lantern-ford",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 20
+			},
+			{
+				"name": "The drove road north",
+				"description": "Across the bridge and out into the open vale.",
+				"traits": [],
+				"towards": "brackenvale",
+				"way": "bridge",
+				"state": "open",
+				"travelMinutes": 60
+			}
+		]
+	},
+	{
+		"key": "kestrel-rise",
+		"title": "The Watchtower on Kestrel Rise",
+		"content": "A ruined signal tower on the highest hill in the vale. From its top you can see the whole ring of lanterns, and which ones are dark.",
+		"keys": [
+			"Kestrel Rise",
+			"watchtower",
+			"tower"
+		],
+		"fields": {
+			"category": "ruin"
+		},
+		"exits": [
+			{
+				"name": "The hill track",
+				"description": "Down the steep track to the vale.",
+				"traits": [],
+				"towards": "brackenvale",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 60
+			}
+		]
+	},
+	{
+		"key": "ashfen-mire",
+		"title": "Ashfen Mire",
+		"content": "Black water, grey reeds and stilt-houses on the far islands. Fog rises here every autumn evening; the Mire Kin know which paths stay firm.",
+		"keys": [
+			"mire",
+			"Ashfen",
+			"marsh"
+		],
+		"fields": {
+			"category": "wild",
+			"priority": 2
+		},
+		"exits": [
+			{
+				"name": "The reed path",
+				"description": "The raised path back to the open vale.",
+				"traits": [
+					"difficult"
+				],
+				"towards": "brackenvale",
+				"way": "passage",
+				"state": "open",
+				"travelMinutes": 45
+			},
+			{
+				"name": "The barrow door",
+				"description": "A slab of grey stone in a mound at the mire's edge, carved with three veiled figures.",
+				"traits": [],
+				"towards": "grey-sisters-barrow",
+				"way": "door",
+				"state": "locked",
+				"lockDc": 18,
+				"forceDc": 22,
+				"travelMinutes": 20
+			}
+		]
+	},
+	{
+		"key": "grey-sisters-barrow",
+		"title": "The Barrow of the Grey Sisters",
+		"content": "Three stone biers in a vaulted chamber, each with an iron lantern at its foot. Two of the lanterns are dark.",
+		"keys": [
+			"barrow",
+			"Grey Sisters",
+			"tomb"
+		],
+		"fields": {
+			"category": "tomb",
+			"priority": 2
+		},
+		"exits": [
+			{
+				"name": "The barrow door",
+				"description": "The carved slab out to the mire.",
+				"traits": [],
+				"towards": "ashfen-mire",
+				"way": "door",
+				"state": "locked",
+				"lockDc": 18,
+				"forceDc": 22
+			},
+			{
+				"name": "The crypt stair",
+				"description": "A worn stair climbing toward the chapel above.",
+				"traits": [
+					"secret"
+				],
+				"towards": "chapel-quiet-bell",
+				"way": "stair",
+				"state": "hidden",
+				"noticeDc": 12,
+				"travelMinutes": 30
+			}
+		]
+	},
+	{
+		"key": "copperdeep-mine",
+		"title": "The Copperdeep Workings",
+		"content": "Spoil heaps, a winding house and a shaft into the hill. No ore cart has come down in three days, and the Ledger House has posted guards at the gate.",
+		"keys": [
+			"Copperdeep",
+			"mine",
+			"shaft"
+		],
+		"fields": {
+			"category": "mine",
+			"priority": 2
+		},
+		"exits": [
+			{
+				"name": "The mine road",
+				"description": "The rutted road back down to the vale.",
+				"traits": [],
+				"towards": "brackenvale",
+				"way": "road",
+				"state": "open",
+				"travelMinutes": 120
+			}
+		]
+	}
+]

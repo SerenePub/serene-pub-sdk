@@ -24,7 +24,7 @@
 import { sessionEvents, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 {{^genre}}
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 {{/genre}}
 {{#genre}}
 
@@ -67,7 +67,7 @@ export const askSpec = () =>
 {{/genre}}
 {{^genre}}
 			/** ✎ CHANGE: the genre this action belongs to. */
-			genre: chatGenre,
+			genre: storyGenre,
 {{/genre}}
 			event: sessionEvents.sessionAction,
 		})

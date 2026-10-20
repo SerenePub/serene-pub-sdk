@@ -54,6 +54,12 @@
 		metadata?: { isGreeting?: boolean }
 	}
 	const rows = $derived(conv.rows as Row[])
+	/**
+	 * 🚧 The composer under this line already offers Stop (its newest row is
+	 * generating — the composer's own rule): this line does not offer a
+	 * second (2026-10-18, the 100-turn walk #28: four Stops during a Rest).
+	 */
+	const composerStops = $derived(!!rows[rows.length - 1]?.isGenerating)
 	/** A reply some run wrote: a greeting opens the session, no run wrote it. */
 	const isReply = (m: Row) =>
 		(!!m.characterId || !!m.isNarratorResponse || !!m.isGenerating) && !m.metadata?.isGreeting
@@ -124,10 +130,36 @@
 	})
 
 	const waiting = $derived(dossier?.state.waiting ?? [])
-	const reviewLabel = $derived(waiting.length === 1 ? "Review 1 change" : `Review ${waiting.length} changes`)
+	/**
+	 * 🚧 What waits ON the viewer, and the viewer's own offers waiting on
+	 * somebody else (PLAN-dc-after-walk3 R1-2, the walk's NEW-4): the giver's
+	 * Review panel showed Accept · Reject on her own offer under "The AI
+	 * asked for these". Her offers are listed apart, with Withdraw.
+	 */
+	const toDecide = $derived(waiting.filter((p) => !p.offer?.yours))
+	const ownOffers = $derived(waiting.filter((p) => !!p.offer?.yours))
+	/** Who asked for what waits on the viewer: the AI, a player, or both. */
+	const decideNote = $derived.by(() => {
+		const offers = toDecide.filter((p) => !!p.offer).length
+		if (!offers) return "The AI asked for these. Nothing changes until you accept one."
+		if (offers === toDecide.length)
+			return offers === 1 ? "Offered to you. Nothing changes until you accept it." : "Offered to you. Nothing changes until you accept one."
+		return "The AI asked for some, a player offered others. Nothing changes until you accept one."
+	})
+	const reviewLabel = $derived(
+		toDecide.length
+			? toDecide.length === 1
+				? "Review 1 change"
+				: `Review ${toDecide.length} changes`
+			: ownOffers.length === 1
+				? "Your offer is waiting"
+				: `Your ${ownOffers.length} offers are waiting`
+	)
 	/** "Inspect run" (R55: administrators only), on a reply that has finished. */
 	const canInspect = $derived(!!conv.ctx.viewer.v1.isAdmin && !!reply && turnState !== "live")
 	const hasLinks = $derived(waiting.length > 0 || canInspect)
+	/** The links beside the pill: Review only when the pill is not already it. */
+	const hasSideLinks = $derived((waiting.length > 0 && !!status) || canInspect)
 	let panelOpen = $state(false)
 
 	const inspect = () => {
@@ -163,15 +195,23 @@
 						<sp-icon name="chevron-up" size="12" data-widget-part="messages.turn-line-status-more"></sp-icon>
 					</button>
 					<div data-widget-part="messages.turn-line-panel">
-						{#if waiting.length}
+						{#if toDecide.length}
 							<header data-widget-part="messages.ledger-review-title">
 								<sp-icon name="clipboard-check" size="14"></sp-icon>
 								<span>Waiting for you</span>
 							</header>
+							<p data-widget-part="messages.ledger-review-note">{decideNote}</p>
+							<StateProposalList proposals={toDecide} showAnchor />
+						{/if}
+						{#if ownOffers.length}
+							<header data-widget-part="messages.ledger-review-title">
+								<sp-icon name="hourglass" size="14"></sp-icon>
+								<span>{ownOffers.length === 1 ? "Your offer" : "Your offers"}</span>
+							</header>
 							<p data-widget-part="messages.ledger-review-note">
-								The AI asked for these. Nothing changes until you accept one.
+								Nothing moves until it is accepted. You can take an offer back.
 							</p>
-							<StateProposalList proposals={waiting} showAnchor />
+							<StateProposalList proposals={ownOffers} />
 						{/if}
 						{#if canInspect}
 							<button type="button" data-widget-part="messages.turn-line-panel-inspect" onclick={inspect}>
@@ -186,10 +226,12 @@
 					<span data-widget-part="messages.turn-line-status-text">{status}</span>
 				</span>
 			{/if}
-			{#if hasLinks}
+			{#if hasSideLinks}
 				<!-- The same links, beside the pill where the box has room. -->
 				<span data-widget-part="messages.turn-line-links">
-					{#if waiting.length}
+					<!-- Not when the pill already says it (no status yet): one
+					     Review per screen, never two side by side. -->
+					{#if waiting.length && status}
 						<button
 							type="button"
 							data-widget-part="messages.turn-line-review"
@@ -214,16 +256,19 @@
 			<!-- Who else is writing (the page's view): a pill, when someone is. -->
 			<span data-widget-part="messages.turn-line-typing"><sp-host-view name="session-banners"></sp-host-view></span>
 			{#if turnState === "live"}
-				<button
-					type="button"
-					data-widget-part="messages.turn-line-stop"
-					title="Stop"
-					aria-label="Stop generating"
-					onclick={() => conv.invoke("stop")}
-				>
-					<sp-icon name="square" size="14"></sp-icon>
-					<span>Stop</span>
-				</button>
+				<!-- 🚧 Live with the composer's own Stop right under it: nothing here. -->
+				{#if !composerStops}
+					<button
+						type="button"
+						data-widget-part="messages.turn-line-stop"
+						title="Stop"
+						aria-label="Stop generating"
+						onclick={() => conv.invoke("stop")}
+					>
+						<sp-icon name="square" size="14"></sp-icon>
+						<span>Stop</span>
+					</button>
+				{/if}
 			{:else if turnState === "failed" && replyIsLast && reply}
 				<button
 					type="button"
@@ -243,6 +288,7 @@
 					avatarFor={(ref) => (ref.startsWith("character:") ? ref : undefined)}
 					canChooseSomeoneElse={dossier.turn.canChoose}
 					viewerUserId={conv.ctx.viewer.v1.userId}
+					waitingFor={dossier.turn.waitingFor ?? []}
 					onContinue={(channel) => void conv.request("fire-turn", { channel })}
 					onSomeoneElse={() => void conv.request("pick-turn", {})}
 				/>

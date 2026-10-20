@@ -172,7 +172,7 @@ describe('what the playground says when it cannot run something', () => {
 				'',
 				"export default spec('example:playground-default', { version: '1.0.0' })",
 				"\t.inlet('input', C.userMessage.v1(), {",
-				"\t\tgenre: use('core:genre/chat'),",
+				"\t\tgenre: use('core:genre/story'),",
 				'\t\tevent: sessionEvents.messageRespond,',
 				'\t})',
 				"\t.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))",

@@ -59,8 +59,7 @@ import {
 	coreAnnouncement,
 	CORE_SPECS,
 	DEFAULT_TRANSCRIPT_TEMPLATE,
-	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
-	CHAT_SUMMARIZE_SCENE_SPEC_ID,
+	STORY_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
 } from '@serene-pub/core-catalog'
@@ -491,7 +490,7 @@ const sdk: HostUnderTest = {
 	mountComponent: mountCode,
 }
 
-const CHAT = 'core:genre/chat'
+const CHAT = 'core:genre/story'
 
 /** A contributed action under the `conformance` namespace, in the composer unless told otherwise. */
 const action = (over: Record<string, unknown> = {}) => ({
@@ -602,8 +601,8 @@ const batchTranscriptBinding = async (i: any) => {
 }
 
 const GENRE_SUMMARIZE_SCENES = [
-	CHAT_SUMMARIZE_SCENE_SPEC_ID,
-	ADVENTURE_SUMMARIZE_SCENE_SPEC_ID,
+	STORY_SUMMARIZE_SCENE_SPEC_ID,
+	STORY_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
 ]
@@ -1412,8 +1411,8 @@ test('95d · the six laws the showcase lanes hit each fail on a host that gets t
 	// C29 — the turn loop: respond completes a message, the completion
 	// recomputes the turn order, auto-advance asks for the next reply. With
 	// auto-advance's termination policy it passes; without any, it is refused.
-	const R = 'core:spec/chat-respond'
-	const T = 'core:spec/chat-turn-order'
+	const R = 'core:spec/story-respond'
+	const T = 'core:spec/story-turn-order'
 	const AA = 'core:listener/auto-advance'
 	const loop = {
 		nodes: [
@@ -1601,7 +1600,7 @@ test('95e · C30 fails on a host that carries the renderer, and on one that drop
 
 test('C34 · every core genre’s summarize-scene passes, and the kit fails a render that drops message ids', async () => {
 	const c34 = async (host: HostUnderTest, fx: Fixtures) => (await conform(host, fx, { only: ['C34'] }))[0]!
-	assert.equal(fixtures.summarizeScenes!().length, 4, 'chat, adventure, guide and lair each ship one')
+	assert.equal(fixtures.summarizeScenes!().length, 3, 'story, guide and lair each ship one (Chat, the assistant, summarizes with core\'s default)')
 	const own = await c34(sdk, fixtures)
 	assert.equal(own.pass, true, own.error)
 	assert.equal(own.skipped, undefined)

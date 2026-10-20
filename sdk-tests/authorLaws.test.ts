@@ -43,11 +43,11 @@ import {
 	type MessageBlock,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 
 import { errorsFor } from './helpers.js'
 
-const CHAT = chatGenre.id
+const CHAT = storyGenre.id
 
 const action = (over: Record<string, unknown> = {}) => ({
 	key: 'grant',
@@ -59,7 +59,7 @@ const action = (over: Record<string, unknown> = {}) => ({
 
 const actionSpec = (id: string, actions: Array<Record<string, unknown>>) =>
 	spec(id, { version: '1.0.0', contributes: { actions: actions as any } })
-		.inlet('input', C.userMessage.v1(), { genre: chatGenre, event: sessionEvents.sessionAction })
+		.inlet('input', C.userMessage.v1(), { genre: storyGenre, event: sessionEvents.sessionAction })
 		.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
 
 // ── 1 · The effects line, at a block ───────────────────────────────────────

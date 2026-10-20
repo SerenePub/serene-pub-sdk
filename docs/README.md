@@ -86,7 +86,7 @@ CommonMark with GFM tables, plus eight things:
    is copied verbatim.
 7. **Banners** — a source's `banner` is prepended to every one of its pages as
    `<aside class="doc-banner" role="note">`.
-8. **Pipeline fences** — ` ```pipeline core:spec/chat-respond ` (the id is the info string
+8. **Pipeline fences** — ` ```pipeline core:spec/story-respond ` (the id is the info string
    after the word; the body is ignored and is usually empty) — become an inline SVG of
    that pipeline, laid out by [elkjs](https://github.com/kieler/elkjs)'s `layered`
    algorithm with the same 220×58 cards and spacings the app's pipeline map uses, so the
@@ -244,12 +244,12 @@ Each fence becomes:
 <figure class="doc-graph">
 	<svg
 		role="img"
-		aria-labelledby="core-spec-chat-respond-title"
+		aria-labelledby="core-spec-story-respond-title"
 		viewBox="0 0 W H"
 		width="W"
 		height="H"
 	>
-		<title id="core-spec-chat-respond-title">core:spec/chat-respond</title>
+		<title id="core-spec-story-respond-title">core:spec/story-respond</title>
 		<defs><marker id="core-spec-chat-respond-arrow">…</marker></defs>
 		<path class="doc-graph-edge" d="…" marker-end="url(#core-spec-chat-respond-arrow)" />
 		<text class="doc-graph-edge-label">…</text>
@@ -260,7 +260,7 @@ Each fence becomes:
 			<text class="doc-graph-sublabel">type id</text>
 		</g>
 	</svg>
-	<figcaption>core:spec/chat-respond</figcaption>
+	<figcaption>core:spec/story-respond</figcaption>
 </figure>
 ```
 
@@ -270,7 +270,7 @@ what has to be unique on a page**, not merely present.
 
 The `<svg>` carries a `viewBox` and matching `width`/`height`, so it is the host that
 decides whether a wide graph scrolls or scales — `.doc-graph { overflow-x: auto }` or
-`.doc-graph svg { max-width: 100%; height: auto }`. Core's `core:spec/chat-respond` lays out
+`.doc-graph svg { max-width: 100%; height: auto }`. Core's `core:spec/story-respond` lays out
 at about 2400×1360, so this is not a hypothetical: style it or it will overrun the
 column, exactly as a wide `.doc-table` does.
 

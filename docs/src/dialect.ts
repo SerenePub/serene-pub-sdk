@@ -484,7 +484,7 @@ const DESCENDS_INTO = new Set(['blockquote', 'docAdmonition'])
 /** Tokens that contribute nothing a reader would want to see in a search hit. */
 const PREVIEW_SKIPS = new Set(['space', 'hr', 'code', 'docFigure'])
 
-/** A fence's info string, as words: ` ```pipeline core:spec/chat-respond ` → two. */
+/** A fence's info string, as words: ` ```pipeline core:spec/story-respond ` → two. */
 function infoWords(lang: unknown): string[] {
 	return String(lang ?? '')
 		.trim()

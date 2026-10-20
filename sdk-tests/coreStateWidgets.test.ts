@@ -1,5 +1,8 @@
 /**
- * Core's World State and Stats as the components they ship as (R21): built
+ * Core's Stats — and World State, which is Stats drawn for the world as a
+ * strip (an alias since W7; its wrapper module went 2026-10-17, so a mount
+ * of `world-state` here is Stats with the settings the host's alias table
+ * implies) — as the component it ships as (R21): built
  * by the CLI's component bundler from `core-catalog/components/shared/`,
  * run in a worker in core's box, reading the `session_state` section and
  * their settings, and writing through `set-attribute-value` — Enter commits
@@ -8,12 +11,16 @@
  */
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
+// ⚠ Never hand a DOM node to an assertion: a failing `assert.equal(node, null)` serialises the
+// whole document graph into the message — 50 GB, and the editor with it (2026-10-18).
 import { resolve } from 'node:path'
 import type { SessionStateV1, WidgetScope } from '@serene-pub/sdk'
 import { mountComponent, type MountedComponent } from '../cli/src/testing.js'
 import { coreComponentEntry } from './componentMount.js'
 
 const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
+/** The component's `session-state` import, aliased to the module's source: the suite needs no rebuild of the catalogue. */
+const SESSION_STATE_SOURCE = resolve(CORE_CATALOG, 'src', 'shared', 'ui', 'session-state', 'index.ts')
 
 const slot = (key: string, type: string, extra: Record<string, unknown> = {}) => ({
 	slotId: `core:slot/${key}@1`,
@@ -74,17 +81,29 @@ async function mount(
 		/** Whose box: core's unless a plugin's clone is being mounted. */
 		owner?: string
 		grants?: WidgetScope[]
+		/** The session as the host posts it (`SessionV1`), past its id and name. */
+		session?: Record<string, unknown>
 	} = {},
 ): Promise<MountedComponent> {
 	const state = opts.state === undefined ? sessionState() : opts.state
+	// World State is an alias (`WIDGET_ID_ALIASES`): the host mounts Stats with
+	// `owners: world, arrangement: strip` under the stored settings, its stored
+	// `layout` read as the arrangement (the app's settings reader).
+	let settings = opts.settings ?? {}
+	if (slug === 'world-state') {
+		const { layout, ...rest } = settings
+		settings = { owners: 'world', arrangement: typeof layout === 'string' ? layout : 'strip', ...rest }
+	}
+	const entry = await coreComponentEntry(slug, { root: CORE_CATALOG, entry: 'components/shared/stats/stats.ts' })
 	return mountComponent({
-		...(await coreComponentEntry(slug, { root: CORE_CATALOG, entry: `components/shared/${slug}/${slug}.ts` })),
+		...entry,
+		...(entry.root === CORE_CATALOG ? { alias: { '@serene-pub/core-catalog/session-state': SESSION_STATE_SOURCE } } : {}),
 		owner: opts.owner ?? 'core',
 		...(opts.grants ? { grants: opts.grants } : {}),
 		timeoutMs: 60_000,
 		context: {
-			session: { id: 1, name: 'Proof' },
-			settings: opts.settings ?? {},
+			session: { id: 1, name: 'Proof', ...opts.session },
+			settings,
 			viewer: { userId: 1, isAdmin: false, isGuest: false },
 			scoped: state ? { session_state: state } : {},
 		},
@@ -100,7 +119,7 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 		const view = await mount('world-state')
 		try {
 			assert.deepEqual(view.refused, [])
-			const root = view.query('[data-state-widget="world-state"]')!
+			const root = view.query('[data-widget-part~="stats.root"]')!
 			assert.equal(root.getAttribute('data-owner-key'), 'world')
 			// Stats in World State's settings since W7: its layout is Stats' arrangement.
 			assert.equal(root.getAttribute('data-arrangement'), 'strip')
@@ -121,10 +140,11 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 			assert.equal(slotEl(view, 'lit').querySelector('button')?.getAttribute('aria-pressed'), 'true')
 			assert.equal(slotEl(view, 'danger').querySelector('[data-widget-part~="stat-slot.fill"]')?.getAttribute('style'), '--sp-fill: 60%')
 			assert.equal(text(slotEl(view, 'danger').querySelector('[data-widget-part~="stat-slot.bar-value"]')), '3/5')
-			// A derived slot is shown and never offered.
+			// A derived slot is shown and never offered: words, not a disabled button (C9).
 			const tension = slotEl(view, 'tension')
 			assert.equal(tension.querySelector('sp-icon')?.getAttribute('name'), 'sigma')
-			assert.equal(tension.querySelector('button')?.hasAttribute('disabled'), true)
+			assert.equal(tension.querySelector('button') === null, true)
+			assert.ok(tension.querySelector('span[data-widget-part~="stat-slot.line"]'))
 		} finally {
 			await view.unmount()
 		}
@@ -244,20 +264,32 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 		}
 	})
 
-	test("a refused write is this widget's own line (R77), cleared by the next write", async () => {
-		let refuse = true
+	test("a refused write is the row's own line (A21), in plain words, cleared by the next write", async () => {
+		let refuse: string | null = "'core:slot/lit@1' is not a slot World carries"
 		const view = await mount('world-state', {
 			requests: () => {
-				if (refuse) throw new Error("'core:slot/lit@1' is not a slot World carries")
+				if (refuse) throw new Error(refuse)
 			},
 		})
 		try {
 			assert.equal(view.query('[role="alert"]') === null, true)
 			await view.click(slotEl(view, 'lit').querySelector('button')!)
-			assert.equal(text(view.query('[role="alert"]')), "'core:slot/lit@1' is not a slot World carries")
-			refuse = false
+			// A sentence that names the machinery reads plainly; its words stay in the tooltip.
+			const line = slotEl(view, 'lit').querySelector('[data-widget-part~="stat-slot.invalid"][role="alert"]')
+			assert.equal(text(line), "You can't change this right now.")
+			assert.equal(line?.getAttribute('title'), "'core:slot/lit@1' is not a slot World carries")
+			assert.equal(view.query('[data-widget-part~="stats.alert"]') === null, true, 'never a widget-level line')
+			refuse = null
 			await view.click(slotEl(view, 'lit').querySelector('button')!)
 			assert.equal(view.query('[role="alert"]') === null, true)
+
+			// A refused number keeps its draft open: the field stays, the line says why.
+			refuse = 'Your sheet is kept by the Narrator.'
+			await view.click(slotEl(view, 'danger').querySelector('button')!)
+			await view.input(`[data-slot-id="${id('danger')}"] input`, '2')
+			await view.pressKey(`[data-slot-id="${id('danger')}"] input`, 'Enter')
+			assert.ok(slotEl(view, 'danger').querySelector('input'), 'the draft is kept')
+			assert.equal(text(slotEl(view, 'danger').querySelector('[role="alert"]')), 'Your sheet is kept by the Narrator.')
 		} finally {
 			await view.unmount()
 		}
@@ -274,12 +306,15 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 				['mira'],
 			)
 			const card = view.query('[data-owner-key="mira"]')!
-			assert.equal(text(card.querySelector('[data-widget-part~="stats.card-head"]')), 'Mira')
+			assert.equal(text(card.querySelector('[data-widget-part~="stats.card-name"]')), 'Mira')
+			// The sheet head's face (§12): no picture yet, so the initial — a button that opens the portrait picker.
+			assert.equal(text(card.querySelector('button[data-widget-part~="stats.face"]')), 'M')
 			assert.equal(text(card.querySelector(`[data-slot-id="${id('hp')}"] [data-widget-part~="stat-slot.bar-value"]`)), '14/20')
 			assert.equal(card.querySelector(`[data-slot-id="${id('hp')}"] [data-widget-part~="stat-slot.fill"]`)?.getAttribute('style'), '--sp-fill: 70%')
 			const gold = card.querySelector(`[data-slot-id="${id('gold')}"]`)!
 			assert.equal(gold.hasAttribute('data-retired'), true)
-			assert.equal(gold.querySelector('button')?.hasAttribute('disabled'), true)
+			// Read-only: words, never a disabled button. The trail's button stays — a retired stat still has a history to read.
+			assert.equal(gold.querySelector('button:not([data-widget-part~="stats.trail-open"])') === null, true)
 			assert.equal(gold.querySelector('sp-icon')?.getAttribute('label'), 'retired')
 		} finally {
 			await view.unmount()
@@ -341,7 +376,7 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 			const hp = `[data-owner-key="mira"] [data-slot-id="${id('hp')}"]`
 			// One button per stat that has a trail — never on a derived one.
 			assert.ok(view.query(`${hp} [data-widget-part~="stats.trail-open"]`))
-			assert.equal(view.query(`[data-slot-id="${id('tension')}"] [data-widget-part~="stats.trail-open"]`), null)
+			assert.equal(view.query(`[data-slot-id="${id('tension')}"] [data-widget-part~="stats.trail-open"]`) === null, true)
 			assert.equal(view.query(`${hp} [data-widget-part~="stats.trail-open"]`)?.getAttribute('aria-label'), 'How Hp changed')
 			assert.equal(view.requested.length, 0, 'nothing is asked until a trail is opened')
 			await view.dispatch(`${hp} sp-popover`, 'open-change', { open: true })
@@ -366,7 +401,7 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 			refuse = true
 			await view.dispatch(`${hp} sp-popover`, 'open-change', { open: true })
 			assert.equal(text(view.query(`${hp} [data-widget-part~="stats.trail-note"][role="alert"]`)), 'This session is not one you are in.')
-			assert.equal(view.query('[data-widget-part~="stats.alert"]'), null)
+			assert.equal(view.query('[data-widget-part~="stats.alert"]') === null, true)
 			// The setting off: no buttons at all.
 			await view.push('settings', { owners: 'all', castScope: 'all', trail: false })
 			assert.equal(view.queryAll('[data-widget-part~="stats.trail-open"]').length, 0)
@@ -389,7 +424,7 @@ describe('a clone of World State or Stats in a box not granted `session:state`',
 				assert.deepEqual(view.refused, [], slug)
 				// Granted later (an admin's review): it waits for, then draws, the section.
 				await view.setGrants(['session:state'])
-				assert.equal(view.query('[data-scope-not-granted]'), null, slug)
+				assert.equal(view.query('[data-scope-not-granted]') === null, true, slug)
 				await view.push('scoped', { session_state: sessionState() })
 				assert.ok(view.queryAll('[data-widget-part~="stat-slot.root"]').length > 0, slug)
 				// Withdrawn at runtime: the section goes, and the notice is back.
@@ -405,7 +440,7 @@ describe('a clone of World State or Stats in a box not granted `session:state`',
 	test('granted it, the same clone draws as core does', async () => {
 		const view = await mount('stats', { owner: 'plugin', grants: ['session:state'] })
 		try {
-			assert.equal(view.query('[data-scope-not-granted]'), null)
+			assert.equal(view.query('[data-scope-not-granted]') === null, true)
 			assert.deepEqual(view.queryAll('[data-widget-part~="stats.card"]').map((c) => c.getAttribute('data-owner-key')), ['mira'])
 		} finally {
 			await view.unmount()
@@ -450,6 +485,26 @@ const shapedState = (): SessionStateV1 =>
 	})
 
 describe("core's state widgets draw and edit every catalogue shape", { timeout: 180_000 }, () => {
+	test("🚧 a copy's timeFormat spells a story-time stat; its emptyState is what an empty widget says", async () => {
+		const view = await mount('stats', {
+			state: shapedState(),
+			settings: { owners: 'world', arrangement: 'list', timeFormat: 'Day {day}, {hh}:{mm}' },
+		})
+		try {
+			assert.deepEqual(view.refused, [])
+			assert.equal(text(slotEl(view, 'clock').querySelector('button')), 'Day 5, 22:30')
+			// Nothing declared: the copy's words, not the widget's.
+			await view.push('settings', { emptyState: 'Your sheet appears once your character is made.' })
+			await view.push('scoped', { session_state: sessionState({ slots: [], owners: [], resolved: { world: {}, cast: {} } }) })
+			assert.equal(text(view.query('[data-widget-part~="stats.empty"]')), 'Your sheet appears once your character is made.')
+			// Without one, the widget's own sentence.
+			await view.push('settings', {})
+			assert.match(text(view.root)!, /Nothing in this session declares stats/)
+		} finally {
+			await view.unmount()
+		}
+	})
+
 	test('each shape is drawn as what it is, read through its field', async () => {
 		const view = await mount('world-state', { state: shapedState(), settings: { layout: 'list' } })
 		try {
@@ -739,6 +794,26 @@ describe("core's state widgets hold items from the lorebook, with counts (phase 
 			assert.doesNotMatch(text(closed.query(bag))!, /Add from the lorebook/)
 		} finally {
 			await closed.unmount()
+		}
+	})
+
+	test('a session that reads no lorebook offers no "Add from the lorebook"; one that reads one does (owner screenshot 2026-10-15)', async () => {
+		const none = await mount('world-state', { state: itemState(), requests: lorebook(), session: { lorebookId: null } })
+		try {
+			await none.click(`${bag} button`)
+			// The list still takes words.
+			assert.ok(none.query(`${bag} input[data-widget-part~="stat-slot.add"]`))
+			assert.equal(none.query(`${bag} [data-widget-part~="stat-slot.pick-open"]`) === null, true)
+			assert.doesNotMatch(text(none.query(bag))!, /Add from the lorebook/)
+		} finally {
+			await none.unmount()
+		}
+		const book = await mount('world-state', { state: itemState(), requests: lorebook(), session: { lorebookId: 3 } })
+		try {
+			await book.click(`${bag} button`)
+			assert.ok(book.query(`${bag} [data-widget-part~="stat-slot.pick-open"]`))
+		} finally {
+			await book.unmount()
 		}
 	})
 

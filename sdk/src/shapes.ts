@@ -294,6 +294,16 @@ export const S = {
 	 */
 	formAddressed: defineShape({ id: 'core:shape/form-addressed@1' }),
 	/**
+	 * 🚧 A **message offered**: the payload of
+	 * `core:event/message-offered@1` — a person wrote a message and asked for
+	 * it to be saved (`MessageOfferedPayload`, events.ts) — and what
+	 * `core:inlet/message-offered@1` publishes, port by port. Its own id for
+	 * the reason `session-change@1` has: the registry's `payload_shape` names
+	 * it.
+	 * @ruling owner 2026-10-15 (a person's message is saved through the pipeline)
+	 */
+	messageOffered: defineShape({ id: 'core:shape/message-offered@1' }),
+	/**
 	 * A **cast change**: the payload of
 	 * `core:event/cast-changed@1` — `{ event, sessionId, at, cause, ref,
 	 * change, value }` (`CastChangePayload`, events.ts). A seated

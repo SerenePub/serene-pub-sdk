@@ -1,0 +1,375 @@
+[
+	{
+		"key": "odile-marsh",
+		"name": "Odile Marsh",
+		"description": "Landlady of the Drowsy Oxbow: broad, quick-witted and kind to anyone who pays, kinder still to anyone who talks. She knows every debt and every grudge in town.",
+		"at": "drowsy-oxbow",
+		"sheet": {
+			"core:slot/level@1": 1,
+			"core:slot/character-class@1": "Innkeeper",
+			"core:slot/hp@1": 9,
+			"core:slot/itineris-hp-max@1": 9,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Innkeeper",
+			"core:slot/itineris-speed@1": 30,
+			"core:slot/itineris-skill-training@1": [
+				"insight",
+				"persuasion"
+			],
+			"core:slot/itineris-save-training@1": [
+				"wisdom",
+				"charisma"
+			],
+			"core:slot/itineris-hit-dice@1": 1,
+			"core:slot/itineris-strength@1": 12,
+			"core:slot/itineris-dexterity@1": 10,
+			"core:slot/itineris-constitution@1": 13,
+			"core:slot/itineris-intelligence@1": 12,
+			"core:slot/itineris-wisdom@1": 14,
+			"core:slot/itineris-charisma@1": 15
+		},
+		"pieces": {
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "club",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "anselm-hale",
+		"name": "Brother Anselm Hale",
+		"description": "Keeper of the Chapel of the Quiet Bell, gentle and stubborn, who has read every book in the crypt and believes the lanterns fail because the town forgot what they are for.",
+		"at": "chapel-quiet-bell",
+		"sheet": {
+			"core:slot/level@1": 3,
+			"core:slot/character-class@1": "Priest",
+			"core:slot/hp@1": 21,
+			"core:slot/itineris-hp-max@1": 21,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Acolyte",
+			"core:slot/itineris-speed@1": 30,
+			"core:slot/itineris-skill-training@1": [
+				"religion",
+				"history",
+				"medicine"
+			],
+			"core:slot/itineris-save-training@1": [
+				"wisdom",
+				"charisma"
+			],
+			"core:slot/itineris-hit-dice@1": 3,
+			"core:slot/itineris-strength@1": 10,
+			"core:slot/itineris-dexterity@1": 10,
+			"core:slot/itineris-constitution@1": 12,
+			"core:slot/itineris-intelligence@1": 13,
+			"core:slot/itineris-wisdom@1": 16,
+			"core:slot/itineris-charisma@1": 12
+		},
+		"pieces": {
+			"spells": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "light",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "sacred-flame",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "cure-wounds",
+					"version": "1.1.0"
+				}
+			],
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "mace",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "wren-talbot",
+		"name": "Captain Wren Talbot",
+		"description": "Captain of the Lamplighters' Compact, scarred and tired, holding the ring together with too few lamplighters and too little oil.",
+		"at": "lantern-ford",
+		"sheet": {
+			"core:slot/level@1": 4,
+			"core:slot/character-class@1": "Fighter",
+			"core:slot/hp@1": 38,
+			"core:slot/itineris-hp-max@1": 38,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Soldier",
+			"core:slot/itineris-speed@1": 30,
+			"core:slot/itineris-skill-training@1": [
+				"athletics",
+				"perception",
+				"intimidation"
+			],
+			"core:slot/itineris-save-training@1": [
+				"strength",
+				"constitution"
+			],
+			"core:slot/itineris-hit-dice@1": 4,
+			"core:slot/itineris-strength@1": 16,
+			"core:slot/itineris-dexterity@1": 13,
+			"core:slot/itineris-constitution@1": 15,
+			"core:slot/itineris-intelligence@1": 10,
+			"core:slot/itineris-wisdom@1": 12,
+			"core:slot/itineris-charisma@1": 11
+		},
+		"pieces": {
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "longsword",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "light-crossbow",
+					"version": "1.1.0"
+				}
+			],
+			"armour": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "chain-mail",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "shield",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "mother-sedge",
+		"name": "Mother Sedge",
+		"description": "Eldest of the Mire Kin, small, bent and sharp as a reed-knife. She remembers when the barrow was last opened, and she is not telling.",
+		"at": "ashfen-mire",
+		"sheet": {
+			"core:slot/level@1": 5,
+			"core:slot/character-class@1": "Druid",
+			"core:slot/hp@1": 33,
+			"core:slot/itineris-hp-max@1": 33,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Hermit",
+			"core:slot/itineris-speed@1": 25,
+			"core:slot/itineris-skill-training@1": [
+				"nature",
+				"survival",
+				"insight"
+			],
+			"core:slot/itineris-save-training@1": [
+				"intelligence",
+				"wisdom"
+			],
+			"core:slot/itineris-hit-dice@1": 5,
+			"core:slot/itineris-strength@1": 8,
+			"core:slot/itineris-dexterity@1": 12,
+			"core:slot/itineris-constitution@1": 13,
+			"core:slot/itineris-intelligence@1": 14,
+			"core:slot/itineris-wisdom@1": 17,
+			"core:slot/itineris-charisma@1": 11
+		},
+		"pieces": {
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "quarterstaff",
+					"version": "1.1.0"
+				}
+			],
+			"spells": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "light",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "cure-wounds",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "hold-person",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "corvin-ashby",
+		"name": "Corvin Ashby",
+		"description": "Factor for the Ledger House at Copperdeep: polite, well dressed and frightened, because something happened in the mine that his masters must not hear about yet.",
+		"at": "copperdeep-mine",
+		"sheet": {
+			"core:slot/level@1": 2,
+			"core:slot/character-class@1": "Factor",
+			"core:slot/hp@1": 13,
+			"core:slot/itineris-hp-max@1": 13,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Clerk",
+			"core:slot/itineris-speed@1": 30,
+			"core:slot/itineris-skill-training@1": [
+				"deception",
+				"investigation",
+				"persuasion"
+			],
+			"core:slot/itineris-save-training@1": [
+				"dexterity",
+				"intelligence"
+			],
+			"core:slot/itineris-hit-dice@1": 2,
+			"core:slot/itineris-strength@1": 10,
+			"core:slot/itineris-dexterity@1": 14,
+			"core:slot/itineris-constitution@1": 11,
+			"core:slot/itineris-intelligence@1": 15,
+			"core:slot/itineris-wisdom@1": 12,
+			"core:slot/itineris-charisma@1": 14
+		},
+		"pieces": {
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "rapier",
+					"version": "1.1.0"
+				}
+			],
+			"gear": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "hooded-lantern",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "pell",
+		"name": "Pell",
+		"description": "The miller's apprentice, twelve years old and running the Mill of Seven Wheels alone. Pell has been out on the reed path at night and seen lights where no lights should be.",
+		"at": "seven-wheel-mill",
+		"sheet": {
+			"core:slot/level@1": 1,
+			"core:slot/character-class@1": "Apprentice",
+			"core:slot/hp@1": 6,
+			"core:slot/itineris-hp-max@1": 6,
+			"core:slot/itineris-species@1": "Human",
+			"core:slot/itineris-background@1": "Apprentice",
+			"core:slot/itineris-speed@1": 30,
+			"core:slot/itineris-skill-training@1": [
+				"stealth",
+				"perception"
+			],
+			"core:slot/itineris-save-training@1": [
+				"dexterity",
+				"wisdom"
+			],
+			"core:slot/itineris-hit-dice@1": 1,
+			"core:slot/itineris-strength@1": 9,
+			"core:slot/itineris-dexterity@1": 14,
+			"core:slot/itineris-constitution@1": 11,
+			"core:slot/itineris-intelligence@1": 12,
+			"core:slot/itineris-wisdom@1": 13,
+			"core:slot/itineris-charisma@1": 10
+		},
+		"pieces": {
+			"gear": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "tinderbox",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "rope",
+					"version": "1.1.0"
+				}
+			]
+		}
+	},
+	{
+		"key": "hester-vane",
+		"name": "Hester Vane",
+		"description": "Keeper of the old toll bridge, once a scout for hire, now in debt to the Ledger House and quietly watching who crosses at night.",
+		"at": "toll-bridge",
+		"sheet": {
+			"core:slot/level@1": 3,
+			"core:slot/character-class@1": "Ranger",
+			"core:slot/hp@1": 27,
+			"core:slot/itineris-hp-max@1": 27,
+			"core:slot/itineris-species@1": "Half-elf",
+			"core:slot/itineris-background@1": "Outlander",
+			"core:slot/itineris-speed@1": 35,
+			"core:slot/itineris-skill-training@1": [
+				"survival",
+				"stealth",
+				"perception"
+			],
+			"core:slot/itineris-save-training@1": [
+				"strength",
+				"dexterity"
+			],
+			"core:slot/itineris-hit-dice@1": 3,
+			"core:slot/itineris-strength@1": 12,
+			"core:slot/itineris-dexterity@1": 16,
+			"core:slot/itineris-constitution@1": 13,
+			"core:slot/itineris-intelligence@1": 11,
+			"core:slot/itineris-wisdom@1": 14,
+			"core:slot/itineris-charisma@1": 10
+		},
+		"pieces": {
+			"weapons": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "shortbow",
+					"version": "1.1.0"
+				},
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "dagger",
+					"version": "1.1.0"
+				}
+			],
+			"armour": [
+				{
+					"kind": "compendium",
+					"compendiumId": "core:ruleset/vis-itineris@1",
+					"pieceId": "leather-armour",
+					"version": "1.1.0"
+				}
+			]
+		}
+	}
+]

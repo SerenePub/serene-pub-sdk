@@ -1,32 +1,33 @@
 /**
- * Chat's turn order: `turnOrderSpec` (`factories/turnOrder.ts`) for Chat.
+ * 🚧 Chat's turn order — `core:spec/assistant-turn-order` (2026-10-19):
+ * `turnOrderSpec` (`factories/turnOrder.ts`) over a pool of the genre's one
+ * in-turn envoy, the Assistant, and no characters — the Guide's shape. One
+ * speaker: the order is written once and kept (canon A9), never re-decided.
  */
 
 import * as C from '@serene-pub/contracts'
 import { chatGenre } from '../../registry/genres.js'
-import { type TurnOrderHandle, TURN_ORDER_EVENTS, turnOrderSpec, turnStrategyNode } from '../../factories/turnOrder.js'
+import { type TurnPoolParams, type TurnOrderHandle, TURN_ORDER_EVENTS, turnOrderSpec, turnStrategyNode } from '../../factories/turnOrder.js'
 import { once } from '../../factories/once.js'
 
 /** @experimental */
-export const CHAT_TURN_ORDER_SPEC_ID = 'core:spec/chat-turn-order'
+export const ASSISTANT_TURN_ORDER_SPEC_ID = 'core:spec/assistant-turn-order'
 
-/** Every core turn strategy but round robin, in the order chat's control lists them. */
-const CHAT_SWAPS = [C.turnUserSplit, C.turnRandom, C.turnScripted, C.turnManual, C.turnNarrator]
+/** The Assistant alone: no characters sit here. */
+const ASSISTANT_ONLY: TurnPoolParams = { characters: 'none', envoys: 'in-turn' }
 
-/** Chat's turn order, by value — hand `build()` and `strategyNode` to `swaps` (R26). @experimental */
-export const chatTurnOrder: TurnOrderHandle = {
+/** Chat's turn order, by value (R26). @experimental */
+export const assistantTurnOrder: TurnOrderHandle = {
 	genre: chatGenre,
-	spec: CHAT_TURN_ORDER_SPEC_ID,
+	spec: ASSISTANT_TURN_ORDER_SPEC_ID,
 	events: TURN_ORDER_EVENTS,
 	build: once(() =>
 		turnOrderSpec({
-			id: CHAT_TURN_ORDER_SPEC_ID,
+			id: ASSISTANT_TURN_ORDER_SPEC_ID,
 			genre: chatGenre,
 			events: TURN_ORDER_EVENTS,
 			strategy: C.turnRoundRobin,
-			swaps: CHAT_SWAPS,
-			// The optional model path (R41, M4): chat declares `turnMode`.
-			advise: C.turnAdvise,
+			pool: ASSISTANT_ONLY,
 		})),
-	strategyNode: turnStrategyNode({ advise: C.turnAdvise }),
+	strategyNode: turnStrategyNode({}),
 }

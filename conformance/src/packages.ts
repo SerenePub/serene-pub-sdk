@@ -12,7 +12,7 @@ import { getDefinition } from '@serene-pub/sdk'
 
 /** @experimental One swap a package offers, with the declaration of what it seats. */
 export interface SwapEvidence {
-	/** The spec the swap targets (`core:spec/chat-turn-order`). */
+	/** The spec the swap targets (`core:spec/story-turn-order`). */
 	spec: string
 	/** The node key on that spec it stands in for. */
 	node: string

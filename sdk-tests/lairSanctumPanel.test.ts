@@ -14,22 +14,17 @@ const SANCTUM = 'messages#sanctum'
 
 test("the Lair's live layout places a Sanctum copy of the conversation in its right column", () => {
 	const layout = lairGenre.layouts![0]!.preset as any
-	// Places (the room list, W4) and the Castellan's scratchpad above it.
-	assert.deepEqual(layout.zoneLayout.zones.right.widgets, ['places', 'annex#castellan', SANCTUM])
-	const right = layout.arrangedGrid.right.items as Array<{ id: string; y: number; h: number }>
+	// Places (the room list, W4) and the Castellan's scratchpad above it,
+	// the Sanctum its own docked panel at the bottom — never a tab of another.
+	const right = layout.panels.right as Array<{ tabs: string[]; pinned?: false }>
 	assert.deepEqual(
-		right.map((i) => i.id),
-		['places', 'annex#castellan', SANCTUM],
+		right.map((p) => p.tabs),
+		[['places'], ['annex#castellan'], [SANCTUM]],
 	)
-	// The three share the column's twelve rows, the talk taking the largest share.
-	assert.equal(right.reduce((n, i) => n + i.h, 0), layout.arrangedGrid.right.rows)
-	const talk = right[2]!.h
-	assert.ok(right.slice(0, 2).every((i) => i.h < talk))
-	// The story stays in the middle.
-	assert.deepEqual(
-		layout.widgetGrid.widgets.map((w: { id: string }) => w.id),
-		['messages'],
-	)
+	assert.ok(right.every((p) => p.pinned === undefined), 'the right column opens whole')
+	// The story stays in the middle, alone.
+	assert.deepEqual(layout.panels.middle.primary.tabs, ['messages'])
+	assert.deepEqual([...layout.panels.middle.above, ...layout.panels.middle.below], [])
 })
 
 test('the copy is a copy of a widget core has, claiming a channel the Lair declares by label', () => {

@@ -73,11 +73,12 @@
  */
 
 import type { I18n } from './descriptors.js'
-import { i18nFindings } from './i18n.js'
+import { i18nFindings, i18nText } from './i18n.js'
 import { refuseUnlessIdentical } from './hash.js'
 import type { FieldDecl } from './settings.js'
 import { getStatShape, statShapeKindOf, type StatShapeId, type StatShapeKind } from './statShapes.js'
 import { parseStoryTime } from './storyTime.js'
+import { _repertoireTimeUnit, checkPiece, getRepertoire, RULESET_ID_PATTERN, type PieceDuration } from './repertoires.js'
 
 // ── Ids ─────────────────────────────────────────────────────────────────────
 
@@ -295,6 +296,12 @@ export interface SlotConfig {
 	 * premade stat).
 	 */
 	entryTypes?: readonly string[]
+	/**
+	 * 🚧 `list`: the repertoire whose pieces it holds, by address —
+	 * `core:ruleset/freeform@1#things` (`repertoireAddress`). Absent, the list
+	 * holds words and lore references only.
+	 */
+	repertoire?: string
 	/** `derived`: which computation, and the slot it reads. */
 	derivation?: string
 	from?: SlotId
@@ -338,8 +345,107 @@ export interface SlotLoreRef {
 	name?: string
 }
 
-/** One item of a `list`: a word, or a lore reference. @experimental */
-export type SlotListItem = SlotScalar | SlotLoreRef
+/**
+ * 🚧 A piece's overrides on a referenced lore entry or compendium row: the
+ * piece fields this holder's copy changes (a sword's new nickname, a door
+ * now barred) and no others. Checked key by key against the repertoire's
+ * piece shape. Never an edit to the entry or the row.
+ * @experimental
+ */
+export type PieceOverrides = Readonly<Record<string, unknown>>
+
+/**
+ * 🚧 A piece written out where it is held: the universal parts (`name`,
+ * `description`, `prose?`, `traits?`, `equipped?`, `duration?` —
+ * `PIECE_FIELDS`) and the repertoire's own fields, flat.
+ * @experimental
+ */
+export interface InlinePiece {
+	kind: 'inline'
+	name: string
+	description: string
+	prose?: string
+	traits?: readonly string[]
+	/** 🚧 Worn, wielded or readied (2026-10-17, universal). */
+	equipped?: boolean
+	/** 🚧 How long it lasts on its holder (2026-10-17, universal) — `PieceDuration`. */
+	duration?: PieceDuration
+	/** How many are held; absent means one. */
+	count?: number
+	[field: string]: unknown
+}
+
+/**
+ * 🚧 A referenced piece as the host read it — the lore entry or the
+ * compendium row, **before** this holder's overrides — so a widget draws it
+ * without carrying the compendium or reading the lorebook. Filled by the
+ * host at read time on a `lore` or `compendium` piece; never stored, never
+ * written back (`slotValueForStorage` drops it). Absent: the host could not
+ * read it (an entry gone, a ruleset not installed) — draw the reference by
+ * its id.
+ * @experimental
+ */
+export interface SlotPieceResolved {
+	/** The entry's title, or the row's name. */
+	name: string
+	description?: string
+	prose?: string
+	traits?: readonly string[]
+	/**
+	 * Its key facts, in words, in the repertoire's declared order — the
+	 * field's key, its label, its value (`damage` · _Damage_ · _1d8 Slashing_).
+	 */
+	keyProps: readonly { key: string; label: string; value: string }[]
+	/** The name of the ruleset whose library holds a compendium row (_Vis Itineris_). */
+	compendiumName?: string
+}
+
+/** 🚧 A piece that is a lore entry, with this holder's overrides. @experimental */
+export interface LorePiece {
+	kind: 'lore'
+	entryId: number
+	count?: number
+	overrides?: PieceOverrides
+	/** The entry's title as of the read. Filled by the host; never stored. */
+	name?: string	/** 🚧 The entry as the host read it. Filled by the host; never stored. @experimental */
+	resolved?: SlotPieceResolved
+}
+
+/**
+ * 🚧 A piece that is a compendium row, pinned to the row's `version`, with
+ * this holder's overrides. `compendiumId` is the ruleset whose compendium
+ * holds it.
+ * @experimental
+ */
+export interface CompendiumPiece {
+	kind: 'compendium'
+	compendiumId: string
+	pieceId: string
+	version: string
+	count?: number
+	overrides?: PieceOverrides
+	/** The row's name as of the read. Filled by the host; never stored. */
+	name?: string	/** 🚧 The row as the host read it. Filled by the host; never stored. @experimental */
+	resolved?: SlotPieceResolved
+}
+
+/**
+ * 🚧 A structured list item — a **piece** of a repertoire. Legal only in a
+ * list slot whose `config.repertoire` names one (`repertoires.ts`); a plain
+ * list holds words and lore references.
+ * @experimental
+ */
+export type SlotPiece = InlinePiece | LorePiece | CompendiumPiece
+
+/** 🚧 Is this list item a piece? @experimental */
+export const isSlotPiece = (item: unknown): item is SlotPiece =>
+	!!item &&
+	typeof item === 'object' &&
+	!Array.isArray(item) &&
+	((item as SlotPiece).kind === 'inline' || (item as SlotPiece).kind === 'lore' || (item as SlotPiece).kind === 'compendium')
+
+/** One item of a `list`: a word, a lore reference, or (🚧 on a repertoire) a piece. @experimental */
+export type SlotListItem = SlotScalar | SlotLoreRef | SlotPiece
 
 /**
  * A stored attribute value: one thing, or — for a `list` — several. One thing
@@ -354,6 +460,7 @@ export const isSlotLoreRef = (item: unknown): item is SlotLoreRef =>
 	!!item &&
 	typeof item === 'object' &&
 	!Array.isArray(item) &&
+	!('kind' in item) &&
 	Number.isInteger((item as SlotLoreRef).entryId) &&
 	(item as SlotLoreRef).entryId > 0
 
@@ -371,7 +478,9 @@ export const slotLoreRefCount = (ref: SlotLoreRef): number =>
 export function heldCountIn(value: unknown, entryId: number): number {
 	if (!Array.isArray(value)) return 0
 	let held = 0
-	for (const item of value) if (isSlotLoreRef(item) && item.entryId === entryId) held += slotLoreRefCount(item)
+	for (const item of value)
+		if ((isSlotLoreRef(item) || (isSlotPiece(item) && item.kind === 'lore')) && item.entryId === entryId)
+			held += typeof item.count === 'number' ? item.count : 1
 	return held
 }
 
@@ -384,6 +493,18 @@ export function heldCountIn(value: unknown, entryId: number): number {
  * @experimental
  */
 export function slotListItemText(item: SlotListItem): string {
+	if (isSlotPiece(item)) {
+		const named = item.kind === 'inline' ? undefined : item.overrides?.name
+		const overridden = typeof named === 'string' ? named : undefined
+		const title =
+			item.kind === 'inline'
+				? item.name
+				: overridden?.trim() ||
+					item.name?.trim() ||
+					(item.kind === 'lore' ? `entry ${item.entryId}` : item.pieceId)
+		const count = typeof item.count === 'number' ? item.count : 1
+		return count > 1 ? `${title} ×${count}` : title
+	}
 	if (isSlotLoreRef(item)) {
 		const title = item.name?.trim() || `entry ${item.entryId}`
 		const count = slotLoreRefCount(item)
@@ -405,7 +526,9 @@ export function slotValueForStorage(value: SlotValue): SlotValue {
 	if (isSlotLoreRef(value)) return { entryId: value.entryId }
 	if (!Array.isArray(value)) return value
 	return (value as readonly SlotListItem[]).map((item) =>
-		isSlotLoreRef(item)
+		isSlotPiece(item)
+			? pieceForStorage(item)
+			: isSlotLoreRef(item)
 			? // One held is stored bare (phase 4): `count: 1` and no count are
 				// one value, and it has one spelling on disk.
 				item.count === undefined || item.count === 1
@@ -415,9 +538,60 @@ export function slotValueForStorage(value: SlotValue): SlotValue {
 	)
 }
 
-/** The identity two list items are "the same item" by: a word by its text, a reference by its entry. */
+/**
+ * 🚧 One band of a slot's words ({@link AttributeSlotProps.words}): a value
+ * whose share of the stat's maximum is at most `upTo` reads `label`.
+ * @experimental
+ */
+export interface SlotWordsBand {
+	readonly upTo: number
+	readonly label: I18n
+}
+
+/**
+ * 🚧 The words a value reads at a table that keeps no numbers: the first
+ * band its share of `max` fits (`max` absent or 0: a value above none is the
+ * whole), or `null` when the slot declares none.
+ * @experimental
+ */
+export function slotWordsFor(
+	bands: readonly { upTo: number; label: string }[] | undefined,
+	value: unknown,
+	max: unknown,
+): string | null {
+	if (!bands?.length || typeof value !== 'number' || !Number.isFinite(value)) return null
+	const top = typeof max === 'number' && max > 0 ? max : null
+	const share = top === null ? (value > 0 ? 1 : 0) : Math.max(0, Math.min(1, value / top))
+	for (const b of bands) if (share <= b.upTo) return b.label
+	return bands[bands.length - 1]!.label
+}
+
+/** A piece as stored: the host-filled `name` and `resolved` of a reference dropped, a count of one spelled bare. */
+function pieceForStorage(item: SlotPiece): SlotPiece {
+	const { count, ...rest } = item as SlotPiece & { count?: number }
+	const kept = { ...rest } as Record<string, unknown>
+	if (item.kind !== 'inline') {
+		delete kept.name
+		delete kept.resolved
+	}
+	return (count === undefined || count === 1 ? kept : { ...kept, count }) as unknown as SlotPiece
+}
+
+/**
+ * The identity two list items are "the same item" by: a word by its text, a
+ * reference (or a lore piece) by its entry, a compendium piece by its row, an
+ * inline piece by its name.
+ */
 const listItemKey = (item: SlotListItem): string =>
-	isSlotLoreRef(item) ? `entry:${item.entryId}` : `${typeof item}:${String(item)}`
+	isSlotPiece(item)
+		? item.kind === 'lore'
+			? `entry:${item.entryId}`
+			: item.kind === 'compendium'
+				? `compendium:${item.compendiumId}/${item.pieceId}`
+				: `piece:${String(item.name).trim().toLowerCase()}`
+		: isSlotLoreRef(item)
+			? `entry:${item.entryId}`
+			: `${typeof item}:${String(item)}`
 
 // ── Logic on the declaration ────────────────────────────────────────────────
 
@@ -553,6 +727,76 @@ export interface AttributeSlotProps {
 	 */
 	pickable?: false
 	/**
+	 * 🚧 The ruleset that declares this slot (`core:ruleset/vis-itineris@1`), when
+	 * one does. Such a slot is **pickable only in a session whose ruleset it
+	 * is** (`slotPickableIn`) — so a ruleset's stats never flood every
+	 * session's picker. Declaration-level; the host honours it where it lists
+	 * pickable slots. Inside the content hash when stated (added 2026-10-16,
+	 * rulesets W3-S).
+	 *
+	 * ⏳ Redundant since 2026-10-17: a slot a ruleset lists under its `stats`
+	 * is owned by it without saying so (`slotRulesetOwners`), unless that
+	 * ruleset marks the entry `borrowed`. Still accepted for a plugin that
+	 * spells it; the two are read together.
+	 */
+	rulesetOwned?: string
+	/**
+	 * 🚧 The fewest **active player seats** a session needs before this slot
+	 * is tracked at all (owner ruling 2026-10-17: "What does Ann do when
+	 * you're away?" is a question for a table with other seats). `2` on
+	 * the Dungeon Crawler's standing order: a solo session leaves the slot
+	 * out of its vocabulary — no sheet row, no form question, a write
+	 * refused — and it appears the moment a second seat joins. Absent or
+	 * `1`: always tracked. Read by the host's vocabulary from its seat
+	 * count; inside the content hash when stated, as `rulesetOwned` is.
+	 */
+	minSeats?: number
+	/**
+	 * 🚧 The **ruleset setting** this slot is tracked under (2026-10-18): a
+	 * slot only one way of playing a ruleset uses — Vis Itineris's spell
+	 * points under `casting: points`, a crawl's spell slots under `casting:
+	 * slots` — is left out of a session whose setting holds another choice,
+	 * as `minSeats` leaves a slot out below its seat count: no sheet row, no
+	 * form question, a write refused. The values already filed stay, and read
+	 * again the moment the setting comes back. Read by the host's vocabulary
+	 * from the session's ruleset settings (the setting's default when the
+	 * session chose none). 🚧 A session that does not play `ruleset` does not
+	 * track it either (2026-10-19, PLAN-dc-after-walk2 Q2-3): the setting is
+	 * that ruleset's, and the slot means nothing without it — a Story
+	 * session's sheet showed an empty "Spell slots" row. Inside the content
+	 * hash when stated, as `minSeats` is.
+	 */
+	whenRulesetSetting?: {
+		/** The ruleset whose setting is read (`core:ruleset/vis-itineris@1`). */
+		readonly ruleset: string
+		/** The setting's name (`casting`). */
+		readonly setting: string
+		/** The choices under which the slot is tracked (`['points']`). */
+		readonly is: readonly string[]
+	}
+	/**
+	 * 🚧 How a bounded number reads at a table that **keeps no numbers** (a
+	 * ruleset of words, the Freeform ruleset — PLAN-dc-after-walk2 Q2-3, owner
+	 * ruling ★3): bands, first fitting first, each `upTo` a share of the
+	 * stat's own maximum (0 to 1) and its words — core's health reads
+	 * _unhurt_, _hurt_, _badly hurt_, _at death's door_. A widget draws the
+	 * words in place of the number there, and a number with no words not at
+	 * all; everywhere else they change nothing. Inside the content hash when
+	 * stated.
+	 * @experimental
+	 */
+	words?: readonly SlotWordsBand[]
+	/**
+	 * 🚧 A stat drawn on a sheet **only while it holds something**
+	 * (PLAN-dc-after-walk2 Q3-8): a mechanism's passing state — a crawl's
+	 * death saves while somebody lies dying — that would otherwise stand on
+	 * every sheet as an empty row. Nothing, null and blank text read as
+	 * nothing. Tracked, written and read as any other stat; only a widget's
+	 * drawing changes. Inside the content hash when stated.
+	 * @experimental
+	 */
+	shownWhenSet?: true
+	/**
 	 * 🚧 **Earshot**: which prompts may read this slot's value.
 	 *
 	 *  · `'all'` (the default) — every agent a run builds a prompt for: the
@@ -591,6 +835,56 @@ export const slotEarshot = (decl: Pick<AttributeSlotProps, 'earshot'>): SlotEars
 
 /** 🚧 May a session pick this slot as an attribute of its own or carry it in from its world? @experimental */
 export const slotPickable = (decl: Pick<AttributeSlotProps, 'pickable'>): boolean => decl.pickable !== false
+
+/**
+ * Which rulesets own each slot by listing it under their `stats` (not
+ * `borrowed`) — filled by `rulesets.ts` as each ruleset registers, so a
+ * ruleset's own slots need not spell `rulesetOwned` 20 times over.
+ */
+const listedOwners = new Map<SlotId, Set<string>>()
+
+/** Record the slots a registering ruleset owns. Called by `rulesets.ts` only. @internal */
+export function _registerRulesetStats(rulesetId: string, slotIds: readonly SlotId[]): void {
+	for (const id of slotIds) {
+		let owners = listedOwners.get(id)
+		if (!owners) listedOwners.set(id, (owners = new Set()))
+		owners.add(rulesetId)
+	}
+}
+
+/** @internal */
+export function _clearRulesetStats(): void {
+	listedOwners.clear()
+}
+
+/**
+ * 🚧 The rulesets that own a slot: every registered ruleset that lists it
+ * under its `stats` (not `borrowed`), with the slot's own `rulesetOwned` if
+ * it spells one. Empty: no ruleset's — pickable in every session.
+ * @experimental
+ */
+export function slotRulesetOwners(decl: Pick<AttributeSlotProps, 'rulesetOwned'> & { id?: SlotId }): readonly string[] {
+	const owners = new Set(decl.id !== undefined ? (listedOwners.get(decl.id) ?? []) : [])
+	if (decl.rulesetOwned !== undefined) owners.add(decl.rulesetOwned)
+	return [...owners]
+}
+
+/**
+ * 🚧 May a session whose ruleset is `sessionRuleset` pick this slot? A slot a
+ * ruleset owns (`slotRulesetOwners`: listed under its `stats`, or spelled
+ * `rulesetOwned`) is pickable only in the sessions of a ruleset that owns
+ * it; every other slot answers as `slotPickable` does. Pass the declaration
+ * with its `id`, so the derived owners are read.
+ * @experimental
+ */
+export const slotPickableIn = (
+	decl: Pick<AttributeSlotProps, 'pickable' | 'rulesetOwned'> & { id?: SlotId },
+	sessionRuleset: string | null | undefined,
+): boolean => {
+	if (!slotPickable(decl)) return false
+	const owners = slotRulesetOwners(decl)
+	return !owners.length || (typeof sessionRuleset === 'string' && owners.includes(sessionRuleset))
+}
 
 /**
  * Which source a registry entry came through.
@@ -928,8 +1222,9 @@ export const slotStatShapeId = (decl: Pick<AttributeSlotProps, 'shape'>): StatSh
 	typeof decl.shape === 'string' ? decl.shape : undefined
 
 /** Which kind of stat a slot is; `undefined` for a derived slot, which is computed rather than kept. @experimental */
-export const slotStatShapeKind = (decl: Pick<AttributeSlotProps, 'type' | 'shape'>): StatShapeKind | undefined =>
-	statShapeKindOf(slotField(decl))
+export const slotStatShapeKind = (
+	decl: Pick<AttributeSlotProps, 'type' | 'shape'> & { config?: Pick<SlotConfig, 'repertoire'> },
+): StatShapeKind | undefined => statShapeKindOf(slotField(decl), { repertoire: decl.config?.repertoire })
 
 /**
  * What a field bounds, as the configuration keys a layer deviates from: a
@@ -970,6 +1265,97 @@ export function fieldSlotConfig(field: FieldDecl | undefined): SlotConfig {
 }
 
 /**
+ * 🚧 One owner's **stat configuration**, as a document (owner ruling
+ * 2026-10-15): which owner, which attribute slot, and the deviations this
+ * owner makes from the slot's own config — `{ max: 26 }`, never the whole.
+ * The ONE format a pipeline's `core:outlet/set-stat-config@1` and a person's
+ * card or session editor (`state:configure`) both send.
+ *
+ * `owner` is a participant reference — `player-seat:<id>`, `character:<id>`
+ * — or `world`; `config`'s keys are only those `statConfigKeys` names.
+ * @experimental
+ */
+export interface StatConfigDocument {
+	owner: string
+	slot: SlotId
+	config: SlotConfig
+}
+
+/**
+ * 🚧 The configuration keys an owner may set on this slot: what its stat
+ * shape bounds (`fieldSlotConfig`'s keys) — a number's `min` and `max`; a
+ * choice's `of`; a list's `maxItems` and, by its item, `of` or
+ * `maxLength`; a line's `maxLength` — and, on every kept slot, the
+ * `descriptor` (the model-facing sentence in this world, R5). A derived
+ * slot takes none. Nothing else is stored per owner: a key outside these
+ * would be kept and read by nobody.
+ * @experimental
+ */
+export function statConfigKeys(decl: Pick<AttributeSlotProps, 'type' | 'shape'>): readonly string[] {
+	const field = slotField(decl)
+	if (!field) return []
+	switch (statShapeKindOf(field)) {
+		case 'number':
+			return ['min', 'max', 'descriptor']
+		case 'choice':
+			return ['of', 'descriptor']
+		case 'list':
+			return field.item?.type === 'enum' ? ['maxItems', 'of', 'descriptor'] : ['maxItems', 'maxLength', 'descriptor']
+		case 'text':
+			return ['maxLength', 'descriptor']
+		default:
+			return ['descriptor']
+	}
+}
+
+/**
+ * 🚧 Why this owner configuration may not be stored for this slot — one
+ * sentence per fault, empty when it may. Asked of the document's `config`
+ * alone; whether its `min` still sits under the owner's `max` once merged
+ * with what is in force is the writer's to ask (it holds the layers).
+ * @experimental
+ */
+export function statConfigRefusals(decl: AttributeSlotDecl, config: unknown): string[] {
+	const label = i18nText(decl.label) ?? decl.id
+	if (!config || typeof config !== 'object' || Array.isArray(config))
+		return [`a stat configuration is an object of the keys to change, such as { max: 30 }.`]
+	if (decl.type === 'derived') return [`${label} is derived, so there is nothing to configure: it is computed every time it is read.`]
+	const keys = statConfigKeys(decl)
+	const out: string[] = []
+	const entries = Object.entries(config as Record<string, unknown>)
+	if (!entries.length) out.push(`the configuration for ${label} changes nothing; name a key: ${keys.join(', ')}.`)
+	for (const [key, value] of entries) {
+		if (!keys.includes(key)) {
+			out.push(`${label} has no '${key}' to configure; it takes ${keys.join(', ')}.`)
+			continue
+		}
+		switch (key) {
+			case 'min':
+			case 'max':
+				if (typeof value !== 'number' || !Number.isFinite(value)) out.push(`${label}'s ${key} is a number; '${String(value)}' is not one.`)
+				break
+			case 'maxItems':
+			case 'maxLength':
+				if (typeof value !== 'number' || !Number.isInteger(value) || value < 1)
+					out.push(`${label}'s ${key} is a whole number above zero; '${String(value)}' is not one.`)
+				break
+			case 'of':
+				if (!Array.isArray(value) || !value.length || value.some((v) => typeof v !== 'string' || !v.trim()))
+					out.push(`${label}'s options are a list of words; '${JSON.stringify(value)}' is not one.`)
+				break
+			case 'descriptor':
+				if (typeof value !== 'string' || !value.trim())
+					out.push(`${label} cannot be described as nothing here; leave 'descriptor' out to keep the declaration's own.`)
+				break
+		}
+	}
+	const { min, max } = config as SlotConfig
+	if (typeof min === 'number' && typeof max === 'number' && min > max)
+		out.push(`${label}'s min (${min}) is above its max (${max}).`)
+	return out
+}
+
+/**
  * The type a declaration is, from what it said: `type`, `shape`, or both
  * agreeing. Refused with a sentence when neither is said, when the shape is
  * one nothing declares or core cannot keep, and when the two disagree.
@@ -997,7 +1383,7 @@ function typeOfDeclaration(id: SlotId, props: AttributeSlotProps): SlotType {
 					`above the slots that name them — a slot shaped like nothing validates against nothing.`,
 			)
 	} else field = props.shape
-	const kind = statShapeKindOf(field)
+	const kind = statShapeKindOf(field, { repertoire: props.config?.repertoire })
 	if (!kind)
 		throw new Error(
 			`${id} is shaped as a '${field?.type}' field, which is not a value core can keep as a stat. ` +
@@ -1016,6 +1402,58 @@ function typeOfDeclaration(id: SlotId, props: AttributeSlotProps): SlotType {
 function checkSlotDeclaration(id: SlotId, props: AttributeSlotProps & { type: SlotType }): void {
 	if (props.pickable !== undefined && props.pickable !== false)
 		throw new Error(`${id}.pickable: only \`false\` is said — a slot is pickable unless it says otherwise.`)
+	if (props.rulesetOwned !== undefined && !(typeof props.rulesetOwned === 'string' && RULESET_ID_PATTERN.test(props.rulesetOwned)))
+		throw new Error(
+			`${id}.rulesetOwned is '${String(props.rulesetOwned)}'. Name the ruleset that declares the slot — ` +
+				`'owner:ruleset/name@N', 'core:ruleset/vis-itineris@1'.`,
+		)
+	if (props.minSeats !== undefined && !(Number.isInteger(props.minSeats) && (props.minSeats as number) >= 1))
+		throw new Error(
+			`${id}.minSeats is ${String(props.minSeats)}. Say how many active player seats a session needs ` +
+				`before this slot is tracked — a whole number from 1 — or leave it out.`,
+		)
+	if (props.whenRulesetSetting !== undefined) {
+		const w = props.whenRulesetSetting as { ruleset?: unknown; setting?: unknown; is?: unknown }
+		const ok =
+			!!w &&
+			typeof w === 'object' &&
+			typeof w.ruleset === 'string' &&
+			RULESET_ID_PATTERN.test(w.ruleset) &&
+			typeof w.setting === 'string' &&
+			w.setting.trim() !== '' &&
+			Array.isArray(w.is) &&
+			w.is.length > 0 &&
+			w.is.every((c) => typeof c === 'string' && c.trim() !== '')
+		if (!ok)
+			throw new Error(
+				`${id}.whenRulesetSetting is { ruleset, setting, is }: the ruleset ('owner:ruleset/name@N'), ` +
+					`the name of one of its settings, and the choices under which the slot is tracked — ` +
+					`{ ruleset: 'core:ruleset/vis-itineris@1', setting: 'casting', is: ['points'] } — or leave it out.`,
+			)
+	}
+	if (props.shownWhenSet !== undefined && props.shownWhenSet !== true)
+		throw new Error(`${id}.shownWhenSet is true or left out: a stat drawn only while it holds something.`)
+	if (props.words !== undefined) {
+		const bands = props.words as unknown
+		const ok =
+			Array.isArray(bands) &&
+			bands.length > 0 &&
+			bands.every(
+				(b, i) =>
+					!!b &&
+					typeof b === 'object' &&
+					typeof (b as SlotWordsBand).upTo === 'number' &&
+					(b as SlotWordsBand).upTo >= 0 &&
+					(b as SlotWordsBand).upTo <= 1 &&
+					(i === 0 || (b as SlotWordsBand).upTo > (bands[i - 1] as SlotWordsBand).upTo) &&
+					!!(b as SlotWordsBand).label,
+			)
+		if (!ok)
+			throw new Error(
+				`${id}.words is a list of bands, first fitting first — each { upTo, label }, upTo a share of the ` +
+					`stat's maximum from 0 to 1 and rising — [{ upTo: 0, label: { en: "at death's door" } }, …] — or leave it out.`,
+			)
+	}
 	if (props.earshot !== undefined && !SLOT_EARSHOTS.includes(props.earshot))
 		throw new Error(
 			`${id}.earshot is '${String(props.earshot)}'. A slot is heard by 'all' (the default) or ` +
@@ -1228,6 +1666,25 @@ export function checkSlotValue(
 			const unique = config.unique !== false
 			const seen = new Set<string>()
 			for (const item of items) {
+				// 🚧 A piece — legal only where the slot names a repertoire,
+				// and checked against that repertoire's piece shape.
+				if (isSlotPiece(item)) {
+					if (!config.repertoire)
+						return `${decl.id} holds words and lore references; a piece belongs in a list whose config names a repertoire.`
+					if (of)
+						return `${decl.id} holds items from ${of.join(', ') || '(nothing declared)'}; a piece is not one of them.`
+					const rep = getRepertoire(String(config.repertoire))
+					if (!rep)
+						return `${decl.id} names the repertoire '${String(config.repertoire)}', which no installed ruleset declares — nothing new is written to it until one does.`
+					const why = checkPiece(rep, item, { timeUnit: _repertoireTimeUnit(String(config.repertoire)) })
+					if (why) return `${decl.id}: ${why}`
+					const key = listItemKey(item)
+					// A reference is held once whatever `unique` says — its count is its multiplicity.
+					if ((item.kind !== 'inline' || unique) && seen.has(key))
+						return `${decl.id} holds each piece once${item.kind === 'inline' ? '' : ', with a count'}; '${slotListItemText(item)}' is in it twice.`
+					seen.add(key)
+					continue
+				}
 				// A lore reference is an item in its own right — unless the
 				// list is closed over words, where only those words are.
 				if (isSlotLoreRef(item)) {
@@ -1339,6 +1796,23 @@ export function applyListOp(
 		...(count === 1 ? {} : { count }),
 		...(ref.name === undefined ? {} : { name: ref.name }),
 	})
+	// 🚧 A piece that references something — a lore entry or a compendium
+	// row — holds a count the same way a lore reference does: the same
+	// reference twice is one holding with a count, never two items. An inline
+	// piece is its own thing and is never merged. @experimental
+	const isCountedPiece = (item: SlotListItem): item is SlotPiece & { count?: number } =>
+		isSlotPiece(item) && (item.kind === 'lore' || item.kind === 'compendium')
+	const isCounted = (item: SlotListItem): boolean => isSlotLoreRef(item) || isCountedPiece(item)
+	const countOf = (item: SlotListItem): number =>
+		isSlotLoreRef(item) ? slotLoreRefCount(item) : isCountedPiece(item) ? (item.count ?? 1) : 1
+	const statedCount = (item: SlotListItem): number | undefined =>
+		isSlotLoreRef(item) || isCountedPiece(item) ? item.count : undefined
+	const recount = (item: SlotListItem, count: number): SlotListItem => {
+		if (isSlotLoreRef(item)) return withCount(item, count)
+		if (!isCountedPiece(item)) return item
+		const { count: _was, ...rest } = item
+		return count === 1 ? (rest as SlotListItem) : ({ ...rest, count } as SlotListItem)
+	}
 
 	let next: readonly SlotListItem[]
 	switch (op) {
@@ -1352,13 +1826,15 @@ export function applyListOp(
 			const out = [...held]
 			const rest: SlotListItem[] = []
 			for (const item of items) {
-				if (!isSlotLoreRef(item) || item.count === undefined) {
+				const stated = statedCount(item)
+				if (!isCounted(item) || stated === undefined) {
 					rest.push(item)
 					continue
 				}
-				const at = out.findIndex((h) => isSlotLoreRef(h) && h.entryId === item.entryId)
-				if (at < 0) out.push(withCount(item, item.count))
-				else out[at] = withCount(out[at] as SlotLoreRef, slotLoreRefCount(out[at] as SlotLoreRef) + item.count)
+				const key = listItemKey(item)
+				const at = out.findIndex((h) => isCounted(h) && listItemKey(h) === key)
+				if (at < 0) out.push(recount(item, stated))
+				else out[at] = recount(out[at]!, countOf(out[at]!) + stated)
 			}
 			next = dedup([...out, ...rest])
 			break
@@ -1367,17 +1843,20 @@ export function applyListOp(
 			// A counted reference takes that many and drops the item at zero;
 			// an uncounted one (and every word) takes the item out entirely.
 			const out = new Set(
-				items.filter((item) => !isSlotLoreRef(item) || item.count === undefined).map(listItemKey),
+				items.filter((item) => !isCounted(item) || statedCount(item) === undefined).map(listItemKey),
 			)
-			const less = new Map<number, number>()
-			for (const item of items)
-				if (isSlotLoreRef(item) && item.count !== undefined)
-					less.set(item.entryId, (less.get(item.entryId) ?? 0) + item.count)
+			const less = new Map<string, number>()
+			for (const item of items) {
+				const stated = statedCount(item)
+				if (isCounted(item) && stated !== undefined)
+					less.set(listItemKey(item), (less.get(listItemKey(item)) ?? 0) + stated)
+			}
 			next = held.flatMap((item): SlotListItem[] => {
-				if (out.has(listItemKey(item))) return []
-				if (!isSlotLoreRef(item) || !less.has(item.entryId)) return [item]
-				const left = slotLoreRefCount(item) - less.get(item.entryId)!
-				return left > 0 ? [withCount(item, left)] : []
+				const key = listItemKey(item)
+				if (out.has(key)) return []
+				if (!isCounted(item) || !less.has(key)) return [item]
+				const left = countOf(item) - less.get(key)!
+				return left > 0 ? [recount(item, left)] : []
 			})
 			break
 		}

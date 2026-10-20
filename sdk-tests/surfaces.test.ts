@@ -374,7 +374,7 @@ describe('a plugin widget id is namespaced (pluginWidgetId / parsePluginWidgetId
 			// it — a surprising panel is worse than no answer.
 			'acme.dice:tray:extra',
 			// A slash is the genre/type grammar, never a panel id.
-			'core:genre/chat',
+			'core:genre/story',
 			// Neither half may carry case or spaces.
 			'Acme.Dice:tray',
 			'acme.dice:Tray',

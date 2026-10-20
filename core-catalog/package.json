@@ -21,6 +21,9 @@
 		"./dist/registry/entries.js",
 		"./dist/registry/statShapes.js",
 		"./dist/registry/slots.js",
+		"./dist/rulesets/vis-itineris/slots.js",
+		"./dist/registry/rulesets.js",
+		"./dist/registry/primers.js",
 		"./dist/registry/genres.js",
 		"./dist/shared/annexField.js",
 		"./dist/registry/widgets.js"
@@ -60,8 +63,8 @@
 			"import": "./dist/shared/ui/lore-entries/index.js"
 		},
 		"./authors-note": {
-			"types": "./dist/genres/chat/ui/authors-note/index.d.ts",
-			"import": "./dist/genres/chat/ui/authors-note/index.js"
+			"types": "./dist/genres/story/ui/authors-note/index.d.ts",
+			"import": "./dist/genres/story/ui/authors-note/index.js"
 		},
 		"./scene-portraits": {
 			"types": "./dist/shared/ui/scene-portraits/index.d.ts",
@@ -121,7 +124,7 @@
 		}
 	},
 	"scripts": {
-		"build": "tsc -p tsconfig.build.json && node scripts/buildComponents.mjs",
+		"build": "tsc -p tsconfig.build.json && node scripts/copyNotices.mjs && node scripts/buildComponents.mjs",
 		"check": "svelte-check --workspace components --tsconfig ./tsconfig.json --threshold error"
 	},
 	"devDependencies": {

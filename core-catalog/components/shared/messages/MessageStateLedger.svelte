@@ -10,8 +10,9 @@
 	 *
 	 * Pending lines are the model's proposals waiting at the gate. They sit here
 	 * rather than in a queue somewhere else because the sentence that justifies a
-	 * change is the one above them; **Review** opens the same rows for the whole
-	 * session, for when they have scrolled away.
+	 * change is the one above them. **Review** — the same rows for the whole
+	 * session, for when they have scrolled away — is the turn line's alone
+	 * (`TurnLine`), never repeated under each message.
 	 *
 	 * 🚧 `head` (live scenes §15 G13): the conversation's **ledger head**
 	 * instead — the clock moves made before the session had a single line
@@ -20,6 +21,8 @@
 	 */
 	import StateProposalList from "./StateProposalList.svelte"
 	import { useConversation } from "./conversation.svelte"
+	import { useWidgetContext } from "../context"
+	import { ledgerLineTextAs } from "@serene-pub/core-catalog/session-state"
 
 	type Props = { messageId: number; head?: false } | { messageId?: undefined; head: true }
 	let { messageId, head = false }: Props = $props()
@@ -33,8 +36,20 @@
 			: (conv.dossier?.state.ledgers[messageId as number] ?? [])
 	)
 	let pending = $derived(head ? [] : (conv.dossier?.state.pending[messageId as number] ?? []))
-	let waiting = $derived(head ? [] : (conv.dossier?.state.waiting ?? []))
-	let reviewOpen = $state(false)
+	// 🚧 The copy's `timeFormat`: a story-time line (a clock move, a clock
+	// stat) spelled the copy's way from the parts the host sent beside its
+	// words (`storyTime`); empty, the host's words as they came.
+	const widget = useWidgetContext()
+	let timeFormat = $derived(
+		(widget?.current.settings.v1 as Record<string, unknown> | undefined)?.timeFormat as string | undefined
+	)
+	/**
+	 * 🚧 Who changed it, in words (PLAN-dc-after-walk3 R3-5, the walk's
+	 * polish: a change line's name read "changed by run:<uuid>"): a person's
+	 * hand, or a run — never its id.
+	 */
+	const changedBy = (updatedBy: string): string =>
+		updatedBy === "user" ? "Changed by hand" : updatedBy.startsWith("run:") ? "Changed automatically" : "Changed"
 </script>
 
 <!-- The ledger's parts (`messages.ledger*`, `messages.proposal*`; STYLE-GUIDE
@@ -47,11 +62,12 @@
 	>
 		{#each groups as group (group.ownerKey)}
 			<p data-widget-part="messages.ledger-line" data-owner-key={group.ownerKey}>
-				<span data-widget-part="messages.ledger-owner">{group.ownerLabel}</span>
+				<!-- 🚧 The world's lines carry no name (Q3-2): "Time Day 1, 08:00 → 08:05". -->
+				{#if group.ownerLabel}<span data-widget-part="messages.ledger-owner">{group.ownerLabel}</span>{/if}
 				{#each group.lines as line, i (line.key)}
 					{#if i > 0}<span data-widget-part="messages.ledger-separator">·</span>{/if}
-					<span data-widget-part="messages.ledger-change" title="changed by {line.updatedBy}">
-						{line.text}
+					<span data-widget-part="messages.ledger-change" title={changedBy(line.updatedBy)}>
+						{ledgerLineTextAs(line, timeFormat)}
 					</span>
 				{/each}
 			</p>
@@ -61,37 +77,9 @@
 			<StateProposalList proposals={pending} />
 		{/if}
 
-		{#if waiting.length}
-			<!-- `sp-popover` (§3.5): our button is the trigger, the card the panel. -->
-			<sp-popover
-				placement="bottom-start"
-				label="Waiting for you"
-				open={reviewOpen}
-				onopen-change={(e: CustomEvent<{ open: boolean }>) => (reviewOpen = e.detail.open)}
-			>
-				<button slot="trigger" type="button" data-widget-part="messages.ledger-review">
-					<sp-icon name="clipboard-check" size="11"></sp-icon>
-					<span>
-						Review
-						{waiting.length === 1
-							? "1 change"
-							: `${waiting.length} changes`}
-					</span>
-				</button>
-						<div data-widget-part="messages.ledger-review-panel">
-							<header
-								data-widget-part="messages.ledger-review-title"
-							>
-								<sp-icon name="clipboard-check" size="14"></sp-icon>
-								<span>Waiting for you</span>
-							</header>
-							<p data-widget-part="messages.ledger-review-note">
-								The AI asked for these. Nothing changes until
-								you accept one.
-							</p>
-							<StateProposalList proposals={waiting} showAnchor />
-						</div>
-			</sp-popover>
-		{/if}
+		<!-- 🚧 No session-wide Review here (DC walk 6: "Review 1 change" drawn
+		     once per ledger AND on the turn line — three buttons for one
+		     proposal). The turn line is the one place it lives; this
+		     message's own proposals are the list above. -->
 	</div>
 {/if}

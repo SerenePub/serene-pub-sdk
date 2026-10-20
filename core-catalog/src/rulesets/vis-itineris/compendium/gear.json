@@ -1,0 +1,138 @@
+[
+	{
+		"id": "backpack",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Backpack",
+			"description": "A sturdy pack for carrying a traveller's kit.",
+			"sort": "container",
+			"weight": 5,
+			"cost": 200
+		}
+	},
+	{
+		"id": "bedroll",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Bedroll",
+			"description": "A rolled blanket and pad for sleeping rough.",
+			"sort": "camp",
+			"weight": 7,
+			"cost": 100
+		}
+	},
+	{
+		"id": "rope",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Rope",
+			"description": "Fifty feet of strong rope.",
+			"traits": [
+				"climbing"
+			],
+			"sort": "tool",
+			"weight": 5,
+			"cost": 100
+		}
+	},
+	{
+		"id": "torch",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Torch",
+			"description": "Burns for an hour, lighting the way and anything it touches.",
+			"traits": [
+				"fire"
+			],
+			"sort": "light",
+			"uses": 1,
+			"weight": 1,
+			"cost": 1
+		}
+	},
+	{
+		"id": "hooded-lantern",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Hooded lantern",
+			"description": "A lantern whose shutter can dim its light.",
+			"sort": "light",
+			"weight": 2,
+			"cost": 500
+		}
+	},
+	{
+		"id": "thieves-tools",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Thieves' tools",
+			"description": "Picks and files for opening locks and disarming traps.",
+			"traits": [
+				"lockpicking"
+			],
+			"sort": "tool",
+			"weight": 1,
+			"cost": 2500
+		}
+	},
+	{
+		"id": "crowbar",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Crowbar",
+			"description": "An iron bar for prying things open.",
+			"traits": [
+				"prying"
+			],
+			"sort": "tool",
+			"weight": 5,
+			"cost": 200
+		}
+	},
+	{
+		"id": "tinderbox",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Tinderbox",
+			"description": "Flint and steel for starting fires.",
+			"traits": [
+				"fire"
+			],
+			"sort": "tool",
+			"weight": 1,
+			"cost": 50
+		}
+	}
+]

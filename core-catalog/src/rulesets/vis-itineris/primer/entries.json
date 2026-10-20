@@ -1,0 +1,154 @@
+[
+	{
+		"key": "premise-brackenvale",
+		"type": "core:entry/world-lore@1",
+		"title": "Brackenvale",
+		"content": "A long green vale of bracken, sheep-walks and old stone, cut by the river Lisk. Its people farm, mill and dig copper, and keep to the roads after dark, because the fog that rises off the mire in autumn does not always carry only damp.",
+		"keys": [
+			"Brackenvale",
+			"the vale",
+			"Lisk"
+		],
+		"fields": {
+			"category": "region",
+			"priority": 3
+		}
+	},
+	{
+		"key": "premise-lanterns",
+		"type": "core:entry/world-lore@1",
+		"title": "The lanterns of Lantern Ford",
+		"content": "Since the town was founded, a ring of iron lanterns has burned around Lantern Ford from dusk to dawn every autumn, and the mire fog has never crossed it. This year the lanterns gutter and fail, one or two each night, and no one can say why.",
+		"keys": [
+			"lantern",
+			"lanterns",
+			"fog"
+		],
+		"fields": {
+			"category": "premise",
+			"priority": 3
+		}
+	},
+	{
+		"key": "premise-grey-sisters",
+		"type": "core:entry/world-lore@1",
+		"title": "The Grey Sisters",
+		"content": "Three wardens were laid in a barrow at the edge of the mire long ago, sworn to keep what sleeps there asleep. Children sing about them; the chapel's oldest books name them as the first lamplighters.",
+		"keys": [
+			"Grey Sisters",
+			"barrow",
+			"wardens"
+		],
+		"fields": {
+			"category": "legend",
+			"priority": 2
+		}
+	},
+	{
+		"key": "faction-lamplighters",
+		"type": "core:entry/world-lore@1",
+		"title": "The Lamplighters' Compact",
+		"content": "The town watch and lantern-keepers of Lantern Ford, sworn by an old compact to keep the ring lit. Proud, underpaid and stretched thin now that the lanterns fail.",
+		"keys": [
+			"Lamplighters",
+			"Compact",
+			"watch"
+		],
+		"fields": {
+			"category": "faction",
+			"priority": 2
+		}
+	},
+	{
+		"key": "faction-mire-kin",
+		"type": "core:entry/world-lore@1",
+		"title": "The Mire Kin",
+		"content": "Reed-cutters and eel-fishers who live on stilts in Ashfen Mire and answer to no lord. They know the safe paths and the old stories, and they trust the town about as far as it trusts them.",
+		"keys": [
+			"Mire Kin",
+			"mire folk",
+			"reed-cutters"
+		],
+		"fields": {
+			"category": "faction",
+			"priority": 2
+		}
+	},
+	{
+		"key": "faction-ledger-house",
+		"type": "core:entry/world-lore@1",
+		"title": "The Ledger House",
+		"content": "A family of lenders from downriver who own the Copperdeep mine and half the debts in the vale. They speak softly, write everything down and never forget a sum.",
+		"keys": [
+			"Ledger House",
+			"lenders",
+			"creditors"
+		],
+		"fields": {
+			"category": "faction",
+			"priority": 2
+		}
+	},
+	{
+		"key": "the-ford-lantern",
+		"type": "core:entry/vis-itineris.gear@1",
+		"title": "The Ford Lantern",
+		"content": "The first lantern of the ring, kept in the chapel: a heavy iron lamp whose flame burns pale blue and is said never to go out on its own.",
+		"keys": [
+			"Ford Lantern",
+			"first lantern"
+		],
+		"fields": {
+			"name": "The Ford Lantern",
+			"description": "An old iron lamp whose pale blue flame keeps the mire fog back.",
+			"traits": [
+				"unique",
+				"warding"
+			],
+			"sort": "light",
+			"weight": 4,
+			"supply": "unique"
+		}
+	},
+	{
+		"key": "mire-lurker",
+		"type": "core:entry/vis-itineris.creatures@1",
+		"title": "Mire lurker",
+		"content": "A long, eel-bodied thing that waits under the mire's black water for something warm to wade too close.",
+		"keys": [
+			"lurker",
+			"mire lurker"
+		],
+		"fields": {
+			"name": "Mire lurker",
+			"description": "An eel-bodied ambusher of the deep pools, all teeth and patience.",
+			"traits": [
+				"beast",
+				"aquatic",
+				"ambusher"
+			],
+			"level": 2,
+			"size": "large",
+			"ac": 13,
+			"hp": 27,
+			"speed": 10,
+			"abilities": {
+				"strength": 15,
+				"dexterity": 13,
+				"constitution": 14,
+				"intelligence": 2,
+				"wisdom": 10,
+				"charisma": 4
+			},
+			"attacks": [
+				{
+					"name": "Bite",
+					"bonus": 4,
+					"damage": "2d6+2",
+					"damageType": "piercing",
+					"reach": 10
+				}
+			]
+		}
+	}
+]

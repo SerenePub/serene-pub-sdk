@@ -10,6 +10,8 @@ import type { SessionStateV1 } from '@serene-pub/sdk'
 import {
 	barView,
 	clampToBounds,
+	derivedRowsAt,
+	derivedRowsOf,
 	enumValues,
 	formatSlotValue,
 	isBarSlot,
@@ -22,7 +24,6 @@ import {
 	statTrailByText,
 	statTrailRows,
 	textDraftValue,
-	worldStateView,
 } from '../core-catalog/src/shared/ui/session-state/index.js'
 
 describe('barView', () => {
@@ -127,114 +128,10 @@ const state = (over: Partial<SessionStateV1> = {}): SessionStateV1 => ({
 const keys = (v: { groups: Array<{ owners: Array<{ owner: { key: string } }> }> }) =>
 	v.groups.flatMap((g) => g.owners.map((o) => o.owner.key))
 
-describe('worldStateView', () => {
-	test('loading before the first read — never "nothing"', () => {
-		assert.equal(worldStateView(undefined, {}).status, 'loading')
-		assert.equal(worldStateView(state({ loaded: false, slots: [] }), {}).status, 'loading')
-	})
-	test('a FIRST read that failed is failed, not loading forever', () => {
-		assert.deepEqual(worldStateView(state({ loaded: false, error: 'Could not read', slots: [] }), {}), {
-			status: 'failed',
-			layout: 'strip',
-		})
-		assert.deepEqual(statsView(state({ loaded: false, error: 'Could not read', slots: [] }), { density: 'compact' }), {
-			status: 'failed',
-			density: 'compact',
-			arrangement: 'cards',
-			owners: 'cast',
-		})
-	})
-	test("the world's slots, with its values and configs, laid out as a strip by default", () => {
-		const v = worldStateView(state(), {})
-		assert.equal(v.status, 'shown')
-		assert.equal(v.layout, 'strip')
-		if (v.status !== 'shown') return
-		assert.deepEqual(
-			v.slots.map((s) => [s.slot.key, s.value, s.config]),
-			[['weather', 'rain', { of: ['clear', 'rain'] }]],
-		)
-	})
-	test('two empties: nothing declared at all, or nothing of the world picked', () => {
-		assert.deepEqual(worldStateView(state({ slots: [] }), { layout: 'list' }), { status: 'empty', layout: 'list', reason: 'none-declared' })
-		assert.deepEqual(worldStateView(state(), { slots: 'pick', pickSlots: ['hp'] }), { status: 'empty', layout: 'strip', reason: 'none-shown' })
-		assert.equal(worldStateView(state(), { slots: 'pick', pickSlots: ['WEATHER'] }).status, 'shown')
-	})
-})
+// ⏳ `worldStateView` went with the World State wrapper (AUDIT B, 2026-10-17):
+// the world as a strip and its places are `statsView` with `owners: world`,
+// covered below.
 
-// Attributes phase 4 (2026-09-26): a location holds state of its own. World
-// State draws each location in play as a place under the world's own slots;
-// Stats is the cast's and never draws one.
-describe('worldStateView — locations', () => {
-	const inv = { ...slot('inventory', 'enum'), type: 'list' as const }
-	const withPlaces = (): SessionStateV1 =>
-		state({
-			slots: [slot('weather', 'enum'), slot('hp', 'integer'), inv] as SessionStateV1['slots'],
-			resolved: {
-				world: { 'core.weather': 'rain' },
-				cast: { mira: { 'core.hp': 14 }, bram: {} },
-				locations: { 'location:harbor': { 'core.inventory': [{ entryId: 5, name: 'Rope' }] }, 'location:crypt': {} },
-			},
-			owners: [
-				...state().owners,
-				{ key: 'location:harbor', kind: 'session_location', id: 41, label: 'Harbor', configs: { 'core:slot/inventory@1': {} } },
-				{ key: 'location:crypt', kind: 'session_location', id: 42, label: 'Crypt', configs: { 'core:slot/inventory@1': {} } },
-			],
-		})
-	test('each location with a value in play is a place under the world; one with none is not drawn', () => {
-		const v = worldStateView(withPlaces(), {})
-		assert.equal(v.status, 'shown')
-		if (v.status !== 'shown') return
-		assert.deepEqual(
-			v.places.map((p) => [p.owner.label, p.slots.map((s) => s.value)]),
-			[['Harbor', [[{ entryId: 5, name: 'Rope' }]]]],
-		)
-		assert.deepEqual(worldStateView(state(), {}).status === 'shown' && (worldStateView(state(), {}) as { places: unknown[] }).places, [])
-	})
-	test('a place alone is enough to show; a pick narrows the places too', () => {
-		const v = worldStateView(withPlaces(), { slots: 'pick', pickSlots: ['inventory'] })
-		assert.equal(v.status, 'shown')
-		if (v.status === 'shown') {
-			assert.deepEqual(v.slots, [])
-			assert.deepEqual(v.places.map((p) => p.owner.key), ['location:harbor'])
-		}
-		assert.equal(worldStateView(withPlaces(), { slots: 'pick', pickSlots: ['hp'] }).status, 'empty')
-	})
-	test('Stats with owners cast never draws a location', () => {
-		const v = statsView(withPlaces(), { members: 'all' })
-		assert.equal(v.status, 'shown')
-		if (v.status === 'shown') assert.deepEqual(keys(v), ['mira', 'bram'])
-	})
-	test('Stats with owners world draws what World State drew: the world, then each place in play, valued stats only', () => {
-		const ws = worldStateView(withPlaces(), {})
-		const v = statsView(withPlaces(), { owners: 'world', arrangement: 'strip' })
-		assert.equal(v.status, 'shown')
-		if (v.status !== 'shown' || ws.status !== 'shown') return
-		assert.deepEqual(
-			v.groups.map((g) => [g.kind, g.owners.map((o) => [o.owner.key, o.slots.map((s) => s.slot.key)])]),
-			[
-				['world', [['world', ['weather']]]],
-				['places', [['location:harbor', ['inventory']]]],
-			],
-		)
-		assert.deepEqual(v.groups[0]!.owners[0]!.slots, ws.slots)
-		assert.deepEqual(v.groups[1]!.owners.map((o) => o.slots), ws.places.map((p) => p.slots))
-	})
-	test('owners places: the places in play alone; all: world → cast → places', () => {
-		const p = statsView(withPlaces(), { owners: 'places' })
-		if (p.status === 'shown') assert.deepEqual(keys(p), ['location:harbor'])
-		const a = statsView(withPlaces(), { owners: 'all', castScope: 'all' })
-		assert.equal(a.status, 'shown')
-		if (a.status === 'shown') {
-			assert.deepEqual(a.groups.map((g) => g.kind), ['world', 'cast', 'places'])
-			assert.deepEqual(keys(a), ['world', 'mira', 'bram', 'location:harbor'])
-		}
-	})
-	test('pick names any owner, by label or key', () => {
-		const v = statsView(withPlaces(), { owners: 'pick', pickOwners: ['World', 'mira', 'Crypt'] })
-		if (v.status === 'shown') assert.deepEqual(keys(v), ['world', 'mira', 'location:crypt'])
-		assert.equal(statsView(withPlaces(), { owners: 'pick', pickOwners: ['nobody'] }).status, 'nothing-shown')
-	})
-})
 
 describe('statsView', () => {
 	test('scene: only the cast members with a value in play', () => {
@@ -247,6 +144,25 @@ describe('statsView', () => {
 		const v = statsView(state(), { castScope: 'all', density: 'compact' })
 		assert.equal(v.density, 'compact')
 		if (v.status === 'shown') assert.deepEqual(keys(v), ['mira', 'bram'])
+	})
+	test('🚧 a card-less player seat (`player_seat`) is a cast member: its values ride in `resolved.cast`', () => {
+		const withSeat = state({
+			resolved: { world: {}, cast: { mira: { 'core.hp': 14 }, bram: {}, ash: { 'core.hp': 9 } } },
+			owners: [
+				...state().owners,
+				{ key: 'ash', kind: 'player_seat', id: 4, label: 'Ash', configs: { 'core:slot/hp@1': { min: 0, max: 20 } } },
+			],
+		})
+		const v = statsView(withSeat, {})
+		if (v.status === 'shown')
+			assert.deepEqual(v.groups.flatMap((g) => g.owners.map((m) => [m.owner.key, m.group, m.slots.map((s) => s.value)])), [
+				['mira', 'cast', [14]],
+				['ash', 'cast', [9]],
+			])
+		else assert.fail(v.status)
+		const picked = statsView(withSeat, { owners: 'pick', pickOwners: ['Ash'] })
+		if (picked.status === 'shown') assert.deepEqual(keys(picked), ['ash'])
+		else assert.fail(picked.status)
 	})
 	test('pick: by label or key; nobody matching says so', () => {
 		const v = statsView(state(), { owners: 'pick', pickOwners: ['bram'] })
@@ -303,7 +219,9 @@ describe('statsView — slots: bars, arrangements, and the settings before W7', 
 	test('⏳ members, pickMembers and World State’s layout read as castScope, owners/pickOwners and arrangement', () => {
 		assert.deepEqual(statsSettingsOf({ members: 'all' }), statsSettingsOf({ castScope: 'all' }))
 		assert.deepEqual(statsSettingsOf({ members: 'pick', pickMembers: ['Bram'] }), statsSettingsOf({ owners: 'pick', pickOwners: ['bram'] }))
-		assert.equal(statsSettingsOf({ layout: 'list' }).arrangement, 'list')
+		// World State's stored `layout` is translated by the app's settings reader alone
+		// (AUDIT B, 2026-10-17): here it is not a setting, and the arrangement stays its default.
+		assert.equal(statsSettingsOf({ layout: 'list' }).arrangement, 'cards')
 		// Written the new way, the new key wins.
 		assert.equal(statsSettingsOf({ members: 'all', castScope: 'scene' }).castScope, 'scene')
 		assert.equal(statsSettingsOf({ layout: 'list', arrangement: 'strip' }).arrangement, 'strip')
@@ -315,7 +233,11 @@ describe('statsView — slots: bars, arrangements, and the settings before W7', 
 			density: 'full',
 			pickOwners: [],
 			pickSlots: [],
+			// 🚧 2026-10-17 (DC walk 5): the stats a copy leaves out.
+			hideSlots: [],
 			trail: true,
+			emptyState: null,
+			timeFormat: null,
 		})
 		assert.equal(statsSettingsOf({ trail: false }).trail, false)
 	})
@@ -363,7 +285,6 @@ describe('the stat trail (F2)', () => {
 
 describe('a scope not granted', () => {
 	test('is its own state — never loading — and only a definite `false` means it', () => {
-		assert.deepEqual(worldStateView(undefined, {}, false), { status: 'not-granted', layout: 'strip' })
 		assert.deepEqual(statsView(undefined, { density: 'compact' }, false), {
 			status: 'not-granted',
 			density: 'compact',
@@ -371,7 +292,7 @@ describe('a scope not granted', () => {
 			owners: 'cast',
 		})
 		// Not said yet (`undefined`) is still loading; granted draws as ever.
-		assert.equal(worldStateView(undefined, {}, undefined).status, 'loading')
+		assert.equal(statsView(undefined, {}, undefined).status, 'loading')
 		assert.equal(statsView(state(), {}, true).status, 'shown')
 	})
 })
@@ -408,6 +329,17 @@ describe('a slot is drawn by its stat shape', async () => {
 		assert.equal(s.shownValueText(clock, 'not a date', t), 'not a date')
 		assert.equal(s.shownValueText(clock, null, t), 'cleared')
 		assert.equal(s.shownValueText(clock, undefined, t), '')
+	})
+
+	test('a choice reads as its option\'s label; one with no label reads as it always did', () => {
+		const order = {
+			type: 'enum' as const,
+			field: { type: 'enum' as const, of: ['hold', 'taken-out'], members: [{ key: 'hold', label: { en: 'Hold your ground' } }] },
+		}
+		assert.equal(s.shownValueText(order, 'hold', t), 'Hold your ground')
+		assert.equal(s.shownValueText(order, 'taken-out', t), 'taken-out')
+		assert.equal(s.choiceOptionText(order, 'hold'), 'Hold your ground')
+		assert.equal(s.choiceOptionText({ type: 'enum' as const, field: { type: 'enum' as const } }, 'follow'), 'follow')
 	})
 
 	test('a list edit writes the whole list: add through the list op, remove, move', () => {
@@ -459,5 +391,38 @@ describe('a slot is drawn by its stat shape', async () => {
 			],
 		} as unknown as SessionStateV1
 		assert.deepEqual(statBarsOf(state, 'mira').map((r) => r.slotId), ['core:slot/hp@1'])
+	})
+})
+
+describe('🚧 the sheet: player seats and worked-out values (2026-10-18)', () => {
+	test('owners: seats — every player seat (card-less or a card seated), the viewer\'s own first; never a companion', () => {
+		const s = state({
+			resolved: { world: {}, cast: { mira: { 'core.hp': 14 }, bram: { 'core.hp': 3 }, ash: { 'core.hp': 9 } } },
+			owners: [
+				{ key: 'mira', kind: 'session_cast', id: 1, label: 'Mira', seat: true, configs: { 'core:slot/hp@1': { min: 0, max: 20 } } } as never,
+				{ key: 'bram', kind: 'session_cast', id: 2, label: 'Bram', configs: { 'core:slot/hp@1': { min: 0, max: 20 } } },
+				{ key: 'ash', kind: 'player_seat', id: 4, label: 'Ash', mine: true, seat: true, configs: { 'core:slot/hp@1': { min: 0, max: 20 } } } as never,
+			],
+		})
+		const v = statsView(s, { owners: 'seats', arrangement: 'faces' })
+		if (v.status === 'shown') assert.deepEqual(keys(v), ['ash', 'mira'])
+		else assert.fail(v.status)
+		assert.equal(statsSettingsOf({ owners: 'seats' }).owners, 'seats')
+	})
+	test('derived values read as rows after the leading bars; anything malformed is left out', () => {
+		const owner = {
+			key: 'ash', kind: 'player_seat', id: 4, label: 'Ash', configs: {},
+			derived: [
+				{ key: 'armour-class', label: 'Armour class', value: 16 },
+				{ key: 'broken', label: '', value: 3 },
+				{ key: 'nan', label: 'Nothing', value: Number.NaN },
+			],
+		} as never
+		assert.deepEqual(derivedRowsOf(owner), [{ key: 'armour-class', label: 'Armour class', value: '16' }])
+		assert.deepEqual(derivedRowsOf({ key: 'x', kind: 'session', id: 1, label: 'World', configs: {} }), [])
+		const hp = { slot: { slotId: 'core:slot/hp@1', key: 'hp', qualifiedKey: 'core.hp', label: 'Health', type: 'integer', appliesTo: ['cast'] }, config: { min: 0, max: 20 }, value: 9 }
+		const cls = { slot: { slotId: 'core:slot/character-class@1', key: 'character-class', qualifiedKey: 'core.character-class', label: 'Class', type: 'string', appliesTo: ['cast'] }, config: {}, value: 'Wizard' }
+		assert.equal(derivedRowsAt([hp, cls] as never), 1)
+		assert.equal(derivedRowsAt([cls, hp] as never), 0)
 	})
 })

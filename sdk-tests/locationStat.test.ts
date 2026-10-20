@@ -23,10 +23,10 @@ import {
 	slotValueForStorage,
 } from '@serene-pub/sdk'
 import {
-	ADVENTURE_SHEET,
+	STORY_SHEET,
 	LAIR_SHEET,
 	locationSlot,
-	adventureGenre,
+	storyGenre,
 	lairGenre,
 } from '@serene-pub/core-catalog'
 import { formatSlotValue } from '@serene-pub/core-catalog/session-state'
@@ -79,14 +79,14 @@ describe('location is a premade stat, not a built-in', () => {
 
 describe('a sheet says which owner carries a slot', () => {
 	test('Adventure and Lair keep location on the world, explicitly', () => {
-		for (const sheet of [ADVENTURE_SHEET, LAIR_SHEET]) {
+		for (const sheet of [STORY_SHEET, LAIR_SHEET]) {
 			const entry = sheet.slots.find((s) => s.id === locationSlot.id)
 			assert.ok(entry, sheet.id)
 			assert.deepEqual(entry?.appliesTo, ['world'], sheet.id)
 			assert.deepEqual(sheetSlotAppliesTo(entry!, locationSlot), ['world'])
 		}
 		// …and the genres carry those sheets, so nothing they had moved.
-		for (const g of [adventureGenre, lairGenre]) {
+		for (const g of [storyGenre, lairGenre]) {
 			const held = genreSheets(g.id).flatMap((s) => s.slots).find((s) => s.id === locationSlot.id)
 			assert.deepEqual(held?.appliesTo, ['world'], g.id)
 			assert.ok(getGenre(g.id))

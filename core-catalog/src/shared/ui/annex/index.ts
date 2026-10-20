@@ -147,6 +147,13 @@ export interface AnnexWidgetRow {
 	key: string
 	label: string
 	text: string
+	/**
+	 * 🚧 A member that is a list, item by item (PLAN-dc-after-walk2 Q3-6, the
+	 * walk's #41: "Follow the bell's ringing below, Ask Moss about the king"
+	 * read as one sentence): drawn as a list, never joined with commas.
+	 * `text` still carries the items joined, for a reader that draws text.
+	 */
+	items?: string[]
 }
 
 /** How the value is drawn. @experimental */
@@ -311,10 +318,14 @@ function drawnOf(
 					.filter((k) => v[k] !== undefined)
 					.map((k) => {
 						const d = declared.find((x) => x.key === k)
+						const member = v[k]
 						return {
 							key: k,
 							label: i18nText(d?.label, locale) ?? humanise(k),
-							text: textOf(v[k], d?.shape, locale, t),
+							text: textOf(member, d?.shape, locale, t),
+							...(Array.isArray(member)
+								? { items: member.map((x) => textOf(x, d?.shape?.item, locale, t)) }
+								: {}),
 						}
 					}),
 			}

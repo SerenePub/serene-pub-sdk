@@ -11,7 +11,11 @@
 	import {
 		exactPaletteMatch,
 		exactSlashCommand,
+		canonicalListedChannel,
+		composerClosedOn,
+		composerClosedPlaceholder,
 		filterPaletteActions,
+		isNoLaneChannel,
 		paletteRowState,
 		slashArgumentHint,
 		slashArgumentRefusal,
@@ -54,11 +58,21 @@
 	const conv = useConversation()
 	const c = $derived(conv.dossier?.composer)
 	const hideCompose = $derived(!!c?.hidden)
-	const channels = $derived(c?.channels ?? [])
+	// 🚧 The no-lane marker is never a channel to write on (channelLanes.ts),
+	// nor the channel this copy draws inline under its anchors (`interleave`):
+	// the conversation's own list, which leaves it out.
+	const channels = $derived((conv.channels ?? c?.channels ?? []).filter((ch) => !isNoLaneChannel(ch)))
 	const overflowActions = $derived((c?.overflow ?? []) as WidgetAction[])
 	const paletteActions = $derived((c?.palette ?? []) as PaletteAction[])
 	const newestItem = $derived((c?.newest ?? null) as ItemValues | null)
 	const sendTonal = $derived(!!c?.sendTonal)
+	/**
+	 * 🚧 The genre closed this composer on the lane it writes to
+	 * (`set-composer-state@1`, owner ruling 2026-10-15): the field, Send and
+	 * the action chips grey, and the reason stands where the placeholder
+	 * was. The turn controls are the round's and stay.
+	 */
+	const closed = $derived(composerClosedOn(c?.closed, conv.lane.current))
 	const actionsListed = $derived(!!c?.actions)
 
 	/**
@@ -338,15 +352,22 @@
 	)
 	// Opening the palette is meeting its newcomers. Their keys are held in
 	// `paletteNewOnOpen` until it closes so the "New" chips survive being seen.
+	// The held set is READ untracked and written only with keys it lacks: an
+	// effect that reads what it writes re-runs itself, and this one did —
+	// without end, a fresh Set and an `actions-seen` ask each pass, until the
+	// UI worker's stack blew (DC walkthrough 2026-10-15, `/reveal`).
 	$effect(() => {
+		const held = untrack(() => paletteNewOnOpen)
 		if (!paletteOpen) {
-			paletteNewOnOpen = new Set()
+			if (held.size) paletteNewOnOpen = new Set()
 			return
 		}
-		const fresh = paletteRows.filter((a) => a.isNew)
-		if (!fresh.length) return
-		const keys = fresh.map(actionIdentity)
-		paletteNewOnOpen = new Set([...paletteNewOnOpen, ...keys])
+		const keys = paletteRows
+			.filter((a) => a.isNew)
+			.map(actionIdentity)
+			.filter((k) => !held.has(k))
+		if (!keys.length) return
+		paletteNewOnOpen = new Set([...held, ...keys])
 		void conv.request("actions-seen", { keys })
 	})
 
@@ -484,13 +505,16 @@
 	const messages = $derived(conv.ctx.messages.v1 as Array<{ isGenerating?: boolean }>)
 	let isGenerating = $derived(!!messages[messages.length - 1]?.isGenerating)
 	let ragVisible = $derived(!!c?.notice && composerSkin !== "minimal")
-	// Writing as no persona in a genre that names the person's lines (R4's
-	// `playerLabel`, S2): "Write as the Dungeon Master…".
+	// Writing as no persona (R4's `playerLabel`, S2): the host's phrase as
+	// written after "Write as" — "the Dungeon Master" for a genre's label,
+	// "Ann" for the viewer's own card-less player seat.
 	let placeholder = $derived(
-		activePersona
+		closed
+			? composerClosedPlaceholder(closed)
+			: activePersona
 			? `Write as ${activePersona.name}…`
 			: c?.playerLabel
-				? `Write as the ${c.playerLabel}…`
+				? `Write as ${c.playerLabel}…`
 				: "Write a message…"
 	)
 
@@ -562,13 +586,16 @@
 <div
 	data-widget-part="messages.composer"
 	data-composer-skin={composerSkin}
+	data-closed={closed ? "" : undefined}
 	hidden={conv.edit.id !== null}
 	onkeydown={handleKeyDown}
 	role="group"
 	aria-label="Compose"
 >
-	{#if c?.addPersona}
-		<!-- Guests without a persona get the one thing they can do here. -->
+	{#if c?.addPersona && !closed}
+		<!-- Guests without a persona get the one thing they can do here —
+		     unless the genre closed this composer: its waiting reason wins
+		     (2026-10-16). -->
 		<div data-widget-part="messages.join">
 			<div data-widget-part="messages.join-text">
 				<sp-icon name="user-plus" size="48" data-widget-part="messages.join-icon"></sp-icon>
@@ -589,7 +616,7 @@
 		<!-- Above the composer, because a run in flight is about the message you
 		     are about to get rather than the ones already there — and because it
 		     has to stay visible while the transcript scrolls. -->
-		<sp-host-view name="run-progress"></sp-host-view>
+		<sp-host-view name="run-progress" channel={conv.lane.current}></sp-host-view>
 
 		<div data-widget-part="messages.composer-disclosure">
 			<div data-widget-part="messages.composer-disclosure-bar">
@@ -685,7 +712,7 @@
 									     reader, never dropped from the list. -->
 									<sp-menu-item
 										value={actionIdentity(a)}
-										disabled={row.disabled}
+										disabled={row.disabled || !!closed}
 										data-widget-part="messages.composer-overflow-item"
 									>
 										<sp-icon name={iconName} size="12"></sp-icon>
@@ -835,6 +862,7 @@
 						rows="1"
 						label="Write a message"
 						{placeholder}
+						disabled={!!closed}
 						submit-on={submitOnEnter ? "enter" : "none"}
 						keys={capturedKeys}
 						spellcheck="true"
@@ -931,7 +959,7 @@
 							<button
 								type="button"
 								data-widget-part="messages.composer-channel"
-								aria-pressed={slug === conv.lane.current}
+								aria-pressed={canonicalListedChannel(slug) === conv.lane.current}
 								title="Write on {channelLabel(slug)}"
 								onclick={() => conv.lane.set(slug)}
 							>
@@ -1088,8 +1116,8 @@
 								type="button"
 								data-widget-part="messages.composer-send"
 								data-someone-due={sendTonal ? "" : undefined}
-								disabled={!draft.trim() && !hasAttachments}
-								title="Send"
+								disabled={!!closed || (!draft.trim() && !hasAttachments)}
+								title={closed ? composerClosedPlaceholder(closed) : "Send"}
 								aria-label="Send message"
 								onclick={send}
 							>

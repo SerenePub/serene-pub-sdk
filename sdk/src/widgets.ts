@@ -143,6 +143,60 @@ export interface SessionV1 {
 	 * @ruling DESIGN-image-generation §6.4, §9.4
 	 */
 	backdrop?: SessionBackdropV1 | null
+	/**
+	 * 🚧 The lorebook this session reads (`sessions.lorebookId`), or null when
+	 * it reads none — so a widget can leave out what only a lorebook could
+	 * answer (the Stats list's *Add from the lorebook*). Absent from a host
+	 * that does not say: read absent as unknown, never as none.
+	 */
+	lorebookId?: number | null
+	/**
+	 * 🚧 The session's **ruleset settings** — which ruleset it plays and the
+	 * values it chose for that ruleset's settings (W3-S, 2026-10-16). Absent
+	 * from a host that does not store them yet, and null for a session with
+	 * no ruleset chosen; read either as the ruleset's defaults
+	 * (`rulesetSettingValues` fills every setting a session left unsaid).
+	 */
+	rulesetSettings?: SessionRulesetSettingsV1 | null
+	/**
+	 * 🚧 The session's **channels as this viewer has them** (2026-10-17):
+	 * one entry per channel the genre declares, with the viewer's own lane
+	 * on a personal channel (`ChannelDecl.lanes: 'personal'`) and the
+	 * attention each lane asks of them. Absent from a host that does not
+	 * say; a widget then draws the channel whole and shows no dots.
+	 */
+	channels?: SessionChannelV1[]
+}
+
+/**
+ * 🚧 One channel as the viewer has it. `mine` is the canonical channel
+ * string of the viewer's own lane on a personal channel (`parley:2`),
+ * absent on a shared one; `waitingOnYou` is true while a lane's turn is
+ * this viewer's to take (a question asked them, their turn in the order);
+ * `unseen` counts the lines written there since they last read it. The
+ * host derives both — a widget never recomputes who speaks (canon A9).
+ * @experimental
+ */
+export interface SessionChannelV1 {
+	slug: string
+	lanes: 'shared' | 'personal'
+	mine?: string
+	waitingOnYou?: boolean
+	unseen?: number
+}
+
+/**
+ * 🚧 A session's ruleset settings on the wire: the ruleset it plays and its
+ * chosen setting values, by setting name (`degrees` → `classic`). Only the
+ * values a session chose are stored; `rulesetSettingValues(ruleset, { values })`
+ * resolves the rest from the defaults, and leaves out a name or choice the
+ * ruleset does not declare. ⚠ Not a session setting (`sessionSettings.ts`),
+ * not a ruleset preset — a preset is one way to fill these values.
+ * @experimental
+ */
+export interface SessionRulesetSettingsV1 {
+	rulesetId: string
+	values: Record<string, string>
 }
 
 /**
@@ -427,6 +481,12 @@ export interface MessageMetadataV1 {
 	speaker?: unknown
 	/** The form this row answers: the message carrying it, and the block. */
 	answersForm?: { messageId: number; blockId: string }
+	/**
+	 * 🚧 A **table line** — the table's own line, in no voice (a Dungeon
+	 * Crawler roll line; `create-message@1`'s `tableLine`). Drawn without a
+	 * speaker's face or name.
+	 */
+	tableLine?: boolean
 	[k: string]: unknown
 }
 
@@ -584,6 +644,16 @@ export type AnnexV1 = Record<string, Record<string, unknown>>
 // ─── Scoped section shapes (v1, 🚧) ─────────────────────────────────────────
 
 /**
+ * 🚧 One person the session's story has met ({@link SessionStateV1.metPeople}):
+ * its entry in the session's own notes and the name the session reads it by.
+ * @experimental
+ */
+export interface SessionMetPersonV1 {
+	entryId: number
+	name: string
+}
+
+/**
  * 🚧 The session's stats and states, as a widget reads them —
  * `session_state.v1` (a SCOPED section, scope `session:state`, which a
  * plugin's widget is granted as `widget:session:state`, reviewed like
@@ -614,6 +684,57 @@ export interface SessionStateV1 {
 	slots: SessionStateSlotV1[]
 	/** Every owner this session's values belong to: the world, and each cast member. */
 	owners: SessionStateOwnerV1[]
+	/**
+	 * 🚧 The table **keeps no numbers** (PLAN-dc-after-walk2 Q2-3, owner ruling
+	 * ★3): its ruleset is one of words, with no dice (the Freeform ruleset). A
+	 * widget draws a stat that has words in them (`SessionStateSlotV1.words`)
+	 * and a number with none not at all. Absent: numbers are kept.
+	 * @experimental
+	 */
+	wordsOnly?: true
+	/**
+	 * 🚧 The **people the story has met** (PLAN-dc-after-walk2 Q3-5): the
+	 * `core:entry/character-lore` entries of the session's own notes — where
+	 * a story that writes people (a dungeon crawl's) puts each one it meets —
+	 * as the session sees them, in entry order. No card behind them, so no
+	 * picture: Scene Portraits draws each by name (`metPeople`). Absent from
+	 * a host that predates it, and ⏳ empty for a session with a lorebook of
+	 * its own (that book holds people never met).
+	 * @experimental
+	 */
+	metPeople?: readonly SessionMetPersonV1[]
+	/**
+	 * 🚧 The **offers** waiting on this session's sheets (2026-10-19, owner
+	 * ruling ★4): a piece given to a sheet its giver may not write waits here
+	 * until the receiver accepts or declines it, or the giver withdraws it —
+	 * nothing moves before that. Only the offers the viewer is shown (those
+	 * on owners they hear). Absent from a host that predates offers, and when
+	 * none waits. @experimental
+	 */
+	offers?: SessionStateOfferV1[]
+}
+
+/**
+ * 🚧 One **offer** ({@link SessionStateV1.offers}): `count` of a piece in
+ * `from`'s `slotId` list, offered to `to` by the _Give to…_ request
+ * (`give-piece`). The receiver — whoever may write `to` — accepts or
+ * declines it with `decide-proposal` (`proposalId`, `accept`); the giver
+ * withdraws it the same way (`accept: false`). @experimental
+ */
+export interface SessionStateOfferV1 {
+	/** What `decide-proposal` answers. */
+	proposalId: number
+	slotId: string
+	/** Whose list the piece leaves, by the owner's key and words. */
+	from: OwnerRefV1 & { key: string; label: string }
+	/** Whose list it would join. */
+	to: OwnerRefV1 & { key: string; label: string }
+	/** The piece as a person reads it — its name, never an id. */
+	item: string
+	/** How many are offered (at least 1). */
+	count: number
+	/** True when the viewer made this offer: theirs to withdraw. */
+	yours?: boolean
 }
 
 /**
@@ -625,7 +746,7 @@ export interface SessionStateV1 {
 export interface SessionResolvedStateV1 {
 	/** The world's values. */
 	world: Record<string, unknown>
-	/** Each cast member's values, by owner key (`SessionStateOwnerV1.key`). */
+	/** Each cast member's values — a card-less player seat's too — by owner key (`SessionStateOwnerV1.key`). */
 	cast: Record<string, Record<string, unknown>>
 	/**
 	 * 🚧 Each location's values, by owner key (`SessionStateOwnerV1.key`, a
@@ -683,27 +804,140 @@ export interface SessionStateSlotV1 {
 	retired?: boolean
 	/** The sheet that first named it, when one did. */
 	sheetId?: string
+	/**
+	 * 🚧 How the value reads at a table that keeps no numbers
+	 * ({@link SessionStateV1.wordsOnly}): the declaration's bands in the
+	 * viewer's language (`slotWordsFor`). Absent when it declares none.
+	 * @experimental
+	 */
+	words?: { upTo: number; label: string }[]
+	/**
+	 * 🚧 Drawn only while it holds something (the declaration's
+	 * `shownWhenSet`, PLAN-dc-after-walk2 Q3-8): a widget leaves an empty one
+	 * off the sheet. Absent: drawn empty, as every stat is.
+	 * @experimental
+	 */
+	shownWhenSet?: true
 }
 
 /**
  * An owner a session's values belong to — the world (`kind: 'session'`), a
- * cast member (`session_cast`) or 🚧 a location (`session_location`, whose
- * `id` is the location's lore entry) — keyed exactly as `resolved` keys it.
- * `key` is the lookup; `kind` and `id` are what `set-attribute-value` names.
+ * cast member (`session_cast`, whose `id` is the card), 🚧 a player seat
+ * that voices no card (`player_seat`, whose `id` is the seat — participant
+ * reference `player-seat:<id>`; a seat with a card is that card's `session_cast`)
+ * or 🚧 a location (`session_location`, whose `id` is the location's lore
+ * entry) — keyed exactly as `resolved` keys it. `key` is the lookup; `kind`
+ * and `id` are what `set-attribute-value` names.
  * @experimental
  */
-export interface SessionStateOwnerV1 {
-	/** `world`, the cast member's key in `resolved.cast`, or the location's in `resolved.locations`. */
+export interface SessionStateOwnerV1 extends OwnerRefV1 {
+	/** `world`, the cast member's or player seat's key in `resolved.cast`, or the location's in `resolved.locations`. */
 	key: string
-	kind: 'session' | 'session_cast' | 'session_location'
-	id: number
 	label: string
+	/**
+	 * 🚧 Whether the viewer may write this owner's values. `false` on a
+	 * player seat that is not the viewer's (only its player and the
+	 * session's owner write it — the host refuses anyone else); a widget
+	 * draws those values without edit controls. Absent: writable, as every
+	 * owner was before this field (2026-10-16, additive).
+	 * @experimental
+	 */
+	editable?: boolean
+	/**
+	 * 🚧 True on the one owner that is the viewer's own: their player seat
+	 * (card-less or carded), else the persona they play. The stats widget's
+	 * `owners: 'mine'` draws this one; a guest sees their own sheet, never
+	 * the host's. Absent on every other owner. @experimental
+	 */
+	mine?: boolean
+	/**
+	 * 🚧 True on an owner that is a **player seat** (2026-10-18): a card-less
+	 * one (`player_seat`), or a card seated as one (a persona played as a
+	 * seat). Never on a cast member nobody plays — a companion, an NPC card.
+	 * The stats widget's `owners: 'seats'` draws these. Absent everywhere
+	 * else, and from a host that predates it. @experimental
+	 */
+	seat?: boolean
+	/**
+	 * 🚧 The owner's **face** (2026-10-17): the picture the sheet head, the
+	 * faces strip, Scene Portraits and a reply's avatar all draw — a cast
+	 * member's card art, a player seat's **seat portrait**
+	 * (`session_personas.portrait_media_id`), resolved by the host to a
+	 * `src`. `null` when the owner has none; absent from a host that does
+	 * not say (read as none). The world and a place carry none.
+	 * `set-owner-face` changes it.
+	 * @experimental
+	 */
+	face?: { src: string; mediaRef: string | null } | null
 	/**
 	 * The configuration in force per slot id — a bar's bounds, a chip's
 	 * options. Only the slots this owner may carry appear, so a slot is this
 	 * owner's exactly when its id is a key here.
+	 *
+	 * 🚧 One universal key (2026-10-17): `lock` — `'none'` (the default:
+	 * whoever may write this owner writes this slot), `'people'` (no hand
+	 * edit; pipelines and the session's owner still write — the dice keep
+	 * Health), or `'all'` (nothing writes until unlocked). Set by
+	 * `core:outlet/set-stat-config@1`; a widget draws a locked slot without
+	 * edit controls, and the host refuses a write with its own sentence.
 	 */
 	configs: Record<string, Record<string, unknown>>
+	/**
+	 * 🚧 Each repertoire a list stat of this owner holds (`config.repertoire`),
+	 * by address — its name and its piece shape, so a widget labels a piece's
+	 * facts and draws its form without the ruleset's declaration. Absent
+	 * from a host that predates pieces, and on an owner holding none.
+	 * @experimental
+	 */
+	repertoires?: Record<string, SessionStateRepertoireV1>
+	/**
+	 * 🚧 The owner's **derived values** (2026-10-18): what the session's
+	 * ruleset works out from this owner's sheet and puts on it (a derived
+	 * selector marked `onSheet` — Vis Itineris's _Armour class_), each with
+	 * the label a person reads and the value as the host worked it out. Never
+	 * stored, so never written: a widget draws them read-only, with no edit
+	 * control and no trail. In the ruleset's order. Absent when the ruleset
+	 * works nothing out for this owner (no numbers at this table, or none on
+	 * the sheet), and from a host that predates them.
+	 * @experimental
+	 */
+	derived?: SessionStateDerivedV1[]
+}
+
+/**
+ * 🚧 One derived value on an owner's sheet ({@link SessionStateOwnerV1.derived}):
+ * `key` the ruleset's selector (`armour-class`), `label` its words, `value`
+ * the number or words the host worked out. @experimental
+ */
+export interface SessionStateDerivedV1 {
+	key: string
+	label: string
+	value: string | number
+}
+
+/**
+ * 🚧 **An owner, named** — the one shape every widget request that names
+ * whose stats uses (`set-attribute-value`, `stat-trail`, `set-owner-face`):
+ * the session itself (the world), a cast member, a player seat or a place,
+ * by the row's own id. The same four kinds the state read keys its owners
+ * by, so a widget hands back exactly what it was given. One shape, not a
+ * union repeated per request (2026-10-17).
+ * @experimental
+ */
+export interface OwnerRefV1 {
+	kind: 'session' | 'session_cast' | 'player_seat' | 'session_location'
+	id: number
+}
+
+/**
+ * 🚧 A repertoire as a widget needs it: its name and its piece shape (the
+ * universal parts and its own fields, `RepertoireDecl.piece`). Never its
+ * compendium — the host fills a referenced piece's `resolved` instead.
+ * @experimental
+ */
+export interface SessionStateRepertoireV1 {
+	label: string
+	piece: FieldDecl
 }
 
 /**
@@ -1264,6 +1498,33 @@ export interface WidgetRequests {
 	/** 🚧 Core's conversation: accept or reject a proposed change to the session's state. */
 	'decide-proposal': { params: { proposalId: number; accept: boolean }; result: void }
 	/**
+	 * 🚧 Core's conversation: the next older page of the log (owner ruling
+	 * ★7, 2026-10-19) — 25 more lines of each of `channels` (absent: every
+	 * channel that has older lines, `SessionDossierV1.olderIn`), merged into
+	 * the page's log, so a copy showing one channel scrolls back through its
+	 * own lines and never another's. Resolves once the lines have landed.
+	 * @experimental
+	 */
+	'load-older': { params: { channels?: string[] }; result: void }
+	/**
+	 * 🚧 _Give to…_ (2026-10-19, owner ruling ★4): `count` (absent: one) of
+	 * the piece at `index` of `from`'s `slotId` list handed to `to`, where it
+	 * joins `to`'s own count of the same piece. The host decides how: given at
+	 * once when the viewer may write both sheets (`given: 'direct'` — the
+	 * session's owner, or a drop at a place they keep), else **offered**
+	 * (`given: 'offered'`) to a player's seat, whose player accepts or
+	 * declines it ({@link SessionStateV1.offers}). Refused in words — more
+	 * than is held, a sheet the viewer may not give from, a place nobody
+	 * keeps. The table hears it either way. A plugin's widget may ask it,
+	 * holding the write grant `session:state:write`, as for
+	 * `set-attribute-value`.
+	 * @experimental
+	 */
+	'give-piece': {
+		params: { from: OwnerRefV1; to: OwnerRefV1; slotId: string; index: number; count?: number }
+		result: { given: 'direct' | 'offered' }
+	}
+	/**
 	 * 🚧 Set one owner's value for one slot, as core's state widgets do, at
 	 * the session layer — the viewer's own edit, applied at once (the page's
 	 * `state:set`); `null` clears the session's value so the read inherits
@@ -1276,10 +1537,20 @@ export interface WidgetRequests {
 	 */
 	'set-attribute-value': {
 		params: {
-			owner: { kind: 'session' | 'session_cast' | 'session_location'; id: number }
+			owner: OwnerRefV1
 			slotId: string
-			/** A list is written whole — its items in order, words and lore references (`SlotListItem`). */
+			/** A list is written whole — its items in order: words, lore references and pieces (`SlotListItem`). */
 			value: SlotValue
+			/**
+			 * 🚧 One line the table hears when this write lands (2026-10-18,
+			 * the 100-turn walk #35: _Give to…_ moved a potion in silence) —
+			 * "Wren gives Potion of healing to Rook." In a session whose genre
+			 * keeps a **table channel** (`TABLE_CHANNEL`), the host writes it
+			 * there, under the story's newest line, voiceless; elsewhere it is
+			 * not written. Plain words, at most 200 characters.
+			 * @experimental
+			 */
+			say?: string
 		}
 		result: void
 	}
@@ -1477,7 +1748,7 @@ export interface WidgetRequests {
 	 */
 	'stat-trail': {
 		params: {
-			owner: { kind: 'session' | 'session_cast' | 'session_location'; id: number }
+			owner: OwnerRefV1
 			slotId: string
 			limit?: number
 		}
@@ -1503,6 +1774,16 @@ export interface WidgetRequests {
 	 * @ruling DESIGN-image-generation §6.4
 	 */
 	'set-backdrop': { params: { mediaRef: string | null }; result: void }
+	/**
+	 * 🚧 Core's Stats (the sheet head's portrait, 2026-10-17): set one
+	 * owner's **face** — a player seat's seat portrait, or a cast member's
+	 * chosen image — by a media ref (an upload's or a generated picture's
+	 * file id, what `session-images` answers as `ref`); `null` clears it so
+	 * the card's own art, or nothing, shows again. The viewer may set their
+	 * own seat's, the session's owner anyone's; the host refuses the rest.
+	 * The new face arrives on the next `session_state` push.
+	 */
+	'set-owner-face': { params: { owner: OwnerRefV1; mediaRef: string | null }; result: void }
 	/**
 	 * 🚧 Core's Backdrop widget's *From this session*: a page of the
 	 * pictures generated in this session — the Album's `generated` source
@@ -1921,8 +2202,12 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'add-persona': 'core',
 	'fire-turn': 'core',
 	'decide-proposal': 'core',
+	// 🚧 Older lines of the page's log, per channel (★7) — core's conversation only.
+	'load-older': 'core',
 	// 🚧 A stat panel that edits: the write beside the `session:state` read.
 	'set-attribute-value': Object.freeze({ scope: 'session:state' as const, write: true as const }),
+	// 🚧 Give to… (★4): a write on two sheets, on the same grant.
+	'give-piece': Object.freeze({ scope: 'session:state' as const, write: true as const }),
 	'set-sprite-set': 'core',
 	'clear-scene-image': 'core',
 	// 🚧 Scene Portraits (W6): a member's gallery is part of the cast it was granted.
@@ -1949,6 +2234,8 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'set-chosen-image': 'core',
 	// 🚧 Backdrop (2026-10-12): writes session state — core's only.
 	'set-backdrop': 'core',
+	// 🚧 Stats (2026-10-17): a seat's portrait is session state — core's only.
+	'set-owner-face': 'core',
 	// 🚧 Backdrop (D3, 2026-10-12): the session's generated pictures, for its chooser — core's only.
 	'session-images': 'core',
 })

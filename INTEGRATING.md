@@ -836,6 +836,40 @@ time), and the accept judges the same way: untouched since → applied (the reba
 `supersededProposals` lists them beside the pending rows. The Adventure keeper graphs wire `base: $.gather.state.read.version` into the resolver and both `set-state`
 arms.
 
+**🚧 Composer states (owner ruling 2026-10-15).** `core:outlet/set-composer-state@1` (_Open or close
+the composer_) takes `{ channel, open, reason?, person? }`: `channel` a slug, a canonical lane
+(`parley:2`; the bare slug is lane 1 alone) or `*`; `person` a `user:<id>`, absent for everyone (the
+owner included). Core's commit is `writeComposerState` (`sessions/composerStates.ts`), one row-locked
+update of `sessions.composer_states` (migration `0103_session_composer_states`) through the SDK's
+`applyComposerState`; the document is channel → who → `{ open: false, reason? }`, absent = open, and
+core opens and closes nothing on its own. The door is `offerMessage` (so `sessionMessages:sendPersonaMessage`
+and `message-offered`'s offer both): `composerRefusal` → `composerClosedRefusal`, the reason in the
+sentence, `Your text was kept.` after it; turn controls never ask. The page hands the composer the
+viewer's closures as `ConversationComposerV1.closed` (`composerClosuresFor`, `*` kept as a key; read a
+lane with `composerClosedOn`); the run's settings document carries `composerStates` when anything is
+closed. Every member's page is pushed the session on a write (`pushSessionToParticipants`). The F7
+live-row law counts only outlets causing `message-created` as message writes, so a `channel` port
+alone is not one.
+
+**🚧 `rerunnable` (ruled 2026-10-15).** `ConversationLineV1.rerunnable` carries the rerun verdict
+(`canControlMessageAs(…, "rerun")`) beside `controllable` (`canActOnMessage`'s rule): the verb table
+(`VerbContext.canRerun`) and the swipe arrows read it for swipe, retry and extend; edit, hide, delete
+and item-gated actions read `controllable`. Absent reads as `controllable`.
+
+**🚧 A stat configured by a pipeline (owner ruling 2026-10-15).** `core:outlet/set-stat-config@1`
+(_Configure a stat_) writes one owner's **stat configuration** — the deviations from an attribute
+slot's config that owner carries, `{ max: 26 }` on a seat's health — as an `attribute_configs` row
+through `setStatConfig` → `configure()` (`state/write.ts`), the writer `state:configure` takes. Its
+in-ports are one `StatConfigDocument` `{ owner, slot, config }` (SDK `attributes.ts`) — `owner` a
+participant reference (`player-seat:<id>`, `character:<id>`) or `world` — plus set-state's optional
+`worldRow`. Only what the slot's stat shape bounds is taken (`statConfigKeys`: `min`/`max`, `of`,
+`maxItems`/`maxLength`, `descriptor`); anything else, a bad value, a min above the max once merged,
+an untracked slot or an owner not the session's halts the run with the sentence
+(`statConfigRefusals`, `assertTracked`, `assertSessionOwner`). Anchored like a value, so a retake or
+swipe takes it back. `main` is `{ configId, owner, slot, before, config }`. What is in force reads
+back on `session-state@1` as `state.configs[<owner key>][<slot id>]` (`world`, or a `cast.byId`
+key), the number the Stats bar is drawn to.
+
 **🚧 The keeper's clock proposal (live scenes §6, ★3, 2026-10-13).** `resolve-state-changes@1`
 takes the keeper's answer on an optional **`clock`** in-port (its `clock` list, `[{ by, unit }]`;
 a bare `{ by, unit }` reads the same) and resolves the first entry — forward only, within
@@ -979,6 +1013,221 @@ and its write rule), `fireTurn.int.test.ts` (firing, picks, the person rule),
 path and rebinds), `lineage.test.ts` (the lane), `eventMapCheck.int.test.ts` (every loop has
 a termination policy), `envoyRoad.int.test.ts`.
 
+## 1f. Saving a person's message — the send is a pipeline too
+
+🚧 **Owner ruling 2026-10-15: a person's message is always saved through the pipeline.** The
+host never writes a person's message row itself.
+
+```
+Send ─► door (access · genre · persona · length · channel)
+     ─► core:event/message-offered@1   (cause { kind: 'user' })
+     ─► the bound spec ─► create-message@1 { role: 'user' }
+     ─► message-created · message-completed (person's cause) ─► turn order ─► auto-advance
+```
+
+- **The door** stays core's: `sessionMessages:sendPersonaMessage` checks access, the genre's
+  availability, persona ownership, `MAX_CHAT_MESSAGE_LENGTH`, `channelRefusal` and the tray ids'
+  shape — then offers the message (`sessions/offerMessage.ts`) instead of inserting it.
+- **The event** is an action and a declared root (like `message-respond`), payload
+  `core:shape/message-offered@1` (`MessageOfferedPayload`: `person` `user:<id>`, `speaker`
+  `character:<id>` | `player-seat:<id>` | null, canonical `channel`, `text`, `trayItemIds`,
+  `replyTo?`), heard on `core:inlet/message-offered@1`, which publishes it port by port. Every
+  genre has it, listed in `events` or not (`genreHasEvent`) — so no genre declaration moved.
+- **The default save** is `core:spec/save-message` (`SAVE_MESSAGE_SPEC_ID`): no lock, every genre
+  (the built-ins' footing), one `create-message@1` wired from the inlet with `role: 'user'` and
+  `trayItems`. The host commit holds a person's row to the run's own person on a root run — their
+  persona (`personaId`), their card-less seat (stamped `player-seat:<id>`, as before) or
+  themselves — commits the tray in one transaction with the row (`commitTraySend`), and fires the
+  row's `message-completed` under `{ kind: 'user' }`, so turn order and auto-advance are unchanged.
+- **The preset shows it.** `preset()` writes `{ spec: 'core:spec/save-message' }` on
+  `message-offered` whenever the preset binds nothing of its own there; a genre that wants to
+  refuse, rewrite or route a message binds its own spec (locked to its genre) and that wins. The
+  app writes the same binding into older rows at boot (`backfillDefaultSave`) and into a preset an
+  administrator creates; a session on no preset falls to it as the event's one default
+  (`defaultEventSpec`).
+- **The answer, and never losing text.** The dispatch is waited on (the save calls no model):
+  `{ accepted: true, runId, sessionMessage }` — the row, linked to its run through
+  `pipeline_run_artifacts` — or `{ refused: sentence }` for a door refusal, a genre spec's halt,
+  a spec error, nothing bound or a save past 8 s (stopped, then checked once so a late row is never
+  refused). The composer holds the sent text (`pendingSend.ts`) until the row lands — on the
+  answer or the push — and gives it back on a refusal, an error or 10 s of silence, saying the
+  sentence once; the server's kept draft is cleared only when the row lands.
+- **Verbs** read the row as before: swipe and retry stay off for `role: 'user'` rows, a retake's
+  yield never holds one (`turnYield`), edit is unchanged.
+
+**Proves it:** `sdk-tests/messageOffered.test.ts` (the event, the inlet, `preset()`'s default, a
+genre's own save winning, the spec), the app's `sessions.offerMessage.int.test.ts` (row and run,
+refusals keep the text, attachments, one `message-completed`, auto-advance, a Dungeon Crawler
+round), `pendingSend.test.ts` (the draft's life).
+
+---
+
+## 1g. Rulesets (2026-10-16)
+
+🚧 The words are NOMENCLATURE §24's _Rulesets vocabulary_ (all provisional until 0.7). The
+contract below is published; the app binds the handler (`src/lib/server/rulesets/`).
+
+- **One handler, run by core.** A ruleset's mechanics are resolved by one premade task, 🚧
+  `core:task/ruleset-resolve@1`, which the app binds like any other task. Core runs it; core never
+  reimplements it, and no app path keys on a particular ruleset's id.
+- **The two-call contract.** A genre's spec places the handler at two moments, chosen by its
+  `mode` in-port:
+  - **`resolve`** (read) — before the model is called. In: `scope` (the session — its ruleset,
+    setting values and, when `owners` names none, its owners), `owners`, `rigour`, `actions`. Out:
+    `blocks` (labelled variables `voice`, `sheet`, `pieces`, `ties`, `custom`) and `facts` (what a
+    step may need: targets, what is equipped, what is allowed). No dice.
+  - **`apply`** (write) — after the model has proposed. In: the same, plus `deltas` and optionally
+    `elapsed`. Out: `outcomes` (rolls, degrees, totals, each with its origins), `explain` (for the
+    receipt and the table channel, never a prompt) and `rejected` (refused deltas — the app turns
+    them into pending proposals, never silent corrections). Dice are seeded from the run, so a
+    retake with the same seed replays them.
+  - **`advance`** — an `apply` with no deltas and an `elapsed` amount (a rest, a journey, a scene
+    break).
+  A ruleset never adds a model call.
+- **A fixed phase order inside it.** Base values → piece effects → derived values → bridges →
+  prose render, in one pass. A ruleset plugs scripts into declared points of that order
+  (`effects`, `derived`, `pre-roll`, `post-roll`, `render`); it never reorders it.
+- **Blocks are budgeted by `core:task/context-budget@1`.** Its optional `blocks` in-port takes the
+  handler's labelled blocks — each `{ key, text, tokens, priority, depth, min, max, depths }` —
+  and its `fittedBlocks` out-port returns them at the depth each landed on. The rule is **degrade
+  depth before dropping** (full → summary → index; drop only at the shallowest depth, never below
+  `min`). The blocks reach a prompt only as template variables named by an explicit spec step — no
+  host folding (the "no magic in core" rule). `voice` and `sheet` sit first for prefix caching;
+  **`outcomes` sits after the history** (`{{outcomes}}`, post-history).
+- **The model proposes, the handler computes.** Valid changes are wired by the spec into
+  `core:task/set-state@1`; refused ones become proposals for review.
+- **Ruleset settings travel with the session.** `SessionV1.rulesetSettings`
+  (`SessionRulesetSettingsV1 { rulesetId, values }`) carries the values a session chose; the host
+  stores only those and `rulesetSettingValues` resolves the rest from the defaults.
+- **Entry types derive from rulesets.** Each entryable repertoire yields a derived entry type,
+  `<creator>:entry/<ruleset>.<repertoire>@1`, whose fields are the piece shape plus core's
+  universal entry parts (`deriveRulesetEntryTypes`; core-catalog's `deriveEntryTypes` for a plugin
+  ruleset at load). Core and rulesets are the authors of entry types; a hand-written plugin type is
+  still refused.
+- **Primers** (`definePrimer`, `core:primer/<name>@1`) are applied once at lorebook creation:
+  their entries, places with exits, cast with sheets, relationships, calendar, clock and leads,
+  plus — in `derived` compendium mode — every compendium row (`primerDerivedEntries`, each stamped
+  `derivedFrom`). A primer names its ruleset; a ruleset names no primer (the back-reference was
+  cut 2026-10-17).
+- **Compendium rows are nested** (2026-10-17). A row is `{ id, version, source?, lang?, piece }`
+  (`CompendiumRow`): the bookkeeping beside, the piece's fields inside `piece`, so a piece field
+  may be called `source` (Vis Itineris's features). The host's one row lookup reads `row.piece`;
+  a flat row is refused (`[bad-row]`).
+- **Universal piece parts.** Every piece has `name`, `description`, `prose?`, `traits`, 🚧
+  `equipped?` (worn, wielded, readied — what `on: equip` and passive gear read) and 🚧
+  `duration?` (`PieceDuration { units, value?, expiry?, startedAt?, spent? }` — how long the piece
+  lasts **on its holder**; units `round` · `minute` · `hour` · `day` · `turn` · `scene` ·
+  `until-removed`). A unit the ruleset's time cannot count is refused at the write
+  (`checkPiece`'s `timeUnit`, `pieceDurationProblem`): rounds need a round-keeping ruleset, clock
+  units need a clock. A mechanic never says a duration of its own.
+- **Mechanics** are `modify` · `set` (the owning ruleset's own stats) · `adjustDegree` · `rider`,
+  firing `on` an event (`elapsed` with `every`, `at` with a story date) and holding under a
+  `predicate`. `bestow`, `situational` and `promptPolicy` were cut 2026-10-17 (validated, never
+  read). 🚧 **A piece used** (2026-10-18, owner ruling ★4: the handler executes a piece's effects —
+  the model proposes `hit`/`use`, never a hand-written `spend hp`) adds five verbs that fire only
+  `on: 'hit' | 'use'`: `rollWith` (the check rolls with the highest of `from` instead of its
+  `base` — a finesse blade), `harm` / `heal` (roll the dice the piece field `dice` holds —
+  `{ dice, die }`, `{ formula }` or `'2d4+2'` — add `plus` — `'check'`, the modifier the hit
+  rolled with, or the highest of some selectors — and, for harm, the `tally` modifies; a critical
+  doubles the dice), `cure` (pieces carrying one of `traits` leave, and none lands for the rest of
+  the moment) and `consume` (one use spent, landed or not: `uses`, else the stack's `count`, the
+  last leaves). The host:
+  - takes a delta's 🚧 **`aimedAt`** (an owner's key, reference or name) as who it lands on: harm
+    off the target's `stat` (never below 0), heal and cure on the target else the holder (heal
+    never past the stat's `max`); a target that is no owner is **told**, never written; with no
+    target a harm is only the roll line;
+  - lands harm, heal and cure on a partial success or better, or when the check was against
+    nothing; a **`use` naming no check** is an unchecked use — no die thrown, the effects land;
+  - runs `harm`/`heal` only where dice count (`mechanics` and up); `cure` and `consume` at every
+    rigour;
+  - reads, within one moment, what its own earlier changes left (a second blow, drink or cast
+    reads the value the first left; a stack spent out refuses the next use, in words);
+  - says each on the outcomes in words, with an **`explainKey`** naming the explain line its
+    roll is on, so a table line can show how it was rolled.
+  A bridge never says one of them (`bridge-piece-verb`: it has no piece).
+- **Selector families.** A dotted selector's parents cover it (`attack` → `attack.melee`), and a
+  check may declare the generic check it counts `within` (`skill.stealth` within `check`). A
+  `modify` / `adjustDegree` / `rider` may target a family; `set` may not. The host folds onto a
+  check every modify on `rulesetSelectorFamily(ruleset, selector)` — one function for the engine
+  and the authoring check. A `tally` selector (`damage`) collects modifies and is never rolled.
+- **Who reads a repertoire.** `earshot` (`all` · `holder`, the slot word) and a separate
+  `gmOnly` replace `audience` (2026-10-17).
+- 🚧 **A derived value on the sheet** (2026-10-18): a `derived` selector may say `onSheet: true`
+  and a `label`; the handler's `sheet` block lists its number beside the stats at `mechanics` and
+  up (Vis Itineris: _Armour class_, and _Spell points at most_ where the derive script reports it).
+  Worked out, never stored.
+- 🚧 **A compendium row is looked up in the repertoire its field holds** (2026-10-18): row ids are
+  unique within a repertoire only (Vis Itineris's spell _Shield_ and armour _Shield_). The host's
+  readers — the handler's owner views, a held piece's props, the wire's `resolved` reading — pass
+  the field's repertoire (`config.repertoire`), falling back to every repertoire for a piece kept
+  where none is named.
+- 🚧 **A repertoire the session does not play, kept in words** (2026-10-18, owner ruling ★10): a
+  change naming a repertoire the session's ruleset lacks lands on the owner's field that holds it
+  under another ruleset as a **word item** — `Mace — A heavy flanged club.`, the piece's name and
+  description, a library row by its words, never its numbers (a list that lost its repertoire
+  holds words and lore references, the SDK's list law); `remove`/`spend` take it away by name. A
+  session at `prose` reads its ledger in words too: the ledger response says `words: true`, and a
+  number's line is `Health falls`, never `Health 10 → 8`.
+- **Bridges are registered.** A foreign field's additive effects (`modify`, `adjustDegree`,
+  `rider` — never `set`; no `listing`/`seam`) are declared with `defineBridge` and registered
+  where the field is (`registerBridge`); the handler applies `bridgesFor(session ruleset)` after
+  the ruleset's own effects.
+- **Conversions** are `{ from, to, idMap }`; what no row maps is carried as prose by the host and
+  reviewed, never declared.
+- **A genre's rulesets**: `{ only: [...] }` (was `strict`, renamed 2026-10-17 — in the interface
+  _strict_ is rigour) or `{ recommended: [...], default }`.
+- **Upgrades** (`rulesetUpgradeFindings`) refuse a dropped stat, repertoire or field, and — since
+  2026-10-17 — a field whose field type changes (`changed-field-type`) or that becomes required
+  with no default (`newly-required`).
+- **Ruleset-owned slots.** A slot a ruleset lists under its `stats` is owned by it (2026-10-17:
+  derived, `slotRulesetOwners`; a stat entry marked `borrowed: true` — core's health, level,
+  class, mood — is not owned; `rulesetOwned` may still be spelled) and is pickable only in that
+  ruleset's sessions (`slotPickableIn`, passed the declaration with its `id`). The host applies the same gate to a genre's **baseline** — its sheets and
+  loose slots — not only to picks, and a piece slot whose `config.repertoire` names a ruleset the
+  session does not play keeps the slot but loses the repertoire (words only; it degrades, never
+  drops).
+- **The session's ruleset is a turn's input** (2026-10-17). The turn inlet carries
+  `ruleset: { id, rigour }` beside `channel`, always supplied, so a spec branches on it instead of
+  assuming the genre's recommended ruleset.
+- **Whose eyes.** `viewer` on the handler (a participant reference, or `gm`) decides what a
+  repertoire's `earshot` (`all` · `holder`) and `gmOnly` let into `blocks`. Unwired: everyone's
+  view, which carries nothing marked for a holder or the GM.
+- **Vis Itineris's `casting` setting** (`slots` · `points`; _Classic_ is `slots`): spell points
+  are our own rule. Under `points` the host, on a spell's `spend`, spends the spell's `level` from
+  `core:slot/itineris-spell-points@1` (a cantrip nothing; refused when too few remain — a second
+  cast in one moment reads what the first left) instead of a `spell-slots` piece's `used`, and on
+  a long rest (an advance of eight hours or more) restores the pool to 🚧 the derive script's
+  `spell-points-max` (by class and level, reported only at a points table — 2026-10-18), else a
+  script's `spellPoints`, else the slot's per-owner `max`. Under `slots`, nothing changes. The
+  Dungeon Crawler honours it (2026-10-18, ★7): its sheet fills the pool, its books spend the spell,
+  its Rest refills it.
+- 🚧 **The turn inlet's `ruleset` carries `settings`** (2026-10-18): `{ id, rigour, settings }`,
+  every setting of the session's ruleset at its value or default — on a turn and on an action's
+  run alike — so a genre's script reads a choice (`casting`, `dying`) without a handler call.
+- **Locking a stat.** `set-stat-config@1`'s `config.lock` — `none` · `people` · `all` — is the one
+  universal lock: the host refuses a hand edit on `people`, every write on `all`, with its own
+  sentence; `SessionStateOwnerV1.editable` and the config reach widgets, which draw a locked slot
+  without edit controls.
+
+## 1h. Personal channel lanes and faces (2026-10-17)
+
+- **Lanes by person, on the server.** A channel declared `lanes: 'personal'` (`ChannelDecl`) has one
+  lane per person, which **core** allocates and files in the session's lane register
+  (`channel_lanes`) on the first `core:query/channel-lane@1` for `{ channel, person }` or the first
+  send; the host sends a lane's rows only to its person and the session's owner — history,
+  pushes and the layout alike. A `shared` channel (the default) keeps the genre's own lanes and
+  every member reads them all. A genre's user→lane map in its annex and a Messages copy's
+  `channelLaneFrom` display claim are retired: the copy says `channelLane: 'mine'` and the host
+  resolves the viewer's lane (`SessionV1.channels[].mine`).
+- **Attention is the host's to derive.** `SessionV1.channels[]` carries, per lane the viewer may
+  read, `waitingOnYou` (their turn, a question asked them) and `unseen` (lines since they last
+  read it); widgets and the panel tabs draw dots from it and never recompute who speaks.
+- **An owner's face.** `SessionStateOwnerV1.face` is the one picture every widget draws for an
+  owner — a cast member's card art, a player seat's seat portrait
+  (`session_personas.portrait_media_id`). `set-owner-face` (a core widget request) sets a seat's or
+  member's by media ref; the request names its owner with `OwnerRefV1`, the one owner shape every
+  owner-naming request uses.
+
 ---
 
 ## 2. Seams that will need work — known, not discovered
@@ -1062,7 +1311,7 @@ uses a lowercase `seam` header so the census test does not read it.)
 | Seam | Stability | Shipped implementations | Tests that run them |
 | --- | --- | --- | --- |
 | **Node kinds**: `inlet` · `query` · `task` · `oracle` · `outlet`, and `entry` for entry types | `handler()` @public · `Kind` @experimental | Core's catalog ships definitions of every kind. A package's `task`, `query`, `oracle` and `outlet` definitions run through `handler()` in the sandbox. Only core ships inlets and entry types | *task*: `sdk-tests/pluginHarness.test.ts` › `a task is pure: neither storage nor fetch` · *query, outlet*: `sdk-tests/pluginHarness.test.ts` › `a query and an outlet get the extension’s own rows, and no network` · *oracle*: `sdk-tests/pluginHarness.test.ts` › `an oracle is the one kind that calls out` · *inlet*: `sdk-tests/messageVerbs.test.ts` › `each compiles clean, under its declared id, as one inlet straight into one outlet` · *entry*: `sdk-tests/entries.test.ts` › `an entry type is a registry row like any other, with kind entry` |
-| **Provisional node definitions**: `core:oracle/speak@1` · `core:oracle/mcp-tool@1` · `core:oracle/mcp-resource@1` | `C.speak`, `C.mcpTool`, `C.mcpResource` @experimental, with `provisional: true` | **None.** They are declared and have no handler. `validate()` refuses a document that places one, and none of them can be a swap | `sdk-tests/rulings.test.ts` › `the three core definitions plans 14 and 28 own carry the flag, and no other core one does` · `sdk-tests/rulings.test.ts` › `a document that reached the executor anyway halts on the law, not on "no binding registered"` · `sdk-tests/modderPass.test.ts` › `a provisional definition cannot be a swap — it has no handler` |
+| **Provisional node definitions**: `core:oracle/speak@1` · `core:oracle/mcp-tool@1` · `core:oracle/mcp-resource@1` (`core:task/ruleset-resolve@1` left the list 2026-10-17 — the app binds it) | `C.speak`, `C.mcpTool`, `C.mcpResource` @experimental, with `provisional: true` | **None.** They are declared and have no handler. `validate()` refuses a document that places one, and none of them can be a swap | `sdk-tests/rulings.test.ts` › `the core definitions their plans own carry the flag, and no other core one does` · `sdk-tests/rulings.test.ts` › `a document that reached the executor anyway halts on the law, not on "no binding registered"` · `sdk-tests/modderPass.test.ts` › `a provisional definition cannot be a swap — it has no handler` |
 | **Specs** (pipelines) | `spec()`, `pin()`, `slot()`, `use()` @public | Core's catalog specs. A package's own, under `pipelines` | *core*: `sdk-tests/coreCatalog.test.ts` › `the announcement builds — genres, pipelines, hooks validated as one package` · *package*: `sdk-tests/plugin.test.ts` › `it produces a manifest and the pipeline documents` |
 | **Genres** | `genre()`, `GenreDecl` @public | Chat, Adventure, Guide and Lair; Whodunit and Writing Room are showcase plugins (`serene-pub-plugin-whodunit`, `serene-pub-plugin-writing-room`). A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `nobody plays a person, and the dungeon is required` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |
 | **Presets** | `PresetInput` @experimental | Core's presets, one per genre. A package's own presets | `sdk-tests/presets.test.ts` › `three presets, one default, addressed by node key` · `sdk-tests/announce.test.ts` › `a preset leaving a required slot unbound refuses, and coverage says MISSING` |

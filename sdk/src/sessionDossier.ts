@@ -57,6 +57,21 @@ export interface ConversationSpeakerV1 {
 export interface ConversationLineV1 {
 	/** The viewer may press this line's own verbs (edit, hide, delete). */
 	controllable: boolean
+	/**
+	 * 🚧 The viewer may rerun this line (swipe, retry, extend) — wider than
+	 * `controllable` for an envoy's line in a channel lane the viewer is the
+	 * member of (ruled 2026-10-15). Absent reads as `controllable`.
+	 */
+	rerunnable?: boolean
+	/**
+	 * 🚧 The viewer may delete this line (2026-10-18) — narrower than
+	 * `controllable` where the session keeps its turns: a story turn's row
+	 * under Honour mode off, or an older turn's, which the host refuses to
+	 * delete whoever asks. A widget does not offer Delete on a line whose
+	 * `deletable` is false (the host's refusal stays the floor). Absent
+	 * reads as `controllable`.
+	 */
+	deletable?: boolean
 	speaker: ConversationSpeakerV1
 	/** Swipe arrows: shown at all, and whether there is a newer reply to take. */
 	swipes: { show: boolean; right: boolean }
@@ -187,6 +202,14 @@ export interface SessionDossierV1 {
 	/** Older messages remain to load, and a load is under way. */
 	hasOlder: boolean
 	loadingOlder: boolean
+	/**
+	 * 🚧 The channels — each as its rows store it (`parley:2`) — that hold
+	 * lines older than the log (owner ruling ★7, 2026-10-19: history pages
+	 * per channel). A copy that shows some channels has older lines exactly
+	 * when one of them is here, and asks for them with `load-older`. Absent
+	 * from a host that predates it: read `hasOlder`. @experimental
+	 */
+	olderIn?: string[]
 	/** Why Extend is unavailable in this session, when it is. */
 	extendRefusal?: string
 	/** The viewer owns the session (not a guest) — a form to the owner is theirs. */
@@ -266,6 +289,13 @@ export interface SessionDossierV1 {
 		 * @ruling lair re-plan R5
 		 */
 		ownVoiceName?: string
+		/**
+		 * 🚧 Whom the round waits on, once the viewer has had their say and
+		 * nothing is prepared (PLAN-dc-after-walk2 Q3-3): the others' names,
+		 * as the page reads them off the seats and the Story's lines — "Waiting
+		 * for Maren Holt". Absent when nobody is waited for. @experimental
+		 */
+		waitingFor?: string[]
 	}
 	/**
 	 * The session's mode is not installed: the log is read-only.
@@ -293,6 +323,14 @@ export interface ConversationProposalV1 {
 	proposedBy: string | null
 	/** For a superseded proposal: what moved since. */
 	moved: string | null
+	/**
+	 * 🚧 A player's **offer** (Give to…, ★4), not a change a run asked for
+	 * (PLAN-dc-after-walk3 R1-2, the walk's NEW-4): who it is offered to and
+	 * by, and whether the viewer made it — the giver's own offer waits on the
+	 * receiver and is theirs to withdraw, never to accept. Absent for every
+	 * other proposal.
+	 */
+	offer?: { from: string; to: string; yours: boolean }
 }
 
 /**
@@ -351,9 +389,11 @@ export interface ConversationComposerV1 {
 	personas: Array<{ personaId: number; name: string }>
 	personaId: number | null
 	/**
-	 * 🚧 What the viewer's persona-less lines are called (the
-	 * page's `sessionPlayerLabel`): the composer, writing as no persona, says
-	 * "Write as the Dungeon Master…". Absent when the genre declares none.
+	 * 🚧 Whom the viewer writes as with no persona, phrased as the composer
+	 * writes it after "Write as": the viewer's own card-less player seat by
+	 * its name ("Ann"), else the page's `sessionPlayerLabel` with its article
+	 * ("the Dungeon Master"). The composer says "Write as Ann…" /
+	 * "Write as the Dungeon Master…". Absent when there is neither.
 	 * @ruling lair pass R4, S2
 	 */
 	playerLabel?: string
@@ -361,6 +401,17 @@ export interface ConversationComposerV1 {
 	addPersona: boolean
 	/** A genre with no field (`composer: 'none'`): triggers only. */
 	hidden: boolean
+	/**
+	 * 🚧 The channel lanes the genre closed this viewer's composer on
+	 * (`core:outlet/set-composer-state@1`, owner ruling 2026-10-15), by
+	 * canonical channel — `*` for every channel — each with what it is
+	 * waiting on. Read a lane with `composerClosedOn(closed, lane)`: a closed
+	 * composer greys its field and its chips and shows the reason in place
+	 * of the placeholder (`composerClosedPlaceholder`); a send on it is
+	 * refused by the host with the reason in its sentence. Absent or empty:
+	 * open everywhere. Turn controls are not the composer's and stay.
+	 */
+	closed?: Record<string, { reason?: string }>
 	/**
 	 * The lanes a line may be written on, `main` first — THIS copy's: the
 	 * host narrows them per mount, so a Messages widget

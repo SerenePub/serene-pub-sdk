@@ -1,0 +1,85 @@
+[
+	{
+		"id": "potion-of-healing",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Potion of healing",
+			"description": "A red draught that closes wounds as it goes down.",
+			"traits": [
+				"potion",
+				"healing"
+			],
+			"uses": 1,
+			"activation": "bonus-action",
+			"heals": "2d4+2",
+			"weight": 0.5,
+			"cost": 5000
+		}
+	},
+	{
+		"id": "antitoxin",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Antitoxin",
+			"description": "A bitter tonic that steadies the body against poison for an hour.",
+			"traits": [
+				"potion",
+				"poison-ward"
+			],
+			"uses": 1,
+			"activation": "bonus-action",
+			"weight": 0,
+			"cost": 5000
+		}
+	},
+	{
+		"id": "alchemists-fire",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Alchemist's fire",
+			"description": "A flask of sticky fluid that bursts into flame when thrown.",
+			"traits": [
+				"thrown"
+			],
+			"uses": 1,
+			"activation": "action",
+			"damage": {
+				"formula": "1d4"
+			},
+			"damageType": "fire",
+			"weight": 1,
+			"cost": 5000
+		}
+	},
+	{
+		"id": "rations",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Rations",
+			"description": "A day's dried food for one traveller.",
+			"traits": [
+				"food"
+			],
+			"uses": 1,
+			"activation": "minute",
+			"weight": 2,
+			"cost": 50
+		}
+	}
+]

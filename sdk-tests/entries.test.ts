@@ -37,13 +37,20 @@ import {
 /** A declaration as data — never registered, so a doctored one claims no id. */
 const asType = (id: string, entryShape: EntryShape) => ({ id, entryShape })
 
+/**
+ * Core's hand-written entry types — every registered one whose name carries no
+ * dot. A dotted name is a ruleset's derived entry type (`core:entry/freeform.things@1`,
+ * 2026-10-16 §21 amendment), checked in rulesetEntryTypes.test.ts.
+ */
+const handWritten = () => allEntryTypes().filter((t) => !t.id.slice(t.id.indexOf('/') + 1).includes('.'))
+
 describe('the shapes a lorebook row can be', () => {
 	test('all five are declared, registered, and the only entry types core ships', () => {
 		// Places (L3, 2026-09-17) and items (attributes phase 3a, 2026-09-26)
 		// joined the original three; both are world lore's shape with a
 		// reason of their own — a place's exits, an item's supply.
 		assert.deepEqual(
-			allEntryTypes().map((t) => t.id),
+			handWritten().map((t) => t.id),
 			[
 				'core:entry/world-lore@1',
 				'core:entry/character-lore@1',
@@ -71,7 +78,7 @@ describe('the shapes a lorebook row can be', () => {
 		// Every core type has one: a place written as world lore reads back
 		// without its links' meaning or its stats (lorebooks plan A26).
 		assert.deepEqual(
-			allEntryTypes().map((t) => t.entryShape.exportKey),
+			handWritten().map((t) => t.entryShape.exportKey),
 			['world', 'character', 'history', 'location', 'item'],
 		)
 		for (const t of allEntryTypes())
@@ -374,9 +381,16 @@ describe('what a declaration is refused for', () => {
 	})
 
 	test('a namespace that is not core — the switch, and it is off', () => {
+		// Widened 2026-10-16 (rulesets §21 amendment): core and rulesets author
+		// entry types, but a ruleset's are derived from its repertoires, never
+		// written by hand — so a plugin's hand-written type is still refused.
 		refuses(
 			{ id: 'acme:entry/spell@1', roles: {}, sourceKind: 'worldLore' },
-			/core-authored in this release/,
+			/authored by core and by rulesets/,
+		)
+		refuses(
+			{ id: 'acme:entry/duel.blades@1', roles: {}, sourceKind: 'worldLore' },
+			/deriveRulesetEntryTypes/,
 		)
 	})
 

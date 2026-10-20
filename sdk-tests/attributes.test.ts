@@ -34,6 +34,8 @@ import {
 	openAnchorFor,
 	reserveAttributeOwner,
 	resolveSlotConfig,
+	statConfigKeys,
+	statConfigRefusals,
 	retireAttributeSheet,
 	retireAttributeSlot,
 	reviveAttributeSlot,
@@ -585,7 +587,7 @@ describe('one registry, two sources', () => {
 		assert.equal(slotOwner('acme.rp:slot/tension@2'), 'acme.rp')
 		assert.equal(slotSlug('acme.rp:slot/tension@2'), 'tension')
 		assert.equal(slotVersion('acme.rp:slot/tension@2'), 2)
-		assert.equal(slotOwner('core:sheet/adventure@1'), 'core')
+		assert.equal(slotOwner('core:sheet/story@1'), 'core')
 		// A stale id has to render, not crash.
 		assert.equal(slotOwner('nonsense'), '')
 		assert.equal(slotVersion('nonsense'), 0)
@@ -995,5 +997,77 @@ describe('the turn lock', () => {
 		assert.equal(openAnchorFor([{ id: 1, speakerId: null }], { kind: 'session_cast', id: 10 }), null)
 		// It is still the world's newest.
 		assert.equal(openAnchorFor([{ id: 1, speakerId: null }], { kind: 'session', id: 1 }), 1)
+	})
+})
+
+describe('🚧 a stat configuration (set-stat-config@1, state:configure)', () => {
+	fresh()
+	const hpSlot = hp()
+	const moodSlot = mood()
+	test('the keys are what the shape bounds, and every kept slot\'s descriptor', () => {
+		assert.deepEqual(statConfigKeys(hpSlot), ['min', 'max', 'descriptor'])
+		assert.deepEqual(statConfigKeys(moodSlot), ['of', 'descriptor'])
+	})
+	test('a key the shape does not bound, a bad value, an empty one and a floor above the ceiling are refused', () => {
+		assert.deepEqual(statConfigRefusals(hpSlot, { max: 26 }), [])
+		assert.match(statConfigRefusals(hpSlot, { default: 26 })[0]!, /no 'default' to configure; it takes min, max, descriptor/)
+		assert.match(statConfigRefusals(hpSlot, { max: 'lots' })[0]!, /max is a number/)
+		assert.match(statConfigRefusals(hpSlot, {})[0]!, /changes nothing/)
+		assert.match(statConfigRefusals(hpSlot, { min: 5, max: 2 })[0]!, /min \(5\) is above its max \(2\)/)
+		assert.match(statConfigRefusals(moodSlot, { of: [] })[0]!, /options are a list of words/)
+		assert.match(statConfigRefusals(hpSlot, [] as any)[0]!, /an object of the keys to change/)
+	})
+})
+
+// 🚧 2026-10-17 — a compendium piece holds a count like a lore reference:
+// the same reference added again merges into one holding, and removing a
+// count takes that many; an inline piece is its own thing and is never merged.
+test('a counted compendium piece merges on add and drains on remove; an inline piece does not merge', () => {
+	const potion = {
+		kind: 'compendium' as const,
+		compendiumId: 'core:ruleset/vis-itineris@1',
+		pieceId: 'potion-of-healing',
+		version: '1.0.0',
+	}
+	const added = applyListOp([potion], 'add', [{ ...potion, count: 2 }])
+	assert.deepEqual(added.value, [{ ...potion, count: 3 }])
+	const drained = applyListOp(added.value, 'remove', [{ ...potion, count: 2 }])
+	assert.deepEqual(drained.value, [potion])
+	const gone = applyListOp(drained.value, 'remove', [{ ...potion, count: 1 }])
+	assert.deepEqual(gone.value, [])
+	const torch = { kind: 'inline' as const, name: 'Torch', description: '', traits: [] }
+	const twice = applyListOp([torch], 'add', [torch], { unique: false })
+	assert.equal(twice.value.length, 2)
+})
+
+describe('🚧 whenRulesetSetting (2026-10-18)', () => {
+	test('a ruleset, a setting and its choices are a declaration; anything else is refused in words', () => {
+		const ok = defineAttributeSlot('acme:slot/when-ok@1', {
+			type: 'integer',
+			label: { en: 'Pool' },
+			descriptor: 'Points left to cast with.',
+			appliesTo: ['cast'],
+			whenRulesetSetting: { ruleset: 'acme:ruleset/sheet@1', setting: 'casting', is: ['points'] },
+		})
+		assert.deepEqual(ok.whenRulesetSetting, { ruleset: 'acme:ruleset/sheet@1', setting: 'casting', is: ['points'] })
+		for (const bad of [
+			{ ruleset: 'not a ruleset', setting: 'casting', is: ['points'] },
+			{ ruleset: 'acme:ruleset/sheet@1', setting: '', is: ['points'] },
+			{ ruleset: 'acme:ruleset/sheet@1', setting: 'casting', is: [] },
+		])
+			assert.throws(
+				() => defineAttributeSlot('acme:slot/when-bad@1', { type: 'integer', label: { en: 'Pool' }, descriptor: 'Points left to cast with.', appliesTo: ['cast'], whenRulesetSetting: bad as never }),
+				/whenRulesetSetting is \{ ruleset, setting, is \}/,
+			)
+	})
+	test("Vis Itineris's spell points and the crawl's spell slots each name the casting they are tracked under", async () => {
+		const vi = await import('../core-catalog/src/rulesets/vis-itineris/slots.js')
+		const dc = await import('../core-catalog/src/genres/dungeon-crawler/sheet.js')
+		assert.deepEqual(vi.visItinerisSpellPointsSlot.whenRulesetSetting, {
+			ruleset: 'core:ruleset/vis-itineris@1', setting: 'casting', is: ['points'],
+		})
+		assert.deepEqual(dc.crawlSpellSlotsSlot.whenRulesetSetting, {
+			ruleset: 'core:ruleset/vis-itineris@1', setting: 'casting', is: ['slots'],
+		})
 	})
 })

@@ -249,6 +249,45 @@ export const createMessage = pin(
 				 * every row but a planner's.
 				 */
 				turnPlan: S.json,
+				/**
+				 * 🚧 A folio line's **kind** (2026-10-17): one word stored as
+				 * `metadata.kind` — the Dungeon Crawler's journal writes `did`
+				 * · `found` · `met` · `changed` · `time` · `lead` — which a
+				 * Messages copy filters on (`rowKinds`) and groups under. A
+				 * literal in the node's config or a wired port; absent writes
+				 * no kind, and a row with none always shows.
+				 */
+				kind: S.text,
+				/**
+				 * 🚧 `'user'`: the row is a **person's own message** — the run
+				 * owner's, through `speaker` (`character:<id>` their persona,
+				 * `player-seat:<id>` their card-less seat, `user:<id>` or
+				 * nothing for themselves). A literal, on `generating`'s terms;
+				 * absent is a reply. The host writes a person's row only for the
+				 * run's own person on a root run, refuses a persona or seat that
+				 * is not theirs, and fires the row's `message-completed` under
+				 * the person's cause, so turn order and auto-advance answer it
+				 * as a send. `core:spec/save-message` sets it.
+				 * @ruling owner 2026-10-15
+				 */
+				role: S.json,
+				/**
+				 * 🚧 The person's ready **tray items** to post as the row's
+				 * attachments (`core:image` / `core:file` parts), in one
+				 * transaction with the row — or the write is refused whole and
+				 * the tray stays. Only on a person's row (`role: 'user'`).
+				 */
+				trayItems: S.json,
+				/**
+				 * 🚧 `true`: the row is a **table line** — the table's own
+				 * line, said in no voice (a Dungeon Crawler roll line,
+				 * 2026-10-15). A literal, on `generating`'s terms. Stored as
+				 * `metadata.tableLine`; the log draws it without a speaker's
+				 * face or name, and a history read that asks for no table lines
+				 * (`session-history@1`'s `tableLines: false`) leaves it out, so
+				 * a model never takes it for its own speech and imitates it.
+				 */
+				tableLine: S.json,
 			},
 			out: { main: S.writeResult, messageId: S.writeResult },
 		},
@@ -500,6 +539,178 @@ export const setSessionAnnex = pin(
 		ports: {
 			in: { value: S.json },
 			out: { main: S.writeResult, annex: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 Name a person's **player seat** in this session (Dungeon Crawler's
+ * interview, 2026-10-15): the pipeline door to the seat name a person sets
+ * by hand in session settings (`sessions:update` `seatName`). The seat is
+ * `user`'s — a `user:<id>` reference, the addressee of the form the name
+ * answered — their card-less seat first, else their first seat; with none,
+ * a name opens a card-less seat for them, as the hand-set name does. The
+ * host refuses a seat for somebody who is neither the owner nor a playing
+ * guest, and a blank name (this outlet never clears one).
+ *
+ * `seat` is the seat as a participant reference — `player-seat:<id>` for a
+ * card-less seat, `character:<id>` for a seat with a card — and `seats` the
+ * same as a one-item list, the shape `resolve-state-changes@1`'s `owners`
+ * takes, so the seat's own stats can be written in the same run.
+ *
+ * 🚧 `retire` (Dungeon Crawler's new character after a death, owner ruling
+ * 2026-10-18): one of `user`'s own seats, by reference. That seat leaves the
+ * table — its lines keep its name, its state stays where it was filed — and
+ * the name opens a NEW card-less seat for them, which `seat` then names. A
+ * seat that is not theirs, or not live, is refused. `@1` evolves in place.
+ * @experimental
+ */
+export const setSeatName = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-seat-name@1',
+		i18n: { name: { en: 'Name a player seat' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		review: { fields: ['name'] },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				/** Whose seat: `user:<id>`. */
+				user: S.participantRef,
+				/** The character's name in this session. */
+				name: S.text,
+				/**
+				 * 🚧 A seat of theirs this name replaces (`player-seat:<id>` or
+				 * `character:<id>`): retired, and a new seat opened. JSON, so a
+				 * script's part may name it (absent or null: none).
+				 */
+				retire: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				seat: S.participantRef,
+				seats: S.participantRefs,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Open or close the composer** on a channel lane (owner ruling
+ * 2026-10-15): the genre's switch for whether a person may write there. The
+ * state is the session row's (`sessions.composer_states`, SDK
+ * `ComposerStatesV1`); core opens and closes nothing on its own, so a
+ * composer a genre closed stays closed until a pipeline opens it.
+ *
+ *  - `channel` — a slug, a canonical lane (`parley:2`; the bare slug is lane
+ *    1 alone), or `*` for every channel;
+ *  - `open` — `true` to open, `false` to close;
+ *  - `reason` — optional: what the composer is waiting on, as a sentence
+ *    the person reads ("Make your character on the Planner tab first.").
+ *    Shown in place of the placeholder and repeated in the refusal of a send
+ *    the widget let through. Named `reason`, never `message`: a message is a
+ *    session's row;
+ *  - `person` — optional: whose composer, `user:<id>`; absent is everyone,
+ *    the session's owner included.
+ *
+ * Opening for everyone clears the lane's every closure; opening for one
+ * person clears theirs, and never overrides a close for everyone. The send
+ * door (`sessionMessages:sendPersonaMessage`, and `message-offered`'s offer)
+ * refuses a line on a closed composer; turn controls (Continue) are the
+ * round's, not the composer's, and are not touched. Every member's page is
+ * told at once.
+ *
+ * `main` is the write; `states` the whole document after it.
+ * @experimental
+ */
+export const setComposerState = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-composer-state@1',
+		i18n: { name: { en: 'Open or close the composer' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		review: { fields: ['reason'] },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				/** A slug, a canonical lane (`parley:2`), or `*`. */
+				channel: S.text,
+				/** `true` opens, `false` closes. */
+				open: S.json,
+				/** What the composer waits on — a sentence. Optional. */
+				reason: S.text,
+				/**
+				 * Whose composer: `user:<id>`, a participant reference as text.
+				 * Optional; absent is everyone. `json`, as `set-stat-config@1`'s
+				 * `owner` is: a genre wires it from a script's text, and the
+				 * host parses the reference (a typed port refused that wire,
+				 * 2026-10-18).
+				 */
+				person: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				states: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Configure a stat** for one owner in this session (owner ruling
+ * 2026-10-15): the pipeline door to an owner's **stat configuration** — the
+ * deviations from an attribute slot's own config that one owner carries,
+ * `{ max: 26 }` on a seat's health. Stored as an `attribute_configs` row
+ * through the same writer a person's `state:configure` takes, so the bar,
+ * the write's bound and every prompt read the same maximum.
+ *
+ * The three in-ports are one `StatConfigDocument` (SDK `attributes.ts`) —
+ * the format a card or session editor sends too:
+ *
+ *  - `owner` — whose: `player-seat:<id>`, `character:<id>` (that card's
+ *    session layer) or `world`;
+ *  - `slot` — the attribute slot id, `core:slot/hp@1`;
+ *  - `config` — only the keys the slot's stat shape bounds
+ *    (`statConfigKeys`): a number's `min`/`max`, a choice's `of`, a list's
+ *    `maxItems` and `of`/`maxLength`, a line's `maxLength`, and every
+ *    slot's `descriptor`.
+ *
+ * Refused, halting the run with the sentence: a slot nothing declares or
+ * the session does not track, a key the shape does not bound or a value it
+ * cannot be, a `min` above the `max` once merged, an owner that is not this
+ * session's. Anchored like a value — the owner's open anchor, or `worldRow`
+ * for a seat or the world — so a retake or a swipe takes it back.
+ *
+ * `main` is `{ configId, owner, slot, before, config }`: the row, and the
+ * configuration in force before and after it.
+ * @experimental
+ */
+export const setStatConfig = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-stat-config@1',
+		i18n: { name: { en: 'Configure a stat' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		review: { fields: ['config'] },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				/** Whose: a participant reference, `world`, or `location:<id>` (a place's lore entry). */
+				owner: S.json,
+				/** The attribute slot: `core:slot/hp@1`. */
+				slot: S.text,
+				/**
+				 * The deviations: `{ max: 26 }`. 🚧 One universal key
+				 * (2026-10-17): `lock` — `none` · `people` (no hand edit; the
+				 * dice and the session's owner still write) · `all` (nothing
+				 * writes until unlocked). The host refuses a locked write with
+				 * its own sentence; widgets draw the slot without edit controls.
+				 */
+				config: S.json,
+				/** The row a seat's or the world's configuration is filed at — `set-state@1`'s `worldRow`. Optional. */
+				worldRow: S.writeResult,
+			},
+			out: { main: S.json },
 		},
 	}),
 )

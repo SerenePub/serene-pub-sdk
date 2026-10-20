@@ -63,6 +63,8 @@ describe('typed references (R48)', () => {
 		assert.deepEqual(document.presets[0]!.bindings, {
 			[sessionEvents.sessionCreated]: { spec: 'typed:spec/create' },
 			[sessionEvents.messageRespond]: { spec: 'typed:spec/respond', config: 'tuned' },
+			// 🚧 core's default save, written in by preset() (owner ruling 2026-10-15)
+			[sessionEvents.messageOffered]: { spec: 'core:spec/save-message' },
 		})
 		assert.deepEqual(document.presets[0]!.actions?.include, ['typed:spec/roll#roll'])
 		assert.equal(document.configs[0]!.spec, 'typed:spec/respond')
@@ -112,7 +114,7 @@ describe('typed references (R48)', () => {
 				name: 'Typed',
 				version: '0.1.0',
 				// @ts-expect-error — a swap names its spec by value
-				swaps: [{ spec: 'core:spec/chat-turn-order', node: 'strategy', definition: C.turnRandom }],
+				swaps: [{ spec: 'core:spec/story-turn-order', node: 'strategy', definition: C.turnRandom }],
 			}),
 		)
 		assert.throws(() =>
@@ -127,17 +129,20 @@ describe('typed references (R48)', () => {
 	test("another package's spec is named with use(), and names its events", () => {
 		const p = preset({
 			slug: 'modded',
-			genre: use('core:genre/chat'),
+			genre: use('core:genre/story'),
 			label: 'Modded',
-			bindings: [{ spec: use('core:spec/chat-respond'), events: [sessionEvents.messageRespond] }],
+			bindings: [{ spec: use('core:spec/story-respond'), events: [sessionEvents.messageRespond] }],
 		})
-		assert.deepEqual(p.bindings, { [sessionEvents.messageRespond]: { spec: 'core:spec/chat-respond' } })
+		assert.deepEqual(p.bindings, {
+			[sessionEvents.messageRespond]: { spec: 'core:spec/story-respond' },
+			[sessionEvents.messageOffered]: { spec: 'core:spec/save-message' },
+		})
 	})
 
 	test('review fixes: a use() pick names its key, no binding binds nothing, a seeded swap names a real node', () => {
 		assert.throws(
-			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [create], actions: { include: [use('core:spec/chat-narrate') as never] } }),
-			/another package's spec — name the action: \{ spec: use\('core:spec\/chat-narrate'\), key/,
+			() => preset({ slug: 'x', genre: g, label: 'X', bindings: [create], actions: { include: [use('core:spec/story-narrate') as never] } }),
+			/another package's spec — name the action: \{ spec: use\('core:spec\/story-narrate'\), key/,
 		)
 		assert.throws(
 			() =>
@@ -146,7 +151,7 @@ describe('typed references (R48)', () => {
 					genre: g,
 					label: 'X',
 					bindings: [create],
-					actions: { include: [{ spec: use('core:spec/chat-narrate'), key: 'Bad#Key' }] },
+					actions: { include: [{ spec: use('core:spec/story-narrate'), key: 'Bad#Key' }] },
 				}),
 			/without a valid key/,
 		)

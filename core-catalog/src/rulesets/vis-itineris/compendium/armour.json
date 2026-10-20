@@ -1,0 +1,108 @@
+[
+	{
+		"id": "leather-armour",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Leather armour",
+			"description": "Stiffened leather, light and quiet.",
+			"category": "light",
+			"acBase": 11,
+			"noisy": false,
+			"weight": 10,
+			"cost": 1000
+		}
+	},
+	{
+		"id": "studded-leather",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Studded leather",
+			"description": "Leather reinforced with rivets.",
+			"category": "light",
+			"acBase": 12,
+			"noisy": false,
+			"weight": 13,
+			"cost": 4500
+		}
+	},
+	{
+		"id": "hide-armour",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Hide armour",
+			"description": "Thick furs and pelts, crude but sturdy.",
+			"category": "medium",
+			"acBase": 12,
+			"dexCap": 2,
+			"noisy": false,
+			"weight": 12,
+			"cost": 1000
+		}
+	},
+	{
+		"id": "chain-shirt",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Chain shirt",
+			"description": "A shirt of interlocking rings worn under clothing.",
+			"category": "medium",
+			"acBase": 13,
+			"dexCap": 2,
+			"noisy": false,
+			"weight": 20,
+			"cost": 5000
+		}
+	},
+	{
+		"id": "chain-mail",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Chain mail",
+			"description": "A full coat of rings over padding: heavy and loud.",
+			"category": "heavy",
+			"acBase": 16,
+			"dexCap": 0,
+			"strength": 13,
+			"noisy": true,
+			"weight": 55,
+			"cost": 7500
+		}
+	},
+	{
+		"id": "shield",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Shield",
+			"description": "Wood or metal on the arm, adding to any armour.",
+			"category": "shield",
+			"acBase": 2,
+			"noisy": false,
+			"weight": 6,
+			"cost": 1000
+		}
+	}
+]

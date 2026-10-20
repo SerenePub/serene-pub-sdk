@@ -1,0 +1,71 @@
+{
+	"calendar": {
+		"months": [
+			{
+				"name": "Thaw",
+				"days": 30
+			},
+			{
+				"name": "Seedtime",
+				"days": 30
+			},
+			{
+				"name": "Greening",
+				"days": 30
+			},
+			{
+				"name": "Bloom",
+				"days": 30
+			},
+			{
+				"name": "Highsun",
+				"days": 30
+			},
+			{
+				"name": "Haying",
+				"days": 30
+			},
+			{
+				"name": "Reaping",
+				"days": 30
+			},
+			{
+				"name": "Russet",
+				"days": 30
+			},
+			{
+				"name": "Mistfall",
+				"days": 30
+			},
+			{
+				"name": "Frost",
+				"days": 30
+			},
+			{
+				"name": "Deepwinter",
+				"days": 30
+			},
+			{
+				"name": "Longnight",
+				"days": 30
+			}
+		],
+		"weekdays": [
+			"Moonday",
+			"Ironday",
+			"Wellday",
+			"Thornday",
+			"Fireday",
+			"Marketday",
+			"Restday"
+		],
+		"yearLabel": "Year"
+	},
+	"clock": {
+		"year": 412,
+		"month": 9,
+		"day": 14,
+		"hour": 18,
+		"minute": 0
+	}
+}

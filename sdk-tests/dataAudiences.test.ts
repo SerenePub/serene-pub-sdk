@@ -52,7 +52,7 @@ describe('the vocabulary', () => {
 describe('validate()', () => {
 	const base = () =>
 		spec('acme.rp:spec/keep', { version: '1.0.0' }).inlet('input', C.userMessage.v1(), {
-			genre: use('core:genre/chat'),
+			genre: use('core:genre/story'),
 			event: 'core:event/message-respond@1',
 		})
 

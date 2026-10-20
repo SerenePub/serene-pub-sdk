@@ -59,7 +59,7 @@ import {
 } from '@serene-pub/sdk'
 import { compilePlugin } from '@serene-pub/cli'
 import * as C from '@serene-pub/contracts'
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 import { bindings, world } from './helpers.js'
 
 /** Every spelling a publish refuses, with the fragment its sentence must carry. */
@@ -349,16 +349,16 @@ describe('R-20 · every door', () => {
 		(value) =>
 			preset({
 				slug: 'p',
-				genre: chatGenre,
+				genre: storyGenre,
 				label: value as never,
-				bindings: [{ spec: use('core:spec/chat-create'), events: [sessionEvents.sessionCreated] }],
+				bindings: [{ spec: use('core:spec/story-create'), events: [sessionEvents.sessionCreated] }],
 			}),
 		/preset 'p'\.label/,
 	)
 
 	itIsADoor(
 		'config (label)',
-		(value) => config(use('core:spec/chat-respond'), 'c', { label: value as never }, {}),
+		(value) => config(use('core:spec/story-respond'), 'c', { label: value as never }, {}),
 		/config 'c'\.label/,
 	)
 
@@ -381,7 +381,7 @@ describe('R-20 · every door', () => {
 		'action (label)',
 		throwing((value) =>
 			actionFindings(
-				{ key: 'roll', genre: chatGenre.id, venue: { kind: 'composer' }, label: value, description: 'Roll the dice.' },
+				{ key: 'roll', genre: storyGenre.id, venue: { kind: 'composer' }, label: value, description: 'Roll the dice.' },
 				'acme:spec/dice',
 			),
 		),

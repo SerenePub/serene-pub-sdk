@@ -6,9 +6,7 @@
  */
 
 /** @experimental */
-export const CHAT_SUMMARIZE_SCENE_SPEC_ID = 'core:spec/chat-summarize-scene'
-/** @experimental */
-export const ADVENTURE_SUMMARIZE_SCENE_SPEC_ID = 'core:spec/adventure-summarize-scene'
+export const STORY_SUMMARIZE_SCENE_SPEC_ID = 'core:spec/story-summarize-scene'
 /** @experimental */
 export const GUIDE_SUMMARIZE_SCENE_SPEC_ID = 'core:spec/guide-summarize-scene'
 /** @experimental */

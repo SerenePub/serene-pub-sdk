@@ -69,9 +69,31 @@ export interface ScenePortraitsSettings {
 	arrangement: ScenePortraitsArrangement
 	/** Put the viewer's own persona beside the cast (`scene` and `recent`). */
 	persona: boolean
+	/**
+	 * 🚧 Every **player seat**'s character beside the cast (`scene` only;
+	 * PLAN-dc-after-walk2 Q3-5): each player's character — a card seated as a
+	 * player seat, or a card-less player seat by its seat name — with its
+	 * face. The viewer's own is among them, so `persona` adds nothing more.
+	 */
+	playerSeats: boolean
+	/**
+	 * 🚧 The **people the story has met** after them (`scene` only; Q3-5,
+	 * `SessionStateV1.metPeople`): by name, with no picture — a lorebook
+	 * entry has none.
+	 */
+	metPeople: boolean
 	/** A mini bar row under each face. */
 	bars: boolean
+	/**
+	 * 🚧 Whose faces carry bars (PLAN-dc-after-walk3 R3-3, the walk's NEW-13):
+	 * `everyone` with stats, or only the **player seats**' characters — a crawl's
+	 * companions keep no sheet, and drew bars of stats nothing writes.
+	 */
+	barsFor: ScenePortraitsBarsFor
 }
+
+/** 🚧 Whose faces carry stat bars (`barsFor`). @experimental */
+export type ScenePortraitsBarsFor = 'everyone' | 'seats'
 
 /** The declared defaults (`CORE_WIDGETS`, the `scene-portraits` entry). @experimental */
 export const SCENE_PORTRAITS_DEFAULTS: ScenePortraitsSettings = Object.freeze({
@@ -82,7 +104,10 @@ export const SCENE_PORTRAITS_DEFAULTS: ScenePortraitsSettings = Object.freeze({
 	chosenImages: Object.freeze([]) as unknown as string[],
 	arrangement: 'grid',
 	persona: false,
+	playerSeats: false,
+	metPeople: false,
 	bars: false,
+	barsFor: 'everyone',
 })
 
 /** The bounds of `recentTurns`, as the declaration has them. @experimental */
@@ -91,6 +116,7 @@ export const SCENE_PORTRAITS_RECENT_MAX = 20
 const WHO: readonly ScenePortraitsWho[] = ['scene', 'recent', 'pick']
 const FACE: readonly ScenePortraitsFace[] = ['avatar', 'sprite', 'chosen']
 const ARRANGEMENT: readonly ScenePortraitsArrangement[] = ['row', 'grid', 'column', 'stage']
+const BARS_FOR: readonly ScenePortraitsBarsFor[] = ['everyone', 'seats']
 const oneOf = <T extends string>(of: readonly T[], v: unknown): v is T =>
 	typeof v === 'string' && (of as readonly string[]).includes(v)
 const lines = (v: unknown): string[] =>
@@ -138,7 +164,10 @@ export function readScenePortraitsSettings(
 				? 'stage'
 				: d.arrangement,
 		persona: typeof v.persona === 'boolean' ? v.persona : d.persona,
+		playerSeats: typeof v.playerSeats === 'boolean' ? v.playerSeats : d.playerSeats,
+		metPeople: typeof v.metPeople === 'boolean' ? v.metPeople : d.metPeople,
 		bars: typeof v.bars === 'boolean' ? v.bars : d.bars,
+		barsFor: oneOf(BARS_FOR, v.barsFor) ? v.barsFor : d.barsFor,
 	}
 }
 
@@ -208,7 +237,9 @@ export function scenePortraitMembersOf(
 		return out
 	}
 	const cast = members.filter((m) => !m.isPersona)
-	const mine = settings.persona ? members.find((m) => m.isPersona && m.mine) : undefined
+	// 🚧 With every player seat shown (`sceneFiguresOf`), the viewer's own is one of them.
+	const seatsShown = settings.playerSeats && settings.who === 'scene'
+	const mine = settings.persona && !seatsShown ? members.find((m) => m.isPersona && m.mine) : undefined
 	const shown = mine ? [...cast, mine] : cast
 	if (settings.who === 'scene') return shown
 	// recent: whoever spoke last first; a member that has spoken nothing is not recent.
@@ -218,6 +249,59 @@ export function scenePortraitMembersOf(
 		.sort((a, b) => b.when - a.when || a.at - b.at)
 		.slice(0, settings.recentTurns)
 		.map((x) => x.m)
+}
+
+/**
+ * 🚧 A **scene figure** (PLAN-dc-after-walk2 Q3-5, the walk's #29): someone
+ * in the scene who is no cast member of `characters.v1` — a player seat's
+ * character (`playerSeats`, read off `session_state.v1`'s owners) or a
+ * person the story has met (`metPeople`). Drawn after the cast with its face
+ * and name, its bars when it keeps stats; never a sprite, a chosen image or a
+ * set menu: it has no card to page.
+ * @experimental
+ */
+export interface SceneFigure {
+	/** The owner's state key (`player_seat:4`, `12`), or `met:<entryId>` for a person met. */
+	key: string
+	kind: 'player-seat' | 'met'
+	name: string
+	/** Its face (the owner's `face`); null draws the blank face. */
+	src: string | null
+	/** The state owner its bars read; null for a person met. */
+	ownerKey: string | null
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
+
+/**
+ * 🚧 The scene's figures (`SceneFigure`), in the order drawn after the cast:
+ * every player seat — the viewer's own first, as the Stats strip has them —
+ * then the people met, each once and never one already drawn by name. Only
+ * with `who: scene`: the latest speakers and a pick name cast members.
+ * @experimental
+ */
+export function sceneFiguresOf(
+	characters: SessionCharactersV1 | undefined,
+	state: SessionStateV1 | undefined,
+	settings: ScenePortraitsSettings,
+): SceneFigure[] {
+	if (settings.who !== 'scene' || !state) return []
+	const out: SceneFigure[] = []
+	const drawn = scenePortraitMembersOf(characters, settings).map((m) => m.name)
+	const taken = (name: string) => drawn.some((n) => sameName(n, name)) || out.some((f) => sameName(f.name, name))
+	if (settings.playerSeats) {
+		const seated = state.owners.filter(
+			(o) => (o.kind === 'session_cast' || o.kind === 'player_seat') && (o.seat === true || o.kind === 'player_seat'),
+		)
+		for (const o of [...seated.filter((o) => o.mine), ...seated.filter((o) => !o.mine)])
+			if (!taken(o.label))
+				out.push({ key: o.key, kind: 'player-seat', name: o.label, src: o.face?.src ?? null, ownerKey: o.key })
+	}
+	if (settings.metPeople)
+		for (const p of state.metPeople ?? [])
+			if (p.name.trim() && !taken(p.name))
+				out.push({ key: `met:${p.entryId}`, kind: 'met', name: p.name.trim(), src: null, ownerKey: null })
+	return out
 }
 
 /** One face the widget draws. @experimental */
@@ -363,10 +447,13 @@ export function statBarsOf(
 	state: SessionStateV1 | undefined,
 	ownerKey: string,
 	limit = 3,
+	/** 🚧 `seats`: none for an owner that is no player seat (R3-3). */
+	barsFor: ScenePortraitsBarsFor = 'everyone',
 ): StatBarRow[] {
 	if (!state) return []
 	const owner = state.owners.find((o) => o.key === ownerKey)
 	if (!owner) return []
+	if (barsFor === 'seats' && owner.seat !== true) return []
 	const bag = ownerKey === 'world' ? state.resolved.world : (state.resolved.cast[ownerKey] ?? {})
 	const out: StatBarRow[] = []
 	for (const slot of state.slots) {

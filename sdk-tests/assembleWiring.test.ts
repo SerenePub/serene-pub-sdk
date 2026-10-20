@@ -21,7 +21,7 @@ const LAW = 'assemble wiring'
 const reply = (prompt: Record<string, unknown>) =>
 	spec('acme.greeter:reply', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1(), {
-			genre: use('core:genre/chat'),
+			genre: use('core:genre/story'),
 			event: sessionEvents.messageRespond,
 		})
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))

@@ -10,8 +10,8 @@ import assert from 'node:assert/strict'
 import {
 	coreAnnouncement,
 	CORE_SPECS,
-	adventureGenre,
 	chatGenre,
+	storyGenre,
 	CORE_HOOK_DECLARATIONS,
 	SHOW_SPRITE_SPEC_ID,
 	SPRITE_PICKER_NODE_KEY,
@@ -32,11 +32,15 @@ describe('the core catalog', () => {
 		// that way. (Writing Room and Whodunit were core genres until
 		// 2026-09-30 and are showcase plugins now.)
 		assert.deepEqual(document.genres.map((g) => g.id).sort(), [
-			'core:genre/adventure',
+			// 🚧 Chat, the plain assistant (2026-10-19): the id kept, the meaning new.
 			'core:genre/chat',
+			// 🚧 PLAN-dungeon-crawler-2026-10-14, published with its create spec (2026-10-15).
+			'core:genre/dungeon-crawler',
 			// The guide (R-18, U5g): the pure user/assistant session type.
 			'core:genre/guide',
 			'core:genre/lair',
+			// 🚧 Story (2026-10-19): the roleplay Chat and Adventure, folded.
+			'core:genre/story',
 		])
 		assert.equal(document.pipelines.length, CORE_SPECS.length)
 		// Core references nothing it does not ship.
@@ -53,29 +57,28 @@ describe('the core catalog', () => {
 		// The genre owns its id; the create pipeline is its required MEMBER, so
 		// "exactly one" is the claim that matters — two would make creation
 		// ambiguous for every session of that genre.
-		assert.deepEqual(serving(chatGenre.id, sessionEvents.sessionCreated), [
-			'core:spec/chat-create',
+		assert.deepEqual(serving(storyGenre.id, sessionEvents.sessionCreated), [
+			'core:spec/story-create',
 		])
-		assert.deepEqual(serving(chatGenre.id, sessionEvents.messageRespond), ['core:spec/chat-respond'])
-		assert.deepEqual(serving(adventureGenre.id, sessionEvents.sessionCreated), [
-			'core:spec/adventure-create',
-		])
-		assert.deepEqual(serving(adventureGenre.id, sessionEvents.messageRespond), [
-			'core:spec/adventure-respond',
-		])
-		// The open slot takes any number: five actions since U5d (look, rest,
-		// advance-time, ask, answer), six since Scene (2026-10-12, §16
-		// follow-up D3) — a package change rather than a schema one.
-		assert.equal(serving(adventureGenre.id, sessionEvents.sessionAction).length, 6)
+		assert.deepEqual(serving(storyGenre.id, sessionEvents.messageRespond), ['core:spec/story-respond'])
+		// 🚧 Chat, the assistant (2026-10-19): fresh spec ids, never the roleplay's (§2-7 a).
+		assert.deepEqual(serving(chatGenre.id, sessionEvents.sessionCreated), ['core:spec/assistant-create'])
+		assert.deepEqual(serving(chatGenre.id, sessionEvents.messageRespond), ['core:spec/assistant-respond'])
+		// The open slot takes any number. Story's nine (2026-10-19): the
+		// roleplay Chat's narrate, side character, image, Scene and Time
+		// passes, and Adventure's look, rest, ask and answer.
+		assert.equal(serving(storyGenre.id, sessionEvents.sessionAction).length, 9)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
-		// optional `form-addressed` event, bound by each shipped preset —
-		// named genre first, like every genre pipeline (2026-10-05).
-		for (const g of [chatGenre, adventureGenre]) {
+		// optional `form-addressed` event, bound by each shipped preset.
+		for (const [g, spec0] of [
+			[storyGenre, 'core:spec/story-answer-form'],
+			[chatGenre, 'core:spec/assistant-answer-form'],
+		] as const) {
 			const [spec, ...rest] = serving(g.id, sessionEvents.formAddressed)
 			assert.equal(rest.length, 0)
-			assert.equal(spec, `core:spec/${g.id.split('/').at(-1)}-answer-form`, g.id)
-			const preset = document.presets.find((p) => p.genre === g.id)
-			assert.equal(preset?.bindings[sessionEvents.formAddressed]?.spec, spec)
+			assert.equal(spec, spec0, g.id)
+			for (const preset of document.presets.filter((p) => p.genre === g.id))
+				assert.equal(preset?.bindings[sessionEvents.formAddressed]?.spec, spec, preset.slug)
 		}
 	})
 
@@ -94,12 +97,11 @@ describe('the core catalog', () => {
 		// Where each spec places it: on the spine, or in the Lair's character
 		// turn — the one branch where a single delver speaks.
 		const placed: Record<string, string> = {
-			'core:spec/chat-respond': '',
+			'core:spec/story-respond': '',
 			'core:spec/tool-loop': '',
-			'core:spec/chat-side-character': '',
+			'core:spec/story-side-character': '',
 			'core:spec/guide-respond': '',
-			'core:spec/adventure-respond': '',
-			'core:spec/chat-narrate': '',
+			'core:spec/story-narrate': '',
 			'core:spec/lair-respond': LAIR_TURN,
 		}
 		const carrying = specs.filter((s) =>
@@ -129,7 +131,7 @@ describe('the core catalog', () => {
 			assert.notEqual(text.from, `${at}save`, slug)
 			// Whose line: wired wherever the line has a speaker — not on a
 			// narration, which is nobody's.
-			assert.equal(into(pick, 'speaker').length, slug === 'core:spec/chat-narrate' ? 0 : 1, slug)
+			assert.equal(into(pick, 'speaker').length, slug === 'core:spec/story-narrate' ? 0 : 1, slug)
 			assert.equal(into(show, 'target')[0]?.from, `${at}save`, slug)
 			assert.equal(into(show, 'pick')[0]?.from, pick.key, slug)
 			assert.ok(
@@ -224,6 +226,10 @@ describe('the core catalog', () => {
 // 2026-09-27 → 295ed22f64a1839e: B9 (lair pass F6) — the three narrator
 // genres (Adventure, Lair, Whodunit) and their turn-order specs recompute on
 // message-deleted and message-hidden as well (TURN_ORDER_NARRATOR_EVENTS).
+//
+// 2026-10-15 → f0de3a0007234f8e: 🚧 Dungeon Crawler published (the create
+// lane) — the genre in `genres`, its six specs, its preset, its five prompt
+// rows and the world annex field's `shape` · `goalMode` · `heroes`.
 describe("core's announcement (golden)", () => {
 	test('the canonical document is unchanged', async () => {
 		const { canonicalize } = await import('@serene-pub/sdk')
@@ -436,7 +442,7 @@ describe("core's announcement (golden)", () => {
 		// (was 'da4e95b335f602bd')
 		// Moved 2026-09-29 (layout plan brief 1, one format): the four core
 		// genres' `layouts[0].preset` is the session layout they have always
-		// seeded (ADVENTURE_LAYOUT, LAIR_LAYOUT, WRITING_ROOM_LAYOUT,
+		// seeded (STORY_WORLD_LAYOUT, LAIR_LAYOUT, WRITING_ROOM_LAYOUT,
 		// WHODUNIT_LAYOUT) instead of a LayoutDoc v2 twin, less the retired
 		// grid `required` flag. Measured with other lanes' in-flight source
 		// already in the tree. Brief 1's half, proven: this document with every
@@ -576,7 +582,7 @@ describe("core's announcement (golden)", () => {
 		// not this one's. Note 44's default swap (`defaultForSpecs`) is not in
 		// the announcement. (was '39d1843db69b2389')
 		// Part of that rest (owner ruling 2026-10-03, author's note lane):
-		// Chat ships a default layout (`CHAT_LAYOUT`, the Author's note
+		// Chat ships a default layout (`STORY_LAYOUT`, the Author's note
 		// unpinned in the right rail). Proven: this document with Chat's
 		// `layouts` key deleted hashes to '131c93dcb85f970d'.
 		// Moved 2026-10-03 (attachments follow-ups, owner ruling): the action
@@ -641,7 +647,7 @@ describe("core's announcement (golden)", () => {
 		// other lanes' in-flight edits in the tree; re-measured after the task
 		// was named `build-proofs` (R1: *candidate* is retrieval's).
 		// (was '4ae849d62002771d')
-		// Moved 2026-10-12 (I9 the Scene action): `core:spec/chat-illustrate-scene`
+		// Moved 2026-10-12 (I9 the Scene action): `core:spec/story-illustrate-scene`
 		// joins the catalogue with its two scene prompt rows (*Scene prompt
 		// 2026-10-12 sweep: Portrait + Sprite set fill name their loadouts; Scene calls carry purposes.
 		// from the last lines* / *Scene prompt, prose*), the *Prompt as
@@ -673,7 +679,7 @@ describe("core's announcement (golden)", () => {
 		// files and their transcript templates name them after each line.
 		// Measured with other lanes' in-flight edits in the tree.
 		// (was '09ed8aa6556b283d')
-		// Moved 2026-10-13 (live scenes lane D): `core:spec/chat-advance-time`
+		// Moved 2026-10-13 (live scenes lane D): `core:spec/story-advance-time`
 		// and `core:spec/lair-advance-time` (*Time passes…*) join the
 		// catalogue; Adventure's *Time passes* collects the clock step and
 		// moves the clock after its keeper; Chat's reply gains the reply tick
@@ -681,7 +687,7 @@ describe("core's announcement (golden)", () => {
 		// user-message inlet publishes `clockStep`. Measured with other lanes'
 		// in-flight edits in the tree. (was '9aa24fd9a318433d')
 		// Moved 2026-10-13 (live scenes lane F, ★3 — the keeper's clock
-		// proposal): `ADVENTURE_KEEPER_SCHEMA` gains the `clock` list; the
+		// proposal): `STORY_KEEPER_SCHEMA` gains the `clock` list; the
 		// Adventure keeper, Rest and Time passes prompt rows hold three
 		// lists; `resolve-state-changes@1` takes and publishes `clock`;
 		// `adventure-respond` and `adventure-rest` gain `keeperStep` and the
@@ -714,6 +720,188 @@ describe("core's announcement (golden)", () => {
 		// Chat's / the Lair's *Time passes…* say `onRefusal: 'skip'` (every
 		// core clock move now skips a story with no clock). Measured with
 		// other lanes' in-flight edits in the tree. (was '6126a10744301919')
-		assert.equal(digest.slice(0, 16), 'fdf6db9e0c86f24b')
+		// Moved 2026-10-14 (PLAN-session-panels lane 0): Chat's, Adventure's
+		// and the Lair's layouts are written in `panels` only. Proven: with
+		// the three presets swapped back for their old-slot literals
+		// (`fixtures/core-layouts-old-slots.ts`), the document hashes back to
+		// the old pin. (was 'fdf6db9e0c86f24b')
+		// Moved 2026-10-15 (Dungeon Crawler's story turn): the respond spec's
+		// story branch (Planner → dice → books → Narrator), Rest and the goal
+		// action, three prompt rows, the `fate` slot and the world's `rounds`
+		// shape. Measured with the multiplayer lane's in-flight edits (rounds,
+		// secrets, reveal) in the tree. (was 'f0de3a0007234f8e')
+		// Moved 2026-10-15 (DC walkthrough fixes): Dungeon Crawler's layout puts
+		// the Planner, Story and Planning notes as tabs of the middle, the
+		// Planner first, and the Planner copy drops `composer: minimal`.
+		// Proven: with the old layout swapped back the document hashes to
+		// '70ea216b576a9757' — the rest is the DC lanes' in-flight genre edits
+		// in the tree. (was '3db0d688dfa706ec')
+		// Moved 2026-10-15 (DC UX findings): Reveal the planning notes is a
+		// quick action, the Planner's greeting says "I'm the {{char}}", the
+		// round's books prompt asks for a location change on a move, and the
+		// specs hand their scripts the state. Measured with other lanes'
+		// in-flight edits in the tree. (was '22f8d3b2ef025d6f')
+		// Moved 2026-10-15 (DC round 2): the choice slots label their options,
+		// the sheet asks no health (full is the slot's ceiling), the Planner's
+		// greeting no longer repeats the first question, Rest is the owner's
+		// and writes a journal line, the reveal shows the goal, the layout
+		// titles Story and Goal & leads. Measured with other lanes' in-flight
+		// edits in the tree. (was '92da7deee881cb6c')
+		// Moved 2026-10-15 (formats belong to widgets): Messages and Stats
+		// gain `emptyState` and `timeFormat` settings, and the DC layout pins
+		// them. Measured with other lanes' in-flight edits in the tree.
+		// (was 'd0743f9eb61f2b7e')
+		// Moved 2026-10-15 (per-character max HP, `set-stat-config@1`): the DC
+		// sheet asks `maxHp` and configures the seat's hp max before its stats,
+		// the story turn raises it on a level (`raise.levels.*`), the turn
+		// prompt bounds health by the character's own max, and the scripts
+		// read it off `state.configs`. Measured with other lanes' in-flight
+		// edits in the tree. (was 'f029c80c18245996')
+		// Moved 2026-10-15 (DC "processing" feedback): the reply declares a
+		// status from its first step (the story read: the Planner is
+		// thinking), the story turn's books, dice and ledger say theirs, every
+		// DC model call's context/transcript/prompt steps say the call's own,
+		// and the Planner lane and genesis say "The Planner is thinking" /
+		// "Building the world". Proven: with those reverted the document
+		// hashes to the old pin. (was 'f7004767b8ea05c9')
+		// Moved 2026-10-15 (a person's message is saved through the pipeline):
+		// `core:spec/save-message` is published, `create-message@1` gains
+		// `role` and `trayItems`, the `message-offered` inlet and event exist,
+		// and every preset binds the save on `message-offered`. Measured with
+		// other lanes' in-flight edits in the tree. (was 'd07dc821b82e4d8a')
+		// Moved 2026-10-15 (composer states, `set-composer-state@1`): Dungeon
+		// Crawler closes a person's Story when their Planner lane opens
+		// (`…lane.item.addressee` · `closeStory`) and the applied sheet opens
+		// it (`route.sheet.after.story.open`). Measured with other lanes'
+		// in-flight edits in the tree. (was 'e3d1faf83c2347b5')
+		// Moved 2026-10-16 (Dungeon Crawler wire fixes): the class offer, the
+		// sheet, the world, the opening and a new goal are laid out by
+		// `DUNGEON_CRAWLER_BRIEF_TEMPLATE` (their brief the last user turn), the
+		// interview's acknowledgements are table lines (`route.noted`), and a
+		// Planner change's gate takes `always`. Measured with other lanes'
+		// in-flight edits in the tree. (was '6f5d6990f579b24a')
+		// Moved 2026-10-16 (Honour mode widened): the Dungeon Crawler
+		// `honorMode` field's description adds "…and lets players edit their
+		// own sheets by hand." Measured with other lanes' in-flight edits in
+		// the tree. (was '29834564e2dcc564')
+		// Moved 2026-10-16 (🚧 table channel, PLAN-rulesets §30): Dungeon
+		// Crawler declares `table` (folio, voice none, Dice); its roll and rest
+		// lines are written there, anchored; the Narrator's outcomes are a
+		// post-history `{{outcomes}}` field; Messages gains `interleave` and
+		// the DC layout pins it on Story. Measured from source with other
+		// lanes' in-flight edits in the tree (the rulesets lanes'). (was 'ea87fd60030e72c7')
+		// Moved 2026-10-17 (wave-3 join): Dungeon Crawler `writes.lore: true`
+		// (its world is the session's notes) and its sheet carries the Vis Itineris
+		// ruleset fields (`core:slot/crawl-*@1`); `core:task/ruleset-resolve@1`
+		// is no longer provisional. Measured from source: with the writes and
+		// slots edits reverted the tree hashes '3b4c6ba6c5a36f1f', not the old
+		// pin — W3-B's in-flight edits (the `dungeon-crawler-progress` annex
+		// key, …) had already moved it unrecorded. (was 'f341972415739892')
+		// Moved 2026-10-17 (ruleset renamed to Vis Itineris, owner ruling): the
+		// ruleset, primer, slot (`core:slot/itineris-*@1`), script
+		// (`core:script/vis-itineris-*`) and entry-type ids the genres name, the
+		// ruleset's description and voice, and one world-delta sentence in the
+		// DC Planner round prompt. Measured from source with other lanes'
+		// in-flight edits in the tree. (was '7a54239a2b6b767b')
+		// Moved 2026-10-17 (DC walk 5, Stats on a ruleset's sheet): the Stats
+		// widget's `owners` gains `mine` (the viewer's own seat) and a
+		// `hideSlots` setting; a list stat that names a repertoire draws its
+		// pieces as cards. The piece kit's compendium import was removed again
+		// (§8: the host fills `resolved`), which does not move it. Measured from
+		// source with other lanes' in-flight edits in the tree. (was '1a5285a827b93d5e')
+		// Moved 2026-10-17 (rulesets W1, SDK contract): Vis Itineris's selectors
+		// gain `ability.<a>` checks and lose the bare `attack` / `check` /
+		// `damage` d20s (the Dungeon Crawler Planner's check enum), its stats gain
+		// `itineris-spell-points`, and its conditions gain Envenomed (the
+		// Planner's condition names). Measured from source — core-catalog mapped
+		// to src, since the suite reads its stale dist until `sdk:build` — with
+		// other lanes' in-flight edits in the tree (the DC genre lane's among
+		// them), not proven in isolation. (was '4c3fbd636fae0451')
+		// Moved 2026-10-18 (Dungeon Crawler reconcile, W3 + follow-ups): one
+		// exit model (ways out inside `world.rooms[].exits[]`, no `exits`
+		// repertoire or `exit` on a delta), no `deathsDoor` in the plan, the
+		// Planner lane's edits call on every line (`standingOrder`, `asks`,
+		// `deltas`, `rooms`) applied through the handler, `parley` a personal
+		// lane opened by `core:query/channel-lane@1` (no annex lane map), the
+		// round's annex clear gone, the Narrator's row opened before the
+		// Planner, the welcome asking the one who played alone their standing
+		// order when the table grows (`standing.asked.*`), the journal's six
+		// row kinds written through `create-message@1`'s `kind`, and the DC
+		// layout's Journal copy naming them (`rowKinds`). Measured from source
+		// — core-catalog mapped to src, since the suite reads its stale dist
+		// until `sdk:build` — with other lanes' in-flight edits in the tree,
+		// not proven in isolation. (was '5fe73a0d3eec1bb4')
+		// Moved 2026-10-18 (the Dungeon Crawler 100-turn walk, lane A): the
+		// story turn's books round and the Narrator's outcomes as their last
+		// user turn (the narrate template), the Planner's calls reading an
+		// empty answer as unreadable, the turn's own owners part, the
+		// interview's answers said back (`said.echo`) before the changes they
+		// file, the sheet's summary first and its kit on the seat it names, a
+		// new character's seat retiring the fallen's, End's epilogue on the
+		// goal action, and the round, books, door, ledger, crib and edits
+		// scripts' new rules (made seats, refusals in words, companions
+		// narrative only). Measured with the SDK built from this tree; other
+		// lanes' in-flight edits in the tree, not proven in isolation.
+		// (was 'ceb2d6681d9f0cd2')
+		// Moved 2026-10-18 (the Dungeon Crawler 100-turn walk, lane B — P2-1…P2-6):
+		// Vis Itineris's repertoires execute what a piece does (`rollWith`,
+		// `harm`, `heal`, `cure`, `consume`; the riders that only said so gone),
+		// armour class and the spell-point maximum are `onSheet` derived
+		// selectors, the derive script reports `spell-points-max` at a points
+		// table, the DC tracks the spell-point pool, a delta carries its
+		// `aimedAt`, the books and the sheet are handed the turn's ruleset, and
+		// the books prompt's ruleset-dependent sentences are variables
+		// (`{{piecesLine}}`, `{{conditionsLine}}`, `{{castingLine}}`,
+		// `{{effectsLine}}`). Measured with the SDK built from this tree; other
+		// lanes' in-flight edits in the tree, not proven in isolation.
+		// (was 'c9cc5e29ea6756ff'; '6502a1bd08a69dee' while a delta's member
+		// was still called `target`, renamed `aimedAt` — R1: a mechanic's
+		// `target` is a selector)
+		// Moved 2026-10-18 (the Dungeon Crawler 100-turn walk, lane C — P4-1…P4-11):
+		// the DC genre's characters `hint`, its layout's faces strip (`owners:
+		// seats`), Dice tab and ticked Line kinds, the reveal's `confirm`, the
+		// spell points' and crawl spell slots' `whenRulesetSetting`, the Stats
+		// widget's `seats` owners and Messages' `rowKinds` as a ticked list.
+		// Measured with the SDK built from this tree; other lanes' in-flight
+		// edits in the tree, not proven in isolation. (was 'b18f063551d28ef0')
+		// Moved 2026-10-19 (PLAN-dc-after-walk2, Q0–Q3): the DC story turn's
+		// words branch and actor-inferred traverse, the genesis "story has
+		// started" line, the lanes greeting of an ended adventure, death saves
+		// on the sheet (fate `dying`, `crawl-death-saves`, `shownWhenSet`),
+		// health's `words`, Scene Portraits' `playerSeats` / `metPeople` and the
+		// DC layout pinning them, the `give-piece` and `load-older` requests.
+		// Measured with the SDK built from this tree; other lanes' in-flight
+		// edits in the tree, not proven in isolation. (was 'ec2b93ec0f79c872')
+		// Moved 2026-10-19 (PLAN-dc-after-walk3, R0–R3): the DC genesis holds
+		// the world's ways out as pieces and files the seat's configs at its
+		// stats' row; a way out carries its trap's `trapDamage` and
+		// `trapCondition` (Vis Itineris's trap its `condition`); the books
+		// prompt's `wordsOnly` variant; _At zero health_ relabelled to what is
+		// played; the kits' trained skills on the DC sheet; the DC layout's
+		// Dice and Planner `timeFormat`, journal kinds without `time`, Scene
+		// Portraits' new `barsFor` pinned to `seats`, the skills hidden on the
+		// sheet. Measured with the SDK built from this tree; other lanes'
+		// in-flight edits in the tree, not proven in isolation. (was 'cf2d55a6238180db')
+		// Moved 2026-10-19 (PLAN-genre-restructure R4, lane 1): the Story genre
+		// (the roleplay Chat's specs re-homed as `core:spec/story-*`, with the
+		// background tasks after the reply — resolve-tasks, the reckoning, the
+		// sweep), Adventure retired (its Look, Rest, Ask and Answer under
+		// Story), Chat the plain assistant (`core:spec/assistant-*`), Story's
+		// three presets and Chat's two, Freeform for the Story ruleset, the
+		// genres' `about` / `members` / `uses` / `tasks`, the Guide's `tools`
+		// field, the Story goals annex field. Measured with the SDK built from
+		// this tree; other lanes' in-flight edits in the tree, not proven in
+		// isolation. (was '50ba9f7630734070')
+		// Moved 2026-10-19 (PLAN-genre-restructure lane 2): the background
+		// tasks wired — story-respond's `tasks` at the head, the `retrieval`
+		// junction and the *Read the scene* gate; the reckoning's Review
+		// arms, item supply and new places; the sweep's relationships and
+		// goal checklist; Chat's tasks, retrieval and memory call;
+		// `core:task/turn-unprompted@1` in Story's turn order; the
+		// `assistant-memory` prompt row, the Story reply rows' place line,
+		// the `story-scene-reading` script; Minimal keeps *Read the
+		// lorebook*; *Route whispers* and *Let the storyteller lead* retired.
+		// Measured with the SDK built from this tree. (was '6e205f970be70807')
+		assert.equal(digest.slice(0, 16), '6ce14eecafa63328')
 	})
 })

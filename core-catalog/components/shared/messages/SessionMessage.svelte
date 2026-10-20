@@ -44,9 +44,15 @@
 		 * `data-msg-*` stay, so j/k, anchors and the state overlays hold.
 		 */
 		folio?: boolean
+		/**
+		 * 🚧 The line's place among the lines shown on its lane, for its
+		 * accessible name (PLAN-dc-after-walk2 Q3-6, the walk's #49: "Message 3
+		 * of 15" counted every channel's rows). Absent: every row the log holds.
+		 */
+		place?: { n: number; of: number }
 	}
 
-	let { msg, index, isLastMessage, sceneName = null, folio = false }: Props = $props()
+	let { msg, index, isLastMessage, sceneName = null, folio = false, place }: Props = $props()
 
 	const conv = useConversation()
 	const line = $derived(conv.line(msg.id))
@@ -151,6 +157,35 @@
 		displayName.trim().charAt(0).toUpperCase() || "?"
 	)
 	const isGreeting = $derived(!!msg.metadata?.isGreeting)
+	/**
+	 * 🚧 A **table line**: the table's own line — a Dungeon Crawler roll line
+	 * — said in no voice. Drawn as its content alone, as a folio paragraph
+	 * is: no face, no name, no controls; its own glyph (⚄, ☠) is the marker.
+	 * `data-msg-table-line` is what the widget stylesheet and a pack key its
+	 * look off. Since PLAN-rulesets §30 (2026-10-16) such a line lives on the
+	 * `table` channel and this copy draws it inline under the line it belongs
+	 * to (`interleave`); ⏳ a row written before then carries
+	 * `metadata.tableLine` on the story itself, and a faceless lane note
+	 * (the interview's "Name: Ann.") still does. 🚧 So does a row anchored to
+	 * another (`metadata.anchorMessageId`, the host's table row) wherever it is
+	 * drawn: a Planner lane's "Noted for the story: …" is the table's, never
+	 * the Narrator's (the 100-turn walk, #24).
+	 */
+	const tableLine = $derived(
+		msg.metadata?.tableLine === true ||
+			(msg.metadata as { anchorMessageId?: unknown } | undefined)?.anchorMessageId != null ||
+			conv.isInterleaved(msg)
+	)
+	/**
+	 * 🚧 The genre regenerates whole turns (`retake` listed among the extra
+	 * actions): a failed row's press is a Regenerate, and reads as one.
+	 */
+	const retakes = $derived.by(() => {
+		const extra = (conv.ctx.actions?.v1 as Record<string, { primary?: Array<{ key?: string; specSlug?: string }>; overflow?: Array<{ key?: string; specSlug?: string }> }> | undefined)?.extra
+		return [...(extra?.primary ?? []), ...(extra?.overflow ?? [])].some((a) => a.key === "retake" && a.specSlug === "core")
+	})
+	/** Only the content cell is drawn: a folio's paragraph, or a table line. */
+	const contentOnly = $derived(folio || tableLine)
 	// Two independent classifications the style packs (sessionLayout skins) key
 	// off. The one SessionMessage renders every layout; these attributes are
 	// what a bubbles/compact/moonlit skin uses for alignment, colour and
@@ -181,6 +216,9 @@
 						: "unknown"
 	)
 	const canControl = $derived(line.controllable)
+	// 🚧 The swipe arrows, retry and extend read the rerun verdict; edit,
+	// hide and delete the line's own (ruled 2026-10-15).
+	const canRerun = $derived(line.rerunnable ?? canControl)
 	const showSwipes = $derived(line.swipes.show)
 	/**
 	 * The swipe arrow's gate is the swipe verb's own enabled-when (U5e,
@@ -201,7 +239,7 @@
 		return enabledWhenState({
 			msg,
 			isLastMessage,
-			canControl,
+			canControl: canRerun,
 			...verdictOf(listed)
 		})
 	})
@@ -312,6 +350,9 @@
 			editing: conv.edit.id !== null,
 			hasGeneratingMessage,
 			canControl,
+			canRerun,
+			// 🚧 A kept turn's row the host would refuse to delete (★9).
+			canDelete: line.deletable ?? true,
 			extendRefusal
 		})
 	)
@@ -396,16 +437,17 @@
 	data-msg-generating={msg.isGenerating ? "" : undefined}
 	data-msg-hidden={msg.isHidden ? "" : undefined}
 	data-msg-greeting={isGreeting ? "" : undefined}
+	data-msg-table-line={tableLine ? "" : undefined}
 	data-msg-newest={isLastMessage ? "" : undefined}
 	tabindex="-1"
 	role="article"
-	aria-label="Message {index +
-		1} of {messageCount} from {displayName}{speakerMember ? ` · ${speakerMember}` : ''}: {msg.content.slice(0, 100)}{msg
+	aria-label="Message {place ? place.n : index +
+		1} of {place ? place.of : messageCount} from {tableLine ? 'the table' : displayName}{speakerMember && !tableLine ? ` · ${speakerMember}` : ''}: {msg.content.slice(0, 100)}{msg
 		.content.length > 100
 		? '...'
 		: ''}"
 >
-	{#if !folio}
+	{#if !contentOnly}
 	<span data-widget-part="messages.message-avatar">
 		{#if msg.isNarratorResponse}
 			<span
@@ -521,8 +563,10 @@
 			     the row, and by a swipe onto another alternative — the stop
 			     belongs to the alternative that was streaming, so selecting a
 			     different one leaves the mark behind. -->
+			<!-- 🚧 One stopped before its first word says so (the 100-turn walk,
+			     B19): it is in no prompt, and reads as no reply. -->
 			<span data-widget-part="messages.message-status" title="This reply was stopped before it finished">
-				Stopped
+				{msg.content?.trim() ? "Stopped" : "Stopped before a word"}
 			</span>
 		{/if}
 	</div>
@@ -550,7 +594,7 @@
 			</button>
 	{/snippet}
 
-	{#if !folio}
+	{#if !contentOnly}
 	<div data-widget-part="messages.message-controls">
 		{#if isEditing}
 			{@render editButtons()}
@@ -570,7 +614,7 @@
 								!swipes!.currentIdx ||
 								swipes!.history.length <= 1 ||
 								msg.isGenerating ||
-								!canControl}
+								!canRerun}
 						>
 							<sp-icon name="chevron-left" size="14"></sp-icon>
 						</button>
@@ -586,7 +630,7 @@
 						aria-label="Next swipe"
 						title={swipeWhen[1] ? `Next swipe — ${swipeWhen[1]}` : undefined}
 						onclick={() => conv.swipe(msg, "right")}
-						disabled={conv.edit.id !== null || swipeWhen[0] || !canControl}
+						disabled={conv.edit.id !== null || swipeWhen[0] || !canRerun}
 					>
 						<sp-icon name="chevron-right" size="14"></sp-icon>
 					</button>
@@ -875,11 +919,14 @@
 										: ""}
 								</p>
 							{/if}
+							<!-- 🚧 Where the genre retakes a whole turn (Dungeon Crawler), the
+							     row's press regenerates the turn and says so (the 100-turn
+							     walk, B7: a Retry the genre then refused). -->
 							<button
 								data-widget-part="messages.message-retry"
 								onclick={() => conv.invoke("retry", msg)}
 							>
-								Retry
+								{retakes ? "Regenerate" : "Retry"}
 							</button>
 						</div>
 					</div>

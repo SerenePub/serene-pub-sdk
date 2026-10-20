@@ -11,14 +11,13 @@
  * action** at that line.
  *
  * One graph, one spec per genre: an action's inlet is one genre's (the usage
- * lock), so Chat's and the Lair's are `core:spec/chat-advance-time` and
+ * lock), so Story's and the Lair's are `core:spec/story-advance-time` and
  * `core:spec/lair-advance-time` — the key `advance-time` and the slash name
- * `/advance-time` Adventure's keeper action already carries, for the same
- * act. Adventure keeps its own (`genres/adventure/advanceTime.ts`): the same
- * stepper and the same clock step, after its state-keeper.
+ * `/advance-time`. (Adventure's own, a keeper action, retired with the genre
+ * on 2026-10-19.)
  *
  * ⚠ Not Chronicle's one-press *Next day* (the clock widget's own step), not
- * the reply tick (Chat's *Each reply advances the clock by …*, a fixed tick no
+ * the reply tick (Story's *Each reply advances the clock by …*, a fixed tick no
  * one presses) and never the book's present: only the session's clock moves.
  */
 import { compile, sessionEvents, slot, spec, type GenreDecl } from '@serene-pub/sdk'
@@ -29,7 +28,7 @@ export const ADVANCE_TIME_ACTION_KEY = 'advance-time'
 
 /**
  * What a *Time passes…* press collects: the stepper, opening at one hour
- * forward. Shared by every genre's, Adventure's included, so the modal asks
+ * forward. Shared by every genre's, so the modal asks
  * the same question everywhere.
  * @experimental
  */

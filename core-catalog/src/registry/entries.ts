@@ -20,12 +20,24 @@
  *    where they render (`render`), and what they are called on the wire
  *    (`exportKey`).
  *
- * Core is the only author of entry types in this release. The switch is one
- * line in `describeEntryType` and it is off, because a plugin-owned type also
- * owns a database constraint and the rows under it, and that half is not built.
+ * Core and rulesets are the authors of entry types in this release (widened
+ * 2026-10-16, rulesets §21 amendment). Core writes its five by hand; a
+ * ruleset never writes one — each entryable repertoire **derives** an entry
+ * type (`<creator>:entry/<ruleset>.<repertoire>@1`) whose fields are the
+ * repertoire's piece shape plus `ENTRY_UNIVERSAL_PARTS` below. A hand-written
+ * plugin type stays off (`describeEntryType` refuses it), because it would
+ * own a database constraint and the rows under it with nothing reviewing it.
  */
 
-import { describeEntryType, STORY_TIME_PART_RANGES } from "@serene-pub/sdk"
+import {
+	deriveRulesetEntryTypes,
+	describeEntryType,
+	STORY_TIME_PART_RANGES,
+	type EntryDescriptor,
+	type EntryUniversalParts,
+	type RulesetDecl
+} from "@serene-pub/sdk"
+import { visItinerisRuleset, freeformRuleset } from "./rulesets.js"
 
 /**
  * The keys every entry type answers with, spelled once.
@@ -405,6 +417,40 @@ export interface ItemSupply {
 }
 
 /**
+ * An item's supply mode — and every derived entry type's, since how many of
+ * a thing the world has is a universal entry part (`ENTRY_UNIVERSAL_PARTS`).
+ */
+const supplyField = {
+	type: "enum",
+	of: ITEM_SUPPLY_MODES,
+	label: { en: "Supply" },
+	description: {
+		en: "How many of it the world has: one, a limited number, or as many as anybody likes."
+	},
+	default: "unlimited",
+	// A genre asks "which items are unique"; nobody sorts by it, and a
+	// word contributes nothing to a cosine.
+	queryable: true,
+	sortable: false,
+	embedded: false,
+	injected: false
+} as const
+
+/** How many exist, for a limited supply. */
+const supplyLimitField = {
+	type: "integer",
+	label: { en: "How many exist" },
+	description: {
+		en: "For a limited supply: how many of it the world has. Ignored otherwise."
+	},
+	min: 1,
+	queryable: false,
+	sortable: false,
+	embedded: false,
+	injected: false
+} as const
+
+/**
  * 🚧 An item — a thing in the world that somebody can hold (attributes phase
  * 3a, 2026-09-26).
  *
@@ -455,33 +501,8 @@ export const itemEntryType = describeEntryType({
 			injected: false
 		},
 		priority: priorityField,
-		supply: {
-			type: "enum",
-			of: ITEM_SUPPLY_MODES,
-			label: { en: "Supply" },
-			description: {
-				en: "How many of it the world has: one, a limited number, or as many as anybody likes."
-			},
-			default: "unlimited",
-			// A genre asks "which items are unique"; nobody sorts by it, and a
-			// word contributes nothing to a cosine.
-			queryable: true,
-			sortable: false,
-			embedded: false,
-			injected: false
-		},
-		supplyLimit: {
-			type: "integer",
-			label: { en: "How many exist" },
-			description: {
-				en: "For a limited supply: how many of it the world has. Ignored otherwise."
-			},
-			min: 1,
-			queryable: false,
-			sortable: false,
-			embedded: false,
-			injected: false
-		}
+		supply: supplyField,
+		supplyLimit: supplyLimitField
 	},
 	render: "core:var/world-lore@1",
 	sourceKind: "worldLore",
@@ -531,3 +552,49 @@ export const CORE_ENTRY_TYPES = [
 	locationEntryType,
 	itemEntryType
 ]
+
+/**
+ * 🚧 The universal entry parts — what every derived entry type answers with
+ * beyond its repertoire's piece shape, spelled from the same constants core's
+ * types use so the two never drift: the field roles world lore, places and
+ * items declare (title, keys, priority, embed text, parent), the world-lore
+ * band and layout, amendments that layer (dated, never replacing), and the
+ * fields every entry carries — priority and supply. Keys, provenance and
+ * `derived_from` are columns every row has.
+ * @experimental
+ */
+export const ENTRY_UNIVERSAL_PARTS: EntryUniversalParts = Object.freeze({
+	roles: {
+		title: TITLE,
+		key: KEYS,
+		priority: "priority",
+		embedText: [TITLE, CONTENT],
+		parent: PARENT
+	},
+	fields: {
+		priority: priorityField,
+		supply: supplyField,
+		supplyLimit: supplyLimitField
+	},
+	render: "core:var/world-lore@1",
+	sourceKind: "worldLore",
+	amendMode: "amend"
+}) as EntryUniversalParts
+
+/**
+ * 🚧 Register a ruleset's derived entry types with core's universal parts —
+ * what the host calls for a plugin ruleset when it loads. Idempotent.
+ * @experimental
+ */
+export const deriveEntryTypes = (ruleset: Pick<RulesetDecl, "id" | "repertoires" | "entryable">): EntryDescriptor[] =>
+	deriveRulesetEntryTypes(ruleset, ENTRY_UNIVERSAL_PARTS)
+
+/**
+ * 🚧 The entry types core's rulesets derive: Freeform's two (`things`,
+ * `conditions`), then Vis Itineris's eight. Registered when this module loads.
+ * @experimental
+ */
+export const RULESET_ENTRY_TYPES: readonly EntryDescriptor[] = Object.freeze([
+	...deriveEntryTypes(freeformRuleset),
+	...deriveEntryTypes(visItinerisRuleset)
+])

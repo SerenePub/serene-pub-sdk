@@ -69,6 +69,9 @@ const ONE_OF_EACH: Record<FieldType, Record<string, unknown>> = {
 		label: 'Ob',
 		fields: { a: { type: 'string' } },
 	},
+	// 🚧 Background tasks (2026-10-19): one grouped control the host renders
+	// from the genre's `tasks`, never a value declaration.
+	tasks: { type: 'tasks', label: 'Tk' },
 }
 
 /**
@@ -82,6 +85,7 @@ const RENDERED_WITHOUT_A_VALUE_DECL = new Set([
 	'secret',
 	'list',
 	'object',
+	'tasks',
 ])
 
 describe('the field vocabulary reaches a control (24 §8 · 12 §6)', () => {

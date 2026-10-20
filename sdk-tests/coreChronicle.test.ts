@@ -91,7 +91,7 @@ describe('the declaration', () => {
 		>
 		assert.equal(s.clock!.type, 'boolean')
 		assert.equal(s.earlierCount!.type, 'integer')
-		assert.equal(s.earlierCount!.group, 'behaviour')
+		assert.equal(s.earlierCount!.group, undefined, 'a section of one field is no section')
 		assert.deepEqual(CHRONICLE_DEFAULTS, {
 			clock: s.clock!.default,
 			earlierCount: s.earlierCount!.default,

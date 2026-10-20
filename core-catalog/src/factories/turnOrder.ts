@@ -197,9 +197,25 @@ export function turnOrderSpec(opts: {
 	 * (`TURN_MODE_FIELD`) so a session can choose. Absent, no branch.
 	 */
 	advise?: TurnAdvisePin
+	/**
+	 * 🚧 Script chains on the `strategy` node, by interior point and seed key
+	 * (`PresetBuilder.scripts`) — `{ select: [{ seedKey }] }` for
+	 * `turn-scripted`'s `select`. The host writes the seeded rows' ids into
+	 * the shipped config. Absent: no chain, the strategy's own answer.
+	 */
+	scripts?: Record<string, Array<{ seedKey: string }>>
+	/**
+	 * 🚧 **Unprompted turns** (lane 2, 2026-10-19): the genre's background
+	 * tasks of the voices group, applied to the order the strategy
+	 * prepared — `tasks` (`core:task/resolve-tasks@1`) then `unprompted`
+	 * (`core:task/turn-unprompted@1`) before the write. `narrate` is the
+	 * action a narrator's own line fires. Absent: no such steps, and the
+	 * strategy's order is written as it came.
+	 */
+	unprompted?: { narrate?: string }
 	version?: string
 }): SpecDocument {
-	const { id, genre, events, strategy, swaps = [], pool = {}, historyChannel, advise, version = TURN_ORDER_VERSION } = opts
+	const { id, genre, events, strategy, swaps = [], pool = {}, historyChannel, advise, scripts, unprompted, version = TURN_ORDER_VERSION } = opts
 	// The model path branches on the genre field `turnMode`; a genre that
 	// does not declare it could never take it (R26, M4 review).
 	if (advise && !(genre.shape?.fields as Record<string, unknown> | undefined)?.turnMode)
@@ -275,8 +291,30 @@ export function turnOrderSpec(opts: {
 			)
 		: strategyTask(upToMentioned)
 
+	/**
+	 * 🚧 The voices group (lane 2): the session's tasks, then at most one
+	 * unprompted entry at the head once the round is over. Reads only.
+	 */
+	const voiced: any = unprompted
+		? decided
+				.task(
+					'tasks',
+					($: any) => C.resolveTasks.v1({ session: $.event.session, genre: genre.id }),
+					{ expose: { label: 'What happens around a reply' } },
+				)
+				.task('unprompted', ($: any) =>
+					C.turnUnprompted.v1({
+						order: advise ? $.decide.order : $.strategy.order,
+						candidates: $.pool.main,
+						messages: $.history.main,
+						modes: $.tasks.modes,
+						params: slot.params(),
+					}),
+				)
+		: decided
+
 	return compile(
-		decided
+		voiced
 			/**
 			 * The one write path (§4.2). `basedOnAt` is the answered event's
 			 * instant, so an order computed from an older event is dropped
@@ -284,11 +322,12 @@ export function turnOrderSpec(opts: {
 			 * `turn-order-changed`, which is how auto-advance can tell a
 			 * person's send from a migration's backfill. `order` is the
 			 * strategy's — or, with a model path, the `decide` junction's own
-			 * result port, whichever path fired (M4).
+			 * result port, whichever path fired (M4) — or, with unprompted
+			 * turns, theirs over it.
 			 */
 			.outlet('write', ($: any) =>
 				C.setTurnOrder.v1({
-					order: advise ? $.decide.order : $.strategy.order,
+					order: unprompted ? $.unprompted.order : advise ? $.decide.order : $.strategy.order,
 					candidates: $.pool.main,
 					basedOnAt: $.event.at,
 					event: $.event.event,
@@ -299,7 +338,9 @@ export function turnOrderSpec(opts: {
 			// an empty value would be a preset that changes nothing.
 			.preset('turn-order', { label: 'Turn order', default: true }, (p: any) => {
 				const pooled = Object.keys(pool).length ? p.params('pool', { ...pool }) : p
-				return historyChannel ? pooled.params('history', { channel: historyChannel }) : pooled
+				const read = historyChannel ? pooled.params('history', { channel: historyChannel }) : pooled
+				const voices = unprompted?.narrate ? read.params('unprompted', { narrate: unprompted.narrate }) : read
+				return scripts ? voices.scripts(turnStrategyNode({ advise }), scripts) : voices
 			})
 			.build(),
 	)

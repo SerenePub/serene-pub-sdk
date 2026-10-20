@@ -548,9 +548,15 @@ describe('the item document names the speaker (R11)', () => {
 			[doc({ role: 'assistant', isNarratorResponse: true }).speaker, doc({ role: 'assistant', isNarratorResponse: true }).characterLine],
 			[null, false],
 		)
-		// Only an envoy reference is read off the metadata: anything else is not a speaker there.
+		// Only an envoy's or 🚧 a card-less player seat's reference is read off the metadata: anything else is not a speaker there.
 		assert.equal(itemSpeakerOf({ metadata: { speaker: 'user:5' } }), null)
 		assert.equal(itemSpeakerOf({ metadata: { speaker: 42 } }), null)
+		assert.deepEqual(
+			[doc({ role: 'user', metadata: { speaker: 'player-seat:3' } }).speaker, doc({ role: 'user', metadata: { speaker: 'player-seat:3' } }).characterLine],
+			['player-seat:3', false],
+		)
+		// A persona wins over a seat the line might also carry: a seat with a card is its card.
+		assert.equal(itemSpeakerOf({ personaId: 4, metadata: { speaker: 'player-seat:3' } }), 'character:4')
 	})
 
 	it("the ⋮ menu greys a message action on a delver's line with the door's sentence", () => {

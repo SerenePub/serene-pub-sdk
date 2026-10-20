@@ -110,7 +110,7 @@ describe('the declaration', () => {
 		})
 		assert.deepEqual(s.groups!.of, ['all', ...ACTIONS_GROUP_ORDER])
 		assert.deepEqual(s.size!.of, ['compact', 'large'])
-		assert.equal(s.showWaiting!.group, 'behaviour')
+		assert.equal(s.showWaiting!.group, undefined, 'a section of one field is no section')
 		assert.deepEqual(readActionsSettings(undefined), ACTIONS_DEFAULTS)
 		assert.deepEqual(
 			readActionsSettings({ groups: 'scripts', size: 'huge', showWaiting: 'no' }),
@@ -218,7 +218,7 @@ describe('the view', () => {
 		}
 		const waits = act({
 			key: 'survey',
-			specSlug: 'core:spec/adventure-survey',
+			specSlug: 'core:spec/story-survey',
 			origin: 'companion',
 			venue: 'composer',
 			name: 'Survey',

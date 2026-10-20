@@ -124,7 +124,21 @@
 					{#each view.drawn.rows as row (row.key)}
 						<div data-widget-part="annex.row row" data-key={row.key}>
 							<dt data-widget-part="annex.row-label label">{row.label}</dt>
-							<dd data-widget-part="annex.row-value value">{row.text}</dd>
+							{#if row.items}
+								<dd data-widget-part="annex.row-value value">
+									{#if row.items.length}
+										<ul data-widget-part="annex.row-items">
+											{#each row.items as item, i (i)}
+												<li data-widget-part="annex.row-item">{item}</li>
+											{/each}
+										</ul>
+									{:else}
+										—
+									{/if}
+								</dd>
+							{:else}
+								<dd data-widget-part="annex.row-value value">{row.text}</dd>
+							{/if}
 						</div>
 					{/each}
 				</dl>

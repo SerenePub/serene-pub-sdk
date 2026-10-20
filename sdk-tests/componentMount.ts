@@ -52,7 +52,9 @@ export const coreComponentBuild = (): 'shipped' | 'in-app' =>
 
 /** A core component's source.json, as the build wrote it. */
 export async function coreComponentSource(slug: string): Promise<CoreComponentSource> {
-	return JSON.parse(await readFile(join(CORE_CATALOG, 'dist', 'components', `${slug}.source.json`), 'utf8'))
+	// ⏳ World State is Stats' module (AUDIT B, 2026-10-17): its source is Stats'.
+	const source = slug === 'world-state' ? 'stats' : slug
+	return JSON.parse(await readFile(join(CORE_CATALOG, 'dist', 'components', `${source}.source.json`), 'utf8'))
 }
 
 /** `slug`'s source.json compiled in-app mode — the whole compile result. */

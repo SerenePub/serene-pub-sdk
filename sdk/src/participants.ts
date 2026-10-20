@@ -17,6 +17,7 @@
  * | `participant`       | Any member of the session — owner or guest.                                                              |
  * | `user:<id>`         | One person, by user id.                                                                                  |
  * | `character:<id>`    | One library character, by row id — a cast member, or a member's own persona.                             |
+ * | `player-seat:<id>`  | 🚧 A player seat that voices **no card**, by seat id — a player character made up in the session.       |
  * | `envoy:<slug>`      | A speaker the genre (or a contributed action) brings with it — `envoy:mascot`, `envoy:chariot.dice-tray.master`. |
  * | `item`              | The **per-message ownership rule**: whoever the message belongs to, decided at the venue, never resolvable ahead of a message. |
  * | `run-owner`         | The person who started the run.                                                                          |
@@ -26,6 +27,13 @@
  * exists nowhere but the genre. The slug is namespaced like a slash name when
  * an action contributes it (`<plugin>.<key>`), so it cannot collide with a
  * genre's.
+ *
+ * **A participant is addressed by its card when it has one.** A player
+ * seat that voices a card is that card, `character:<id>`, exactly as a
+ * cast member is; `player-seat:<id>` is only for a seat with no card behind it,
+ * so one participant never has two spellings. Give the seat a card and its
+ * reference becomes the card's. A seat is always a person's — never a
+ * speaker the model takes.
  *
  * ## Resolution
  *
@@ -67,7 +75,8 @@ export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number]
  *
  * Ids are opaque to the SDK — the host's user and character ids are
  * integers today, and the receipt's `actorUserId` is already a string, so
- * the id half is a string here and the host reads it at its seam. An envoy
+ * the id half is a string here and the host reads it at its seam. A
+ * `player-seat:` id is the host's player seat row (`session_personas.id`). An envoy
  * slug is `[A-Za-z0-9]` followed by any of `[A-Za-z0-9._-]`.
  * @experimental
  */
@@ -75,6 +84,7 @@ export type ParticipantRef =
 	| ParticipantRole
 	| `user:${string}`
 	| `character:${string}`
+	| `player-seat:${string}`
 	| `envoy:${string}`
 
 /** A reference taken apart. @experimental */
@@ -82,6 +92,7 @@ export type ParsedParticipantRef =
 	| { kind: ParticipantRole }
 	| { kind: 'user'; id: string }
 	| { kind: 'character'; id: string }
+	| { kind: 'player-seat'; id: string }
 	| { kind: 'envoy'; slug: string }
 
 /**
@@ -99,11 +110,11 @@ export interface Audience {
  * Who portrays a participant this turn — the resolver's answer.
  *
  * `person` — a signed-in member of the session speaks as them (their own
- * persona, or the run owner acting as a role). `ai` — the model speaks as
- * them (a cast character, an envoy, the turn's own speaker). `none` — nobody
- * can: a character not in the cast, a user who is not a member, a role
- * nobody present holds, or `item`, which is only ever decided against a
- * message.
+ * persona or seat, or the run owner acting as a role). `ai` — the model
+ * speaks as them (a cast character, an envoy, the turn's own speaker).
+ * `none` — nobody can: a character not in the cast, a seat nobody sits in,
+ * a user who is not a member, a role nobody present holds, or `item`, which
+ * is only ever decided against a message.
  *
  * `userId` is a string for the reason `ParticipantRef`'s ids are.
  * @experimental
@@ -243,13 +254,14 @@ export function parseParticipantRef(raw: unknown): ParsedParticipantRef {
 	if (cut === -1)
 		throw new Error(
 			`'${raw}' is not a participant reference — expected one of ${PARTICIPANT_ROLES.join(', ')}, ` +
-				`or user:<id>, character:<id>, envoy:<slug>`,
+				`or user:<id>, character:<id>, player-seat:<id>, envoy:<slug>`,
 		)
 	const kind = text.slice(0, cut)
 	const rest = text.slice(cut + 1)
 	switch (kind) {
 		case 'user':
 		case 'character':
+		case 'player-seat':
 			if (!ID.test(rest))
 				throw new Error(
 					`'${raw}' names a ${kind} with no readable id — a ${kind} reference is '${kind}:<id>'`,
@@ -264,7 +276,7 @@ export function parseParticipantRef(raw: unknown): ParsedParticipantRef {
 			return { kind, slug: rest }
 		default:
 			throw new Error(
-				`'${raw}' is not a participant reference — '${kind}:' is not a kind (user, character, envoy)`,
+				`'${raw}' is not a participant reference — '${kind}:' is not a kind (user, character, player-seat, envoy)`,
 			)
 	}
 }
@@ -276,6 +288,8 @@ export function formatParticipantRef(parsed: ParsedParticipantRef): ParticipantR
 			return `user:${parsed.id}`
 		case 'character':
 			return `character:${parsed.id}`
+		case 'player-seat':
+			return `player-seat:${parsed.id}`
 		case 'envoy':
 			return `envoy:${parsed.slug}`
 		default:
@@ -393,7 +407,12 @@ export interface SessionCastV1 {
 		absorbedAliases: string[]
 		[k: string]: unknown
 	}>
-	/** Persona seats: the library row under `persona` (a character flagged `is_persona`), plus the seat's own columns. */
+	/**
+	 * Player seats — a person's place at the table: the library row under `persona` (a
+	 * character flagged `is_persona`), plus the seat's own columns. 🚧 A
+	 * seat that voices no card has `persona: null` and is named by its
+	 * `seatName` (participant reference `player-seat:<seatId>`).
+	 */
 	sessionPersonas: Array<{
 		persona: {
 			id: number
@@ -402,7 +421,13 @@ export interface SessionCastV1 {
 			aliases?: unknown
 			userId?: number | null
 			[k: string]: unknown
-		}
+		} | null
+		/** 🚧 The seat's own id — what `player-seat:<id>` and a `player_seat` stat owner name. */
+		seatId: number
+		/** 🚧 The seat's name in this session; wins over the card's name when set. */
+		seatName: string | null
+		/** 🚧 Who sits in the seat; null on a row from before it (read the card's owner). */
+		seatUserId: number | null
 		/** Always true — a persona seat has no switch — said so one filter serves both lists. */
 		enabled: boolean
 		position: number | null

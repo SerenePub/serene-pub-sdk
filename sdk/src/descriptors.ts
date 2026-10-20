@@ -728,6 +728,18 @@ export const BUILTIN_SPEC_IDS = Object.freeze({
 /** @internal */
 export type BuiltInKind = keyof typeof BUILTIN_SPEC_IDS
 
+/**
+ * 🚧 Core's default **save** pipeline for `core:event/message-offered@1`
+ * (owner ruling 2026-10-15): one `create-message@1` with `role: 'user'`,
+ * writing the person's message as the host used to. Like the built-ins it has
+ * no inlet lock and serves every genre; `preset()` binds it on
+ * `message-offered` when a preset binds nothing of its own there, so the
+ * stored preset always shows what saves a message. Here, not in the catalog,
+ * because the SDK's `preset()` names it and cannot import the catalog.
+ * @experimental
+ */
+export const SAVE_MESSAGE_SPEC_ID = 'core:spec/save-message'
+
 /** The outlet each built-in's spec ends in — `effects: 'write'`, every one. @experimental */
 export const BUILTIN_OUTLET_IDS = Object.freeze({
 	delete: 'core:outlet/delete-message@1',
@@ -850,10 +862,28 @@ export interface PortDecl {
  * @ruling 19 §1
  */
 export interface SessionShape {
-	/** The character system: toggles, ordering, pickers, cast rows. */
-	characters?: { min: number; max?: number }
-	/** The persona system. Absent or `max: 0`: the user is prose. */
-	personas?: { min: number; max?: number }
+	/**
+	 * The character system: toggles, ordering, pickers, cast rows.
+	 *
+	 * 🚧 `hint` (2026-10-18): what the new-session form says of this genre's
+	 * characters while none is added — the Dungeon Crawler's join the party
+	 * as companions, never "the characters you'll talk to". Absent, the
+	 * form's own words.
+	 */
+	characters?: { min: number; max?: number; hint?: I18n }
+	/**
+	 * The persona system. Absent or `max: 0`: the user is prose.
+	 *
+	 * `preselectDefault` 🚧 — whether the new-session form starts with the
+	 * person's default persona already chosen. Omitted or `true`: it does
+	 * (Chat, Adventure). `false`: the picker starts empty and the session is
+	 * created with no persona unless the person picks one — for a genre where
+	 * a persona is only a seed for something the session builds (Dungeon
+	 * Crawler's player seat). Moot when `max: 0`. Never refuses anything: a
+	 * persona the person picks is attached as usual.
+	 * @experimental
+	 */
+	personas?: { min: number; max?: number; preselectDefault?: boolean }
 	/** The lorebook attachment picker, and retrieval satisfiability. */
 	lorebook?: 'optional' | 'required'
 	/** What the send surface is. `none` for purely trigger-driven modes. */
@@ -1124,7 +1154,25 @@ export interface ChannelDecl {
 	 * @ruling lair re-plan R6
 	 */
 	turnControls?: SessionShape['turnControls']
+	/**
+	 * 🚧 Whose the channel's lanes are (owner ruling 2026-10-17, lanes by
+	 * person on the server). `shared` (the default): lanes are the genre's
+	 * to allocate and every member reads every lane, as before. `personal`:
+	 * **core** keeps one lane per person — allocated on first use by
+	 * `core:query/channel-lane@1` or a send, filed in the session's lane
+	 * register — and the host sends a lane only to its person and the
+	 * session's owner. A Messages copy reads its viewer's lane with
+	 * `channelLane: 'mine'`. Privacy is the server's, never a display claim:
+	 * the Dungeon Crawler's Planner lanes, whose annex map and client-side
+	 * hiding this replaces.
+	 */
+	lanes?: ChannelLaneMode
 }
+
+/** 🚧 Whose a channel's lanes are: the genre's (`shared`) or one per person (`personal`). @experimental */
+export const CHANNEL_LANE_MODES = ['shared', 'personal'] as const
+/** @experimental */
+export type ChannelLaneMode = (typeof CHANNEL_LANE_MODES)[number]
 
 /** The roles a channel's messages may play in a prompt. @experimental */
 export const CHANNEL_ROLES = ['conversation', 'folio'] as const
@@ -1190,6 +1238,7 @@ export function channelDecls(shape: unknown): ChannelDecl[] {
 			...(verbs ? { messageVerbs: verbs } : {}),
 			...(isI18n(decl.label) ? { label: localeMapOf(decl.label) } : {}),
 			...(controls ? { turnControls: controls as SessionShape['turnControls'] } : {}),
+			...(decl.lanes ? { lanes: decl.lanes } : {}),
 		}
 	}
 	const declared = (Array.isArray(s.channels) ? s.channels : [])
@@ -1249,6 +1298,17 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 				`${at} declares voice '${decl.voice}'. A channel's voice is ` +
 					`${CHANNEL_VOICES.map((v) => `'${v}'`).join(', ')} — whose name a turn ` +
 					`triggered here seeds under, or none for no seed row at all (R-C).`,
+			)
+		if (decl.lanes !== undefined && !CHANNEL_LANE_MODES.includes(decl.lanes))
+			throw new Error(
+				`${at} declares lanes '${String(decl.lanes)}'. A channel's lanes are ` +
+					`${CHANNEL_LANE_MODES.map((m) => `'${m}'`).join(' or ')} — the genre's to allocate, ` +
+					`or one per person that core keeps and the host sends to that person alone.`,
+			)
+		if (slug === DEFAULT_CHANNEL && decl.lanes === 'personal')
+			throw new Error(
+				`${at} declares personal lanes. '${DEFAULT_CHANNEL}' is the channel every member ` +
+					`reads; declare another channel for lanes of one person each.`,
 			)
 		assertMessageVerbFloors({ messageVerbs: decl.messageVerbs }, at)
 		// R6: the display name is display text, and the per-channel turn
@@ -2758,7 +2818,14 @@ export type EntryDescriptor<Id extends string = string> = Descriptor<PortDecl, P
 	entryShape: EntryShape
 }
 
-const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$/
+/**
+ * The name may carry one dot: a ruleset's derived entry type is
+ * `<ruleset>.<repertoire>` (`core:entry/vis-itineris.weapons@1`, `rulesetEntryTypeId`).
+ */
+const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*(?:\.[a-z0-9][a-z0-9-]*)?)@(\d+)$/
+
+/** 🚧 Whether `id` is an entry type id by its grammar — registered or not. @experimental */
+export const isEntryTypeId = (id: string): boolean => ENTRY_TYPE_ID.test(id)
 
 /**
  * Declare an entry type.
@@ -2773,11 +2840,24 @@ const ENTRY_TYPE_ID = /^([a-z0-9][a-z0-9.-]*):entry\/([a-z0-9][a-z0-9-]*)@(\d+)$
  */
 export const describeEntryType = <const Id extends string>(
 	d: EntryTypeDecl<Id>,
-): EntryDescriptor<Id> => {
+): EntryDescriptor<Id> => registerEntryType(d, 'core')
+
+/**
+ * 🚧 The rulesets' door: a **derived entry type** — one per entryable
+ * repertoire, id `<creator>:entry/<ruleset>.<repertoire>@1` — declared by
+ * `deriveRulesetEntryTypes` (rulesets.ts), never by hand. Admits a non-core
+ * namespace, because a plugin ruleset's repertoires derive under its own;
+ * refuses any id that is not of the derived form.
+ * @internal
+ */
+export const _describeRulesetEntryType = <const Id extends string>(d: EntryTypeDecl<Id>): EntryDescriptor<Id> =>
+	registerEntryType(d, 'ruleset')
+
+function registerEntryType<const Id extends string>(d: EntryTypeDecl<Id>, door: 'core' | 'ruleset'): EntryDescriptor<Id> {
 	const { id, i18n, ...shape } = d
 	// Before the id is claimed, so a refused declaration can be fixed and
 	// retried — the same order `checkModeTitled` runs in.
-	assertEntryShape(id, shape)
+	assertEntryShape(id, shape, door)
 	return register({
 		id,
 		i18n,
@@ -2802,7 +2882,7 @@ export const allEntryTypes = (): EntryDescriptor[] =>
  * typo or a decision somebody has to make, and none of them has a partial
  * answer worth keeping.
  */
-function assertEntryShape(id: string, shape: EntryShape): void {
+function assertEntryShape(id: string, shape: EntryShape, door: 'core' | 'ruleset' = 'core'): void {
 	if (!ENTRY_TYPE_ID.test(id))
 		throw new Error(
 			`'${id}' is not a valid entry type id. The grammar is ` +
@@ -2810,20 +2890,30 @@ function assertEntryShape(id: string, shape: EntryShape): void {
 				`is the pin, exactly as for node definitions.`,
 		)
 	/**
-	 * Core is the sole author of entry types, and this line is the switch.
+	 * Core and rulesets are the authors of entry types, and these lines are
+	 * the switch (widened 2026-10-16, rulesets §21 amendment).
 	 *
-	 * Not a permanent property of the design — an entry type is data, and
-	 * nothing about the projection cares who wrote it. What is missing is the
-	 * rest of the story: a plugin-authored type needs its constraint projection
-	 * gated, its `fields` reviewed and its rows owned. Until that exists the
-	 * honest state is off, said out loud, in one place.
+	 * Core declares its five by hand. A ruleset never writes one: each of its
+	 * entryable repertoires **derives** one through `_describeRulesetEntryType`
+	 * (`deriveRulesetEntryTypes`), whose fields are the repertoire's piece
+	 * shape — already checked by the ruleset's own findings — plus the
+	 * universal entry parts core's types declare. A hand-written plugin type
+	 * stays off: it would own a database constraint and the rows under it
+	 * with nothing reviewing its `fields`, and that half is not built.
 	 */
-	if (!id.startsWith('core:'))
+	const derived = ENTRY_TYPE_ID.exec(id)?.[2]?.includes('.') ?? false
+	if (door === 'ruleset' && !derived)
 		throw new Error(
-			`'${id}' cannot be declared: entry types are core-authored in this release. ` +
-				`The row shape is data and nothing in the projection cares who wrote it, so ` +
-				`this is a switch rather than a wall — but a plugin-owned type also owns a ` +
-				`database constraint and the rows under it, and that half is not built.`,
+			`'${id}' is not a derived entry type id. A ruleset's entry types are ` +
+				`'<creator>:entry/<ruleset>.<repertoire>@1' — 'core:entry/vis-itineris.weapons@1' — ` +
+				`one per entryable repertoire.`,
+		)
+	if (door === 'core' && !id.startsWith('core:'))
+		throw new Error(
+			`'${id}' cannot be declared: entry types are authored by core and by rulesets ` +
+				`in this release. A ruleset's come from its entryable repertoires ` +
+				`(deriveRulesetEntryTypes), never by hand — a hand-written plugin type also owns ` +
+				`a database constraint and the rows under it, and that half is not built.`,
 		)
 
 	const unknown = unknownRoles(shape)

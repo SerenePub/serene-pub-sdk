@@ -34,7 +34,7 @@ const FIELDS = [
 	annexField({ key: 'clock', shape: { type: 'integer', min: 0 }, see: ['person'] }),
 	annexField({ key: 'culprit', shape: { type: 'string' } }),
 	annexField({ key: 'last-roll', shape: { type: 'integer' }, see: ['participant'], act: ['participant'] }),
-	annexField({ key: 'map', shape: { type: 'string' }, genre: 'core:genre/adventure' }),
+	annexField({ key: 'map', shape: { type: 'string' }, genre: 'core:genre/story' }),
 ]
 
 describe('the declaration', () => {
@@ -72,7 +72,7 @@ describe('the write judge', () => {
 		// Another genre's field is not this session's.
 		assert.match(
 			annexWriteRefusals(FIELDS, { owner: 'acme.rp', keys: ['map'], genre: 'core:genre/chat' })[0]!,
-			/declared for 'core:genre\/adventure'/,
+			/declared for 'core:genre\/story'/,
 		)
 		// An owner that declares nothing: every key is refused.
 		assert.equal(annexWriteRefusals(undefined, { owner: 'x', keys: ['a'] }).length, 1)
@@ -97,7 +97,7 @@ describe('the write judge', () => {
 describe('validate() and the package pass', () => {
 	const base = (id = 'acme.rp:spec/keep') =>
 		spec(id, { version: '1.0.0' }).inlet('input', C.userMessage.v1(), {
-			genre: use('core:genre/chat'),
+			genre: use('core:genre/story'),
 			event: 'core:event/message-respond@1',
 		})
 
@@ -169,15 +169,72 @@ describe("core's annex declaration", () => {
 		// One (lair re-plan R13, 2026-09-28): the Lair Castellan rewrites its
 		// scratchpad after a Sanctum reply. Every other core pipeline keeps its
 		// state in core's own columns.
+		// 🚧 And Dungeon Crawler (2026-10-15), whose generated world, lanes,
+		// round, journal and notes live in the annex (★A): create's blank keys
+		// and the owner's lane, the welcome's lanes, the interview's world and
+		// genesis, the story's round reset and the Planner's sheet edits.
+		// 2026-10-17: W3-B (2026-10-16) moved the crawl's bookkeeping from
+		// `dungeon-crawler-world` to `dungeon-crawler-progress` (the world now
+		// lives in the session's notes); every writer names the new key, and the
+		// story turn files at `filed.kept.write`, Rest at `rested.kept.write`.
+		// 2026-10-18: the lane map left the annex (lanes by person on the
+		// server: core's register, `core:query/channel-lane@1`) and the round
+		// key is retired (AUDIT B) — nobody writes either; the Planner's talk
+		// keeps its asks in the notes (PLAN-sheet-widget-redesign §13); and
+		// every rewrite of the notes keeps the revealed copy in step (A24).
+		// 🚧 And Story's sweep (2026-10-19): *Track goals* keeps the goals note.
 		assert.deepEqual(writers, [
+			'core:spec/story-respond#sweep.due.goals.noted.write:story-goals',
 			'core:spec/lair-respond#via.turn.channel.sanctum.padKeep.kept.write:castellan-scratchpad',
+			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-journal',
+			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-planning-notes',
+			'core:spec/dungeon-crawler-respond#channel.story.sheet.noted.write:dungeon-crawler-planning-notes',
+			'core:spec/dungeon-crawler-respond#channel.story.sheet.revealed.write:dungeon-crawler-planning-notes-revealed',
+			'core:spec/dungeon-crawler-respond#channel.story.filed.kept.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-respond#channel.story.filed.kept.write:dungeon-crawler-journal',
+			'core:spec/dungeon-crawler-respond#channel.parley.kept.noted.write:dungeon-crawler-planning-notes',
+			'core:spec/dungeon-crawler-respond#channel.parley.kept.revealed.write:dungeon-crawler-planning-notes-revealed',
+			'core:spec/dungeon-crawler-interview#route.world.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-interview#route.sheet.after.world.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-interview#route.sheet.after.begin.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-interview#route.sheet.after.begin.write:dungeon-crawler-journal',
+			'core:spec/dungeon-crawler-interview#route.sheet.after.begin.write:dungeon-crawler-planning-notes',
+			'core:spec/dungeon-crawler-reveal#route.revealed.copy:dungeon-crawler-planning-notes-revealed',
+			'core:spec/dungeon-crawler-reveal#route.goal.write:dungeon-crawler-journal',
+			// 🚧 The story turn (2026-10-15): the world and journal filed, the
+			// Planner's notes rewritten; Rest's world; the goal's decision and
+			// its new goal.
+			'core:spec/dungeon-crawler-rest#rested.kept.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-goal#route.world.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-goal#route.renew.kept.goal.write:dungeon-crawler-progress',
+			'core:spec/dungeon-crawler-goal#route.renew.kept.goal.write:dungeon-crawler-journal',
+			'core:spec/dungeon-crawler-goal#route.renew.kept.goal.write:dungeon-crawler-planning-notes',
+			'core:spec/dungeon-crawler-goal#route.renew.revealed.notes.write:dungeon-crawler-planning-notes-revealed',
 		])
+		// Nobody writes the retired keys.
+		assert.ok(!writers.some((w) => /dungeon-crawler-(lanes|round)$/.test(w)))
 	})
 
 	test("declares retake's \"don't ask again\" — the person's, settable, in every genre (lair pass R2)", () => {
 		assert.deepEqual(
 			CORE_ANNEX_FIELDS.map((f) => f.key),
-			['retake-quietly', 'castellan-scratchpad'],
+			[
+				'retake-quietly',
+				'castellan-scratchpad',
+				// 🚧 Story's goals note (2026-10-19), written by its sweep.
+				'story-goals',
+				// 🚧 Dungeon Crawler's six (PLAN-dungeon-crawler-2026-10-14).
+				// 2026-10-17: + `progress` (W3-B); `world` stays ⏳, read-only, for
+				// sessions made before 2026-10-16. 2026-10-18: `round` retired
+				// (AUDIT B) — six; ⏳ `lanes` still declared, written by nothing.
+				'dungeon-crawler-progress',
+				'dungeon-crawler-world',
+				'dungeon-crawler-lanes',
+				'dungeon-crawler-planning-notes',
+				'dungeon-crawler-planning-notes-revealed',
+				'dungeon-crawler-journal',
+			],
 		)
 		const [f] = CORE_ANNEX_FIELDS
 		assert.deepEqual(f!.shape, { type: 'boolean', default: false })
@@ -201,5 +258,24 @@ describe("core's annex declaration", () => {
 		assert.deepEqual(f.act, ['owner'])
 		assert.equal(f.genre, 'core:genre/lair')
 		assert.equal((f.label as { en?: string } | undefined)?.en, "Castellan's scratchpad")
+	})
+
+	test("declares Dungeon Crawler's six — its sessions only, nobody's to set, the notes the Planner's alone until revealed", () => {
+		const dc = CORE_ANNEX_FIELDS.filter((x) => x.key.startsWith('dungeon-crawler-'))
+		// 2026-10-17: seven — `progress` plus the ⏳ legacy `world`; 2026-10-18: `round` retired — six again.
+		assert.equal(dc.length, 6)
+		assert.ok(!dc.some((f) => f.key === 'dungeon-crawler-round'))
+		for (const f of dc) {
+			assert.equal(f.genre, 'core:genre/dungeon-crawler', f.key)
+			assert.equal(f.act, undefined, f.key)
+		}
+		const see = (key: string) => dc.find((f) => f.key === key)!.see as ParticipantRef[]
+		// The world is pipelines only; the secret notes reach the Planner's prompt and nobody else's.
+		assert.deepEqual(see('dungeon-crawler-progress'), [])
+		assert.deepEqual(see('dungeon-crawler-world'), [])
+		assert.equal(aiHolds(see('dungeon-crawler-planning-notes'), 'envoy:planner' as ParticipantRef), true)
+		assert.equal(aiHolds(see('dungeon-crawler-planning-notes'), 'envoy:narrator' as ParticipantRef), false)
+		for (const key of ['dungeon-crawler-lanes', 'dungeon-crawler-planning-notes-revealed', 'dungeon-crawler-journal'])
+			assert.deepEqual(see(key), ['participant'], key)
 	})
 })

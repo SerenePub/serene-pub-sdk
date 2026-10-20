@@ -9,33 +9,28 @@
  */
 import { i18nText, preset, type GenreDecl, type PresetDecl, type PresetInput } from "@serene-pub/sdk"
 import {
-	adventureGenre,
 	chatGenre,
-	guideGenre
+	guideGenre,
+	STORY_TASKS,
+	storyGenre
 } from "../registry/genres.js"
 import {
+	dungeonCrawlerGenre,
 	lairGenre
 } from "../registry/genres.js"
-import {
-	createChatSpec
-} from "../genres/chat/create.js"
+import { createStorySpec } from "../genres/story/create.js"
+import { storyRespondSpec } from "../genres/story/respond.js"
+import { narrateSpec } from "../genres/story/narrate.js"
+import { answerFormStorySpec } from "../genres/story/answerForm.js"
+import { storyAnswerSpec } from "../genres/story/answer.js"
+import { storyAskSpec } from "../genres/story/ask.js"
+import { storyLookSpec } from "../genres/story/look.js"
+import { storyRestSpec } from "../genres/story/rest.js"
+import { createAssistantSpec } from "../genres/chat/create.js"
+import { assistantRespondSpec } from "../genres/chat/respond.js"
+import { answerFormAssistantSpec } from "../genres/chat/answerForm.js"
 import { createGuideSpec } from "../genres/guide/create.js"
 import { guideRespondSpec } from "../genres/guide/respond.js"
-import {
-	respondSpec
-} from "../genres/chat/respond.js"
-import {
-	narrateSpec
-} from "../genres/chat/narrate.js"
-import { adventureCreateSpec } from "../genres/adventure/create.js"
-import { adventureRespondSpec } from "../genres/adventure/respond.js"
-import { adventureAdvanceTimeSpec } from "../genres/adventure/advanceTime.js"
-import { adventureAnswerSpec } from "../genres/adventure/answer.js"
-import { adventureAskSpec } from "../genres/adventure/ask.js"
-import { adventureLookSpec } from "../genres/adventure/look.js"
-import { adventureRestSpec } from "../genres/adventure/rest.js"
-import { answerFormAdventureSpec } from "../genres/adventure/answerForm.js"
-import { answerFormChatSpec } from "../genres/chat/answerForm.js"
 import { answerFormGuideSpec } from "../genres/guide/answerForm.js"
 import { answerFormLairSpec } from "../genres/lair/answerForm.js"
 import { lairCreateSpec } from "../genres/lair/create.js"
@@ -48,6 +43,20 @@ import { lairRoomAnswerSpec } from "../genres/lair/roomAnswer.js"
 import { lairTrapSpec } from "../genres/lair/trap.js"
 import { lairWhisperSpec } from "../genres/lair/whisper.js"
 import { TURN_ORDER_BY_GENRE } from "../genres/index.js"
+import {
+	DUNGEON_CRAWLER_NARRATOR_KEY,
+	DUNGEON_CRAWLER_PLANNER_KEY
+} from "../genres/dungeon-crawler/names.js"
+import {
+	dungeonCrawlerCreateSpec,
+	dungeonCrawlerWelcomeSpec
+} from "../genres/dungeon-crawler/create.js"
+import { dungeonCrawlerRespondSpec } from "../genres/dungeon-crawler/respond.js"
+import { dungeonCrawlerInterviewSpec } from "../genres/dungeon-crawler/interview.js"
+import { dungeonCrawlerRevealSpec } from "../genres/dungeon-crawler/reveal.js"
+import { dungeonCrawlerRestSpec } from "../genres/dungeon-crawler/rest.js"
+import { dungeonCrawlerGoalSpec } from "../genres/dungeon-crawler/goal.js"
+import { answerFormDungeonCrawlerSpec } from "../genres/dungeon-crawler/answerForm.js"
 
 /** A genre's turn-order spec, as a value (R27, R48). */
 const turnOrderFor = (genre: GenreDecl) => TURN_ORDER_BY_GENRE.find((t) => t.genre === genre)!.build()
@@ -57,85 +66,157 @@ const turnOrderFor = (genre: GenreDecl) => TURN_ORDER_BY_GENRE.find((t) => t.gen
  * answers, so a genre's turn-order spec — locked over the events it
  * recomputes on — is one entry like any other. One document serves one
  * genre: the preset check refuses a spec whose lock names another genre
- * (plans/24 §4), which is why there are four turn-order specs.
+ * (plans/24 §4), which is why there are five turn-order specs.
  */
 
-const chatDefaultPreset = (): PresetInput => ({
-	slug: "chat-default",
-	genre: chatGenre,
-	label: "Chat",
-	description: "The standard roleplay chat, everything default.",
-	bindings: [
-		// Turn order as state (PLAN-turn-order §4.5).
-		turnOrderFor(chatGenre),
-		createChatSpec(),
-		respondSpec(),
-		// A form put to a participant the AI portrays is answered by the
-		// genre's answer pipeline (R-15 *Forms*; U5d). Optional in the
-		// surface; bound here so it works out of the box.
-		answerFormChatSpec(),
-	],
-	// By identity (W-A): the declaration, not the spec — `narrate` is the
-	// narrate spec's one action.
-	actions: { include: [{ spec: narrateSpec(), key: "narrate" }] }
+/* ── Story: Minimal · Living · Rule Based ──────────────────────────────── */
+
+/**
+ * 🚧 The background tasks at their declared defaults — what Living and Rule
+ * Based pin (`TaskSettingsV1`). Lorebook writes (`lore`, `world-state`) are
+ * Full here (★J, ruled 2026-10-19).
+ */
+const STORY_TASKS_DEFAULT = Object.freeze({
+	v: 1 as const,
+	tasks: Object.fromEntries(STORY_TASKS.map((t) => [t.key, { mode: t.default }]))
 })
 
 /**
- * The Adventure genre's shipped preset.
- *
- * ## It ships ENABLED
- *
- * The condition set for this lane was "enabled if the create path runs end to
- * end in tests", and it does: creating an Adventure session publishes the
- * create spec, seeds the cast's greetings and resolves the genre's seven
- * attribute slots, with no model call anywhere in it. The turn itself needs a
- * connection like every other turn does.
- *
- * ## What `defaults` says, and what it deliberately does not
- *
- * `genreFields` is the creation pre-fill for the three fields the genre
- * declares. `trustNarrator: false` is restated here rather than left to the
- * declaration's default because it is the one field with a safety meaning: a
- * preset is what a person starts from, and the answer to "does the model get to
- * change my character's health without asking" should be visible in the thing
- * that decided it.
- *
- * No `lorebookId`: the genre requires a lorebook and has no opinion about
- * which, and a preset naming one would name a row that exists on the machine it
- * was written on.
+ * 🚧 Every task Off — what Minimal pins: nothing after the reply runs, so one
+ * call a turn; lorebook writes Off (★J). All but *Read the lorebook*, which
+ * stays Full (lane 2, 2026-10-19): it costs no call, and a session migrated
+ * from the roleplay Chat read its lorebook into every reply — Minimal
+ * replies exactly as before (R). *Read the scene* stays Off: it adds to the
+ * prompt.
  */
-const adventureDefaultPreset = (): PresetInput => ({
-	slug: "adventure-default",
-	genre: adventureGenre,
-	label: "Adventure",
-	description:
-		"A narrated world with a cast that acts on its own, stats and an inventory that change as you play, and a story clock that moves.",
-	bindings: [
-		// Turn order as state (PLAN-turn-order §4.5).
-		turnOrderFor(adventureGenre),
-		adventureCreateSpec(),
-		adventureRespondSpec(),
-		answerFormAdventureSpec(),
-	],
-	actions: {
-		include: [
-			{ spec: adventureLookSpec(), key: "look" },
-			{ spec: adventureRestSpec(), key: "rest" },
-			{ spec: adventureAdvanceTimeSpec(), key: "advance-time" },
-			// The worked form (U5d): Ask puts a question to the cast, Answer
-			// is what its options fire — by a click, or by the answer
-			// pipeline committing an oracle's choice.
-			{ spec: adventureAskSpec(), key: "ask" },
-			{ spec: adventureAnswerSpec(), key: "answer" }
-		]
-	},
-	defaults: {
-		genreFields: {
-			tone: "grounded",
-			difficulty: "normal",
-			trustNarrator: false
-		}
-	},
+const STORY_TASKS_OFF = Object.freeze({
+	v: 1 as const,
+	tasks: Object.fromEntries(
+		STORY_TASKS.map((t) => [t.key, { mode: t.key === "lore-retrieval" ? ("full" as const) : ("off" as const) }])
+	)
+})
+
+/** Story's spine, the same for its three presets — one pipeline that branches on the tasks. */
+const storyBindings = () => [
+	// Turn order as state (PLAN-turn-order §4.5).
+	turnOrderFor(storyGenre),
+	createStorySpec(),
+	storyRespondSpec(),
+	// A form put to a participant the AI portrays is answered by the
+	// genre's answer pipeline (R-15 *Forms*; U5d).
+	answerFormStorySpec()
+]
+
+/**
+ * 🚧 **Minimal** — the roleplay Chat's preset until 2026-10-19 (the app's
+ * migration re-keys `core-chat-default` to it, so a migrated Chat session is
+ * born of it): one call a turn, nothing changes unless the person changes
+ * it, and a story may start with nobody in it. Only Narrate comes along, as
+ * it did on Chat.
+ */
+const storyMinimalPreset = (): PresetInput => ({
+	slug: "story-minimal",
+	genre: storyGenre,
+	label: "Minimal",
+	description: "Just the story: one model call a turn, and nothing changes unless you change it.",
+	bindings: storyBindings(),
+	// By identity (W-A): the declaration, not the spec — `narrate` is the
+	// narrate spec's one action.
+	actions: { include: [{ spec: narrateSpec(), key: "narrate" }] },
+	callsPerTurn: 1,
+	cast: { characters: 0, personas: 0 },
+	settings: { tasks: STORY_TASKS_OFF },
+	enabled: true
+})
+
+/** The actions a world that keeps itself offers: Narrate, and Adventure's Look, Rest, Ask and its Answer. */
+const storyWorldActions = () => ({
+	include: [
+		{ spec: narrateSpec(), key: "narrate" },
+		{ spec: storyLookSpec(), key: "look" },
+		{ spec: storyRestSpec(), key: "rest" },
+		// The worked form (U5d): Ask puts a question to the cast, Answer
+		// is what its options fire — by a click, or by the answer
+		// pipeline committing an oracle's choice.
+		{ spec: storyAskSpec(), key: "ask" },
+		{ spec: storyAnswerSpec(), key: "answer" }
+	]
+})
+
+/**
+ * 🚧 **Living** — the genre's default (Adventure's preset until 2026-10-19;
+ * the app's migration re-keys `core-adventure-default` to it): the world
+ * keeps itself in words — the reply, then one call that notes what it
+ * changed; a sweep every few turns files what happened.
+ */
+const storyLivingPreset = (): PresetInput => ({
+	slug: "story-living",
+	genre: storyGenre,
+	label: "Living",
+	description: "The world keeps itself in words: after each reply it notes what changed, and every few turns it files what happened.",
+	bindings: storyBindings(),
+	actions: storyWorldActions(),
+	defaults: { genreFields: { tone: "grounded", difficulty: "normal" } },
+	callsPerTurn: 2,
+	settings: { tasks: STORY_TASKS_DEFAULT },
+	enabled: true
+})
+
+/**
+ * 🚧 **Rule Based** — Living, with the session's ruleset resolving the
+ * numbers by script. ⚠ `rigour` is not a genre field: it is the session's
+ * own `sessions.rigour` column. It is pinned here as the preset's value for
+ * the host to apply when a session starts from (or switches to) this preset
+ * — the app lane's to honour. With no ruleset picked it plays as Living (the
+ * reckoning's words branch), and the form says so.
+ */
+const storyRuleBasedPreset = (): PresetInput => ({
+	slug: "story-rule-based",
+	genre: storyGenre,
+	label: "Rule Based",
+	description: "Living, with the ruleset's rules deciding the numbers. With no ruleset picked it plays as Living.",
+	bindings: storyBindings(),
+	actions: storyWorldActions(),
+	defaults: { genreFields: { tone: "grounded", difficulty: "normal" } },
+	callsPerTurn: 2,
+	settings: { tasks: STORY_TASKS_DEFAULT, rigour: "scripts" },
+	enabled: true
+})
+
+/* ── Chat: Basic · Agentic ──────────────────────────────────────────────── */
+
+const chatBindings = () => [
+	turnOrderFor(chatGenre),
+	createAssistantSpec(),
+	assistantRespondSpec(),
+	answerFormAssistantSpec()
+]
+
+/** 🚧 **Basic** — Chat's default: the model, no tools, one call a turn. */
+const chatBasicPreset = (): PresetInput => ({
+	slug: "chat-basic",
+	genre: chatGenre,
+	label: "Basic",
+	description: "The model as itself: no tools, one call a turn.",
+	bindings: chatBindings(),
+	callsPerTurn: 1,
+	settings: { tools: [] },
+	enabled: true
+})
+
+/**
+ * 🚧 **Agentic** — the same reply with tools: web search, your lorebooks, pictures, the
+ * date, a calculator and the conversation's own history. Lorebook writes
+ * are off (★J): a person switches them on per session.
+ */
+const chatAgenticPreset = (): PresetInput => ({
+	slug: "chat-agentic",
+	genre: chatGenre,
+	label: "Agentic",
+	description: "The model with tools: it can search the web, read your lorebooks, make pictures and do sums. Each tool it uses is another call.",
+	bindings: chatBindings(),
+	callsPerTurn: 1,
+	settings: { tools: ["web", "lore", "image", "clock", "calculator", "history"] },
 	enabled: true
 })
 
@@ -224,6 +305,50 @@ const lairDefaultPreset = (): PresetInput => ({
 	enabled: true
 })
 
+/**
+ * 🚧 Dungeon Crawler's shipped preset (PLAN-dungeon-crawler-2026-10-14).
+ *
+ * Every event the genre declares that a pipeline answers is bound: create,
+ * the reply, the welcome (`member-added`), the turn order (on its six) and
+ * the answer form. The interview's one action (`answer`, the `form` venue)
+ * comes along by identity, so the blocks its questions carry have something
+ * to fire.
+ *
+ * `defaults.envoys` seats BOTH envoys: the Narrator is the genre's default and
+ * is seated regardless, and the Planner is seated here — the create spec
+ * writes its greeting only while it is seated, and its talk needs its seat.
+ *
+ * Offered, not assumed, and enabled: creating a session runs no model call.
+ */
+const dungeonCrawlerDefaultPreset = (): PresetInput => ({
+	slug: "dungeon-crawler-default",
+	genre: dungeonCrawlerGenre,
+	label: "Dungeon Crawler",
+	description:
+		"The AI is the whole Dungeon Master. Make a character, walk into a world it generates, and play only your own part — alone or with friends.",
+	bindings: [
+		dungeonCrawlerCreateSpec(),
+		dungeonCrawlerRespondSpec(),
+		dungeonCrawlerWelcomeSpec(),
+		turnOrderFor(dungeonCrawlerGenre),
+		answerFormDungeonCrawlerSpec()
+	],
+	actions: {
+		include: [
+			{ spec: dungeonCrawlerInterviewSpec(), key: "answer" },
+			// 🚧 The owner's one-way reveal (feature 15, D8).
+			{ spec: dungeonCrawlerRevealSpec(), key: "reveal" },
+			// 🚧 The story turn's two: Rest (composer), and what follows the goal (its form).
+			{ spec: dungeonCrawlerRestSpec(), key: "rest" },
+			{ spec: dungeonCrawlerGoalSpec(), key: "goal" }
+		]
+	},
+	defaults: {
+		envoys: [DUNGEON_CRAWLER_PLANNER_KEY, DUNGEON_CRAWLER_NARRATOR_KEY]
+	},
+	enabled: true
+})
+
 /** Built on first use: a preset binds spec values, and core's specs compile lazily. */
 const once = <T>(build: () => T): (() => T) => {
 	let value: T | undefined
@@ -232,10 +357,14 @@ const once = <T>(build: () => T): (() => T) => {
 
 /** Core's presets as authored — what the announcement declares (R48). @internal */
 export const corePresetInputs = once((): PresetInput[] => [
-	chatDefaultPreset(),
-	adventureDefaultPreset(),
+	storyMinimalPreset(),
+	storyLivingPreset(),
+	storyRuleBasedPreset(),
+	chatBasicPreset(),
+	chatAgenticPreset(),
 	guideDefaultPreset(),
-	lairDefaultPreset()
+	lairDefaultPreset(),
+	dungeonCrawlerDefaultPreset()
 ])
 
 /** Core's presets in their stored form, every reference read down to its id. @experimental */
@@ -287,6 +416,12 @@ export interface CorePresetSeed {
 	 * decision, because the seed pass never touches a row it did not create.
 	 */
 	enabled?: boolean
+	/** 🚧 What the preset pins (`PresetDecl.settings`) — the `settings` column. */
+	settings?: Record<string, unknown>
+	/** 🚧 The card's model calls a turn (`PresetDecl.callsPerTurn`) — `calls_per_turn`. */
+	callsPerTurn?: number
+	/** 🚧 The cast floor (`PresetDecl.cast`) — `cast_floor`. */
+	castFloor?: { characters?: number; personas?: number }
 	isDefault: boolean
 	isImmutable: boolean
 }
@@ -314,6 +449,11 @@ const seedOf = (
 		? { defaults: decl.defaults as Record<string, unknown> }
 		: {}),
 	...(decl.enabled === undefined ? {} : { enabled: decl.enabled }),
+	// 🚧 The preset layer of the cascade and the card's numbers (2026-10-19):
+	// the row columns `settings`, `calls_per_turn` and `cast_floor`.
+	...(decl.settings ? { settings: decl.settings as Record<string, unknown> } : {}),
+	...(decl.callsPerTurn !== undefined ? { callsPerTurn: decl.callsPerTurn } : {}),
+	...(decl.cast ? { castFloor: decl.cast } : {}),
 	isDefault,
 	isImmutable: true
 })
@@ -323,16 +463,24 @@ export const corePresetSeeds = once((): CorePresetSeed[] => {
 	const stored = (slug: string) => corePresets().find((p) => p.slug === slug)!
 	return [
 	// ⚠ The seed keys never change spelling — existing installs match on them.
-	seedOf(stored("chat-default"), "core-chat-default", true),
 	/**
-	 * ⚠ `isDefault: false`. "Default" here means *the preset a session with no
-	 * preset falls back to*, and there is exactly one of those on an instance.
-	 * Adventure is offered, not assumed.
+	 * 🚧 Story's three (2026-10-19). Living is the genre's default — one
+	 * default per genre (owner ruling 2026-10-02). `core-story-minimal` and
+	 * `core-story-living` are the keys the app's migration re-keys
+	 * `core-chat-default` and `core-adventure-default` to, so a 0.6 install
+	 * keeps those rows (and every session's `preset_id`) under the new names.
 	 */
-	seedOf(stored("adventure-default"), "core-adventure-default", false),
+	seedOf(stored("story-minimal"), "core-story-minimal", false),
+	seedOf(stored("story-living"), "core-story-living", true),
+	seedOf(stored("story-rule-based"), "core-story-rule-based", false),
+	/** 🚧 Chat's two (2026-10-19): Basic is its default. */
+	seedOf(stored("chat-basic"), "core-chat-basic", true),
+	seedOf(stored("chat-agentic"), "core-chat-agentic", false),
 	/** Offered, not assumed — the same footing as Adventure. */
 	seedOf(stored("guide-default"), "core-guide-default", false),
 	/** The same footing again: Lair is offered in the picker, never assumed. */
-	seedOf(stored("lair-default"), "core-lair-default", false)
+	seedOf(stored("lair-default"), "core-lair-default", false),
+	/** 🚧 Offered in the picker, never assumed — Lair's footing. */
+	seedOf(stored("dungeon-crawler-default"), "core-dungeon-crawler-default", false)
 	]
 })

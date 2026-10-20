@@ -57,9 +57,9 @@ import {
 	type SpecDocument,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre, adventureGenre } from '@serene-pub/core-catalog'
+import { storyGenre} from '@serene-pub/core-catalog'
 
-const CHAT = chatGenre.id
+const CHAT = storyGenre.id
 
 const location: EnabledWhen = {
 	on: 'state.world.location',
@@ -88,7 +88,7 @@ const actionSpec = (id: string, over: Record<string, unknown>) =>
 		},
 	})
 		.inlet('input', C.userMessage.v1(), {
-			genre: chatGenre,
+			genre: storyGenre,
 			event: 'core:event/session-action@1',
 		})
 		.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
@@ -516,9 +516,9 @@ describe('every door runs them', () => {
 		assert.deepEqual(genreEnabledWhen(g, 'demo:spec/other#other'), [])
 		// Adventure's `look` default was withdrawn: Look is the opening
 		// scene, and a fresh session must not begin with it grey.
-		assert.equal(adventureGenre.enabledWhen, undefined)
-		assert.deepEqual(genreEnabledWhen(adventureGenre, 'core:spec/adventure-look#look'), [])
-		assert.deepEqual(genreEnabledWhen(chatGenre, 'core:spec/chat-narrate#narrate'), [])
+		assert.equal(storyGenre.enabledWhen, undefined)
+		assert.deepEqual(genreEnabledWhen(storyGenre, 'core:spec/story-look#look'), [])
+		assert.deepEqual(genreEnabledWhen(storyGenre, 'core:spec/story-narrate#narrate'), [])
 	})
 })
 

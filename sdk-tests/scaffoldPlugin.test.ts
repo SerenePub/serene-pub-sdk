@@ -437,7 +437,7 @@ describe('105 · what the built manifest carries', () => {
 		const m = JSON.parse(await readFile(join(out, 'manifest.json'), 'utf8'))
 		// Never bundled: an id this package references and does not declare is
 		// enforced at install.
-		assert.deepEqual(m.requires, ['core:event/session-action@1', 'core:genre/chat'])
+		assert.deepEqual(m.requires, ['core:event/session-action@1', 'core:genre/story'])
 	})
 })
 

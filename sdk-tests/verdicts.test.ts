@@ -190,7 +190,7 @@ describe('01 §13 · the seven, judged', () => {
 		const spec = {
 			id: 'acme:spec/keys',
 			contributes: {
-				actions: [{ key: 'grant', genre: 'core:genre/chat', venue: { kind: 'composer' }, label: 'Grant', effects: 'world' }],
+				actions: [{ key: 'grant', genre: 'core:genre/story', venue: { kind: 'composer' }, label: 'Grant', effects: 'world' }],
 			},
 		}
 		const choices = (addressee?: string) =>

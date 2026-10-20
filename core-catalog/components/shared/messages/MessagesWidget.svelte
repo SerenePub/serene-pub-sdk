@@ -61,6 +61,16 @@
 		 * by it; the widget draws its head from it.
 		 */
 		channel: string | null
+		/**
+		 * 🚧 What an empty log says (the copy's `emptyState`), or `null` for
+		 * the widget's own "Send a message to start".
+		 */
+		emptyState: string | null
+		/**
+		 * 🚧 How the change lines spell a story time (`formatStoryTimeAs`
+		 * tokens), or `null` for the host's spelling through the calendar.
+		 */
+		timeFormat: string | null
 	}
 
 	/**
@@ -81,7 +91,9 @@
 		showSceneMarkers: true,
 		nextUp: "head",
 		showActions: true,
-		channel: null
+		channel: null,
+		emptyState: null,
+		timeFormat: null
 	}
 
 	function pickEnum<T extends string>(
@@ -157,7 +169,15 @@
 			channel:
 				typeof v.channel === "string" && v.channel.trim()
 					? v.channel.trim()
-					: d.channel
+					: d.channel,
+			emptyState:
+				typeof v.emptyState === "string" && v.emptyState.trim()
+					? v.emptyState.trim()
+					: d.emptyState,
+			timeFormat:
+				typeof v.timeFormat === "string" && v.timeFormat.trim()
+					? v.timeFormat
+					: d.timeFormat
 		}
 	}
 </script>
@@ -295,6 +315,7 @@
 					order={settings.order}
 					showSceneMarkers={settings.showSceneMarkers}
 					presentation={settings.presentation}
+					emptyState={settings.emptyState}
 				/>
 			{/if}
 		</div>
@@ -407,7 +428,7 @@
 				</div>
 			</div>
 		</div>
-	{:else if settings.showComposer && conversation}
+	{:else if settings.showComposer && conversation && !conversation.noLane}
 		{@const dossier = conversation.dossier}
 		<div data-widget-part="messages.compose">
 			<!-- The turn line (§3.16): what the last run did, and who is next —

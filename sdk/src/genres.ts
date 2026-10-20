@@ -32,9 +32,13 @@ import { assertSceneSettings, declaredScenePlace } from './sceneSettings.js'
 import { i18nFindings, localeMapOf, type LocaleMap } from './i18n.js'
 import { eventById, notADeclaredEvent } from './events.js'
 import { settingsSchemaFindings } from './settings.js'
+import { taskDeclsFindings, type TaskDecl } from './tasks.js'
+import { genreUsesFindings, type GenreUses } from './fit.js'
 import { getAttributeSlot, type AttributeSlotDecl } from './attributes.js'
 import type { AttributeSheetDecl } from './sheets.js'
 import { refuseUnlessIdentical } from './hash.js'
+import { getRuleset, RIGOURS, type Rigour } from './rulesets.js'
+import { finding, RULESET_ID_PATTERN, RulesetError } from './repertoires.js'
 import { isActionIdentity, parseSpecId, assertSpecId } from './identity.js'
 import {
 	enabledWhenFindings,
@@ -72,6 +76,14 @@ export const sessionEvents = Object.freeze({
 	sessionCreated: 'core:event/session-created@1',
 	/** The primary turn. A swipe is this pipeline re-run, not a new event. */
 	messageRespond: 'core:event/message-respond@1',
+	/**
+	 * 🚧 A person sent a message; the bound pipeline saves it (owner ruling
+	 * 2026-10-15). Every genre has it, stated in its `events` or not
+	 * (`genreHasEvent`) — so no genre declaration moved; `preset()` binds
+	 * `core:spec/save-message` (`SAVE_MESSAGE_SPEC_ID`) here unless the preset
+	 * binds a spec of its own.
+	 */
+	messageOffered: 'core:event/message-offered@1',
 	/**
 	 * Arbitrary buttons/triggers — the existing functions surface.
 	 * @ruling 19 §3
@@ -133,6 +145,17 @@ export const sessionEvents = Object.freeze({
 export type SessionEvent = (typeof sessionEvents)[keyof typeof sessionEvents]
 
 /**
+ * 🚧 Does this genre's event surface have `event`? Its `events`, plus
+ * `message-offered`, which every genre has whether it lists it or not (owner
+ * ruling 2026-10-15: a person's message is always saved through a pipeline).
+ * Implied rather than written into each declaration, so no genre's
+ * declaration — and no create document carrying one — moved.
+ * @experimental
+ */
+export const genreHasEvent = (genre: Pick<GenreDecl, 'events'>, event: string): boolean =>
+	event in (genre.events ?? {}) || event === sessionEvents.messageOffered
+
+/**
  * Why no genre may list, and no spec may lock, `turn-order-changed`:
  * the turn-order write's own event is core-internal.
  * One sentence for `genre()`, the builder's `.inlet()` and the package pass.
@@ -166,6 +189,40 @@ export interface GenreDecl {
 	readonly family: string
 	/** The picker card's subtitle. */
 	readonly description?: I18n
+	/** 🚧 The card's long copy (PLAN-genre-restructure §6, 2026-10-19): who's in the room, who drives, calls per turn in plain words, what's required and optional, when to pick a sibling. Two lines show; "More" unfolds it in place; the docs compiler reuses it. */
+	readonly about?: I18n
+	/** 🚧 Who may sit here (ruled 2026-10-19): `'solo'` — never a group session: the form hides the group switch and the host refuses `isGroup`, invites, guest claims and lanes (the Guide, whose tools reach the app). `'group'` (default) — as the shape allows. */
+	readonly members?: 'solo' | 'group'
+	/** 🚧 What this genre uses of a ruleset (PLAN-genre-restructure §11): the verbs its scripts emit (or `'any'`), the slots it reads, the repertoires it hands pieces from; `rulesetFit` rates every ruleset against it. */
+	readonly uses?: {
+		// Spelled out rather than `GenreUses`, as `rigour` is: this interface
+		// is frozen and the fit vocabulary is still 🚧 (`fit.ts`).
+		readonly verbs: readonly string[] | 'any'
+		readonly slots?: readonly string[]
+		readonly pieces?: readonly string[]
+		readonly conditions?: boolean
+		readonly casting?: boolean
+		readonly dice?: 'required' | 'optional'
+		readonly optional?: {
+			readonly verbs?: readonly string[]
+			readonly slots?: readonly string[]
+			readonly pieces?: readonly string[]
+			readonly conditions?: boolean
+			readonly casting?: boolean
+		}
+	}
+	/** 🚧 The background tasks this genre offers (PLAN-genre-restructure §4): chosen per session in a `'tasks'` field, pinned per preset, branched on by the genre's pipelines. */
+	readonly tasks?: readonly {
+		// Spelled out rather than `TaskDecl` for the same reason (`tasks.ts`).
+		readonly key: string
+		readonly label: I18n
+		readonly description?: I18n
+		readonly group: 'reply' | 'reckoning' | 'sweep' | 'events' | 'voices'
+		readonly kind: 'prose' | 'script' | 'both'
+		readonly default: 'full' | 'review' | 'off'
+		readonly detachable?: boolean
+		readonly reviewable?: boolean
+	}[]
 	/**
 	 * The standing SessionShape every surface asks about.
 	 * @ruling 19 §1
@@ -303,6 +360,28 @@ export interface GenreDecl {
 	 * params), not the genre's. Absent when unstated, so a genre that says
 	 * nothing hashes as it did.
 	 */
+	/**
+	 * 🚧 The **rigour** this genre's sessions run rulesets at — the options a
+	 * session may pick from and the default. Absent, a genre runs at
+	 * `prose` only. Rulesets are genre-independent: a genre says how play is
+	 * driven and how much of the mechanics it resolves, never which mechanics.
+	 * (Spelled out rather than `GenreRigour`: this interface is frozen, and
+	 * the rigour vocabulary is still 🚧.)
+	 */
+	readonly rigour?: {
+		readonly options: readonly ('prose' | 'mechanics' | 'scripts')[]
+		readonly default: 'prose' | 'mechanics' | 'scripts'
+	}
+	/**
+	 * 🚧 Rulesets this genre names, optionally: `only` — only these work (a
+	 * genre built to drive one ruleset; the first is the default); or
+	 * `recommended` with a `default` — offered first, every other ruleset
+	 * still allowed. Absent, every ruleset is offered alike. (`only` was
+	 * `strict` until 2026-10-17: in the interface _strict_ means rigour.)
+	 */
+	readonly rulesets?:
+		| { readonly only: readonly string[] }
+		| { readonly recommended: readonly string[]; readonly default: string }
 	readonly summarize?: {
 		/**
 		 * The spec a scene is summarized with — `owner:spec/<name>`. Only
@@ -322,6 +401,14 @@ export interface GenreProps {
 	name: I18n
 	family: string
 	description?: I18n
+	/** 🚧 The card's long copy — see `GenreDecl.about`. */
+	about?: I18n
+	/** 🚧 `'solo'` refuses group sessions — see `GenreDecl.members`. */
+	members?: 'solo' | 'group'
+	/** 🚧 What the genre uses of a ruleset — see `GenreDecl.uses`. */
+	uses?: GenreUses
+	/** 🚧 The background tasks the genre offers — see `GenreDecl.tasks`. */
+	tasks?: readonly TaskDecl[]
 	shape?: SessionShape
 	events?: Record<string, GenreEventDecl>
 	slots?: readonly AttributeSlotDecl[]
@@ -344,6 +431,77 @@ export interface GenreProps {
 	layouts?: readonly GenreLayoutDecl[]
 	/** 🚧 The summarize pipelines this genre owns, by spec id — see `GenreDecl.summarize`. */
 	summarize?: { scene?: string }
+	/** 🚧 The rigour options and default — see `GenreDecl.rigour`. */
+	rigour?: GenreRigour
+	/** 🚧 The only rulesets, or the recommended ones, by id — see `GenreDecl.rulesets`. */
+	rulesets?: GenreRulesets
+}
+
+/** 🚧 A genre's rigour options and its default (`GenreDecl.rigour`). @experimental */
+export interface GenreRigour {
+	options: readonly Rigour[]
+	default: Rigour
+}
+
+/** 🚧 The rulesets a genre names (`GenreDecl.rulesets`). @experimental */
+export type GenreRulesets = { only: readonly string[] } | { recommended: readonly string[]; default: string }
+
+/**
+ * 🚧 Why a genre's `rigour` or `rulesets` is refused, each finding opened by
+ * its reason's name: `bad-rigour` (no options, an unknown rigour, a default
+ * outside the options) · `bad-rulesets` (both or neither form, an empty
+ * list, a default outside `recommended`, the retired `strict`) · `bad-ruleset-id` ·
+ * `unknown-ruleset` — a `core:` id or one under the genre's own namespace
+ * that no registered ruleset is (declare it above the genre). An id under
+ * another package's namespace is the package's `requires`, resolved at
+ * install, so it is not refused here.
+ * @experimental
+ */
+export function genreRulesetFindings(id: string, props: Pick<GenreProps, 'rigour' | 'rulesets'>): string[] {
+	const out: string[] = []
+	const r = props.rigour
+	if (r !== undefined) {
+		const options = Array.isArray(r?.options) ? r.options : []
+		if (!options.length) out.push(finding('bad-rigour', `${id}.rigour has no options. Name the rigours a session may run at — ['prose'] at least.`))
+		for (const o of options.filter((o) => !RIGOURS.includes(o)))
+			out.push(finding('bad-rigour', `${id}.rigour offers '${String(o)}'. The rigours are ${RIGOURS.join(', ')}.`))
+		if (!options.includes(r?.default))
+			out.push(finding('bad-rigour', `${id}.rigour defaults to '${String(r?.default)}', which is not among its options.`))
+	}
+	const rs = props.rulesets as Record<string, unknown> | undefined
+	if (rs !== undefined) {
+		const only = rs?.only
+		const recommended = rs?.recommended
+		let ids: unknown[] = []
+		if (rs?.strict !== undefined)
+			out.push(finding('bad-rulesets', `${id}.rulesets.strict is now 'only' (2026-10-17) — say { only: [...] }.`))
+		else if ((only === undefined) === (recommended === undefined))
+			out.push(finding('bad-rulesets', `${id}.rulesets is { only: [...] } or { recommended: [...], default } — one of the two.`))
+		else if (only !== undefined) {
+			if (!Array.isArray(only) || !only.length || rs.default !== undefined)
+				out.push(finding('bad-rulesets', `${id}.rulesets.only is a non-empty list, with no default beside it — the first is the default.`))
+			else ids = only
+		} else {
+			if (!Array.isArray(recommended) || !recommended.length)
+				out.push(finding('bad-rulesets', `${id}.rulesets.recommended is a non-empty list.`))
+			else {
+				ids = recommended
+				if (!recommended.includes(rs.default))
+					out.push(finding('bad-rulesets', `${id}.rulesets.default is '${String(rs.default)}', which is not among its recommended rulesets.`))
+			}
+		}
+		const own = id.slice(0, id.indexOf(':'))
+		for (const rid of ids) {
+			if (typeof rid !== 'string' || !RULESET_ID_PATTERN.test(rid)) {
+				out.push(finding('bad-ruleset-id', `${id}.rulesets names '${String(rid)}', not a ruleset id ('owner:ruleset/name@N').`))
+				continue
+			}
+			const ns = rid.slice(0, rid.indexOf(':'))
+			if ((ns === 'core' || ns === own) && !getRuleset(rid))
+				out.push(finding('unknown-ruleset', `${id}.rulesets names ${rid}, which no registered ruleset is. Declare it above the genre.`))
+		}
+	}
+	return out
 }
 
 /** 🚧 Whether a genre's sessions may track attributes beyond its baseline (`GenreDecl.customAttributes`). @experimental */
@@ -651,6 +809,7 @@ export function genreDisplayTextFindings(props: GenreProps, at: string): string[
 	const out: string[] = []
 	out.push(...i18nFindings(props.name, `${at}.name`, { required: true }))
 	out.push(...i18nFindings(props.description, `${at}.description`))
+	out.push(...i18nFindings(props.about, `${at}.about`))
 	if (props.shape) {
 		out.push(...settingsSchemaFindings(props.shape.fields, `${at}.shape.fields`))
 		out.push(...widgetDeclsFindings(props.shape.panels, `${at}.shape.panels`))
@@ -793,7 +952,7 @@ export function genreSummarizeFindings(raw: unknown, at = 'summarize'): string[]
 			continue
 		}
 		if (!parseSpecId(value).owner)
-			out.push(`${at}.scene: '${value}' names no owner — use 'owner:spec/name', e.g. 'core:spec/chat-summarize-scene'`)
+			out.push(`${at}.scene: '${value}' names no owner — use 'owner:spec/name', e.g. 'core:spec/story-summarize-scene'`)
 	}
 	return out
 }
@@ -887,6 +1046,14 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	const playerLabel = assertPlayerLabel(props, id)
 	const summarizeFindings = genreSummarizeFindings(props.summarize, `${id}.summarize`)
 	if (summarizeFindings.length) throw new Error(summarizeFindings.join('\n'))
+	const rulesetFound = genreRulesetFindings(id, props)
+	if (rulesetFound.length) throw new RulesetError(id, rulesetFound)
+	if (props.members !== undefined && props.members !== 'solo' && props.members !== 'group')
+		throw new Error(`${id}.members: 'solo' or 'group' — not ${JSON.stringify(props.members)}`)
+	const usesFound = genreUsesFindings(props.uses, `${id}.uses`)
+	if (usesFound.length) throw new Error(usesFound.join('\n'))
+	const tasksFound = taskDeclsFindings(props.tasks, `${id}.tasks`)
+	if (tasksFound.length) throw new Error(tasksFound.join('\n'))
 	const summarize =
 		props.summarize?.scene !== undefined ? Object.freeze({ scene: props.summarize.scene }) : undefined
 	const decl: GenreDecl = Object.freeze({
@@ -894,6 +1061,10 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		name: props.name,
 		family: props.family,
 		description: props.description,
+		...(props.about !== undefined ? { about: props.about } : {}),
+		...(props.members === 'solo' ? { members: 'solo' as const } : {}),
+		...(props.uses ? { uses: Object.freeze(JSON.parse(JSON.stringify(props.uses)) as GenreUses) } : {}),
+		...(props.tasks && props.tasks.length ? { tasks: Object.freeze(props.tasks.map((t) => Object.freeze({ ...t }))) } : {}),
 		shape: props.shape,
 		events: Object.freeze(events),
 		slots: props.slots ? Object.freeze([...props.slots]) : undefined,
@@ -914,6 +1085,11 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		...(layouts.length ? { layouts: Object.freeze(layouts) } : {}),
 		// Live scenes §13: absent when unstated, so a genre that says nothing hashes as it did.
 		...(summarize ? { summarize } : {}),
+		// 🚧 Rulesets: absent when unstated, so a genre that says nothing hashes as it did.
+		...(props.rigour
+			? { rigour: Object.freeze({ options: Object.freeze([...props.rigour.options]), default: props.rigour.default }) }
+			: {}),
+		...(props.rulesets ? { rulesets: Object.freeze(freezeRulesets(props.rulesets)) } : {}),
 	})
 	const existing = registry.get(id)
 	if (existing)
@@ -921,6 +1097,11 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	registry.set(id, decl)
 	return decl
 }
+
+const freezeRulesets = (r: GenreRulesets): GenreRulesets =>
+	'only' in r
+		? { only: Object.freeze([...r.only]) }
+		: { recommended: Object.freeze([...r.recommended]), default: r.default }
 
 /**
  * Declared genres, by id.

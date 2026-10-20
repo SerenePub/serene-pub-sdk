@@ -1188,7 +1188,7 @@ test('every validation error states what to do instead', () => {
 // ── Documentation: what a receipt actually looks like ───────────────────────
 test('a full chat turn renders a legible receipt', async () => {
 	const doc = publish(
-		spec('core:spec/chat-turn@1', { version: '1.0.0' })
+		spec('core:spec/story-turn@1', { version: '1.0.0' })
 			.inlet('input', C.userMessage.v1())
 			.task('budget', C.contextBudget.v1({ connection: slot.downstreamOracle() }))
 			.gather('gather', { mode: 'parallel' }, (b) =>

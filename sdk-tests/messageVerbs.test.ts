@@ -51,8 +51,8 @@ import {
 	builtinEditSpec,
 	builtinSwipeSpec,
 	builtinBranchSpec,
+	storyGenre,
 	chatGenre,
-	adventureGenre,
 	lairGenre,
 } from '@serene-pub/core-catalog'
 
@@ -148,7 +148,7 @@ describe('the five built-in specs', () => {
 		}
 		assert.equal(isBuiltInOutlet('core:outlet/create-message@1'), false)
 		for (const id of Object.values(BUILTIN_SPEC_IDS)) assert.ok(isBuiltInSpec(id))
-		assert.equal(isBuiltInSpec('core:spec/chat-respond'), false)
+		assert.equal(isBuiltInSpec('core:spec/story-respond'), false)
 	})
 })
 
@@ -260,16 +260,18 @@ describe("the prefill extend and the turn control are switched separately (lair 
 		assert.equal(resolveTurnControls(lairGenre.shape).advance.offered, true)
 	})
 
-	test('Chat and Adventure still offer both, and keep their turn controls (B8)', () => {
-		for (const g of [chatGenre, adventureGenre]) {
+	test('Story and Chat still offer both, and keep their turn controls (B8)', () => {
+		for (const g of [storyGenre, chatGenre]) {
 			assert.notEqual(verbs(g).extend, false, g.id)
 			for (const t of TURN_CONTROLS)
 				assert.deepEqual(resolveTurnControls(g.shape)[t].presentWhen, [], `${g.id} ${t}`)
 		}
-		// Chat: Continue and Pick; its narrator is the narrate spec, not a turn.
-		assert.deepEqual(offered(chatGenre), { advance: true, pick: true, narrate: false, retake: false })
-		// Adventure: a narrator genre, so the narrator is a turn to hand over.
-		assert.deepEqual(offered(adventureGenre), { advance: true, pick: true, narrate: true, retake: false })
+		// Story (the roleplay Chat's shape): Continue and Pick; its narrator
+		// is the narrate spec, not a turn.
+		assert.deepEqual(offered(storyGenre), { advance: true, pick: true, narrate: false, retake: false })
+		// Chat, the assistant (2026-10-19): the Guide's footing — one speaker,
+		// nobody to pick, nothing to hand over or narrate.
+		assert.deepEqual(offered(chatGenre), { advance: false, pick: false, narrate: false, retake: false })
 	})
 
 	test('resolveTurnControls: undeclared is the shape default, only an explicit false takes one away', () => {
@@ -350,7 +352,7 @@ describe('turn controls carry a presence condition (lair pass B8, D2/D3)', () =>
 	})
 
 	test('a control the genre does not offer is absent with no reason', () => {
-		const p = resolveTurnControls(chatGenre.shape)
+		const p = resolveTurnControls(storyGenre.shape)
 		assert.deepEqual(turnControlPresent(p, 'narrate', inX), { present: false, reason: null })
 	})
 

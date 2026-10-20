@@ -1,0 +1,19 @@
+/**
+ * 🚧 Story's **Time passes…** (Chat's until 2026-10-19) — `core:spec/story-advance-time` (live scenes §6,
+ * 2026-10-13). The graph is `shared/timePasses.ts`, shared with the Lair's.
+ */
+import { storyGenre } from '../../registry/genres.js'
+import { timePassesGraph } from '../../shared/timePasses.js'
+
+/** @experimental */
+export const STORY_ADVANCE_TIME_SPEC_ID = 'core:spec/story-advance-time'
+/** @internal */
+export const STORY_ADVANCE_TIME_VERSION = '1.0.0'
+
+/** Move the story clock by an amount the person picks. @experimental */
+export const storyAdvanceTimeSpec = () =>
+	timePassesGraph({
+		id: STORY_ADVANCE_TIME_SPEC_ID,
+		version: STORY_ADVANCE_TIME_VERSION,
+		genre: storyGenre,
+	})

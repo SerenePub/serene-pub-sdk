@@ -98,7 +98,7 @@ describe('the declaration', () => {
 		assert.equal(s.tile!.default, 'medium')
 		assert.deepEqual(s.arrangement!.of, ['grid', 'latest'])
 		assert.equal(s.arrangement!.default, 'grid')
-		assert.equal(s.channel!.group, 'behaviour')
+		assert.equal(s.channel!.group, undefined, 'a section of one field is no section')
 		assert.ok(
 			CORE_COMPONENTS.some(
 				(c) => c.slug === 'album' && c.entry === 'components/shared/album/album.ts',

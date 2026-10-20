@@ -160,6 +160,13 @@ export interface FormAnswered {
 	by: ParticipantRef
 	at: string
 	choice?: string
+	/**
+	 * A `form` block's answer, as words — what a client shows beside
+	 * "Answered", as a choice shows its option's label. Absent on a
+	 * `choices` block, and on a form answered before it was stamped.
+	 * @experimental
+	 */
+	value?: string
 }
 
 /** @experimental */
@@ -505,7 +512,8 @@ export function isFormAnswered(v: unknown): v is FormAnswered {
 		isParticipantRef(a.by) &&
 		typeof a.at === 'string' &&
 		!!a.at &&
-		(a.choice === undefined || (typeof a.choice === 'string' && !!a.choice))
+		(a.choice === undefined || (typeof a.choice === 'string' && !!a.choice)) &&
+		(a.value === undefined || typeof a.value === 'string')
 	)
 }
 

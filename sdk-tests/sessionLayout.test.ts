@@ -22,7 +22,7 @@ import {
 	type SessionLayoutV1,
 } from '../sdk/src/index.js'
 import { CORE_WIDGETS } from '../core-catalog/src/index.js'
-import { adventureGenre, lairGenre } from '../core-catalog/src/registry/genres.js'
+import { storyGenre, lairGenre } from '../core-catalog/src/registry/genres.js'
 
 const grow = { w: 'grow', h: 'grow' } as const
 const all = { top: true, bottom: true, left: true, right: true }
@@ -82,8 +82,9 @@ describe('reading ids out of a layout', () => {
 		},
 	}
 
-	test('layoutWidgetIds names every id once; middleWidgetIds the middle by order', () => {
-		assert.deepEqual(layoutWidgetIds(layout), ['stats', 'world-state', 'messages#sanctum', 'messages', 'map'])
+	test('layoutWidgetIds names every id once, in panel reading order; middleWidgetIds the middle', () => {
+		// Read through panelsOf: the middle (map above the conversation), left, right.
+		assert.deepEqual(layoutWidgetIds(layout), ['map', 'messages', 'stats', 'world-state', 'messages#sanctum'])
 		assert.deepEqual(middleWidgetIds(layout), ['map', 'messages'])
 	})
 
@@ -332,6 +333,83 @@ describe('validateSessionLayout', () => {
 	})
 })
 
+describe('validateSessionLayout: panels', () => {
+	const doc = (p: Record<string, unknown> = {}, middle: Record<string, unknown> = {}) => ({
+		panels: {
+			version: 1,
+			left: [],
+			right: [],
+			...p,
+			middle: { above: [], primary: { key: 'p1', tabs: ['messages'] }, below: [], ...middle },
+		},
+	})
+	const errs = (layout: unknown) => validateSessionLayout(layout).errors
+
+	test('a sound panel layout is valid, and its ids are read from the panels alone', () => {
+		const layout = doc({
+			right: [
+				{ key: 'p2', tabs: ['stats', 'world-state'], open: 'world-state', height: { share: 6 }, title: 'State' },
+				{ key: 'p3', tabs: ['messages#sanctum'], pinned: false, height: 'fit' },
+			],
+		})
+		assert.deepEqual(validateSessionLayout(layout, { widgets: CORE_WIDGETS, unknownWidgets: 'warn' }), {
+			ok: true,
+			errors: [],
+			warnings: [],
+		})
+		assert.deepEqual(layoutWidgetIds(layout as SessionLayoutV1), ['messages', 'stats', 'world-state', 'messages#sanctum'])
+		assert.deepEqual(middleWidgetIds(layout as SessionLayoutV1), ['messages'])
+		assert.equal(primaryPlaced(layout as SessionLayoutV1, 'messages'), true)
+	})
+
+	test('the shape: version, zone lists, a panel object', () => {
+		assert.ok(errs({ panels: { version: 2 } }).some((e) => e.startsWith('panels: { version: 1')))
+		assert.ok(errs(doc({ left: 'no' })).includes('panels.left: a list of panels, top to bottom'))
+		assert.ok(errs(doc({ right: [7] })).some((e) => e.startsWith('panels.right[0]: a panel is an object')))
+		assert.ok(errs({ panels: { version: 1, left: [], right: [], middle: 3 } }).some((e) => e.startsWith('panels.middle:')))
+	})
+
+	test('every panel holds a tab — the primary included — and opens one of its own', () => {
+		assert.ok(errs(doc({}, { primary: { key: 'p1', tabs: [] } })).some((e) => e.startsWith('panels.middle.primary.tabs: at least one')))
+		assert.ok(errs(doc({ left: [{ key: 'p2', tabs: [] }] })).some((e) => e.startsWith('panels.left[0].tabs: at least one')))
+		assert.ok(errs(doc({ left: [{ key: 'p2', tabs: ['stats'], open: 'notes' }] })).includes('panels.left[0].open: one of its tabs'))
+		assert.ok(errs(doc({ left: [{ key: 'p2', tabs: ['Stats'] }] })).some((e) => e.includes("'Stats' is not a widget instance id")))
+	})
+
+	test('an instance sits in one panel, once; a key names one panel', () => {
+		const twice = errs(doc({ left: [{ key: 'p2', tabs: ['stats'] }], right: [{ key: 'p3', tabs: ['stats'] }] }))
+		assert.ok(twice.some((e) => e.startsWith("panels.right[0].tabs: 'stats' is also in panels.left[0]")))
+		assert.ok(errs(doc({ left: [{ key: 'p2', tabs: ['stats', 'stats'] }] })).some((e) => e.includes("'stats' is also in panels.left[0]")))
+		assert.ok(errs(doc({ left: [{ key: 'p1', tabs: ['stats'] }] })).some((e) => e.includes("'p1' keys two panels")))
+		assert.ok(errs(doc({ left: [{ tabs: ['stats'] }] })).includes('panels.left[0].key: a non-empty string'))
+	})
+
+	test('pinned: false only, and never in the middle', () => {
+		assert.ok(errs(doc({}, { above: [{ key: 'p2', tabs: ['stats'], pinned: false }] })).some((e) => e.startsWith('panels.middle.above[0].pinned: a middle panel never pins')))
+		assert.ok(errs(doc({}, { primary: { key: 'p1', tabs: ['messages'], pinned: false } })).some((e) => e.startsWith('panels.middle.primary.pinned')))
+		assert.ok(errs(doc({ left: [{ key: 'p2', tabs: ['stats'], pinned: true }] })).some((e) => e.startsWith('panels.left[0].pinned: absent (docked) or false')))
+		assert.deepEqual(errs(doc({ left: [{ key: 'p2', tabs: ['stats'], pinned: false }] })), [])
+	})
+
+	test('a height is fit, fill or a whole share of 1–12', () => {
+		const h = (height: unknown) => errs(doc({ left: [{ key: 'p2', tabs: ['stats'], height }] }))
+		for (const ok of ['fit', 'fill', { share: 1 }, { share: 12 }]) assert.deepEqual(h(ok), [], JSON.stringify(ok))
+		for (const bad of ['auto', { share: 0 }, { share: 13 }, { share: 2.5 }, 300])
+			assert.ok(h(bad).some((e) => e.startsWith('panels.left[0].height')), JSON.stringify(bad))
+	})
+
+	test('no conversation anywhere is a warning — a genre may withhold it — and the old slots are not read beside panels', () => {
+		const board = validateSessionLayout(doc({}, { primary: { key: 'p1', tabs: ['acme.x:board'] } }))
+		assert.equal(board.ok, true)
+		assert.ok(board.warnings.some((w) => w.startsWith("panels place no copy of the conversation ('messages')")))
+		const beside = validateSessionLayout({
+			...doc(),
+			zoneLayout: { version: 1, zones: { right: { kind: 'side', side: 'right', widgets: ['stats'] } } },
+		})
+		assert.deepEqual(beside, { ok: true, errors: [], warnings: [] }, "nothing undrawn: the slots' placements are not read")
+	})
+})
+
 describe("core's genres declare the layouts they have always shipped", () => {
 	/**
 	 * The blobs each genre shipped before brief 1, verbatim — what the
@@ -347,6 +425,13 @@ describe("core's genres declare the layouts they have always shipped", () => {
 	 * `arrangement` (W6); the Lair's right column is Places, the Castellan's
 	 * scratchpad (an Annex copy) and the Sanctum (W4, W9). Regenerated from
 	 * the genres, the `required` flags kept.
+	 *
+	 * Moved on purpose 2026-10-14 (PLAN-session-panels, lane 0): the literals
+	 * are written in `panels` only, the old slots gone from them; settings
+	 * unchanged. `panelsFromSlots.test` holds the old literals as fixtures and
+	 * proves they convert to these. Regenerated from the genres:
+	 * `JSON.stringify({ [g.id]: g.layouts[0].preset }, null, '\t')` for
+	 * Adventure and Lair.
 	 */
 	const before = JSON.parse(readFileSync(join(import.meta.dirname, 'goldens/core-session-layouts.json'), 'utf8')) as Record<
 		string,
@@ -358,11 +443,18 @@ describe("core's genres declare the layouts they have always shipped", () => {
 		return copy
 	}
 
-	for (const g of [adventureGenre, lairGenre])
+	// 🚧 2026-10-19: Adventure's layout is Story's **World** layout (Story's
+	// default is the roleplay Chat's, which no golden held); the golden's key
+	// moved with it, its blob byte for byte.
+	for (const [g, slug] of [
+		[storyGenre, 'world'],
+		[lairGenre, 'default'],
+	] as const)
 		test(g.id, () => {
-			const [shipped, ...others] = g.layouts ?? []
-			assert.equal(others.length, 0)
-			assert.equal(shipped?.slug, 'default')
+			const layouts = g.layouts ?? []
+			assert.equal(layouts.length, g === storyGenre ? 2 : 1)
+			const shipped = layouts.find((l) => l.slug === slug)
+			assert.equal(shipped?.slug, slug)
 			assert.ok(before[g.id], 'a golden for the genre')
 			assert.equal(JSON.stringify(shipped!.preset), JSON.stringify(withoutRequired(before[g.id]!)))
 			assert.equal(JSON.stringify(shipped!.preset).includes('"required"'), false)

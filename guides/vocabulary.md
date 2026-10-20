@@ -17,9 +17,9 @@ namespace every id it declares sits under.
 
 ### genre
 
-A kind of session (Chat, Adventure, a game of your own), and the owner of the pipelines its
+A kind of session (Story, Chat, a game of your own), and the owner of the pipelines its
 sessions run.
-`use('core:genre/chat')` names core's Chat genre.
+`use('core:genre/story')` names core's Story genre (roleplay and adventure); `use('core:genre/chat')` names Chat, the plain assistant.
 [Canon §9](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session)
 
 ### spec

@@ -17,7 +17,8 @@
  */
 import { ANNEX_FIELD_SPEC_ID, annexField, compile, declareAnnex, spec, type AnnexFieldDecl } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { LAIR_CASTELLAN_KEY, lairGenre } from '../registry/genres.js'
+import { LAIR_CASTELLAN_KEY, dungeonCrawlerGenre, lairGenre, storyGenre } from '../registry/genres.js'
+import { DUNGEON_CRAWLER_ANNEX_KEYS as DC, DUNGEON_CRAWLER_PLANNER_KEY } from '../genres/dungeon-crawler/names.js'
 
 /** @experimental */
 export const SET_ANNEX_FIELD_SPEC_ID = ANNEX_FIELD_SPEC_ID
@@ -41,6 +42,151 @@ export const setAnnexFieldSpec = () =>
 			.outlet('write', ($) => C.setAnnexField.v1({ payload: $.input.payload }))
 			.build(),
 	)
+
+/**
+ * 🚧 Dungeon Crawler's annex keys (PLAN-dungeon-crawler-2026-10-14, ★A,
+ * ★D, verification 1, the reveal revision). Its sessions alone carry them.
+ * Nobody presses any of them: the genre's pipelines write each one.
+ *
+ * ⚠ **Maps.** The field language has no free-form map — an `object` declares
+ * fixed members and `checkValues` passes members it does not declare — so
+ * the maps (the ⏳ retired `lanes`, keyed `user:<id>`) and the crawl's
+ * bookkeeping declare the members a reader relies on and let the rest
+ * through. The hand-marked round (`dungeon-crawler-round`) is retired (AUDIT
+ * B): the round is read off the rows. The world itself
+ * left the annex on 2026-10-16 (PLAN-rulesets §26): places, people and the
+ * fallen are entries of the session's own lorebook.
+ * @internal
+ */
+const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
+	annexField({
+		key: DC.progress,
+		shape: {
+			type: 'object',
+			fields: {
+				shape: { type: 'string', description: "The interview's first answer: 'dungeon' or 'open-world'." },
+				goal: { type: 'text', description: 'What the adventure is for. Secret or not, it is written here. Whether it is secret is the world\'s goal-mode slot.' },
+				settled: { type: 'boolean', description: "The owner has answered the world's questions: the first finished sheet builds the world." },
+				building: { type: 'number', description: 'When genesis started (epoch milliseconds): no second build while one runs.' },
+				built: { type: 'boolean', description: 'Genesis has built the world: its places are in the session\'s own lorebook.' },
+				ended: { type: 'boolean', description: 'The owner ended the adventure: every later turn is an epilogue.' },
+				heroes: {
+					type: 'object',
+					description: "Each player's character as the interview made it, keyed 'user:<id>': name, class, backstory.",
+					fields: {
+						// The map's keys are `user:<id>`; this member stands for every one of them.
+						'user:<id>': {
+							type: 'object',
+							fields: {
+								name: { type: 'string' },
+								class: { type: 'string' },
+								backstory: { type: 'text' },
+							},
+						},
+					},
+				},
+				fates: {
+					type: 'object',
+					description: "Who is out of the round, by seat reference: 'dead' or 'taken-out'. A mirror of each seat's fate, for the round script.",
+					fields: {
+						// The map's keys are seat references; this member stands for every one of them.
+						'<seat>': { type: 'string' },
+					},
+				},
+				arrivals: {
+					type: 'list',
+					description: 'Newcomers owed to the story after a death, each with the rounds left to bring them in.',
+					item: { type: 'object', fields: { who: { type: 'string' }, fallen: { type: 'string' }, where: { type: 'string' } } },
+				},
+				lastTelling: {
+					type: 'object',
+					description: "The last story turn's row, brief and outcomes — what a swipe of that row tells again, with nothing re-rolled.",
+					fields: { row: { type: 'number' }, brief: { type: 'text' }, outcomes: { type: 'text' } },
+				},
+			},
+		},
+		see: [],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'Crawl' },
+		description: {
+			en: "The crawl's bookkeeping: the heroes, the goal and where it stands, who is out, who is owed. The world itself — places, people, the fallen — is the session's own lorebook. Only the pipelines read it.",
+		},
+	}),
+	annexField({
+		key: DC.legacyWorld,
+		shape: {
+			type: 'object',
+			fields: {
+				shape: { type: 'string' },
+				goal: { type: 'text' },
+			},
+		},
+		see: [],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'World (older sessions)' },
+		description: {
+			en: "⏳ The world document sessions made before 2026-10-16 kept. Read for an older session's heroes and goal only; never written. Its places and people are not carried over.",
+		},
+	}),
+	annexField({
+		key: DC.lanes,
+		shape: {
+			type: 'object',
+			fields: {
+				// The map's keys are `user:<id>`; this member stands for every one of them.
+				'user:<id>': { type: 'string', description: "One per person: their Planner lane, 'parley:<n>'." },
+			},
+		},
+		see: ['participant'],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'Planner lanes' },
+		description: {
+			en: "⏳ Retired 2026-10-17: which Planner lane was whose, keyed user:<id>. Core keeps each person's lane now and sends it to them and the owner alone; nothing writes this.",
+		},
+	}),
+	annexField({
+		key: DC.planningNotes,
+		shape: { type: 'text', default: '' },
+		see: [`envoy:${DUNGEON_CRAWLER_PLANNER_KEY}`],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'Planning notes' },
+		description: {
+			en: "The Planner's secret notes: what is really going on, what is hidden where, what the world will do next.",
+		},
+	}),
+	annexField({
+		key: DC.planningNotesRevealed,
+		shape: { type: 'text', default: '' },
+		see: ['participant'],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'Planning notes' },
+		description: {
+			en: "The Planner's notes, once the session's owner has asked for them to be revealed. One-way: they stay readable.",
+		},
+	}),
+	annexField({
+		key: DC.journal,
+		shape: {
+			type: 'object',
+			fields: {
+				goal: { type: 'text', description: "The goal as the party knows it, or 'secret'." },
+				leads: { type: 'list', item: { type: 'string' }, description: 'Open leads, one per line.' },
+			},
+		},
+		see: ['participant'],
+		genre: dungeonCrawlerGenre,
+		label: { en: 'Journal' },
+		description: { en: "The party's goal and open leads. The log is the Journal channel." },
+	}),
+]
+
+/**
+ * 🚧 The Story genre's running note of its characters' goals (2026-10-19):
+ * written by the sweep's *Track goals* task (`genres/story/reckon.ts`) into
+ * `annex.core['story-goals']`.
+ * @experimental
+ */
+export const STORY_GOALS_KEY = 'story-goals'
 
 /**
  * Core's **annex declaration** (owner ruling 2026-09-26): every key core
@@ -103,6 +249,18 @@ export const CORE_ANNEX_FIELDS: readonly AnnexFieldDecl[] = Object.freeze([
 			en: "The Castellan's running notes from the Sanctum: rooms planned, intentions, corrections. It rewrites them after each reply there, and reads them when it plans a turn while Sanctum talk steers the story. The party never read them.",
 		},
 	}),
+	annexField({
+		key: STORY_GOALS_KEY,
+		shape: { type: 'text', default: '' },
+		see: ['owner'],
+		act: ['owner'],
+		genre: storyGenre,
+		label: { en: 'Goals' },
+		description: {
+			en: "What the characters are after and how close they are, kept every few turns while Track goals is on. Yours to edit.",
+		},
+	}),
+	...DUNGEON_CRAWLER_ANNEX_FIELDS,
 ])
 
 // Registered on import, as core's events and definitions are: `validate()`

@@ -34,7 +34,7 @@ const legacyEngine = (systemPrompt: string, history: string[]) =>
 	`${systemPrompt}\n\n${history.join('\n')}`
 
 const migrated = () =>
-	spec('core:spec/chat-turn@1', { version: '1.0.0' })
+	spec('core:spec/story-turn@1', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 		.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages, template: slot.template(), connection: slot.connectionOf('generate') }))
@@ -164,7 +164,7 @@ describe('75 · the migration report', () => {
 			{
 				source: { table: 'prompt_configs', id: 2, label: 'Old experiment' },
 				outcome: 'unmapped',
-				reason: "field 'impersonationPrompt' has no slot on core:spec/chat-turn@1; kept in spec_diagnostics",
+				reason: "field 'impersonationPrompt' has no slot on core:spec/story-turn@1; kept in spec_diagnostics",
 			},
 		],
 		parity: [{ fixture: 'chat/basic', identical: true }],

@@ -47,8 +47,8 @@
  * ## One graph, one spec per genre
  *
  * An inlet is locked to one genre, so each genre that offers Scene ships its
- * own spec — `core:spec/chat-illustrate-scene` and
- * `core:spec/adventure-illustrate-scene` (2026-10-12) — and both call
+ * own spec — `core:spec/story-illustrate-scene` and
+ * `core:spec/story-illustrate-scene` (2026-10-12) — and both call
  * `illustrateSceneGraph` here with their own id, version and genre. The
  * graph is written once; the two specs differ only in identity and inlet.
  * Both use the narrator builder (the scene prompt rows live in its pool and
@@ -58,13 +58,13 @@
 import { compile, spec, sessionEvents, slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { CORE_LOADOUT } from '../loadouts.js'
-import type { adventureGenre, chatGenre } from '../registry/genres.js'
+import type { GenreDecl } from '@serene-pub/sdk'
 
 /** The action's key — `<scene spec>#illustrate-scene`. @experimental */
 export const ILLUSTRATE_SCENE_ACTION_KEY = 'illustrate-scene'
 
 /** The step keys a host or a test reads by name. @internal */
-export const CHAT_ILLUSTRATE_SCENE_NODES = {
+export const STORY_ILLUSTRATE_SCENE_NODES = {
 	history: 'gather.history.read',
 	likeness: 'likeness',
 	write: 'write',
@@ -76,7 +76,7 @@ export const CHAT_ILLUSTRATE_SCENE_NODES = {
 } as const
 
 /** The scene prompt's two rows' seed keys. @internal */
-export const CHAT_ILLUSTRATE_SCENE_PROMPT_SEED_KEYS = {
+export const STORY_ILLUSTRATE_SCENE_PROMPT_SEED_KEYS = {
 	tags: 'pipeline-prompt:core:task/build-narrator-context:prompts:scene-prompt-tags',
 	prose: 'pipeline-prompt:core:task/build-narrator-context:prompts:scene-prompt-prose',
 } as const
@@ -94,7 +94,7 @@ const DRAW_PARAMS = {
 export interface IllustrateSceneOptions {
 	id: string
 	version: string
-	genre: typeof chatGenre | typeof adventureGenre
+	genre: GenreDecl
 }
 
 /** The Scene action's graph, for one genre's spec. @internal */

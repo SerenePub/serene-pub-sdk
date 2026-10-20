@@ -108,6 +108,17 @@ describe('round robin · the candidate vocabulary', () => {
 		assert.deepEqual(refs(pool, [user(7)]), ['character:11', 'character:12'])
 	})
 
+	test("🚧 a card-less player seat's send consumes its turn, read off the line's `player-seat:` speaker", () => {
+		const withSeat = [...pool, cand('player-seat:4', 1, 'persona', 2)]
+		const seatLine: TurnHistoryMessage = { role: 'user', personaId: null, metadata: { speaker: 'player-seat:4' } }
+		assert.deepEqual(refs(withSeat, [seatLine]), ['character:11', 'character:12', 'character:7'])
+		assert.ok(spokenRefsSince([{ role: 'user', speaker: 'player-seat:4' }]).has('player-seat:4'))
+		// A persona line names its persona, never a seat it might also carry.
+		assert.deepEqual([...spokenRefsSince([{ role: 'user', personaId: 7, speaker: 'player-seat:4' }])], ['character:7'])
+		// Only a person's opening line names a seat; a reply's `player-seat:` is not read.
+		assert.ok(!spokenRefsSince([user(), { role: 'assistant', speaker: 'player-seat:4' }]).has('player-seat:4'))
+	})
+
 	test('everyone having spoken is an empty order', () => {
 		assert.deepEqual(roundRobinOrder(pool, [user(7), reply(11), reply(12)]), [])
 	})

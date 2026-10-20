@@ -64,8 +64,7 @@ import {
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
-	adventureGenre,
-	chatGenre,
+	storyGenre,
 	lairGenre,
 	lairBuildRoomSpec,
 	lairNudgeSpec,
@@ -74,13 +73,13 @@ import {
 	lairRevealSpec,
 } from '@serene-pub/core-catalog'
 
-const CHAT = chatGenre.id
+const CHAT = storyGenre.id
 
 /**
  * A one-node action spec under `owner`, with whatever `contributes` says. Its
  * actions are offered to the lock's genre — chat unless another is given (R48).
  */
-const actionSpec = (id: string, contributes: Record<string, unknown>, lockGenre: GenreDecl = chatGenre) =>
+const actionSpec = (id: string, contributes: Record<string, unknown>, lockGenre: GenreDecl = storyGenre) =>
 	spec(id, { version: '1.0.0', contributes: contributes as any })
 		.inlet('input', C.userMessage.v1(), { genre: lockGenre, event: 'core:event/session-action@1' })
 		.outlet('save', ($) => C.createMessage.v1({ text: $.input.text }))
@@ -203,8 +202,8 @@ describe('R-15 · one slash name means one action (plans/31 V2)', () => {
 	})
 
 	test('the same name for two genres never meets in one palette — no collision', () => {
-		const a = actionsOf(actionDoc('core:spec/look-a', { actions: [roll({ key: 'look' })] }, adventureGenre))
-		const b = actionsOf(actionDoc('core:spec/look-b', { actions: [roll({ key: 'look' })] }))
+		const a = actionsOf(actionDoc('core:spec/look-a', { actions: [roll({ key: 'look' })] }, storyGenre))
+		const b = actionsOf(actionDoc('core:spec/look-b', { actions: [roll({ key: 'look' })] }, lairGenre))
 		assert.deepEqual(slashCollisions([...a, ...b]), [])
 	})
 
@@ -264,7 +263,7 @@ describe("R-15 · core's verbs hold their slash names in every genre (U5c review
 	test('a core spec claiming a verb\'s name collides with the verb', () => {
 		assert.throws(
 			() => actionDoc('core:spec/redo', { actions: [roll({ key: 'redo', slash: 'retry' })] }),
-			/'\/retry' is claimed twice for genre 'core:genre\/chat': by 'core' for 'retry' and by 'core:spec\/redo' for 'redo'/,
+			/'\/retry' is claimed twice for genre 'core:genre\/story': by 'core' for 'retry' and by 'core:spec\/redo' for 'redo'/,
 		)
 		// …and a verb with no declared slash holds its key: `/edit` is edit's.
 		assert.throws(
@@ -276,13 +275,13 @@ describe("R-15 · core's verbs hold their slash names in every genre (U5c review
 	test('a core spec re-declaring a verb under its own name collides too (V2: `core#retry` and `core:spec/retry-again#retry` are two), and the seed reaches every genre', () => {
 		assert.throws(
 			() => actionDoc('core:spec/retry-again', { actions: [roll({ key: 'retry', slash: 'retry' })] }),
-			/'\/retry' is claimed twice for genre 'core:genre\/chat': by 'core' for 'retry' and by 'core:spec\/retry-again' for 'retry'/,
+			/'\/retry' is claimed twice for genre 'core:genre\/story': by 'core' for 'retry' and by 'core:spec\/retry-again' for 'retry'/,
 		)
-		const adventure = actionsOf(actionDoc('core:spec/adv-redo', { actions: [roll({ key: 'redo' })] }, adventureGenre))
+		const adventure = actionsOf(actionDoc('core:spec/adv-redo', { actions: [roll({ key: 'redo' })] }, storyGenre))
 		assert.deepEqual(slashCollisions(adventure), [])
-		const clash = actionsOf({ ...actionDoc('core:spec/adv-redo', { actions: [roll({ key: 'redo' })] }, adventureGenre), contributes: { actions: [roll({ key: 'redo', genre: 'core:genre/adventure', slash: 'extend' })] } })
+		const clash = actionsOf({ ...actionDoc('core:spec/adv-redo', { actions: [roll({ key: 'redo' })] }, storyGenre), contributes: { actions: [roll({ key: 'redo', genre: 'core:genre/story', slash: 'extend' })] } })
 		assert.equal(slashCollisions(clash).length, 1)
-		assert.match(slashCollisions(clash)[0]!, /for genre 'core:genre\/adventure': by 'core' for 'extend'/)
+		assert.match(slashCollisions(clash)[0]!, /for genre 'core:genre\/story': by 'core' for 'extend'/)
 	})
 })
 
@@ -373,7 +372,7 @@ describe('R-15 · CORE_ACTIONS is the one table for the verbs', () => {
 		assert.equal(resolveTurnControls({ ...withCast, voice: 'narrator' }).retake.offered, false)
 		assert.equal(resolveTurnControls({ ...withCast, turnControls: { retake: true } }).retake.offered, true)
 		assert.equal(resolveTurnControls(lairGenre.shape).retake.offered, true)
-		for (const g of [chatGenre, adventureGenre]) assert.equal(resolveTurnControls(g.shape).retake.offered, false, g.id)
+		for (const g of [storyGenre, storyGenre]) assert.equal(resolveTurnControls(g.shape).retake.offered, false, g.id)
 	})
 
 	test('every label is a locale map with en, and the audience names participant references', () => {
@@ -593,5 +592,27 @@ describe('the legend · every action says what it does (2026-09-28)', () => {
 			const text = typeof a.description === 'string' ? a.description : a.description?.en
 			assert.ok(text && text.trim().length > 0, `core#${a.key} has no description`)
 		}
+	})
+})
+
+describe('🚧 an action asks first (`confirm`, 2026-10-18)', () => {
+	test('a question with its words is a declaration; it rides the document', () => {
+		const confirm = { question: { en: 'Reveal the planning notes?' }, description: { en: 'For good.' }, confirmLabel: { en: 'Reveal' } }
+		assert.deepEqual(actionFindings(roll({ genre: CHAT, confirm }), 'core:spec/roll'), [])
+		const [asked] = actionsOf(actionDoc('core:spec/roll', { actions: [roll({ confirm })] }))
+		assert.deepEqual(asked!.confirm, confirm)
+	})
+	test('a confirm without its question, or not an object, is refused', () => {
+		const none = actionFindings(roll({ genre: CHAT, confirm: { description: { en: 'x' } } }), 'core:spec/roll')
+		assert.ok(none.some((m) => /confirm\.question/.test(m)), none.join('\n'))
+		const bare = actionFindings(roll({ genre: CHAT, confirm: 'are you sure?' }), 'core:spec/roll')
+		assert.ok(bare.some((m) => /confirm is \{ question/.test(m)), bare.join('\n'))
+	})
+	test("the Dungeon Crawler's reveal asks before it fires", async () => {
+		const cat = await import('../core-catalog/src/index.js')
+		const doc = cat.CORE_SPECS.find((s) => s.slug === cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID)!.build() as any
+		const reveal = actionsOf({ id: doc.id, contributes: doc.contributes } as any).find((a) => a.key === 'reveal')!
+		assert.equal((reveal.confirm as any)?.question?.en, 'Reveal the planning notes?')
+		assert.equal((reveal.confirm as any)?.confirmLabel?.en, 'Reveal')
 	})
 })

@@ -43,10 +43,12 @@ describe('the grammar', () => {
 		assert.deepEqual([...PARTICIPANT_ROLES], ['owner', 'admin', 'participant', 'person', 'ai', 'item', 'run-owner'])
 	})
 
-	test('user, character and envoy round-trip', () => {
+	test('user, character, player-seat and envoy round-trip', () => {
 		const cases: Array<[ParticipantRef, ReturnType<typeof parseParticipantRef>]> = [
 			['user:3', { kind: 'user', id: '3' }],
 			['character:12', { kind: 'character', id: '12' }],
+			// A card-less player seat, by seat id — a seat with a card is its `character:`.
+			['player-seat:4', { kind: 'player-seat', id: '4' }],
 			['envoy:mascot', { kind: 'envoy', slug: 'mascot' }],
 			// An action's envoy is namespaced like a slash name (R-18 (1)).
 			['envoy:chariot.dice-tray.master', { kind: 'envoy', slug: 'chariot.dice-tray.master' }],
@@ -67,6 +69,8 @@ describe('the grammar', () => {
 			'user:',
 			'user:a b',
 			'character:',
+			'player-seat:',
+			'player-seat:a b',
 			'envoy:',
 			'envoy:-leading-dash',
 			'envoy:has space',
@@ -84,7 +88,8 @@ describe('the grammar', () => {
 		assert.throws(() => parseParticipantRef('character: '), /no readable id/)
 		// Ids are opaque to the SDK — the host narrows them at its seam.
 		assert.deepEqual(parseParticipantRef('character:Tom'), { kind: 'character', id: 'Tom' })
-		assert.throws(() => parseParticipantRef('persona:3'), /'persona:' is not a kind/)
+		assert.throws(() => parseParticipantRef('player-seat: '), /no readable id/)
+		assert.throws(() => parseParticipantRef('persona:3'), /'persona:' is not a kind \(user, character, player-seat, envoy\)/)
 		assert.throws(() => parseParticipantRef('owner:1'), /'owner:' is not a kind/)
 	})
 

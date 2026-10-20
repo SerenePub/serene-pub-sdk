@@ -327,7 +327,7 @@ describe('compiling a docs site', () => {
 							{
 								path: 'pipelines/core_spec_chat-respond.md',
 								markdown:
-									'# core:spec/chat-respond\n\nVersion 1.\n\n## Steps\n\nThe nodes.\n',
+									'# core:spec/story-respond\n\nVersion 1.\n\n## Steps\n\nThe nodes.\n',
 							},
 						],
 					},

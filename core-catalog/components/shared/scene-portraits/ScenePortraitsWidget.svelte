@@ -34,8 +34,10 @@
 	import { untrack } from "svelte"
 	import {
 		readScenePortraitsSettings,
+		sceneFiguresOf,
 		scenePortraitsOf,
 		statBarsOf,
+		type SceneFigure,
 		type ScenePortrait
 	} from "@serene-pub/core-catalog/scene-portraits"
 	import { scopeNotGranted } from "@serene-pub/core-catalog/widgets"
@@ -55,6 +57,15 @@
 	 */
 	const castNotGranted = $derived(scopeNotGranted(w?.current, "characters"))
 	const portraits = $derived(scenePortraitsOf(characters, sessionState, settings))
+	/**
+	 * 🚧 The scene's figures after the cast (PLAN-dc-after-walk2 Q3-5): every
+	 * player seat's character and the people the story has met, when the
+	 * settings ask — on a `stage`, only while the cast leaves room in its two.
+	 */
+	const figures = $derived.by(() => {
+		const all = sceneFiguresOf(characters, sessionState, settings)
+		return settings.arrangement === "stage" ? all.slice(0, Math.max(0, 2 - portraits.length)) : all
+	})
 
 	/**
 	 * This widget's own error (R77): a refused sprite-set switch is said
@@ -197,6 +208,22 @@
 	)
 </script>
 
+{#snippet figure(f: SceneFigure)}
+	<div data-widget-part="scene-portraits.face" data-scene-member={f.key} data-scene-figure={f.kind}>
+		{#if f.src}
+			<img src={f.src} alt={f.name} data-widget-part="scene-portraits.face-img" />
+		{:else}
+			<div data-widget-part="scene-portraits.face-img" data-blank>
+				<sp-icon name="user-round" size="20"></sp-icon>
+			</div>
+		{/if}
+		<span data-widget-part="scene-portraits.face-name">{f.name}</span>
+		{#if settings.bars && f.ownerKey}
+			<StatBars ownerKey={f.ownerKey} rows={statBarsOf(sessionState, f.ownerKey, 3, settings.barsFor)} />
+		{/if}
+	</div>
+{/snippet}
+
 {#snippet portrait(member: ScenePortrait)}
 	{@const src = chosenSrcOf(member) ?? member.src}
 	<div
@@ -283,7 +310,7 @@
 			</sp-popover>
 		{/if}
 		{#if settings.bars && member.ownerKey}
-			<StatBars ownerKey={member.ownerKey} rows={statBarsOf(sessionState, member.ownerKey)} />
+			<StatBars ownerKey={member.ownerKey} rows={statBarsOf(sessionState, member.ownerKey, 3, settings.barsFor)} />
 		{/if}
 	</div>
 {/snippet}
@@ -383,7 +410,7 @@
 				{t("Pick the image this face shows. Only your view of this widget changes.")}
 			</p>
 		</section>
-	{:else if !portraits.length}
+	{:else if !portraits.length && !figures.length}
 		<div data-widget-part="scene-portraits.empty empty">
 			<sp-icon name="square-user-round" size="22"></sp-icon>
 			<span>{emptyText}</span>
@@ -393,11 +420,17 @@
 			{#each portraits as member (member.key)}
 				{@render portrait(member)}
 			{/each}
+			{#each figures as f (f.key)}
+				{@render figure(f)}
+			{/each}
 		</div>
 	{:else}
 		<div data-widget-part="scene-portraits.scene">
 			{#each portraits as member (member.key)}
 				{@render portrait(member)}
+			{/each}
+			{#each figures as f (f.key)}
+				{@render figure(f)}
 			{/each}
 		</div>
 	{/if}

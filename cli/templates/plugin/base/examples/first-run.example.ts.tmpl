@@ -22,7 +22,7 @@
 
 import { sessionEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { chatGenre } from '@serene-pub/core-catalog'
+import { storyGenre } from '@serene-pub/core-catalog'
 import type { Example } from '@serene-pub/cli'
 
 import { echoDefinition } from '../src/index.js'
@@ -31,7 +31,7 @@ import { bindings, world } from './fixtures.js'
 const firstRun = spec('{{exampleSpecId}}', { version: '1.0.0' })
 	/** Exactly one inlet, positionally first, carrying the usage lock. */
 	.inlet('input', C.userMessage.v1(), {
-		genre: chatGenre,
+		genre: storyGenre,
 		event: sessionEvents.messageRespond,
 	})
 	/** A Query reads Serene Pub's own data, and cannot reach the network. */

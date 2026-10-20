@@ -59,12 +59,16 @@ describe('B3 · which step streams is declared', () => {
 		])
 	})
 
-	test('Adventure streams its scene, as before', () => {
-		assert.deepEqual(streamingOf(doc('core:spec/adventure-respond')), ['scene'])
+	// 🚧 2026-10-19: Adventure's planner-and-voices reply retired with the
+	// genre (Story's reply is the roleplay Chat's one call). Chat, the
+	// assistant, streams Basic's one call; its tool loop streams nothing — a
+	// loop pass would stream once per pass into one row.
+	test("Chat streams Basic's reply; its tool loop streams nothing", () => {
+		assert.deepEqual(streamingOf(doc('core:spec/assistant-respond')), ['mode.basic.generate'])
 	})
 
 	test('the single-step reply specs stream their generate', () => {
-		for (const slug of ['core:spec/chat-respond', 'core:spec/chat-narrate', 'core:spec/chat-side-character', 'core:spec/guide-respond'])
+		for (const slug of ['core:spec/story-respond', 'core:spec/story-narrate', 'core:spec/story-side-character', 'core:spec/guide-respond'])
 			assert.deepEqual(streamingOf(doc(slug)), ['generate'], slug)
 	})
 
@@ -91,23 +95,23 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('two streaming steps are refused — a run has one live row', () => {
-		const adventure = doc('core:spec/adventure-respond')
-		const bad = marked(adventure, 'voices.item.say', { stream: true })
+		const story = doc('core:spec/story-respond')
+		const bad = marked(story, 'spritePick', { stream: true })
 		const found = errors(bad)
 		assert.ok(found.length >= 1)
 		assert.ok(found.some((f) => /one/.test(f.message)))
 	})
 
-	test('a streaming step inside an each is refused — it would run once per item into one row', () => {
-		const adventure = doc('core:spec/adventure-respond')
-		const bad = marked(marked(adventure, 'scene', undefined), 'voices.item.say', { stream: true })
+	test('a streaming step inside a loop is refused — it would run once per pass into one row', () => {
+		const chat = doc('core:spec/assistant-respond')
+		const bad = marked(marked(chat, 'mode.basic.generate', undefined), 'mode.agentic.tools.item.generate', { stream: true })
 		const found = errors(bad)
 		assert.equal(found.length, 1)
-		assert.equal(found[0]!.nodeKey, 'voices.item.say')
+		assert.equal(found[0]!.nodeKey, 'mode.agentic.tools.item.generate')
 	})
 
 	test('a spec that declares nothing streams nothing, and that is valid', () => {
-		const d = marked(doc('core:spec/chat-respond'), 'generate', undefined)
+		const d = marked(doc('core:spec/story-respond'), 'generate', undefined)
 		assert.deepEqual(streamingOf(d), [])
 		assert.deepEqual(errors(d), [])
 	})
@@ -226,15 +230,23 @@ describe('B18 · a step declares its status', () => {
 	})
 
 	test('every model step of a multi-step core reply spec declares one', () => {
-		for (const slug of ['core:spec/lair-respond', 'core:spec/adventure-respond']) {
+		// Story's reply is single-step but for its background tasks: every
+		// model step there says what it is doing (the reckoning, the sweep);
+		// the reply's own retrieval and sprite steps keep the host's wording.
+		for (const slug of ['core:spec/lair-respond']) {
 			const d = doc(slug)
 			for (const n of d.nodes.filter((n) => n.kind === 'oracle'))
+				assert.ok((n.expose as { status?: unknown } | undefined)?.status, `${slug} ${n.key}`)
+		}
+		for (const slug of ['core:spec/story-respond']) {
+			const d = doc(slug)
+			for (const n of d.nodes.filter((n) => n.kind === 'oracle' && /^(reckon|sweep)\./.test(n.key)))
 				assert.ok((n.expose as { status?: unknown } | undefined)?.status, `${slug} ${n.key}`)
 		}
 	})
 
 	test('a status that is not display text is refused', () => {
-		const bad = marked(doc('core:spec/chat-respond'), 'generate', { stream: true, status: 42 })
+		const bad = marked(doc('core:spec/story-respond'), 'generate', { stream: true, status: 42 })
 		assert.ok(validate(bad).some((f) => f.severity === 'error' && f.nodeKey === 'generate' && /status/.test(f.message)))
 	})
 })

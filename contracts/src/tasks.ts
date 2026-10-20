@@ -65,7 +65,23 @@ export const contextBudget = pin(
 				},
 			},
 		},
-		ports: { out: { main: S.budget, available: S.budget } },
+		ports: {
+			/**
+			 * 🚧 `blocks` (optional, 2026-10-16 — rulesets programme W3-S;
+			 * additive, so `@1` evolves in place): labelled prompt blocks to fit
+			 * into what `available` leaves — each `{ key, text, tokens,
+			 * priority, depth, min, max, depths }`, where `depths` holds the
+			 * block's text and tokens at each render depth it has (`full`,
+			 * `summary`, `index`). The rule is **degrade depth before
+			 * dropping**: under pressure the lowest-priority block steps down a
+			 * depth (full → summary → index) before any block is dropped, and a
+			 * block is dropped only at its shallowest depth, never below its
+			 * `min`. `fittedBlocks` is the same records at the depth each
+			 * landed on, dropped ones left out; absent `blocks`, it is absent.
+			 */
+			in: { blocks: S.json },
+			out: { main: S.budget, available: S.budget, fittedBlocks: S.json },
+		},
 	}),
 )
 
@@ -2138,7 +2154,7 @@ export const buildSideCharacterContext = pin(
 				 * (2026-09-29) — the narrator modal's text,
 				 * which feeds both of its halves. `{{turnDirection}}`, on the
 				 * terms `build-narrator-context@1` states; wired by
-				 * `core:spec/chat-side-character` alone, so a genre's voices
+				 * `core:spec/story-side-character` alone, so a genre's voices
 				 * (whose composer text is a line somebody said) render
 				 * nothing new.
 				 */
@@ -2817,6 +2833,10 @@ export const turnUserSplit = pin(
  */
 export const turnScripted = pin(
 	turnStrategy('core:task/turn-scripted@1', 'Scripted', {
+		// A select script runs in the sandbox: the node routinely takes
+		// 0.6–1.4 s end to end (2026-10-17, a Dungeon Crawler round timed out
+		// at the strategies' 1 s), so this one strategy gets five.
+		timeoutMs: 5000,
 		scriptPoints: [
 			{
 				key: 'select',
@@ -2840,6 +2860,67 @@ export const turnManual = pin(turnStrategy('core:task/turn-manual@1', 'Manual'))
  */
 export const turnNarrator = pin(
 	turnStrategy('core:task/turn-narrator@1', 'Narrator replies'),
+)
+
+/**
+ * 🚧 **Unprompted turns** (PLAN-genre-restructure §4, the voices group; lane
+ * 2, 2026-10-19): what a genre's background tasks add to the order a
+ * strategy prepared, after the round. Canon A9 holds — who speaks is state,
+ * written by the turn-order spec and fired by auto-advance; nothing reads the
+ * history to decide a reply elsewhere.
+ *
+ * Only when the round has ended (no AI entry still to fire) and somebody has
+ * answered the person since their line, it puts ONE entry at the head, at
+ * most once per round each:
+ *
+ *  · `side-cast` on — a seated character who did not speak last speaks up
+ *    again (`{ ref: 'character:<id>', via: 'unprompted' }`); once any
+ *    character has spoken twice since the person's line, it is done;
+ *  · `narrator-interjections` on — the narrator adds a line
+ *    (`{ ref: null, via: 'unprompted', subject: <params.narrate> }`, the
+ *    genre's narrate action; a plain narrator reply when unset), unless a
+ *    narration already landed since the person's line.
+ *
+ * `modes` is `core:task/resolve-tasks@1`'s `modes`; a key absent or `off` adds
+ * nothing, so the order passes through untouched — a Minimal session's turn
+ * order is exactly its strategy's. Pure.
+ * @experimental
+ */
+export const turnUnprompted = pin(
+	describeTaskDefinition({
+		id: 'core:task/turn-unprompted@1',
+		i18n: { name: { en: 'Unprompted turns' } },
+		timeoutMs: 1000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					narrate: {
+						type: 'string',
+						default: '',
+						label: { en: 'Narrator action' },
+						description: {
+							en: "The action a narrator's own line fires, as '<spec>#<key>'. Empty: an ordinary reply in the narrator's voice.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** What the strategy prepared. */
+				order: S.turnEntries,
+				/** Who may be seated — the pool's output. */
+				candidates: S.turnCandidates,
+				/** The session's visible history, ascending. */
+				messages: S.messages,
+				/** The background tasks' modes by key (`resolve-tasks@1`'s `modes`). */
+				modes: S.json,
+			},
+			out: { main: S.turnEntries, order: S.turnEntries },
+		},
+	}),
 )
 
 /**
@@ -3468,7 +3549,7 @@ export const makeChoices = pin(
 				fn: S.text,
 				/**
 				 * The identity of the declaration the options fire, when it is
-				 * another spec's (`core:spec/adventure-answer#answer`). Absent,
+				 * another spec's (`core:spec/story-answer#answer`). Absent,
 				 * the host stamps this spec's own declaration for `fn` at the
 				 * write.
 				 */
@@ -4852,9 +4933,11 @@ export const runScript = pin(
 			 * The time each script in the chain may take.
 			 * Read by the HOST's script applier off the scope chain, not by the
 			 * binding — the binding never sees the chain. A script past it is
-			 * stopped and recorded `err` with the time in its reason, and the
-			 * value it was handed goes on. Unset, the seam default applies (the
-			 * same 250 ms).
+			 * stopped and recorded `err` with the time in its reason, and 🚧 the
+			 * step HALTS with that reason (2026-10-19): a script step's answer
+			 * is its script's, and handing its own input on as that answer
+			 * reached the next step as nonsense. Unset, the seam default
+			 * applies (the same 250 ms).
 			 */
 			params: {
 				kind: 'parameters',
@@ -4867,7 +4950,7 @@ export const runScript = pin(
 						default: 250,
 						label: { en: 'Script time limit (ms)' },
 						description: {
-							en: 'How long each script in this step may run. A script that runs longer is stopped, and the value it was handed goes on unchanged.',
+							en: 'How long each script in this step may run. A script that runs longer is stopped, and the step stops with it.',
 						},
 					},
 				},
@@ -4876,6 +4959,154 @@ export const runScript = pin(
 		ports: {
 			in: { input: S.json },
 			out: { main: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 **Resolve a ruleset** — the one handler every genre calls to read and
+ * apply a session's ruleset (rulesets programme, P1 contract stub).
+ *
+ * Ruleset-agnostic: it reads whichever ruleset the session has from the
+ * registry (`defineRuleset`), at the rigour it is handed, in a fixed phase
+ * order (base → piece effects → derived → bridges → prose render). A genre's
+ * spec supplies only the moment:
+ *
+ *  · `resolve` — before a model call: labelled prompt blocks and the facts a
+ *    step may need. No dice.
+ *  · `apply` — after the model proposes: validates the `deltas`, rolls what
+ *    must be rolled (seeded — hence `declaresRandomness`), and returns the
+ *    outcomes, the explain trace and the deltas it refused.
+ *  · `advance` — `apply` with no deltas and an `elapsed` amount (a rest, a
+ *    journey, a scene break).
+ *
+ * `blocks` is a record of labelled variables — `voice`, `sheet`, `pieces`,
+ * `ties`, `outcomes`, `custom` — which a context template places by name;
+ * the handler never writes into a prompt itself. `explain` is for receipts
+ * and ledgers, never a prompt. Bound by the app since 2026-10-17 (no longer
+ * provisional — the Dungeon Crawler create spec seeds it).
+ * @experimental
+ */
+export const rulesetResolve = pin(
+	describeTaskDefinition({
+		id: 'core:task/ruleset-resolve@1',
+		i18n: {
+			name: { en: 'Resolve a ruleset' },
+			description: {
+				en: "Reads the session's ruleset for the owners it is given, at the rigour it is given: prompt blocks before a reply, validated changes and rolled outcomes after one.",
+			},
+		},
+		timeoutMs: 5000,
+		declaresRandomness: true,
+		ports: {
+			in: {
+				/**
+				 * The session the call reads — its ruleset, setting values and
+				 * owners when `owners` names none. Added 2026-10-16 (W3-S) so a
+				 * call that is not handed owners still knows its session; `@1`
+				 * evolves in place.
+				 */
+				scope: S.sessionScope,
+				/** The owners resolved this turn — the acting cast, the scene's place. */
+				owners: S.json,
+				/** `prose`, `mechanics` or `scripts`; else the session's rigour. */
+				rigour: S.text,
+				/**
+				 * `resolve`, `apply` or `advance` — or 🚧 `propose` (lane 2,
+				 * 2026-10-19): `apply` whose every change is filed for review
+				 * (`state_proposals`) rather than applied, for a task on Review.
+				 */
+				mode: S.text,
+				/** The turn's declared actions — what selects the pieces in play. */
+				actions: S.json,
+				/** `apply`: the changes the model proposed, to validate. */
+				deltas: S.json,
+				/** `advance` (or `apply`): story time passed, in the ruleset's unit. */
+				elapsed: S.json,
+				/**
+				 * 🚧 **Whose eyes** the blocks are for (2026-10-17): a participant
+				 * reference, or `gm` for the game-master-facing step. Decides
+				 * what a repertoire's `earshot` and `gmOnly` let into `blocks` —
+				 * a holder's own pieces into their voice, the creatures a
+				 * player never reads into the Narrator's. Unwired: everyone's
+				 * view, which carries nothing marked for the holder or the GM.
+				 */
+				viewer: S.text,
+			},
+			out: {
+				/** Labelled variables: `voice`, `sheet`, `pieces`, `ties`, `outcomes`, `custom`. */
+				blocks: S.json,
+				/** What a step may need: targets, what is equipped, what is allowed this turn. */
+				facts: S.json,
+				/** `apply` / `advance`: rolls, degrees and totals, each with its origins. */
+				outcomes: S.json,
+				/** How each number was reached — for receipts and ledgers, never a prompt. */
+				explain: S.json,
+				/** Proposed changes the mechanics refused, with why — review items, never silent corrections. */
+				rejected: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Resolve the background tasks** (PLAN-genre-restructure §4, 2026-10-19):
+ * what a session runs around a reply — the genre's declared tasks
+ * (`GenreDecl.tasks`), each at the mode the session chose, else the mode its
+ * preset pins (`PresetDecl.settings.tasks`), else the declared default; the
+ * SDK's `resolveTasks` does the arithmetic (stored > pinned > declared). The
+ * host binds it: it reads the session's preset row by the settings document's
+ * `presetId` when `preset` is unwired, the genre's declaration by `genre`
+ * (else the document's `genreId`), and the turn count for the sweep's
+ * frequency (`sweepDue`).
+ *
+ * Pure apart from those reads, and no model call: a genre's spec branches on
+ * what it publishes — one pipeline whose junctions read `reckoning`, `sweep`
+ * and `modes`, never one pipeline per toggle (owner ruling 2026-10-19). A task
+ * whose mode is `off` is skipped at its branch.
+ * @experimental
+ */
+export const resolveTasks = pin(
+	describeTaskDefinition({
+		id: 'core:task/resolve-tasks@1',
+		i18n: {
+			name: { en: 'Resolve background tasks' },
+			description: {
+				en: "Works out what this session runs around a reply: each of the genre's tasks at the session's mode, else its preset's, else the genre's default.",
+			},
+		},
+		timeoutMs: 1000,
+		ports: {
+			in: {
+				/** The settings document — its `genreId`, `presetId` and `fields`. */
+				session: S.sessionSettings,
+				/** The genre fields; `fields.tasks` is the stored `TaskSettingsV1`. Unwired: the document's. */
+				fields: S.json,
+				/** The preset's pinned settings (`PresetDecl.settings`). Unwired: the host reads the session's preset row. */
+				preset: S.json,
+				/** The genre whose `tasks` are resolved. Unwired: the document's `genreId`. */
+				genre: S.text,
+				/** The inlet's `{ id, rigour, settings }` — what `scripts` is read from. */
+				ruleset: S.json,
+			},
+			out: {
+				/** Everything below, as one document. */
+				main: S.json,
+				/** True when any `reckoning` task is on (`full` or `review`): one call after the reply. */
+				reckoning: S.json,
+				/** True when any `sweep` task is on AND a sweep is due this turn (`sweepDue`, or a scene boundary). */
+				sweep: S.json,
+				/** The sweep's shared frequency — every N turns, or `'scene'`. */
+				sweepEvery: S.json,
+				/** Whether the sweep waits for the round to end (A, B, C reply, then the sweep). */
+				waitForRound: S.json,
+				/** Every task as the session runs it (`ResolvedTask[]`). */
+				tasks: S.json,
+				/** `{ [task key]: 'full' | 'review' | 'off' }` — what a junction reads by `path`. */
+				modes: S.json,
+				/** True when the session's ruleset resolves by script (`rigour: 'scripts'`). */
+				scripts: S.json,
+			},
 		},
 	}),
 )

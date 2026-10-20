@@ -16,7 +16,8 @@
 	 *
 	 * An empty order with people to choose from — a round that is over, or
 	 * a manual strategy waiting to be told — waits on a message and offers
-	 * the pick. An order whose entries are all on other channels shows
+	 * the pick. 🚧 A round that waits on others once the viewer has had their
+	 * say (`waitingFor`, the page's reading) says so: "Waiting for Maren Holt". An order whose entries are all on other channels shows
 	 * nothing here.
 	 *
 	 * Continue hands its channel to `onContinue`, so the page fires this
@@ -55,6 +56,8 @@
 		canChooseSomeoneElse?: boolean
 		/** The person looking: their own persona's turn reads "Your turn". */
 		viewerUserId?: number | null
+		/** 🚧 Whom the round waits on (Q3-3): "Waiting for Maren Holt". */
+		waitingFor?: readonly string[]
 	}
 
 	let {
@@ -66,8 +69,12 @@
 		onContinue,
 		onSomeoneElse,
 		canChooseSomeoneElse = true,
-		viewerUserId = null
+		viewerUserId = null,
+		waitingFor = []
 	}: Props = $props()
+	const waitingWords = $derived(
+		waitingFor.length ? `Waiting for ${new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format([...waitingFor])}` : ""
+	)
 
 	const conversation = useConversation()
 	/** This log's channel — the composer's — `main` by default. */
@@ -104,7 +111,13 @@
 	const after = $derived(mode === "list" ? here.slice(1) : [])
 </script>
 
-{#if shouldShow && !order.length && candidates.length}
+{#if !here.length && waitingWords}
+	<!-- 🚧 The round waits on others, the viewer's say made (Q3-3). -->
+	<div data-widget-part="messages.turn-line-waiting messages.next-up-waiting" data-waiting-for="">
+		<sp-icon name="hourglass" size="14"></sp-icon>
+		<span data-widget-part="messages.turn-line-text messages.next-up-text">{waitingWords}</span>
+	</div>
+{:else if shouldShow && !order.length && candidates.length}
 	<div data-widget-part="messages.turn-line-waiting messages.next-up-waiting">
 		<span data-widget-part="messages.turn-line-text messages.next-up-text">
 			Waiting for a message — or pick who speaks next

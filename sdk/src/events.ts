@@ -785,6 +785,33 @@ export const CORE_EVENTS = {
 		description: 'A reply was asked for — the primary turn of a session.',
 	}),
 	/**
+	 * 🚧 A person wrote a message and asked for it to be saved — the
+	 * composer's Send. **A person's message is always saved through the
+	 * pipeline** (owner ruling 2026-10-15): the host checks the door (access,
+	 * the genre, the persona, the length, the channel) and dispatches this;
+	 * the spec the preset binds writes the row (`core:spec/save-message` by
+	 * default — `create-message@1` with `role: 'user'`). A genre that wants
+	 * to refuse, rewrite or route a message binds its own spec instead.
+	 *
+	 * An action, like `message-respond`: a request, not a write's
+	 * consequence. The row it saves causes `message-created` and
+	 * `message-completed` as any write does, so turn order and auto-advance
+	 * answer the saved row, never this request. Payload
+	 * `core:shape/message-offered@1` (`MessageOfferedPayload`).
+	 * @ruling owner 2026-10-15
+	 */
+	messageOffered: defineEvent({
+		slug: 'message-offered',
+		declaredRoot: true,
+		name: { en: 'Message sent' },
+		version: 1,
+		family: 'action',
+		affectsUser: true,
+		payload: S.messageOffered,
+		description:
+			'A person sent a message — the pipeline bound here saves it. The payload carries who sent it, who it speaks as, the channel, the text and the attachments.',
+	}),
+	/**
 	 * Arbitrary buttons/triggers — the contributed functions surface.
 	 * @ruling 19 §3
 	 */
@@ -1060,6 +1087,33 @@ export interface FormAddressedPayload {
 	action: string
 	/** Who the form is put to — a reference the resolver answered `ai` for. */
 	addressee: string
+}
+
+/**
+ * 🚧 The payload of `core:event/message-offered@1`
+ * (`core:shape/message-offered@1`) — a person's Send, checked at the door and
+ * handed to the pipeline that saves it. What `core:inlet/message-offered@1`
+ * publishes port by port.
+ * @experimental
+ */
+export interface MessageOfferedPayload {
+	sessionId: number
+	/** The person sending — always `user:<id>`, the run's owner. */
+	person: string
+	/**
+	 * Who the message speaks as: `character:<id>` (the person's persona),
+	 * `player-seat:<id>` (their card-less seat), or null — the person as
+	 * themselves.
+	 */
+	speaker: string | null
+	/** The channel it was written on, canonical (`main`, `parley:2`). */
+	channel: string
+	text: string
+	/** The person's ready tray items to send as its attachments, in order. */
+	trayItemIds: string[]
+	/** The message it answers, when the composer named one. */
+	replyTo?: number | null
+	cause?: EventCause
 }
 
 /** @experimental */

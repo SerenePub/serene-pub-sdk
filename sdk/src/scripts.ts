@@ -409,14 +409,18 @@ export const castTransform = defineScriptKind({
  * The one seam a plugin — or an admin, in the Scripts panel with no plugin at
  * all — has for turn detection of its own. Core's `core:task/turn-scripted@1`
  * declares this kind at its `select` point and hands the chain a
- * **selection**: `{ speaker, candidates, lastSpeaker, sinceUser }` — the pick so
- * far (null until a link decides), every seat a strategy may seat (characters
- * and in-turn envoys, each a participant reference with its position and name),
- * who spoke last, and how many replies have landed since the person last
- * spoke. A link returns the selection with `speaker` set, or nothing to leave
- * the decision to the next link. The host seats only a reference that is in
- * `candidates`; anything else is recorded and ignored, so a script can never
- * seat somebody the cast does not hold.
+ * **selection**: `{ order, candidates, lastSpeaker, sinceUser, voiceEntries,
+ * sentSinceReply }` — the prepared turns so far (round robin's), every
+ * candidate the pool admitted, who spoke last, how many replies have landed
+ * since the person last spoke, 🚧 `voiceEntries`, what the narrator strategy
+ * would prepare (one own-voice entry per channel whose newest row is a
+ * person's), and 🚧 `sentSinceReply`, per channel the seats
+ * (`character:<id>`, `player-seat:<id>`) that have written since that
+ * channel's newest reply — what a script waiting for everyone reads. A link
+ * returns the selection with `order` rewritten, or nothing to leave it to the
+ * next link. The host keeps an entry only when its `ref` is a candidate or
+ * null (the pipeline's own voice); anything else is recorded and dropped, so
+ * a script can never seat somebody the cast does not hold.
  *
  * A transform rather than a verdict: the chain's *order* is its precedence —
  * "the mentioned character, else whoever is due" is two links — and a verdict

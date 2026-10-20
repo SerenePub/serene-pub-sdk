@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { describeTaskDefinition, S, type Descriptor } from '@serene-pub/sdk'
 import '@serene-pub/contracts'
-import { coreSpec, CHAT_TURN_ORDER_SPEC_ID, TURN_ORDER_BY_GENRE } from '@serene-pub/core-catalog'
+import { coreSpec, STORY_TURN_ORDER_SPEC_ID, TURN_ORDER_BY_GENRE } from '@serene-pub/core-catalog'
 import {
 	COMPONENT_PROTOCOL_FIXTURE,
 	PACKAGE_REQUIREMENTS,
@@ -35,7 +35,7 @@ import { mountComponent } from './harnessGuard.js'
 import { compileCoreSource, mountCode } from './componentMount.js'
 
 const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
-const STRATEGY_NODE = TURN_ORDER_BY_GENRE.find((t) => t.spec === CHAT_TURN_ORDER_SPEC_ID)!.strategyNode
+const STRATEGY_NODE = TURN_ORDER_BY_GENRE.find((t) => t.spec === STORY_TURN_ORDER_SPEC_ID)!.strategyNode
 
 /* ── C30 parity: core's messages widget against a clone ────────────────── */
 
@@ -358,7 +358,7 @@ test('the manifest carries full port shapes: definitionFromManifest reads the de
 })
 
 test('C32 and C33 pass on a strategy that fits core’s chat turn order and behaves as a hook', async () => {
-	const m = manifestWith([{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: firstUp.id }], [firstUp])
+	const m = manifestWith([{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: firstUp.id }], [firstUp])
 	const results = await conformPackage(swapHost(m), ['C32', 'C33'])
 	for (const r of results) {
 		assert.equal(r.pass, true, `${r.id}: ${r.error}`)
@@ -369,9 +369,9 @@ test('C32 and C33 pass on a strategy that fits core’s chat turn order and beha
 test('C32 fails on a misfit, a node the host does not seat, and a definition the package does not declare', async () => {
 	const m = manifestWith(
 		[
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: halfWired.id },
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: 'strategy', definition: firstUp.id },
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: 'acme.turns:task/turn-ghost@1' },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: halfWired.id },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: 'strategy', definition: firstUp.id },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: 'acme.turns:task/turn-ghost@1' },
 		],
 		[firstUp, halfWired],
 	)
@@ -385,8 +385,8 @@ test('C32 fails on a misfit, a node the host does not seat, and a definition the
 test('C33 fails on a strategy that returns a bare value, and on one with no handler, naming the probe', async () => {
 	const m = manifestWith(
 		[
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: bare.id },
-			{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: halfWired.id },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: bare.id },
+			{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: halfWired.id },
 		],
 		[bare, halfWired],
 	)
@@ -403,7 +403,7 @@ test('C33 skips a definition reading a shape the kit has no sample for, unless t
 		timeoutMs: 1000,
 		ports: { in: { cast: S.sessionCast }, out: { main: S.turnEntries } },
 	} as never) as Descriptor
-	const m = manifestWith([{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: odd.id }], [odd])
+	const m = manifestWith([{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: odd.id }], [odd])
 	m.hooks!.nodeHandlers![odd.id] = 'turnFirstUpHandler'
 	const [skipped] = await conformPackage(swapHost(m), ['C33'])
 	assert.equal(skipped!.pass, true)
@@ -416,7 +416,7 @@ test('C33 skips a definition reading a shape the kit has no sample for, unless t
 test('the package seams: hooksFromBundle refuses a require, swapsFromManifest carries the declaration', () => {
 	assert.throws(() => hooksFromBundle(`require('fs')`), /asked for 'fs' — a bundle must be self-contained/)
 	assert.deepEqual(Object.keys(hooksFromBundle(BUNDLE)).sort(), ['turnBareHandler', 'turnFirstUpHandler'])
-	const [s] = swapsFromManifest(manifestWith([{ spec: CHAT_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: firstUp.id }], [firstUp]))
+	const [s] = swapsFromManifest(manifestWith([{ spec: STORY_TURN_ORDER_SPEC_ID, node: STRATEGY_NODE, definition: firstUp.id }], [firstUp]))
 	assert.equal(s!.definition?.id, firstUp.id)
 })
 

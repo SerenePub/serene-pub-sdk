@@ -23,3 +23,14 @@ export { WIDGET_CONTEXT_KEY, type WidgetContext, type WidgetContextRef } from '.
 export * from './composerTray.js'
 // 🚧 §15 G9: the conversation's dates, through the book's calendar.
 export * from './storyDays.js'
+// 🚧 Channel lanes in a copy's channel list: the explicit lane, the no-lane marker.
+export * from './channelLanes.js'
+// 🚧 The table channel (PLAN-rulesets §30): rolls and calculations, off the story.
+export * from './tableChannel.js'
+// 🚧 Composer states (owner ruling 2026-10-15): a closed composer's lane and
+// what it says — the SDK's own readers, for the composer to import here.
+export {
+	COMPOSER_CLOSED_NO_REASON,
+	composerClosedOn,
+	composerClosedPlaceholder,
+} from '@serene-pub/sdk'

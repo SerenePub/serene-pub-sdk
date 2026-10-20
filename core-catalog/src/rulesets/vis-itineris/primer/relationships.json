@@ -1,0 +1,54 @@
+[
+	{
+		"from": "wren-talbot",
+		"to": "odile-marsh",
+		"label": "old friend of",
+		"reverseLabel": "old friend of",
+		"description": "They grew up on the same street; Odile feeds the lamplighters on credit."
+	},
+	{
+		"from": "wren-talbot",
+		"to": "faction-lamplighters",
+		"label": "captain of",
+		"reverseLabel": "led by"
+	},
+	{
+		"from": "mother-sedge",
+		"to": "faction-mire-kin",
+		"label": "eldest of",
+		"reverseLabel": "heeds"
+	},
+	{
+		"from": "corvin-ashby",
+		"to": "faction-ledger-house",
+		"label": "factor for",
+		"reverseLabel": "employs"
+	},
+	{
+		"from": "anselm-hale",
+		"to": "mother-sedge",
+		"label": "distrusts",
+		"reverseLabel": "pities",
+		"description": "He thinks her people let the barrow be robbed; she thinks he reads too much and listens too little."
+	},
+	{
+		"from": "odile-marsh",
+		"to": "pell",
+		"label": "looks out for",
+		"reverseLabel": "trusts",
+		"description": "Odile sends soup to the mill and asks Pell no questions."
+	},
+	{
+		"from": "hester-vane",
+		"to": "corvin-ashby",
+		"label": "owes money to",
+		"reverseLabel": "holds the debt of",
+		"description": "Hester's debt is due at the next full moon, and Corvin has offered to forget it for a favour."
+	},
+	{
+		"from": "anselm-hale",
+		"to": "the-ford-lantern",
+		"label": "keeps",
+		"reverseLabel": "kept by"
+	}
+]

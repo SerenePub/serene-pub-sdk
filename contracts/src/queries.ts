@@ -161,6 +161,21 @@ export const sessionHistory = pin(
 						},
 					},
 					/**
+					 * 🚧 **Table lines** (2026-10-15): the rows written as the
+					 * table's own (`create-message@1`'s `tableLine` — a Dungeon
+					 * Crawler roll line). On by default, so every spec reads
+					 * what it always read; a spec whose brief already carries
+					 * what those lines say turns them off, and says so here.
+					 */
+					tableLines: {
+						type: 'boolean',
+						default: true,
+						label: { en: 'Read the table lines' },
+						description: {
+							en: "Include the table's own lines — roll lines and the like — in what this history reads. Off: only what was said.",
+						},
+					},
+					/**
 					 * The transcript's intent, on the node that produces the
 					 * transcript (built 2026-09-16 — see
 					 * `bandIntentFields`). `weight: 0.4` and `minInclude: 6`
@@ -277,6 +292,20 @@ export const sessionHistory = pin(
 				 * carries the id, never the text, so the row is read here.
 				 */
 				messageId: S.rowIds,
+				/**
+				 * 🚧 **One channel lane, chosen at run time** (2026-10-15):
+				 * wired — `$.input.channel`, the channel lane the turn was
+				 * fired on — the read is exactly that channel lane, in place
+				 * of the `channel` parameter. A bare slug here is its lane 1,
+				 * never the whole channel: the run names the channel lane a
+				 * row is on, and a channel lane is one conversation (`parley` is the owner's lane with the
+				 * Planner, `parley:2` another player's — reading the slug
+				 * would hand one player's private talk to another's reply).
+				 * `limit`, `budget`, `unplayedOnly` and `talkOnly` apply as
+				 * they would to the parameter. Unwired, the parameter is read.
+				 * The Dungeon Crawler's Planner reads its player's lane so.
+				 */
+				channelLane: S.text,
 			},
 			out: {
 				/**
@@ -2244,7 +2273,21 @@ export const availableTools = pin(
 				},
 			},
 		},
-		ports: { in: { scope: S.sessionScope }, out: { main: S.json, tools: S.json } },
+		ports: {
+			in: {
+				scope: S.sessionScope,
+				/**
+				 * 🚧 Which **kinds** of tool to offer (2026-10-19, the Chat
+				 * genre's `tools` field): `web`, `lore`, `lorebook-write`,
+				 * `image`, `clock`, `calculator`, `history` — the host maps
+				 * each kind onto the tools that serve it. Unwired, every tool
+				 * the session has (as before); an empty list, none. Added in
+				 * place (`@1` evolves until 0.7).
+				 */
+				kinds: S.json,
+			},
+			out: { main: S.json, tools: S.json },
+		},
 	}),
 )
 
@@ -2756,8 +2799,12 @@ export const graphScenes = pin(
  * The session's stats and states, resolved — an inventory is one, the
  * `inventory` list stat (phase 3b retired possessions as edges).
  *
- * `{ world, cast, slots, who, version }` — the same object `stateFor(sessionId)`
+ * `{ world, cast, slots, configs, who, version }` — the same object `stateFor(sessionId)`
  * returns and the shape `state` on `core:task/build-template-context@1` takes.
+ * 🚧 `configs` is each owner's **stat configuration** in force — `world`
+ * and every `cast.byId` key, then the slot id: `configs['player_seat:4']
+ * ['core:slot/hp@1'].max` is that seat's full health, the bar's own number
+ * (`core:outlet/set-stat-config@1` writes it).
  * Every value is already resolved down session → lorebook → card →
  * declaration default, with absence meaning **inherit** rather than zero, and
  * derived slots computed rather than read.
@@ -2926,6 +2973,43 @@ export const lorebookState = pin(
 		},
 	}),
 )
+
+/**
+ * 🚧 **A person's channel lane** (owner ruling 2026-10-17): on a channel the
+ * genre declares `lanes: 'personal'`, the lane that is this person's —
+ * allocated by core on first ask, filed in the session's lane register,
+ * and sent by the host to that person and the session's owner alone. The
+ * same ask twice is the same lane; a shared channel is refused (its lanes
+ * are the genre's to allocate). Replaces a genre's own user→lane map and
+ * client-side hiding.
+ * @experimental
+ */
+export const channelLane = pin(
+	describeQueryDefinition({
+		id: 'core:query/channel-lane@1',
+		i18n: {
+			name: { en: 'A person’s channel lane' },
+			description: { en: 'Finds, or opens, the lane one person has on a channel of personal lanes.' },
+		},
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				scope: S.sessionScope,
+				/** The channel's slug, declared with personal lanes. */
+				channel: S.text,
+				/** Whose lane: `user:<id>` — a participant reference as text (wired from a script's words; the host parses it). */
+				person: S.json,
+			},
+			out: {
+				/** The canonical channel string of the lane: `parley` for lane 1, `parley:2` after. */
+				lane: S.text,
+				/** Whether this ask opened the lane. */
+				opened: S.json,
+			},
+		},
+	}),
+)
+
 
 /**
  * 🚧 The **stat trail**: one stat's values over time, for one owner — the

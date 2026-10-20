@@ -7,20 +7,26 @@
  *
  * ## The shape in one paragraph
  *
- * Its **arrangement** is three slots, three views of one placement:
+ * Its **arrangement** is `panels` ({@link PanelLayoutV1}): three zones of
+ * **panels**, a panel being a box that holds widgets as tabs — the thing a
+ * person drags, pins and sees. A side zone is panels top to bottom, each
+ * docked or in the rail; the middle is the `primary` panel (the conversation's,
+ * which fills) with panels `above` and `below` it. When `panels` is present it
+ * is the whole truth.
  *
- * - `zoneLayout` — the side zones' membership: which widgets each side lists,
- *   in order, whether the side is pinned (a docked column) or an icon strip,
- *   its width ladder, and `styles.chat` (the message pack, by name).
- * - `widgetGrid` — the widget grid: each widget's zone, order, size and the
- *   edges it anchors to. The middle's membership lives here; a side's may too.
- * - `arrangedGrid` — the arrangement per zone: whole grid cells (`cols` ×
- *   `rows`) and each widget's cell box. Where a zone has one, it is what draws.
+ * ⏳ Before panels, the arrangement was three slots, three views of one
+ * placement — `zoneLayout` (the side zones' membership, pin and width
+ * ladder), `widgetGrid` (each widget's zone, order, size and anchors) and
+ * `arrangedGrid` (per zone, whole cells and each widget's box). 0.6 is in
+ * users' hands and plugin manifests carry them, so they are still typed and
+ * still read — by {@link panelsFromSlots} only — and are dropped at the 0.7
+ * squash, with it. `zoneLayout`'s width `rules` are the one part still read
+ * directly: they are a side's width ladder ({@link zoneRungAt}), not where
+ * anything is placed.
  *
- * Three slots can name one zone, so what the screen DRAWS is a reading of
- * them, and there is one: {@link resolveDrawn} (→ {@link DrawnLayout}) decides
- * which slot draws each zone, drops retired widgets, gives every placed
- * instance one pin ({@link pinnedOf}: absent means pinned) and walks each
+ * What the screen DRAWS is one reading: {@link resolveDrawn} (→
+ * {@link DrawnLayout}) reads {@link panelsOf}, drops retired widgets, gives
+ * every panel one pin ({@link pinnedOf}: absent means docked) and walks each
  * side's width ladder ({@link zoneRungAt}). The id readers that ask "is it
  * drawn" ({@link drawnWidgetIds}, {@link primaryPlaced}) are that answer.
  *
@@ -34,19 +40,25 @@
  * A layout places a widget under a **widget instance id**: the widget id
  * itself (`messages`, `acme.maps:map`), or `<widget id>#<instance name>` for
  * another copy of it in the same layout (`messages#sanctum`). Everything a
- * layout keys per placed copy — the zone lists, grid entries and cells, the
- * `widgetSettings` and `widgetStyles` keys — is an instance id; everything
- * about the widget (its declaration, its style rows) is read through
- * {@link widgetOfInstance}.
+ * layout keys per placed copy — a panel's tabs, the old slots' lists and
+ * cells, the `widgetSettings` and `widgetStyles` keys — is an instance id;
+ * everything about the widget (its declaration, its style rows) is read
+ * through {@link widgetOfInstance}.
  *
- * ## What is deliberately not here
+ * ## The one normaliser, and what is deliberately not here
  *
- * No renderer, no normalizer and no measurement: those are the app's, which
- * reads a stored blob it did not write and must repair rather than refuse.
- * This module types the format, reads the ids out of it, and checks a layout a
- * package SHIPS ({@link validateSessionLayout}), where refusing is right. No
- * `svelte` import, ever: a linked package that imports svelte gives the app a
- * second Svelte.
+ * The ONE normaliser the SDK owns is {@link panelsFromSlots}: the old slots
+ * read as panels. It is here rather than in the app because four readers need
+ * the same answer — the packager's compiler, plugin manifests in the wild
+ * (which ship the old slots and keep working with no manifest change), the
+ * goldens, and the app's boot pass that writes `panels` onto stored rows — and
+ * two converters would be two answers. Every other normaliser, the renderer
+ * and all measurement are the app's, which reads a stored blob it did not
+ * write and must repair rather than refuse. This module types the format,
+ * reads the ids out of it, and checks a layout a package SHIPS
+ * ({@link validateSessionLayout}), where refusing is right. No `svelte`
+ * import, ever: a linked package that imports svelte gives the app a second
+ * Svelte.
  * @ruling NOMENCLATURE §9
  */
 
@@ -267,8 +279,9 @@ export interface LayoutZoneRule {
 }
 
 /**
- * One zone of `zoneLayout`: a side column (or a strip) and the widgets it
- * lists, in order.
+ * ⏳ One zone of `zoneLayout`: a side column (or a strip) and the widgets it
+ * lists, in order. Read only by {@link panelsFromSlots} (and its `rules`, by
+ * {@link zoneRungAt}); dropped at the 0.7 squash.
  *
  * Where the page draws it is `side` (a side zone) or `area` (a strip) — never
  * its key — and a zone that does not say it is a strip is a side.
@@ -291,7 +304,8 @@ export interface LayoutZoneDef {
 }
 
 /**
- * The `zoneLayout` slot. A zone is keyed by where the page draws it: a side
+ * ⏳ The `zoneLayout` slot — read only by {@link panelsFromSlots} (and its
+ * zones' `rules`, a side's width ladder); dropped at the 0.7 squash. A zone is keyed by where the page draws it: a side
  * zone by its `side` (`left`, `right`), a strip by its `area` (`top`,
  * `bottom`) — so one layout has at most one of each, and the key and the
  * field never disagree (`validateSessionLayout` refuses a layout where they
@@ -307,14 +321,15 @@ export interface ZoneLayoutV1 {
 }
 
 /**
- * How a grid widget sizes on one axis: `grow` fills what is left (a `1fr`
+ * ⏳ How a grid widget sizes on one axis: `grow` fills what is left (a `1fr`
  * track), `fixed` is content-sized (`auto`), or a number of cells.
  * @experimental
  */
 export type GridSizeSpec = 'grow' | 'fixed' | { minCells?: number; maxCells?: number; cells?: number }
 
 /**
- * The edges of its space a widget sticks to as the grid reflows. ⚠ Not a lore
+ * ⏳ The edges of its space a widget sticks to as the grid reflows (read only
+ * by {@link panelsFromSlots}, for panel order). ⚠ Not a lore
  * entry's **anchor** (the reference that governs its visibility).
  * @experimental
  */
@@ -325,7 +340,11 @@ export interface WidgetAnchor {
 	right?: boolean
 }
 
-/** One widget in the widget grid. @experimental */
+/**
+ * ⏳ One widget in the widget grid.
+ * ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash.
+ * @experimental
+ */
 export interface GridWidget {
 	/** A widget instance id. */
 	id: string
@@ -344,7 +363,11 @@ export interface GridWidget {
 	group?: string
 }
 
-/** The `widgetGrid` slot. @experimental */
+/**
+ * ⏳ The `widgetGrid` slot.
+ * ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash.
+ * @experimental
+ */
 export interface WidgetGridV1 {
 	version: 1
 	/** The cell module, px. */
@@ -353,7 +376,8 @@ export interface WidgetGridV1 {
 }
 
 /**
- * One widget's cell box in an arranged zone: 0-based origin and span, in whole
+ * ⏳ One widget's cell box in an arranged zone (read only by
+ * {@link panelsFromSlots}; dropped at the 0.7 squash): 0-based origin and span, in whole
  * cells of that zone's grid.
  * @experimental
  */
@@ -371,14 +395,22 @@ export interface ArrangedItem {
 	pinned?: boolean
 }
 
-/** One zone's arrangement: its cell grid and the items on it. @experimental */
+/**
+ * ⏳ One zone's arrangement: its cell grid and the items on it.
+ * ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash.
+ * @experimental
+ */
 export interface ArrangedZone {
 	cols: number
 	rows: number
 	items: ArrangedItem[]
 }
 
-/** The `arrangedGrid` slot: one arrangement per zone that has one. @experimental */
+/**
+ * ⏳ The `arrangedGrid` slot: one arrangement per zone that has one.
+ * ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash.
+ * @experimental
+ */
 export type ArrangedGridV1 = Partial<Record<ZoneId, ArrangedZone>>
 
 /**
@@ -392,14 +424,84 @@ export interface WidgetStylePin {
 	id?: number
 }
 
+// ── Panels ──────────────────────────────────────────────────────────────────
+
+/**
+ * The height a side or strip panel takes: `fit` its content, `fill` an equal
+ * share of what is left (absent means `fill`), or `{ share }` twelfths of the
+ * zone's docked height — an integer 1–12, counted only among that zone's
+ * docked panels.
+ * @experimental
+ */
+export type PanelHeightV1 = 'fit' | 'fill' | { share: number }
+
+/**
+ * A **panel**: a box in a zone that holds widgets as tabs. The thing a person
+ * drags, pins and sees.
+ * @experimental
+ */
+export interface PanelV1 {
+	/** Stable within one layout; `p` + a counter. Never an instance id. */
+	key: string
+	/** Widget instance ids, in tab order. At least one. */
+	tabs: string[]
+	/** The tab last shown; absent is `tabs[0]`. */
+	open?: string
+	/**
+	 * ABSENT MEANS DOCKED ({@link pinnedOf}); `false` is in the rail, and the
+	 * only value written. Refused on a middle panel: the middle never pins.
+	 */
+	pinned?: false
+	/** A side or strip panel's height; absent is `fill`. */
+	height?: PanelHeightV1
+	/** A person's name for the panel, shown only when it holds two or more tabs. */
+	title?: string
+}
+
+/** A side zone's panels, top to bottom. @experimental */
+export type PanelZoneV1 = PanelV1[]
+
+/**
+ * The middle: the `primary` panel (it fills), with panels `above` and `below`
+ * it, each top to bottom.
+ * @experimental
+ */
+export interface PanelMiddleV1 {
+	above: PanelV1[]
+	primary: PanelV1
+	below: PanelV1[]
+}
+
+/**
+ * The `panels` slot — the arrangement. When a layout has it, it is the whole
+ * truth: the old slots are not read.
+ *
+ * Rules the type cannot say ({@link validateSessionLayout}): an instance id
+ * sits in at most one panel across the layout; `middle.primary` holds at
+ * least one tab; a layout places one copy of the conversation somewhere;
+ * `pinned: false` means nothing in the middle, and is refused there.
+ * @experimental
+ */
+export interface PanelLayoutV1 {
+	version: 1
+	left: PanelZoneV1
+	middle: PanelMiddleV1
+	right: PanelZoneV1
+}
+
 /**
  * The **session layout**. Every slot is optional: a layout says what it
  * arranges and nothing else.
  * @experimental
  */
 export interface SessionLayoutV1 {
+	/** The arrangement ({@link PanelLayoutV1}). When present it is the whole truth. */
+	panels?: PanelLayoutV1
+	/** ⏳ Read only by {@link panelsFromSlots} (and its `rules`, a side's width ladder); dropped at the 0.7 squash. */
 	zoneLayout?: ZoneLayoutV1
+	/** ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash. */
 	widgetGrid?: WidgetGridV1
+	/** ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash. */
 	arrangedGrid?: ArrangedGridV1
 	/** Per-instance widget settings, keyed by widget instance id. */
 	widgetSettings?: Record<string, Record<string, unknown>>
@@ -407,22 +509,15 @@ export interface SessionLayoutV1 {
 	widgetStyles?: Record<string, WidgetStylePin>
 }
 
-// ── Reading ids ─────────────────────────────────────────────────────────────
+// ── Reading the old slots ───────────────────────────────────────────────────
 
 const isObj = (x: unknown): x is Record<string, unknown> => !!x && typeof x === 'object' && !Array.isArray(x)
 
 const strings = (x: unknown): string[] =>
 	Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string') : []
 
-/** The grid's entries for one zone, by `order`. */
-function gridIn(layout: SessionLayoutV1, zone: ZoneId): string[] {
-	const widgets = isObj(layout.widgetGrid) && Array.isArray(layout.widgetGrid.widgets) ? layout.widgetGrid.widgets : []
-	return widgets
-		.filter((w) => isObj(w) && w.zone === zone && typeof w.id === 'string')
-		.map((w, n) => ({ id: w.id, order: typeof w.order === 'number' ? w.order : n }))
-		.sort((a, b) => a.order - b.order)
-		.map((w) => w.id)
-}
+/** The conversation's widget id (`CONVERSATION_WIDGET_ID`, which `genres.ts` owns; not imported, to keep this module a leaf). */
+const CONVERSATION = 'messages'
 
 /** An arranged zone's ids in reading order (by row, then column), or null when the zone has none. */
 function arrangedIn(layout: SessionLayoutV1, zone: ZoneId): string[] | null {
@@ -441,24 +536,47 @@ function zoneDefs(layout: SessionLayoutV1): Array<Record<string, unknown>> {
 	return isObj(zones) ? Object.values(zones).filter(isObj) : []
 }
 
+/** The zone definitions of `zoneLayout` with their keys, in declared order. */
+function zoneEntries(layout: SessionLayoutV1): Array<[string, Record<string, unknown>]> {
+	const zones: unknown = isObj(layout.zoneLayout) ? layout.zoneLayout.zones : undefined
+	return isObj(zones) ? Object.entries(zones).filter((e): e is [string, Record<string, unknown>] => isObj(e[1])) : []
+}
+
 /**
- * Where the page draws a zone of `zoneLayout` — the one rule, which the id
- * readers and the validator share with the page: a strip at its `area` (the
- * top unless it says bottom); anything else is a side, on its `side` (the
- * right unless it says left). Never the zone's key.
+ * Where the page draws a zone of `zoneLayout` — the one rule, which the
+ * converter and the validator share: a strip at its `area` (the top unless it
+ * says bottom); anything else is a side, on its `side` (the right unless it
+ * says left). Never the zone's key.
  */
 function zoneDrawnAt(def: Record<string, unknown>): 'left' | 'right' | 'top' | 'bottom' {
 	if (def.kind === 'strip') return def.area === 'bottom' ? 'bottom' : 'top'
 	return def.side === 'left' ? 'left' : 'right'
 }
 
-/**
- * Every widget instance id the layout NAMES — the zone lists, the grid and the
- * arrangement — each once, in that order. What a check reads when the question
- * is "does this layout mention it at all" (a genre's omitted widgets).
- * @experimental
- */
-export function layoutWidgetIds(layout: SessionLayoutV1): string[] {
+/** An arranged frame read as the page read it: whole numbers of cells and an item list, else none. */
+function frameIn(layout: SessionLayoutV1, zone: ZoneId): { cols: number; rows: number; items: ArrangedItem[] } | null {
+	const frame = isObj(layout.arrangedGrid) ? (layout.arrangedGrid as Record<string, unknown>)[zone] : undefined
+	if (!isObj(frame) || typeof frame.cols !== 'number' || typeof frame.rows !== 'number' || !Array.isArray(frame.items))
+		return null
+	const items = (frame.items as unknown[]).filter(
+		(i): i is ArrangedItem =>
+			isObj(i) && typeof i.id === 'string' && !!i.id && ['x', 'y', 'w', 'h'].every((k) => typeof i[k] === 'number'),
+	)
+	return { cols: frame.cols, rows: frame.rows, items }
+}
+
+/** The grid's well-formed entries for one zone, by `order`. */
+function gridZone(layout: SessionLayoutV1, zone: ZoneId): GridWidget[] {
+	const widgets = isObj(layout.widgetGrid) && Array.isArray(layout.widgetGrid.widgets) ? layout.widgetGrid.widgets : []
+	return widgets
+		.filter((w): w is GridWidget => isObj(w) && typeof w.id === 'string' && !!w.id && w.zone === zone)
+		.map((w, n) => ({ w, order: typeof w.order === 'number' ? w.order : n }))
+		.sort((a, b) => a.order - b.order)
+		.map(({ w }) => w)
+}
+
+/** Every id the old slots NAME — the zone lists, the grid and the arrangement — each once, in that order. */
+function slotWidgetIds(layout: SessionLayoutV1): string[] {
 	const out = new Set<string>()
 	for (const z of zoneDefs(layout)) for (const id of strings(z.widgets)) out.add(id)
 	const grid = isObj(layout.widgetGrid) && Array.isArray(layout.widgetGrid.widgets) ? layout.widgetGrid.widgets : []
@@ -467,13 +585,322 @@ export function layoutWidgetIds(layout: SessionLayoutV1): string[] {
 	return [...out]
 }
 
+/** Is this instance a copy of a retired widget? No reader draws one. */
+const retired = (instanceId: string): boolean => RETIRED_WIDGET_IDS.has(widgetOfInstance(instanceId))
+
+// ── panelsFromSlots: the old slots, read as panels ──────────────────────────
+
+/** What {@link panelsFromSlots} may be told beyond the layout. @experimental */
+export interface PanelsFromSlotsOptions {
+	/**
+	 * The widgets that declare `role: 'primary'` — the stand-in for the
+	 * conversation a genre that withholds it ships. Read only when the middle
+	 * places no copy of the conversation; a layout carries no roles itself.
+	 */
+	primaryWidgetIds?: Iterable<string>
+}
+
+/** One item of an old slot as the converter reads it: its box (cells, or its list place), group, pin and anchor. */
+interface SlotItem {
+	id: string
+	x: number
+	y: number
+	w: number
+	h: number
+	group?: string
+	pinned: boolean
+	anchor?: WidgetAnchor
+}
+
+/** A panel before it has a key. */
+type PanelDraft = Omit<PanelV1, 'key'>
+
+const byRow = (a: SlotItem, b: SlotItem) => a.y - b.y || a.x - b.x
+const byColumn = (a: SlotItem, b: SlotItem) => a.x - b.x || a.y - b.y
+
+/** An arranged item read as a slot item. */
+const fromArranged = (i: ArrangedItem): SlotItem => ({
+	id: i.id,
+	x: i.x,
+	y: i.y,
+	w: i.w,
+	h: i.h,
+	...(typeof i.group === 'string' ? { group: i.group } : {}),
+	pinned: pinnedOf(i),
+	...(isObj(i.anchor) ? { anchor: i.anchor } : {}),
+})
+
 /**
- * The widget instance ids the MIDDLE names: the grid's middle entries, then
- * the arranged middle's items, each once.
+ * Items clustered by `group` tag — an ungrouped item is a cluster of one —
+ * each cluster's members ordered by their cell (x, then y), the clusters in
+ * the order their first member was read.
+ */
+function clustersOf(items: readonly SlotItem[]): SlotItem[][] {
+	const byGroup = new Map<string, SlotItem[]>()
+	const out: SlotItem[][] = []
+	for (const i of items) {
+		if (i.group === undefined) {
+			out.push([i])
+			continue
+		}
+		let c = byGroup.get(i.group)
+		if (!c) byGroup.set(i.group, (c = [])), out.push(c)
+		c.push(i)
+	}
+	for (const c of out) c.sort(byColumn)
+	return out
+}
+
+/** A cluster's top-left: its least row, then its least column. */
+const cornerOf = (c: readonly SlotItem[]) => ({ y: Math.min(...c.map((i) => i.y)), x: Math.min(...c.map((i) => i.x)) })
+
+/** Top-anchored first, bottom-anchored last (the app's `collapsedOrder` rule, applied once here). */
+const anchorRank = (c: readonly SlotItem[]) =>
+	c.some((i) => i.anchor?.top) ? 0 : c.some((i) => i.anchor?.bottom) ? 2 : 1
+
+/** Clusters as panels: tabs in cell order, docked unless every member was unpinned. */
+function panelOf(c: readonly SlotItem[], height?: PanelHeightV1): PanelDraft {
+	return {
+		tabs: c.map((i) => i.id),
+		...(c.every((i) => !i.pinned) ? { pinned: false as const } : {}),
+		...(height ? { height } : {}),
+	}
+}
+
+/** The converter's answer, and whether the primary is the floor's (no conversation was placed in the middle). */
+function convertSlots(layout: unknown, opts: PanelsFromSlotsOptions = {}): { panels: PanelLayoutV1; floor: boolean } {
+	const doc: SessionLayoutV1 = isObj(layout) ? (layout as SessionLayoutV1) : {}
+	const seen = new Set<string>()
+	/** Admit an instance once, in the old reading order — middle, left, right, strips — never a retired one. */
+	const admit = (id: string): boolean => {
+		if (retired(id) || seen.has(id)) return false
+		seen.add(id)
+		return true
+	}
+	const defs = zoneEntries(doc)
+
+	// The middle: its arrangement whenever it has one (an emptied one
+	// included), else the grid's middle entries, a row each by `order`.
+	const middleFrame = frameIn(doc, 'middle')
+	const middleItems: SlotItem[] = (
+		middleFrame
+			? middleFrame.items.map(fromArranged).sort(byRow)
+			: gridZone(doc, 'middle').map(
+					(w, n): SlotItem => ({ id: w.id, x: 0, y: n, w: 1, h: 1, pinned: true, ...(typeof w.group === 'string' ? { group: w.group } : {}) }),
+				)
+	).filter((i) => admit(i.id))
+	const primaryIds = new Set(opts.primaryWidgetIds ?? [])
+	const conversations = middleItems.filter((i) => isInstanceOf(i.id, CONVERSATION))
+	const lead: SlotItem | undefined = conversations.length
+		? conversations.reduce((best, i) => (i.w * i.h > best.w * best.h ? i : best))
+		: (middleItems.find((i) => primaryIds.has(widgetOfInstance(i.id))) ?? middleItems[0])
+	const primaryMembers = lead
+		? lead.group === undefined
+			? [lead]
+			: middleItems.filter((i) => i.group === lead.group).sort(byColumn)
+		: []
+	const aboveItems: PanelDraft[] = []
+	const belowItems: PanelDraft[] = []
+	if (lead) {
+		const rest = clustersOf(middleItems.filter((i) => !primaryMembers.includes(i)))
+		rest.sort((a, b) => cornerOf(a).y - cornerOf(b).y || cornerOf(a).x - cornerOf(b).x)
+		for (const c of rest) {
+			// Above its rows, or beside them (no column survives): above. Under them: below.
+			const at = cornerOf(c).y
+			;(at >= lead.y + lead.h ? belowItems : aboveItems).push({ tabs: c.map((i) => i.id), height: 'fit' })
+		}
+	}
+
+	// The sides: an arrangement that places anything live, else every zone
+	// drawn there, in order, each item taking its zone's pin — with the
+	// grid's entries for the side folded in after the first zone's list.
+	const side = (edge: 'left' | 'right'): PanelDraft[] => {
+		const frame = frameIn(doc, edge)
+		let items: SlotItem[]
+		if (frame && frame.items.some((i) => !retired(i.id))) items = frame.items.map(fromArranged)
+		else {
+			items = []
+			defs
+				.filter(([, d]) => zoneDrawnAt(d) === edge)
+				.forEach(([, def], n) => {
+					const pinned = pinnedOf(def)
+					for (const id of strings(def.widgets)) items.push({ id, x: 0, y: items.length, w: 1, h: 1, pinned })
+					if (n === 0)
+						for (const w of gridZone(doc, edge))
+							items.push({ id: w.id, x: 0, y: items.length, w: 1, h: 1, pinned, ...(typeof w.group === 'string' ? { group: w.group } : {}) })
+				})
+		}
+		const live = items.sort(byRow).filter((i) => admit(i.id))
+		return clustersOf(live)
+			.map((c, n) => ({ c, n }))
+			.sort((a, b) => {
+				const ca = cornerOf(a.c)
+				const cb = cornerOf(b.c)
+				return anchorRank(a.c) - anchorRank(b.c) || ca.y - cb.y || ca.x - cb.x || a.n - b.n
+			})
+			.map(({ c }) => panelOf(c))
+	}
+	const left = side('left')
+	const right = side('right')
+
+	// The strips: one panel each, first in their area, in declared order.
+	const stripsAt = (area: 'top' | 'bottom'): PanelDraft[] =>
+		defs
+			.filter(([, d]) => d.kind === 'strip' && zoneDrawnAt(d) === area)
+			.map(([, d]) => strings(d.widgets).filter((id) => admit(id)))
+			.filter((tabs) => tabs.length > 0)
+			.map((tabs) => ({ tabs, height: 'fit' as const }))
+	const above = [...stripsAt('top'), ...aboveItems]
+	const below = [...stripsAt('bottom'), ...belowItems]
+
+	// The primary: the lead's group — else, with nothing in the middle, the
+	// panel already holding the bare conversation, moved to the middle, or
+	// the floor's conversation.
+	let primary: PanelDraft
+	let floor = false
+	if (lead) {
+		const tabs = primaryMembers.map((i) => i.id)
+		primary = { tabs, ...(tabs[0] !== lead.id ? { open: lead.id } : {}) }
+	} else {
+		const holder = [above, below, left, right].find((list) => list.some((p) => p.tabs.includes(CONVERSATION)))
+		if (holder) {
+			const at = holder.findIndex((p) => p.tabs.includes(CONVERSATION))
+			const [moved] = holder.splice(at, 1)
+			primary = { tabs: moved!.tabs, ...(moved!.tabs[0] !== CONVERSATION ? { open: CONVERSATION } : {}) }
+		} else {
+			primary = { tabs: [CONVERSATION] }
+			floor = true
+		}
+	}
+
+	// Keys in discovery order: the primary, above, below, left, right.
+	let n = 0
+	const keyed = (p: PanelDraft): PanelV1 => ({ key: `p${++n}`, ...p })
+	const keyedPrimary = keyed(primary)
+	const keyedAbove = above.map(keyed)
+	const keyedBelow = below.map(keyed)
+	return {
+		panels: {
+			version: 1,
+			left: left.map(keyed),
+			middle: { above: keyedAbove, primary: keyedPrimary, below: keyedBelow },
+			right: right.map(keyed),
+		},
+		floor,
+	}
+}
+
+/**
+ * ⏳ The old slots — `zoneLayout`, `widgetGrid`, `arrangedGrid` — read as
+ * {@link PanelLayoutV1}. The ONE normaliser the SDK owns (the module header
+ * says why). Pure and deterministic; it reads the old slots only, never
+ * `panels`, and drops nothing but geometry (cells, sizes, anchors, the
+ * grid's cell module).
+ *
+ * **A side** (`left`, `right`): its arrangement when that places anything
+ * live, else every `zoneLayout` zone drawn there, in order, with the grid's
+ * entries for the side after the first zone's list. Items are clustered by
+ * their `group` tag (an ungrouped item is its own), each cluster one panel
+ * with its tabs in cell order (x, then y). Panels run top-anchored first,
+ * then by their top-left cell (row, then column), bottom-anchored last. A
+ * panel is docked unless every member was unpinned — and an un-arranged
+ * zone's items take its pin, so a `pinned: false` zone puts every panel in
+ * the rail. Heights are absent (`fill`).
+ *
+ * **The middle.** Its arrangement whenever it has one (an emptied one
+ * included), else the grid's middle entries by `order`, one row each. The
+ * primary is the item carrying a copy of the conversation (the largest, if
+ * several), else a `role: 'primary'` widget's ({@link PanelsFromSlotsOptions}),
+ * else the first; its group's members are the primary panel's tabs, so a
+ * grouped `messages#sanctum` stays a tab of it. `zoneLayout` strips come
+ * first in their area — `top` above, `bottom` below — a panel each, in
+ * declared order; then the rest of the middle, clustered the same way: a
+ * cluster whose top row is under the primary's rows goes below, anything
+ * else above (beside it included: panels have no columns). Every middle panel
+ * but the primary is `height: 'fit'`.
+ *
+ * **Nothing in the middle.** The panel holding the bare `messages` moves
+ * there; with none anywhere, the primary is the floor's conversation,
+ * `{ key: 'p1', tabs: ['messages'] }` — so an empty layout yields a valid
+ * panel layout. ({@link resolveDrawn} marks that panel `floor`: the layout
+ * did not place it, and the id readers do not count it.)
+ *
+ * Every instance is admitted once, where the old readers drew it first —
+ * middle, left, right, strips — and a copy of a retired widget never
+ * ({@link RETIRED_WIDGET_IDS}). An aliased id ({@link WIDGET_ID_ALIASES})
+ * stays the id as placed, the key its settings and style pin live under.
+ * Keys run `p1…pn` in discovery order: the primary, above, below, left, right.
+ * @experimental
+ */
+export function panelsFromSlots(layout: SessionLayoutV1, opts?: PanelsFromSlotsOptions): PanelLayoutV1 {
+	return convertSlots(layout, opts).panels
+}
+
+/** Is this a stored `panels` slot a reader can walk? (Not a validation: {@link validateSessionLayout} is.) */
+function storedPanels(layout: unknown): PanelLayoutV1 | null {
+	if (!isObj(layout)) return null
+	const p = layout.panels
+	return isObj(p) && p.version === 1 && isObj(p.middle) && isObj(p.middle.primary) ? (p as unknown as PanelLayoutV1) : null
+}
+
+/** {@link panelsOf}, and whether its primary is the converter's floor. */
+function panelsWithFloor(layout: unknown, opts?: PanelsFromSlotsOptions): { panels: PanelLayoutV1; floor: boolean } {
+	const stored = storedPanels(layout)
+	return stored ? { panels: stored, floor: false } : convertSlots(layout, opts)
+}
+
+/**
+ * The layout's panels: `layout.panels` when it has them — returned as
+ * stored, the whole truth — else {@link panelsFromSlots}. What every reader
+ * reads.
+ * @experimental
+ */
+export function panelsOf(layout: SessionLayoutV1, opts?: PanelsFromSlotsOptions): PanelLayoutV1 {
+	return panelsWithFloor(layout, opts).panels
+}
+
+/** A stored zone's panels, defensively: the objects of a list. */
+const panelList = (x: unknown): PanelV1[] => (Array.isArray(x) ? x.filter((p): p is PanelV1 => isObj(p)) : [])
+
+/** Every panel's tabs, as written, in reading order — middle (above, primary, below), left, right — the floor's left out. */
+function panelTabs(layout: unknown, zones: readonly ZoneId[] = ZONE_IDS): string[] {
+	const { panels, floor } = panelsWithFloor(layout)
+	const out: string[] = []
+	const take = (p: PanelV1) => out.push(...strings(p.tabs))
+	if (zones.includes('middle')) {
+		panelList(panels.middle.above).forEach(take)
+		if (!floor) take(panels.middle.primary)
+		panelList(panels.middle.below).forEach(take)
+	}
+	if (zones.includes('left')) panelList(panels.left).forEach(take)
+	if (zones.includes('right')) panelList(panels.right).forEach(take)
+	return out
+}
+
+// ── Reading ids ─────────────────────────────────────────────────────────────
+
+/**
+ * Every widget instance id the layout NAMES, each once: its panels' tabs in
+ * reading order — and, while it has no `panels`, then whatever the ⏳ old
+ * slots name that the conversion did not keep (a retired widget, an entry an
+ * arrangement shadows). What a check reads when the question is "does this
+ * layout mention it at all" (a genre's omitted widgets). The floor's
+ * conversation is not named.
+ * @experimental
+ */
+export function layoutWidgetIds(layout: SessionLayoutV1): string[] {
+	const out = new Set(panelTabs(layout))
+	if (!storedPanels(layout) && isObj(layout)) for (const id of slotWidgetIds(layout)) out.add(id)
+	return [...out]
+}
+
+/**
+ * The widget instance ids the MIDDLE's panels hold — above, the primary,
+ * below — each once. The floor's conversation is not held.
  * @experimental
  */
 export function middleWidgetIds(layout: SessionLayoutV1): string[] {
-	return [...new Set([...gridIn(layout, 'middle'), ...(arrangedIn(layout, 'middle') ?? [])])]
+	return [...new Set(panelTabs(layout, ['middle']))]
 }
 
 // ── What a layout draws ─────────────────────────────────────────────────────
@@ -555,16 +982,14 @@ export function zoneRungAt(def: LayoutZoneDef, inline: number): ZoneRung {
 
 /**
  * Is this placement pinned? **Absent means pinned; `false` is the only value
- * that unpins.** The ONE pin rule of the session layout, for every slot that
- * carries the field — an arranged item, a grid entry and a zone — so a layout
- * saved before a slot had the field reads exactly as it drew: docked.
- * Anything that is not `false` (a missing field, `true`, junk) is pinned.
- *
- * What a pin means is where it sits: an arranged item's or a grid entry's is
- * that widget's (docked in its side column, or a rail icon that flies out);
- * a zone's is the un-arranged side's (a docked rail, or an icon strip —
- * {@link zoneRungAt}). ⚠ Not the widget envelope's `layout.v1.pinned`, which
- * a host tells a widget about its own box.
+ * that unpins.** The ONE pin rule of the session layout: a panel's
+ * ({@link PanelV1.pinned} — docked in its side, or in the rail as an icon
+ * that docks or flies out when opened), and the ⏳ old slots' that carry the
+ * field (an arranged item, a grid entry, a zone), so a layout saved before a
+ * slot had the field reads exactly as it drew: docked. Anything that is not
+ * `false` (a missing field, `true`, junk) is pinned. ⚠ Not the widget
+ * envelope's `layout.v1.pinned`, which a host tells a widget about its own
+ * box.
  * @experimental
  */
 export function pinnedOf(placement: { pinned?: unknown } | null | undefined): boolean {
@@ -572,7 +997,7 @@ export function pinnedOf(placement: { pinned?: unknown } | null | undefined): bo
 }
 
 /**
- * One widget instance a zone draws.
+ * One widget instance a panel draws, as a tab.
  * @experimental
  */
 export interface DrawnInstance {
@@ -587,22 +1012,34 @@ export interface DrawnInstance {
 	 * its stored settings and style pin live under.
 	 */
 	impliedSettings?: Readonly<Record<string, unknown>>
-	/**
-	 * Its cells — 0-based origin and span in whole cells of the zone's
-	 * arrangement ({@link DrawnZone.arrangement}) — when the zone is drawn from
-	 * one. As written: a renderer that draws into a measured grid clamps it.
-	 */
-	cells?: { x: number; y: number; w: number; h: number }
-	/** Pinned, by the one rule ({@link pinnedOf}). Every instance has exactly one. */
+	/** Its panel's pin, by the one rule ({@link pinnedOf}). Every instance has exactly one. */
 	pinned: boolean
-	/** Tab-group membership: instances sharing one draw as one tab set. */
-	group?: string
-	/** The edges of its space it sticks to (an arrangement's or the grid's). */
-	anchor?: WidgetAnchor
-	/** A grid-drawn instance's size spec. */
-	size?: GridWidget['size']
-	/** A grid-drawn instance's span, in cells. */
-	colSpan?: number
+}
+
+/**
+ * One panel as a layout draws it.
+ * @experimental
+ */
+export interface DrawnPanel {
+	/** The panel's key ({@link PanelV1.key}). */
+	key: string
+	/** Its tabs, in order: what it draws. Never empty, except a stored primary whose every tab is retired. */
+	tabs: DrawnInstance[]
+	/** The instance id of the tab shown: its `open` when that is one of its tabs, else the first. */
+	open: string
+	/** Docked (`true`) or in the rail, by the one rule ({@link pinnedOf}). A middle panel is always docked. */
+	pinned: boolean
+	/** Its height; absent or unreadable is `fill`. */
+	height: PanelHeightV1
+	/** A person's name for it, when it has one. */
+	title?: string
+	/**
+	 * The converter's floor: the layout placed no conversation in its middle
+	 * (and no `panels`), so the primary is `messages` by
+	 * {@link panelsFromSlots}'s rule. A renderer draws it; the id readers do
+	 * not count it — the layout did not place it.
+	 */
+	floor?: true
 }
 
 /**
@@ -615,81 +1052,54 @@ export interface DrawnZone {
 	/** A side zone's edge. */
 	side?: 'left' | 'right'
 	/**
-	 * Where its instances come from: its `arrangedGrid` frame (`arrangement`),
-	 * the grid's middle entries (`grid`), or a side's zone lists, presented by
-	 * the width ladder (`ladder`). {@link resolveDrawn} says which wins.
-	 */
-	drawnFrom: 'arrangement' | 'grid' | 'ladder'
-	/** The arrangement's cell grid, when drawn from one. */
-	arrangement?: { cols: number; rows: number }
-	/**
-	 * A side: the key of the first `zoneLayout` zone drawn on it — the one an
-	 * editor writes to — or null when the layout declares none there.
+	 * ⏳ A side: the key of the first `zoneLayout` zone drawn on it — whose
+	 * width `rules` are the side's ladder — or null when the layout declares
+	 * none there.
 	 */
 	zoneKey?: string | null
 	/**
-	 * A side: the zone's own pin, by the one rule ({@link pinnedOf}); true
-	 * when the layout declares no zone there. It decides what an un-arranged
-	 * side draws (its `rung`); an arranged side's instances carry their own.
-	 * The middle is always pinned.
+	 * A side: docked when any of its panels is — a side whose every panel is
+	 * in the rail takes rail width ({@link zoneRungAt}'s `icons`). With no
+	 * panels, its ⏳ `zoneLayout` zone's pin (true when it declares none). The
+	 * middle is always pinned.
 	 */
 	pinned: boolean
 	/**
 	 * A side: its width ladder at the box's inline size ({@link zoneRungAt};
-	 * the first zone's, else the side's default ladder). An un-arranged side is
-	 * drawn as its `mode`; an arranged one takes `width × columns` as its
-	 * footprint and docks per instance.
+	 * the first zone's rules, else the side's default ladder), refined by the
+	 * side's `pinned`.
 	 */
 	rung?: ZoneRung
-	/** What it draws, in reading order. */
-	instances: DrawnInstance[]
-}
-
-/** A strip as a layout draws it: its list, in order. @experimental */
-export interface DrawnStrip {
-	/** The `zoneLayout` key of the strip. */
-	zoneKey: string
-	area: 'top' | 'bottom'
-	rung: ZoneRung
+	/** Its panels in reading order (the middle: above, the primary, below). */
+	panels: DrawnPanel[]
+	/** Every tab of its panels, in reading order — the floor's left out. */
 	instances: DrawnInstance[]
 }
 
 /**
+ * The middle as a layout draws it: a zone whose panels are `above`, the
+ * `primary` and `below`.
+ * @experimental
+ */
+export interface DrawnMiddle extends DrawnZone {
+	zone: 'middle'
+	kind: 'middle'
+	above: DrawnPanel[]
+	primary: DrawnPanel
+	below: DrawnPanel[]
+}
+
+/**
  * What a session layout DRAWS, and where — {@link resolveDrawn}'s answer.
- * The three slots are its inputs, never a second answer: a renderer, a
- * picture of a preset, the primary floor and a genre's checks all read this.
+ * A renderer, a picture of a preset, the primary floor and a genre's checks
+ * all read this.
  * @experimental
  */
 export interface DrawnLayout {
 	left: DrawnZone
-	middle: DrawnZone
+	middle: DrawnMiddle
 	right: DrawnZone
-	/** The strips, in the order `zoneLayout` declares them. */
-	strips: DrawnStrip[]
 }
-
-/** An arranged frame read as the page reads it: whole numbers of cells and an item list, else none. */
-function frameIn(layout: SessionLayoutV1, zone: ZoneId): { cols: number; rows: number; items: ArrangedItem[] } | null {
-	const frame = isObj(layout.arrangedGrid) ? (layout.arrangedGrid as Record<string, unknown>)[zone] : undefined
-	if (!isObj(frame) || typeof frame.cols !== 'number' || typeof frame.rows !== 'number' || !Array.isArray(frame.items))
-		return null
-	const items = (frame.items as unknown[]).filter(
-		(i): i is ArrangedItem =>
-			isObj(i) && typeof i.id === 'string' && !!i.id && ['x', 'y', 'w', 'h'].every((k) => typeof i[k] === 'number'),
-	)
-	return { cols: frame.cols, rows: frame.rows, items }
-}
-
-/** The grid's well-formed entries, as written. */
-function gridEntries(layout: SessionLayoutV1): GridWidget[] {
-	const widgets = isObj(layout.widgetGrid) && Array.isArray(layout.widgetGrid.widgets) ? layout.widgetGrid.widgets : []
-	return widgets.filter(
-		(w): w is GridWidget => isObj(w) && typeof w.id === 'string' && !!w.id && (ZONE_IDS as readonly unknown[]).includes(w.zone),
-	)
-}
-
-/** Is this instance a copy of a retired widget? No reader draws one. */
-const retired = (instanceId: string): boolean => RETIRED_WIDGET_IDS.has(widgetOfInstance(instanceId))
 
 /** An instance's widget, read through the aliases, and the settings an alias implies. */
 function widgetFacts(instanceId: string): Pick<DrawnInstance, 'widgetId' | 'impliedSettings'> {
@@ -697,39 +1107,31 @@ function widgetFacts(instanceId: string): Pick<DrawnInstance, 'widgetId' | 'impl
 	return r.aliasedFrom ? { widgetId: r.widgetId, impliedSettings: r.impliedSettings } : { widgetId: r.widgetId }
 }
 
+/** A stored height, read: `fit`, `fill` or a whole share of 1–12; anything else is `fill`. */
+function heightOf(x: unknown): PanelHeightV1 {
+	if (x === 'fit' || x === 'fill') return x
+	if (isObj(x) && isInt(x.share) && x.share >= 1 && x.share <= 12) return { share: x.share }
+	return 'fill'
+}
+
 /**
  * What a session layout draws at a session box of `box.inline` px: per zone,
- * the instances it draws in reading order, each with one `pinned`, plus the
- * facts a renderer draws the zone by. Pure and total — any value reads; what
- * it cannot read places nothing.
+ * its panels in reading order, each with its tabs, the tab shown, one pin and
+ * a height. Pure and total — any value reads; what it cannot read places
+ * nothing.
  *
- * **The precedence, written once.** Three slots can name one zone; this is
- * the one place that decides which draws.
+ * It reads {@link panelsOf}: the layout's `panels`, else the ⏳ old slots
+ * through {@link panelsFromSlots}. A tab that is a copy of a retired widget
+ * ({@link RETIRED_WIDGET_IDS}) is not drawn, a panel left with no tab is not
+ * drawn (the primary always is), and an instance is drawn once, in its first
+ * panel in reading order — the middle (above, primary, below), left, right.
+ * An aliased id ({@link WIDGET_ID_ALIASES}) is drawn as the widget it became,
+ * under the id it was placed by, with the settings it implies.
  *
- * - **The middle draws its arrangement whenever the layout has one** — an
- *   empty one included, else the grid's middle entries by `order`. The
- *   arrangement is the editor's capture of what a person laid out; an
- *   emptied middle is a decision, and the primary floor (the app's) is what
- *   puts the conversation back.
- * - **A side draws its arrangement when that places anything, else its zone
- *   lists** — every `zoneLayout` zone drawn on that side (by its `side`,
- *   never its key) in order, with any grid entry naming the side folded in
- *   after the first zone's list, but only when a zone is there to hold it.
- *   An arrangement of nothing is the editor's leftover, not a decision: a
- *   side that loses its last card goes back to its list.
- * - **When a side has no arrangement, its width ladder decides how it is
- *   drawn** ({@link zoneRungAt}): docked as a rail, an icon strip, a drawer
- *   or hidden — the zone's pin refining the rail. An arranged side is not
- *   asked: each instance's own pin decides whether it docks.
- * - **A strip draws its list.**
- *
- * Read in that order — middle, left, right, strips — an instance is drawn
- * once, where it is first drawn. A copy of a retired widget
- * ({@link RETIRED_WIDGET_IDS}) is never drawn; an aliased id
- * ({@link WIDGET_ID_ALIASES}) is drawn as the widget it became, under the id
- * it was placed by, with the settings it implies. Every `pinned` is
- * {@link pinnedOf}'s: an arranged item's and a grid entry's own, a listed
- * instance's its zone's.
+ * A side's `rung` is its width ladder: the first `zoneLayout` zone's `rules`
+ * there, else the default ladder for the side ({@link zoneRungAt}), its
+ * `rail` refined by the side's pin — an icon strip when every panel is in the
+ * rail.
  *
  * The box's `block` size is not read today: no rung is a height.
  * @experimental
@@ -737,6 +1139,7 @@ function widgetFacts(instanceId: string): Pick<DrawnInstance, 'widgetId' | 'impl
 export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; block?: number }): DrawnLayout {
 	const doc: SessionLayoutV1 = isObj(layout) ? layout : {}
 	const inline = typeof box?.inline === 'number' && Number.isFinite(box.inline) ? box.inline : 0
+	const { panels, floor } = panelsWithFloor(doc)
 	const seen = new Set<string>()
 	/** Admit an instance once, in reading order, never a retired one. */
 	const admit = (id: string): boolean => {
@@ -744,122 +1147,72 @@ export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; blo
 		seen.add(id)
 		return true
 	}
-	const grid = gridEntries(doc)
-	const gridZone = (zone: ZoneId) =>
-		grid
-			.filter((w) => w.zone === zone)
-			.map((w, n) => ({ w, order: typeof w.order === 'number' ? w.order : n }))
-			.sort((a, b) => a.order - b.order)
-			.map(({ w }) => w)
-	const fromGrid = (w: GridWidget, pinned = pinnedOf(w)): DrawnInstance => ({
-		instanceId: w.id,
-		...widgetFacts(w.id),
-		pinned,
-		...(typeof w.group === 'string' ? { group: w.group } : {}),
-		...(isObj(w.anchor) ? { anchor: { ...w.anchor } } : {}),
-		...(isObj(w.size) ? { size: w.size } : {}),
-		...(typeof w.colSpan === 'number' ? { colSpan: w.colSpan } : {}),
-	})
-	/** An arrangement's live items in reading order (by row, then column), admitted. */
-	const arrangedInstances = (items: ArrangedItem[]): DrawnInstance[] =>
-		[...items]
-			.sort((a, b) => a.y - b.y || a.x - b.x)
-			.filter((i) => admit(i.id))
-			.map((i) => ({
-				instanceId: i.id,
-				...widgetFacts(i.id),
-				cells: { x: i.x, y: i.y, w: i.w, h: i.h },
-				pinned: pinnedOf(i),
-				...(typeof i.group === 'string' ? { group: i.group } : {}),
-				...(isObj(i.anchor) ? { anchor: { ...i.anchor } } : {}),
-			}))
+	const draw = (p: PanelV1, pinned: boolean): DrawnPanel => {
+		const tabs = strings(p.tabs)
+			.filter((id) => id && admit(id))
+			.map((id): DrawnInstance => ({ instanceId: id, ...widgetFacts(id), pinned }))
+		const open = typeof p.open === 'string' && tabs.some((t) => t.instanceId === p.open) ? p.open : (tabs[0]?.instanceId ?? '')
+		return {
+			key: typeof p.key === 'string' ? p.key : '',
+			tabs,
+			open,
+			pinned,
+			height: heightOf(p.height),
+			...(typeof p.title === 'string' ? { title: p.title } : {}),
+		}
+	}
+	const drawn = (list: DrawnPanel[]) => list.filter((p) => p.tabs.length > 0)
 
-	// The middle.
-	const middleFrame = frameIn(doc, 'middle')
-	const middle: DrawnZone = middleFrame
-		? {
-				zone: 'middle',
-				kind: 'middle',
-				drawnFrom: 'arrangement',
-				arrangement: { cols: middleFrame.cols, rows: middleFrame.rows },
-				pinned: true,
-				instances: arrangedInstances(middleFrame.items),
-			}
-		: {
-				zone: 'middle',
-				kind: 'middle',
-				drawnFrom: 'grid',
-				pinned: true,
-				instances: gridZone('middle')
-					.filter((w) => admit(w.id))
-					.map((w) => fromGrid(w)),
-			}
+	// The middle: never pinned out.
+	const above = drawn(panelList(panels.middle.above).map((p) => draw(p, true)))
+	const primary: DrawnPanel = { ...draw(panels.middle.primary, true), ...(floor ? { floor: true as const } : {}) }
+	const below = drawn(panelList(panels.middle.below).map((p) => draw(p, true)))
+	const middlePanels = [...above, primary, ...below]
+	const middle: DrawnMiddle = {
+		zone: 'middle',
+		kind: 'middle',
+		pinned: true,
+		panels: middlePanels,
+		instances: middlePanels.filter((p) => !p.floor).flatMap((p) => p.tabs),
+		above,
+		primary,
+		below,
+	}
 
 	// The sides.
-	const zonesRaw: unknown = isObj(doc.zoneLayout) ? doc.zoneLayout.zones : undefined
-	const defs = isObj(zonesRaw)
-		? Object.entries(zonesRaw).filter((e): e is [string, Record<string, unknown>] => isObj(e[1]))
-		: []
+	const defs = zoneEntries(doc)
 	const side = (edge: 'left' | 'right'): DrawnZone => {
-		const zones = defs.filter(([, d]) => zoneDrawnAt(d) === edge) as unknown as Array<[string, LayoutZoneDef]>
-		const first = zones[0]?.[1]
-		const pinned = first ? pinnedOf(first) : true
-		const rung = zoneRungAt(first ?? { kind: 'side', side: edge, widgets: [] }, inline)
-		const base = { zone: edge, kind: 'side' as const, side: edge, zoneKey: zones[0]?.[0] ?? null, pinned, rung }
-		const frame = frameIn(doc, edge)
-		if (frame && frame.items.some((i) => !retired(i.id)))
-			return {
-				...base,
-				drawnFrom: 'arrangement',
-				arrangement: { cols: frame.cols, rows: frame.rows },
-				instances: arrangedInstances(frame.items),
-			}
-		const instances: DrawnInstance[] = []
-		zones.forEach(([, def], n) => {
-			const listed = pinnedOf(def)
-			for (const id of strings(def.widgets))
-				if (admit(id)) instances.push({ instanceId: id, ...widgetFacts(id), pinned: listed })
-			// A grid entry naming this side is drawn in its first zone, after
-			// what that zone lists — and nowhere, when no zone is here.
-			if (n === 0) for (const w of gridZone(edge)) if (admit(w.id)) instances.push(fromGrid(w, listed))
-		})
-		return { ...base, drawnFrom: 'ladder', instances }
+		const own = drawn(panelList(panels[edge]).map((p) => draw(p, pinnedOf(p))))
+		const zone = defs.find(([, d]) => d.kind !== 'strip' && zoneDrawnAt(d) === edge)
+		const def = zone?.[1] as LayoutZoneDef | undefined
+		const pinned = own.length ? own.some((p) => p.pinned) : def ? pinnedOf(def) : true
+		const rung = zoneRungAt({ ...(def ?? { kind: 'side', side: edge, widgets: [] }), pinned }, inline)
+		return {
+			zone: edge,
+			kind: 'side',
+			side: edge,
+			zoneKey: zone?.[0] ?? null,
+			pinned,
+			rung,
+			panels: own,
+			instances: own.flatMap((p) => p.tabs),
+		}
 	}
 	const left = side('left')
 	const right = side('right')
-
-	// The strips.
-	const strips: DrawnStrip[] = defs
-		.filter(([, d]) => d.kind === 'strip')
-		.map(([key, def]) => {
-			const d = def as unknown as LayoutZoneDef
-			return {
-				zoneKey: key,
-				area: d.area === 'bottom' ? 'bottom' : 'top',
-				rung: zoneRungAt(d, inline),
-				instances: strings(d.widgets)
-					.filter((id) => admit(id))
-					.map((id) => ({ instanceId: id, ...widgetFacts(id), pinned: pinnedOf(d) })),
-			}
-		})
-	return { left, middle, right, strips }
+	return { left, middle, right }
 }
 
-/** Every instance a drawn layout draws, in its reading order: middle, left, right, strips. @experimental */
+/** Every instance a drawn layout draws, in its reading order: middle, left, right — the floor's left out. @experimental */
 export function drawnInstances(drawn: DrawnLayout): DrawnInstance[] {
-	return [
-		...drawn.middle.instances,
-		...drawn.left.instances,
-		...drawn.right.instances,
-		...drawn.strips.flatMap((s) => s.instances),
-	]
+	return [...drawn.middle.instances, ...drawn.left.instances, ...drawn.right.instances]
 }
 
 /**
- * Every widget instance id the layout DRAWS, in reading order — middle, left,
- * right, then any strips: {@link resolveDrawn}'s answer as ids, so the
- * precedence is that function's and nowhere else. An entry an arrangement
- * shadows is named but not drawn; a retired widget is never drawn.
+ * Every widget instance id the layout DRAWS, in reading order — the middle
+ * (above, primary, below), left, right: {@link resolveDrawn}'s answer as ids.
+ * A retired widget is never drawn, and the floor's conversation is not the
+ * layout's.
  * @experimental
  */
 export function drawnWidgetIds(layout: SessionLayoutV1): string[] {
@@ -869,14 +1222,16 @@ export function drawnWidgetIds(layout: SessionLayoutV1): string[] {
 
 /**
  * Does the layout DRAW any instance of `primaryId` — the bare id or a
- * `#name` copy — anywhere? The **primary floor**'s question: placement is
+ * `#name` copy — in any panel? The **primary floor**'s question: placement is
  * free, and the one rule left is that a layout draws its genre's primary
- * widget somewhere. Asked of {@link resolveDrawn}, like every "is it drawn".
+ * widget somewhere. Asked of {@link resolveDrawn}, like every "is it drawn";
+ * the converter's floor is not the layout placing it.
  * @experimental
  */
 export function primaryPlaced(layout: SessionLayoutV1, primaryId: string): boolean {
 	return drawnWidgetIds(layout).some((id) => isInstanceOf(id, primaryId))
 }
+
 
 // ── Validation ──────────────────────────────────────────────────────────────
 
@@ -911,7 +1266,7 @@ export interface SessionLayoutValidationOptions {
 const isInt = (x: unknown): x is number => typeof x === 'number' && Number.isInteger(x)
 
 /** The slots a session layout has. */
-const SLOTS = ['zoneLayout', 'widgetGrid', 'arrangedGrid', 'widgetSettings', 'widgetStyles'] as const
+const SLOTS = ['panels', 'zoneLayout', 'widgetGrid', 'arrangedGrid', 'widgetSettings', 'widgetStyles'] as const
 
 /** The top-level keys only the retired layout document had (and its preset wrapper, `layout`). */
 const RETIRED_DOCUMENT_KEYS: readonly string[] = ['layout', 'version', 'zones', 'variants', 'look']
@@ -932,7 +1287,13 @@ function isAnchor(x: unknown): boolean {
  * the verdict lists every problem rather than the first.
  *
  * **Errors** (the layout is refused):
- * - a slot of the wrong shape: `zoneLayout` and `widgetGrid` are `version: 1`;
+ * - `panels` of the wrong shape: `{ version: 1, left, middle: { above,
+ *   primary, below }, right }`; a panel with a key no other panel has, at
+ *   least one tab (the primary included), `open` one of its tabs, `height`
+ *   `fit`, `fill` or `{ share }` (an integer 1–12), and `pinned` absent or
+ *   `false` — refused on a middle panel, which never pins; an instance id
+ *   in two panels, or twice in one;
+ * - an ⏳ old slot of the wrong shape: `zoneLayout` and `widgetGrid` are `version: 1`;
  *   a grid entry and an arrangement name a zone, `left`, `middle` or
  *   `right`; a `zoneLayout` zone is keyed by where the page draws it — a
  *   side by its `side` (`left`, `right`), a strip by its `area` (`top`,
@@ -951,6 +1312,11 @@ function isAnchor(x: unknown): boolean {
  *
  * **Warnings** (the layout draws, not as written):
  * - a key that is not a slot (readers ignore it) and a retired widget;
+ * - `panels` that place no copy of the conversation: the session draws one
+ *   by the primary floor — unless the genre withholds it, which the genre's
+ *   own checks judge (a layout carries no roles);
+ * - with `panels`, the ⏳ old slots are still checked for shape, but what
+ *   they place is not read, so nothing below is asked of them;
  * - an id placed but never drawn ({@link drawnWidgetIds}): its zone's
  *   arrangement draws over it, or the grid puts it in a side the layout has
  *   no zone for;
@@ -979,7 +1345,7 @@ export function validateSessionLayout(
 	if (RETIRED_DOCUMENT_KEYS.some((k) => k in layout))
 		errors.push(
 			`a retired layout document (LayoutDoc v2: ${RETIRED_DOCUMENT_KEYS.filter((k) => k in layout).join(', ')}) — ` +
-				'declare a session layout: { zoneLayout?, widgetGrid?, arrangedGrid?, widgetSettings?, widgetStyles? }',
+				'declare a session layout: { panels?, widgetSettings?, widgetStyles? }',
 		)
 	for (const k of Object.keys(layout))
 		if (!(SLOTS as readonly string[]).includes(k) && !RETIRED_DOCUMENT_KEYS.includes(k))
@@ -1147,13 +1513,69 @@ export function validateSessionLayout(
 			}
 	}
 
+	// panels
+	const pl = layout.panels
+	/** Where each id sits in `panels`: its zone, first seen at `where`. */
+	const panelPlaced = new Map<string, { zone: string; where: string }>()
+	if (pl !== undefined) {
+		const keys = new Set<string>()
+		const panel = (p: unknown, zone: ZoneId, at: string, middle: boolean) => {
+			if (!isObj(p)) return errors.push(`${at}: a panel is an object — { key, tabs, open?, pinned?, height?, title? }`)
+			if (typeof p.key !== 'string' || !p.key) errors.push(`${at}.key: a non-empty string`)
+			else if (keys.has(p.key)) errors.push(`${at}.key: '${p.key}' keys two panels — a key names one`)
+			else keys.add(p.key)
+			if (!Array.isArray(p.tabs) || p.tabs.length === 0)
+				errors.push(`${at}.tabs: at least one widget instance id${at === 'panels.middle.primary' ? ' — the primary holds the conversation (or what stands in for it)' : ''}`)
+			else
+				for (const id of p.tabs) {
+					if (!isInstanceId(id, `${at}.tabs`)) continue
+					const held = panelPlaced.get(id)
+					if (held) errors.push(`${at}.tabs: '${id}' is also in ${held.where} — a widget instance sits in one panel, once`)
+					else panelPlaced.set(id, { zone, where: at })
+				}
+			if (p.open !== undefined && !(typeof p.open === 'string' && Array.isArray(p.tabs) && p.tabs.includes(p.open)))
+				errors.push(`${at}.open: one of its tabs`)
+			if (p.pinned !== undefined) {
+				if (middle) errors.push(`${at}.pinned: a middle panel never pins — leave it out`)
+				else if (p.pinned !== false) errors.push(`${at}.pinned: absent (docked) or false (in the rail)`)
+			}
+			const h = p.height
+			if (h !== undefined && h !== 'fit' && h !== 'fill' && !(isObj(h) && isInt(h.share) && h.share >= 1 && h.share <= 12))
+				errors.push(`${at}.height: 'fit', 'fill' or { share } — a whole number of twelfths, 1 to 12`)
+			if (p.title !== undefined && typeof p.title !== 'string') errors.push(`${at}.title: a string`)
+		}
+		const list = (x: unknown, zone: ZoneId, at: string, middle: boolean) => {
+			if (!Array.isArray(x)) return errors.push(`${at}: a list of panels, top to bottom`)
+			x.forEach((p, n) => panel(p, zone, `${at}[${n}]`, middle))
+		}
+		if (!isObj(pl) || pl.version !== 1)
+			errors.push('panels: { version: 1, left: [ … ], middle: { above: [ … ], primary: { … }, below: [ … ] }, right: [ … ] }')
+		else {
+			const mid = pl.middle
+			if (!isObj(mid)) errors.push('panels.middle: { above: [ … ], primary: { key, tabs }, below: [ … ] }')
+			else {
+				list(mid.above, 'middle', 'panels.middle.above', true)
+				panel(mid.primary, 'middle', 'panels.middle.primary', true)
+				list(mid.below, 'middle', 'panels.middle.below', true)
+			}
+			list(pl.left, 'left', 'panels.left', false)
+			list(pl.right, 'right', 'panels.right', false)
+			if (![...panelPlaced.keys()].some((id) => isInstanceOf(id, CONVERSATION) && !retired(id)))
+				warnings.push(
+					`panels place no copy of the conversation ('${CONVERSATION}') — a session draws one anyway (the primary floor), unless its genre withholds it for a role: 'primary' widget`,
+				)
+		}
+	}
+
 	// Warnings: what draws, but not as written.
 	const drawn = new Set(drawnWidgetIds(layout as SessionLayoutV1))
+	// With `panels`, the old slots are not read: what is placed is what the panels hold.
+	const placed = storedPanels(layout) ? panelPlaced : placedIn
 	const framed = (zone: string) => {
 		const frame = isObj(ag) ? ag[zone] : undefined
 		return isObj(frame) && Array.isArray(frame.items) && (zone === 'middle' || frame.items.length > 0)
 	}
-	for (const [id, { zone }] of placedIn) {
+	for (const [id, { zone }] of placed) {
 		if (RETIRED_WIDGET_IDS.has(widgetOfInstance(id))) {
 			warnings.push(`'${id}' names a retired widget — no reader draws it`)
 			continue
@@ -1169,7 +1591,7 @@ export function validateSessionLayout(
 	if (opts.widgets) {
 		const decls = new Map(opts.widgets.map((w) => [w.id, w]))
 		const counts = new Map<string, number>()
-		for (const id of placedIn.keys()) {
+		for (const id of placed.keys()) {
 			const widget = widgetOfInstance(id)
 			counts.set(widget, (counts.get(widget) ?? 0) + 1)
 			if (opts.unknownWidgets === 'warn' && !decls.has(widget) && !RETIRED_WIDGET_IDS.has(widget))

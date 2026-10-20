@@ -1,51 +1,29 @@
 /**
- * The standard chat's **create pipeline** — the genre's one required member
- * (24 §3, revising 23 §7: the genre owns its id; this spec answers its
- * `session-created` slot rather than *being* the genre).
+ * 🚧 Chat's **create pipeline** — `core:spec/assistant-create` (2026-10-19,
+ * PLAN-genre-restructure §1): the genre's one required member. A fresh spec
+ * id, never the roleplay Chat's (`core:spec/chat-create`, now Story's
+ * `story-create`): config rows, deviations and forks follow a spec id, so the
+ * assistant never inherits the roleplay's (§2-7 a).
  *
- * ## 2.0.0 — the honest input (24 §12)
- *
- * 1.x reused `core:inlet/user-message@1` as an "identity only" placeholder,
- * which welded creation to the chat turn's shape and was wrong: a create run
- * has no triggering text and no speaker; it has a request. The input is
- * `core:inlet/session-created@1`, and the usage lock (24 §4) declares
- * exactly what this spec is: the pipeline answering `session-created` for
- * `core:genre/chat`.
- *
- * ## 2.2.0 — the event surface persists
- *
- * `meta.genre.events` rides the version row, so the genre dashboard and the
- * preset editor read "which events exist, which are required" as a SELECT.
- *
- * ## 2.1.0 — creation as a run (T8)
- *
- * The seeding is nodes now: `collect` reads what the cast wants to say first
- * (greeting histories, interpolated, position order) and `seed` writes them
- * as the session's first messages on the genre's greeting channel. The same
- * implementation the imperative path used, behind two declared nodes — so
- * the receipt says what creation did, and a custom genre swaps either half
- * without reimplementing the other. `sessions:create` runs this spec through
- * the ordinary executor; the byte-parity test in SP guards the seam.
- *
- * The genre's declaration (name, family, shape) rides `meta.genre` on the
- * version row so every "what is this session" check stays a SELECT; the id
- * association comes from the input lock's `genre` column.
+ * Nothing to seed: Chat seats no character and its Assistant has no greeting
+ * (★C), so a new Chat opens empty — the create run publishes the genre's
+ * declaration on the version row and writes nothing.
  */
-import { compile, spec, sessionEvents } from "@serene-pub/sdk"
-import * as C from "@serene-pub/contracts"
-import { chatGenre } from "../../registry/genres.js"
+import { compile, spec, sessionEvents } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+import { chatGenre } from '../../registry/genres.js'
 
 /** @internal */
-export const CHAT_CREATE_SPEC_ID = "core:spec/chat-create"
+export const ASSISTANT_CREATE_SPEC_ID = 'core:spec/assistant-create'
 /** @internal */
-export const CHAT_CREATE_VERSION = "2.2.0"
+export const ASSISTANT_CREATE_VERSION = '1.0.0'
 
 /** @internal */
-export const createChatSpec = () =>
+export const createAssistantSpec = () =>
 	compile(
-		spec(CHAT_CREATE_SPEC_ID, {
-			version: CHAT_CREATE_VERSION,
-			taxonomy: { role: "create"},
+		spec(ASSISTANT_CREATE_SPEC_ID, {
+			version: ASSISTANT_CREATE_VERSION,
+			taxonomy: { role: 'create' },
 			genre: {
 				name: chatGenre.name,
 				family: chatGenre.family,
@@ -53,26 +31,25 @@ export const createChatSpec = () =>
 				shape: chatGenre.shape,
 				// The event surface rides the row (24 §5): the dashboard and
 				// the preset editor SELECT it, never re-derive it.
-				events: chatGenre.events as Record<
-					string,
-					{ required?: boolean; open?: boolean }
-				>
-			}
+				events: chatGenre.events as Record<string, { required?: boolean; open?: boolean }>,
+				envoys: chatGenre.envoys,
+			},
 		})
-			.inlet("input", C.sessionCreated.v1(), {
+			.inlet('input', C.sessionCreated.v1(), {
 				genre: chatGenre,
-				event: sessionEvents.sessionCreated
+				event: sessionEvents.sessionCreated,
 			})
-			.query("collect", ($) =>
-				C.sessionGreetings.v1({ scope: $.input.sessionScope })
-			)
-			.outlet("seed", ($) =>
+			/**
+			 * The cast's greetings, as every create pipeline reads them — none
+			 * here (no characters, greetings off), so `seed` writes nothing. Kept
+			 * so the run's receipt says so rather than leaving it unsaid.
+			 */
+			.query('collect', ($) => C.sessionGreetings.v1({ scope: $.input.sessionScope }))
+			.outlet('seed', ($) =>
 				C.seedGreetings.v1({
 					greetings: $.collect.greetings,
-					// The genre's declared greeting channel (19 §1) — stated
-					// here so the spec and the shape cannot silently disagree.
-					channel: chatGenre.shape?.greeting?.channel ?? "main"
-				})
+					channel: chatGenre.shape?.greeting?.channel ?? 'main',
+				}),
 			)
-			.build()
+			.build(),
 	)
