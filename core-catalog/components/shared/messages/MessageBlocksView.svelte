@@ -141,6 +141,8 @@
 	/* ── 🚧 the roll form and the dice (Lair rewrite D3) ──────────────── */
 
 	type RollCheck = { key: string; label: string }
+	/** A drawn card as the outcome block carries it (the SDK's `OutcomeCard`, spelled here: components import the SDK only through its component entry). */
+	type OutcomeCard = { label?: string }
 	type RollBand = { id: string; label: string; target?: number }
 
 	/** The checks a roll form offers: its `stats`, else its `stat` alone. */
@@ -235,7 +237,7 @@
 		const stat = typeof b?.stat === "string" && b.stat ? b.stat : t("A roll")
 		const tally = tallyOf(b)
 		const against = againstOf(b)
-		const cards = Array.isArray(b?.cards) && b.cards.length ? `${t("drew")} ${b.cards.map((c: any) => c?.label).join(", ")}, ` : ""
+		const cards = Array.isArray(b?.cards) && b.cards.length ? `${t("drew")} ${b.cards.map((c: OutcomeCard) => c?.label).join(", ")}, ` : ""
 		const said = [cards + tally, against].filter(Boolean).join(" ")
 		const outcome = typeof b?.outcome === "string" && b.outcome ? `${b.outcome}.` : ""
 		return `${stat}: ${[said ? `${said}.` : "", outcome].filter(Boolean).join(" ")}`
@@ -621,7 +623,7 @@
 					<p data-widget-part="messages.block-dice-explain">{block.explain}</p>
 				{:else if Array.isArray(block.cards) && block.cards.length}
 					<p data-widget-part="messages.block-dice-explain">
-						{t("Drew")} {block.cards.map((c) => c?.label).join(", ")}
+						{t("Drew")} {block.cards.map((c: OutcomeCard) => c?.label).join(", ")}
 					</p>
 				{:else if Array.isArray(block.faces) && block.faces.length}
 					<p data-widget-part="messages.block-dice-explain">
