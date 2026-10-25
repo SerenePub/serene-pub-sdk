@@ -3,13 +3,15 @@
  * are introduced in `index.ts`.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { LAIR_CASTELLAN_KEY, SANCTUM_CHANNEL, lairGenre } from '../../registry/genres.js'
+import { SANCTUM_CHANNEL } from '../../registry/genres.js'
+import { bareEntryTypeId, locationEntryType } from '../../registry/entries.js'
+import { applyWiring, jsonPart, scriptStep, textPart, wiring } from '../../shared/calls.js'
+import { CASTELLAN, LAIR_ROOM_DRAFT_SCHEMA } from './names.js'
+import { LAIR_ROOM_SCRIPT } from './scripts.js'
 
-/**
- * The Castellan's reference — who says a room is already filed.
- *
+/*
  * ⚠ **A room draft reads the book's public half and nothing else** (plan
  * A28): the world-lore and history lanes, never character lore. A room entry
  * is public lore — every delver's voice reads it, and so does every session
@@ -19,9 +21,9 @@ import { LAIR_CASTELLAN_KEY, SANCTUM_CHANNEL, lairGenre } from '../../registry/g
  * of a persona someone plays in the session, which every voice of that
  * session may read. Either way a secret keyed on the conversation could be
  * drafted into a room anybody reads, so the drafts read no character lore
- * at all. *Build room* reads world lore alone.
+ * at all. *Build room* reads world lore alone. (The Castellan — `CASTELLAN`,
+ * `names.ts` — is who says a room is already filed.)
  */
-const CASTELLAN = `envoy:${LAIR_CASTELLAN_KEY}` as const
 
 /* ── File as a room ─────────────────────────────────────────────────────── */
 
@@ -61,8 +63,10 @@ export const LAIR_FILE_ROOM_VERSION = '1.0.0'
  * rule (`undescribed-name@1` over the location entries, then the whole book;
  * no prose read — the row itself is prose) is not filed twice: the Castellan
  * says so on the Sanctum, and nothing is written. Otherwise the Castellan
- * drafts the entry from that one row in *Build room*'s layout
- * (`LAIR_ROOM_CONTENT_SHAPE`, `Exits:` when the message names them) and
+ * drafts the entry from that one row as *Build room* does (2026-10-21: one
+ * JSON answer — the body, the ways out the message names, the place entry
+ * type's own `fields` — made into the write by `core:script/lair-room`, its
+ * ways to rooms the book holds linked in the entry's own commit), and
  * `create-lore-entry`'s **review gate** holds it — even from the person's own
  * row, because the row may say more than the room. Approved, it lands as a
  * **location**; rejected, nothing is written.
@@ -73,8 +77,9 @@ export const LAIR_FILE_ROOM_VERSION = '1.0.0'
  * names it; no answer pipeline presses it.
  * @internal
  */
-export const lairFileRoomSpec = () =>
-	compile(
+export const lairFileRoomSpec = () => {
+	const w = wiring()
+	return compile(
 		spec(LAIR_FILE_ROOM_SPEC_ID, {
 			version: LAIR_FILE_ROOM_VERSION,
 			taxonomy: { role: 'action' },
@@ -118,10 +123,7 @@ export const lairFileRoomSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					/** The message the press was made on — one row, by id. */
@@ -134,7 +136,7 @@ export const lairFileRoomSpec = () =>
 							}),
 						),
 					)
-					/** The book's public half — world lore and history, never character lore (see the note on `CASTELLAN`). */
+					/** The book's public half — world lore and history, never character lore (see the note above). */
 					.chain('worldLore', (c) =>
 						c.query('read', ($) =>
 							C.worldLore.v1({
@@ -147,7 +149,7 @@ export const lairFileRoomSpec = () =>
 						c.query('read', ($) =>
 							C.historyEntries.v1({
 								scope: $.input.sessionScope,
-								params: slot.params({ node: 'gather.worldLore.read' }),
+								params: slot.params($.gather.worldLore.read),
 							}),
 						),
 					)
@@ -210,7 +212,7 @@ export const lairFileRoomSpec = () =>
 			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
 			// the world's location at `world.location` (the preset's `path`),
 			// by the one room rule; the ranker leaves it out of the lore.
-			.task('place', ($: any) =>
+			.task('place', ($) =>
 				C.undescribedName.v1({
 					name: $.gather.state.read.state,
 					locationEntries: $.gather.rooms.read.entries,
@@ -251,7 +253,7 @@ export const lairFileRoomSpec = () =>
 					params: slot.params(),
 				}),
 			)
-			.junction('room', { on: ($: any) => $.check.undescribed }, (r) =>
+			.junction('room', { on: ($) => $.check.undescribed }, (r) =>
 				r
 					/**
 					 * Not in the book: the Castellan drafts it from the row, in
@@ -259,9 +261,9 @@ export const lairFileRoomSpec = () =>
 					 * The name is the one typed (trimmed); the other rooms are
 					 * named to the draft so its exits can point at them.
 					 */
-					.when('new', { truthy: true }, (c) =>
-						c
-							.task('context', ($: any) =>
+					.when('new', { truthy: true }, (c) => {
+						const drafted = c
+							.task('context', ($) =>
 								C.buildTemplateContext.v1({
 									cast: $.gather.cast.read.cast,
 									state: $.gather.state.read.state,
@@ -272,53 +274,92 @@ export const lairFileRoomSpec = () =>
 								}),
 							)
 							/** The one row, as prose: the draft is written from it and nothing else said. */
-							.task('lines', ($: any) =>
+							.task('lines', ($) =>
 								C.proseTranscript.v1({
 									messages: $.gather.row.read.messages,
 									cast: $.gather.cast.read.cast,
-									templateContext: $.room.new.context.templateContext,
+									templateContext: $.context.templateContext,
 								}),
 							)
-							.task('attached', ($: any) =>
+							.task('attached', ($) =>
 								C.placeAttachments.v1({
-									messages: $.room.new.lines.messages,
+									messages: $.lines.messages,
 									attachments: $.attachments.attachments,
 									connection: slot.connectionOf('room.new.write'),
 									params: slot.params(),
 								}),
 							)
-							.task('prompt', ($: any) =>
+							.task('prompt', ($) =>
 								C.assemble.v2({
 									candidates: $.rank.candidates,
 									decisions: $.rank.decisions,
 									groups: $.rank.groups,
 									budget: $.contextBudget.available,
-									messages: $.room.new.attached.messages,
-									templateContext: $.room.new.context.templateContext,
+									messages: $.attached.messages,
+									templateContext: $.context.templateContext,
 									template: slot.template(),
-									prompts: slot.prompts({ node: 'room.new.context' }),
+									prompts: slot.prompts($.context),
 									variables: slot.variables(),
 									params: slot.params(),
 									connection: slot.connectionOf('room.new.write'),
 								}),
 							)
-							.oracle('write', ($: any) =>
-								C.generateText.v1({
-									context: $.room.new.prompt.context,
-									connection: slot.connection(),
-									sampling: slot.sampling(),
-									params: slot.params(),
-								}),
-								{ expose: { status: 'The Castellan drafts the room' } },
+							.oracle(
+								'write',
+								($) =>
+									C.generateJson.v1({
+										context: $.prompt.context,
+										schema: LAIR_ROOM_DRAFT_SCHEMA as any,
+										connection: slot.connection(),
+										sampling: slot.sampling(),
+										params: slot.params(),
+									}),
+								{ expose: { status: 'The Castellan drafts the room', label: 'Draft the room' } },
 							)
-							.outlet('save', ($: any) =>
-								C.createLoreEntry.v1({
-									name: $.check.undescribed,
-									content: $.room.new.write.text,
-									params: slot.params(),
-								}),
+						/** The draft, made into the write (`core:script/lair-room`). */
+						const made = jsonPart(
+							jsonPart(
+								textPart(
+									scriptStep(
+										drafted,
+										w,
+										'made',
+										LAIR_ROOM_SCRIPT.seedKey,
+										($) => ({
+											draft: $.room.new.write.json,
+											name: $.check.undescribed,
+											rooms: $.gather.rooms.read.entries,
+										}),
+										'The draft, made into the room',
+									),
+									w,
+									'content',
+									($) => $.room.new.made.main,
+									'content',
+									"The room's body",
+								),
+								w,
+								'fields',
+								($) => $.room.new.made.main,
+								'fields',
+								"The room's fields",
 							),
-					)
+							w,
+							'links',
+							($) => $.room.new.made.main,
+							'links',
+							"The room's ways to rooms the book holds",
+						)
+						return made.outlet('save', ($) =>
+							C.createLoreEntry.v1({
+								name: $.check.undescribed,
+								content: $.room.new.content.text,
+								fields: $.room.new.fields.main,
+								links: $.room.new.links.main,
+								params: slot.params(),
+							}),
+						)
+					})
 					/**
 					 * Already in the book: nothing is filed twice. The Castellan
 					 * says so at its own table — a plain line, no model call —
@@ -326,7 +367,7 @@ export const lairFileRoomSpec = () =>
 					 */
 					.otherwise('exists', (c) =>
 						c
-							.task('note', ($: any) =>
+							.task('note', ($) =>
 								C.joinText.v1({
 									items: [
 										$.input.text,
@@ -335,9 +376,9 @@ export const lairFileRoomSpec = () =>
 									params: slot.params(),
 								}),
 							)
-							.outlet('said', ($: any) =>
+							.outlet('said', ($) =>
 								C.createMessage.v1({
-									text: $.room.exists.note.text,
+									text: $.note.text,
 									speaker: CASTELLAN,
 									channel: SANCTUM_CHANNEL,
 								}),
@@ -349,14 +390,18 @@ export const lairFileRoomSpec = () =>
 			 * undeclared review position to `off`, so without this line the
 			 * draft would land unseen. A room is a place (L3).
 			 */
-			.preset('lair', { label: 'Lair', default: true }, (p) =>
-				p
-					.settings('room.new.save', { review: 'on' })
-					.params('room.new.save', { entryType: 'core:entry/location' })
-					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
-					.params('room.exists.note', { path: '', separator: ' ' })
-					// The room the place slot shows (the room rule).
-					.params('place', { path: 'world.location' }),
+			.defaults((p) =>
+				applyWiring(
+					p
+						.settings('room.new.save', { review: 'on' })
+						.params('room.new.save', { entryType: bareEntryTypeId(locationEntryType) })
+						.params('gather.rooms.read', { entryTypes: [bareEntryTypeId(locationEntryType)] })
+						.params('room.exists.note', { path: '', separator: ' ' })
+						// The room the place slot shows (the room rule).
+						.params('place', { path: 'world.location' }),
+					w,
+				),
 			)
 			.build(),
 	)
+}

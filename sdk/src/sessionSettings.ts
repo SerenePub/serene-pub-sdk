@@ -73,6 +73,14 @@ export interface SessionSettingsV1 {
 	 * @ruling R28 (the modder pass)
 	 */
 	turnOrder: TurnOrderV1
+	/**
+	 * 🚧 The mode of each routine in force, by the pipeline it runs (R55,
+	 * 2026-10-21): `off` · `review` · `full`; a pipeline nothing registers as
+	 * a routine is absent. What an action that follows a routine reads —
+	 * Story's Rest applies its changes when the reckoning is Full and holds
+	 * them for review otherwise.
+	 */
+	routineModes?: Readonly<Record<string, 'off' | 'review' | 'full'>>
 	/** Read-only from the pipeline layer: written by no outlet except `set-turn-order`. */
 	metadata: Record<string, unknown>
 	/** The whole annex; a spec reads its own key. */

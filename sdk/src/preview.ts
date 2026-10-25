@@ -43,7 +43,11 @@ export interface PreviewReport {
 	/** Where the run stopped, and why that node. */
 	atNode: string
 	definitionId: string
-	targetedBy: 'first-provider-on-spine' | 'explicit'
+	/**
+	 * 🚧 `first-provider-in-branch` (2026-10-23): the provider sits in a
+	 * junction's branch — the one the route fired (`previewStops`).
+	 */
+	targetedBy: 'first-provider-on-spine' | 'first-provider-in-branch' | 'explicit'
 
 	/**
 	 * Metadata only — material never leaves core.
@@ -102,21 +106,88 @@ export const countableText = (v: unknown): string =>
  */
 export const roughTokens = (v: unknown): number => Math.ceil(countableText(v).length / 4)
 
-/** Choose where a preview stops. @experimental */
-export function previewTarget(
-	nodes: Array<{ key: string; kind: string; clauseId?: string; position: number }>,
-	explicit?: string,
-): { key: string; targetedBy: PreviewReport['targetedBy'] } | undefined {
-	if (explicit) return { key: explicit, targetedBy: 'explicit' }
-	// "The first Provider" needs one qualifier: in any retrieval pipeline the literally
-	// first Provider is `embed`, which lives inside the gather block — stopping there
-	// would preview a context that had not been retrieved yet. Spine-only is the rule
-	// that means what people intend, and it is the same rule
-	// `slot.downstreamOracle()` already resolves with (16 §5b-i).
-	const spine = nodes
-		.filter((n) => !n.clauseId && n.kind === 'oracle')
+/** A node as the preview rule reads it. @experimental */
+export interface PreviewRuleNode {
+	key: string
+	kind: string
+	clauseId?: string
+	position: number
+}
+
+/** A clause as the preview rule reads it: its kind, and the clause it sits in. @experimental */
+export interface PreviewRuleClause {
+	id: string
+	kind: string
+	clauseId?: string
+}
+
+/**
+ * 🚧 **The providers a preview can stop before** (2026-10-23), in document
+ * order: every oracle on the spine, and every oracle in a junction's branch,
+ * nested junctions included.
+ *
+ * A junction runs the branch its route fired, so a provider in a branch is
+ * the run's own call on that path, exactly as a spine provider is: Story's
+ * reply writes inside its `reply` junction (`reply.prose.generate`, beside
+ * *Replies carry changes*), the Lair's lines inside `via`. A run reaches at
+ * most one branch of a junction, so the first of these the run reaches is
+ * the first call it would make.
+ *
+ * Never one inside a **gather**, an **each** or a **loop**, at any depth:
+ * those fan out. In a retrieval pipeline the literally first provider is
+ * `embed`, inside the gather — stopping there would preview a context that
+ * had not been retrieved yet (16 §5b-i).
+ *
+ * Without `clauses` a clause's kind is unknown, so only the spine counts —
+ * the rule as it stood before junction branches were read.
+ * @experimental
+ */
+export function previewStops<N extends PreviewRuleNode>(
+	nodes: readonly N[],
+	clauses: readonly PreviewRuleClause[] = [],
+): N[] {
+	const byId = new Map(clauses.map((c) => [c.id, c]))
+	const onRoute = (clauseId: string | undefined): boolean => {
+		// Bounded by the clause count: a malformed cycle answers "not on the route".
+		for (let id = clauseId, hops = 0; id !== undefined; hops++) {
+			const clause = byId.get(id)
+			if (!clause || clause.kind !== 'junction' || hops > clauses.length) return false
+			id = clause.clauseId
+		}
+		return true
+	}
+	return nodes
+		.filter((n) => n.kind === 'oracle' && onRoute(n.clauseId))
 		.sort((a, b) => a.position - b.position)
-	return spine[0] ? { key: spine[0].key, targetedBy: 'first-provider-on-spine' } : undefined
+}
+
+/**
+ * Choose where a preview stops: the `explicit` node, else the first of the
+ * `previewStops` the run reaches. `key` is the first in document order;
+ * `stops` holds every key the run halts before, with why — a junction's
+ * branches are alternatives, and only the route knows which one runs.
+ * @experimental
+ */
+export function previewTarget(
+	nodes: ReadonlyArray<PreviewRuleNode>,
+	explicit?: string,
+	clauses: readonly PreviewRuleClause[] = [],
+):
+	| {
+			key: string
+			targetedBy: PreviewReport['targetedBy']
+			stops: ReadonlyMap<string, PreviewReport['targetedBy']>
+	  }
+	| undefined {
+	if (explicit) return { key: explicit, targetedBy: 'explicit', stops: new Map([[explicit, 'explicit']]) }
+	const stops = new Map<string, PreviewReport['targetedBy']>(
+		previewStops(nodes, clauses).map((n) => [
+			n.key,
+			n.clauseId ? 'first-provider-in-branch' : 'first-provider-on-spine',
+		]),
+	)
+	const [first] = stops
+	return first ? { key: first[0], targetedBy: first[1], stops } : undefined
 }
 
 /** @experimental */

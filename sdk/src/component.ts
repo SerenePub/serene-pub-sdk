@@ -62,6 +62,8 @@ export type {
 	MessageV1,
 	PlaceLinkV1,
 	PlaceV1,
+	RoutineLogEntryV1,
+	RoutineLogV1,
 	SessionCharactersV1,
 	SessionEntryV1,
 	SessionPersonaV1,

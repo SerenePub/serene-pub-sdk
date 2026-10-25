@@ -33,7 +33,7 @@
  * same config, and diverging is a deliberate act rather than the starting state.
  */
 
-import { compile, spec, slot } from "@serene-pub/sdk"
+import { compile, spec, slot, ITEM, type DataRef } from "@serene-pub/sdk"
 import * as C from "@serene-pub/contracts"
 
 /** @experimental */
@@ -45,9 +45,9 @@ export const GRAPH_BUILD_SPEC_ID = "core:spec/graph-build"
 /** @internal */
 export const GRAPH_BUILD_VERSION = "1.2.0"
 
-/** Every step takes the scene it is working on and its own three slots. */
-const step = ($: any) => ({
-	scenes: $.building.item,
+/** Every step takes the scene it is working on (the iteration's item) and its own three slots. */
+const step = ($: { readonly [ITEM]: DataRef }) => ({
+	scenes: $[ITEM],
 	connection: slot.connection(),
 	sampling: slot.sampling(),
 	prompts: slot.prompts()
@@ -86,13 +86,13 @@ export const graphBuildSpec = () =>
 			.each(
 				"building",
 				{
-					over: ($: any) => $.scenes.scenes,
+					over: ($) => $.scenes.scenes,
 					max: MAX_SCENES,
 					mode: "sequential"
 				},
 				(m) =>
 					m
-						.oracle("prefilter", ($: any) =>
+						.oracle("prefilter", ($) =>
 							C.graphPreFilter.v1(step($)),
 							{
 								expose: {
@@ -101,7 +101,7 @@ export const graphBuildSpec = () =>
 								},
 							},
 						)
-						.oracle("resolution", ($: any) =>
+						.oracle("resolution", ($) =>
 							C.graphNodeResolution.v1(step($)),
 							{
 								expose: {
@@ -110,7 +110,7 @@ export const graphBuildSpec = () =>
 								},
 							},
 						)
-						.oracle("perspective", ($: any) =>
+						.oracle("perspective", ($) =>
 							C.graphPerspective.v1(step($)),
 							{
 								expose: {
@@ -119,7 +119,7 @@ export const graphBuildSpec = () =>
 								},
 							},
 						)
-						.oracle("describe", ($: any) =>
+						.oracle("describe", ($) =>
 							C.graphNodeDescription.v1(step($)),
 							{
 								expose: {
@@ -128,7 +128,7 @@ export const graphBuildSpec = () =>
 								},
 							},
 						)
-						.oracle("state", ($: any) =>
+						.oracle("state", ($) =>
 							C.graphStateDetection.v1(step($)),
 							{
 								expose: {
@@ -138,7 +138,7 @@ export const graphBuildSpec = () =>
 							},
 						)
 			)
-			.outlet("propose", ($: any) =>
+			.outlet("propose", ($) =>
 				C.graphProposal.v1({ proposal: $.building.main })
 			)
 			.build()

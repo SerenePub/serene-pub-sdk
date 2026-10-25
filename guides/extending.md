@@ -11,6 +11,7 @@ Each section links to the guide with the details.
 | Add a step a pipeline can run: roll dice, keep score, call a web API | a **node definition** and its **handler** | `handlers` | [Node kinds](#node-kinds-what-each-step-may-do) |
 | Decide what happens when something happens in a session | a **pipeline** (a spec) | `pipelines` | [Pipelines](#pipelines) |
 | Add a new kind of session: a game, a writing room | a **genre** | `genres` | [Genres](#genres) |
+| Write the rules a session is played by: what a sheet tracks, how a risky moment is decided, what people carry | a **ruleset** | `defineRuleset`, published on a pub (a package can't carry one yet) | [Write your own rules](rulesets.md) |
 | Add a button, a menu item or a slash command | an **action** | on a spec, `contributes.actions` | [Actions](#actions) |
 | Ask a question inside a message | a **choices** or **form** block | a step in a pipeline | [Forms](forms-and-effects.md) |
 | Show your own interface in the session | a **widget** and its **component** | `widgets`, `components` | [Widgets](widgets.md) |
@@ -44,16 +45,21 @@ These limits hold whatever you declare. Plan around them from the start.
 ## Pipelines
 
 A **pipeline** is a graph of steps that runs when something happens in a session: a message
-arrives, a button is pressed, an event is recorded. You build one with `spec()` and ship it under
-`pipelines`. Serene Pub installs the compiled document, never your builder code.
+arrives, a button is pressed, an event is recorded, a routine's cadence comes due. You build one
+with `spec()` and ship it under `pipelines`. Serene Pub installs the compiled document, never your
+builder code.
+
+A pipeline does not say where it runs. It may name the events it **suits** (a hint for pickers),
+and a genre's defaults or a preset **registers** it on an event, an action or a cadence. See
+[Genres, presets and routines](genres-presets-and-routines.md).
 
 <!-- prelude:
-import { sessionEvents, slot, spec, use } from '@serene-pub/sdk'
+import { coreEvents, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 -->
 ```ts
 const reply = spec('acme.greeter:reply', { version: '1.0.0' })
-	.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.messageRespond })
+	.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })
 	.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
 	.task('prompt', () => C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }))
 	.oracle('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
@@ -143,7 +149,7 @@ command, a button in your widget. It is declared on the pipeline that answers it
 it appears (its **venue**) and, in one plain sentence, what it does.
 
 <!-- prelude:
-import { sessionEvents, spec, use } from '@serene-pub/sdk'
+import { spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 -->
 ```ts
@@ -160,8 +166,11 @@ const roll = spec('acme.dice:spec/roll', {
 			},
 		],
 	},
-}).inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.sessionAction })
+}).inlet('input', C.userMessage.v1(), { suits: [] })
 ```
+
+`roll.actions.roll` is the action as an object. A preset puts it in sessions by registering it:
+`register(roll.actions.roll, roll)` (see [Genres, presets and routines](genres-presets-and-routines.md)).
 
 The venues drawn today are `composer`, `message` (a message's menu), `extra` (the turn controls
 beside the composer), `widget` (your widget's own buttons) and `form` (a button in a form block).
@@ -283,8 +292,10 @@ const nightly = eventListener(SCHEDULED_WORK_PATH.instead, async (e, ctx) => {
   [Where values come from](where-values-come-from.md).
 - **Template engines.** A template language of your own, declared under `templateEngines`. It
   renders in the sandbox, as a pure function.
-- **Configs and presets.** Named settings for your pipelines, and which pipelines a session of a
-  genre runs. See [Where values come from](where-values-come-from.md).
+- **The genre's defaults and presets.** Which pipelines a session of your genre runs, on which
+  events, actions and cadences, with their values; and the presets a person picks, each one set
+  of changes on those defaults. See [Genres, presets and routines](genres-presets-and-routines.md)
+  and [Where values come from](where-values-come-from.md).
 - **Variables and their layouts.** A value your step hands a template is a variable you declare
   with `definePluginVariable`; on a lore source it is a band (`bands: { clue: varClue }`). Every
   object variable gets an automatic JSON layout. Ship layouts of your own under `templates` with

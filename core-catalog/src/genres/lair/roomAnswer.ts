@@ -3,9 +3,12 @@
  * actions are introduced in `index.ts`.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { actionIdentity, compile, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { lairGenre } from '../../registry/genres.js'
+import { bareEntryTypeId, locationEntryType } from '../../registry/entries.js'
+import { applyWiring, jsonPart, scriptStep, textPart, wiring } from '../../shared/calls.js'
+import { LAIR_ROOM_DRAFT_SCHEMA } from './names.js'
+import { LAIR_ROOM_SCRIPT } from './scripts.js'
 
 /* ── The party knocks: the answer ───────────────────────────────────────── */
 
@@ -14,6 +17,9 @@ export const LAIR_ROOM_ANSWER_SPEC_ID = 'core:spec/lair-room-answer'
 /** @internal */
 export const LAIR_ROOM_ANSWER_VERSION = '1.0.0'
 
+
+/** The action's key — `<this spec>#room`, what the knock's block names. */
+const ROOM_ACTION_KEY = 'room'
 
 /**
  * **What the knock's option fires** — the other half of the respond spec's
@@ -28,10 +34,12 @@ export const LAIR_ROOM_ANSWER_VERSION = '1.0.0'
  *    the party knocked at, its content **the typed text, verbatim**, and **no
  *    review gate**. It is the master's own words; a gate would ask them to
  *    approve what they just typed.
- *  - **drafted** — nothing typed: the Castellan drafts the room in the
- *    dungeon's layout (`LAIR_ROOM_CONTENT_SHAPE`, the form *Build room* drafts
- *    into, the `lair-knock-build` prompt), and the master edits it at
- *    `create-lore-entry`'s **review gate** before it lands.
+ *  - **drafted** — nothing typed: the Castellan drafts the room as *Build
+ *    room* does (2026-10-21, D1/D2/D10: one JSON answer — the body, its ways
+ *    out, the place entry type's own `fields` — made into the write by
+ *    `core:script/lair-room`, its ways to rooms the book holds linked in the
+ *    entry's own commit; the `lair-knock-build` prompt), and the master edits
+ *    it at `create-lore-entry`'s **review gate** before it lands.
  *
  * Retired with the two-option knock: *I will build it* and *Let the Castellan
  * improvise it* (`KNOCK_OPTIONS`), and the improvise branch's narration
@@ -91,15 +99,16 @@ export const LAIR_ROOM_ANSWER_VERSION = '1.0.0'
  * nothing is said and the knock is open again.
  * @internal
  */
-export const lairRoomAnswerSpec = () =>
-	compile(
+export const lairRoomAnswerSpec = () => {
+	const w = wiring()
+	return compile(
 		spec(LAIR_ROOM_ANSWER_SPEC_ID, {
 			version: LAIR_ROOM_ANSWER_VERSION,
 			taxonomy: { role: 'action'},
 			contributes: {
 				actions: [
 					{
-						key: 'room',
+						key: ROOM_ACTION_KEY,
 						/**
 						 * ⚠ **`composer`, and it was `form`** (changed
 						 * 2026-09-17 with L1). This action writes a lorebook
@@ -125,7 +134,7 @@ export const lairRoomAnswerSpec = () =>
 						venue: { kind: 'composer' },
 						presentWhen: {
 							on: 'session.openForm.action',
-							equals: `${LAIR_ROOM_ANSWER_SPEC_ID}#room`,
+							equals: actionIdentity({ specSlug: LAIR_ROOM_ANSWER_SPEC_ID, key: ROOM_ACTION_KEY }),
 							/** Said only at the door: a listing hides it instead. */
 							reason: { en: 'There is no door to answer — the party have not knocked.' },
 						},
@@ -164,10 +173,7 @@ export const lairRoomAnswerSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.task('answer', ($) =>
 				C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }),
 			)
@@ -194,7 +200,7 @@ export const lairRoomAnswerSpec = () =>
 						c.query('read', ($) =>
 							C.historyEntries.v1({
 								scope: $.input.sessionScope,
-								params: slot.params({ node: 'gather.worldLore.read' }),
+								params: slot.params($.gather.worldLore.read),
 							}),
 						),
 					)
@@ -238,7 +244,7 @@ export const lairRoomAnswerSpec = () =>
 			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
 			// the world's location at `world.location` (the preset's `path`),
 			// by the one room rule; the ranker leaves it out of the lore.
-			.task('place', ($: any) =>
+			.task('place', ($) =>
 				C.undescribedName.v1({
 					name: $.gather.state.read.state,
 					locationEntries: $.gather.rooms.read.entries,
@@ -280,21 +286,43 @@ export const lairRoomAnswerSpec = () =>
 				}),
 			)
 			/**
+			 * **Where the party stand** (B6): the world's `location`, read at
+			 * `world.location` inside the session's state (the preset's
+			 * `path`), else the knock's `vantage` — the room its planner said
+			 * the party stood in (A27) — resolved against the rooms by the
+			 * Lair's name rule. The world's value first and the plan's hint
+			 * second is the order `{{locationEntry}}` reads them in on a play
+			 * turn; the hint here is the knock turn's own, which no prompt in
+			 * that turn showed. A location set to a place entry is that entry.
+			 * `entryId` is the room, or null when nothing the dungeon lists
+			 * answers — words naming no room, or neither a location nor a hint.
+			 */
+			.task('here', ($) =>
+				C.undescribedName.v1({
+					name: $.gather.state.read.state,
+					fallbackName: $.answer.vantage,
+					locationEntries: $.gather.rooms.read.entries,
+					params: slot.params(),
+				}),
+			)
+			/**
 			 * **Typed, or left to the Castellan** (R9). The model call is in
 			 * the branch that needs one: a typed room costs nothing. Each
 			 * branch files the room itself — a location (L3), set in the
 			 * preset below, exactly as *Build room* files one — named after
 			 * the door the party knocked at (the block's `referent`).
 			 *
-			 * `links` is unwired on purpose: it would fail the room with a
-			 * name nothing answers to. The way back to where the party stand
-			 * is the `link` junction below, after the room (B6); the drafted
-			 * `Exits:` line stays prose (`LAIR_ROOM_CONTENT_SHAPE`).
+			 * The typed room wires no `links`: it is the GM's own words (its
+			 * *Exits:* line is the host's to read on save, D10). The drafted
+			 * room's links are its ways out to rooms the book holds, made by
+			 * `core:script/lair-room` — never a name nothing answers to, which
+			 * would fail the room with it. The way back to where the party
+			 * stand is the `link` junction below, after the room (B6).
 			 */
-			.junction('room', { on: ($: any) => $.input.text }, (r) =>
+			.junction('room', { on: ($) => $.input.text }, (r) =>
 				r
 					.when('typed', { truthy: true }, (c) =>
-						c.outlet('save', ($: any) =>
+						c.outlet('save', ($) =>
 							C.createLoreEntry.v1({
 								name: $.answer.referent,
 								// The master's own words, as they wrote them.
@@ -310,9 +338,9 @@ export const lairRoomAnswerSpec = () =>
 					 * row: the room is the one the party just knocked at,
 					 * named by the last line of the conversation.
 					 */
-					.otherwise('drafted', (c) =>
-						c
-							.task('context', ($: any) =>
+					.otherwise('drafted', (c) => {
+						const drafted = c
+							.task('context', ($) =>
 								C.buildTemplateContext.v1({
 									cast: $.gather.cast.read.cast,
 									state: $.gather.state.read.state,
@@ -321,74 +349,101 @@ export const lairRoomAnswerSpec = () =>
 									variables: slot.variables(),
 								}),
 							)
-							.task('lines', ($: any) =>
+							.task('lines', ($) =>
 								C.proseTranscript.v1({
 									messages: $.gather.history.read.messages,
 									cast: $.gather.cast.read.cast,
-									templateContext: $.room.drafted.context.templateContext,
+									templateContext: $.context.templateContext,
 								}),
 							)
-							.task('attached', ($: any) =>
+							.task('attached', ($) =>
 								C.placeAttachments.v1({
-									messages: $.room.drafted.lines.messages,
+									messages: $.lines.messages,
 									attachments: $.attachments.attachments,
 									connection: slot.connectionOf('room.drafted.write'),
 									params: slot.params(),
 								}),
 							)
-							.task('prompt', ($: any) =>
+							.task('prompt', ($) =>
 								C.assemble.v2({
 									candidates: $.rank.candidates,
 									decisions: $.rank.decisions,
 									groups: $.rank.groups,
 									budget: $.contextBudget.available,
-									messages: $.room.drafted.attached.messages,
-									templateContext: $.room.drafted.context.templateContext,
+									messages: $.attached.messages,
+									templateContext: $.context.templateContext,
 									template: slot.template(),
-									prompts: slot.prompts({ node: 'room.drafted.context' }),
+									prompts: slot.prompts($.context),
 									variables: slot.variables(),
 									params: slot.params(),
 									connection: slot.connectionOf('room.drafted.write'),
 								}),
 							)
-							.oracle('write', ($: any) =>
-								C.generateText.v1({
-									context: $.room.drafted.prompt.context,
-									connection: slot.connection(),
-									sampling: slot.sampling(),
-									params: slot.params(),
-								}),
-								{ expose: { status: 'The Castellan drafts the room' } },
+							.oracle(
+								'write',
+								($) =>
+									C.generateJson.v1({
+										context: $.prompt.context,
+										schema: LAIR_ROOM_DRAFT_SCHEMA as any,
+										connection: slot.connection(),
+										sampling: slot.sampling(),
+										params: slot.params(),
+									}),
+								{ expose: { status: 'The Castellan drafts the room', label: 'Draft the room' } },
 							)
-							.outlet('save', ($: any) =>
+						/**
+						 * The draft, made into the write (`core:script/lair-room`) — its
+						 * ways to rooms the book holds linked in the same commit; the
+						 * room the party stand in is left to `link` below, which writes
+						 * that way both ways.
+						 */
+						const made = jsonPart(
+							jsonPart(
+								textPart(
+									scriptStep(
+										drafted,
+										w,
+										'made',
+										LAIR_ROOM_SCRIPT.seedKey,
+										($) => ({
+											draft: $.room.drafted.write.json,
+											name: $.answer.referent,
+											rooms: $.gather.rooms.read.entries,
+											here: $.here.entryId,
+										}),
+										'The draft, made into the room',
+									),
+									w,
+									'content',
+									($) => $.room.drafted.made.main,
+									'content',
+									"The room's body",
+								),
+								w,
+								'fields',
+								($) => $.room.drafted.made.main,
+								'fields',
+								"The room's fields",
+							),
+							w,
+							'links',
+							($) => $.room.drafted.made.main,
+							'links',
+							"The room's ways to rooms the book holds",
+						)
+						return made.outlet(
+							'save',
+							($) =>
 								C.createLoreEntry.v1({
 									name: $.answer.referent,
-									content: $.room.drafted.write.text,
+									content: $.room.drafted.content.text,
+									fields: $.room.drafted.fields.main,
+									links: $.room.drafted.links.main,
 									params: slot.params(),
 								}),
-								{ expose: { label: 'Save the drafted room' } },
-							),
-					),
-			)
-			/**
-			 * **Where the party stand** (B6): the world's `location`, read at
-			 * `world.location` inside the session's state (the preset's
-			 * `path`), else the knock's `vantage` — the room its planner said
-			 * the party stood in (A27) — resolved against the rooms by the
-			 * Lair's name rule. The world's value first and the plan's hint
-			 * second is the order `{{locationEntry}}` reads them in on a play
-			 * turn; the hint here is the knock turn's own, which no prompt in
-			 * that turn showed. A location set to a place entry is that entry.
-			 * `entryId` is the room, or null when nothing the dungeon lists
-			 * answers — words naming no room, or neither a location nor a hint.
-			 */
-			.task('here', ($: any) =>
-				C.undescribedName.v1({
-					name: $.gather.state.read.state,
-					fallbackName: $.answer.vantage,
-					locationEntries: $.gather.rooms.read.entries,
-					params: slot.params(),
-				}),
+							{ expose: { label: 'Save the drafted room' } },
+						)
+					}),
 			)
 			/**
 			 * **The way between them** (B6): one relationship from the room
@@ -397,9 +452,9 @@ export const lairRoomAnswerSpec = () =>
 			 * publishes whichever `save` ran as `room.entryId`. Nothing fires
 			 * otherwise: the room stays saved, unlinked, and the story goes on.
 			 */
-			.junction('link', { on: ($: any) => $.here.entryId }, (r) =>
+			.junction('link', { on: ($) => $.here.entryId }, (r) =>
 				r.when('resolved', { truthy: true }, (c) =>
-					c.outlet('write', ($: any) =>
+					c.outlet('write', ($) =>
 						C.linkLoreEntries.v1({
 							from: $.room.entryId,
 							to: $.here.entryId,
@@ -416,13 +471,13 @@ export const lairRoomAnswerSpec = () =>
 			 * prepares the Castellan's turn and auto-advance takes it, as
 			 * after any send.
 			 */
-			.task('onward', ($: any) =>
+			.task('onward', ($) =>
 				C.joinText.v1({
 					items: ['The party go on into', $.answer.referent] as any,
 					params: slot.params(),
 				}),
 			)
-			.outlet('resume', ($: any) =>
+			.outlet('resume', ($) =>
 				C.createMessage.v1({
 					text: $.onward.text,
 					speaker: $.input.presser,
@@ -437,23 +492,24 @@ export const lairRoomAnswerSpec = () =>
 			 * *Build room* form with the draft already in it. The typed room
 			 * is `off` by name: the master wrote it (R9).
 			 */
-			.preset('lair', { label: 'Lair', default: true }, (p) =>
-				p
+			.defaults((p) =>
+				applyWiring(p
 					.settings('room.typed.save', { review: 'off' })
 					.settings('room.drafted.save', { review: 'on' })
 					// A room is a place (L3), however it was written.
-					.params('room.typed.save', { entryType: 'core:entry/location' })
-					.params('room.drafted.save', { entryType: 'core:entry/location' })
+					.params('room.typed.save', { entryType: bareEntryTypeId(locationEntryType) })
+					.params('room.drafted.save', { entryType: bareEntryTypeId(locationEntryType) })
 					// Plain names, one sentence (B12).
 					.params('onward', { path: '', separator: ' ' })
 					// B6: the rooms, where the party stand, and the way
 					// between — one row, read the same from either end.
-					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
+					.params('gather.rooms.read', { entryTypes: [bareEntryTypeId(locationEntryType)] })
 					.params('here', { path: 'world.location' })
 					// The room the place slot shows (the room rule) — the world's
 					// location alone, where `here` also falls back to the vantage.
 					.params('place', { path: 'world.location' })
-					.params('link.resolved.write', { linkType: 'leads to', reverseLinkType: 'leads to' }),
+					.params('link.resolved.write', { linkType: 'leads to', reverseLinkType: 'leads to' }), w),
 			)
 			.build(),
 	)
+}

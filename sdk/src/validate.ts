@@ -7,12 +7,14 @@
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
-import { JUNCTION_CLAUSE_PORTS, junctionBranchEnds, type SpecDocument } from './document.js'
+import { agreedShape, JUNCTION_CLAUSE_PORTS, junctionBranchEnds, type SpecDocument } from './document.js'
 import { notADeclaredEvent, packageEventById } from './events.js'
 import { annexDeclarationOf, annexStepFindings } from './annexFields.js'
 import { settingsSlotFor } from './settingsSlot.js'
 import {
 	ANSWER_FORM_OUTLET_ID,
+	DELETION_ASKED_INLET_ID,
+	deletionPipelinePlaces,
 	FORM_ADDRESSED_INLET_ID,
 	getDefinition,
 	isBuiltInOutlet,
@@ -37,6 +39,8 @@ import {
 	capabilityLabel,
 	FEATURES,
 	IO_KINDS,
+	IO_KIND_TOKEN,
+	isKnownIoKind,
 	isTransformId,
 	parseTransform,
 	transformId,
@@ -431,10 +435,52 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 	// was handed. Refused here at publish, and again by the host at the write
 	// (defence in depth, U5b review W8). A manifest permission letting a plugin
 	// spec place one is the future this leaves room for; nothing grants it yet.
+	//
+	// 🚧 One exception (RF fix 5, owner ruling 2026-10-23): a **deletion
+	// pipeline** — a document entered through
+	// `core:inlet/message-deletion-asked@1` — places `delete-message@1`
+	// (`deletionPipelinePlaces`). The host judged the door before it
+	// dispatched the event, so the delete takes the deletion the event
+	// carried, whole, on its `asked` port — one edge from the inlet's `main`,
+	// never a literal, a part or another step's value — and leaves `target`,
+	// the built-in's own port, unset. The message it deletes is then the
+	// judged one by construction; the host reads it off `asked`.
 	if (!isBuiltInSpec(doc.id)) {
+		const firstInlet = inlets[0]
+		const inletId = firstInlet ? `${firstInlet.definitionId}@${firstInlet.definitionVersion}` : undefined
 		for (const n of doc.nodes) {
 			const id = `${n.definitionId}@${n.definitionVersion}`
 			if (n.kind !== 'outlet' || !isBuiltInOutlet(id)) continue
+			if (deletionPipelinePlaces(id, inletId)) {
+				const into = (port: string) =>
+					doc.edges.filter((e) => e.to === n.key && e.toPort.split('.')[0] === port)
+				const asked = into('asked')
+				const fromInlet =
+					asked.length === 1 &&
+					!asked[0]!.implicit &&
+					asked[0]!.from === firstInlet!.key &&
+					asked[0]!.fromPort === 'main' &&
+					asked[0]!.toPort === 'asked'
+				const config = (n.config ?? {}) as Record<string, unknown>
+				const targetSet = config.target !== undefined || into('target').length > 0
+				if (!fromInlet || targetSet)
+					f.push({
+						law: 'R-15',
+						severity: 'error',
+						nodeKey: n.key,
+						message: targetSet
+							? `'${n.key}' names its message on 'target' in a deletion pipeline — a deletion pipeline ` +
+								`deletes the message its event carried, which arrives whole on 'asked'; 'target' is ` +
+								`the built-in's own spec's port`
+							: `'${n.key}' takes 'asked' from somewhere other than ${DELETION_ASKED_INLET_ID}'s ` +
+								`'main' — a deletion pipeline deletes the message its event carried, and only the ` +
+								`inlet's 'main' carries it`,
+						fix:
+							`wire the deletion whole from the inlet — C.deleteMessage.v1({ asked: $.${firstInlet!.key}.main }) ` +
+							`— and leave 'target' unset`,
+					})
+				continue
+			}
 			f.push({
 				law: 'R-15',
 				severity: 'error',
@@ -723,16 +769,19 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 				})
 			} else shapes.add(shape)
 		}
-		if (shapes.size > 1)
+		// 🚧 Shapes agree when one of them takes them all (`agreedShape`, RF fix 3):
+		// a text-stream and a text hand on a text.
+		const agreed = shapes.size ? agreedShape([...shapes]) : undefined
+		if (shapes.size > 1 && !agreed)
 			f.push({
 				law: '20 §10',
 				severity: 'error',
 				nodeKey: e.to,
 				message: `the branches of junction '${e.from}' publish '${e.fromPort}' as different shapes (${[...shapes].join(', ')})`,
-				fix: 'end every branch in nodes whose port shapes agree',
+				fix: 'end every branch in nodes whose port shapes agree: one shape that every branch’s is assignable to',
 			})
-		else if (shapes.size === 1) {
-			const outShape = [...shapes][0]!
+		else if (agreed) {
+			const outShape = agreed
 			const inShape = desc(e.to)?.ports.in?.[e.toPort.split('.')[0]!]
 			if (inShape && !e.toPort.includes('.') && !assignable(outShape, inShape))
 				f.push({
@@ -1168,7 +1217,21 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 			}
 
 			for (const id of [...requires, ...optional]) {
-				if (isKnownCapability(id)) continue
+				if (isKnownCapability(id)) {
+					// O1: a well-formed transform naming a kind this build does
+					// not know is ALLOWED (a plugin or a later release may bring
+					// it) — said once as a warning, so a typo is still seen.
+					const unknown = isTransformId(id) ? unknownKindsOf(id) : []
+					if (unknown.length)
+						f.push({
+							law: 'capabilities',
+							severity: 'warning',
+							nodeKey: n.key,
+							message: `'${n.key}.${slotName}' names ${unknown.length === 1 ? 'a kind' : 'kinds'} this build does not know: ${unknown.map((k) => `'${k}'`).join(', ')}`,
+							fix: `fine if a plugin or a later release brings ${unknown.length === 1 ? 'it' : 'them'}; otherwise check the spelling — the known kinds are ${IO_KINDS_TEXT}`,
+						})
+					continue
+				}
 
 				// A transform built from known kinds but written in the wrong
 				// ORDER is a different mistake from a typo, and telling them
@@ -1187,7 +1250,7 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 						? `'${n.key}.${slotName}' spells the capability '${id}' non-canonically`
 						: `'${n.key}.${slotName}' names an unknown capability '${id}'`,
 					fix: canonical
-						? `write it as '${canonical}' — kinds are ordered by IO_KINDS (text, image, audio, video, document, embedding), and only that spelling is ever matched`
+						? `write it as '${canonical}' — kinds are ordered by IO_KINDS (${IO_KINDS_TEXT}), then any other kind alphabetically, and only that spelling is ever matched`
 						: `use a declared transform (e.g. 'text->image') or feature (${FEATURES.join(', ')})`,
 				})
 			}
@@ -1502,12 +1565,15 @@ function exclusivePredicates(p: JunctionPredicateLike, q: JunctionPredicateLike)
  * ⚠ "Structurally" used to mean `!!lhs && !!rhs`, which passed `'text->tex'`,
  * `'txet->text'` and `'->'` — every typo this check exists to catch, since the
  * ones it did catch were already impossible to write. The real structure is
- * that both sides are non-empty lists of KNOWN kinds in CANONICAL order, which
- * is exactly "the id round-trips through `parseTransform` and back". That
- * rejects an unknown kind, a misspelled one, an empty side and `image+text->text`
- * (whose canonical spelling is `text+image->text`, so two ids would name one
+ * that both sides are non-empty lists of well-formed kinds in CANONICAL order,
+ * which is exactly "the id round-trips through `parseTransform` and back". That
+ * rejects an empty side, a malformed kind and `image+text->text` (whose
+ * canonical spelling is `text+image->text`, so two ids would name one
  * capability and only one of them would ever match) — while still admitting
  * `image+audio->video`, because the plugin escape hatch above is the point.
+ * Since O1 (2026-10-20) kinds are open: an UNKNOWN kind is well-formed and
+ * sorts after the known ones, alphabetically; the law warns about it (a typo
+ * still shows) and never refuses it (R30).
  *
  * There is no registry of plugin-declared transforms to consult here: `validate`
  * reads a spec document, not an instance, so a set-membership test would have to
@@ -1523,18 +1589,29 @@ function isKnownCapability(id: CapabilityId): boolean {
 /**
  * The canonical spelling of a transform id, or `undefined` if it is not one.
  *
- * `undefined` covers an empty side and any kind this build does not know —
- * neither of which has a canonical form to suggest, because there is nothing to
- * reorder. A mis-ORDERED id, by contrast, round-trips to a different string,
+ * `undefined` covers an empty side and a malformed kind (not one lowercase
+ * token, `IO_KIND_TOKEN`) — neither of which has a canonical form to suggest,
+ * because there is nothing to reorder. An unknown but well-formed kind has
+ * one (O1): after the known kinds, alphabetically. A mis-ORDERED id, by contrast, round-trips to a different string,
  * and that string is the fix.
  */
 function canonicalise(id: TransformId): TransformId | undefined {
 	const t = parseTransform(id)
 	if (!t.in.length || !t.out.length) return undefined
-	const known = (k: string) => (IO_KINDS as readonly string[]).includes(k)
-	if (!t.in.every(known) || !t.out.every(known)) return undefined
+	// O1: kinds are open — any well-formed token is a kind; the known ones
+	// keep their order and the others follow alphabetically (`transformId`).
+	const wellFormed = (k: string) => IO_KIND_TOKEN.test(k)
+	if (!t.in.every(wellFormed) || !t.out.every(wellFormed)) return undefined
 	return transformId(t)
 }
+
+/** The kinds of a transform id that `IO_KINDS` does not name (O1). */
+function unknownKindsOf(id: TransformId): string[] {
+	const t = parseTransform(id)
+	return [...new Set([...t.in, ...t.out])].filter((k) => !isKnownIoKind(k))
+}
+
+const IO_KINDS_TEXT = IO_KINDS.join(', ')
 
 function reaches(doc: SpecDocument, from: string, to: string, seen = new Set<string>()): boolean {
 	if (from === to) return true

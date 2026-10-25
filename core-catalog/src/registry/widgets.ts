@@ -98,6 +98,29 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				],
 				default: 'classic',
 			},
+			/**
+			 * 🚧 **The composer on the other tabs** (lair fix 2, 2026-10-22): a
+			 * copy that shows two or more channels draws a tab each above its
+			 * log (`messages.channel-tabs`); while a tab other than the first is
+			 * shown, its composer is drawn this way — the Lair's Sanctum, a
+			 * single-line pill under the story's card. `same` keeps `composer`.
+			 */
+			otherTabsComposer: {
+				type: 'enum',
+				label: 'Composer on the other tabs',
+				description:
+					'When this Messages widget shows more than one channel as tabs, how the message field is drawn ' +
+					'while a tab other than the first is shown. Same keeps the Composer setting.',
+				of: ['same', 'classic', 'minimal', 'writer', 'quill'],
+				members: [
+					{ key: 'same', label: 'Same as the first tab' },
+					{ key: 'classic', label: 'Classic card' },
+					{ key: 'minimal', label: 'Single-line pill' },
+					{ key: 'writer', label: 'Tall editor' },
+					{ key: 'quill', label: 'Page line' },
+				],
+				default: 'same',
+			},
 			composerPosition: {
 				type: 'enum',
 				label: 'Composer position',
@@ -110,24 +133,35 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: 'bottom',
 			},
 			/**
-			 * How wide the log's rows and the composer run. `full` fills the
-			 * width the layout gives the widget — the default, because a widget
-			 * fills its box; `comfortable` holds them to a reading measure
-			 * (about 640px of prose), centred on the session. It was a hidden
-			 * cap before it was a setting (ruled 2026-09-29).
+			 * How wide the log's rows and the composer run. `column` — the
+			 * default since the polish-parity ruling ★R1 (2026-10-24) — holds
+			 * them to a reading column of about 76 characters of the story's
+			 * body text, centred on the session; `full` fills the width the
+			 * layout gives the widget (a widget fills its box, 2026-09-29);
+			 * `comfortable` is the narrower measure (about 640px of prose).
+			 * Never a hidden cap: each is a value a person can see and change.
 			 */
 			lineWidth: {
 				type: 'enum',
 				label: 'Line width',
 				description:
-					'Full uses the whole width of the panel; Comfortable keeps ' +
-					'lines to an easy reading length, centred.',
-				of: ['full', 'comfortable'],
+					'How wide the messages and the composer run: a reading column, ' +
+					'the whole panel, or a narrow measure.',
+				of: ['column', 'full', 'comfortable'],
 				members: [
-					{ key: 'full', label: 'Full' },
-					{ key: 'comfortable', label: 'Comfortable' },
+					{
+						key: 'column',
+						label: 'Column',
+						description: 'About 76 characters of story text a line, centred.',
+					},
+					{ key: 'full', label: 'Full', description: 'The whole width of the panel.' },
+					{
+						key: 'comfortable',
+						label: 'Comfortable',
+						description: 'A narrower measure, about 640px of prose, centred.',
+					},
 				],
-				default: 'full',
+				default: 'column',
 			},
 			/**
 			 * How the lines are drawn (PLAN-core-widgets §3.7, Q7: a setting,
@@ -200,7 +234,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				label: 'Channel',
 				description:
 					"Show one channel only, by its slug (the Lair's is sanctum). " +
-					'Empty shows every channel no other Messages widget shows.',
+					'Empty shows every channel no other Messages widget shows, as tabs when there are two or more.',
 				group: 'Channel',
 			},
 			/**
@@ -825,6 +859,25 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					'How a story time (a clock) reads, with {year}, {month}, {monthName}, {day}, {dayName}, {hh} and {mm} — ' +
 					'e.g. Day {day}, {hh}:{mm}. Empty spells it through the calendar.',
 			},
+			/**
+			 * 🚧 The game's own state (RF fix 8, 2026-10-23): what the host keeps
+			 * for a genre's tools — the crawl's standing orders and fate, the
+			 * Lair's whisper — drawn in a block of its own under the sheet,
+			 * never among the rules' attributes. Shown by default (what those
+			 * sheets always drew); a copy may hide it.
+			 */
+			toolState: {
+				type: 'enum',
+				label: "The game's own state",
+				description:
+					"Whether the sheet also shows what the game itself keeps — standing orders, who is still standing — under the character's own stats.",
+				of: ['hidden', 'shown'],
+				members: [
+					{ key: 'hidden', label: 'Hidden' },
+					{ key: 'shown', label: 'Shown' },
+				],
+				default: 'shown',
+			},
 		},
 	},
 	/**
@@ -1369,6 +1422,41 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 	 * says so in one line. Story's default layout places it, unpinned, in the
 	 * right rail (owner ruling 2026-10-03; `STORY_LAYOUT`).
 	 */
+	/**
+	 * 🚧 **While you were away** (PLAN-layering A7, R23; lane 7, 2026-10-21):
+	 * a log of what the session's **routines** did — what ran and what it
+	 * wrote, what was skipped or paused and why — newest first, with the runs
+	 * since anyone last played set apart. Asked of the page
+	 * (`routine-log`); an administrator's line opens its run in the inspector
+	 * (`inspect-run` by run id). Available in every genre and placed by no
+	 * layout preset (R23): a person adds it from the tray. One per layout.
+	 */
+	{
+		id: 'routine-log',
+		title: 'While you were away',
+		icon: 'History',
+		component: 'routine-log',
+		layout: { span: { ideal: 1 }, minInline: 220 },
+		reads: ['viewer', 'settings', 'session'],
+		maxInstances: 1,
+		presets: [DEFAULT_PRESET],
+		settings: {
+			limit: {
+				type: 'integer',
+				label: 'How many',
+				description: 'The most recent runs to list.',
+				min: 5,
+				max: 100,
+				default: 20,
+			},
+			skipped: {
+				type: 'boolean',
+				label: 'Show skipped and paused',
+				description: 'List the times a routine did not run, and why, beside the runs.',
+				default: true,
+			},
+		},
+	},
 	{
 		id: 'authors-note',
 		title: "Author's note",
@@ -1425,6 +1513,8 @@ export const coreWidgets = {
 	places: coreWidget('places'),
 	/** 🚧 Who's here (W10): the session's people — who has it open, as whom each writes, who is typing, who is away. */
 	attendance: coreWidget('attendance'),
+	/** 🚧 While you were away (A7, R23): what the session's routines ran, wrote and skipped. In no layout by default. */
+	routineLog: coreWidget('routine-log'),
 } as const
 
 /**
@@ -1508,6 +1598,12 @@ export const CORE_COMPONENTS: ComponentDecl[] = [
 		slug: 'attendance',
 		label: "Who's here",
 		entry: 'components/shared/attendance/attendance.ts',
+		framework: 'svelte',
+	}),
+	component({
+		slug: 'routine-log',
+		label: 'While you were away',
+		entry: 'components/shared/routine-log/routine-log.ts',
 		framework: 'svelte',
 	}),
 ]

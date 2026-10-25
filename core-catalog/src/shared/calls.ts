@@ -9,29 +9,39 @@
  * preset, so a builder used twice names its rows twice, under each place's
  * own node keys.
  *
- * Node keys are absolute: a builder is handed the prefix of the branch it
- * sits in (`route.sheet.`) and reads its own outputs through it, the way
- * the Lair's branches read `$.via.turn.channel.sanctum.*`.
+ * 🚧 Typed (A18, derive-don't-spell; lane 4, 2026-10-20): a builder is
+ * handed the chain it extends and reads through that chain's scope — the
+ * caller's reads (`($) => $.crib.main`) typed by the caller's chain, its own
+ * nodes by the key it declared them under — and returns the chain with its
+ * nodes added (`Plus`), so what follows reads them by name. Nothing is
+ * spelled as a prefix and a key: a `Wiring` entry names a node on its chain
+ * (`on(c, 'crib')`), and its full key is read off that chain when the
+ * defaults are written (`chains.ts`).
  */
 
-import { handlebars, slot } from '@serene-pub/sdk'
+import { handlebars, slot, type NodeAccessor, type OutPortsOf, type PortDecl, type PresetBuilder } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { READ_PATH_SCRIPT } from '../genres/dungeon-crawler/scripts.js'
+import { READ_PATH_SCRIPT } from './scriptSeed.js'
+import { chainOf, keyOf, on, sibling, type Chain, type NodeOn, type Plus, type ReadOn } from './chains.js'
+
+export * from './chains.js'
+
+type PortsOf<F extends (...args: never[]) => unknown> = OutPortsOf<ReturnType<F>>
 
 /** What a spec's author preset names, collected as the graph is built. @internal */
 export interface Wiring {
-	scripts: Array<[node: string, seedKey: string]>
-	prompts: Array<[node: string, seedKey: string]>
-	params: Array<[node: string, value: Record<string, unknown>]>
+	scripts: Array<[node: NodeOn | string, seedKey: string]>
+	prompts: Array<[node: NodeOn | string, seedKey: string]>
+	params: Array<[node: NodeOn | string, value: Record<string, unknown>]>
 	/** Model calls that answer JSON: they run on the Background sampling. */
-	background: string[]
+	background: Array<NodeOn | string>
 	/**
 	 * Prompt steps laid out by a genre template, each with its source:
 	 * {@link BRIEF_TURN_TEMPLATE} for a call whose brief is its
 	 * last user turn, a genre's own for its narrator (Dungeon Crawler's
 	 * `DUNGEON_CRAWLER_NARRATE_TEMPLATE`).
 	 */
-	templates: Array<[node: string, source: string]>
+	templates: Array<[node: NodeOn | string, source: string]>
 }
 
 /** @internal */
@@ -87,19 +97,24 @@ export const BRIEF_TURN_TEMPLATE = `{{#systemBlock}}
 {{/userBlock}}
 {{/if}}`
 
-/** Everything a `Wiring` collected, written into an author preset. @internal */
-export const applyWiring = (p: any, w: Wiring): any => {
-	let out = p
-	for (const [node, seedKey] of w.scripts) out = out.scripts(node, [{ seedKey }])
-	for (const [node, seedKey] of w.prompts) out = out.prompts(node, { seedKey })
-	for (const [node, value] of w.params) out = out.params(node, value)
-	for (const node of w.background) out = out.sampling(node, { seedKey: 'sampling-background' })
-	for (const [node, source] of w.templates) out = out.template(node, { source, engine: handlebars.id })
-	return out
-}
+/**
+ * The helper's own node, by the key the helper declared it under — inside a
+ * helper generic over its key, where the scope cannot name it by type.
+ * derive-don't-spell: a helper generic in `K` reads `${K}Lines`; the key is
+ * derived from the one the caller handed, never spelled. @internal
+ */
+const own = ($: unknown, key: string): NodeAccessor<PortDecl> => ($ as Record<string, NodeAccessor<PortDecl>>)[key]
 
-/** `$` read by a dotted node path (`route.sheet.sheetWrite`). @internal */
-export const at = ($: any, path: string): any => path.split('.').reduce((o, k) => o[k], $)
+/** Everything a `Wiring` collected, written into an author preset. @internal */
+export const applyWiring = <P extends PresetBuilder<any>>(p: P, w: Wiring): P => {
+	let out: PresetBuilder<any> = p
+	for (const [node, seedKey] of w.scripts) out = out.scripts(keyOf(node), [{ seedKey }])
+	for (const [node, seedKey] of w.prompts) out = out.prompts(keyOf(node), { seedKey })
+	for (const [node, value] of w.params) out = out.params(keyOf(node), value)
+	for (const node of w.background) out = out.sampling(keyOf(node), { seedKey: 'sampling-background' })
+	for (const [node, source] of w.templates) out = out.template(keyOf(node), { source, engine: handlebars.id })
+	return out as P
+}
 
 /**
  * A script step: `core:task/run-script@1` over `input`, its chain the seeded
@@ -110,76 +125,78 @@ export const at = ($: any, path: string): any => path.split('.').reduce((o, k) =
  * progress card, and on a waiting reply's row before the reply's own row
  * exists. @internal
  */
-export const scriptStep = (
-	c: any,
+export const scriptStep = <B extends Chain, K extends string>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	key: string,
+	key: K,
 	seedKey: string,
-	input: ($: any) => unknown,
+	input: ReadOn<B>,
 	label: string,
 	status?: string,
-) => {
-	w.scripts.push([`${prefix}${key}`, seedKey])
-	return c.task(key, ($: any) => C.runScript.v1({ input: input($) as any, params: slot.params() }), {
+): Plus<B, K, PortsOf<typeof C.runScript.v1>> => {
+	w.scripts.push([on(c, key), seedKey])
+	return chainOf(c).task(key, ($) => C.runScript.v1({ input: input($ as never) as any, params: slot.params() }), {
 		expose: status ? { label, status } : { label },
-	})
+	}) as never
 }
 
 /** A JSON part of a document (`core:script/read-path`), on `main`. @internal */
-export const jsonPart = (
-	c: any,
+export const jsonPart = <B extends Chain, K extends string>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	key: string,
-	from: ($: any) => unknown,
+	key: K,
+	from: ReadOn<B>,
 	path: string,
 	label: string,
-) => scriptStep(c, w, prefix, key, READ_PATH_SCRIPT.seedKey, ($) => ({ from: from($), path }), label)
+) => scriptStep(c, w, key, READ_PATH_SCRIPT.seedKey, ($) => ({ from: from($), path }), label)
 
 /** A text part of a document (`join-text@1`'s `path`), on `text`. @internal */
-export const textPart = (
-	c: any,
+export const textPart = <B extends Chain, K extends string>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	key: string,
-	from: ($: any) => unknown,
+	key: K,
+	from: ReadOn<B>,
 	path: string,
 	label: string,
-) => {
-	w.params.push([`${prefix}${key}`, { path, separator: '' }])
-	return c.task(key, ($: any) => C.joinText.v1({ items: [from($)] as any, params: slot.params() }), {
+): Plus<B, K, PortsOf<typeof C.joinText.v1>> => {
+	w.params.push([on(c, key), { path, separator: '' }])
+	return chainOf(c).task(key, ($) => C.joinText.v1({ items: [from($ as never)] as any, params: slot.params() }), {
 		expose: { label },
-	})
+	}) as never
 }
 
-/** One model call's terms. @internal */
-export interface CallTerms {
+/** One model call's terms, read off chain `B`'s scope. @internal */
+export interface CallTerms<B> {
 	/** Who speaks: the envoy reference whose `{{char}}` the prompt names. Absent: no speaker (a call nobody voices — the Story genre's reckoning and sweep). */
 	speaker?: string
 	/** The seeded prompt row the context step starts on. */
 	prompt: string
 	/** The brief, as text — `{{turnDirection}}`. */
-	brief: ($: any) => unknown
+	brief: ReadOn<B>
 	/** The Planner's crib, as text — `{{scratchpad}}`. */
-	crib?: ($: any) => unknown
-	cast: ($: any) => unknown
+	crib?: ReadOn<B>
+	cast: ReadOn<B>
 	/** Transcript rows (`session-history@1`) the model reads as the conversation. */
-	history: ($: any) => unknown
+	history: ReadOn<B>
 	/**
 	 * Transcript rows read as background, not turns — `{{recentStory}}`:
 	 * the story's newest rows for a call whose conversation is a Planner
 	 * lane (`parley.ts`).
 	 */
-	recentStory?: ($: any) => unknown
+	recentStory?: ReadOn<B>
 	/**
 	 * 🚧 Named prompt fields (`build-template-context@1`'s `fields`) — the
 	 * story turn's ruleset blocks (`{{rulesetSheet}}` …), each placed by name
 	 * in the prompt row.
 	 */
-	fields?: ($: any) => unknown
-	/** A JSON schema: the call answers JSON. Absent: prose. */
-	schema?: object
+	fields?: ReadOn<B>
+	/**
+	 * A JSON schema: the call answers JSON. Absent: prose. 🚧 Or a read of one
+	 * (`($) => $.schema.main`, PLAN-genres-seams S1, 2026-10-23): a schema the
+	 * run builds — the session's rules' change grammar — rather than one the
+	 * spec spells.
+	 */
+	schema?: object | ReadOn<B>
 	/**
 	 * 🚧 The brief is the call's **last user turn** (2026-10-16), after the
 	 * transcript ({@link BRIEF_TURN_TEMPLATE}) — for a call nobody's
@@ -188,8 +205,23 @@ export interface CallTerms {
 	 * prompt.
 	 */
 	briefTurn?: boolean
-	expose: { status: string; label: string; purpose: string; stream?: boolean }
+	expose: { status: string; label: string; purpose: string; stream?: true }
 }
+
+/** The four nodes `modelCall` adds; `<key>Write` answers JSON with a schema, prose without. @internal */
+export type Called<B, K extends string, T> = Plus<
+	Plus<
+		Plus<
+			Plus<B, `${K}Context`, PortsOf<typeof C.buildTemplateContext.v1>>,
+			`${K}Lines`,
+			PortsOf<typeof C.proseTranscript.v1>
+		>,
+		`${K}Prompt`,
+		PortsOf<typeof C.assemble.v2>
+	>,
+	`${K}Write`,
+	T extends { schema: object } ? PortsOf<typeof C.generateJson.v1> : PortsOf<typeof C.generateText.v1>
+>
 
 /**
  * One model call, four steps: `<key>Context` (`build-template-context@1`,
@@ -199,70 +231,82 @@ export interface CallTerms {
  * laid out by {@link BRIEF_TURN_TEMPLATE}, the brief last. Publishes the oracle's ports on
  * `<key>Write`. All four declare the call's status. @internal
  */
-export const modelCall = (c: any, w: Wiring, prefix: string, key: string, t: CallTerms) => {
-	const ctx = `${prefix}${key}Context`
-	const write = `${prefix}${key}Write`
-	w.prompts.push([ctx, t.prompt])
+export const modelCall = <B extends Chain, K extends string, T extends CallTerms<B>>(
+	c: B,
+	w: Wiring,
+	key: K,
+	t: T,
+): Called<B, K, T> => {
+	const ctx = `${key}Context`
+	const write = on(c, `${key}Write`)
+	w.prompts.push([on(c, ctx), t.prompt])
 	if (t.schema) w.background.push(write)
 	// The call's one status from its first step: the context, transcript
 	// and prompt steps say what the oracle will (in place of the handlers'
 	// generic *{speaker} is thinking* / *is composing*), so a call reads as
 	// one stage, not three voices.
 	const said = { expose: { status: t.expose.status } }
-	if (t.briefTurn) w.templates.push([`${prefix}${key}Prompt`, BRIEF_TURN_TEMPLATE])
-	return c
-		.task(`${key}Context`, ($: any) =>
-			C.buildTemplateContext.v1({
-				cast: t.cast($) as any,
-				...(t.speaker ? { speaker: t.speaker as any } : {}),
-				turnDirection: t.brief($) as any,
-				...(t.crib ? { scratchpad: t.crib($) as any } : {}),
-				...(t.recentStory ? { recentStory: t.recentStory($) as any } : {}),
-				...(t.fields ? { fields: t.fields($) as any } : {}),
-				prompts: slot.prompts(),
-				variables: slot.variables(),
-			}),
+	if (t.briefTurn) w.templates.push([on(c, `${key}Prompt`), BRIEF_TURN_TEMPLATE])
+	const read = (f: ReadOn<B>, $: unknown) => f($ as never) as any
+	return chainOf(c)
+		.task(
+			ctx,
+			($) =>
+				C.buildTemplateContext.v1({
+					cast: read(t.cast, $),
+					...(t.speaker ? { speaker: t.speaker as any } : {}),
+					turnDirection: read(t.brief, $),
+					...(t.crib ? { scratchpad: read(t.crib, $) } : {}),
+					...(t.recentStory ? { recentStory: read(t.recentStory, $) } : {}),
+					...(t.fields ? { fields: read(t.fields, $) } : {}),
+					prompts: slot.prompts(),
+					variables: slot.variables(),
+				}),
 			said,
 		)
 		.task(
 			`${key}Lines`,
-			($: any) =>
+			($) =>
 				C.proseTranscript.v1({
-					messages: t.history($) as any,
-					cast: t.cast($) as any,
-					templateContext: at($, ctx).templateContext,
+					messages: read(t.history, $),
+					cast: read(t.cast, $),
+					templateContext: own($, ctx).templateContext,
 				}),
 			said,
 		)
-		.task(`${key}Prompt`, ($: any) =>
-			C.assemble.v2({
-				messages: at($, `${prefix}${key}Lines`).messages,
-				templateContext: at($, ctx).templateContext,
-				template: slot.template(),
-				prompts: slot.prompts({ node: ctx }),
-				variables: slot.variables(),
-				params: slot.params(),
-				connection: slot.connectionOf(write),
-			}),
+		.task(
+			`${key}Prompt`,
+			($) =>
+				C.assemble.v2({
+					messages: own($, `${key}Lines`).messages,
+					templateContext: own($, ctx).templateContext,
+					template: slot.template(),
+					prompts: slot.prompts(own($, ctx)),
+					variables: slot.variables(),
+					params: slot.params(),
+					connection: slot.connectionOf(sibling(own($, ctx), `${key}Write`)),
+				}),
 			said,
 		)
 		.oracle(
 			`${key}Write`,
-			($: any) =>
+			($) =>
 				t.schema
 					? C.generateJson.v1({
-							context: at($, `${prefix}${key}Prompt`).context,
-							schema: t.schema as any,
+							context: own($, `${key}Prompt`).context,
+							schema: (typeof t.schema === 'function' ? read(t.schema as ReadOn<B>, $) : t.schema) as any,
 							connection: slot.connection(),
 							sampling: slot.sampling(),
 							params: slot.params(),
 						})
 					: C.generateText.v1({
-							context: at($, `${prefix}${key}Prompt`).context,
+							context: own($, `${key}Prompt`).context,
 							connection: slot.connection(),
 							sampling: slot.sampling(),
 							params: slot.params(),
+							// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+							speechSampling: slot.speechSampling(),
 						}),
 			{ expose: t.expose },
-		)
+		) as never
 }

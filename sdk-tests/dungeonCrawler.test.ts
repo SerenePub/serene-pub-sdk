@@ -7,9 +7,12 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { channelDecls, compile, genreSlots, i18nText, spec, validate, validateSessionLayout } from '@serene-pub/sdk'
+import { channelDecls, compile, getRuleset, hostStateFor, i18nText, spec, validate, validateSessionLayout } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import * as cat from '../core-catalog/src/index.js'
+
+/** 🚧 Vis Itineris as the host lays it on the inlet (S4, 2026-10-23): its id, rigour, settings and gist. */
+const VI_IN = { id: 'core:ruleset/vis-itineris@1', rigour: 'scripts', settings: {}, ...cat.rulesetGistOf(getRuleset('core:ruleset/vis-itineris@1')! as never) }
 
 const g = cat.dungeonCrawlerGenre
 
@@ -27,7 +30,8 @@ test('no lorebook, no lore or scene writes, no scene summary', () => {
 	assert.equal(g.shape?.characters?.min, 0)
 	// 🚧 The form says they are companions (2026-10-18, `characters.hint`).
 	assert.match(String((g.shape?.characters as any)?.hint?.en), /companions/i)
-	assert.equal(g.customAttributes, 'allow')
+	// 🚧 RF fix 8: a genre brings no attributes — and adds none.
+	assert.equal('customAttributes' in g, false)
 	assert.equal(i18nText(g.playerLabel!, 'en'), 'Adventurer')
 	assert.deepEqual(g.shape?.turnControls, { advance: true, pick: false, narrate: false, retake: true })
 })
@@ -83,13 +87,19 @@ test('the Planner greets on its channel; the Narrator is the default and the fal
 	assert.match(narrator!.prompts!.systemPrompt!, /Never decide what a player's character does/)
 })
 
-test('the sheet: seven on the cast (player seats and companions), four on the world', () => {
-	const ids = Object.values(cat.DUNGEON_CRAWLER_SLOT_IDS)
-	const slots = genreSlots(g.id)
-	for (const id of ids) assert.ok(slots.some((s) => s.id === id), id)
-	assert.equal(cat.DUNGEON_CRAWLER_SLOT_IDS.gear, 'core:slot/inventory@1')
-	const location = cat.DUNGEON_CRAWLER_SHEET.slots.find((s) => s.id === cat.DUNGEON_CRAWLER_SLOT_IDS.location)
-	assert.deepEqual(location?.appliesTo, ['cast'])
+test('the crawl declares no sheet: the host keeps its tools, the place on each hero (RF fix 8)', () => {
+	assert.equal('slots' in g, false)
+	assert.equal('sheets' in g, false)
+	const kept = hostStateFor(g)
+	const of = (id: string) => kept.filter((d) => d.slot === id)
+	for (const id of [cat.DUNGEON_CRAWLER_SLOT_IDS.standingOrder, cat.DUNGEON_CRAWLER_SLOT_IDS.fate, cat.DUNGEON_CRAWLER_SLOT_IDS.difficulty, cat.DUNGEON_CRAWLER_SLOT_IDS.goalMode])
+		assert.deepEqual(of(id).map((d) => d.role), ['tool'], id)
+	assert.deepEqual(of(cat.DUNGEON_CRAWLER_SLOT_IDS.clock).map((d) => d.role), ['time'])
+	// The party may split: where someone is, is theirs.
+	assert.deepEqual(of(cat.DUNGEON_CRAWLER_SLOT_IDS.location).map((d) => [d.role, d.owners]), [['place', ['cast']]])
+	// Health, level and class are the rules' — never the host's, never the genre's.
+	for (const id of [cat.DUNGEON_CRAWLER_SLOT_IDS.hp, cat.DUNGEON_CRAWLER_SLOT_IDS.level, cat.DUNGEON_CRAWLER_SLOT_IDS.characterClass])
+		assert.deepEqual(of(id), [], id)
 	assert.equal(cat.standingOrderSlot.default, 'hold')
 	assert.equal(cat.difficultySlot.default, 'fair')
 })
@@ -185,20 +195,36 @@ test('the genre is published: its pipelines, its preset, both envoys seated', ()
 	// Create before anything that declares itself for the genre.
 	assert.ok(ids.indexOf(cat.DUNGEON_CRAWLER_CREATE_SPEC_ID) < ids.indexOf(cat.DUNGEON_CRAWLER_RESPOND_SPEC_ID))
 	assert.ok(cat.coreExtension().genres!.some((x: any) => x.id === g.id))
+	// 🚧 By registration (PLAN-layering D4, 2026-10-20): the preset is the
+	// genre's defaults as they stand, and the defaults say what answers what.
 	const preset = cat.corePresets().find((p) => p.slug === 'dungeon-crawler-default')!
-	assert.equal(preset.bindings['core:event/session-created@1']!.spec, cat.DUNGEON_CRAWLER_CREATE_SPEC_ID)
-	assert.equal(preset.bindings['core:event/message-respond@1']!.spec, cat.DUNGEON_CRAWLER_RESPOND_SPEC_ID)
-	assert.equal(preset.bindings['core:event/member-added@1']!.spec, cat.DUNGEON_CRAWLER_WELCOME_SPEC_ID)
-	assert.equal(preset.bindings['core:event/annex-changed@1']!.spec, cat.DUNGEON_CRAWLER_TURN_ORDER_SPEC_ID)
-	assert.deepEqual(preset.actions?.include, [
-		cat.DUNGEON_CRAWLER_INTERVIEW_ACTION,
-		`${cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID}#reveal`,
-		`${cat.DUNGEON_CRAWLER_REST_SPEC_ID}#rest`,
-		cat.DUNGEON_CRAWLER_GOAL_ACTION,
-	])
+	assert.equal(preset.registrations, undefined)
+	assert.equal(preset.default, true)
+	const regs = cat.coreGenreRegistrations()[g.id]!
+	const on = (event: string) =>
+		regs.filter((r) => r.trigger.family === 'event' && r.trigger.event === event).map((r) => r.pipeline)
+	assert.deepEqual(on('core:event/session-created@1'), [cat.DUNGEON_CRAWLER_CREATE_SPEC_ID])
+	assert.deepEqual(on('core:event/message-respond@1'), [cat.DUNGEON_CRAWLER_RESPOND_SPEC_ID])
+	assert.deepEqual(on('core:event/member-added@1'), [cat.DUNGEON_CRAWLER_WELCOME_SPEC_ID])
+	assert.deepEqual(on('core:event/annex-changed@1'), [cat.DUNGEON_CRAWLER_TURN_ORDER_SPEC_ID])
+	assert.deepEqual(
+		regs.flatMap((r) => (r.trigger.family === 'action' ? [r.trigger.action] : [])),
+		[
+			cat.DUNGEON_CRAWLER_INTERVIEW_ACTION,
+			`${cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID}#reveal`,
+			`${cat.DUNGEON_CRAWLER_REST_SPEC_ID}#rest`,
+			cat.DUNGEON_CRAWLER_GOAL_ACTION,
+			// R50: every core genre registers the four summaries as (unlisted) actions.
+			`${cat.SUMMARIZE_WORLD_SPEC_ID}#summarize-world`,
+			`${cat.SUMMARIZE_CHARACTER_SPEC_ID}#summarize-character`,
+			`${cat.SUMMARIZE_HISTORY_SPEC_ID}#summarize-history`,
+			`${cat.SUMMARIZE_SCENE_SPEC_ID}#summarize-scene`,
+		],
+	)
 	assert.deepEqual(preset.defaults?.envoys, ['planner', 'narrator'])
+	// The genre's one preset is its default (R22, one default per genre).
 	const seedRow = cat.corePresetSeeds().find((x) => x.seedKey === 'core-dungeon-crawler-default')!
-	assert.equal(seedRow.isDefault, false)
+	assert.equal(seedRow.isDefault, true)
 })
 
 test('create: the rules on the world, the annex keys, a greeted lane per person — by seed key, no model call', () => {
@@ -309,7 +335,11 @@ test('the reply: the story and the Planner lanes are two branches; the Planner m
 	assert.equal(node('channel.parley.editsWrite').definitionId, 'core:oracle/generate-json')
 	assert.equal(node('channel.parley.kept.ruled.apply').definitionId, 'core:task/ruleset-resolve')
 	assert.equal(node('channel.parley.kept.ruled.apply').config.mode, 'apply')
-	assert.deepEqual(Object.keys((cat.DUNGEON_CRAWLER_EDITS_SCHEMA as any).properties), ['standingOrder', 'asks', 'deltas', 'rooms'])
+	assert.deepEqual(Object.keys((cat.DUNGEON_CRAWLER_EDITS_FRAME as any).properties), ['standingOrder', 'asks', 'deltas', 'rooms'])
+	// 🚧 S1: its grammar laid over the session's rules — the reply schema, then the genre's own (`shape.ts`).
+	assert.equal(node('channel.parley.editsShape').definitionId, 'core:task/ruleset-resolve')
+	assert.deepEqual(named(doc, 'scripts')['channel.parley.editsSchema'], [{ seedKey: cat.DUNGEON_CRAWLER_SHAPE_SCRIPT.seedKey }])
+	assert.match(JSON.stringify(node('channel.parley.editsWrite').config.schema), /channel\.parley\.editsSchema/)
 	// Every line anchored to the Planner's reply: deleting it takes them back.
 	assert.match(JSON.stringify(node('channel.parley.kept.said.write').config.tableLine), /channel\.parley\.placeholder/)
 })
@@ -548,7 +578,7 @@ test('the sheet: stats on the seat, the world on the owner’s Just play, genesi
 		shape: 'dungeon', difficulty: 'gentle', goalMode: 'secret',
 	}
 	const plan = { addressee: 'user:1', justPlay: true, isOwner: true, currentName: null }
-	const out = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: session(), plan, json })
+	const out = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: session(), plan, json, ruleset: VI_IN })
 	assert.equal(out.seatName, 'Vex')
 	// No abilities or gear in words: the class's starting kit, pieces of the rules (2026-10-16).
 	assert.ok(!out.seatChanges.some((c: any) => c.slot === 'core:slot/abilities@1' || c.slot === 'core:slot/inventory@1'))
@@ -646,25 +676,28 @@ test('the sheet: stats on the seat, the world on the owner’s Just play, genesi
 
 test("the sheet: a fighter's kit gives Strength 16 — modifier +3 — and d10 + Constitution health (walk 2026-10-17)", () => {
 	const plan = { addressee: 'user:1', justPlay: true, isOwner: false, currentName: null }
-	const out = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: session(), plan, json: { name: 'Ann', class: 'Fighter', backstory: '' } })
+	const out = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: session(), plan, json: { name: 'Ann', class: 'Fighter', backstory: '' }, ruleset: VI_IN })
 	const score = (a: string) => out.seatChanges.find((c: any) => c.slot === `core:slot/itineris-${a}@1`)?.value
 	assert.equal(score('strength'), 16)
 	assert.equal(score('constitution'), 14)
 	assert.deepEqual(out.healthConfig, { max: 12 })
-	assert.equal(cat.kitMaxHp('fighter'), 12)
-	assert.deepEqual(cat.kitAbilityChanges('fighter')[0], { slot: 'core:slot/itineris-strength@1', value: 16 })
+	// 🚧 The session's ruleset's kits (S4): read off the inlet, never the build's.
+	const kits = VI_IN.kits!
+	assert.equal(kits.byId.fighter!.maxHp, 12)
+	assert.deepEqual(kits.byId.fighter!.abilities[0], { slot: 'core:slot/itineris-strength@1', value: 16 })
 	// Every kit is the standard array, its best score raised by one.
-	for (const key of Object.keys(cat.DUNGEON_CRAWLER_KITS))
-		assert.deepEqual(Object.values(cat.DUNGEON_CRAWLER_KITS[key]!.abilities).sort((a, b) => b - a), [16, 14, 13, 12, 10, 8], key)
+	for (const key of kits.order)
+		assert.deepEqual(kits.byId[key]!.abilities.map((a) => a.value).sort((a, b) => b - a), [16, 14, 13, 12, 10, 8], key)
 	// The derive script, handed those scores, makes the modifier the attack reads.
 	const values: Record<string, unknown> = { level: 1 }
 	for (const c of out.seatChanges) if (/itineris-/.test(c.slot)) values[c.slot.replace(/^core:slot\/|@1$/g, '')] = c.value
 	const derived = runScript(cat.VIS_ITINERIS_DERIVE_SCRIPT, { values, pieces: {} })
 	assert.equal(derived.values['strength-mod'], 3)
 	assert.equal(derived.values['constitution-mod'], 2)
-	// The genre tracks the six (the handler reads a stat only where the session does).
+	// 🚧 RF fix 8: Vis Itineris's own attributes carry the six, wherever it is played — never the genre.
+	const vi = getRuleset(cat.VIS_ITINERIS_RULESET_ID)! as any
 	for (const a of ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma'])
-		assert.ok(cat.DUNGEON_CRAWLER_SHEET.slots.some((e: any) => e.id === `core:slot/itineris-${a}@1`), a)
+		assert.ok(vi.attributes.some((e: any) => e.slot === `core:slot/itineris-${a}@1`), a)
 })
 
 test('the sheet: no name from the model is asked again — never "the Stranger" (walk 2026-10-17)', () => {
@@ -689,12 +722,9 @@ test('the sheet: no name from the model is asked again — never "the Stranger" 
 	assert.equal(named.next, null)
 })
 
-test('the sheet: abilities and inventory are retired from it — still tracked, never drawn (walk 2026-10-17)', () => {
-	const ids = cat.DUNGEON_CRAWLER_SHEET.slots.map((e: any) => e.id)
-	for (const id of cat.DUNGEON_CRAWLER_RETIRED_SLOT_IDS) {
-		assert.ok(!ids.includes(id), id)
-		assert.ok(cat.DUNGEON_CRAWLER_SLOTS.some((s: any) => s.id === id), id)
-	}
+test('the sheet: abilities, inventory and stat-mode are no longer kept at all (RF fix 8)', () => {
+	const kept = hostStateFor(g).map((d) => d.slot)
+	for (const id of cat.DUNGEON_CRAWLER_RETIRED_SLOT_IDS) assert.ok(!kept.includes(id), id)
 })
 
 test('genesis: the world filed, a secret goal kept out of the journal', () => {

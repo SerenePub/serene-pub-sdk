@@ -539,6 +539,16 @@ export const remainingItemSupply = (supply: ItemSupply, held: number): number | 
 	supply.limit === null ? null : Math.max(0, supply.limit - held)
 
 /**
+ * 🚧 An entry type's **bare id** — its id without the version
+ * (`core:entry/location` for `locationEntryType`) — what a step's
+ * `entryType` / `entryTypes` parameter and a `session-entries` row's
+ * `typeId` name it by, read off the declaration (A18, derive-don't-spell).
+ * @internal
+ */
+export const bareEntryTypeId = <const Id extends string>(t: { readonly id: Id }): Id extends `${infer B}@${number}` ? B : Id =>
+	t.id.replace(/@\d+$/, '') as never
+
+/**
  * The five, in the order the tabs read.
  *
  * A list for the readers that want one; the *registration* happened when this

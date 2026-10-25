@@ -74,6 +74,22 @@ export * from './sheets.js'
 // Beside sheets because a ruleset's stats are a sheet's entries and its
 // repertoires are list slots that know their item's shape.
 export * from './rulesets.js'
+// 🚧 Check methods — how a ruleset decides a risky moment: dice, cards, a
+// spend, a comparison, or the game master's judgement (2026-10-22).
+export * from './checkMethods.js'
+// 🚧 The ruleset document — a ruleset as data, for stores, packages and the admin editor.
+export * from './rulesetDocument.js'
+// 🚧 Ruleset templates — archetypes to copy, with a playtest scene — and the
+// ruleset laws a shipped catalogue keeps (2026-10-22).
+export * from './rulesetTemplates.js'
+export * from './rulesetSections.js'
+export * from './functions.js'
+export * from './ties.js'
+// 🚧 A declared shape as the JSON Schema a model answers against, and the one
+// check on the answer (Lair rewrite D1): entry types, sheets, repertoires, forms.
+export * from './jsonSchema.js'
+// 🚧 Vocabularies (A19, R27–R30): shared attribute words as objects; rulesets play them.
+export * from './vocabularies.js'
 export * from './primers.js'
 export * from './repertoires.js'
 export * from './bridges.js'
@@ -107,8 +123,17 @@ export * from './eventMapLaws.js'
 export * from './rankingDecisions.js'
 export * from './values.js'
 export * from './genres.js'
-export * from './tasks.js'
+// 🚧 Host state (RF fix 8, 2026-10-23): what the host keeps beside the rules' attributes.
+export * from './hostState.js'
 export * from './fit.js'
+// 🚧 The layering restructure (PLAN-layering D1–D6, 2026-10-20): conditions,
+// entities and fit, cadences, registrations, exposure. Before announce.js,
+// whose presets are changes on the genre's defaults these describe.
+export * from './conditions.js'
+export * from './entities.js'
+export * from './cadences.js'
+export * from './registrations.js'
+export * from './exposure.js'
 export * from './announce.js'
 // The checks both authoring surfaces run over what a package declares (D-1).
 // After announce.js, because its declaration types are the ones these read.

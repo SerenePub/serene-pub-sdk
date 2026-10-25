@@ -858,6 +858,18 @@ export function _clearRulesetStats(): void {
 }
 
 /**
+ * 🚧 Forget that one ruleset lists any slot (`_registerRulesetStats`'s
+ * inverse); a slot nobody lists any more is dropped from the index.
+ * @internal
+ */
+export function _withdrawRulesetStats(rulesetId: string): void {
+	for (const [id, owners] of [...listedOwners]) {
+		owners.delete(rulesetId)
+		if (!owners.size) listedOwners.delete(id)
+	}
+}
+
+/**
  * 🚧 The rulesets that own a slot: every registered ruleset that lists it
  * under its `stats` (not `borrowed`), with the slot's own `rulesetOwned` if
  * it spells one. Empty: no ruleset's — pickable in every session.
@@ -1000,7 +1012,33 @@ function register(
  * with both hashes named.
  * @internal
  */
-export function defineAttributeSlot(id: SlotId, props: AttributeSlotProps): AttributeSlotDecl {
+export function defineAttributeSlot<const Id extends SlotId, const P extends AttributeSlotProps>(
+	id: Id,
+	props: P,
+): DeclaredAttributeSlot<Id, P> {
+	return register(id, props, 'code') as DeclaredAttributeSlot<Id, P>
+}
+
+/**
+ * 🚧 A slot declaration that remembers, in its TYPE, what was declared — its
+ * id and its props (A5, A18): what `sessionOf(genre)` and `vocabulary(…)` read
+ * to type a condition's property (`s.world.weather` is an enum of the slot's
+ * own choices). The value is the plain registered `AttributeSlotDecl`;
+ * `__declared` is a phantom, never set.
+ * @experimental
+ * @ruling A5, A18
+ */
+export type DeclaredAttributeSlot<Id extends SlotId = SlotId, P extends AttributeSlotProps = AttributeSlotProps> =
+	AttributeSlotDecl & { readonly id: Id; readonly __declared?: P }
+
+/**
+ * 🚧 The rulesets' door: the slot a ruleset's own attribute files its values
+ * under (`rulesetAttributeSlotDecls`, `<owner>.<ruleset>:slot/<attribute>@N`),
+ * registered by `defineRuleset` with the ruleset and withdrawn with it. A
+ * code declaration, so an identical re-declaration is a no-op.
+ * @internal
+ */
+export function _defineRulesetAttributeSlot(id: SlotId, props: AttributeSlotProps): AttributeSlotDecl {
 	return register(id, props, 'code')
 }
 
@@ -1010,11 +1048,11 @@ export function defineAttributeSlot(id: SlotId, props: AttributeSlotProps): Attr
  * every character's health means on the instance without appearing anywhere.
  * @experimental
  */
-export function definePluginAttributeSlot(
+export function definePluginAttributeSlot<const Id extends SlotId, const P extends AttributeSlotProps>(
 	pluginId: string,
-	id: SlotId,
-	props: AttributeSlotProps,
-): AttributeSlotDecl {
+	id: Id,
+	props: P,
+): DeclaredAttributeSlot<Id, P> {
 	if (id.startsWith('core:'))
 		throw new Error(
 			`plugin '${pluginId}' may not declare '${id}': the 'core:' namespace is reserved. ` +

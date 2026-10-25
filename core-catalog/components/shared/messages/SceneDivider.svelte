@@ -22,6 +22,11 @@
 	 * later one. Anyone else opens it in the lorebook by its name. Every
 	 * press is one of the conversation's scene verbs; a refusal is said here,
 	 * under the divider.
+	 *
+	 * The last scene of a completed history entry with no entry after it
+	 * (`startsEntry`) offers *Start a new entry* in the same ⋯ menu, to
+	 * anyone — the menu is drawn for it even where the viewer places no
+	 * boundaries (polish parity L1, 2026-10-24: it was a row of its own).
 	 */
 	interface Props {
 		divider: SceneDivider
@@ -31,9 +36,11 @@
 		hidden?: boolean
 		/** The log's order: a drag's gap reads the other way round newest-first. */
 		order?: "oldest-first" | "newest-first"
+		/** The last scene of a completed history entry with none after it: *Start a new entry*. */
+		startsEntry?: boolean
 	}
 
-	let { divider, color, hidden = false, order = "oldest-first" }: Props = $props()
+	let { divider, color, hidden = false, order = "oldest-first", startsEntry = false }: Props = $props()
 
 	const conv = useConversation()
 	const scene = $derived(divider.scene)
@@ -98,6 +105,14 @@
 	let menuOpen = $state(false)
 	let renaming = $state(false)
 	let draft = $state("")
+
+	/** A new history entry, after the one this scene closes. */
+	const startEntry = () =>
+		void conv.request("open-lore", {
+			scope: "history",
+			create: true,
+			lorebookId: (scene as { lorebookId?: number }).lorebookId
+		})
 
 	const openInLore = () =>
 		void conv.request("open-lore", {
@@ -214,7 +229,12 @@
 		{#if divider.open}
 			<span data-widget-part="messages.scene-title-state">open</span>
 		{/if}
-		<span data-widget-part="messages.scene-facts">{facts}</span>
+		<!-- Who speaks in it rides the facts' tooltip too: the default sheet
+		     keeps the row to swatch · name · count · ⋯ and draws no faces. -->
+		<span
+			data-widget-part="messages.scene-facts"
+			title={faces.length ? `${facts} · ${faces.map((f) => f.name).join(", ")}` : undefined}
+		>{facts}</span>
 		{#if summarizing}
 			<span data-widget-part="messages.scene-summary" role="status">Summarizing…</span>
 		{:else if reviewing}
@@ -264,7 +284,7 @@
 				{/if}
 			</span>
 		{/if}
-		{#if canEdit}
+		{#if canEdit || startsEntry}
 			<!-- `sp-popover` (§3.5): the host's positioned panel; the rows wear
 			     the message menu's parts beside their own, so they read as one
 			     family of menus. -->
@@ -285,97 +305,113 @@
 					</button>
 					<div data-widget-part="messages.scene-menu-panel messages.message-options-panel">
 						<article data-widget-part="messages.scene-menu-list messages.message-options-list">
-							{#if divider.open}
+							{#if startsEntry}
 								<button
 									type="button"
 									data-widget-part="messages.scene-option messages.message-option"
-									title="End this scene at the newest line"
-									aria-disabled={conv.scenes.busy}
-									onclick={boundary(() => conv.scenes.endAt(scene.id))}
+									title="Start a new history entry after this one"
+									onclick={press(startEntry)}
 								>
-									<sp-icon name="flag-off" size="16"></sp-icon>
-									<span>End scene</span>
+									<sp-icon name="calendar-plus" size="16"></sp-icon>
+									<span>Start a new entry</span>
 								</button>
-							{:else if summarizes}
-								<button
-									type="button"
-									data-widget-part="messages.scene-option messages.message-option"
-									title={summarizing
-										? "Summarize — it is being summarized now"
-										: reviewing
-											? "Open its summary's review, to apply or discard it"
-											: "Summarize this scene into the lorebook"}
-									aria-disabled={summarizing}
-									onclick={(e) =>
-										summarizing ? e.preventDefault() : press(() => conv.scenes.summarize(scene.id))()}
-								>
-									<sp-icon name={reviewing ? "eye" : "sparkles"} size="16"></sp-icon>
-									<span>{reviewing ? "Review summary" : "Summarize"}</span>
-								</button>
-							{/if}
-							<button
-								type="button"
-								data-widget-part="messages.scene-option messages.message-option"
-								title="Open this scene in the lorebook"
-								onclick={press(openInLore)}
-							>
-								<sp-icon name="external-link" size="16"></sp-icon>
-								<span>Open in lorebook</span>
-							</button>
-							{#if divider.live}
-								{#if divider.startEarlier !== null || divider.startLater !== null || divider.reopens}
+								{#if canEdit}
 									<hr data-widget-part="messages.scene-menu-divider messages.message-options-divider" />
 								{/if}
-								{#if divider.startEarlier !== null}
-									{@const to = divider.startEarlier}
+							{/if}
+							{#if canEdit}
+								{#if divider.open}
 									<button
 										type="button"
 										data-widget-part="messages.scene-option messages.message-option"
-										title="Start this scene one line earlier"
+										title="End this scene at the newest line"
 										aria-disabled={conv.scenes.busy}
-										onclick={boundary(() => conv.scenes.moveStart(scene.id, to))}
+										onclick={boundary(() => conv.scenes.endAt(scene.id))}
 									>
-										<sp-icon name="arrow-up" size="16"></sp-icon>
-										<span>Move start up one line</span>
+										<sp-icon name="flag-off" size="16"></sp-icon>
+										<span>End scene</span>
 									</button>
-								{/if}
-								{#if divider.startLater !== null}
-									{@const to = divider.startLater}
+								{:else if summarizes}
 									<button
 										type="button"
 										data-widget-part="messages.scene-option messages.message-option"
-										title="Start this scene one line later; the line before leaves it"
-										aria-disabled={conv.scenes.busy}
-										onclick={boundary(() => conv.scenes.moveStart(scene.id, to))}
+										title={summarizing
+											? "Summarize — it is being summarized now"
+											: reviewing
+												? "Open its summary's review, to apply or discard it"
+												: "Summarize this scene into the lorebook"}
+										aria-disabled={summarizing}
+										onclick={(e) =>
+											summarizing ? e.preventDefault() : press(() => conv.scenes.summarize(scene.id))()}
 									>
-										<sp-icon name="arrow-down" size="16"></sp-icon>
-										<span>Move start down one line</span>
+										<sp-icon name={reviewing ? "eye" : "sparkles"} size="16"></sp-icon>
+										<span>{reviewing ? "Review summary" : "Summarize"}</span>
 									</button>
 								{/if}
-								{#if divider.reopens}
-									<button
-										type="button"
-										data-widget-part="messages.scene-option messages.message-option"
-										title="Open this scene again: it runs on to the newest line"
-										aria-disabled={conv.scenes.busy}
-										onclick={boundary(() => conv.scenes.reopen(scene.id))}
-									>
-										<sp-icon name="flag" size="16"></sp-icon>
-										<span>Reopen scene</span>
-									</button>
-								{/if}
-								<hr data-widget-part="messages.scene-menu-divider messages.message-options-divider" />
 								<button
 									type="button"
 									data-widget-part="messages.scene-option messages.message-option"
-									data-verb="delete"
-									title="Remove this boundary: it joins the scene before it, or its lines stay outside any scene"
-									aria-disabled={conv.scenes.busy}
-									onclick={boundary(() => conv.scenes.remove(scene.id))}
+									title="Open this scene in the lorebook"
+									onclick={press(openInLore)}
 								>
-									<sp-icon name="scissors" size="16"></sp-icon>
-									<span>Remove boundary</span>
+									<sp-icon name="external-link" size="16"></sp-icon>
+									<span>Open in lorebook</span>
 								</button>
+								{#if divider.live}
+									{#if divider.startEarlier !== null || divider.startLater !== null || divider.reopens}
+										<hr data-widget-part="messages.scene-menu-divider messages.message-options-divider" />
+									{/if}
+									{#if divider.startEarlier !== null}
+										{@const to = divider.startEarlier}
+										<button
+											type="button"
+											data-widget-part="messages.scene-option messages.message-option"
+											title="Start this scene one line earlier"
+											aria-disabled={conv.scenes.busy}
+											onclick={boundary(() => conv.scenes.moveStart(scene.id, to))}
+										>
+											<sp-icon name="arrow-up" size="16"></sp-icon>
+											<span>Move start up one line</span>
+										</button>
+									{/if}
+									{#if divider.startLater !== null}
+										{@const to = divider.startLater}
+										<button
+											type="button"
+											data-widget-part="messages.scene-option messages.message-option"
+											title="Start this scene one line later; the line before leaves it"
+											aria-disabled={conv.scenes.busy}
+											onclick={boundary(() => conv.scenes.moveStart(scene.id, to))}
+										>
+											<sp-icon name="arrow-down" size="16"></sp-icon>
+											<span>Move start down one line</span>
+										</button>
+									{/if}
+									{#if divider.reopens}
+										<button
+											type="button"
+											data-widget-part="messages.scene-option messages.message-option"
+											title="Open this scene again: it runs on to the newest line"
+											aria-disabled={conv.scenes.busy}
+											onclick={boundary(() => conv.scenes.reopen(scene.id))}
+										>
+											<sp-icon name="flag" size="16"></sp-icon>
+											<span>Reopen scene</span>
+										</button>
+									{/if}
+									<hr data-widget-part="messages.scene-menu-divider messages.message-options-divider" />
+									<button
+										type="button"
+										data-widget-part="messages.scene-option messages.message-option"
+										data-verb="delete"
+										title="Remove this boundary: it joins the scene before it, or its lines stay outside any scene"
+										aria-disabled={conv.scenes.busy}
+										onclick={boundary(() => conv.scenes.remove(scene.id))}
+									>
+										<sp-icon name="scissors" size="16"></sp-icon>
+										<span>Remove boundary</span>
+									</button>
+								{/if}
 							{/if}
 						</article>
 					</div>

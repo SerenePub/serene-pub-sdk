@@ -4,17 +4,19 @@
 
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { storyGenre } from '../../registry/genres.js'
 import { TIME_PASSES_COLLECTS } from '../../shared/timePasses.js'
-
-/** The four world values the keeper may set, by the names the prompts use. */
-const TRACKED_SLOTS = ['hp', 'stamina', 'mood', 'trust', 'location', 'time-of-day', 'weather']
+import { chainIf } from '../../shared/chains.js'
+import { STORY_REST_CRIB_SCRIPT } from './reckon.js'
 
 /**
  * The state-keeper's answer for **Rest** (`story-rest`): `{ values, inventory,
  * clock }` — Adventure's keeper schema until 2026-10-19 (moved with the
  * action when Adventure folded into Story). The after-turn reckoning reads
- * the delta grammar instead (`STORY_RECKON_SCHEMA`, `reckon.ts`).
+ * the session's rules' change grammar instead (`STORY_RECKON_SCHEMA`, S1).
+ * 🚧 A value is named by the word the session's sheets give it (2026-10-23,
+ * S3): the hard-coded list of seven (`TRACKED_SLOTS`) is gone — the prompt's
+ * `{{slots}}` lists every value the session tracks, and `{{restores}}` the
+ * ones the rules say a rest brings back (`core:script/story-rest-crib`).
  * @internal
  */
 export const STORY_KEEPER_SCHEMA = {
@@ -27,7 +29,8 @@ export const STORY_KEEPER_SCHEMA = {
 				type: 'object',
 				properties: {
 					owner: { type: 'string' },
-					slot: { type: 'string', enum: TRACKED_SLOTS },
+					/** The value, by the word the session's sheets give it (`{{slots}}`). */
+					slot: { type: 'string' },
 					value: { type: 'string' },
 				},
 				required: ['owner', 'slot', 'value'],
@@ -63,8 +66,8 @@ export const STORY_KEEPER_SCHEMA = {
 		 * journey, a long search, a night's sleep. Never for ordinary dialogue,
 		 * and never written: `resolve-state-changes` (its `clock` port) turns
 		 * the first entry into a `{ kind: 'clock', by, unit }` change, which
-		 * `set-state` holds as a proposal — or, with Trust the narrator on,
-		 * *Advance story clock* moves the clock by it.
+		 * *Advance story clock* moves the clock by once the keeper's changes
+		 * apply (Rest applies at its own action's mode, GM 2026-10-23).
 		 *
 		 * A list (empty is the ordinary turn, as `values` and `inventory`)
 		 * rather than an optional object, because every property here is
@@ -97,8 +100,8 @@ export const STORY_KEEPER_SCHEMA = {
  * so in a builder is more honest than writing it twice.
  *
  * Both read the state, ask the keeper what changes, resolve the names it used
- * and land the result as proposals — or as writes, when the session trusts the
- * narrator. Neither writes a message: a clock tick is a ledger line, not a
+ * and land the result as writes — a press is the person's own decision (GM
+ * 2026-10-23: the action's own mode, Full). Neither writes a message: a clock tick is a ledger line, not a
  * paragraph, and the narrator has its own button for the paragraph.
  *
  * They are separate SPECS rather than one spec with a parameter because a
@@ -121,8 +124,8 @@ export const keeperAction = (
 	 * (live scenes §15 G7). Time passes says it; Rest does not.
 	 *
 	 * 🚧 Without it (Rest), the keeper's own `clock` list is read instead
-	 * (live scenes ★3, lane F): a clock proposal under review, or — with
-	 * Trust the narrator on — *Advance story clock* in the trusted arm.
+	 * (live scenes ★3, lane F): a clock proposal under review, or — on
+	 * **Full** — *Advance story clock* in the applying arm.
 	 * With it, the keeper's `clock` is never wired: the amount is the
 	 * player's.
 	 */
@@ -147,10 +150,7 @@ export const keeperAction = (
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
@@ -177,11 +177,21 @@ export const keeperAction = (
 					params: slot.params(),
 				}),
 			)
+			/**
+			 * 🚧 What a rest brings back by the session's rules (S3): the
+			 * attributes they tag `resource`, read off the inlet's ruleset, as
+			 * `{{restores}}` beside the genre's fields.
+			 */
+			.task(
+				'restores',
+				($) => C.runScript.v1({ input: { ruleset: $.input.ruleset, fields: $.input.fields } as any, params: slot.params() }),
+				{ expose: { label: 'What a rest brings back' } },
+			)
 			.task('context', ($) =>
 				C.buildKeeperContext.v1({
 					cast: $.gather.cast.read.cast,
 					state: $.gather.state.read.state,
-					fields: $.input.fields,
+					fields: $.restores.main,
 					// 🚧 Time passes: the span the player chose, as
 					// `{{clockStep}}` (live scenes §15 G6), so the keeper
 					// turns the sky over that span, not one notch.
@@ -231,7 +241,7 @@ export const keeperAction = (
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
@@ -273,112 +283,86 @@ export const keeperAction = (
 				}),
 			)
 	/** The keeper's clock move, decided — Rest's alone; see `respond`'s `keeperStep`. */
-	const stepped = opts.clock
-		? resolved
-		: (resolved as any).task('keeperStep', ($: any) =>
-				C.clockStep.v1({ step: $.resolve.clock, params: slot.params() }),
-			)
-	/**
-	 * 🚧 Apply, or hold for review — the session's **attributes** task mode
-	 * (PLAN-genre-restructure §4, 2026-10-19), resolved the way the reply's
-	 * reckoning resolves it: Full applies, Review (and Off — a press is the
-	 * person asking) holds each change as a proposal. Was the `trustNarrator`
-	 * genre field, retired with Adventure.
-	 */
-	const tasked = (stepped as any).task(
-		'tasks',
-		($: any) =>
-			C.resolveTasks.v1({
-				session: $.input.session,
-				fields: $.input.fields,
-				genre: storyGenre.id,
-				ruleset: $.input.ruleset,
-			}),
-		{ expose: { label: 'What happens around a reply' } },
+	const stepped = chainIf(!opts.clock, resolved, (r) =>
+		r.task('keeperStep', ($) => C.clockStep.v1({ step: $.resolve.clock, params: slot.params() })),
 	)
-	const committed = tasked.junction('commit', { on: ($: any) => $.tasks.modes }, (r: any) =>
-		r
-			.when('applied', { path: 'attributes', equals: 'full' }, (c: any) => {
-				const applied = c.task(
-					'apply',
-					($: any) =>
-						C.setState.v1({
-							changes: $.resolve.changes,
-							scope: $.input.sessionScope,
-							base: $.gather.state.read.version,
+	/**
+	 * 🚧 Apply — **the action's own mode** (GM 2026-10-23, G1 ★3; the
+	 * objection PLAN-genres-seams S2 answered for the reply): a press is the
+	 * person's own decision, and an action registration carries no mode (a
+	 * routine's field, R37), so its changes land, as a rules action's do
+	 * (`core:spec/rules-action`, ★ Review for an action waits on a ruling).
+	 * Was **the reckoning routine's mode** read by spec id off the settings
+	 * document's `routineModes` (R55, 2026-10-21) — a pipeline reading
+	 * another's mode; before that Story's *Apply a press's changes*
+	 * (`applyActionChanges`, 2026-10-20, removed), the retired background
+	 * tasks' *attributes* mode (2026-10-19), and Adventure's `trustNarrator`.
+	 */
+	const applied = stepped.task(
+		'apply',
+		($) =>
+			C.setState.v1({
+				changes: $.resolve.changes,
+				scope: $.input.sessionScope,
+				base: $.gather.state.read.version,
+				params: slot.params(),
+			}),
+		{ expose: { label: 'Apply the changes' } },
+	)
+	// 🚧 Rest's clock move (★3): through *Advance story clock*, as
+	// `respond`'s — `apply` passes the clock line over. The keeper's move,
+	// and a refusal skips the clock rather than halting the rest (§15 G4/G7).
+	const committed = chainIf(!opts.clock, applied, (a) =>
+		a.junction('keeperClock', { on: ($) => $.keeperStep.moves }, (j) =>
+			j.when('moves', { truthy: true }, (k) =>
+				k.outlet(
+					'advance',
+					($) =>
+						C.advanceStoryClock.v1({
+							by: $.keeperStep.by,
+							unit: $.keeperStep.unit,
+							cause: 'keeper',
+							onRefusal: 'skip',
 							params: slot.params(),
 						}),
-					{ expose: { label: 'Apply the changes' } },
-				)
-				// 🚧 Rest's clock move when attributes apply (★3): through
-				// *Advance story clock*, as `respond`'s — `apply` passes the
-				// clock line over. The keeper's move, and a refusal skips
-				// the clock rather than halting the rest (§15 G4/G7).
-				return opts.clock
-					? applied
-					: applied.junction('keeperClock', { on: ($: any) => $.keeperStep.moves }, (j: any) =>
-							j.when('moves', { truthy: true }, (k: any) =>
-								k.outlet(
-									'advance',
-									($: any) =>
-										C.advanceStoryClock.v1({
-											by: $.keeperStep.by,
-											unit: $.keeperStep.unit,
-											cause: 'keeper',
-											onRefusal: 'skip',
-											params: slot.params(),
-										}),
-									{ expose: { label: 'Move the story clock' } },
-								),
-							),
-						)
-			})
-			.otherwise('reviewed', (c: any) =>
-				c.task(
-					'propose',
-					($: any) =>
-						C.setState.v1({
-							changes: $.resolve.changes,
-							scope: $.input.sessionScope,
-							base: $.gather.state.read.version,
+					{ expose: { label: 'Move the story clock' } },
+				),
+			),
+		),
+	)
+	const withClock = chainIf(opts.clock === true, committed, (c) =>
+		c
+			/** The press's step, decided: `{ by, unit }` and whether it moves at all. */
+			.task('step', ($) => C.clockStep.v1({ step: $.input.clockStep, params: slot.params() }))
+			/**
+			 * 🚧 A person's press (`cause: 'action'`). A story with no
+			 * clock yet skips the move with a line in the ledger
+			 * instead of halting after the keeper's changes landed
+			 * (`onRefusal: 'skip'`, live scenes §15 G7).
+			 */
+			.junction('clock', { on: ($) => $.step.moves }, (j) =>
+				j.when('moves', { truthy: true }, (c) =>
+					c.outlet('advance', ($) =>
+						C.advanceStoryClock.v1({
+							by: $.step.by,
+							unit: $.step.unit,
+							cause: 'action',
+							onRefusal: 'skip',
 							params: slot.params(),
 						}),
-					{ expose: { label: 'Propose the changes' } },
+					),
 				),
 			),
 	)
-	const withClock = opts.clock
-		? (committed as any)
-				/** The press's step, decided: `{ by, unit }` and whether it moves at all. */
-				.task('step', ($: any) => C.clockStep.v1({ step: $.input.clockStep, params: slot.params() }))
-				/**
-				 * 🚧 A person's press (`cause: 'action'`). A story with no
-				 * clock yet skips the move with a line in the ledger
-				 * instead of halting after the keeper's changes landed
-				 * (`onRefusal: 'skip'`, live scenes §15 G7).
-				 */
-				.junction('clock', { on: ($: any) => $.step.moves }, (j: any) =>
-					j.when('moves', { truthy: true }, (c: any) =>
-						c.outlet('advance', ($: any) =>
-							C.advanceStoryClock.v1({
-								by: $.step.by,
-								unit: $.step.unit,
-								cause: 'action',
-								onRefusal: 'skip',
-								params: slot.params(),
-							}),
-						),
-					),
-				)
-		: committed
 	return compile(
 		withClock
-			.preset('story', { label: 'Story', default: true }, (p: any) =>
+			.defaults((p) =>
 				p
 					// The keeper's two arms, joined into the one list
 					// the resolver takes.
 					.params('write', { path: 'values,inventory' })
-					.params('commit.applied.apply', { mode: 'apply' }),
+					.params('apply', { mode: 'apply' })
+					.scripts('restores', [{ seedKey: STORY_REST_CRIB_SCRIPT.seedKey }]),
 			)
 			.build(),
 	)

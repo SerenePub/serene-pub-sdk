@@ -298,6 +298,17 @@ export interface SessionDossierV1 {
 		waitingFor?: string[]
 	}
 	/**
+	 * 🚧 **Back · Forward** (RF fix 5, owner ruling 2026-10-23): how many of
+	 * the story's turns are rewound (`ahead`, the forward stack's height), and
+	 * why each press would be refused now — `back` / `forward` a sentence,
+	 * null when it would not be. The page's answer, the owner rule and a
+	 * reply being written folded in, so the presses grey what the host would
+	 * refuse and say why. Absent from a host that predates it: no presses,
+	 * no note.
+	 * @ruling owner 2026-10-23
+	 */
+	rewind?: ConversationRewindV1
+	/**
 	 * The session's mode is not installed: the log is read-only.
 	 * @ruling 19 §6
 	 */
@@ -311,6 +322,19 @@ export interface SessionDossierV1 {
 	 * widget reads. Not the session's backdrop (`SessionV1.backdrop`).
 	 */
 	appBackground: boolean
+}
+
+/**
+ * 🚧 The Back · Forward strip's state (`SessionDossierV1.rewind`). @experimental
+ * @ruling owner 2026-10-23
+ */
+export interface ConversationRewindV1 {
+	/** How many turns are rewound — "2 turns ahead". */
+	ahead: number
+	/** Why Back is refused now, or null when it may be pressed. */
+	back: string | null
+	/** Why Forward is refused now, or null when it may be pressed. */
+	forward: string | null
 }
 
 /** One proposed change, described. @experimental */
@@ -399,6 +423,16 @@ export interface ConversationComposerV1 {
 	playerLabel?: string
 	/** A guest with no persona: the composer offers to add one instead. */
 	addPersona: boolean
+	/**
+	 * 🚧 A guest who plays, in a genre of player seats (one with a player
+	 * label: the Lair), with no seat yet: the story's composer offers a
+	 * **seat** in its place — name the character they will play
+	 * (`take-seat`), or bring one of their personas (`add-persona`). On
+	 * `main` only, and a closed composer's reason wins. Absent is false.
+	 * @experimental
+	 * @ruling Lair rewrite D5 (2026-10-21)
+	 */
+	takeSeat?: boolean
 	/** A genre with no field (`composer: 'none'`): triggers only. */
 	hidden: boolean
 	/**
@@ -480,10 +514,11 @@ export interface ConversationComposerV1 {
 /**
  * 🚧 What kind of attachment a file is — an
  * **attachment kind**. Decided from the file's bytes, never its name.
+ * `audio` and `video` since O2/O4 (2026-10-21).
  * @experimental
  * @ruling composer attachments D5
  */
-export type AttachmentKindV1 = 'image' | 'text' | 'pdf'
+export type AttachmentKindV1 = 'image' | 'text' | 'pdf' | 'audio' | 'video'
 
 /**
  * 🚧 One **tray item** as the composer draws it: a file uploaded into the
@@ -504,6 +539,12 @@ export interface TrayItemV1 {
 	kind: AttachmentKindV1 | null
 	/** The square thumbnail (`/media/<id>?v=thumb`) of a stored image, else null. */
 	thumbSrc: string | null
+	/**
+	 * 🚧 The stored file itself (`/media/<id>`), for a sound or a moving
+	 * picture the tray lets a person play before sending (O11). Absent
+	 * otherwise.
+	 */
+	previewSrc?: string | null
 }
 
 /**
@@ -514,9 +555,11 @@ export interface TrayItemV1 {
 export interface AttachmentReadersV1 {
 	/**
 	 * Per kind: may it be attached (the union over reading calls), and why not.
+	 * Partial (O1, 2026-10-21): a kind with no row is not offered — the
+	 * kinds grow (audio, video) without every reader and fixture growing too.
 	 * @ruling composer attachments D1
 	 */
-	kinds: Record<AttachmentKindV1, { allowed: boolean; reason?: string }>
+	kinds: Partial<Record<AttachmentKindV1, { allowed: boolean; reason?: string }>>
 	/**
 	 * Each **reading call** — a model call of the reply that is handed
 	 * attachments — with what it reads and what it gets as a placeholder
@@ -529,6 +572,12 @@ export interface AttachmentReadersV1 {
 		label: string
 		reads: AttachmentKindV1[]
 		placeholderFor: AttachmentKindV1[]
+		/**
+		 * 🚧 Kinds this call cannot read that reach it as their WORDS — audio
+		 * the reply's transcribe step hears for it (O9). A subset of
+		 * `placeholderFor`.
+		 */
+		transcribes?: AttachmentKindV1[]
 		model?: string
 	}>
 	/** The file picker's filter for every kind that may be attached (`image/png,.md`). */
@@ -542,6 +591,6 @@ export interface AttachmentReadersV1 {
 	 * The byte cap per kind, so a file is refused before it uploads.
 	 * @ruling composer attachments D6
 	 */
-	bytesPerKind: Record<AttachmentKindV1, number>
+	bytesPerKind: Partial<Record<AttachmentKindV1, number>>
 }
 

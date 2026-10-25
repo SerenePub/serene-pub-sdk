@@ -66,10 +66,7 @@ export const generateImageSpec = () =>
 		})
 			// Manually triggered — a person presses the button; no message drives it.
 			/** The usage lock (24 §4): a person-invoked action on Chat sessions. */
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			/**
 			 * The render. Its slots are references rather than values so that the
 			 * connection, the sampling config, the prompt templates and the
@@ -100,16 +97,12 @@ export const generateImageSpec = () =>
 			/**
 			 * Review OFF by default: the prompt was just typed into the action's
 			 * form, and asking again was the "two dialogs for one image" confusion
-			 * (2026-10-11). The preset stays as an opt-in for a spec whose prompt
-			 * comes from an upstream text node rather than a person.
+			 * (2026-10-11). The *review-on* author preset retired with
+			 * configurations (R38, 2026-10-20): a registration's values turn the
+			 * review on (`{ render: { settings: { review: 'on' } } }`). The render
+			 * runs on the Images loadout (I12).
 			 */
-			.preset('review-on', { label: 'Review the prompt before rendering' }, (p) =>
-				p
-					.settings('render', { review: 'on' })
-					.loadout('render', slot.loadout(CORE_LOADOUT.images)),
-			)
-			/** The render runs on the Images loadout (I12). */
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p.loadout('render', slot.loadout(CORE_LOADOUT.images)),
 			)
 			.build(),

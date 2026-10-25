@@ -49,6 +49,30 @@
 import { compile, slot, spec, sessionEvents, S } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import type { Descriptor, GenreDecl, NodeSpec, SpecDocument } from '@serene-pub/sdk'
+import { chainIf, type ScopeOf } from '../shared/chains.js'
+
+/**
+ * 🚧 `core:script/unprompted-modes` (2026-10-20): the genre's voices settings
+ * — its fields `sideCast` and `narratorInterjections`, read off the settings
+ * document a turn-order spec's inlet carries — as `core:task/turn-unprompted@1`
+ * reads them: `{ 'side-cast', 'narrator-interjections' }`, each `full` or
+ * `off`. A field set `true` (or a stored `full` / `review`) is on. Seeded by
+ * core (`CORE_SCRIPTS`); a turn-order spec with `unprompted` runs it.
+ * @experimental
+ */
+export const UNPROMPTED_MODES_SCRIPT = Object.freeze({
+	typeId: 'core:script:data/transform@1',
+	seedKey: 'core:script/unprompted-modes',
+	name: 'Turn order: who may speak up unprompted',
+	source: [
+		'var doc = value && typeof value === "object" ? value.session : null;',
+		'var f = doc && typeof doc === "object" && doc.fields && typeof doc.fields === "object" ? doc.fields : {};',
+		'function on(x) { return x === true || x === "full" || x === "review"; }',
+		'return { "side-cast": on(f.sideCast) ? "full" : "off", "narrator-interjections": on(f.narratorInterjections) ? "full" : "off" };',
+	].join('\n'),
+	varsIn: Object.freeze(['value']),
+	varsOut: Object.freeze(['value']),
+})
 
 /** @experimental */
 export const TURN_ORDER_VERSION = '1.0.0'
@@ -205,12 +229,14 @@ export function turnOrderSpec(opts: {
 	 */
 	scripts?: Record<string, Array<{ seedKey: string }>>
 	/**
-	 * 🚧 **Unprompted turns** (lane 2, 2026-10-19): the genre's background
-	 * tasks of the voices group, applied to the order the strategy
-	 * prepared — `tasks` (`core:task/resolve-tasks@1`) then `unprompted`
-	 * (`core:task/turn-unprompted@1`) before the write. `narrate` is the
-	 * action a narrator's own line fires. Absent: no such steps, and the
-	 * strategy's order is written as it came.
+	 * 🚧 **Unprompted turns** (lane 2, 2026-10-19; genre settings since
+	 * 2026-10-20): the genre's voices settings — its fields `sideCast` and
+	 * `narratorInterjections` (`SIDE_CAST_FIELD`, `NARRATOR_INTERJECTIONS_FIELD`)
+	 * — applied to the order the strategy prepared: `voices`
+	 * (`core:script/unprompted-modes`, the fields read off the settings
+	 * document) then `unprompted` (`core:task/turn-unprompted@1`) before the
+	 * write. `narrate` is the action a narrator's own line fires. Absent: no
+	 * such steps, and the strategy's order is written as it came.
 	 */
 	unprompted?: { narrate?: string }
 	version?: string
@@ -222,6 +248,14 @@ export function turnOrderSpec(opts: {
 		throw new Error(
 			`turnOrderSpec('${id}'): advise needs genre '${genre.id}' to declare the field turnMode ` +
 				`(TURN_MODE_FIELD) — without it the model path can never fire`,
+		)
+	// The voices read the genre's two fields; a genre that does not declare
+	// them could never turn an unprompted voice on (R26).
+	const fields = (genre.shape?.fields ?? {}) as Record<string, unknown>
+	if (unprompted && (!fields.sideCast || !fields.narratorInterjections))
+		throw new Error(
+			`turnOrderSpec('${id}'): unprompted needs genre '${genre.id}' to declare the fields sideCast and ` +
+				`narratorInterjections (SIDE_CAST_FIELD, NARRATOR_INTERJECTIONS_FIELD) — the voices are its settings`,
 		)
 	// R42: a spec that offers swaps shows its turn controls — who may be
 	// seated, the mention rule, the strategy; one that offers none shows none.
@@ -240,7 +274,7 @@ export function turnOrderSpec(opts: {
 	 * turn, off its critical path, and carries no turn of its own.
 	 */
 	const upToMentioned = spec(id, { version, taxonomy: { role: 'maintenance' } })
-		.inlet('event', C.sessionEvent.v1(), { genre, events: [...events] })
+		.inlet('event', C.sessionEvent.v1(), { suits: [...events] })
 		.query('history', ($) =>
 			C.sessionHistory.v1({ scope: $.event.sessionScope, params: slot.params() }),
 		)
@@ -257,27 +291,27 @@ export function turnOrderSpec(opts: {
 		)
 
 	/** The strategy — turns candidates into entries, never halts (an empty order is an answer). */
-	const strategyTask = (b: any) =>
-		b.task(
-			'strategy',
-			($: any) => strategyNode(strategy, { candidates: $.mentioned.main, messages: $.history.main }),
-			strategyExpose,
-		)
+	const strategyOf = ($: ScopeOf<typeof upToMentioned>) =>
+		strategyNode(strategy, { candidates: $.mentioned.main, messages: $.history.main })
 
 	/**
 	 * The two paths (R41): the junction reads the settings document on the
 	 * inlet, so `turnMode` cascades like any genre field (§4.13). `advise` is
 	 * in session settings so a plugin's model strategy can be contributed to
 	 * it (R29, M4). Its result port `order` is what the write reads.
+	 * Built as one or the other, typed as both: what follows reads
+	 * `$.decide.order` with a model path, `$.strategy.order` without.
 	 */
-	const decided: any = advise
-		? (upToMentioned as any).junction('decide', { on: ($: any) => $.event.session }, (j: any) =>
+	const decided = chainIf(
+		!advise,
+		chainIf(!!advise, upToMentioned, (u) =>
+			u.junction('decide', { on: ($) => $.event.session }, (j) =>
 				j
-					.when('model', { path: 'fields.turnMode', equals: 'model' }, (c: any) =>
+					.when('model', { path: (v: TurnModeSession) => v.fields.turnMode, equals: 'model' }, (c) =>
 						c.oracle(
 							'advise',
-							($: any) =>
-								adviseNode(advise, {
+							($) =>
+								adviseNode(advise!, {
 									candidates: $.mentioned.main,
 									messages: $.history.main,
 									connection: slot.connection(),
@@ -287,31 +321,34 @@ export function turnOrderSpec(opts: {
 							{ expose: { session: true } },
 						),
 					)
-					.otherwise('rules', strategyTask),
-			)
-		: strategyTask(upToMentioned)
+					.otherwise('rules', (c) => c.task('strategy', strategyOf, strategyExpose)),
+			),
+		),
+		(u) => u.task('strategy', strategyOf, strategyExpose),
+	)
 
 	/**
-	 * 🚧 The voices group (lane 2): the session's tasks, then at most one
+	 * 🚧 The voices (lane 2; genre settings since 2026-10-20): the genre's
+	 * two voices fields read off the settings document, then at most one
 	 * unprompted entry at the head once the round is over. Reads only.
 	 */
-	const voiced: any = unprompted
-		? decided
-				.task(
-					'tasks',
-					($: any) => C.resolveTasks.v1({ session: $.event.session, genre: genre.id }),
-					{ expose: { label: 'What happens around a reply' } },
-				)
-				.task('unprompted', ($: any) =>
-					C.turnUnprompted.v1({
-						order: advise ? $.decide.order : $.strategy.order,
-						candidates: $.pool.main,
-						messages: $.history.main,
-						modes: $.tasks.modes,
-						params: slot.params(),
-					}),
-				)
-		: decided
+	const voiced = chainIf(!!unprompted, decided, (d) =>
+		d
+			.task(
+				'voices',
+				($) => C.runScript.v1({ input: { session: $.event.session } as any, params: slot.params() }),
+				{ expose: { label: 'Who may speak up unprompted' } },
+			)
+			.task('unprompted', ($) =>
+				C.turnUnprompted.v1({
+					order: advise ? $.decide.order : $.strategy.order,
+					candidates: $.pool.main,
+					messages: $.history.main,
+					modes: $.voices.main,
+					params: slot.params(),
+				}),
+			),
+	)
 
 	return compile(
 		voiced
@@ -325,7 +362,7 @@ export function turnOrderSpec(opts: {
 			 * result port, whichever path fired (M4) — or, with unprompted
 			 * turns, theirs over it.
 			 */
-			.outlet('write', ($: any) =>
+			.outlet('write', ($) =>
 				C.setTurnOrder.v1({
 					order: unprompted ? $.unprompted.order : advise ? $.decide.order : $.strategy.order,
 					candidates: $.pool.main,
@@ -336,18 +373,28 @@ export function turnOrderSpec(opts: {
 			)
 			// The author preset on `pool`, only when the genre pins anything:
 			// an empty value would be a preset that changes nothing.
-			.preset('turn-order', { label: 'Turn order', default: true }, (p: any) => {
+			.defaults((p) => {
 				const pooled = Object.keys(pool).length ? p.params('pool', { ...pool }) : p
 				const read = historyChannel ? pooled.params('history', { channel: historyChannel }) : pooled
-				const voices = unprompted?.narrate ? read.params('unprompted', { narrate: unprompted.narrate }) : read
+				const narrated = unprompted?.narrate ? read.params('unprompted', { narrate: unprompted.narrate }) : read
+				const voices = unprompted ? narrated.scripts('voices', [{ seedKey: UNPROMPTED_MODES_SCRIPT.seedKey }]) : narrated
 				return scripts ? voices.scripts(turnStrategyNode({ advise }), scripts) : voices
 			})
 			.build(),
 	)
 }
 
+/**
+ * The settings document as the model path's junction reads it: a genre that
+ * offers `advise` declares `turnMode` (`TURN_MODE_FIELD`), refused above
+ * otherwise.
+ */
+interface TurnModeSession {
+	readonly fields: { readonly turnMode: unknown }
+}
+
 /** The key of the node a turn-order spec's Turn order control swaps (M4): `strategy`, or `decide.rules.strategy` with a model path. @experimental */
-export const turnStrategyNode = (opts: { advise?: unknown }): string =>
+export const turnStrategyNode = (opts: { advise?: unknown }): 'decide.rules.strategy' | 'strategy' =>
 	opts.advise ? 'decide.rules.strategy' : 'strategy'
 
 /**

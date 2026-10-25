@@ -93,7 +93,7 @@
 						"places"
 					],
 					"height": {
-						"share": 4
+						"share": 3
 					}
 				},
 				{
@@ -104,19 +104,13 @@
 					"height": {
 						"share": 2
 					}
-				},
-				{
-					"key": "p5",
-					"tabs": [
-						"messages#sanctum"
-					],
-					"height": {
-						"share": 6
-					}
 				}
 			]
 		},
 		"widgetSettings": {
+			"messages": {
+				"otherTabsComposer": "minimal"
+			},
 			"places": {
 				"view": "list",
 				"highlight": "both"
@@ -124,10 +118,6 @@
 			"annex#castellan": {
 				"key": "core.castellan-scratchpad",
 				"title": "Castellan's scratchpad"
-			},
-			"messages#sanctum": {
-				"channel": "sanctum",
-				"composer": "minimal"
 			}
 		}
 	}

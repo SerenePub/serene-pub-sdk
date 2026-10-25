@@ -321,3 +321,25 @@ test('a dossier with no tray offers no attachments: no Attach, no What can be at
 		await view.unmount()
 	}
 })
+
+// 🚧 O11 (2026-10-21): an attached sound plays in the tray before it is sent.
+test('a ready audio tile carries a player for its sound; a picture tile does not', { timeout: 120_000 }, async () => {
+	const view = await mount(
+		dossierWith({
+			tray: [
+				tile('note', { kind: 'audio', filename: 'note.mp3', thumbSrc: null, previewSrc: '/media/7' }),
+				tile('cat'),
+			],
+		}),
+	)
+	try {
+		const players = parts(view, 'messages.composer-tray-audio')
+		assert.equal(players.length, 1)
+		assert.equal(players[0]!.getAttribute('src'), '/media/7')
+		assert.equal(players[0]!.getAttribute('aria-label'), 'Play note.mp3')
+		assert.equal(players[0]!.hasAttribute('controls'), true)
+		assert.equal(parts(view, 'messages.composer-tray-icon')[0]?.getAttribute('name'), 'file-audio')
+	} finally {
+		await view.unmount()
+	}
+})

@@ -21,6 +21,9 @@ export { renderAnnouncementDocs } from './docs.js'
 export type { DocPage } from './docs.js'
 export { pipelineResolver, specGraphOf } from './docsGraph.js'
 export { renderLawsDocs } from './docsLaws.js'
+export { renderEventsDocs } from './docsEvents.js'
+export { renderHandbook } from './handbook.js'
+export type { HandbookDocPage, HandbookDocument, HandbookInput, HandbookPage } from './handbook.js'
 export {
 	scaffoldConfig,
 	scaffoldPlugin,

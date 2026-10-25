@@ -4,14 +4,15 @@
 	 * run and the next response trigger above the composer should be
 	 * combined"): ONE row between the log and the composer, in two halves.
 	 *
-	 * - **Left, what the last run did** (`messages.turn-line-run`): a status
-	 *   pill read off the newest reply in this log — *Narrator replied ·
-	 *   6.2 s*, *Wren is thinking* while it streams (the row's own run
-	 *   status), *Last run failed · <the row's error>* — then *Review N
-	 *   changes* when proposals wait for the viewer, then *Inspect run*
-	 *   (administrators, R55). The time is the run as this view saw it, from
-	 *   `generation:start` to `generation:end`: a reply that finished before
-	 *   the page opened has none, and says only that it replied.
+	 * - **Left, what the last run is doing** (`messages.turn-line-run`): a
+	 *   status pill read off the newest reply in this log — *Wren is
+	 *   thinking* while it streams (the row's own run status), *Last run
+	 *   failed · <the row's error>* — then *Review N changes* when proposals
+	 *   wait for the viewer. At rest it says nothing (polish parity L1,
+	 *   2026-10-24: one control row under the log): *Wren replied · 6.2 s*,
+	 *   *Last run stopped* and *Inspect run* are the newest reply's ⋮ menu's
+	 *   (`MessageControls`), and the pill is *Review N changes* alone when
+	 *   something waits.
 	 * - **Right, who is next** (`messages.turn-line-next`): who is typing (the
 	 *   page's `session-banners` view), then `NextCharacterBlock` exactly as
 	 *   it always drew — or **Stop** while the reply streams, or **Try again**
@@ -24,8 +25,6 @@
 	 * Reads only the conversation (its rows, its dossier, its events); acts
 	 * only through its verbs and requests.
 	 */
-	import { untrack } from "svelte"
-	import { SvelteMap } from "svelte/reactivity"
 	import type { StatusText } from "@serene-pub/sdk/component"
 	import type { NextUp } from "./MessagesWidget.svelte"
 	import NextCharacterBlock from "./NextCharacterBlock.svelte"
@@ -91,30 +90,11 @@
 		return null
 	})
 
-	// How long each run took, as this view saw it: `generation:start` to
-	// `generation:end`, per reply. A stopped run keeps no time.
-	const startedAt = new Map<number, number>()
-	const took = new SvelteMap<number, number>()
-	$effect(() =>
-		untrack(() => {
-			const offStart = conv.ctx.on("generation:start", (e) => {
-				if (e.kind === "generation:start" && e.messageId != null) startedAt.set(e.messageId, Date.now())
-			})
-			const offEnd = conv.ctx.on("generation:end", (e) => {
-				if (e.kind !== "generation:end" || e.messageId == null) return
-				const t0 = startedAt.get(e.messageId)
-				startedAt.delete(e.messageId)
-				if (t0 === undefined || e.aborted) took.delete(e.messageId)
-				else took.set(e.messageId, (Date.now() - t0) / 1000)
-			})
-			return () => {
-				offStart()
-				offEnd()
-			}
-		})
-	)
-	const seconds = (s: number) => `${s < 10 ? s.toFixed(1) : Math.round(s)} s`
-
+	/**
+	 * The pill while something is happening: a reply being written, or the
+	 * last one failed. A finished or stopped run says nothing here — its
+	 * reply's ⋮ menu says it.
+	 */
 	const status = $derived.by((): string => {
 		if (!reply || !turnState) return ""
 		if (turnState === "live")
@@ -123,10 +103,7 @@
 				`${speaker ?? "The reply"} is thinking`
 			)
 		if (turnState === "failed") return `Last run failed · ${reply.error!.message}`
-		if (turnState === "stopped") return "Last run stopped"
-		const time = took.get(reply.id)
-		const said = speaker ? `${speaker} replied` : "Replied"
-		return time === undefined ? said : `${said} · ${seconds(time)}`
+		return ""
 	})
 
 	const waiting = $derived(dossier?.state.waiting ?? [])
@@ -155,17 +132,10 @@
 				? "Your offer is waiting"
 				: `Your ${ownOffers.length} offers are waiting`
 	)
-	/** "Inspect run" (R55: administrators only), on a reply that has finished. */
-	const canInspect = $derived(!!conv.ctx.viewer.v1.isAdmin && !!reply && turnState !== "live")
-	const hasLinks = $derived(waiting.length > 0 || canInspect)
-	/** The links beside the pill: Review only when the pill is not already it. */
-	const hasSideLinks = $derived((waiting.length > 0 && !!status) || canInspect)
+	const hasLinks = $derived(waiting.length > 0)
+	/** The link beside the pill: Review, only when the pill is not already it. */
+	const hasSideLinks = $derived(waiting.length > 0 && !!status)
 	let panelOpen = $state(false)
-
-	const inspect = () => {
-		panelOpen = false
-		if (reply) void conv.request("inspect-run", { messageId: reply.id })
-	}
 
 	const showNext = $derived(nextUp !== "hidden" && !!dossier && !dossier.readOnly)
 </script>
@@ -213,12 +183,6 @@
 							</p>
 							<StateProposalList proposals={ownOffers} />
 						{/if}
-						{#if canInspect}
-							<button type="button" data-widget-part="messages.turn-line-panel-inspect" onclick={inspect}>
-								<sp-icon name="receipt" size="14"></sp-icon>
-								<span>Inspect run</span>
-							</button>
-						{/if}
 					</div>
 				</sp-popover>
 			{:else}
@@ -227,26 +191,18 @@
 				</span>
 			{/if}
 			{#if hasSideLinks}
-				<!-- The same links, beside the pill where the box has room. -->
+				<!-- The same link, beside the pill where the box has room. Not
+				     when the pill already says it (no status): one Review per
+				     screen, never two side by side. -->
 				<span data-widget-part="messages.turn-line-links">
-					<!-- Not when the pill already says it (no status yet): one
-					     Review per screen, never two side by side. -->
-					{#if waiting.length && status}
-						<button
-							type="button"
-							data-widget-part="messages.turn-line-review"
-							onclick={() => (panelOpen = true)}
-						>
-							<sp-icon name="clipboard-check" size="12"></sp-icon>
-							<span>{reviewLabel}</span>
-						</button>
-					{/if}
-					{#if canInspect}
-						<button type="button" data-widget-part="messages.turn-line-inspect" onclick={inspect}>
-							<sp-icon name="receipt" size="12"></sp-icon>
-							<span>Inspect run</span>
-						</button>
-					{/if}
+					<button
+						type="button"
+						data-widget-part="messages.turn-line-review"
+						onclick={() => (panelOpen = true)}
+					>
+						<sp-icon name="clipboard-check" size="12"></sp-icon>
+						<span>{reviewLabel}</span>
+					</button>
 				</span>
 			{/if}
 		</div>
@@ -289,6 +245,7 @@
 					canChooseSomeoneElse={dossier.turn.canChoose}
 					viewerUserId={conv.ctx.viewer.v1.userId}
 					waitingFor={dossier.turn.waitingFor ?? []}
+					viewerIsOwner={!!dossier.isOwner}
 					onContinue={(channel) => void conv.request("fire-turn", { channel })}
 					onSomeoneElse={() => void conv.request("pick-turn", {})}
 				/>

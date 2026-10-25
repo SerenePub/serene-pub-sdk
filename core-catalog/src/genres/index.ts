@@ -27,6 +27,8 @@ export * from './guide/index.js'
 export * from './lair/index.js'
 // 🚧 PLAN-dungeon-crawler-2026-10-14.
 export * from './dungeon-crawler/index.js'
+/** 🚧 The genre's defaults of all five — registrations, built lazily (PLAN-layering D4, 2026-10-20). */
+export * from './defaults.js'
 
 /** Every answer pipeline core ships, by the genre it serves. @internal */
 export const ANSWER_FORM_SPEC_IDS: Readonly<Record<string, string>> = Object.freeze({
@@ -39,7 +41,8 @@ export const ANSWER_FORM_SPEC_IDS: Readonly<Record<string, string>> = Object.fre
 
 /**
  * Core's five (§4.14's table): which genre gets which spec, on which events —
- * what the presets bind and what `CORE_SPECS` publishes.
+ * what the genre's defaults register (`defaults.ts`) and what `CORE_SPECS`
+ * publishes.
  * @experimental
  */
 export const TURN_ORDER_BY_GENRE: ReadonlyArray<TurnOrderHandle> = [

@@ -5,18 +5,51 @@
  * the Journal folio has no voice, so no turn is ever fired there).
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, slot, spec, sessionEvents, coreEvents, type ChainBuilder } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { dungeonCrawlerGenre } from '../../registry/genres.js'
 import { parleyBranch } from './parley.js'
 import { storyBranch } from './story.js'
 import { applyWiring, wiring } from './calls.js'
 import { DUNGEON_CRAWLER_ENTRY_TYPES } from './lore.js'
+import type { ChainNodes } from '../../shared/chains.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_RESPOND_SPEC_ID = 'core:spec/dungeon-crawler-respond'
 /** @internal */
 export const DUNGEON_CRAWLER_RESPOND_VERSION = '1.0.0'
+
+/** The turn's reads, before it branches on the channel: who is here, the state, the story, the world. */
+const respondHead = () =>
+	spec(DUNGEON_CRAWLER_RESPOND_SPEC_ID, {
+		version: DUNGEON_CRAWLER_RESPOND_VERSION,
+		taxonomy: { role: 'primary' },
+	})
+		.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })
+		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
+		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
+		/**
+		 * The story's newest rows: the Narrator's conversation, and what the
+		 * Planner has seen of the story. Its status is the turn's first word
+		 * — on both branches the Planner goes first — said in place of the
+		 * history read's generic *{speaker} is thinking*.
+		 */
+		.query('story', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+			expose: { status: 'The Planner is thinking' },
+		})
+		.query('places', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+			expose: { label: 'The places', status: 'The Planner is thinking' },
+		})
+		.query('people', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+			expose: { label: 'The people', status: 'The Planner is thinking' },
+		})
+
+/** What both branches read off the spine. @internal */
+export type RespondHead = ChainNodes<ReturnType<typeof respondHead>>
+/** The chain the story turn extends — `channel.story` (`story.ts`). @internal */
+export type StoryOn = ChainBuilder<RespondHead, 'channel.story'>
+/** The chain the Planner's talk extends — `channel.parley` (`parley.ts`). @internal */
+export type ParleyOn = ChainBuilder<RespondHead, 'channel.parley'>
 
 /**
  * **Reply** — the genre's one turn pipeline (24 §3), two branches on
@@ -49,53 +82,14 @@ export const dungeonCrawlerRespondSpec = () => {
 	 */
 	w.params.push(['places', { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.place], withLinks: true }])
 	w.params.push(['people', { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.person] }])
-	const built = spec(DUNGEON_CRAWLER_RESPOND_SPEC_ID, {
-		version: DUNGEON_CRAWLER_RESPOND_VERSION,
-		taxonomy: { role: 'primary' },
-	})
-		.inlet('input', C.userMessage.v1(), {
-			genre: dungeonCrawlerGenre,
-			event: sessionEvents.messageRespond,
-		})
-		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
-		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
-		/**
-		 * The story's newest rows: the Narrator's conversation, and what the
-		 * Planner has seen of the story. Its status is the turn's first word
-		 * — on both branches the Planner goes first — said in place of the
-		 * history read's generic *{speaker} is thinking*.
-		 */
-		.query('story', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { status: 'The Planner is thinking' },
-		})
-		.query('places', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The places', status: 'The Planner is thinking' },
-		})
-		.query('people', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The people', status: 'The Planner is thinking' },
-		})
-		.junction('channel', { on: ($: any) => $.input.channel }, (ch: any) =>
-			ch
-				.when('story', { equals: 'main' }, (s: any) =>
-					storyBranch(s, w, {
-						cast: ($) => $.cast.cast,
-						history: ($) => $.story.messages,
-						places: ($) => $.places.entries,
-						people: ($) => $.people.entries,
-					}),
-				)
-				.otherwise('parley', (p: any) =>
-					parleyBranch(p, w, 'channel.parley.', {
-						cast: ($) => $.cast.cast,
-						history: ($) => $.story.messages,
-						places: ($) => $.places.entries,
-						people: ($) => $.people.entries,
-					}),
-				),
-		)
+	const built = respondHead().junction('channel', { on: ($) => $.input.channel }, (ch) =>
+		ch
+			.when('story', { equals: 'main' }, (s) => storyBranch(s, w))
+			.otherwise('parley', (p) => parleyBranch(p, w)),
+	)
 	return compile(
 		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) => applyWiring(p, w))
+			.defaults((p) => applyWiring(p, w))
 			.build(),
 	)
 }

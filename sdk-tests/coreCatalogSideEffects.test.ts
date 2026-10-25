@@ -42,6 +42,7 @@ process.stdout.write(JSON.stringify({
 	statShapes: ids(sdk.statShapes()),
 	sheets: ids(sdk.attributeSheets()),
 	rulesets: ids(sdk.rulesets()),
+	rulesetTemplates: ids(sdk.rulesetTemplates()),
 	genres: ids(sdk.genres()),
 	annexOwners: [...sdk.annexOwners()].sort(),
 	coreWidgets: [...sdk.coreWidgetIds()].sort(),

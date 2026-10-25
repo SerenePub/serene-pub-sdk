@@ -1,7 +1,7 @@
 /**
  * Core's answer-a-message pipeline: Story's reply — the roleplay Chat's reply
  * until 2026-10-19 (ruled: today's Chat prompts, context template and variable
- * templates ARE Story's reply), plus the background tasks after it.
+ * templates ARE Story's reply), with its two reading duties (2026-10-20).
  *
  * One file per spec — every pipeline core ships is its own module, under its
  * genre's folder (`genres/<genre>/`) or `shared/` — because a pipeline is
@@ -10,13 +10,14 @@
  * them would be a merge conflict waiting for the first person to add a sixth.
  */
 
-import { compile, spec, slot, sessionEvents } from '@serene-pub/sdk'
+import { compile, spec, slot, sessionEvents, coreEvents } from '@serene-pub/sdk'
 import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
-import { storyGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
+import { POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
 import { applyWiring, wiring } from '../../shared/calls.js'
-import { STORY_SCENE_READING_SCRIPT, storyTasksTail } from './reckon.js'
-import { READ_PATH_SCRIPT } from '../dungeon-crawler/scripts.js'
+import { STORY_REPLY_OWNERS_SCRIPT, STORY_SCENE_READING_SCRIPT } from './reckon.js'
+import { READ_PATH_SCRIPT } from '../../shared/scriptSeed.js'
+import { bareEntryTypeId, locationEntryType } from '../../registry/entries.js'
 
 /** The spec a session turn runs. @experimental */
 export const STORY_RESPOND_SPEC_ID = 'core:spec/story-respond'
@@ -378,8 +379,57 @@ export const STORY_RESPOND_SPEC_ID = 'core:spec/story-respond'
 // the sweep behind their junctions (`reckon.ts`). A session whose tasks are
 // all Off (Minimal) runs exactly the reply it ran. The app's migration
 // re-keys the stored rows (renamed-id table, lane 1 report).
+//
+// ⚠ **1.21.0, edited in place (2026-10-20, PLAN-layering §4) —
+// content-addressed; `specHashes.test.ts` records the move.** The reckoning
+// and the sweep left the reply: each is a routine of its own
+// (`core:spec/story-reckoning`, `core:spec/story-sweep`), registered on a
+// cadence in the Story genre's defaults, so the reply is one call on every
+// preset. The head's `tasks` step became `reading`
+// (`core:task/reply-duties@1`): *Read the lorebook* and *Read the scene* are
+// the reply's own settings (A6), read where they always were. The inlet
+// names no genre (`{ suits }`).
+// ⚠ Edited in place (2026-10-21, omni O5/O7/O9) — content-addressed;
+// `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
+// before placement hears the audio the reply cannot; `generate` names its
+// speech sampling, and `save` writes the reply's media parts in order.
+// ⚠ Edited in place (2026-10-23, PLAN-rulesets-functions D7) — content-
+// addressed; `specHashes.test.ts` records the move. `generate`, `save` and
+// the sprite steps moved into the `reply` junction's `prose` branch
+// (`reply.prose.*`, the slot references with them), beside the `changes`
+// branch — *Replies carry changes*, the `reading` duty, off by default, so a
+// reply runs the prose it ran. A stored config keyed `generate`, `save`,
+// `spritePick`, `spriteShow` moves to `reply.prose.<key>` (the merge's data
+// upgrade).
+// ⚠ Edited in place (2026-10-23, PLAN-genres-seams S2): the `changes`
+// branch's commit reads the reply's own duty mode (`reading.modes`), never
+// the reckoning's routine mode by spec id; it names its owners (`owners`,
+// `core:script/story-reply-owners`) to the schema and the commit, and its
+// `asked` step reads the preset's `path` (its params were never wired) —
+// `specHashes.test.ts` records it.
+// ⚠ Edited in place (2026-10-23, RF fix 3) — content-addressed;
+// `specHashes.test.ts` records the move. The `reply` junction holds only what
+// differs: the prose call, or the changes call and what reads its answer
+// (`owners`, `shape`, `generate`, `asked`, `message`). ONE tail after it —
+// `save`, the `commit` (Apply alone: the `changes` branch fires at Full only),
+// `spritePick`, `spriteShow`, then the tick — reads the junction's `text` and
+// runs once, back at the top-level keys `save`, `spritePick`, `spriteShow`
+// (the app's 0123 data upgrade moves what 0120 sent to `reply.prose.*`, and
+// `reply.changes.commit.applied.apply` to `commit.applied.apply`). Each branch
+// carrying its own save and sprite steps showed two settings for one step.
 /** @internal */
 export const STORY_RESPOND_VERSION = '1.21.0'
+
+/**
+ * The reply's duties as its junctions read them (`core:task/reply-duties@1`'s
+ * `modes`): each duty's key → `full` or `off`.
+ */
+interface ReplyDutyModes {
+	readonly 'lore-retrieval': string
+	readonly 'scene-reading': string
+	/** 🚧 D7: *Replies carry changes* (off by default). */
+	readonly 'reply-changes'?: string
+}
 
 /**
  * Core's answer-a-message pipeline.
@@ -392,17 +442,16 @@ export const STORY_RESPOND_VERSION = '1.21.0'
  * @experimental
  */
 export const storyRespondSpec = () => {
-	/** What the background tasks' steps ask of the author preset (`reckon.ts`). */
+	/** What the reply's steps ask of its declared defaults. */
 	const w = wiring()
 	// 🚧 *Read the scene* (lane 2): the gate script, its two parts, and the
 	// places listing's entry type — see the `scene` step below.
 	w.scripts.push(['scene', STORY_SCENE_READING_SCRIPT.seedKey])
 	w.scripts.push(['sceneState', READ_PATH_SCRIPT.seedKey])
 	w.scripts.push(['scenePlaceList', READ_PATH_SCRIPT.seedKey])
-	w.params.push(['scenePlaces', { entryTypes: ['core:entry/location'], withLinks: true }])
-	/** The writes the preset holds at the review gate — a task on Review. */
-	const review: string[] = []
-	const graph = spec(STORY_RESPOND_SPEC_ID, {
+	w.params.push(['scenePlaces', { entryTypes: [bareEntryTypeId(locationEntryType)], withLinks: true }])
+	return compile(
+		spec(STORY_RESPOND_SPEC_ID, {
 			version: STORY_RESPOND_VERSION,
 			/** Catalogue claims (23 §2): the Story genre's main turn. */
 			taxonomy: {
@@ -410,10 +459,7 @@ export const storyRespondSpec = () => {
 			},
 		})
 			/** The usage lock (24 §4): this spec answers Story's primary turn. */
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.messageRespond,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })
 			/**
 			 * The reply row, created by the pipeline that fills it (R-17) —
 			 * **directly after the inlet** (PLAN-turn-order §4.4).
@@ -454,35 +500,25 @@ export const storyRespondSpec = () => {
 			 */
 			.task('contextBudget', ($) =>
 				C.contextBudget.v1({
-					sampling: slot.samplingOf('generate'),
+					sampling: slot.samplingOf('reply.prose.generate'),
 					// The other half of the same pair, for the model's own
 					// window (0114). Shared for the same reason, and read by the
 					// one computation dispatch sizes the request with (R-8).
-					connection: slot.connectionOf('generate'),
+					connection: slot.connectionOf('reply.prose.generate'),
 					params: slot.params(),
 				}),
 			)
 			/**
-			 * 🚧 The session's background tasks (PLAN-genre-restructure §4),
-			 * resolved at the **head** of the reply (lane 2, 2026-10-19): the
-			 * reply group obeys its own — *Read the lorebook* is the
-			 * `retrieval` junction before `rank` — and the tail's reckoning
-			 * and sweep read the same answer (`reckon.ts`). Nothing it
-			 * resolves moves within one run: the reply row exists from the
-			 * placeholder on, and the turn order is recomputed after the run.
-			 * No model call.
+			 * 🚧 **What the reply reads** (2026-10-20, PLAN-layering §4, A6):
+			 * the reply's own two duties, a switch each and the session
+			 * owner's to flip — *Read the lorebook* is the `retrieval`
+			 * junction before `rank`, *Read the scene* the `scene` gate
+			 * before `context`. Read at the head, once; no model call. Was
+			 * the reply group of the retired background tasks.
 			 */
-			.task(
-				'tasks',
-				($) =>
-					C.resolveTasks.v1({
-						session: $.input.session,
-						fields: $.input.fields,
-						genre: storyGenre.id,
-						ruleset: $.input.ruleset,
-					}),
-				{ expose: { label: 'What happens around a reply' } },
-			)
+			.task('reading', ($) => C.replyDuties.v1({ params: slot.params() }), {
+				expose: { session: true, label: 'What the reply reads' },
+			})
 			/**
 			 * The four reads, run together.
 			 *
@@ -565,7 +601,7 @@ export const storyRespondSpec = () => {
 								// The settings live on the world-lore lane (R-7 P2, one owner per
 								// setting per spec): the three lanes declare the same seven knobs,
 								// and a person tuning them tunes them once.
-								params: slot.params({ node: 'gather.worldLore.read' }),
+								params: slot.params($.gather.worldLore.read),
 							}),
 						),
 					)
@@ -580,7 +616,7 @@ export const storyRespondSpec = () => {
 								// The settings live on the world-lore lane (R-7 P2, one owner per
 								// setting per spec): the three lanes declare the same seven knobs,
 								// and a person tuning them tunes them once.
-								params: slot.params({ node: 'gather.worldLore.read' }),
+								params: slot.params($.gather.worldLore.read),
 							}),
 						),
 					)
@@ -862,7 +898,7 @@ export const storyRespondSpec = () => {
 								texts: $.names.arm.mentions.texts,
 								// One `enabled` switch for both embed nodes (R-7 P2): the
 								// semantic mechanism's embed owns it, this one reads it.
-								params: slot.params({ node: 'semantic.arm.embed' }),
+								params: slot.params($.semantic.arm.embed),
 							}),
 							{ expose: { label: 'Embed the mentions' } },
 						)
@@ -930,24 +966,24 @@ export const storyRespondSpec = () => {
 			 * records each as `excluded_ineligible` with the sentence.
 			 */
 			/**
-			 * 🚧 *Read the lorebook* (`lore-retrieval`, lane 2, 2026-10-19):
+			 * 🚧 *Read the lorebook* (`lore-retrieval`, the `reading` duty):
 			 * Off, and the ranker is handed the conversation's band alone —
 			 * no lore, character lore, history entry or tie reaches the
-			 * prompt; On (the default, and any session whose genre declares
-			 * no such task), the hard gates run as they always did. Either
-			 * way one step, so the reply's call count is unchanged.
+			 * prompt; On (the default), the hard gates run as they always
+			 * did. Either way one step, so the reply's call count is
+			 * unchanged.
 			 */
-			.junction('retrieval', { on: ($: any) => $.tasks.modes }, (j) =>
+			.junction('retrieval', { on: ($) => $.reading.modes }, (j) =>
 				j
-					.when('off', { path: 'lore-retrieval', equals: 'off' }, (b: any) =>
-						b.task('eligible', ($: any) =>
+					.when('off', { path: (v: ReplyDutyModes) => v['lore-retrieval'], equals: 'off' }, (b) =>
+						b.task('eligible', ($) =>
 							C.eligibility.v1({
 								candidates: $.gather.history.read.band,
 							}),
 						),
 					)
-					.otherwise('on', (b: any) =>
-						b.task('eligible', ($: any) =>
+					.otherwise('on', (b) =>
+						b.task('eligible', ($) =>
 							C.eligibility.v1({
 								candidates: $.loreLinked.candidates,
 								exclusions: [
@@ -962,7 +998,7 @@ export const storyRespondSpec = () => {
 						),
 					),
 			)
-			.task('rank', ($: any) =>
+			.task('rank', ($) =>
 				C.rankHybrid.v1({
 					candidates: $.retrieval.candidates,
 					budget: $.contextBudget.available,
@@ -991,32 +1027,32 @@ export const storyRespondSpec = () => {
 			 * Off (Minimal), the builder is handed nothing and the prompt is
 			 * the bytes it was.
 			 */
-			.query('sceneNow', ($: any) => C.sessionState.v1({ scope: $.input.sessionScope }), {
+			.query('sceneNow', ($) => C.sessionState.v1({ scope: $.input.sessionScope }), {
 				expose: { label: 'Where the story stands' },
 			})
-			.query('scenePlaces', ($: any) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+			.query('scenePlaces', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
 				expose: { label: 'The places the lorebook knows' },
 			})
 			.task(
 				'scene',
-				($: any) =>
+				($) =>
 					C.runScript.v1({
-						input: { modes: $.tasks.modes, state: $.sceneNow.state, places: $.scenePlaces.entries } as any,
+						input: { modes: $.reading.modes, state: $.sceneNow.state, places: $.scenePlaces.entries } as any,
 						params: slot.params(),
 					}),
 				{ expose: { label: 'Read the scene, when on' } },
 			)
 			.task(
 				'sceneState',
-				($: any) => C.runScript.v1({ input: { from: $.scene.main, path: 'state' } as any, params: slot.params() }),
+				($) => C.runScript.v1({ input: { from: $.scene.main, path: 'state' } as any, params: slot.params() }),
 				{ expose: { label: 'The state, for the scene' } },
 			)
 			.task(
 				'scenePlaceList',
-				($: any) => C.runScript.v1({ input: { from: $.scene.main, path: 'places' } as any, params: slot.params() }),
+				($) => C.runScript.v1({ input: { from: $.scene.main, path: 'places' } as any, params: slot.params() }),
 				{ expose: { label: 'The places, for the scene' } },
 			)
-			.task('context', ($: any) =>
+			.task('context', ($) =>
 				C.buildTemplateContext.v1({
 					cast: $.gather.cast.read.cast,
 					currentCharacterId: $.input.characterId,
@@ -1073,8 +1109,12 @@ export const storyRespondSpec = () => {
 					 */
 					fields: $.input.fields,
 				}),
+				// 🚧 R54 (2026-10-21): the reply's prompt is the session owner's to
+				// choose, among the prompts an administrator has not hidden — a
+				// setting of the reply in the session's settings. Never its text.
+				{ expose: { promptReach: 'owner' } },
 			)
-			.task('lines', ($: any) =>
+			.task('lines', ($) =>
 				C.processMessages.v1({
 					messages: $.gather.history.read.messages,
 					cast: $.gather.cast.read.cast,
@@ -1107,15 +1147,31 @@ export const storyRespondSpec = () => {
 			 * transcript with no files passes through untouched, so the prompt
 			 * is byte for byte what it was.
 			 */
-			.task('attached', ($: any) =>
+			/**
+			 * 🚧 Audio the reply cannot hear, heard first (O9) — see
+			 * `chat/respond.ts`. Nothing to hear sends nothing.
+			 */
+			.oracle(
+				'heard',
+				($) =>
+					C.transcribeAudio.v1({
+						messages: $.lines.messages,
+						attachments: $.gather.history.attachments.attachments,
+						hears: $.contextBudget.reads,
+						connection: slot.connection(),
+						params: slot.params(),
+					}),
+				{ expose: { label: 'Transcribe audio' } },
+			)
+			.task('attached', ($) =>
 				C.placeAttachments.v1({
 					messages: $.lines.messages,
-					attachments: $.gather.history.attachments.attachments,
-					connection: slot.connectionOf('generate'),
+					attachments: $.heard.attachments,
+					connection: slot.connectionOf('reply.prose.generate'),
 					params: slot.params(),
 				}),
 			)
-			.task('prompt', ($: any) =>
+			.task('prompt', ($) =>
 				C.assemble.v2({
 					candidates: $.rank.candidates,
 					decisions: $.rank.decisions,
@@ -1148,7 +1204,7 @@ export const storyRespondSpec = () => {
 					// The context builder's authored text, by reference — one
 					// prompt, written once, read where the template asks for
 					// `{{systemPrompt}}` (13 §12 finding i).
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					// Assemble's own layouts — the lore and history *it*
 					// produced, laid out after the budget decided what fit.
 					// Its own slot, not the context builder's: no earlier node
@@ -1166,100 +1222,214 @@ export const storyRespondSpec = () => {
 					// back to Vicuna on every run, so every ChatML, Llama-2,
 					// Alpaca and Claude connection was sent Vicuna markers and
 					// the receipt reported the format that was NOT used.
-					connection: slot.connectionOf('generate'),
+					connection: slot.connectionOf('reply.prose.generate'),
 				}),
-			)
-			.oracle('generate', ($: any) =>
-				C.generateText.v1({
-					context: $.prompt.context,
-					// The stop-string exclusion follows the speaker node's
-					// output — the payload-wins seam in the host (19 §5).
-					currentCharacterId: $.input.characterId,
-					// ⚠ **The two slots this node has always been the OWNER of,
-					// and never named.**
-					//
-					// `contextBudget` sizes the prompt with
-					// `slot.samplingOf("generate")` and `prompt` renders it with
-					// `slot.connectionOf("generate")` — both read
-					// `config['generate']`, so a pick made on this step already
-					// decided the window the prompt is cut to and the wire format
-					// it is wrapped in. What it did not decide was where the
-					// request went: `resolveInput` resolves only the slots a
-					// node's config names, so `p.connection` and `p.sampling`
-					// were `undefined` at the binding, `host.ts`'s
-					// `refId(p.connection)` read `null`, and
-					// `resolveCapabilityTarget` took that as "the pipeline chose
-					// nothing" and fell to the instance default. One window sized
-					// the prompt and another received it.
-					//
-					// So this is a picker becoming live rather than a retune: a
-					// person who set it expected it to be used, and every install
-					// that never set one keeps resolving the same instance
-					// default it always did (`resolveSlot` falls back to
-					// `world.activeConnection[kind]`, which `world.ts` projects
-					// from the very `connection_defaults` row the
-					// `capabilityDefault` tier reads). A session names no
-					// connection of its own: the pair is this slot's pick or the
-					// capability default, and only a session's SAMPLING rides on
-					// top (`PAIR_TIERS` vs `RESOLUTION_TIERS` in
-					// `capabilityTarget.ts`).
-					connection: slot.connection(),
-					sampling: slot.sampling(),
-					// ⚠ **The third slot this node owns, and the last half of
-					// the stop-sequence ruling (2026-09-10).**
-					//
-					// `core:oracle/generate-text@1` declares
-					// `params.stopSequences` — "sequences that end the reply the
-					// moment the model writes one" — the binding reads
-					// `input?.params?.stopSequences`, `DispatchRequest` carries
-					// it, and `BaseConnectionAdapter.withStops` sends it. Every
-					// piece existed except this one: `resolveInput` resolves only
-					// the slots a node's config names, so the key was never
-					// formed and the reader saw `undefined` on every turn — while
-					// the panel rendered the control and stored what people typed
-					// into it.
-					//
-					// Behaviour-preserving to close, and the declaration is what
-					// makes it so: `stopSequences` carries no default, so an
-					// install that never typed one still resolves `undefined` and
-					// sends exactly the stops it always did.
-					params: slot.params(),
-					// No `prompts` here: `core:oracle/generate-text@1` declares
-					// no such slot any more (culled 2026-09-16, R-12) — the
-					// instructions travel inside `context`, from `prompt`.
-				}),
-				{
-					expose: {
-						stream: true,
-						status: '{speaker} is typing',
-						label: 'Reply',
-						purpose: 'Writes the reply: whoever is due speaks, from the story so far and the lore it found.',
-					},
-				},
 			)
 			/**
-			 * The reply row, filled. The placeholder above created it; this
-			 * ends its generation with the text and the trace. One row, one
-			 * run — see `placeholder`.
+			 * 🚧 **Replies carry changes** (PLAN-rulesets-functions D7, R7;
+			 * 2026-10-23) — the reply's own switch (`reply-changes`, the
+			 * `reading` duty), off by default. On, the reply is one JSON object
+			 * in strict mode — its words (`message`) and what the scene changed
+			 * (`changes`: an attribute's value up or down, an entry gained or
+			 * lost, never a rewritten sheet), its schema built from the
+			 * session's ruleset (`ruleset-resolve`'s `replySchema`). Off, the
+			 * reply is the prose it always was — the `prose` branch.
+			 *
+			 * 🚧 **The junction holds only what differs** (RF fix 3, 2026-10-23,
+			 * owner: "careful about hidden behavior … why do we have duplicate
+			 * sprites in the pipeline?"): each branch is its model call and what
+			 * reads that call's answer, and ends in the step whose `text` is the
+			 * reply's words — the prose call itself, or the answer's `message`.
+			 * The junction hands that `text` on (M4; a text-stream and a text
+			 * agree on text), so ONE tail after it — `save`, the `commit`, the
+			 * line's face, the tick — runs once, at the top-level keys it had
+			 * before D7, whichever branch fired. Never a second copy of a step in
+			 * each branch: two copies were two settings for one thing.
 			 */
-			.outlet('save', ($: any) =>
+			.junction('reply', { on: ($) => $.reading.modes }, (j) =>
+				j
+					.when('changes', { path: (v: ReplyDutyModes) => v['reply-changes'], equals: 'full' }, (c) =>
+						c
+							/**
+							 * 🚧 Whose changes it may name (S2): the world and everyone seated,
+							 * by reference — what the schema's `owner` words and the commit
+							 * resolve (`core:script/story-reply-owners`).
+							 */
+							.task('owners', ($) => C.runScript.v1({ input: { session: $.input.session } as any, params: slot.params() }), {
+								expose: { label: 'Whose changes a reply may carry' },
+							})
+							/** What a reply may change: the schema, from the session's ruleset. No dice, no writes. */
+							.task(
+								'shape',
+								($) =>
+									C.rulesetResolve.v1({
+										params: slot.params(),
+										scope: $.input.sessionScope,
+										owners: $.owners.main,
+										mode: 'resolve',
+										actions: { replyShape: true } as any,
+									}),
+								{ expose: { label: 'What a reply may change' } },
+							)
+							.oracle(
+								'generate',
+								($) =>
+									C.generateJson.v1({
+										context: $.prompt.context,
+										schema: $.shape.replySchema,
+										connection: slot.connection(),
+										sampling: slot.sampling(),
+										params: slot.params(),
+									}),
+								{
+									// Not the streaming step: a JSON step never streams into a row (D6's law) —
+									// the words land with the save until that law reads a reply's `message` (D7).
+									expose: {
+										status: '{speaker} is typing',
+										label: 'Reply',
+										purpose: 'Writes the reply and what the scene changed, as one answer the rules can read.',
+									},
+								},
+							)
+							/**
+							 * What the scene changed: the answer's `changes` — the step's `path`
+							 * (S2: its params wired, so the preset's `path` reaches it; the
+							 * whole answer went to the rules before).
+							 */
+							.task('asked', ($) => C.parseJson.v1({ text: $.generate.text, params: slot.params() }))
+							/**
+							 * The reply's words: the answer's `message` (the step's `path`) —
+							 * last, so the junction hands them on as its `text`.
+							 */
+							.task('message', ($) => C.joinText.v1({ items: $.generate.items, params: slot.params() })),
+					)
+					/** The reply as prose — what it always was: the call, whose `text` the junction hands on. */
+					.otherwise('prose', (c) =>
+						c.oracle('generate', ($) =>
+							C.generateText.v1({
+								context: $.prompt.context,
+								// The stop-string exclusion follows the speaker node's
+								// output — the payload-wins seam in the host (19 §5).
+								currentCharacterId: $.input.characterId,
+								// ⚠ **The two slots this node has always been the OWNER of,
+								// and never named.**
+								//
+								// `contextBudget` sizes the prompt with
+								// `slot.samplingOf("generate")` and `prompt` renders it with
+								// `slot.connectionOf("generate")` — both read
+								// `config['generate']`, so a pick made on this step already
+								// decided the window the prompt is cut to and the wire format
+								// it is wrapped in. What it did not decide was where the
+								// request went: `resolveInput` resolves only the slots a
+								// node's config names, so `p.connection` and `p.sampling`
+								// were `undefined` at the binding, `host.ts`'s
+								// `refId(p.connection)` read `null`, and
+								// `resolveCapabilityTarget` took that as "the pipeline chose
+								// nothing" and fell to the instance default. One window sized
+								// the prompt and another received it.
+								//
+								// So this is a picker becoming live rather than a retune: a
+								// person who set it expected it to be used, and every install
+								// that never set one keeps resolving the same instance
+								// default it always did (`resolveSlot` falls back to
+								// `world.activeConnection[kind]`, which `world.ts` projects
+								// from the very `connection_defaults` row the
+								// `capabilityDefault` tier reads). A session names no
+								// connection of its own: the pair is this slot's pick or the
+								// capability default, and only a session's SAMPLING rides on
+								// top (`PAIR_TIERS` vs `RESOLUTION_TIERS` in
+								// `capabilityTarget.ts`).
+								connection: slot.connection(),
+								sampling: slot.sampling(),
+								speechSampling: slot.speechSampling(),
+								// ⚠ **The third slot this node owns, and the last half of
+								// the stop-sequence ruling (2026-09-10).**
+								//
+								// `core:oracle/generate-text@1` declares
+								// `params.stopSequences` — "sequences that end the reply the
+								// moment the model writes one" — the binding reads
+								// `input?.params?.stopSequences`, `DispatchRequest` carries
+								// it, and `BaseConnectionAdapter.withStops` sends it. Every
+								// piece existed except this one: `resolveInput` resolves only
+								// the slots a node's config names, so the key was never
+								// formed and the reader saw `undefined` on every turn — while
+								// the panel rendered the control and stored what people typed
+								// into it.
+								//
+								// Behaviour-preserving to close, and the declaration is what
+								// makes it so: `stopSequences` carries no default, so an
+								// install that never typed one still resolves `undefined` and
+								// sends exactly the stops it always did.
+								params: slot.params(),
+								// No `prompts` here: `core:oracle/generate-text@1` declares
+								// no such slot any more (culled 2026-09-16, R-12) — the
+								// instructions travel inside `context`, from `prompt`.
+							}),
+							{
+								expose: {
+									stream: true,
+									status: '{speaker} is typing',
+									label: 'Reply',
+									purpose: 'Writes the reply: whoever is due speaks, from the story so far and the lore it found.',
+								},
+							},
+						),
+					),
+			)
+			/**
+			 * The reply row, filled — once, whichever branch fired. The
+			 * placeholder above created it; this ends its generation with the
+			 * reply's words (the junction's `text`) and, from the prose call, the
+			 * trace and its media parts (a JSON answer carries neither, so a
+			 * reply that carries changes saves its words alone, as it always
+			 * did). One row, one run — see `placeholder`.
+			 */
+			.outlet('save', ($) =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
-					text: $.generate.text,
-					reasoning: $.generate.reasoning,
+					text: $.reply.text,
+					reasoning: $.reply.prose.generate.reasoning,
+					parts: $.reply.prose.generate.parts,
 				}),
+			)
+			/**
+			 * What the reply changed, through the rules — after the words are
+			 * saved, so a refused change never costs the reply its words. At the
+			 * reply's own mode (S2): its `changes` duty as the `reading` step
+			 * publishes it, the same predicate the `changes` branch fired on, so
+			 * it runs exactly when that branch ran and reads its owners and its
+			 * parsed changes by their whole path. 🚧 Full applies; the reply's
+			 * `changes` branch fires at Full only (an event registration carries
+			 * no mode, R37), so no Review arm is declared that could never run.
+			 */
+			.junction('commit', { on: ($) => $.reading.modes }, (k) =>
+				k.when('applied', { path: (v: ReplyDutyModes) => v['reply-changes'], equals: 'full' }, (a) =>
+					a.task(
+						'apply',
+						($) =>
+							C.rulesetResolve.v1({
+								params: slot.params(),
+								scope: $.input.sessionScope,
+								owners: $.reply.changes.owners.main,
+								deltas: $.reply.changes.asked.items,
+								mode: 'apply',
+							}),
+						{ expose: { label: 'Apply what the reply changed' } },
+					),
+				),
 			)
 			/**
 			 * The line's face (DESIGN-sprites §5), after the save so it never
-			 * delays the reply: the sprite picker, handed the reply's own text
+			 * delays the reply: the sprite picker, handed the reply's own words
 			 * and whose line it is. A session setting — "Choose sprites",
-			 * stickiness and the floor are the session's to set.
+			 * stickiness and the floor are the session's to set — and ONE step,
+			 * whichever branch wrote the words.
 			 */
 			.oracle(
 				'spritePick',
-				($: any) =>
+				($) =>
 					C.pickSprite.v1({
-						text: $.generate.text,
+						text: $.reply.text,
 						speaker: $.input.speaker,
 						scope: $.input.sessionScope,
 						params: slot.params(),
@@ -1267,7 +1437,7 @@ export const storyRespondSpec = () => {
 				{ expose: { session: true } },
 			)
 			/** … recorded on the line. A picker's null pick writes nothing. */
-			.outlet('spriteShow', ($: any) =>
+			.outlet('spriteShow', ($) =>
 				C.showSprite.v1({
 					target: $.save.messageId,
 					pick: $.spritePick.main,
@@ -1290,12 +1460,12 @@ export const storyRespondSpec = () => {
 			 * the run finishes, and the ledger under the reply says *not on
 			 * the clock* and why — never a turn that looks failed.
 			 */
-			.task('tick', ($: any) => C.clockStep.v1({ unless: $.input.messageId, params: slot.params() }), {
+			.task('tick', ($) => C.clockStep.v1({ unless: $.input.messageId, params: slot.params() }), {
 				expose: { session: true, label: 'Each reply advances the clock by' },
 			})
-			.junction('clock', { on: ($: any) => $.tick.moves }, (j) =>
+			.junction('clock', { on: ($) => $.tick.moves }, (j) =>
 				j.when('moves', { truthy: true }, (c) =>
-					c.outlet('advance', ($: any) =>
+					c.outlet('advance', ($) =>
 						C.advanceStoryClock.v1({
 							by: $.tick.by,
 							unit: $.tick.unit,
@@ -1306,42 +1476,27 @@ export const storyRespondSpec = () => {
 					),
 				),
 			)
-	/**
-	 * 🚧 **What happens around the reply** (PLAN-genre-restructure §4,
-	 * 2026-10-19): the session's background tasks resolved, then the
-	 * reckoning and the sweep behind their junctions (`reckon.ts`). Minimal
-	 * pins every task Off, so nothing here runs and the turn is one call.
-	 */
-	const tasked = storyTasksTail(
-		graph,
-		w,
-		{
-			cast: ($: any) => $.gather.cast.read.cast,
-			history: ($: any) => $.gather.history.read.messages,
-		},
-		review,
-	)
-	return compile(
-		tasked
 			/**
 			 * What Story ships with: the reminder's trigger
-			 * (`POST_HISTORY_TOKEN_TRIGGER`), the reply on the Reply loadout and
-			 * the reckoning and the sweep on Extraction (I12), what their steps
-			 * name (`Wiring`), and every Review write behind the review gate.
+			 * (`POST_HISTORY_TOKEN_TRIGGER`), the reply on the Reply loadout
+			 * (I12), and what its steps name (`Wiring`).
 			 */
-			.preset('default', { label: 'Default', default: true }, (p: any) => {
-				let out = applyWiring(
+			.defaults((p) =>
+				applyWiring(
 					p
 						.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
 						// The reply runs on the Reply loadout (I12).
-						.loadout('generate', slot.loadout(CORE_LOADOUT.reply))
-						.loadout('reckon.on.reckonWrite', slot.loadout(CORE_LOADOUT.extraction))
-						.loadout('sweep.due.sweepWrite', slot.loadout(CORE_LOADOUT.extraction)),
+						.loadout('reply.prose.generate', slot.loadout(CORE_LOADOUT.reply))
+						.loadout('reply.changes.generate', slot.loadout(CORE_LOADOUT.reply))
+						// 🚧 D7: the answer's words and its changes, read apart.
+						.params('reply.changes.generate', { path: 'message' })
+						.params('reply.changes.asked', { path: 'changes' })
+						// 🚧 S2: whose changes the reply may name.
+						.scripts('reply.changes.owners', [{ seedKey: STORY_REPLY_OWNERS_SCRIPT.seedKey }])
+					.loadout('heard', slot.loadout(CORE_LOADOUT.transcription)),
 					w,
-				)
-				for (const node of review) out = out.settings(node, { review: 'on' })
-				return out
-			})
+				),
+			)
 			.build(),
 	)
 }

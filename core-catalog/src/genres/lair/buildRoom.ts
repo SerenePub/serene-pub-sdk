@@ -3,9 +3,12 @@
  * `index.ts`.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, slot, spec } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { lairGenre } from '../../registry/genres.js'
+import { bareEntryTypeId, locationEntryType } from '../../registry/entries.js'
+import { applyWiring, jsonPart, scriptStep, textPart, wiring } from '../../shared/calls.js'
+import { LAIR_ROOM_DRAFT_SCHEMA } from './names.js'
+import { LAIR_ROOM_SCRIPT } from './scripts.js'
 
 /* ── Build room ─────────────────────────────────────────────────────────── */
 
@@ -23,68 +26,31 @@ export const LAIR_BUILD_ROOM_SPEC_ID = 'core:spec/lair-build-room'
 export const LAIR_BUILD_ROOM_VERSION = '1.0.0'
 
 /**
- * The layout a drafted room's body takes — its `Exits:` line among it — and
- * why that line is still prose beside the graph.
+ * **Build room**: the GM writes a room into the dungeon (rewritten 2026-10-21,
+ * D1, D2, D10).
  *
- * **The ways between rooms are relationships now** (places plan, 2026-09-29):
- * one `narrative_relationships` row per way, read both ways when it has a
- * reverse wording, drawn on the Places lens or in a place's own Links, and
- * written by a pipeline through `core:outlet/link-lore-entries@1`. The Lair's
- * rooms listing asks for them (`withLinks`), so `{{locationEntry}}` says a
- * room's ways out under its body as "From here:" — that, not this line, is
- * what the planner reads the ways on from. *Answer the door* links the room it
- * writes to the room the party stand in (B6).
+ * The collected text (R3) is the room's **name**; the Castellan drafts the
+ * rest as one JSON answer (`LAIR_ROOM_DRAFT_SCHEMA`): the body in words, its
+ * ways out, and — under `fields` — exactly the typed fields the place entry
+ * type declares (`jsonSchemaOf(locationEntryType)`), which
+ * `create-lore-entry@1`'s `fields` port takes and checks at the gate and the
+ * commit. `core:script/lair-room` makes it the write: the body with an
+ * *Exits:* line naming every way out, the fields, and **one link per way out
+ * to a room the book holds**, in the entry's own commit (`links`). A way to a
+ * room nobody built yet stays words, for the knock to answer.
  *
- * ⚠ **The drafted `Exits:` line stays** (plan §11; how the map should grow is
- * the owner's open Q4). A draft names ways out to rooms that may not exist
- * yet, and nothing in the bound catalogue turns a line of prose into a list
- * of names; parsing it at write time, with stub rooms for the names nothing
- * answers, would change what a knock means. So the line is the room's own
- * words — a reader still reads it, and an older room has only it — and the
- * master turns it into links by hand, or with the place editor's *Read links
- * from the Exits line* (B7). It stays a fixed line so a parser can take it
- * apart.
+ * The draft is told every room the dungeon has (`{{knownLocations}}`) and
+ * reads world lore alone — never anyone's private lore. The write parks at the
+ * **review gate** (the preset turns it on): the GM edits the name, the body
+ * and the fields before anything lands.
+ *
+ * ⚠ **`effects: 'world'`** (R-15 *The line*): lorebook data, the owner's, in
+ * the composer, and no message block may name it.
  * @internal
  */
-export const LAIR_ROOM_CONTENT_SHAPE = [
-	'Exits: <direction> → <room>, <direction> → <room>',
-	'Contents: …',
-	'Hazards: …',
-	'Occupants: …',
-].join('\n')
-
-/**
- * **Build room**: the master writes a room into the dungeon.
- *
- * The collected text (R3) is the room's **name** — the one thing a person always
- * knows when they press this — and the model writes the body against the lore,
- * the party's position and the fixed layout above. The name reaches the draft
- * as `{{turnDirection}}`, and every room the dungeon already has as
- * `{{knownLocations}}` (the rooms listing, plan A28) — the prompt's "name only
- * rooms this dungeon already has" with the rooms in front of it. The world
- * lore it reads carries no private entries. The write then parks at the
- * review gate: `core:outlet/create-lore-entry@1` declares
- * `review: { fields: ['name', 'content'] }`, and the preset below turns the
- * gate ON — without that line `resolvePosition` defaults an undeclared position
- * to `off` and this docblock's promise would be false, which it was until
- * 2026-09-17. The gate IS the Build room form, with the name and the whole body
- * editable before anything lands.
- *
- * **The entry is a location** (L3, contracts batch 2, 2026-09-17): the preset
- * sets `entryType: 'core:entry/location'`, so a room files as a place rather
- * than as world lore whose content happens to be laid out, and "which rows are
- * the map" becomes a question a reader can ask. It is written with no links:
- * a room built ahead of the party stands nowhere yet, and its drafted `Exits:`
- * line is prose the master links by hand — see `LAIR_ROOM_CONTENT_SHAPE`.
- *
- * ⚠ **`effects: 'world'`** (R-15 *The line*): the result is lorebook data, so
- * this action is the owner's, lives in the composer, and no message block may
- * name it. That last rule is why the knock's form cannot save a room itself.
- * @internal
- */
-export const lairBuildRoomSpec = () =>
-	compile(
-		spec(LAIR_BUILD_ROOM_SPEC_ID, {
+export const lairBuildRoomSpec = () => {
+	const w = wiring()
+	const drafted = spec(LAIR_BUILD_ROOM_SPEC_ID, {
 			version: LAIR_BUILD_ROOM_VERSION,
 			taxonomy: { role: 'action'},
 			contributes: {
@@ -101,16 +67,13 @@ export const lairBuildRoomSpec = () =>
 						audience: { see: ['participant'], act: ['owner'] },
 						label: { en: 'Build room' },
 						description: {
-							en: "Write a room into the dungeon. Name it, and edit what the narrator drafts before it's saved.",
+							en: "Write a room into the dungeon. Name it, and edit what the Castellan drafts before it's saved.",
 						},
 					},
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
@@ -166,7 +129,7 @@ export const lairBuildRoomSpec = () =>
 			// The room `{{locationEntry}}` shows (the room rule, 2026-10-02):
 			// the world's location at `world.location` (the preset's `path`),
 			// by the one room rule; the ranker leaves it out of the lore.
-			.task('place', ($: any) =>
+			.task('place', ($) =>
 				C.undescribedName.v1({
 					name: $.gather.state.read.state,
 					locationEntries: $.gather.rooms.read.entries,
@@ -243,55 +206,90 @@ export const lairBuildRoomSpec = () =>
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
 				}),
 			)
-			.oracle('write', ($) =>
-				C.generateText.v1({
-					context: $.prompt.context,
-					connection: slot.connection(),
-					sampling: slot.sampling(),
-					params: slot.params(),
-				}),
-				{ expose: { status: 'Building the room' } },
+			.oracle(
+				'write',
+				($) =>
+					C.generateJson.v1({
+						context: $.prompt.context,
+						schema: LAIR_ROOM_DRAFT_SCHEMA as any,
+						connection: slot.connection(),
+						sampling: slot.sampling(),
+						params: slot.params(),
+					}),
+				{ expose: { status: 'Building the room', label: 'Draft the room' } },
 			)
+	/**
+	 * The draft, made into the write (`core:script/lair-room`): the GM's own
+	 * name, the body with its *Exits:* line, the typed fields, the links.
+	 */
+	const made = jsonPart(
+		jsonPart(
+			textPart(
+				scriptStep(
+					drafted,
+					w,
+					'room',
+					LAIR_ROOM_SCRIPT.seedKey,
+					($) => ({ draft: $.write.json, name: $.input.text, rooms: $.gather.rooms.read.entries }),
+					'The draft, made into the room',
+				),
+				w,
+				'content',
+				($) => $.room.main,
+				'content',
+				"The room's body",
+			),
+			w,
+			'fields',
+			($) => $.room.main,
+			'fields',
+			"The room's fields",
+		),
+		w,
+		'links',
+		($) => $.room.main,
+		'links',
+		"The room's ways to rooms the book holds",
+	)
+	return compile(
+		made
 			/**
-			 * The name is what the master typed, never what the model wrote: a
-			 * room the person named is a room they can find again, and the gate
-			 * lets them fix it if the composer was empty.
+			 * The name is what the GM typed, never what the model wrote: a room
+			 * the person named is a room they can find again.
 			 */
 			.outlet('save', ($) =>
 				C.createLoreEntry.v1({
 					name: $.input.text,
-					content: $.write.text,
-					// Named so the entry-kind setting is live rather than
-					// rendered and unread (L3); the preset below sets it to a
-					// location. `links` is left unwired: a room built ahead of
-					// the party joins nothing yet, and its drafted exits are
-					// prose the master links (see `LAIR_ROOM_CONTENT_SHAPE`).
+					content: $.content.text,
+					fields: $.fields.main,
+					links: $.links.main,
 					params: slot.params(),
 				}),
 			)
 			/**
-			 * ⚠ **The gate is the point, not a precaution** — and this preset is
-			 * what makes it true. `resolvePosition` defaults an undeclared review
-			 * position to `off`, so until this line the drafted room landed unseen
-			 * while the docblock above promised a form. *Answer the door* has
-			 * carried the same two lines since L1; this is the pair.
+			 * ⚠ **The gate is the point** — `resolvePosition` defaults an
+			 * undeclared review position to `off`, so without this line the
+			 * draft would land unseen.
 			 */
-			.preset('lair', { label: 'Lair', default: true }, (p) =>
-				p
-					.settings('save', { review: 'on' })
-					// A room is a place (L3) — bare id, the way a listing spells
-					// them; the version is the row's own column.
-					.params('save', { entryType: 'core:entry/location' })
-					// The rooms the draft is shown: the dungeon's places.
-					.params('gather.rooms.read', { entryTypes: ['core:entry/location'] })
-					// The room the place slot shows (the room rule).
-					.params('place', { path: 'world.location' }),
+			.defaults((p) =>
+				applyWiring(
+					p
+						.settings('save', { review: 'on' })
+						// A room is a place (L3) — bare id, the way a listing spells them.
+						.params('save', { entryType: bareEntryTypeId(locationEntryType) })
+						// The rooms the draft is shown: the dungeon's places.
+						.params('gather.rooms.read', { entryTypes: [bareEntryTypeId(locationEntryType)] })
+						// The room the place slot shows (the room rule).
+						.params('place', { path: 'world.location' }),
+					w,
+				),
 			)
 			.build(),
 	)
+}

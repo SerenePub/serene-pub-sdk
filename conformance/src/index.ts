@@ -26,6 +26,8 @@ import { allDefinitions, assertHookSurface, effectsOf, sessionEvents, worldBlock
 import type { GenreDecl, MessageBlock, ParticipantRef, PresetDecl } from '@serene-pub/sdk'
 import type { EventGraph } from '@serene-pub/sdk'
 import { uncausedGenreEvents, unterminatedCycles } from '@serene-pub/sdk'
+import { effectiveRegistrations, genreDefaultsOf, presetChangesOf } from '@serene-pub/sdk'
+import { exposureFindings, presetLevelFindings, registrationFindings, type RegistrationDecl } from '@serene-pub/sdk'
 // One verdict per law (01 §13): C27 enumerates what is registered and holds
 // the host's doors to each verdict's own sentence.
 import { i18nText, verdicts, type Door } from '@serene-pub/sdk'
@@ -49,6 +51,7 @@ import {
 import { probeSampleFor, type NodeHandler, type SwapEvidence } from './packages.js'
 import type { Descriptor } from '@serene-pub/sdk'
 import { swapFitFinding } from '@serene-pub/sdk'
+import { rulesetCatalogueFindings, type RulesetDecl, type RulesetTemplate } from '@serene-pub/sdk'
 import { probeBinding, probeCtxFor } from '@serene-pub/sdk/testing'
 
 export * from './components.js'
@@ -122,8 +125,8 @@ export interface HostUnderTest {
 	 * What this host **ships**: the genres it offers in the picker and the
 	 * presets that fill their event slots. C24's law is about a catalogue
 	 * rather than a document — a genre that declares no `form-addressed` event
-	 * has nowhere to route an answer, and a preset that binds no pipeline to it
-	 * leaves every form it writes unanswerable — so it is read off what the
+	 * has nowhere to route an answer, and a preset that registers no pipeline on
+	 * it leaves every form it writes unanswerable — so it is read off what the
 	 * host ships and nowhere else. Optional: a host that ships no catalogue of
 	 * its own (a validator, a test harness) is not judged on it.
 	 */
@@ -241,6 +244,22 @@ export interface HostUnderTest {
 export interface ShippedCatalogue {
 	genres: readonly GenreDecl[]
 	presets: readonly PresetDecl[]
+	/**
+	 * 🚧 The pipelines the catalogue ships — their published documents — so
+	 * C35 and C36 can hold every registration of the genres' defaults and the
+	 * presets to what its pipeline reads and exposes. Optional: without them
+	 * those two say what went unjudged. A registration naming a pipeline not
+	 * here is another package's, judged where that package is installed.
+	 */
+	pipelines?: readonly SpecDocument[]
+	/**
+	 * 🚧 The rulesets the catalogue ships — their declarations — so C38 can
+	 * hold each to the ruleset laws (`rulesetCatalogueFindings`). Optional:
+	 * without them C38 says what went unjudged.
+	 */
+	rulesets?: readonly RulesetDecl[]
+	/** 🚧 The ruleset templates it ships (`rulesetTemplates()`), for C38. */
+	rulesetTemplates?: readonly RulesetTemplate[]
 }
 
 /** @experimental C29's evidence: one genre's event map and the termination policy of each node that has one. */
@@ -1420,7 +1439,7 @@ export const REQUIREMENTS: Requirement[] = [
 				must(
 					errs.filter((e) => e.law === 'F8').every((e) => !!e.fix && e.fix.length > 10),
 					`${because} — refused without naming the one path: a write causes the event its outlet ` +
-						`declares, and a preset binds a pipeline to that event (15 §1.3)`,
+						`declares, and a genre's defaults or a preset registers a pipeline on that event (15 §1.3)`,
 				)
 			}
 		},
@@ -1535,7 +1554,7 @@ export const REQUIREMENTS: Requirement[] = [
 	{
 		id: 'C24',
 		law: 'R-15',
-		title: 'every genre can be addressed by a form, and every shipped preset binds the pipeline that answers one',
+		title: 'every genre can be addressed by a form, and every shipped preset registers the pipeline that answers one',
 		consequence:
 			'A pipeline writes a form into the session and nothing answers it: the block renders, the reader fills it in, the press reaches no run, and no error says why. The feature works in the genre it was built in and is dead in every other.',
 		async check(host, fx, report) {
@@ -1561,14 +1580,23 @@ export const REQUIREMENTS: Requirement[] = [
 				must(
 					decl!.required !== true,
 					`genre '${g.id}' makes ${EVENT} required — the slot is offered, never demanded: a genre whose ` +
-						`forms are all owner-addressed still declares it, and a preset that binds nothing is still a preset`,
+						`forms are all owner-addressed still declares it, and a preset that registers nothing there is still a preset`,
 				)
 			}
+			// 🚧 By registration (PLAN-layering D4): what a preset answers is its
+			// genre's defaults ⊕ its changes; a preset still on ⏳ bindings is
+			// read through `presetChangesOf`, so either form is judged.
 			for (const p of shipped.presets) {
-				const bound = p.bindings?.[EVENT]
+				const g = shipped.genres.find((x) => x.id === p.genre)
+				const defaults = genreDefaultsOf(g)?.registrations
+				const answered =
+					!!p.bindings?.[EVENT]?.spec ||
+					effectiveRegistrations(defaults, presetChangesOf(p, defaults)).some(
+						(r) => r.trigger.family === 'event' && r.trigger.event === EVENT,
+					)
 				must(
-					!!bound?.spec,
-					`preset '${p.slug}' binds no pipeline to ${EVENT} — a shipped preset answers the forms its ` +
+					answered,
+					`preset '${p.slug}' registers no pipeline on ${EVENT} — a shipped preset answers the forms its ` +
 						`genre can be addressed by, or the answer button does nothing in every session started from it`,
 				)
 			}
@@ -1851,7 +1879,7 @@ export const REQUIREMENTS: Requirement[] = [
 		law: 'PLAN-turn-order §B3, R33',
 		title: 'every event a genre lists is caused by a write or is a declared root',
 		consequence:
-			'A preset binds a pipeline to an event nothing ever fires: the slot looks filled, the pipeline is published, and it never runs. Nobody is told, because nothing failed.',
+			'A preset registers a pipeline on an event nothing ever fires: the registration looks filled, the pipeline is published, and it never runs. Nobody is told, because nothing failed.',
 		async check(host, fx, report) {
 			const shipped = await host.shipped?.()
 			if (!shipped)
@@ -2051,7 +2079,136 @@ export const REQUIREMENTS: Requirement[] = [
 			for (const doc of docs) await judgeSummarizeScene(host, fx, doc)
 		},
 	},
+	{
+		id: 'C35',
+		law: 'R4, A11, A17',
+		title: 'every registration a host ships fits its pipeline: what the pipeline reads, its trigger carries',
+		consequence:
+			'A pipeline mounted on a trigger that does not carry what it reads runs and finds nothing where it looks — a reply with no speaker, a routine with no message — so the first turn fails in a session, where the registration should have been refused in words before anyone started one.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its registrations to be judged')
+			if (!shipped.pipelines?.length)
+				return report.skip(
+					'the catalogue ships no pipelines — supply `shipped().pipelines` (the published documents) for fit to be judged',
+				)
+			const failures = shippedRegistrations(shipped).flatMap(({ layer, decls }) =>
+				doorFindings(shipped, decls, layer, 'registration fit'),
+			)
+			must(!failures.length, failures.join('\n'))
+		},
+	},
+	{
+		id: 'C36',
+		law: 'R1, A10 (ruled 2026-10-12)',
+		title: 'model plumbing never reaches a member: no shipped setting exposes a connection, sampling, loadout, prompt or template to the owner',
+		consequence:
+			'A session owner who is not an administrator is offered the model a step runs on, its sampling or its prompts — the plumbing members were ruled never to touch — and a change there reaches every turn of that session with nobody who manages the models knowing.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its settings to be judged')
+			const failures: string[] = []
+			for (const g of shipped.genres)
+				failures.push(...exposureFindings((g as { shape?: { fields?: never } }).shape?.fields, `genre '${g.id}' shape.fields`))
+			if (!shipped.pipelines?.length)
+				report.skip(
+					'the catalogue ships no pipelines — supply `shipped().pipelines` for the registered pipelines\' settings to be judged',
+				)
+			else
+				for (const { layer, decls } of shippedRegistrations(shipped))
+					failures.push(...doorFindings(shipped, decls, layer, 'exposed plumbing'))
+			must(!failures.length, failures.join('\n'))
+		},
+	},
+	{
+		id: 'C37',
+		law: 'R2, R3, R22',
+		title: 'every shipped preset is one set of changes on one genre’s defaults, and a genre has at most one default preset',
+		consequence:
+			'A preset built on another preset — or one that drops or changes what its genre never registered — reads differently on every pub depending on what the other preset holds that day, and a person who picks it cannot tell what the session will run; two defaults for one genre leave which preset a new session starts from to chance.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its presets to be judged')
+			const failures: string[] = []
+			const defaults = new Map<string, string[]>()
+			for (const p of shipped.presets) {
+				const g = shipped.genres.find((x) => x.id === p.genre)
+				if (!g) failures.push(`preset '${p.slug}' names genre '${String(p.genre)}', which the catalogue does not ship`)
+				failures.push(...presetLevelFindings(p, genreDefaultsOf(g)?.registrations))
+				if ((p as { default?: boolean }).default === true)
+					defaults.set(p.genre, [...(defaults.get(p.genre) ?? []), p.slug])
+			}
+			for (const [genre, slugs] of defaults)
+				if (slugs.length > 1)
+					failures.push(
+						`genre '${genre}' has ${slugs.length} default presets (${slugs.join(', ')}) — the genre's defaults name one default preset (R22)`,
+					)
+			must(!failures.length, failures.join('\n'))
+		},
+	},
+	{
+		id: 'C38',
+		law: 'PLAN-rulesets-authoring R1, R2, D3 (2026-10-22)',
+		title:
+			'every shipped ruleset keeps the ruleset laws: chance reads through bands or degrees, every repertoire is tagged, and a template is copied, never played or offered by a genre',
+		consequence:
+			'A ruleset that rolls with nothing to roll against and nothing to read the roll as hands the table a number and no outcome; an untagged repertoire leaves whether the ruleset has conditions or casting to a guess from its name, so a genre is rated against what a word looked like; and a template a genre offers, or the catalogue plays, puts an archetype meant to be copied into people’s sessions, where its sample rows become somebody’s rules.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its rulesets to be judged')
+			if (!shipped.rulesets?.length)
+				return report.skip('the catalogue ships no rulesets — supply `shipped().rulesets` (and `rulesetTemplates`) for the ruleset laws to be judged')
+			const failures = rulesetCatalogueFindings({
+				rulesets: shipped.rulesets,
+				templates: shipped.rulesetTemplates ?? [],
+				genres: shipped.genres,
+			})
+			must(!failures.length, failures.join('\n'))
+		},
+	},
 ]
+
+// ── C35 · C36: the registrations a catalogue ships, at the one door ─────────
+
+/** The genres' defaults and each preset's own registrations, with the layer each was declared in. */
+function shippedRegistrations(shipped: ShippedCatalogue): Array<{ layer: string; decls: readonly RegistrationDecl[] }> {
+	const out: Array<{ layer: string; decls: readonly RegistrationDecl[] }> = []
+	for (const g of shipped.genres) {
+		const decls = genreDefaultsOf(g)?.registrations
+		if (decls?.length) out.push({ layer: `the defaults of '${g.id}'`, decls })
+	}
+	for (const p of shipped.presets) {
+		const g = shipped.genres.find((x) => x.id === p.genre)
+		const added = presetChangesOf(p, genreDefaultsOf(g)?.registrations).register
+		if (added?.length) out.push({ layer: `preset '${p.slug}'`, decls: added })
+	}
+	return out
+}
+
+/**
+ * One law's findings from the registration door (`registrationFindings`) —
+ * the same verdict a package build and a host's install give, quoted (01 §13).
+ * A pipeline the catalogue does not ship is another package's: not judged here.
+ */
+function doorFindings(
+	shipped: ShippedCatalogue,
+	decls: readonly RegistrationDecl[],
+	layer: string,
+	law: string,
+): string[] {
+	const byId = new Map((shipped.pipelines ?? []).map((d) => [d.id, d]))
+	return registrationFindings(decls, {
+		pipeline: (id) => byId.get(id),
+		external: (id) => !byId.has(id),
+		layer,
+	})
+		.filter((f) => f.severity === 'error' && f.law === law)
+		.map((f) => f.message)
+}
 
 // ── C34: the summarize-scene fixture ────────────────────────────────────────
 

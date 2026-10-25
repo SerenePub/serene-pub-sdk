@@ -21,14 +21,20 @@ import {
 } from './names.js'
 import { difficultySlot, fateSlot, goalModeSlot, hpSlot, levelSlot, standingOrderSlot } from '../../registry/slots.js'
 import { VIS_ITINERIS_ARMOUR_CLASS_JS, VIS_ITINERIS_SPELL_POINTS_JS } from '../../rulesets/vis-itineris/rules.js'
-import { visItinerisSpellPointsSlot } from '../../rulesets/vis-itineris/slots.js'
 import { VIS_ITINERIS_COMPENDIUM } from '../../rulesets/vis-itineris/compendium/index.js'
+import { VIS_ITINERIS_RULESET_ID } from '../../rulesets/vis-itineris/index.js'
 import { DELTA_OF_JS } from '../../shared/deltas.js'
+import { AT_ZERO_HEALTH_JS } from '../../functions/atZeroHealth.js'
+import { DUNGEON_CRAWLER_RULES_WORDS_JS } from './fromRuleset.js'
 
 /**
  * 🚧 Vis Itineris's armour rows as the sheet line needs them (P2-3): each
  * row's id → `{ category, acBase, dexCap? }`, from the compendium, never
- * typed twice. @internal
+ * typed twice. ⏳ The armour-class line is Vis Itineris's own rule
+ * (`rules.ts`), said only at a table that plays it (`rulesetOf().armour`) —
+ * the one build-time reading of a ruleset the crawl keeps (lane G3,
+ * 2026-10-23: not in S4's list; a ruleset's worked-out values reach the
+ * Planner through the handler's sheet block). @internal
  */
 const ARMOUR_ROWS: Record<string, { category: unknown; acBase: unknown; dexCap?: unknown }> = Object.fromEntries(
 	(VIS_ITINERIS_COMPENDIUM.rows.armour ?? []).map((r) => {
@@ -54,30 +60,9 @@ export const DUNGEON_CRAWLER_NOT_FOR_DELTAS = Object.freeze([
 	'goal-mode',
 ] as const)
 
-/** The kind every data-transform script here is. @experimental */
-export const DATA_TRANSFORM_KIND = 'core:script:data/transform@1'
-
-/** A seeded script row (`pipeline_scripts`), as `CORE_SCRIPTS` lists it. @experimental */
-export interface CoreScriptSeed {
-	/** Never change spelling — existing installs match on it. */
-	seedKey: string
-	typeId: string
-	name: string
-	source: string
-	varsIn: readonly string[]
-	varsOut: readonly string[]
-}
-
-/** A seeded data-transform row, reading and returning `value`. @internal */
-export const seedScript = (seedKey: string, name: string, source: string): CoreScriptSeed =>
-	Object.freeze({
-		typeId: DATA_TRANSFORM_KIND,
-		seedKey,
-		name,
-		source: source.trim(),
-		varsIn: Object.freeze(['value']),
-		varsOut: Object.freeze(['value']),
-	})
+// 🚧 A seeded script row and its builder are every genre's (`shared/scriptSeed.ts`,
+// 2026-10-23, PLAN-genres-seams S5); re-exported so this genre's files read them here as before.
+export { DATA_TRANSFORM_KIND, seedScript, type CoreScriptSeed } from '../../shared/scriptSeed.js'
 
 /**
  * The value a slot reads as when nothing is stored — its declared default —
@@ -113,10 +98,16 @@ export const DUNGEON_CRAWLER_SLOT_DEFAULTS: Readonly<Record<string, unknown>> = 
  *    `peopleOf`, `fallenOf`; the Journal folio: `logOf`;
  *  - `cribLines(...)` — the Planner's crib, one builder for its three readers;
  *  - `dropUnchanged(changes, state, ownerFor)` — no change that changes nothing;
- *  - 🚧 `rulesetOf(ruleset)` — the inlet's `{ id, rigour, settings }` read:
- *    `kit` (the kits' own ruleset, Vis Itineris — absent reads as it),
- *    `casting`, `deathSaves`; `deathSaveWords(passed, failed)`;
- *    `armourClassOf(dexMod, worn)` (Vis Itineris's one rule).
+ *  - 🚧 `rulesetOf(ruleset)` — the inlet's `ruleset` read (lane G3,
+ *    2026-10-23, S4: the session's ruleset, through its gist —
+ *    `rulesetGistOf`, `fromRuleset.ts`; nothing assumed when it says
+ *    nothing): `decides` (counted play), `casting` and the pool's slot,
+ *    `fall` (its fall rule, or null: told in words, no die) and
+ *    `deathSaves`, `levels`, `rest` (a night's rest, or null), `armour`;
+ *    `deathSaveWords(passed, failed)`; the words for the numbers
+ *    (`DUNGEON_CRAWLER_RULES_WORDS_JS`) and the fall rule itself
+ *    (`AT_ZERO_HEALTH_JS`, `atZeroHealthOf`); `armourClassOf(dexMod, worn)`
+ *    (Vis Itineris's one rule, said at its table alone).
  * @internal
  */
 export const DUNGEON_CRAWLER_PREAMBLE = `
@@ -138,14 +129,11 @@ var SL = {
 	// 🚧 A dying seat's death saves in words, beside Fate's Dying (Q3-8).
 	deathSaves: "core:slot/crawl-death-saves@1"
 };
-var KIT_RULESET = "core:ruleset/vis-itineris@1";
+// ⏳ The ruleset whose armour rule the sheet line says (P2-3), alone.
+var ARMOUR_RULESET = ${JSON.stringify(VIS_ITINERIS_RULESET_ID)};
 var ARMOUR_ROWS = ${JSON.stringify(ARMOUR_ROWS)};
 ${VIS_ITINERIS_ARMOUR_CLASS_JS}
 ${VIS_ITINERIS_SPELL_POINTS_JS}
-// 🚧 The spell-point pool's stat, and the ceiling it is declared with — a
-// seat's own most is below it, the declared one says nothing (Q1-6).
-var POINTS_SLOT = ${JSON.stringify(visItinerisSpellPointsSlot.id)};
-var POINTS_CEILING = ${JSON.stringify((visItinerisSpellPointsSlot as { config?: { max?: number } }).config?.max ?? null)};
 var v = value || {};
 function own(o) { var out = {}; if (o && typeof o === "object" && !Array.isArray(o)) for (var k in o) out[k] = o[k]; return out; }
 function copy(o) { return o === undefined ? undefined : JSON.parse(JSON.stringify(o)); }
@@ -160,18 +148,29 @@ function list(x, max) {
 }
 var doc = own(v.session);
 var core = own(own(doc.annex).core);
-// 🚧 The ruleset the session plays, as the inlet carries it (P2-4, P2-6):
-// whether it is the kits' own (Vis Itineris — a host that sends none reads
-// as it), and its casting and dying choices.
+${DUNGEON_CRAWLER_RULES_WORDS_JS}
+${AT_ZERO_HEALTH_JS}
+// 🚧 The ruleset the session plays, as the inlet carries it — its gist
+// (lane G3, 2026-10-23, S4: \`rulesetGistOf\`): whether it decides anything
+// by its rules (counted play; a ruleset that says nothing keeps words), its
+// casting pool (\`points\`, else \`slots\`) and that pool's stat and
+// ceiling (a seat's own most is below it, the declared one says nothing:
+// Q1-6), its fall rule (null: none — the fall is told in words and no die is
+// rolled) and whether its death saves play, whether levels raise anything,
+// a night's rest (null: none), and whether the armour rule is its own.
 function rulesetOf(r) {
 	r = own(r);
-	var settings = own(r.settings);
 	var id = text(r.id);
-	var kit = !id || id === KIT_RULESET;
+	var decides = r.decides === true;
+	var cast0 = own(r.casting);
+	var fall = fallOf(r);
 	return {
-		id: id, rigour: text(r.rigour), kit: kit,
-		casting: kit && text(settings.casting) === "points" ? "points" : "slots",
-		deathSaves: kit && text(settings.dying) === "death-saves"
+		id: id, rigour: text(r.rigour), decides: decides,
+		casting: text(cast0.pool) ? "points" : "slots",
+		pointsSlot: text(cast0.slot), pointsCeiling: num(cast0.ceiling, null),
+		fall: fall, deathSaves: !!(fall && fall.playsSaves),
+		levels: r.levels === true, rest: nightRest(r),
+		armour: decides && id === ARMOUR_RULESET
 	};
 }
 // "1 pass, 2 failures" — a dying character's death saves so far.
@@ -261,7 +260,7 @@ function healthWords(hp, max) {
 // table that counts; health in words, and no level, at one that keeps none.
 function standingText(level, hp, max, rules) {
 	var rl0 = rules && typeof rules === "object" ? rules : null;
-	if (rl0 && rl0.kit === false) return healthWords(hp, max);
+	if (rl0 && rl0.decides === false) return healthWords(hp, max);
 	return ", level " + level + healthText(hp, max);
 }
 function seatsOf(d, state) {
@@ -342,7 +341,7 @@ function seatMade(progress, seat) {
 }
 // ── A piece and a sheet, in words (P1-3, P1-8) ──
 // A piece's name as a person reads it: its own name, else its compendium id
-// spelled out ("potion-of-healing" → "Potion of healing").
+// spelled out (dashes to spaces, the first letter raised).
 function pieceWords(p) {
 	function spelled(id) { return id.charAt(0).toUpperCase() + id.slice(1).replace(/-/g, " "); }
 	if (p && typeof p === "object") {
@@ -399,7 +398,7 @@ function sheetLine(state, ref, name, rules) {
 	var sh = sheetOf(bag);
 	var parts = [];
 	var rl = rules && typeof rules === "object" ? rules : rulesetOf(null);
-	var ac = rl.kit && rl.rigour !== "prose" ? ", armour class " + armourClassLine(bag) : "";
+	var ac = rl.armour && rl.rigour !== "prose" ? ", armour class " + armourClassLine(bag) : "";
 	parts.push(name + " (" + ref + (sh["class"] ? ", " + sh["class"] : "") + standingText(sh.level, sh.hp, maxHpOf(state, ref), rl) + ac + (sh.fate !== "alive" ? ", " + sh.fate.replace("-", " ") : "") + (sh.location ? ", at " + sh.location : "") + ")");
 	var conds = Array.isArray(bag["crawl-conditions"]) ? bag["crawl-conditions"] : [];
 	var cn = [];
@@ -420,10 +419,11 @@ function sheetLine(state, ref, name, rules) {
 	// 🚧 At a spell-points table (P2-4): the pool left, and its most — the
 	// seat's own, never the stat's declared ceiling (Q1-6: "4 of 99"); a
 	// seat whose pool is none casts nothing, and is said nothing of.
-	if (rl.casting === "points" && bag["itineris-spell-points"] !== undefined) {
-		var poolMax = own(own(own(own(state).configs)[stateKeyOf(ref)])[POINTS_SLOT]).max;
-		var ownMax = typeof poolMax === "number" && poolMax !== POINTS_CEILING ? poolMax : null;
-		if (ownMax !== 0) parts.push("spell points " + num(bag["itineris-spell-points"], 0) + (ownMax !== null ? " of " + ownMax : "") + " left");
+	var poolKey = rl.casting === "points" ? ucSlotName(rl.pointsSlot) : "";
+	if (poolKey && bag[poolKey] !== undefined) {
+		var poolMax = own(own(own(own(state).configs)[stateKeyOf(ref)])[rl.pointsSlot]).max;
+		var ownMax = typeof poolMax === "number" && poolMax !== rl.pointsCeiling ? poolMax : null;
+		if (ownMax !== 0) parts.push("spell points " + num(bag[poolKey], 0) + (ownMax !== null ? " of " + ownMax : "") + " left");
 	}
 	return parts.join("; ");
 }
@@ -564,7 +564,20 @@ function cribLines(progress, journal, o) {
 	if (log.length) lines.push("The story so far, oldest first:\\n- " + log.join("\\n- "));
 	return lines;
 }
-${DELTA_OF_JS}// ── A refused change, in the table's words (P1-2, owner ruling 2026-10-18:
+${DELTA_OF_JS}// 🚧 A change in the session's rules' grammar (S1, lane G3, 2026-10-23:
+// \`ruleset-resolve\`'s \`replySchema\` — attribute · entryType · name — the
+// one grammar a model is asked for changes in), read as the handler's (slot ·
+// repertoire · piece) before \`deltaOf\`. One already in the handler's words
+// passes as it is.
+function asDelta(raw) {
+	var d = own(raw);
+	if (text(d.attribute) && !text(d.slot)) d.slot = text(d.attribute);
+	if (text(d.entryType) && !text(d.repertoire)) d.repertoire = text(d.entryType);
+	if (text(d.name) && !d.piece) d.piece = text(d.name);
+	delete d.attribute; delete d.entryType; delete d.name; delete d.changes;
+	return d;
+}
+// ── A refused change, in the table's words (P1-2, owner ruling 2026-10-18:
 // a "Not changed: …" line every player sees — never a code). \`rj\` is one of
 // the ruleset handler's \`rejected\` (\`{ delta, reason, why, proposalId }\`),
 // or the genre's own \`{ delta, words }\`; \`names\` maps a reference to the

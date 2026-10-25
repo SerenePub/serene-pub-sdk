@@ -38,7 +38,15 @@ import { CONVERSATION_WIDGET_ID, TURN_ORDER_CHANGED_IS_INTERNAL, sessionEvents, 
 import { drawnWidgetIds, validateSessionLayout, widgetOfInstance } from './sessionLayout.js'
 import { SAVE_MESSAGE_SPEC_ID, eventsLockFindings, getDefinition, swapFitFinding } from './descriptors.js'
 import { eventById, isEventId, notADeclaredEvent } from './events.js'
+import {
+	effectiveRegistrations,
+	presetChangesOf,
+	registrationFindings,
+	type RegistrationDecl,
+} from './registrations.js'
+import { genreDefaultsOf } from './genres.js'
 import type { SpecDocument } from './document.js'
+import type { BuiltSpec } from './builder.js'
 import { actionDocumentFindings, actionsOf, slashCollisions } from './actions.js'
 import { isTodo } from './values.js'
 import { isServableEntry, type SurfacesDecl } from './surfaces.js'
@@ -345,7 +353,8 @@ export const lockAnswers = (
 ): boolean => lockedEvents(input).includes(event)
 
 /**
- * Exactly one create pipeline per declared genre.
+ * Exactly one create pipeline per declared genre — registered on
+ * `session-created` in the genre's defaults, or ⏳ locked to it.
  * @experimental
  * @ruling 24 §3
  */
@@ -355,9 +364,20 @@ export function createPipelineFindings(
 ): string[] {
 	const out: string[] = []
 	for (const g of genres) {
-		const creates = pipelines.filter(
-			(s) => s.input?.genre === g.id && s.input?.event === sessionEvents.sessionCreated,
-		)
+		// 🚧 A genre that states its defaults (PLAN-layering D4) names its
+		// create pipeline by registration; one still on ⏳ inlet locks, by lock.
+		const defaults = genreDefaultsOf(g)?.registrations
+		const creates: Array<{ id: string }> = defaults
+			? [
+					...new Set(
+						defaults
+							.filter((r) => r.trigger?.family === 'event' && r.trigger.event === sessionEvents.sessionCreated)
+							.map((r) => r.pipeline),
+					),
+				].map((id) => ({ id }))
+			: pipelines.filter(
+					(s) => s.input?.genre === g.id && s.input?.event === sessionEvents.sessionCreated,
+				)
 		if (creates.length === 0)
 			out.push(
 				`genre '${g.id}' has no create pipeline — every genre needs exactly one ` +
@@ -408,18 +428,52 @@ export function genrePresetFindings(
  * @experimental
  * @ruling R-15, U5c
  */
-export function contributedActionFindings(pipelines: readonly AnnouncedSpec[]): string[] {
+export function contributedActionFindings(
+	pipelines: readonly AnnouncedSpec[],
+	registeredIn?: ReadonlyMap<string, readonly string[]>,
+): string[] {
 	const out: string[] = []
 	const packageActions: ReturnType<typeof actionsOf> = []
 	for (const s of pipelines) {
 		// A built spec keeps its contributions on `meta`; a document carries
 		// them at the top — one reader for both.
 		const contributed = { id: s.id, contributes: 'meta' in s ? s.meta.contributes : s.contributes }
-		for (const finding of actionDocumentFindings(contributed))
+		for (const finding of actionDocumentFindings({ ...contributed, input: s.input, suits: s.suits }))
 			out.push(`pipeline '${s.id}': ${finding}`)
-		packageActions.push(...actionsOf(contributed))
+		// 🚧 An action with no lock (the suits form, D3) belongs to the genres
+		// whose registrations include it — a slash name is one action per
+		// genre, so it is judged in each of them.
+		for (const a of actionsOf(contributed)) {
+			const genres = a.genre ? [a.genre] : (registeredIn?.get(`${s.id}#${a.key}`) ?? [undefined])
+			for (const genre of genres) packageActions.push({ ...a, genre } as (typeof packageActions)[number])
+		}
 	}
 	out.push(...slashCollisions(packageActions))
+	return out
+}
+
+/**
+ * 🚧 Which genres register each action, by identity (`<spec>#<key>`): the
+ * genre's defaults' action registrations and every preset's `register`.
+ * What gives an unlocked action (D3) its genre for the package's checks.
+ * @internal
+ */
+export function actionGenres(
+	genres: readonly GenreDecl[],
+	presets: readonly PresetDecl[],
+): Map<string, string[]> {
+	const out = new Map<string, string[]>()
+	const add = (identity: string, genre: string) => {
+		const list = out.get(identity) ?? []
+		if (!list.includes(genre)) list.push(genre)
+		out.set(identity, list)
+	}
+	for (const g of genres)
+		for (const r of genreDefaultsOf(g)?.registrations ?? [])
+			if (r.trigger?.family === 'action') add(r.trigger.action, g.id)
+	for (const p of presets)
+		for (const r of p.registrations?.register ?? [])
+			if (r.trigger?.family === 'action') add(r.trigger.action, p.genre)
 	return out
 }
 
@@ -499,6 +553,15 @@ export function presetFindings(
 		const surface: Record<string, { required?: boolean; open?: boolean }> = g
 			? { [sessionEvents.messageOffered]: {}, ...g.events }
 			: {}
+		// 🚧 D4: a preset that states registrations, or one of a genre with
+		// defaults, covers an event when an effective registration listens to
+		// it — the genre's defaults ⊕ the preset's changes (R24: a required
+		// event needs at least one).
+		const defaults = genreDefaultsOf(g)?.registrations
+		const registered = new Map<string, RegistrationDecl>()
+		if (p.registrations || defaults)
+			for (const r of effectiveRegistrations(defaults, presetChangesOf(p, defaults)))
+				if (r.trigger.family === 'event' && !registered.has(r.trigger.event)) registered.set(r.trigger.event, r)
 		// Slots the preset binds beyond the declared surface are errors when
 		// the genre is ours to know; recorded when it is not.
 		const slots: CoverageSlot[] = []
@@ -528,6 +591,16 @@ export function presetFindings(
 				errors.push(
 					`preset '${p.slug}' binds '${event}', which genre '${p.genre}' does not declare`,
 				)
+				continue
+			}
+			if (!binding && registered.has(event)) {
+				const r = registered.get(event)!
+				slots.push({
+					event,
+					required: !!declared?.required,
+					binding: { spec: r.pipeline },
+					status: declaredSpecs.has(r.pipeline) ? 'bound' : 'bound-external',
+				})
 				continue
 			}
 			if (!binding) {
@@ -636,6 +709,72 @@ export function presetFindings(
 	}
 	return { errors, coverage }
 }
+
+/**
+ * 🚧 The registrations a package declares — every genre's defaults and every
+ * preset's changes on them — through the one door (`registrationFindings`,
+ * §11-2): pipelines this package ships are resolved and fit-checked;
+ * another package's are requirements, checked by the instance that has them.
+ * A preset that drops or changes what the genre's defaults never registered
+ * is a warning. Findings are deduplicated: a fault in the genre's defaults
+ * is said once, not once per preset.
+ * @experimental
+ * @ruling §11-2, R2, R34, A12
+ */
+export function registrationDeclarationFindings(
+	ns: string,
+	genres: readonly GenreDecl[],
+	presets: readonly PresetDecl[],
+	declaredSpecs: ReadonlyMap<string, AnnouncedSpec>,
+	requires: Set<string>,
+): { errors: string[]; warnings: string[] } {
+	const errors = new Set<string>()
+	const warnings = new Set<string>()
+	const resolve = (id: string) => declaredSpecs.get(id) as BuiltSpecOrDoc | undefined
+	const external = (id: string) => !id.startsWith(`${ns}:`) && !declaredSpecs.has(id)
+	/** Each finding as one sentence, with no layer — so a fault the genre's defaults hold reads the same in every preset. */
+	const judge = (decls: readonly RegistrationDecl[]): Array<{ error: boolean; text: string }> => {
+		for (const d of decls) {
+			if (external(d.pipeline)) requires.add(d.pipeline)
+			if (d.trigger?.family === 'event' && d.trigger.event.startsWith('core:event/')) requires.add(d.trigger.event)
+		}
+		return registrationFindings(decls, { pipeline: resolve, external }).map((f) => ({
+			error: f.severity === 'error',
+			text: `${f.message} — ${f.fix}`,
+		}))
+	}
+	const add = (where: string, found: Array<{ error: boolean; text: string }>, already?: ReadonlySet<string>) => {
+		for (const f of found) if (!already?.has(f.text)) (f.error ? errors : warnings).add(`${where}: ${f.text}`)
+	}
+	const genreById = new Map(genres.map((g) => [g.id, g]))
+	const saidForGenre = new Map<string, Set<string>>()
+	for (const g of genres) {
+		const defaults = genreDefaultsOf(g)?.registrations
+		if (!defaults?.length) continue
+		const found = judge(defaults)
+		saidForGenre.set(g.id, new Set(found.map((f) => f.text)))
+		add(`genre '${g.id}' defaults`, found)
+	}
+	for (const p of presets) {
+		const g = genreById.get(p.genre)
+		const defaults = genreDefaultsOf(g)?.registrations
+		if (!p.registrations && !defaults) continue
+		const changes = presetChangesOf(p, defaults)
+		const keys = new Set((defaults ?? []).map((d) => d.key))
+		if (g)
+			for (const key of [...(p.registrations?.drop ?? []), ...(p.registrations?.change ?? []).map((c) => c.key)])
+				if (!keys.has(key))
+					warnings.add(
+						`preset '${p.slug}' drops or changes '${key}', which the genre's defaults do not register — ` +
+							`name a registration of the genre's defaults`,
+					)
+		// What the genre's defaults already said is said once, under the genre.
+		add(`preset '${p.slug}'`, judge(effectiveRegistrations(defaults, changes)), saidForGenre.get(p.genre))
+	}
+	return { errors: [...errors], warnings: [...warnings] }
+}
+
+type BuiltSpecOrDoc = BuiltSpec | SpecDocument
 
 /**
  * Surfaces: an entry that does not exist at install is a blank panel nobody can
@@ -868,7 +1007,7 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 		...inputLockFindings(pipelines, new Set(declaredGenres.keys()), p.ns, requires),
 		...createPipelineFindings(genres, pipelines),
 		...genrePresetFindings(genres, p.presets ?? []),
-		...contributedActionFindings(pipelines),
+		...contributedActionFindings(pipelines, actionGenres(genres, p.presets ?? [])),
 		...exposeSwapFindings(pipelines),
 		...swapContributionFindings(p.swaps ?? [], p.ns, declaredSpecs),
 		...promptFindings(p.prompts ?? []),
@@ -891,8 +1030,10 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 		configs,
 		requires,
 	)
+	const registrations = registrationDeclarationFindings(p.ns, genres, p.presets ?? [], declaredSpecs, requires)
 	errors.push(
 		...presets.errors,
+		...registrations.errors,
 		...surfaceFindings(p.surfaces),
 		...componentFindings(p.components ?? []),
 		...widgetComponentFindings(genres, p.components ?? []),
@@ -903,7 +1044,7 @@ export function declarationFindings(p: DeclaredPackage): DeclarationFindings {
 
 	return {
 		errors,
-		warnings: layouts.warnings,
+		warnings: [...layouts.warnings, ...registrations.warnings],
 		coverage: { presets: presets.coverage, todos: todoHoles(configs) },
 		// Never the package's own ids: core locks on its own events and
 		// requires nothing of itself.

@@ -5,6 +5,7 @@
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { storyGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
+import { bareEntryTypeId, locationEntryType } from '../../registry/entries.js'
 
 /* ── look ───────────────────────────────────────────────────────────────── */
 
@@ -69,10 +70,7 @@ export const storyLookSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			// Before the reads (history window, 2026-10-03): the history read
 			// is sized by this budget, so it is computed first. It reads only
 			// config, never a step, so moving it changes no value.
@@ -154,7 +152,7 @@ export const storyLookSpec = () =>
 			// `adventure-respond`): the world's `location` resolved against
 			// the places, so the ranker leaves that room to
 			// `{{locationEntry}}` rather than spending lore budget on it twice.
-			.task('place', ($: any) =>
+			.task('place', ($) =>
 				C.undescribedName.v1({
 					name: $.gather.state.read.state,
 					locationEntries: $.gather.rooms.read.entries,
@@ -221,7 +219,7 @@ export const storyLookSpec = () =>
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
@@ -234,7 +232,9 @@ export const storyLookSpec = () =>
 					sampling: slot.sampling(),
 					params: slot.params(),
 					// No `prompts` on the generating step — see `./respond.ts`
-					// (culled 2026-09-16, R-12).
+					// (culled 2026-09-16, R-12).,
+					// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+					speechSampling: slot.speechSampling(),
 				}),
 				{ expose: { stream: true, status: 'Looking around' } },
 			)
@@ -248,11 +248,11 @@ export const storyLookSpec = () =>
 			 * new nodes, so they reach an install through a re-projection
 			 * (0111).
 			 */
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
 					.params('gather.rooms.read', {
-						entryTypes: ['core:entry/location'],
+						entryTypes: [bareEntryTypeId(locationEntryType)],
 						withLinks: true,
 					})
 					.params('place', { path: 'world.location' }),

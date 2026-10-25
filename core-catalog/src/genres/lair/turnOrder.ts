@@ -14,7 +14,15 @@ export const LAIR_TURN_ORDER_SPEC_ID = 'core:spec/lair-turn-order'
  * are character turns"). The narrator strategy still seats nobody by rule;
  * what the pool admits is who a standing turn plan may prepare a character
  * turn for, since an entry naming somebody the pool did not admit is dropped
- * at the write. Envoys stay out: the Castellan's turns are the null entry's.
+ * at the write. Envoys stay out: the Castellan's turns are the null entry's,
+ * and the Oracle takes none.
+ *
+ * **Seated players wait** (rewrite D5, 2026-10-21): a delver a person plays
+ * is their seat — a persona or a card-less seat — which the pool admits no
+ * character turn for, so the AI never voices them; the plan row names them
+ * (`turnPlan.waits`), and their turn is their own line. The order is the GM's
+ * direction, then the plan's: the plan row hands on the turns, held while a
+ * roll form on it is open (`turnPlan.rolls`) — the host's to honour.
  */
 const PARTY: TurnPoolParams = { characters: 'active', envoys: 'none' }
 

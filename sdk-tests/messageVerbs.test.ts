@@ -12,7 +12,9 @@
  *     into one outlet — nothing between a person's request and the write.
  *  3. **A built-in outlet belongs to its own spec.** `validate()` refuses the
  *     five outlets in any other document, with a sentence naming the future
- *     manifest permission (W8).
+ *     manifest permission (W8) — but for a **deletion pipeline**, which
+ *     places the delete and hands it the deletion its event carried, whole,
+ *     on `asked` (RF fix 5).
  *  4. **Identity is not reviewable.** Each built-in outlet declares
  *     `review.fields`, the form `reviewSchemaFor` builds carries no `target`,
  *     `fromMessage` or `index`, and a submission naming one is reported by
@@ -169,6 +171,44 @@ describe('a built-in outlet belongs to its own spec (W8)', () => {
 		assert.match(found[0]!.fix, /manifest permission/)
 	})
 
+	// 🚧 RF fix 5 (owner ruling 2026-10-23): a deletion pipeline places the
+	// delete, and takes the deletion its event carried whole on `asked`.
+	const deletion = (write: (inlet: any) => unknown) =>
+		compile(
+			spec('acme.tidy:spec/delete-asked', { version: '1.0.0' })
+				.inlet('input', C.messageDeletionAsked.v1())
+				.outlet('write', ($: any) => write($.input) as never)
+				.build(),
+		)
+
+	test('a deletion pipeline places delete-message, wired whole from the inlet onto asked', () => {
+		const doc = deletion((input) => C.deleteMessage.v1({ asked: input.main }))
+		assert.deepEqual(
+			validate(doc).filter((f) => f.law === 'R-15'),
+			[],
+		)
+		const edge = doc.edges.find((e) => e.to === 'write' && e.toPort === 'asked')
+		assert.equal(edge?.from, 'input')
+		assert.equal(edge?.fromPort, 'main')
+		assert.equal(edge?.shape, S.deletionAsked)
+	})
+
+	test('a deletion pipeline is refused a target, a literal deletion, a part of one or none', () => {
+		for (const [what, write, pattern] of [
+			['target', (i: any) => C.deleteMessage.v1({ target: i.messageId }), /names its message on 'target'/],
+			['both', (i: any) => C.deleteMessage.v1({ asked: i.main, target: i.messageId }), /names its message on 'target'/],
+			['literal', () => C.deleteMessage.v1({ asked: { messageId: 7 } as never }), /other than core:inlet\/message-deletion-asked@1's 'main'/],
+			['part', (i: any) => C.deleteMessage.v1({ asked: { messageId: i.messageId } as never }), /other than/],
+			['unset', () => C.deleteMessage.v1({}), /other than/],
+		] as const) {
+			const found = validate(deletion(write)).filter((f) => f.law === 'R-15')
+			assert.equal(found.length, 1, what)
+			assert.equal(found[0]!.nodeKey, 'write', what)
+			assert.match(found[0]!.message, pattern, what)
+			assert.match(found[0]!.fix, /asked: \$\.input\.main/, what)
+		}
+	})
+
 	test('the five built-in documents themselves pass', () => {
 		for (const build of [
 			builtinDeleteSpec,
@@ -238,10 +278,12 @@ describe('identity is not reviewable (C1)', () => {
 		assert.deepEqual(Object.keys(schema).sort(), ['content', 'name'])
 		assert.deepEqual(undeclaredReviewFields(d, { anything: 1 }), [])
 		// And the lore entry's write, which used to be the example here,
-		// now declares exactly the two.
+		// declares exactly its retypeable values (🚧 2026-10-21, D2: its typed
+		// fields joined the name and the content).
 		assert.deepEqual(getDefinition('core:outlet/create-lore-entry@1')?.review?.fields, [
 			'name',
 			'content',
+			'fields',
 		])
 	})
 })

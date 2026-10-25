@@ -89,6 +89,9 @@ const recordedRow = {
 	speakerLabel: 'Bell',
 	extras: {},
 	version: null,
+	// 🚧 The forward stack (RF fix 5): a live row's, host bookkeeping.
+	rewindOrdinal: null,
+	rewindTaken: null,
 }
 
 /** One message-venue action as `sessions:actions` lists it: greyed, with an `item.*` predicate. */

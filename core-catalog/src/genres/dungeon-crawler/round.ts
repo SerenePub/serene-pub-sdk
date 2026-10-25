@@ -22,9 +22,8 @@
  *  4. The Narrator's reply on Story is a reply: the next round starts empty.
  *     A deleted or hidden line un-declares.
  *
- * ⚠ **Why no "declare" spec writing the annex.** A preset binds one spec per
- * event, and `message-completed` is the turn order's; and a declaration
- * written to the annex would land as `annex-changed` under a run's cause,
+ * ⚠ **Why no "declare" spec writing the annex.** A declaration written to
+ * the annex would land as `annex-changed` under a run's cause,
  * which auto-advance never fires on (R34) — the last player's line would
  * prepare the Narrator and leave it silent. Read off the rows, the
  * recompute the line itself causes (a person's cause) finds the round

@@ -15,6 +15,7 @@ import { spec } from '@serene-pub/sdk'
 import { run, ok } from '@serene-pub/sdk'
 import { renderReceipt } from '@serene-pub/sdk'
 import { roughTokens } from '@serene-pub/sdk'
+import { previewStops } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { publish, bindings, withEmbeddings } from './helpers.js'
@@ -115,6 +116,113 @@ describe('59 · the preview stops at the first Provider on the spine', () => {
 		})
 		assert.equal(r.preview!.atNode, 'gather.semantic.embed')
 		assert.equal(r.preview!.targetedBy, 'explicit')
+	})
+})
+
+// 🚧 O9 (2026-10-21): an oracle that only PREPARES the prompt — the transcribe
+// step, hearing audio before placement — is run through, never stopped before.
+test('a step that prepares the prompt is run through; the preview stops at the call that sends it', async () => {
+	let heard = 0
+	const withHearing = () =>
+		spec('demo:preview-hearing@1', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.task('budget', C.contextBudget.v1({ connection: slot.connectionOf('generate'), params: slot.params() }))
+			.oracle('heard', ($) =>
+				C.transcribeAudio.v1({ messages: [] as any, attachments: {} as any, hears: $.budget.reads, connection: slot.connection() }),
+			)
+			.task('prompt', ($) =>
+				C.assemble.v2({ budget: $.budget.available, template: slot.template(), connection: slot.connectionOf('generate') }),
+			)
+			.oracle('generate', ($) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() }))
+	const r = await run(publish(withHearing()), {
+		input,
+		world,
+		preview: true,
+		bindings: bindings({
+			'core:oracle/transcribe-audio@1': async () => {
+				heard++
+				return ok({ main: {}, attachments: {}, notes: [] })
+			},
+		}),
+	})
+	assert.equal(r.preview!.atNode, 'generate')
+	assert.equal(r.preview!.targetedBy, 'first-provider-on-spine')
+	assert.equal(heard, 1, 'the preparing step ran, as everything upstream of the target does')
+})
+
+// 🚧 2026-10-23: a reply that writes inside a junction (Story's `reply.prose.generate`,
+// beside *Replies carry changes*) — the branch's provider is the run's call, so the
+// preview stops there, on whichever branch the route fired; a gather's never counts.
+describe('a provider in a junction branch is a preview stop', () => {
+	const branched = () =>
+		spec('demo:preview-branched@1', { version: '1.0.0' })
+			.inlet('input', C.userMessage.v1())
+			.task('budget', C.contextBudget.v1({ connection: slot.connectionOf('reply.prose.generate'), params: slot.params() }))
+			.gather('gather', { mode: 'parallel' }, (b) =>
+				b.chain('semantic', (c) =>
+					c
+						.oracle('embed', ($) => C.embedText.v1({ text: $.input.text }))
+						.query('vsearch', ($) => C.vectorSearch.v1({ vector: $.gather.semantic.embed.vector })),
+				),
+			)
+			.task('prompt', ($) =>
+				C.assemble.v2({
+					candidates: $.gather.semantic.vsearch.hits,
+					budget: $.budget.available,
+					template: slot.template(),
+					connection: slot.connectionOf('reply.prose.generate'),
+				}),
+			)
+			.junction('reply', { on: ($: any) => $.input.text }, (j) =>
+				j
+					.when('changes', { equals: 'with changes' }, (c) =>
+						c.oracle('generate', ($: any) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() })),
+					)
+					.otherwise('prose', (c) =>
+						c.oracle('generate', ($: any) => C.generateText.v1({ context: $.prompt.context, connection: slot.connection() })),
+					),
+			)
+			.outlet('save', ($: any) => C.createMessage.v1({ text: $.reply.text }))
+	const previewOf = async (text: string) => {
+		let called = 0
+		const r = await run(publish(branched()), {
+			input: { ...input, text },
+			world,
+			preview: true,
+			bindings: bindings({
+				'core:oracle/generate-text@1': async () => {
+					called++
+					return ok({ main: 'x', text: 'x' })
+				},
+			}),
+		})
+		return { r, called }
+	}
+
+	test('stops before the fired branch’s provider, and sends nothing', async () => {
+		const { r, called } = await previewOf('where is my sister')
+		assert.equal(r.outcome, 'halt')
+		assert.equal(r.preview!.atNode, 'reply.prose.generate')
+		assert.equal(r.preview!.targetedBy, 'first-provider-in-branch')
+		assert.equal(called, 0, 'the whole point: nothing is sent')
+		assert.ok(r.nodes.some((n) => n.nodeKey === 'gather.semantic.embed' && n.result === 'ok'), 'the gather ran through')
+		assert.equal(r.nodes.find((n) => n.nodeKey === 'save'), undefined)
+	})
+
+	test('the other branch stops at its own provider', async () => {
+		const { r, called } = await previewOf('with changes')
+		assert.equal(r.preview!.atNode, 'reply.changes.generate')
+		assert.equal(called, 0)
+	})
+
+	test('previewStops: the spine and the junction branches, never a gather', () => {
+		const doc = publish(branched())
+		assert.deepEqual(
+			previewStops(doc.nodes, doc.clauses).map((n) => n.key),
+			['reply.changes.generate', 'reply.prose.generate'],
+		)
+		// Without the clauses, the spine alone — the rule before branches were read.
+		assert.deepEqual(previewStops(doc.nodes).map((n) => n.key), [])
 	})
 })
 

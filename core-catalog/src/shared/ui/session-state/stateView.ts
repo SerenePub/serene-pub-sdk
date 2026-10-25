@@ -163,6 +163,13 @@ export interface StatsSettings {
 	emptyState: string | null
 	/** 🚧 How a story-time stat is spelled (`formatStoryTimeAs`); `null` keeps the calendar's spelling. */
 	timeFormat: string | null
+	/**
+	 * 🚧 Whether the genre's own tool state is drawn (RF fix 8): what the host
+	 * keeps for a genre's tools (the crawl's fate and standing orders, the
+	 * Lair's whisper) in a block of its own under the attributes — `shown`
+	 * (the default: what those sheets always drew) or `hidden`.
+	 */
+	toolState: 'hidden' | 'shown'
 }
 
 /**
@@ -190,6 +197,7 @@ export function statsSettingsOf(settings: Record<string, unknown>): StatsSetting
 		trail: typeof settings.trail === 'boolean' ? settings.trail : true,
 		emptyState: typeof settings.emptyState === 'string' && settings.emptyState.trim() ? settings.emptyState.trim() : null,
 		timeFormat: typeof settings.timeFormat === 'string' && settings.timeFormat.trim() ? settings.timeFormat : null,
+		toolState: pickEnum(settings.toolState, ['hidden', 'shown'], 'shown'),
 	}
 }
 
@@ -207,12 +215,93 @@ export function isBarSlot(slot: SessionStateSlotV1, config: Record<string, unkno
 	)
 }
 
-/** One owner as a Stats widget draws it: a card, or a line of a list or strip. @experimental */
+/**
+ * One owner as a Stats widget draws it: a card, or a line of a list or strip.
+ * 🚧 RF fix 8: `slots` are the rules' **attributes** only; the host's place
+ * and time are `where` (a _Where and when_ row), a genre's tool state is
+ * `tools` (drawn when the copy's `toolState` is `shown`), ⏳ what the owner
+ * carries as the host's list is `carried`, and what the owner holds, zone by
+ * zone, is `zones`.
+ * @experimental
+ */
 export interface StatsShownOwner {
 	owner: SessionStateOwnerV1
 	group: StatsOwnerGroup
 	slots: ShownSlot[]
+	/** 🚧 The host's place and time for this owner, each with a value (RF fix 8). */
+	where: ShownSlot[]
+	/** 🚧 The genre's tool state this copy draws (RF fix 8); empty unless `toolState: shown`. */
+	tools: ShownSlot[]
+	/** 🚧 ⏳ What the owner carries, kept by the host as a list (`hostState: carried`, RF fix 8). */
+	carried: ShownSlot[]
+	/** 🚧 What it holds, zone by zone (RF fix 8). */
+	zones: ZoneRow[]
 }
+
+/** 🚧 One zone an owner holds, as a sheet draws it (`SessionStateZoneV1`, read defensively; RF fix 8). @experimental */
+export interface ZoneRow {
+	zoneType: string
+	label: string
+	shownAs: 'list' | 'fan'
+	entries: Array<{ key: string; name: string; entryType: string; typeLabel: string | null; count: number; exposed: boolean }>
+}
+
+/** 🚧 An owner's zones (RF fix 8): each with an entry in it; a hint other than `fan` is a list. @experimental */
+export function zoneRowsOf(owner: SessionStateOwnerV1): ZoneRow[] {
+	const raw = (owner as SessionStateOwnerV1 & { zones?: unknown }).zones
+	if (!Array.isArray(raw)) return []
+	const out: ZoneRow[] = []
+	for (const z of raw) {
+		if (!z || typeof z !== 'object') continue
+		const r = z as unknown as Record<string, unknown>
+		if (typeof r.zoneType !== 'string' || !Array.isArray(r.entries)) continue
+		const entries: ZoneRow['entries'] = []
+		;(r.entries as unknown[]).forEach((e, i) => {
+			if (!e || typeof e !== 'object') return
+			const x = e as Record<string, unknown>
+			if (typeof x.name !== 'string' || !x.name.trim()) return
+			entries.push({
+				key: `${i}|${x.name}`,
+				name: x.name.trim(),
+				entryType: typeof x.entryType === 'string' ? x.entryType : '',
+				typeLabel: typeof x.typeLabel === 'string' && x.typeLabel.trim() ? x.typeLabel.trim() : null,
+				count: finiteNumber(x.count) && x.count > 1 ? Math.floor(x.count) : 1,
+				exposed: x.exposed === true,
+			})
+		})
+		if (!entries.length) continue
+		out.push({ zoneType: r.zoneType, label: typeof r.label === 'string' && r.label.trim() ? r.label.trim() : r.zoneType, shownAs: r.shownAs === 'fan' ? 'fan' : 'list', entries })
+	}
+	return out
+}
+
+/** 🚧 One of the rules' optional attributes an owner may carry or not (RF fix 8). @experimental */
+export interface CarryRow {
+	slotId: string
+	label: string
+	carries: boolean
+	mayChange: boolean
+}
+
+/** 🚧 An owner's attribute carries (`SessionStateOwnerV1.carries`, read defensively; RF fix 8). @experimental */
+export function carryRowsOf(owner: SessionStateOwnerV1): CarryRow[] {
+	const raw = (owner as SessionStateOwnerV1 & { carries?: unknown }).carries
+	if (!Array.isArray(raw)) return []
+	const out: CarryRow[] = []
+	for (const c of raw) {
+		if (!c || typeof c !== 'object') continue
+		const r = c as unknown as Record<string, unknown>
+		if (typeof r.slotId !== 'string' || typeof r.label !== 'string' || !r.label.trim()) continue
+		out.push({ slotId: r.slotId, label: r.label.trim(), carries: r.carries !== false, mayChange: r.mayChange === true })
+	}
+	return out
+}
+
+/** 🚧 Whether a slot is one of the rules' attributes — not the host's place, time or a tool (RF fix 8). @experimental */
+export const isAttributeSlot = (slot: SessionStateSlotV1): boolean => !(slot as { hostState?: unknown }).hostState
+
+/** 🚧 Whether the session's rules declare any attribute at all (RF fix 8): what an empty sheet says. @experimental */
+export const declaresAttributes = (state: SessionStateV1): boolean => state.slots.some(isAttributeSlot)
 
 /**
  * 🚧 An owner's **derived values** as a sheet draws them (2026-10-18,
@@ -233,6 +322,90 @@ export function derivedRowsOf(owner: SessionStateOwnerV1): Array<{ key: string; 
 		out.push({ key, label: label.trim(), value: String(value) })
 	}
 	return out
+}
+
+/** 🚧 One field of a tie side, as a sheet draws it (`SessionStateTieFieldV1`, read defensively). @experimental */
+export interface TieFieldRow {
+	field: string
+	label: string
+	value: string | number
+	min?: number
+	max?: number
+	onto: boolean
+}
+
+/** 🚧 One tie side, as a sheet draws it (`SessionStateTieV1`, read defensively). @experimental */
+export interface TieRow {
+	entryType: string
+	label: string
+	towards: string
+	towardsLabel: string
+	name: string | null
+	words: TieFieldRow[]
+	numbers: TieFieldRow[]
+	shown: boolean
+	mayShow: boolean
+	other: { words: TieFieldRow[]; numbers: TieFieldRow[]; shown: boolean } | null
+}
+
+const tieFields = (raw: unknown): TieFieldRow[] => {
+	if (!Array.isArray(raw)) return []
+	const out: TieFieldRow[] = []
+	for (const f of raw) {
+		if (!f || typeof f !== 'object') continue
+		const { field, label, value, min, max, onto } = f as Record<string, unknown>
+		if (typeof field !== 'string' || !field || typeof label !== 'string') continue
+		if (!(typeof value === 'string' ? value.trim() : finiteNumber(value))) continue
+		out.push({
+			field,
+			label: label.trim() || field,
+			value: value as string | number,
+			...(finiteNumber(min) ? { min } : {}),
+			...(finiteNumber(max) ? { max } : {}),
+			onto: onto === true,
+		})
+	}
+	return out
+}
+
+/**
+ * 🚧 An owner's **tie sides** as a sheet draws them (ties on the graph,
+ * 2026-10-23, `SessionStateOwnerV1.ties`): each tie towards someone, its
+ * words, its numbers where the host sent them, and the other person's side.
+ * Anything malformed is left out; a host that sends none draws none.
+ * @experimental
+ */
+export function tieRowsOf(owner: SessionStateOwnerV1): TieRow[] {
+	const raw = (owner as SessionStateOwnerV1 & { ties?: unknown }).ties
+	if (!Array.isArray(raw)) return []
+	const out: TieRow[] = []
+	for (const t of raw as unknown[]) {
+		if (!t || typeof t !== 'object') continue
+		const r = t as Record<string, unknown>
+		if (typeof r.entryType !== 'string' || typeof r.towards !== 'string' || !r.towards || typeof r.towardsLabel !== 'string') continue
+		const other = r.other && typeof r.other === 'object' ? (r.other as Record<string, unknown>) : null
+		out.push({
+			entryType: r.entryType,
+			label: typeof r.label === 'string' ? r.label : r.entryType,
+			towards: r.towards,
+			towardsLabel: r.towardsLabel.trim() || r.towards,
+			name: typeof r.name === 'string' && r.name.trim() ? r.name.trim() : null,
+			words: tieFields(r.words),
+			numbers: tieFields(r.numbers),
+			shown: r.shown === true,
+			mayShow: r.mayShow === true,
+			other: other ? { words: tieFields(other.words), numbers: tieFields(other.numbers), shown: other.shown === true } : null,
+		})
+	}
+	return out
+}
+
+/** 🚧 A tie number's share of its bar, 0–100 (no bounds: of 0–10). @experimental */
+export function tieBarPercent(n: Pick<TieFieldRow, 'value' | 'min' | 'max'>): number {
+	if (typeof n.value !== 'number') return 0
+	const lo = n.min ?? 0
+	const hi = n.max ?? 10
+	return hi <= lo ? 0 : Math.round(Math.max(0, Math.min(1, (n.value - lo) / (hi - lo))) * 100)
 }
 
 /**
@@ -265,6 +438,8 @@ export interface StatsViewBase {
 	density: 'compact' | 'full'
 	arrangement: StatsArrangement
 	owners: StatsOwners
+	/** 🚧 Whether the session's rules declare any attribute (RF fix 8); `false` cards say so. */
+	declaresAttributes: boolean
 }
 
 /**
@@ -320,26 +495,45 @@ export function statsView(
 	granted?: boolean,
 ): StatsView {
 	const read = statsSettingsOf(settings)
-	const base: StatsViewBase = { density: read.density, arrangement: read.arrangement, owners: read.owners }
+	const base: StatsViewBase = { density: read.density, arrangement: read.arrangement, owners: read.owners, declaresAttributes: !!state?.loaded && declaresAttributes(state) }
 	if (granted === false) return { ...base, status: 'not-granted' }
 	if (state && !state.loaded && state.error) return { ...base, status: 'failed' }
 	if (!state || !state.loaded) return { ...base, status: 'loading' }
-	if (!state.slots.length) return { ...base, status: 'none-declared' }
+	// 🚧 RF fix 8: nothing at all — no attribute, no place or time, nothing held, no tie.
+	if (!state.slots.length && !state.storyTime && !state.owners.some((o) => zoneRowsOf(o).length || tieRowsOf(o).length))
+		return { ...base, status: 'none-declared' }
 
 	const slotMode = read.slots === 'pick' ? 'pick' : 'all'
+	const bars = read.slots === 'bars'
 	const show = (owner: SessionStateOwnerV1): ShownSlot[] =>
-		shown(state, owner, slotMode, read.pickSlots, read.hideSlots).filter((s) => read.slots !== 'bars' || isBarSlot(s.slot, s.config))
-	const as = (group: StatsOwnerGroup, slots: (owner: SessionStateOwnerV1) => ShownSlot[]) => (owner: SessionStateOwnerV1) => ({
+		shown(state, owner, slotMode, read.pickSlots, read.hideSlots).filter((s) => isAttributeSlot(s.slot) && (!bars || isBarSlot(s.slot, s.config)))
+	// 🚧 RF fix 8: the host's place and time (valued) and a genre's tool state, apart from the attributes.
+	const hostOf = (owner: SessionStateOwnerV1, roles: readonly string[]) =>
+		bars ? [] : shown(state, owner, 'all', [], read.hideSlots).filter((s) => roles.includes(String((s.slot as { hostState?: unknown }).hostState)))
+	const whereOf = (owner: SessionStateOwnerV1) => hostOf(owner, ['place', 'time']).filter((s) => s.value !== undefined && s.value !== null && s.value !== '')
+	const toolsOf = (owner: SessionStateOwnerV1) => (read.toolState === 'shown' ? hostOf(owner, ['tool']) : [])
+	/** ⏳ What the owner carries as the host's list: a place's only when something lies there. */
+	const carriedOf = (owner: SessionStateOwnerV1) =>
+		hostOf(owner, ['carried']).filter((s) => owner.kind !== 'session_location' || (Array.isArray(s.value) && s.value.length > 0))
+	const as = (group: StatsOwnerGroup, slots: (owner: SessionStateOwnerV1) => ShownSlot[]) => (owner: SessionStateOwnerV1): StatsShownOwner => ({
 		owner,
 		group,
 		slots: slots(owner),
+		where: whereOf(owner),
+		tools: toolsOf(owner),
+		carried: carriedOf(owner),
+		zones: bars ? [] : zoneRowsOf(owner),
 	})
+	/** 🚧 Anything to draw for an owner: an attribute, where and when, a tool, what it carries, a zone, a tie (RF fix 8). */
+	const drawsSomething = (o: StatsShownOwner) =>
+		!!(o.slots.length || o.where.length || o.tools.length || o.carried.length || o.zones.length || tieRowsOf(o.owner).length)
 	const world = state.owners.find((o) => o.kind === 'session' && o.key === 'world') ?? null
 	// A card-less player seat (`player_seat`) is a cast member with no card: its values ride in `resolved.cast` too.
 	const cast = state.owners.filter((o) => o.kind === 'session_cast' || o.kind === 'player_seat')
 	const places = state.owners.filter((o) => o.kind === 'session_location')
 	/** The world's own stats — only with one to show. */
-	const worldShown = (): StatsShownOwner[] => (world ? [as('world', show)(world)].filter((o) => o.slots.length) : [])
+	const worldShown = (): StatsShownOwner[] =>
+		world ? [as('world', show)(world)].filter((o) => drawsSomething(o) || (!!state.storyTime && !bars)) : []
 	/** The cast by `scope`. Scene: a member nobody has given a value to has nothing to show. */
 	const castShown = (scope: 'scene' | 'all'): StatsShownOwner[] =>
 		cast.filter((o) => scope === 'all' || hasAnyValue(state, o)).map(as('cast', show))
@@ -347,7 +541,7 @@ export function statsView(
 	const placesShown = (): StatsShownOwner[] =>
 		places
 			.map(as('places', (o) => show(o).filter((s) => s.value !== undefined)))
-			.filter((o) => o.slots.length)
+			.filter(drawsSomething)
 	const picked = (o: SessionStateOwnerV1) =>
 		read.pickOwners.includes(o.label.toLowerCase()) || read.pickOwners.includes(o.key.toLowerCase())
 
@@ -402,7 +596,7 @@ export function statsView(
 	}
 	// A line of a list or a strip with nothing on it is not drawn.
 	if (read.arrangement !== 'cards' && read.arrangement !== 'faces')
-		groups = groups.map((g) => ({ ...g, owners: g.owners.filter((o) => o.slots.length) }))
+		groups = groups.map((g) => ({ ...g, owners: g.owners.filter((o) => drawsSomething(o) || (o.group === 'world' && !!state.storyTime && !bars)) }))
 	groups = groups.filter((g) => g.owners.length)
 	if (!groups.length) return { ...base, status: 'nothing-shown', castScope: read.castScope }
 	return { ...base, status: 'shown', groups }

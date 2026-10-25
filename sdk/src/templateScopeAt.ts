@@ -41,11 +41,12 @@
  */
 
 import { annexOwners, annexVarFieldOf } from './annexFields.js'
-import { slotField, type AttributeSlotDecl } from './attributes.js'
+import { getAttributeSlot, slotField, type AttributeSlotDecl } from './attributes.js'
 import { BandCollisionError, bandsReaching, rendersAt, type BandSource } from './bands.js'
 import { getDefinition, type SlotDecl } from './descriptors.js'
 import type { DocEdge, DocNode } from './document.js'
-import { genreAllowsCustomAttributes, genreEnvoy, genreSlots, getGenre, envoyPromptsSlotFor } from './genres.js'
+import { genreEnvoy, getGenre, envoyPromptsSlotFor } from './genres.js'
+import { hostStateFor } from './hostState.js'
 import { fieldToVarField, slotToVarField, type TemplateScope, type VarDecl, type VarField } from './template.js'
 import { getVariable, type VariableDecl } from './variables.js'
 
@@ -79,7 +80,7 @@ export interface TemplateScopeEnv {
 	owners?: readonly string[]
 	/** An owner's annex as a template variable. Default: `annexVarFieldOf`. */
 	annexOf?: (owner: string, genre?: string) => VarField | undefined
-	/** The attribute slots `state` is typed from. Default: `genreSlots(genre)`. */
+	/** The attribute slots `state` is typed from. Default: the host state of the genre's sessions, open (🚧 RF fix 8: the session's rules bring the attributes, known only at run time). */
 	slots?: readonly AttributeSlotDecl[]
 }
 
@@ -199,9 +200,9 @@ const slotKeys = (id: string): [string, string] => {
  * `state.cast.<member>.<slot>` beside the member's `id`, `key` and `name`,
  * and `state.locations.<place>.<slot>` likewise (what the host renders:
  * slug-keyed holders only, never the `byId` index).
- * A genre that lets sessions add attributes of their own (`customAttributes:
- * 'allow'`) — or no known genre at all — leaves the bags open: the honest
- * answer for a set nobody can list.
+ * 🚧 The session's rules bring its attributes (RF fix 8), so unless the
+ * caller hands the slots it knows the bags are open beyond what the host
+ * keeps: the honest answer for a set nobody can list before the session runs.
  * @ruling P6
  */
 function stateVarField(slots: readonly AttributeSlotDecl[] | undefined, open: boolean, base?: VarField): VarField {
@@ -361,9 +362,11 @@ export function templateScopeReport(
 
 	// `state`, re-typed from the attribute slots the session tracks.
 	if (isField(scope.state) && declarers.state !== ownDeclarer) {
-		const g = genre ? getGenre(genre) : undefined
-		const slotsIn = env.slots ?? (genre ? genreSlots(genre) : undefined)
-		const open = env.slots ? false : !g || genreAllowsCustomAttributes(g)
+		// 🚧 RF fix 8: the session's rules bring its attributes, so `state` is
+		// open beyond what the host keeps for the genre's sessions.
+		const kept = genre ? hostStateFor(genre).map((d) => getAttributeSlot(d.slot)).filter((d): d is NonNullable<typeof d> => !!d) : undefined
+		const slotsIn = env.slots ?? kept
+		const open = !env.slots
 		scope.state = stateVarField(slotsIn, open, scope.state)
 	}
 

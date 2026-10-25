@@ -31,22 +31,12 @@ export const LAIR_TRANSCRIPT_TEMPLATE = [
 	'{{#*inline "aside"}}[Sanctum] {{{name}}}: {{{text}}}{{{attachments}}}{{/inline}}',
 ].join('\n')
 
-/**
- * 🚧 The Lair's own **boundary trigger** (★9, live scenes §15 G1): a new
- * scene where the party reach a new floor — the world's `floor`, which the
- * Castellan's keeper keeps, changed on `main`. A dungeon's floors are its
- * chapters, and nothing core watches knows that: the room the party stand
- * in is already the genre's **place** (`shape.scenes.place`, so *the place
- * changed* covers walking from room to room), and a Castellan line on
- * `main` is either a narration the master pressed for or a knock at an
- * unbuilt room — the turn's own rhythm, not a scene's.
- * @experimental
+/*
+ * ⚠ No boundary trigger of the Lair's own since the rewrite (2026-10-21, D8):
+ * the new-floor trigger read the world's `floor`, which the Lair no longer
+ * declares. *The place changes* — the genre's place, the room the party stand
+ * in (`shape.scenes.place`) — covers walking from room to room.
  */
-export const LAIR_NEW_FLOOR_TRIGGER = {
-	key: 'newFloor',
-	label: { en: 'the party reached a new floor' },
-	when: { channel: 'main', stateKey: 'floor' },
-} as const
 
 /** @experimental */
 export const lairSummarizeSceneSpec = () =>
@@ -55,5 +45,4 @@ export const lairSummarizeSceneSpec = () =>
 		genre: lairGenre,
 		channels: { story: 'main', asides: [SANCTUM_CHANNEL] },
 		transcript: LAIR_TRANSCRIPT_TEMPLATE,
-		boundaries: [LAIR_NEW_FLOOR_TRIGGER],
 	})

@@ -48,7 +48,9 @@ describe("core's three layouts, from their old-slot literals", () => {
 		for (const [old, now] of [
 			[OLD_CHAT_LAYOUT, STORY_LAYOUT],
 			[OLD_ADVENTURE_LAYOUT, STORY_WORLD_LAYOUT],
-			[OLD_LAIR_LAYOUT, LAIR_LAYOUT],
+			// 🚧 Not the Lair's since lair fix 2 (2026-10-22): its Sanctum left
+			// the right column for a tab of the story, so the shipped literal
+			// is no longer the old slots' conversion (the Lair's own test below).
 		] as const) {
 			// The converter discards geometry, so a shipped literal may add `height` by hand
 			// (the Lair's 4/2/6 right column); everything else must match key for key.
@@ -106,21 +108,27 @@ describe("core's three layouts, from their old-slot literals", () => {
 		assertValid(OLD_LAIR_LAYOUT)
 	})
 
-	test("the Lair's Sanctum stays where lairSanctumPanel puts it: the right column, its settings under its own id", () => {
+	test("🚧 the Lair's Sanctum is a tab of the story now (lair fix 2): the old slots' panel is gone from the shipped layout", () => {
 		const preset = lairGenre.layouts![0]!.preset
 		const p = panelsOf(preset)
-		const holder = p.right.find((x) => x.tabs.includes('messages#sanctum'))
-		assert.ok(holder, 'a right-column panel holds the Sanctum')
-		assert.equal(holder!.pinned, undefined, 'docked')
-		assert.equal(holder, p.right.at(-1), 'at the bottom of the column')
+		assert.deepEqual(p, LAIR_LAYOUT.panels)
 		assert.ok(
-			!p.middle.primary.tabs.includes('messages#sanctum'),
-			'the story alone in the middle',
+			[...p.left, ...p.right, ...p.middle.above, ...p.middle.below, p.middle.primary].every(
+				(x) => !x.tabs.includes('messages#sanctum'),
+			),
+			'no copy claims the Sanctum',
 		)
-		assert.deepEqual(preset.widgetSettings?.['messages#sanctum'], {
-			channel: 'sanctum',
-			composer: 'minimal',
-		})
+		// The rest of the old conversion stands: Stats left, the story alone in the middle, the rooms and the note right.
+		const old = panelsFromSlots(OLD_LAIR_LAYOUT)
+		assert.deepEqual(p.middle, old.middle)
+		assert.deepEqual(shape(p.left), shape(old.left))
+		assert.deepEqual(
+			p.right.map((x) => x.tabs),
+			old.right.map((x) => x.tabs).slice(0, 2),
+		)
+		assert.equal(preset.widgetSettings?.['messages#sanctum'], undefined)
+		assert.deepEqual(preset.widgetSettings?.messages, { otherTabsComposer: 'minimal' })
+		assertValid(preset)
 	})
 })
 

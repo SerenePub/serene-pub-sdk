@@ -23,11 +23,52 @@ import {
 	rulesetSelectorFamily,
 	rulesetSettingValues,
 	slotRulesetOwners,
+	_rulesetDeclOf,
+	CORE_FUNCTION_IDS,
+	functionRefKey,
+	presetsOf,
+	rulesetSections,
+	settingsOf,
 	type RulesetProps,
 } from '@serene-pub/sdk'
 import * as cat from '../core-catalog/src/index.js'
 
 const E = cat.visItinerisRuleset
+/** 🚧 Its sections (2026-10-23): the registry declares it in them (`VIS_ITINERIS_RULESET`). */
+const S = rulesetSections(E)
+/** A function reference by its key. */
+const ref = (key: string) => S.functions!.find((f) => functionRefKey(f) === key)
+/**
+ * 🚧 Vis Itineris as the shape before the sections named it, built from the parts the
+ * sections are built from (`catalogueParity` proves the two read equal). What these tests
+ * read of its selectors, conventions, settings, repertoires and compendium as the shape
+ * before, they read here; what the declaration says, they read through its sections.
+ */
+const L = _rulesetDeclOf(E.id, {
+	name: E.name,
+	description: E.description,
+	voice: cat.VIS_ITINERIS_VOICE,
+	conventions: cat.VIS_ITINERIS_CONVENTIONS,
+	settings: cat.VIS_ITINERIS_SETTINGS,
+	presets: cat.VIS_ITINERIS_PRESETS,
+	stats: [
+		{ id: cat.levelSlot.id, config: { min: 1, max: 20 }, borrowed: true },
+		{ id: cat.characterClassSlot.id, borrowed: true },
+		{ id: cat.hpSlot.id, config: { min: 0, max: 999 }, default: 10, borrowed: true },
+		...cat.VIS_ITINERIS_OWN_SLOTS.map((s) => ({ id: s.id })),
+	],
+	selectors: cat.VIS_ITINERIS_SELECTORS,
+	repertoires: cat.VIS_ITINERIS_REPERTOIRES,
+	compendium: cat.VIS_ITINERIS_COMPENDIUM,
+	scripts: [
+		{ phase: 'derived', priority: 10, seedKey: 'core:script/vis-itineris-derive' },
+		{ phase: 'derived', priority: 20, seedKey: 'core:script/vis-itineris-bulk' },
+		{ phase: 'pre-roll', priority: 10, seedKey: 'core:script/vis-itineris-heighten-spell' },
+		{ phase: 'effects', priority: 90, seedKey: 'core:script/vis-itineris-level-up' },
+	],
+	conversions: [cat.VIS_ITINERIS_FROM_FREEFORM],
+	plays: [cat.commonVocabulary],
+})
 const DIR = path.join(import.meta.dirname, '../core-catalog/src/rulesets/vis-itineris/compendium')
 const runScript = (seedRow: { source: string }, value: unknown) =>
 	// eslint-disable-next-line no-new-func
@@ -42,10 +83,12 @@ describe('Vis Itineris — the declaration', () => {
 		assert.match(String((E.description as { en: string }).en), /System Reference Document 5\.2, licensed CC-BY-4\.0; see Licences\./)
 	})
 
-	test('eleven repertoires; eight entryable', () => {
+	// 🚧 Twelve since 2026-10-21 (Lair rewrite D9): the classes, with their
+	// starting kits, moved here from the Dungeon Crawler — not entryable.
+	test('twelve repertoires; eight entryable', () => {
 		assert.deepEqual(
-			E.repertoires.map((r) => r.id),
-			['weapons', 'armour', 'gear', 'consumables', 'spells', 'spell-slots', 'features', 'feats', 'conditions', 'exits', 'creatures'],
+			S.entryTypes!.map((r) => r.id),
+			['weapons', 'armour', 'gear', 'consumables', 'spells', 'spell-slots', 'features', 'feats', 'conditions', 'exits', 'creatures', 'classes'],
 		)
 		assert.deepEqual(rulesetEntryable(E), ['weapons', 'armour', 'gear', 'consumables', 'spells', 'feats', 'conditions', 'creatures'])
 		const exits = getRepertoire(`${E.id}#exits`)!
@@ -54,7 +97,7 @@ describe('Vis Itineris — the declaration', () => {
 	})
 
 	test('stats reuse core slots and add its own', () => {
-		const ids = E.stats.map((s) => s.id)
+		const ids = S.attributes!.map((a) => a.slot!)
 		for (const reused of ['core:slot/level@1', 'core:slot/character-class@1', 'core:slot/hp@1']) assert.ok(ids.includes(reused), reused)
 		assert.equal(ids.length, 24)
 		assert.equal(new Set(ids).size, ids.length)
@@ -62,15 +105,15 @@ describe('Vis Itineris — the declaration', () => {
 	})
 
 	test('time in rounds of 6 s, short and long rests, defaults are Vis Itineris\'s own', () => {
-		assert.deepEqual(E.conventions.time, { unit: 'round', roundSeconds: 6 })
-		assert.deepEqual(E.conventions.rest!.map((r) => [r.id, r.minutes]), [['short', 60], ['long', 480]])
+		assert.deepEqual(rulesetConventionsFor(E).time, { unit: 'round', roundSeconds: 6 })
+		assert.deepEqual(rulesetConventionsFor(E).rest!.map((r) => [r.id, r.minutes]), [['short', 60], ['long', 480]])
 		assert.deepEqual(rulesetSettingValues(E), { degrees: 'fourfold', actions: 'three', bonuses: 'typed', dying: 'dying-1-4', focus: 'sustain', casting: 'slots' })
 	})
 
 	test('voices: one per rigour, within 240 characters', () => {
 		for (const r of ['prose', 'mechanics', 'scripts'] as const) {
-			assert.ok(E.voice[r], r)
-			assert.ok(E.voice[r]!.length <= 240, `${r}: ${E.voice[r]!.length}`)
+			assert.ok(E.voice![r], r)
+			assert.ok(E.voice![r]!.length <= 240, `${r}: ${E.voice![r]!.length}`)
 		}
 	})
 
@@ -86,13 +129,17 @@ describe('Vis Itineris — the declaration', () => {
 
 	test('scripts name seeded rows; conversion from Story is an empty id map', () => {
 		const seeded = new Set(cat.CORE_SCRIPTS.map((s) => s.seedKey))
-		for (const s of E.scripts ?? []) assert.ok(seeded.has(s.seedKey), s.seedKey)
-		assert.deepEqual(E.conversions, [{ from: 'core:ruleset/freeform@1', to: E.id, idMap: [] }])
+		// 🚧 Its own modules carry the seeded scripts (2026-10-23).
+		const own = S.functions!.filter((f) => f.module).map((f) => f.module!.seedKey!)
+		assert.equal(own.length, 4)
+		for (const k of own) assert.ok(seeded.has(k), k)
+		assert.deepEqual(E.options!.conversions, [{ from: 'core:ruleset/freeform@1', to: E.id, idMap: [] }])
 		assert.deepEqual(cat.VIS_ITINERIS_PLUGIN_ID_MAP, [])
 	})
 
 	test('owns its own slots by listing them; borrows core health, level and class (2026-10-17)', () => {
-		for (const s of E.stats) {
+		for (const { slot, borrowed } of S.attributes!) {
+			const s = { id: slot!, borrowed }
 			const shared = ['core:slot/level@1', 'core:slot/character-class@1', 'core:slot/hp@1'].includes(s.id)
 			assert.equal(s.borrowed, shared ? true : undefined, s.id)
 			// No slot spells what listing already says.
@@ -102,12 +149,14 @@ describe('Vis Itineris — the declaration', () => {
 	})
 
 	test('every check rolls with a modifier; attack and check are families; damage is a tally (audit D)', () => {
-		const sel = E.selectors!
-		for (const [name, d] of Object.entries(sel)) if (d.kind === 'check') assert.ok(d.base, `${name} names its modifier`)
-		assert.equal(sel.attack, undefined)
-		assert.equal(sel.check, undefined)
-		assert.deepEqual(sel.damage, { kind: 'tally' })
-		assert.deepEqual(sel['attack.spell'], { kind: 'check', base: 'casting-mod' })
+		// 🚧 In the sections (2026-10-23): a check is a reference to core's `check`; damage to its `tally`.
+		for (const f of S.functions!) if (f.ref === CORE_FUNCTION_IDS.check) assert.ok((f.options as { base?: string } | undefined)?.base, `${f.key} names its modifier`)
+		assert.equal(ref('attack'), undefined)
+		assert.equal(ref('check'), undefined)
+		assert.deepEqual(ref('damage'), { ref: CORE_FUNCTION_IDS.tally, key: 'damage' })
+		// 🚧 …each check in its own words (GM 2026-10-23, G2 ★1): what a roll form reads.
+		assert.deepEqual(ref('attack.spell'), { ref: CORE_FUNCTION_IDS.check, key: 'attack.spell', options: { base: 'casting-mod', label: { en: 'Spell attack' } } })
+		for (const f of S.functions!) if (f.ref === CORE_FUNCTION_IDS.check) assert.ok((f.options as { label?: { en?: string } } | undefined)?.label?.en, `${f.key} has its words`)
 		assert.deepEqual(rulesetSelectorFamily(E, 'attack.melee'), ['attack.melee', 'attack'])
 		assert.deepEqual(rulesetSelectorFamily(E, 'skill.stealth'), ['skill.stealth', 'skill', 'check'])
 		assert.deepEqual(rulesetSelectorFamily(E, 'ability.strength'), ['ability.strength', 'ability', 'check'])
@@ -135,15 +184,15 @@ describe('Vis Itineris — the declaration', () => {
 		assert.ok(rep('conditions').piece.fields!.duration, 'the universal part')
 		assert.equal(rep('spells').piece.fields!.effectDuration?.type, 'object')
 		const dup = /^(simple|martial|two-handed|versatile|school-.+|attack)$/
-		for (const [repId, rows] of Object.entries(E.compendium!.rows))
+		for (const [repId, rows] of Object.entries(E.library!.rows))
 			for (const r of rows) {
 				for (const t of r.piece.traits ?? []) assert.ok(!dup.test(t), `${repId}/${r.id} trait ${t}`)
 				if (repId === 'armour') assert.equal(r.piece.traits, undefined, r.id)
 				if (r.piece.damageType) assert.ok(!(r.piece.traits ?? []).includes(r.piece.damageType as string), `${r.id} repeats its damage type`)
 				assert.ok(!JSON.stringify(r).includes('null'), `${repId}/${r.id} carries no explicit null`)
 			}
-		assert.ok(E.conventions.bonuses!.types.includes('gear'))
-		assert.ok(!E.conventions.bonuses!.types.includes('item'))
+		assert.ok(rulesetConventionsFor(E).bonuses!.types.includes('gear'))
+		assert.ok(!rulesetConventionsFor(E).bonuses!.types.includes('item'))
 		assert.deepEqual(getAttributeSlot('core:slot/itineris-spell-points@1')!.label, { en: 'Spell points' })
 		assert.deepEqual(rep('spell-slots').label, { en: 'Spell slots' })
 	})
@@ -155,15 +204,17 @@ describe('🚧 Vis Itineris — item effects the handler executes (owner ruling 
 		const w = mech('weapons')
 		const roll = w.find((m) => m.verb === 'rollWith') as { on: string; target: string; from: readonly string[] }
 		assert.deepEqual([roll.on, roll.target, roll.from], ['hit', 'attack', ['strength-mod', 'dexterity-mod']])
-		const harm = w.find((m) => m.verb === 'harm') as { on: string; dice: string; plus: string; stat: string }
-		assert.deepEqual([harm.on, harm.dice, harm.plus, harm.stat], ['hit', 'piece.damage', 'check', 'hp'])
+		// 🚧 An amount (2026-10-22, M3), never the ⏳ `dice: 'piece.damage'`.
+		const harm = w.find((m) => m.verb === 'harm') as { on: string; amount: unknown; dice?: string; plus: string; stat: string }
+		assert.deepEqual([harm.on, harm.amount, harm.plus, harm.stat], ['hit', { selector: 'piece.damage' }, 'check', 'hp'])
+		assert.equal(harm.dice, undefined)
 		// The rider that only said so (and read on the table's line as done) is gone.
 		assert.ok(!w.some((m) => m.verb === 'rider' && /roll the weapon's damage/.test((m as { text: string }).text)))
 	})
 	test('a consumable: spent on use, landed or not; heals, harms or cures by its fields', () => {
 		const c = mech('consumables')
 		assert.deepEqual(c.filter((m) => m.verb === 'consume').map((m) => m.on).sort(), ['hit', 'use'])
-		assert.ok(c.some((m) => m.verb === 'heal' && (m as { dice: string }).dice === 'piece.heals'))
+		assert.ok(c.some((m) => m.verb === 'heal' && JSON.stringify((m as { amount?: unknown }).amount) === JSON.stringify({ selector: 'piece.heals' })))
 		const cure = c.find((m) => m.verb === 'cure') as { traits: readonly string[] }
 		assert.deepEqual(cure.traits, ['condition-poisoned', 'condition-envenomed'])
 		assert.ok(!c.some((m) => m.verb === 'rider'), 'no rider says what the handler does')
@@ -176,7 +227,7 @@ describe('🚧 Vis Itineris — item effects the handler executes (owner ruling 
 
 describe('Vis Itineris — settings and presets', () => {
 	test('each preset round-trips through values and back to its id', () => {
-		for (const p of E.presets ?? []) {
+		for (const p of presetsOf(E)) {
 			const values = rulesetSettingValues(E, { preset: p.id })
 			assert.deepEqual(values, { ...rulesetSettingValues(E), ...p.values })
 			assert.equal(rulesetPresetOf(E, values), p.id)
@@ -185,24 +236,24 @@ describe('Vis Itineris — settings and presets', () => {
 	})
 
 	test('casting: slots or spell points (ours); Classic plays slots', () => {
-		assert.deepEqual(E.settings!.casting!.choices.map((c) => c.id), ['slots', 'points'])
-		assert.equal(E.settings!.casting!.default, 'slots')
+		assert.deepEqual(settingsOf(E).casting!.choices.map((c) => c.id), ['slots', 'points'])
+		assert.equal(settingsOf(E).casting!.default, 'slots')
 		assert.equal(rulesetSettingValues(E, { preset: 'classic' }).casting, 'slots')
 		assert.equal(rulesetSettingValues(E, { values: { casting: 'points' } }).casting, 'points')
-		assert.ok(E.stats.some((s) => s.id === 'core:slot/itineris-spell-points@1'))
+		assert.ok(S.attributes!.some((a) => a.slot === 'core:slot/itineris-spell-points@1'))
 	})
 
 	test('Classic restores the printed rules in the conventions', () => {
 		const classic = rulesetConventionsFor(E, rulesetSettingValues(E, { preset: 'classic' }))
 		assert.equal(classic.actions!.perTurn, 1)
 		assert.deepEqual(classic.bonuses, { types: ['edge'], stacking: 'sum', edge: 'edge' })
-		assert.equal(classic.degrees.naturalShift, undefined)
-		assert.deepEqual(classic.degrees.natural?.high, { from: 20, band: 'critical' })
-		assert.ok(!classic.degrees.bands.some((b) => b.five === 'partial'))
+		assert.equal(classic.degrees!.naturalShift, undefined)
+		assert.deepEqual(classic.degrees!.natural?.high, { from: 20, band: 'critical' })
+		assert.ok(!classic.degrees!.bands.some((b) => b.five === 'partial'))
 		const own = rulesetConventionsFor(E)
 		assert.equal(own.actions!.perTurn, 3)
-		assert.deepEqual(own.degrees.naturalShift, { high: 20, low: 1 })
-		assert.deepEqual(own.degrees.bands.map((b) => b.from), [undefined, -9, 0, 10])
+		assert.deepEqual(own.degrees!.naturalShift, { high: 20, low: 1 })
+		assert.deepEqual(own.degrees!.bands.map((b) => b.from), [undefined, -9, 0, 10])
 		assert.deepEqual(own.time, classic.time, 'settings never move time')
 	})
 
@@ -212,24 +263,27 @@ describe('Vis Itineris — settings and presets', () => {
 	})
 
 	test('setting findings are named', () => {
-		const props = E as unknown as RulesetProps
+		// The shape before the sections (`L`): a section beside its old shape is refused as such (`legacy-beside-section`).
+		const props = L as unknown as RulesetProps
 		const f = (over: Partial<RulesetProps>) => reasons(rulesetFindings('acme.e:ruleset/e@1', { ...props, ...over }))
 		assert.ok(f({ presets: [{ id: 'x', label: { en: 'X' }, values: { degrees: 'nope' } }] }).includes('bad-preset'))
-		assert.ok(f({ settings: { ...E.settings, focus: { label: { en: 'F' }, default: 'a', choices: [{ id: 'a', label: { en: 'A' } }] } } }).includes('bad-setting'))
+		assert.ok(f({ settings: { ...L.settings, focus: { label: { en: 'F' }, default: 'a', choices: [{ id: 'a', label: { en: 'A' } }] } } }).includes('bad-setting'))
 		assert.ok(
-			f({ settings: { ...E.settings, again: { label: { en: 'Again' }, default: 'a', choices: [{ id: 'a', label: { en: 'A' }, conventions: { actions: { perTurn: 2 } } }, { id: 'b', label: { en: 'B' } }] } } }).includes('setting-overlap'),
+			f({ settings: { ...L.settings, again: { label: { en: 'Again' }, default: 'a', choices: [{ id: 'a', label: { en: 'A' }, conventions: { actions: { perTurn: 2 } } }, { id: 'b', label: { en: 'B' } }] } } }).includes('setting-overlap'),
 		)
-		assert.ok(f({ conventions: { ...E.conventions, bonuses: { types: ['item'], stacking: 'sum', edge: 'edge' } } }).includes('bad-bonuses'))
+		assert.ok(f({ conventions: { ...L.conventions!, bonuses: { types: ['item'], stacking: 'sum', edge: 'edge' } } }).includes('bad-bonuses'))
 	})
 })
 
 describe('Vis Itineris — the compendium slice', () => {
-	const rows = E.compendium!.rows
+	const rows = E.library!.rows
 
-	test('51 rows: 12 weapons, 6 armour, 8 gear, 4 consumables, 12 spells, 4 feats, 5 conditions', () => {
+	// 🚧 57 since 2026-10-21 (Lair rewrite D9): the six classes, moved from the
+	// Dungeon Crawler's kits. Entryable rows are still 51 (primers.test.ts).
+	test('57 rows: 12 weapons, 6 armour, 8 gear, 4 consumables, 12 spells, 4 feats, 5 conditions, 6 classes', () => {
 		const counts = Object.fromEntries(Object.entries(rows).map(([k, v]) => [k, v.length]))
-		assert.deepEqual(counts, { weapons: 12, armour: 6, gear: 8, consumables: 4, spells: 12, feats: 4, conditions: 5 })
-		assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), 51)
+		assert.deepEqual(counts, { weapons: 12, armour: 6, gear: 8, consumables: 4, spells: 12, feats: 4, conditions: 5, classes: 6 })
+		assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), 57)
 	})
 
 	test('every row validates as a piece of its repertoire, with version and source', () => {
@@ -330,7 +384,7 @@ describe('Vis Itineris — the seeded scripts', () => {
 	})
 
 	test('heighten: fireball at 5 is 10d6; magic missile at 3 adds darts; cantrips grow with level', () => {
-		const spell = (id: string) => E.compendium!.rows.spells.find((s) => s.id === id)!.piece
+		const spell = (id: string) => E.library!.rows.spells.find((s) => s.id === id)!.piece
 		assert.equal(runScript(cat.VIS_ITINERIS_HEIGHTEN_SCRIPT, { spell: spell('fireball'), slotLevel: 5 }).formula, '10d6')
 		assert.equal(runScript(cat.VIS_ITINERIS_HEIGHTEN_SCRIPT, { spell: spell('magic-missile'), slotLevel: 3 }).formula, '5d4+5')
 		assert.equal(runScript(cat.VIS_ITINERIS_HEIGHTEN_SCRIPT, { spell: spell('fire-bolt'), characterLevel: 11 }).formula, '3d10')
@@ -378,10 +432,10 @@ describe('Vis Itineris — the seeded scripts', () => {
 		})
 		assert.equal(env.values['armour-class'], 15)
 		// Armour class and the spell-point pool are on the sheet.
-		const sels = E.selectors as Record<string, { kind: string; onSheet?: boolean; label?: { en: string } }>
-		assert.deepEqual([sels['armour-class']!.onSheet, sels['armour-class']!.label?.en], [true, 'Armour class'])
+		const sels = (k: string) => ref(k)!.options as { onSheet?: boolean; label?: { en: string } }
+		assert.deepEqual([sels('armour-class').onSheet, sels('armour-class').label?.en], [true, 'Armour class'])
 		// 🚧 Not on the sheet (PLAN-dc-after-walk2 Q1-6): the pool's own row is bounded by it — one row, never two.
-		assert.equal(sels['spell-points-max']!.onSheet, undefined)
+		assert.equal(sels('spell-points-max').onSheet, undefined)
 	})
 
 	test('bulk: capacity Strength × 15; burdened past half', () => {
@@ -393,12 +447,21 @@ describe('Vis Itineris — the seeded scripts', () => {
 })
 
 describe('Vis Itineris — genre hooks', () => {
-	test('Lair and Dungeon Crawler recommend Vis Itineris; Story recommends Freeform then Vis Itineris; rigour defaults per genre', () => {
+	test('Dungeon Crawler recommends Vis Itineris; the Lair and Story recommend Freeform, Vis Itineris and Wherewithal; rigour defaults per genre', () => {
 		const g = (id: string) => getGenre(id)!
-		assert.deepEqual(g('core:genre/lair').rulesets, { recommended: [E.id], default: E.id })
+		// 🚧 2026-10-21 (the Lair's rewrite, D8): Freeform by default, Vis Itineris — the Dungeon Crawler's — for rules and dice;
+		// 🚧 2026-10-23 (AUDIT-core-genres Lair 2): and Wherewithal, as Story does.
+		assert.deepEqual(g('core:genre/lair').rulesets, {
+			recommended: ['core:ruleset/freeform@1', E.id, 'core:ruleset/wherewithal@1'],
+			default: 'core:ruleset/freeform@1',
+		})
 		assert.deepEqual(g('core:genre/dungeon-crawler').rulesets, { recommended: [E.id], default: E.id })
-		// 🚧 2026-10-19: Story (the roleplay Chat and Adventure) plays in words by default.
-		assert.deepEqual(g('core:genre/story').rulesets, { recommended: ['core:ruleset/freeform@1', E.id], default: 'core:ruleset/freeform@1' })
+		// 🚧 2026-10-19: Story (the roleplay Chat and Adventure) plays in words by default;
+		// 🚧 2026-10-22 (M3): and recommends Wherewithal, core's diceless ruleset.
+		assert.deepEqual(g('core:genre/story').rulesets, {
+			recommended: ['core:ruleset/freeform@1', E.id, 'core:ruleset/wherewithal@1'],
+			default: 'core:ruleset/freeform@1',
+		})
 		assert.equal(g('core:genre/lair').rigour!.default, 'mechanics')
 		assert.equal(g('core:genre/dungeon-crawler').rigour!.default, 'scripts')
 		assert.deepEqual(g('core:genre/story').rigour, { options: ['prose', 'mechanics', 'scripts'], default: 'prose' })
@@ -413,4 +476,156 @@ test('a piece field may not take a held piece\'s form keys', async () => {
 		() => defineRepertoire('bad', { label: { en: 'Bad' }, prose: 'Bad.', piece: { type: 'object', fields: { kind: { type: 'string', label: { en: 'Kind' } } } } }),
 		(e: unknown) => e instanceof RulesetError && e.findings.some((f) => f.startsWith('[piece-reserved-field]')),
 	)
+})
+
+// ── 🚧 Check methods (PLAN-rulesets-authoring D1, 2026-10-22): Vis Itineris declares its own (M3) ──
+
+/**
+ * Vis Itineris before M3 (2026-10-22) — the shape a stored copy made before
+ * check methods still holds: `conventions.dice`, the top-level bands, the
+ * old harm/heal spelling, no tags. Built from today's declaration by putting
+ * the ⏳ spellings back, so it is exactly what a copy written then carries.
+ */
+/** The words the dying, focus and casting choices said before M3 gave them the rules' numbers. */
+const PRE_M3_WORDS: Record<string, Record<string, string>> = {
+	dying: {
+		'dying-1-4': 'At zero health one roll decides: back up on 1 health, or down for good — dead, or taken out at a gentle table.',
+		'death-saves': 'At zero health a roll each round: three passes and they are stable, three failures and they die. Healing brings them back.',
+	},
+	focus: {
+		sustain: 'Spend an action each turn to keep a spell going; stop and it ends.',
+		concentration: 'One spell held at a time; taking harm calls for a save to keep it.',
+	},
+}
+const legacyCopy = (decl: typeof L, words = false) => {
+	const { methods: _m, defaultMethod: _d, ...conventions } = decl.conventions!
+	const { bands, kind: _k, label: _l, ...die } = decl.conventions!.methods!.die as { bands: unknown; kind: string; label: unknown; sides: number }
+	// With `words`, the settings as they read before M3 too: no casting pool, the old choice words.
+	const settings = !words
+		? decl.settings
+		: Object.fromEntries(
+				Object.entries(decl.settings ?? {}).map(([k, set]) => [
+					k,
+					{
+						...set,
+						choices: set.choices.map(({ conventions: patch, ...c }) => ({
+							...c,
+							...(patch && !('casting' in patch) ? { conventions: patch } : {}),
+							...(PRE_M3_WORDS[k]?.[c.id] ? { description: { en: PRE_M3_WORDS[k]![c.id]! } } : {}),
+						})),
+					},
+				]),
+			)
+	return {
+		...decl,
+		settings,
+		conventions: { ...conventions, dice: die },
+		difficultyBands: bands,
+		repertoires: decl.repertoires.map(({ tags: _t, ...r }) => ({
+			...r,
+			mechanics: r.mechanics?.map((m) =>
+				(m.verb === 'harm' || m.verb === 'heal') && m.amount && typeof m.amount === 'object' ? (({ amount, ...rest }) => ({ ...rest, dice: (amount as { selector: string }).selector }))(m) : m,
+			),
+		})),
+	}
+}
+
+describe('🚧 Vis Itineris declares its check method, its tags and its amounts (M3, 2026-10-22)', () => {
+	test('one die-target method, `die`, holding its bands — no `dice`, no top-level bands, nothing to warn of', async () => {
+		const { normaliseRuleset, rulesetCheckMethod, rulesetProvides, rulesetWarnings, defaultDifficultyBand, rulesetDifficultyBands } = await import('@serene-pub/sdk')
+		// 🚧 Read through the sections (2026-10-23): its way to decide is a reference to core's die-target, keyed `die`.
+		const conv = rulesetConventionsFor(E)
+		assert.equal(conv.dice, undefined)
+		assert.equal(E.difficultyBands, undefined)
+		assert.deepEqual(Object.keys(conv.methods ?? {}), ['die'])
+		assert.equal(conv.defaultMethod, 'die')
+		const die = conv.methods!.die as { kind: string; sides: number; bands: readonly { id: string }[]; modifierOf?: string }
+		assert.deepEqual([die.kind, die.sides, die.modifierOf], ['die-target', 20, undefined])
+		assert.deepEqual(die.bands.map((b) => b.id), ['very-easy', 'easy', 'medium', 'hard', 'very-hard', 'nearly-impossible'])
+		assert.equal(rulesetCheckMethod(E, 'skill.stealth').key, 'die')
+		assert.equal(defaultDifficultyBand(E)?.id, 'medium')
+		assert.deepEqual(rulesetDifficultyBands(E, 'die'), die.bands)
+		assert.deepEqual(normaliseRuleset(E).conventions!.degrees, conv.degrees)
+		const p = rulesetProvides(E)
+		assert.deepEqual(p.methods, ['die-target'])
+		assert.ok(p.dice && p.chance && p.conditions && p.casting && p.tagged)
+		assert.deepEqual(rulesetWarnings(E), [])
+		// A session's settings are laid over first: Hit or miss reads as its own degrees.
+		const classic = normaliseRuleset(E, rulesetSettingValues(E, { preset: 'classic' }))
+		assert.equal(classic.conventions.degrees.natural?.high?.band, 'critical')
+		assert.equal(classic.conventions.methods.die!.kind, 'die-target')
+	})
+
+	test('a tag on every repertoire — spells cast, spell slots are a resource, never casting', () => {
+		const tags = Object.fromEntries(S.entryTypes!.map((r) => [r.id, r.tags]))
+		assert.deepEqual(tags, {
+			weapons: ['weapon'],
+			armour: ['armour'],
+			gear: ['gear'],
+			consumables: ['consumable'],
+			spells: ['casting'],
+			'spell-slots': ['resource'],
+			features: ['feature'],
+			feats: ['feat'],
+			conditions: ['condition'],
+			exits: ['exit'],
+			creatures: ['creature'],
+			classes: ['class'],
+		})
+	})
+
+	test('spell points are declared on the `casting: points` choice; the dying and focus choices read the rules\' numbers', () => {
+		const casting = settingsOf(E).casting!.choices.find((c) => c.id === 'points')!.conventions!.casting
+		assert.deepEqual(casting, { pool: 'itineris-spell-points', cost: 'level', repertoire: 'spells', refill: 'long', max: 'spell-points-max' })
+		assert.equal(settingsOf(E).casting!.choices.find((c) => c.id === 'slots')!.conventions, undefined)
+		assert.deepEqual(rulesetConventionsFor(E, { casting: 'points' }).casting, casting)
+		assert.equal(rulesetConventionsFor(E, {}).casting, undefined)
+		// The long rest the pool refills on is declared, in minutes.
+		assert.equal(rulesetConventionsFor(E).rest!.find((r) => r.id === 'long')!.minutes, 480)
+		const words = (setting: string, id: string) => (settingsOf(E)[setting]!.choices.find((c) => c.id === id)!.description as { en: string }).en
+		// 🚧 Its fall rule's reference's numbers (core:function/at-zero-health@1; lane G3, 2026-10-23, ★I).
+		const z = cat.VIS_ITINERIS_AT_ZERO_HEALTH_RULE
+		assert.match(words('dying', 'dying-1-4'), new RegExp(`${z.door.target} or more .* ${z.door.upOn} health`))
+		assert.match(words('dying', 'death-saves'), new RegExp(`${z.saves!.passes} passes .* ${z.saves!.failures} failures`))
+		assert.match(words('focus', 'concentration'), new RegExp(`against ${cat.VIS_ITINERIS_FOCUS.concentration.target}`))
+	})
+
+	test('a stored copy written before check methods reads as this declaration — through the aliases, with its warnings', async () => {
+		const { normaliseRuleset, rulesetWarnings, rulesetFindings: findings } = await import('@serene-pub/sdk')
+		const old = legacyCopy(L) as never
+		// The legacy copy is still a valid declaration, and still warned.
+		assert.deepEqual(findings(E.id, old), [])
+		const warned = reasons(rulesetWarnings(old))
+		for (const r of ['legacy-dice', 'legacy-difficulty-bands', 'legacy-amount', 'untagged-repertoires']) assert.ok(warned.includes(r), `${r} in ${warned.join(', ')}`)
+		// Read through the aliases, its method is today's (less the label it never had), under the same key.
+		const n = normaliseRuleset(old)
+		const { label: _l, ...today } = L.conventions!.methods!.die as Record<string, unknown>
+		assert.deepEqual(n.conventions.methods, { die: today })
+		assert.equal(n.conventions.defaultMethod, 'die')
+		// Its harm/heal amounts read as today's.
+		const amounts = (r: { repertoires: readonly { mechanics?: readonly unknown[] }[] }) =>
+			r.repertoires.flatMap((x) => (x.mechanics ?? []).filter((m) => ['harm', 'heal'].includes((m as { verb: string }).verb)))
+		assert.deepEqual(amounts(n as never), amounts(L))
+	})
+
+	test("its document's hash moved, deliberately: the method, tags, amounts, the casting pool and the numbered choices", async () => {
+		const { canonicalize, rulesetDocumentOf } = await import('@serene-pub/sdk')
+		const { createHash } = await import('node:crypto')
+		const digest = createHash('sha256').update(canonicalize(rulesetDocumentOf(E) as never)).digest('hex').slice(0, 16)
+		// Moved 2026-10-22 (M3): `conventions.dice` + top-level `difficultyBands` →
+		// `methods.die` (+ label) and `defaultMethod`; tags on all twelve
+		// repertoires; harm/heal `dice` → `amount`; `casting: points` lays
+		// `conventions.casting`; the dying and focus choices' words read the
+		// rules' numbers. Proven: today's declaration with exactly those put back
+		// (legacyCopy with its words) hashes to the pin before M3.
+		const before = createHash('sha256').update(canonicalize(rulesetDocumentOf(legacyCopy(L, true) as never) as never)).digest('hex').slice(0, 16)
+		assert.equal(before, '0d26c4585600ae11')
+		// 🚧 Moved again 2026-10-23: the same rules in the seven sections (`catalogueParity`); the shape before them still hashes as it did.
+		assert.equal(createHash('sha256').update(canonicalize(rulesetDocumentOf(L) as never)).digest('hex').slice(0, 16), 'b07a6e3b8fe47be0')
+		// Moved again 2026-10-23 (genres GM): core's rest and fall rule referenced (G3, S3, ★I), each check in its words (G2 ★1).
+		// 🚧 Moved again 2026-10-23 (RF fix 8): its borrowed level, class and health say their tags (`level`,
+		// `class`, `health`) for what a genre plays best with. Proven: with those three tags taken off, it
+		// hashes to '75f4c4c69cd43155'. Recomputed after the final build.
+		assert.equal(digest, '17daa8bfe5339da9') // was '75f4c4c69cd43155', before that '4ade3f8c8d3caf8b', before that 'b07a6e3b8fe47be0'
+	})
 })

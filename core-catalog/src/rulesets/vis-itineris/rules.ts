@@ -1,6 +1,13 @@
 /**
  * 🚧 Vis Itineris's rules that more than one script reads, as ES5 source to
- * lay into each (2026-10-18): one armour-class rule, one spell-point pool.
+ * lay into each (2026-10-18): one armour-class rule, one spell-point pool —
+ * and 🚧 (2026-10-22, M3) its numbers for holding a spell, read by the
+ * settings' own words (`VIS_ITINERIS_SETTINGS`), so a choice never says a
+ * number the rules do not hold. ⏳ Its numbers at zero health lived here as
+ * data (2026-10-21) until the fall rule became a catalogue function (lane
+ * G3, 2026-10-23, ★I): they are its reference's options now
+ * (`VIS_ITINERIS_AT_ZERO_HEALTH_RULE`, `conventions.ts`), which a genre reads
+ * from the session's ruleset, never from this module.
  * A leaf module — no imports — so the ruleset's seeded scripts and the
  * Dungeon Crawler's preamble both take it without an import cycle.
  */
@@ -55,3 +62,26 @@ export function spellPointsFor(cls: string, level: number): number {
 	const lv = Math.max(1, Math.min(20, Math.floor(level)))
 	return c === 'full' ? 2 + 2 * lv : c === 'half' ? Math.floor((2 + 2 * lv) / 2) : 0
 }
+
+/**
+ * 🚧 What holding a spell takes under Vis Itineris, as numbers (2026-10-22,
+ * M3) — the two choices of its _Holding a spell_ setting (`focus`), read by
+ * those choices' words:
+ *
+ *  · _Sustain_ (`focus: sustain`): `actions` of a turn's actions each turn
+ *    keep a spell going.
+ *  · _Concentration_ (`focus: concentration`): `held` spell at a time;
+ *    taking harm calls for a save against `target`, or the harm divided by
+ *    `harmDivisor` when that is more.
+ * @experimental
+ */
+export interface VisItinerisFocus {
+	readonly sustain: { readonly actions: number }
+	readonly concentration: { readonly held: number; readonly target: number; readonly harmDivisor: number }
+}
+
+/** 🚧 Vis Itineris's numbers for holding a spell (`VisItinerisFocus`). @experimental */
+export const VIS_ITINERIS_FOCUS: VisItinerisFocus = Object.freeze({
+	sustain: Object.freeze({ actions: 1 }),
+	concentration: Object.freeze({ held: 1, target: 10, harmDivisor: 2 })
+})

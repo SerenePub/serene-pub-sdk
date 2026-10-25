@@ -117,6 +117,10 @@ export const STORY_SIDE_CHARACTER_SPEC_ID = 'core:spec/story-side-character'
 // `save` (`spritePick`, `spriteShow`) where the retired `withSpriteTail`
 // wrapper appended nodes this source never named; `semantic.arm.queries`
 // wires its own embedding connection, since `embed-text` declares none.
+// ⚠ Edited in place (2026-10-21, omni O5/O7/O9) — content-addressed;
+// `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
+// before placement hears the audio the reply cannot; `generate` names its
+// speech sampling, and `save` writes the reply's media parts in order.
 /** @internal */
 export const STORY_SIDE_CHARACTER_VERSION = '1.0.0'
 
@@ -168,10 +172,7 @@ export const narrateCharacterSpec = () =>
 			 * this trigger carries a side-character fact the chat input has no
 			 * port for.
 			 */
-			.inlet('input', C.sideCharacterTurn.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.sideCharacterTurn.v1(), { suits: [] })
 			/**
 			 * The side character's row, created by the pipeline that fills it
 			 * (R-17) — see `respond`'s `placeholder`. Narration with a named
@@ -363,7 +364,7 @@ export const narrateCharacterSpec = () =>
 								texts: $.names.arm.mentions.texts,
 								// One `enabled` switch for both embed nodes (R-7 P2): the
 								// semantic mechanism's embed owns it, this one reads it.
-								params: slot.params({ node: 'semantic.arm.embed' }),
+								params: slot.params($.semantic.arm.embed),
 							}),
 							{ expose: { label: 'Embed the mentions' } },
 						)
@@ -442,10 +443,26 @@ export const narrateCharacterSpec = () =>
 				}),
 			)
 			// 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+			/**
+			 * 🚧 Audio the reply cannot hear, heard first (O9) — see
+			 * `chat/respond.ts`. Nothing to hear sends nothing.
+			 */
+			.oracle(
+				'heard',
+				($) =>
+					C.transcribeAudio.v1({
+						messages: $.lines.messages,
+						attachments: $.attachments.attachments,
+						hears: $.contextBudget.reads,
+						connection: slot.connection(),
+						params: slot.params(),
+					}),
+				{ expose: { label: 'Transcribe audio' } },
+			)
 			.task('attached', ($) =>
 				C.placeAttachments.v1({
 					messages: $.lines.messages,
-					attachments: $.attachments.attachments,
+					attachments: $.heard.attachments,
 					connection: slot.connectionOf('generate'),
 					params: slot.params(),
 				}),
@@ -464,7 +481,7 @@ export const narrateCharacterSpec = () =>
 					template: slot.template(),
 					// One authored prompt, read by reference where the template
 					// asks for `{{systemPrompt}}` (13 §12 finding i).
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					// The connection this prompt is being WRITTEN FOR, shared
@@ -487,6 +504,7 @@ export const narrateCharacterSpec = () =>
 					// See the note above `STORY_SIDE_CHARACTER_VERSION`.
 					connection: slot.connection(),
 					sampling: slot.sampling(),
+					speechSampling: slot.speechSampling(),
 					// And the third: `params.stopSequences` has had a reader
 					// since the stop-sequence ruling (2026-09-10) and no spec
 					// named the slot, so the control rendered and the value
@@ -505,6 +523,7 @@ export const narrateCharacterSpec = () =>
 					target: $.placeholder.messageId,
 					text: $.generate.text,
 					reasoning: $.generate.reasoning,
+					parts: $.generate.parts,
 				}),
 			)
 			/**
@@ -537,10 +556,11 @@ export const narrateCharacterSpec = () =>
 			 * session's growing history and the reminder only earns its place
 			 * once there is enough of it to drift from.
 			 */
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
-					.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply))
+					.loadout('heard', slot.loadout(CORE_LOADOUT.transcription)),
 			)
 			.build(),
 	)

@@ -28,6 +28,7 @@ import type { RunLineage } from './executor.js'
 import type { TurnOrderV1 } from './turnOrder.js'
 import { S, getShape } from './shapes.js'
 import { i18nFindings, i18nText, type I18n } from './i18n.js'
+import type { EntityKind } from './entities.js'
 
 /** @experimental */
 export type EventFamily = 'data' | 'action'
@@ -81,6 +82,16 @@ export interface EventDef {
 	 */
 	name?: { en: string } & Record<string, string>
 	description: string
+	/**
+	 * 🚧 What the event's body **carries** — the entities a pipeline
+	 * registered on it may read (PLAN-layering D3, A1). Fit is computed
+	 * against it: a pipeline whose steps read the speaker cannot be
+	 * registered on an event that carries none. Every core event states it;
+	 * absent means `['session']`. Display-adjacent, but contract for fit:
+	 * stated truthfully from the payload the host emits, never hopefully.
+	 * @ruling R4, A1
+	 */
+	carries?: readonly EntityKind[]
 	/** Reserved, always null in 0.6. Reopening is a permission, not a migration. */
 	ownerPluginId?: null
 }
@@ -110,6 +121,10 @@ export function defineEvent(def: Omit<EventDef, 'id' | 'ownerPluginId'>): EventD
 				`consequences of a write — that is what keeps them out of the cycle graph`,
 		)
 	}
+	if (def.carries !== undefined && (!Array.isArray(def.carries) || def.carries.some((k) => typeof k !== 'string' || !k)))
+		throw new Error(
+			`event '${def.slug}' declares carries that are not entity kinds — a list such as ['session', 'message']`,
+		)
 	if (def.declaredRoot && def.causedBy?.length) {
 		throw new Error(
 			`event '${def.slug}' is a declared root and declares causedBy — a root starts outside ` +
@@ -247,6 +262,12 @@ export function defineSessionEvent<Payload = unknown>(d: {
 	payload: ShapeId | { readonly id: ShapeId }
 	name: I18n
 	description: I18n
+	/**
+	 * 🚧 What the recording carries beyond its payload — the entities a
+	 * registered pipeline may read (fit, R4). Absent: the session it was
+	 * recorded in.
+	 */
+	carries?: readonly EntityKind[]
 }): SessionEventDecl<Payload> {
 	if (!EVENT_ID.test(d.id) || d.id.startsWith('core:') || /@0\d/.test(d.id))
 		throw new Error(
@@ -293,6 +314,7 @@ export function defineSessionEvent<Payload = unknown>(d: {
 		family: 'data',
 		affectsUser: false,
 		causedBy: ['core:outlet/record-event'],
+		...(d.carries?.length ? { carries: Object.freeze([...d.carries]) } : {}),
 		payload: RECORDED_EVENT_SHAPE as ShapeId,
 		name: typeof d.name === 'string' ? { en: d.name } : (d.name as { en: string } & Record<string, string>),
 		description: i18nText(d.description) ?? '',
@@ -361,6 +383,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message written' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/create-message', 'core:outlet/seed-greetings'],
 		description: 'A message was written into a session.',
@@ -379,6 +402,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message changed' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: ['core:outlet/update-message', 'core:outlet/attach-image', 'core:outlet/attach-audio'],
 		payload: S.sessionChange,
@@ -394,6 +418,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message deleted' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: ['core:outlet/delete-message'],
 		payload: S.sessionChange,
@@ -405,6 +430,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message hidden or shown' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: ['core:outlet/hide-message'],
 		payload: S.sessionChange,
@@ -416,6 +442,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message edited' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: ['core:outlet/edit-message'],
 		payload: S.sessionChange,
@@ -427,6 +454,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message swiped' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: ['core:outlet/swipe-message'],
 		payload: S.sessionChange,
@@ -446,6 +474,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Sprite shown' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message', 'speaker'],
 		affectsUser: true,
 		causedBy: ['core:outlet/show-sprite'],
 		payload: S.sessionChange,
@@ -464,6 +493,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Reply stopped' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		payload: S.sessionChange,
 		description:
@@ -474,6 +504,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Session branched' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/branch-session'],
 		payload: S.sessionChange,
@@ -499,6 +530,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Message completed' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message'],
 		affectsUser: true,
 		causedBy: [
 			'core:outlet/create-message',
@@ -521,6 +553,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Cast changed' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'cast-member'],
 		affectsUser: true,
 		payload: S.castChange,
 		description:
@@ -545,6 +578,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Session updated' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/advance-story-clock'],
 		payload: S.sessionChange,
@@ -563,6 +597,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Turn order changed' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/set-turn-order'],
 		payload: S.turnOrderChanged,
@@ -583,6 +618,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Annex changed' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/set-session-annex', 'core:outlet/set-annex-field'],
 		payload: S.annexChange,
@@ -602,6 +638,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Backdrop set' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/set-backdrop'],
 		payload: S.sessionChange,
@@ -621,6 +658,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Sprites attached' },
 		version: 1,
 		family: 'data',
+		carries: ['subject'],
 		affectsUser: true,
 		causedBy: ['core:outlet/attach-sprite'],
 		payload: S.json,
@@ -640,6 +678,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Pictures offered' },
 		version: 1,
 		family: 'data',
+		carries: ['subject'],
 		affectsUser: true,
 		causedBy: ['core:outlet/offer-media'],
 		payload: S.json,
@@ -660,6 +699,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Session changes truncated' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: false,
 		payload: S.sessionChange,
 		description:
@@ -680,6 +720,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Form addressed' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message', 'cast-member', 'form'],
 		affectsUser: false,
 		causedBy: ['core:outlet/create-message', 'core:outlet/update-message'],
 		payload: S.formAddressed,
@@ -697,6 +738,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Form answered' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message', 'cast-member', 'form'],
 		affectsUser: false,
 		causedBy: ['core:outlet/answer-form'],
 		payload: S.sessionChange,
@@ -716,6 +758,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Form superseded' },
 		version: 1,
 		family: 'data',
+		carries: ['session', 'message', 'form'],
 		affectsUser: false,
 		payload: S.sessionChange,
 		description:
@@ -726,6 +769,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Lore entry written' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/create-lore-entry'],
 		description: 'A lorebook entry was written.',
@@ -749,6 +793,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Lore entries linked' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/link-lore-entries'],
 		description: 'Two lorebook entries were linked.',
@@ -758,9 +803,196 @@ export const CORE_EVENTS = {
 		name: { en: 'Graph proposal filed' },
 		version: 1,
 		family: 'data',
+		carries: ['session'],
 		affectsUser: true,
 		causedBy: ['core:outlet/graph-proposal'],
 		description: 'A narrative-graph proposal was filed for review.',
+	}),
+
+	// ── 🚧 Session events the host raises (PLAN-layering D7, 2026-10-20; D11) — DATA family
+	// What used to be host happenings with no event — a turn ending, a round
+	// ending, a scene opening or closing, the story clock moving — become
+	// core events, so event pipelines may register on them and cadences
+	// wake on them. Each is emitted by the host through the session-event
+	// emitter (lane 6); each payload is a session change
+	// (`SessionChangePayload`) whose fields say what moved. Names
+	// checked against NOMENCLATURE: a scene is *opened* and *closed*
+	// (`openedAt` · `closedAt`, `scenes:close`), so the plan's "scene ended"
+	// is `scene-closed`; the clock is always the *story clock* (R3), so
+	// "clock moved" is `story-clock-moved`.
+	/**
+	 * 🚧 A turn ended: a speaker's reply landed and the runs it set off
+	 * settled. Carries the line that ended it and whose turn it was. The
+	 * event `afterEachTurn()` and `everyNTurns()` wake on.
+	 */
+	turnEnded: defineEvent({
+		slug: 'turn-ended',
+		declaredRoot: true,
+		name: { en: 'Turn ended' },
+		version: 1,
+		family: 'data',
+		carries: ['session', 'message', 'speaker'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description:
+			"A turn ended — a speaker's line landed on a lane and what it set off has settled. The payload names the line, the speaker, the lane, the turn's number in that lane, the round and each speaker's turns in it.",
+	}),
+	/**
+	 * 🚧 A round ended: every active speaker — whoever the turn order seats or
+	 * prepares, and every person who spoke — has had a turn on the story's
+	 * lane (R52). The event `afterEachRound()` wakes on — the "wait for
+	 * everyone".
+	 */
+	roundEnded: defineEvent({
+		slug: 'round-ended',
+		declaredRoot: true,
+		name: { en: 'Round ended' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description:
+			"A round ended — every active speaker (whoever the turn order seats or prepares, and every person who spoke) has had a turn on the story's lane. The payload carries the round's number and who spoke in it.",
+	}),
+	/** 🚧 A live scene was opened on a lane — by a person, a boundary trigger or the genre. */
+	sceneOpened: defineEvent({
+		slug: 'scene-opened',
+		declaredRoot: true,
+		name: { en: 'Scene opened' },
+		version: 1,
+		family: 'data',
+		carries: ['session', 'scene'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description: 'A scene was opened. The payload names the scene and the line it opened at.',
+	}),
+	/**
+	 * 🚧 A live scene was closed. The event `afterEachScene()` wakes on.
+	 * ⚠ Not the summary of the scene — that runs after, as its own work.
+	 */
+	sceneClosed: defineEvent({
+		slug: 'scene-closed',
+		declaredRoot: true,
+		name: { en: 'Scene closed' },
+		version: 1,
+		family: 'data',
+		carries: ['session', 'scene'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description: 'A scene was closed. The payload names the scene and the line it closed at.',
+	}),
+	/**
+	 * 🚧 The session's **story clock** moved — *Time passes…*, a reckoning,
+	 * a reply tick, a person's step. Caused by
+	 * `core:outlet/advance-story-clock`, like the `session-updated` it
+	 * travels beside, so the event map draws the edge a pipeline registered
+	 * here that also moves the clock would loop on. The event a Timeline
+	 * Cron and a timeline Schedule are evaluated at (R17).
+	 */
+	storyClockMoved: defineEvent({
+		slug: 'story-clock-moved',
+		name: { en: 'Story clock moved' },
+		version: 1,
+		family: 'data',
+		carries: ['session', 'clock'],
+		affectsUser: false,
+		causedBy: ['core:outlet/advance-story-clock'],
+		payload: S.sessionChange,
+		description:
+			"The session's story clock moved. The payload carries where it stood and where it stands now.",
+	}),
+	/**
+	 * 🚧 A **rest was taken** under the session's rules (lane G3, 2026-10-23;
+	 * PLAN-genres-seams S3) — raised by core's rest function
+	 * (`core:function/rest@1`, a person's rules action Rest) and emitted once
+	 * the run that resolved it is saved (the host's `dispatchRulesetEmits`).
+	 * What a genre's own effects after a rest listen for: a routine
+	 * `onEvent(coreEvents.restTaken)` (the Dungeon Crawler's *After a rest*).
+	 * Its `values`: `{ owner, rest }` — who rested, and which of the
+	 * ruleset's rests.
+	 */
+	restTaken: defineEvent({
+		slug: 'rest-taken',
+		name: { en: 'A rest was taken' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		causedBy: ['core:task/ruleset-resolve'],
+		payload: S.sessionChange,
+		description: "Someone took a rest under the session's rules. The payload's values name who rested and which rest.",
+	}),
+	/**
+	 * 🚧 A **level was reached** under the session's rules (GM, 2026-10-23;
+	 * ★G3-4, declared the way `rest-taken` is) — raised by core's experience
+	 * levels function (`core:function/experience-levels@1`) when someone's
+	 * experience passes a threshold, and emitted once the run that resolved
+	 * it is saved (`dispatchRulesetEmits`). Its `values`: `{ owner, level }`.
+	 */
+	levelReached: defineEvent({
+		slug: 'level-reached',
+		name: { en: 'A level was reached' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		causedBy: ['core:task/ruleset-resolve'],
+		payload: S.sessionChange,
+		description: "Someone reached a new level under the session's rules. The payload's values name who and the level.",
+	}),
+	/**
+	 * 🚧 An **obligation came due** (GM, 2026-10-23; ★G3-4) — raised by
+	 * core's obligation function (`core:function/obligation@1`) when the story
+	 * clock passes what an entry was owed by. Its `values`: `{ owner, entry }`.
+	 * ⚠ Not a **deadline passed** (a value short of its goal at a set time).
+	 */
+	obligationCameDue: defineEvent({
+		slug: 'obligation-came-due',
+		name: { en: 'An obligation came due' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		causedBy: ['core:task/ruleset-resolve'],
+		payload: S.sessionChange,
+		description: "The story clock passed what an obligation was owed by. The payload's values name who owed it and the entry.",
+	}),
+	/**
+	 * 🚧 A **deadline passed** with its goal unmet (GM, 2026-10-23; ★G3-4) —
+	 * raised by core's deadline function (`core:function/deadline@1`) when
+	 * the story clock passes its time short of the goal. Its `values`:
+	 * `{ key, owner }` — the function reference's key, and whose value fell
+	 * short. ⚠ Not an **obligation came due** (an entry owed by a time).
+	 */
+	deadlinePassed: defineEvent({
+		slug: 'deadline-passed',
+		name: { en: 'A deadline passed' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		causedBy: ['core:task/ruleset-resolve'],
+		payload: S.sessionChange,
+		description: "The story clock passed a deadline with its goal unmet. The payload's values name the rule and whose value fell short.",
+	}),
+	/**
+	 * 🚧 A **scheduled moment was reached** (GM, 2026-10-23; ★G3-4) — raised
+	 * by core's scheduled function (`core:function/scheduled@1`) when the
+	 * story clock reaches its set time. Its `values`: `{ key }` — the
+	 * function reference's key. ⚠ Not a **cadence** (when a routine wakes):
+	 * a ruleset's moment in story time, which a routine may listen for.
+	 */
+	scheduledMomentReached: defineEvent({
+		slug: 'scheduled-moment-reached',
+		name: { en: 'A scheduled moment was reached' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: false,
+		causedBy: ['core:task/ruleset-resolve'],
+		payload: S.sessionChange,
+		description: "The story clock reached a moment the session's rules set. The payload's values name the rule.",
 	}),
 
 	// ── The session lifecycle (24 §5) — ACTION family: a person did it ──────
@@ -771,6 +1003,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Session created' },
 		version: 1,
 		family: 'action',
+		carries: ['session'],
 		affectsUser: false,
 		description: "A session was created — the genre's create pipeline answers this.",
 	}),
@@ -781,6 +1014,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Reply' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'message', 'speaker', 'actor'],
 		affectsUser: true,
 		description: 'A reply was asked for — the primary turn of a session.',
 	}),
@@ -806,10 +1040,46 @@ export const CORE_EVENTS = {
 		name: { en: 'Message sent' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'speaker', 'actor', 'user'],
 		affectsUser: true,
 		payload: S.messageOffered,
 		description:
 			'A person sent a message — the pipeline bound here saves it. The payload carries who sent it, who it speaks as, the channel, the text and the attachments.',
+	}),
+	/**
+	 * 🚧 A person asked for a message to be **deleted** (RF fix 5, owner
+	 * ruling 2026-10-23: "hiding messages or using back/forward will be the
+	 * recommended methods. Deletion requires a pipeline, so it's managed by
+	 * the genre"). The host checks the door — the message is the session's,
+	 * the person may act on it — and dispatches this; the pipeline registered
+	 * here carries the deletion out through `core:outlet/delete-message@1`,
+	 * handed the payload on its `asked` port (it takes back everything the
+	 * message changed), with whatever steps
+	 * the genre puts around it: a note, a lore write, a confirm form.
+	 *
+	 * **Core registers nothing here.** A message offers Delete only where the
+	 * session's effective registrations hold an event pipeline on this event
+	 * — a plugin genre's, or one an administrator registers — so deleting is
+	 * off everywhere by default. An action, like `message-offered`: a
+	 * request, not a write's consequence. Payload
+	 * `core:shape/deletion-asked@1` (`DeletionAskedPayload`).
+	 *
+	 * ⚠ Not `message-deleted`: that is the fact the outlet causes once the
+	 * row is gone. Not Back: a rewound turn is taken out of the history and
+	 * kept, and a new write replacing it raises nothing here.
+	 * @ruling owner 2026-10-23
+	 */
+	messageDeletionAsked: defineEvent({
+		slug: 'message-deletion-asked',
+		declaredRoot: true,
+		name: { en: 'Deletion asked' },
+		version: 1,
+		family: 'action',
+		carries: ['session', 'message', 'actor', 'user'],
+		affectsUser: true,
+		payload: S.deletionAsked,
+		description:
+			'A person asked for a message to be deleted — the pipeline registered here deletes it and takes back what it changed. The payload carries the session, the message, its channel and who asked.',
 	}),
 	/**
 	 * Arbitrary buttons/triggers — the contributed functions surface.
@@ -821,6 +1091,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Action' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'actor'],
 		affectsUser: true,
 		description: 'A person triggered a contributed action in a session.',
 	}),
@@ -830,6 +1101,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Member joined' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'cast-member'],
 		affectsUser: false,
 		// A seat is a cast change (R31): `change: 'added'`, `ref` the member.
 		payload: S.castChange,
@@ -841,6 +1113,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Member left' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'cast-member'],
 		affectsUser: false,
 		// An unseat is a cast change (R31): `change: 'removed'`, `ref` the member.
 		payload: S.castChange,
@@ -864,6 +1137,7 @@ export const CORE_EVENTS = {
 		name: { en: 'Interface action' },
 		version: 1,
 		family: 'action',
+		carries: ['session', 'actor', 'user'],
 		affectsUser: true,
 		description:
 			'Someone asked for a run from the interface — a composer action, a message action, ' +
@@ -885,10 +1159,44 @@ export const CORE_EVENTS = {
 		name: { en: 'Schedule tick' },
 		version: 1,
 		family: 'action',
+		carries: [],
 		affectsUser: false,
 		description: 'A declared cadence elapsed. Payload: cadence, scheduledFor, scope.',
 	}),
 } as const
+
+/**
+ * 🚧 Core's events as **objects** — what an author passes where an event is
+ * named: `register(coreEvents.messageRespond, storyReply)`,
+ * `.inlet('input', node, { suits: [coreEvents.messageRespond] })`,
+ * `.emits(coreEvents.…)`. The same values as `CORE_EVENTS`; the id strings
+ * stay in `sessionEvents` for stored forms and old code (derive, don't spell —
+ * A18).
+ * @experimental
+ * @ruling A18, R35
+ */
+export const coreEvents = CORE_EVENTS
+
+/**
+ * The id an event is named by: core's `core:event/<slug>@<version>`, a
+ * package's own id. Accepts the event object, a package event declaration, or
+ * an id already (returned as is).
+ * @experimental
+ */
+export function eventIdOf(e: EventDef | SessionEventDecl | string): string {
+	if (typeof e === 'string') return e
+	if (isSessionEventDecl(e)) return e.id
+	// A package event's view keeps its full id as its slug.
+	return e.slug.includes(':') ? e.slug : `core:event/${e.slug}@${e.version}`
+}
+
+/** Whether a value is an event object (`EventDef`) — core's or a package event's view. @experimental */
+export const isEventDef = (v: unknown): v is EventDef =>
+	!!v &&
+	typeof v === 'object' &&
+	typeof (v as EventDef).slug === 'string' &&
+	typeof (v as EventDef).version === 'number' &&
+	((v as EventDef).family === 'data' || (v as EventDef).family === 'action')
 
 /**
  * One **session change** — the payload of every built-in write's event
@@ -1005,6 +1313,26 @@ export interface SessionChangePayload {
 	lineage?: RunLineage
 	/** `session-updated`: the columns/fields that changed, by name. */
 	changed?: string[]
+	/** 🚧 `turn-ended` (and `round-ended`, the turn that closed it): the turn's index in its lane, counted from 1 (R51). */
+	turn?: number
+	/** 🚧 `turn-ended` · `round-ended`: the round the turn belongs to, counted from 1 (R52). The story's lane only. */
+	round?: number
+	/** 🚧 `turn-ended`: whose turn ended, as a participant reference; null for narration. */
+	speaker?: string | null
+	/** 🚧 `turn-ended` · `round-ended`: the lane the turn was taken on — a canonical channel string (`main`, `main:2`, `sanctum`) (R51). */
+	lane?: string
+	/**
+	 * 🚧 `turn-ended`: how many turns each speaker has taken this round, this
+	 * one included — by participant reference, `narrator` for the pipeline's
+	 * own voice (R51). On a lane with no rounds, every turn of the lane.
+	 */
+	turnsBy?: Record<string, number>
+	/** 🚧 `round-ended`: who spoke in the round, in order of first turn — `narrator` for the pipeline's own voice (R52). */
+	speakers?: string[]
+	/** 🚧 `scene-opened` · `scene-closed`: the scene. */
+	sceneId?: number
+	/** 🚧 `story-clock-moved`: where the story clock stood and where it stands now (`StoryTime`). */
+	clock?: { from: unknown; to: unknown }
 }
 
 /**
@@ -1113,6 +1441,22 @@ export interface MessageOfferedPayload {
 	trayItemIds: string[]
 	/** The message it answers, when the composer named one. */
 	replyTo?: number | null
+	cause?: EventCause
+}
+
+/**
+ * 🚧 The payload of `core:event/message-deletion-asked@1` — what a person
+ * asked to delete (owner ruling 2026-10-23).
+ * @experimental
+ */
+export interface DeletionAskedPayload {
+	sessionId: number
+	/** The message the person asked to delete. */
+	messageId: number
+	/** Its channel, canonical (`main`, `parley:2`). */
+	channel: string
+	/** Who asked — always `user:<id>`, the run's owner. */
+	person: string
 	cause?: EventCause
 }
 

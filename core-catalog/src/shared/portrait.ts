@@ -105,12 +105,8 @@ export const characterPortraitSpec = () =>
 					characterId: $.input.characterId,
 				}),
 			)
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p.params('draw', { ...DRAW_PARAMS }).settings('draw', { review: 'on' }).loadout('draw', slot.loadout(CORE_LOADOUT.portrait)),
-			)
-			/** Opt-out: draw straight away, without showing the prompt first. */
-			.preset('review-off', { label: 'Draw without reviewing the prompt' }, (p) =>
-				p.params('draw', { ...DRAW_PARAMS }).settings('draw', { review: 'off' }).loadout('draw', slot.loadout(CORE_LOADOUT.portrait)),
 			)
 			.build(),
 	)

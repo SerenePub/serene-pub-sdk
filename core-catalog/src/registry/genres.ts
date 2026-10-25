@@ -7,17 +7,15 @@
  * T6 moves this into `@serene-pub/core-catalog` with the specs; today it is
  * the in-repo half of that package.
  */
-import { genre, layout, sessionEvents } from "@serene-pub/sdk"
+import { genre, layout, NUMBER_ATTRIBUTE_KINDS, sessionEvents, type UsesExpectation } from "@serene-pub/sdk"
 import {
 	DUNGEON_CRAWLER_LAYOUT,
 	LAIR_LAYOUT,
+	LAIR_PARTY_LAYOUT,
 	STORY_LAYOUT,
 	STORY_WORLD_LAYOUT
 } from "./layouts.js"
-import type { AttributeSlotDecl, FieldDecl, TaskDecl } from "@serene-pub/sdk"
-import { STORY_SHEET, STORY_SLOTS } from "./slots.js"
-import { LAIR_SHEET, LAIR_SLOTS } from "./slots.js"
-import { DUNGEON_CRAWLER_SHEET, DUNGEON_CRAWLER_SLOTS } from "./slots.js"
+import type { FieldDecl } from "@serene-pub/sdk"
 import {
 	DUNGEON_CRAWLER_GENRE_ID,
 	DUNGEON_CRAWLER_NARRATOR_KEY,
@@ -27,7 +25,7 @@ import {
 } from "../genres/dungeon-crawler/names.js"
 import { GUIDE_MASCOT_IMAGE } from "../seed/guideMascotImage.js"
 // 🚧 The rulesets first: a genre recommending one nothing declares is refused.
-import { freeformRuleset, visItinerisRuleset } from "./rulesets.js"
+import { freeformRuleset, visItinerisRuleset, wherewithalRuleset } from "./rulesets.js"
 import { coreWidgets } from "./widgets.js"
 import {
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
@@ -210,198 +208,90 @@ export const AUTHORS_NOTE_FIELD: FieldDecl = {
 	default: { text: "", depth: 0, interval: 1, role: "system" }
 }
 
-/* ── Background tasks ───────────────────────────────────────────────────── */
+/* ── The voices: who may speak up unprompted ──────────────────────────── */
 
 /**
- * 🚧 The session field that holds a session's **background tasks**
- * (`TaskSettingsV1`, `@serene-pub/sdk`'s `tasks.ts`): one grouped control the
- * host renders from the genre's `tasks`, grouped by when each runs. A preset
- * pins its values (`PresetDecl.settings.tasks`); the genre's pipelines branch
- * on what `core:task/resolve-tasks@1` resolves from it.
+ * 🚧 **Let others speak up** (2026-10-20 — the voices group of the retired
+ * background tasks, now a genre setting, PLAN-layering §4): after everyone
+ * has had their turn, one more character may speak up on their own before it
+ * is the person's again. Read by the genre's turn-order spec
+ * (`turnOrderSpec({ unprompted })`, `core:script/unprompted-modes`), which
+ * puts the entry at the head of the order — canon A9, who speaks is state.
+ * Each voice is another model call, so it is off by default. A genre opts in
+ * by declaring it beside `NARRATOR_INTERJECTIONS_FIELD`.
  * @experimental
  */
-export const TASKS_FIELD: FieldDecl = {
-	type: "tasks",
-	label: { en: "What happens around a reply" },
+export const SIDE_CAST_FIELD: FieldDecl = {
+	type: "boolean",
+	label: { en: "Let others speak up" },
 	description: {
-		en: "What the model does besides the reply: read the lorebook into it, note what it changed, file what happened every few turns. Each one is Full, Review (held for you to accept) or Off."
-	}
+		en: "After everyone has had their turn, one more character may speak up on their own before it is yours again. Each is another model call."
+	},
+	default: false,
+	reach: "owner"
 }
 
 /**
- * 🚧 The **Story** genre's background tasks (PLAN-genre-restructure §4,
- * ruled 2026-10-19), by trigger group. Keys are what a session stores its
- * choice under and what `core:spec/story-respond` branches on — never
- * respelled. Living's and Rule Based's defaults are these defaults; Minimal
- * pins every one off.
+ * 🚧 **Narrator asides** (2026-10-20, the voices group's other half): after
+ * everyone has had their turn, the narrator may add a line of its own before
+ * it is the person's again. A genre setting read by the turn-order spec, as
+ * `SIDE_CAST_FIELD` is. Off by default.
  * @experimental
  */
-export const STORY_TASKS: readonly TaskDecl[] = Object.freeze([
-	// ── In the reply: no extra call. ──
-	{
-		key: "lore-retrieval",
-		group: "reply",
-		kind: "prose",
-		default: "full",
-		reviewable: false,
-		label: { en: "Read the lorebook" },
-		description: { en: "Finds the lorebook entries the scene calls for and puts them in the reply's context." }
+export const NARRATOR_INTERJECTIONS_FIELD: FieldDecl = {
+	type: "boolean",
+	label: { en: "Narrator asides" },
+	description: {
+		en: "After everyone has had their turn, the narrator may add a line of its own before it is yours again. Each is another model call."
 	},
-	{
-		key: "scene-reading",
-		group: "reply",
-		kind: "prose",
-		default: "full",
-		reviewable: false,
-		label: { en: "Read the scene" },
-		description: {
-			en: "Puts where the story is — the place, what it is like, the ways out — into the reply's context. Writes nothing."
-		}
-	},
-	// ── After each turn: one extra call when anything here is on. ──
-	{
-		key: "attributes",
-		group: "reckoning",
-		kind: "both",
-		default: "full",
-		label: { en: "Keep the sheets" },
-		description: { en: "Notes what the reply changed about health, mood, belongings and the place, and updates the sheets." }
-	},
-	{
-		key: "time",
-		group: "reckoning",
-		kind: "prose",
-		default: "full",
-		label: { en: "Move the clock" },
-		description: { en: "Moves the story clock by as much time as the reply took." }
-	},
-	{
-		key: "conditions",
-		group: "reckoning",
-		kind: "script",
-		default: "full",
-		label: { en: "Track conditions" },
-		description: { en: "Puts conditions on and takes them off: hurt, tired, poisoned, inspired." }
-	},
-	// ── Every few turns: one batched call. ──
-	{
-		key: "summary",
-		group: "sweep",
-		kind: "prose",
-		default: "full",
-		label: { en: "Summarize the story" },
-		description: { en: "Files a summary of what happened in the lorebook's history." }
-	},
-	{
-		key: "lore",
-		group: "sweep",
-		kind: "prose",
-		default: "full",
-		label: { en: "Add to the lore" },
-		description: { en: "Files new facts the story established as lorebook entries." }
-	},
-	{
-		key: "cast",
-		group: "sweep",
-		kind: "prose",
-		default: "full",
-		label: { en: "Note new people" },
-		description: { en: "Files the people the story introduced as lorebook entries." }
-	},
-	{
-		key: "relationships",
-		group: "sweep",
-		kind: "prose",
-		default: "off",
-		label: { en: "Track relationships" },
-		description: { en: "Proposes how the characters now stand with each other, for you to look over." }
-	},
-	{
-		key: "world-state",
-		group: "sweep",
-		kind: "prose",
-		default: "full",
-		label: { en: "Keep the world" },
-		description: { en: "Updates the world's state from what happened: where the story is, the time of day, the weather." }
-	},
-	{
-		key: "scenes",
-		group: "sweep",
-		kind: "prose",
-		default: "off",
-		label: { en: "File the places" },
-		description: { en: "Files each place the story used as a place in the lorebook." }
-	},
-	{
-		key: "goals",
-		group: "sweep",
-		kind: "prose",
-		default: "off",
-		label: { en: "Track goals" },
-		description: { en: "Keeps a running note of what the characters are after and how close they are." }
-	},
-	// ── On an event. ──
-	{
-		key: "image-on-scene",
-		group: "events",
-		kind: "prose",
-		default: "off",
-		// A picture is drawn or it is not: nothing to hold for review (lane 2).
-		reviewable: false,
-		label: { en: "Picture each new scene" },
-		description: { en: "Draws a picture when the scene changes, with the Scene action." }
-	},
-	{
-		key: "places-on-move",
-		group: "events",
-		kind: "both",
-		default: "full",
-		label: { en: "Describe new places" },
-		description: { en: "When the story moves somewhere new, files the place and its ways out." }
-	},
-	{
-		key: "timed-expiry",
-		group: "events",
-		kind: "script",
-		default: "full",
-		label: { en: "End what runs out" },
-		description: { en: "Ends conditions and effects when their time is up." }
-	},
-	{
-		key: "goal-reached",
-		group: "events",
-		kind: "prose",
-		default: "off",
-		// Saying so is news, not a change to accept (lane 2).
-		reviewable: false,
-		label: { en: "Mark goals reached" },
-		description: { en: "When a goal in the goals note is ticked, says so in the story and tells everyone in the session." }
-	},
-	// ── Extra voices: more replies per turn. ──
-	{
-		key: "side-cast",
-		group: "voices",
-		kind: "prose",
-		default: "off",
-		reviewable: false,
-		label: { en: "Let others speak up" },
-		description: {
-			en: "After everyone has had their turn, one more character may speak up on their own before it is yours again."
-		}
-	},
-	{
-		key: "narrator-interjections",
-		group: "voices",
-		kind: "prose",
-		default: "off",
-		reviewable: false,
-		label: { en: "Narrator asides" },
-		description: { en: "After everyone has had their turn, the narrator may add a line of its own before it is yours again." }
-	}
-])
+	default: false,
+	reach: "owner"
+}
 
-/** 🚧 Every Story task key, in declaration order — what a preset pins. @experimental */
-export const STORY_TASK_KEYS: readonly string[] = Object.freeze(STORY_TASKS.map((t) => t.key))
+/**
+ * 🚧 **Honour mode** (owner ruling 2026-10-15) — a key core reads, the way it
+ * reads `autoAdvance`, so any genre opts in by placing this object under
+ * `honorMode` in its `fields` (PLAN-genres-seams S6, 2026-10-23; the Dungeon
+ * Crawler's own until then). A genre that declares it keeps its story turns:
+ * an older turn on a channel that offers the retake is never deleted (retake
+ * from the latest instead), and the latest is deleted by the session owner
+ * alone, only while this is on (`turnDeleteVerdict`, app `messages/verbs.ts`).
+ * The retake is the owner's whatever it says. 🚧 And (2026-10-16) a player
+ * edits their own sheet by hand only while this is on; the host always may,
+ * and the pipeline is untouched (`assertSessionOwner`, app `state/write.ts`;
+ * the key read by `app/server/sessions/settings.ts`).
+ * @experimental
+ */
+export const HONOR_MODE_FIELD: FieldDecl = {
+	type: "boolean",
+	label: { en: "Honour mode" },
+	// 🚧 RF fix 5 (owner ruling 2026-10-23): deleting needs a deletion
+	// pipeline, which no core genre registers — so the delete half reads
+	// "where deleting is on"; Back and Forward are the table's either way.
+	description: { en: "Lets players edit their own sheets by hand, and the host delete the latest turn where deleting is on. Off: neither." },
+	default: false
+}
+
+/**
+ * 🚧 **Show outcomes** — whether a session's prompts carry the numbers of
+ * how its checks came out; a key core reads (app `messages/diceWords.ts`), so
+ * any genre opts in by placing this object under `showDice` in its `fields`
+ * (PLAN-genres-seams S6, 2026-10-23; the Lair's own until then). ⏳ The key
+ * `showDice` is kept — stored sessions hold it; no setting is named for dice
+ * (2026-10-22), a ruleset may decide without them. How checks came out stays
+ * in the story for everyone either way — dice, cards, a spend or a
+ * judgement; off, the party read how things went and never the numbers (the
+ * host leaves them out of every prompt).
+ * @experimental
+ */
+export const SHOW_OUTCOMES_FIELD: FieldDecl = {
+	type: "boolean",
+	label: { en: "Show outcomes" },
+	description: {
+		en: "On, the party read how each check came out, numbers and all, as it landed. Off, the results still show in the story, but the party read only how things went, never the numbers."
+	},
+	default: true
+}
 
 /* ── Story ──────────────────────────────────────────────────────────────── */
 
@@ -413,8 +303,10 @@ export const STORY_TASK_KEYS: readonly string[] = Object.freeze(STORY_TASKS.map(
  * **preset** says: Minimal (one call, nothing moves), Living (one after-turn
  * call keeps the sheets, the clock and the conditions; a sweep every few
  * turns files what happened) and Rule Based (Living, with the ruleset's
- * scripts resolving the numbers). One pipeline, branching on the session's
- * background tasks (`STORY_TASKS`, `core:task/resolve-tasks@1`).
+ * scripts resolving the numbers). Since 2026-10-20 (PLAN-layering §4) the
+ * world keeps itself by **routines** — the reckoning after each round, the
+ * sweep every few turns, a picture of each new scene (off) — registered in
+ * the genre's defaults (`genres/defaults.ts`); a preset is changes on them.
  *
  * Adventure's own reply — a planner, a narrator, a voice per cast member and a
  * state keeper, four calls and more a turn — was retired with the genre: its
@@ -422,6 +314,25 @@ export const STORY_TASK_KEYS: readonly string[] = Object.freeze(STORY_TASKS.map(
  * @experimental
  */
 export const STORY_GENRE_ID = "core:genre/story"
+
+/**
+ * 🚧 **What a genre plays best with** (RF fix 8, owner ruling 2026-10-23:
+ * "genres can expect certain attributes, shapes, zones … but we won't lock
+ * someone into using their own conventions"): each thing by its tag, with
+ * the label the picker lists and the sentence it says why. A genre brings no
+ * attributes of its own; one the session's rules lack is played in words.
+ * Member copy — never a word of the rules' machinery.
+ */
+const expectation = (tag: string, label: string, why: string, kinds?: readonly string[]): UsesExpectation =>
+	Object.freeze({ tag, label, why, ...(kinds ? { kinds: Object.freeze([...kinds]) } : {}) })
+/** A number someone can lose and win back: health. */
+const HEALTH = expectation("health", "a health-like number", "Hits hurt and rests heal by it; without one, harm is told in words.", NUMBER_ATTRIBUTE_KINDS)
+/** How someone feels, in a word. */
+const MOOD = expectation("mood", "a mood word", "How each character feels colours how they speak; without one, it lives in the telling.")
+/** What ails or marks someone for a while. */
+const CONDITIONS = expectation("condition", "what ails someone", "Hurts, fears and blessings last until they pass; without them, they are remembered in words.")
+/** Somewhere a character's things stay with them. */
+const INVENTORY = expectation("inventory", "somewhere to keep what they carry", "What a character picks up stays with them from scene to scene.")
 
 /** @experimental */
 export const storyGenre = genre(STORY_GENRE_ID, {
@@ -434,11 +345,11 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 		en: [
 			"Tell a story with the model: roleplay with your characters, run an adventure, or just write together.",
 			"Who's in the room: your characters and personas, in any mix. None are required: the model can tell the story on its own.",
-			"Who drives: you do. On Living the world keeps itself: after each reply it notes what changed — health, time, conditions — and every few turns it files what happened in your lorebook.",
+			"Who drives: you do. On Living the world keeps itself: after each round it notes what changed — health, time, conditions — and every few turns it files what happened in your lorebook.",
 			"What it costs: one model call a turn on Minimal; two on Living and Rule Based (the reply, then a short look at what changed), plus a summary every few turns.",
-			"Required: nothing. Optional: a lorebook for the world, and a ruleset if you want rules and numbers.",
+			"Required: nothing. Optional: a lorebook for the world, and rules that keep numbers if you want them.",
 			"Pick Chat to talk to the model as itself, the Lair to run the game yourself, or the Dungeon Crawler to let the AI run it.",
-			"Minimal: just the story, nothing tracked. Living: the world keeps itself, in words. Rule Based: Living, with a ruleset's rules deciding the numbers."
+			"Minimal: just the story, nothing tracked. Living: the world keeps itself, in words. Rule Based: Living, with the rules you pick deciding the numbers."
 		].join("\n\n")
 	},
 	members: "group",
@@ -451,11 +362,15 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 	uses: {
 		verbs: "any",
 		dice: "optional",
-		optional: { slots: ["hp", "conditions"], conditions: true, casting: true }
+		// 🚧 RF fix 8: what it plays best with, never what it needs — Freeform plays it all in words.
+		optional: { attributes: [HEALTH, MOOD], entryTypes: [CONDITIONS], zoneTypes: [INVENTORY], conditions: true, casting: true }
 	},
-	tasks: STORY_TASKS,
-	/** 🚧 Freeform first and by default; Vis Itineris for numbers and dice; any ruleset allowed. */
-	rulesets: { recommended: [freeformRuleset.id, visItinerisRuleset.id], default: freeformRuleset.id },
+	/**
+	 * 🚧 Freeform first and by default; Vis Itineris for numbers and a d20;
+	 * 🚧 (2026-10-22) Wherewithal for rules with no dice — pools spent, bonds
+	 * and troubles; any ruleset allowed.
+	 */
+	rulesets: { recommended: [freeformRuleset.id, visItinerisRuleset.id, wherewithalRuleset.id], default: freeformRuleset.id },
 	/** 🚧 Words by default; a table may turn rules or scripts on (Rule Based pins `scripts`). */
 	rigour: { options: ["prose", "mechanics", "scripts"], default: "prose" },
 	shape: {
@@ -485,9 +400,10 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 		/**
 		 * Chat's four (auto-advance on `round`, R16; the turn-order model
 		 * path; character detail; the author's note), Adventure's tone and
-		 * difficulty under Advanced, and the background tasks. Adventure's
-		 * *Trust the narrator* is gone: its meaning is a task's **Review**
-		 * mode now.
+		 * difficulty under Advanced, and the two voices (2026-10-20: the
+		 * voices group of the retired background tasks, genre settings now).
+		 * Adventure's *Trust the narrator* is gone: its meaning is a
+		 * routine's **Review** mode now.
 		 */
 		fields: {
 			autoAdvance: { ...AUTO_ADVANCE_FIELD, default: "round" },
@@ -514,7 +430,7 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 				type: "enum",
 				label: { en: "Difficulty" },
 				description: {
-					en: "How hard the world pushes back. Read when the world keeps the sheets after each reply."
+					en: "How hard the world pushes back. Read when the world keeps the sheets after each round."
 				},
 				of: ["story", "normal", "hard"],
 				members: [
@@ -525,14 +441,15 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 				default: "normal",
 				advanced: true
 			},
-			tasks: TASKS_FIELD
+			sideCast: SIDE_CAST_FIELD,
+			narratorInterjections: NARRATOR_INTERJECTIONS_FIELD
+			// `applyActionChanges` (2026-10-20) is removed (R55, 2026-10-21);
+			// since GM 2026-10-23 (G1 ★3) Rest applies at its own action's mode
+			// (an action registration carries none: Full), never the reckoning's.
 		}
 	},
-	/** Adventure's eight, as the sheet a session may track (`STORY_SHEET`). */
-	slots: STORY_SLOTS as unknown as AttributeSlotDecl[],
-	sheets: [STORY_SHEET],
-	// Its sessions may carry in their world's attributes and add their own.
-	customAttributes: "allow",
+	// 🚧 No slots, no sheet (RF fix 8): the session's rules bring its attributes;
+	// the host keeps where and when (the scene's place, the story clock).
 	events: {
 		/**
 		 * The turn-order events (PLAN-turn-order §4.5) — Chat's nine: anything
@@ -601,8 +518,7 @@ export const ASSISTANT_SYSTEM_PROMPT = [
  * 🚧 Chat's tool kinds (§1-8), each off or on per session through the
  * `tools` field: the host maps each kind onto the tools that serve it
  * (`core:query/available-tools@1`'s `kinds`). R53 holds: no tool sees a
- * connection. Not offered: code execution, a shell, app administration —
- * those are the Guide's, and the Guide stays solo.
+ * connection. Not offered: code execution, a shell, app administration.
  * @experimental
  */
 export const CHAT_TOOL_KINDS = Object.freeze([
@@ -615,26 +531,6 @@ export const CHAT_TOOL_KINDS = Object.freeze([
 	"history"
 ] as const)
 
-/** 🚧 Chat's background tasks: the lorebook read into the reply, and a memory it may keep (off; ★K). @experimental */
-export const CHAT_TASKS: readonly TaskDecl[] = Object.freeze([
-	{
-		key: "lore-retrieval",
-		group: "reply",
-		kind: "prose",
-		default: "full",
-		reviewable: false,
-		label: { en: "Read the lorebook" },
-		description: { en: "Finds the lorebook entries your message calls for and puts them in the reply's context." }
-	},
-	{
-		key: "memory",
-		group: "sweep",
-		kind: "prose",
-		default: "off",
-		label: { en: "Remember things" },
-		description: { en: "Every few turns, keeps notes of what you told it in a notes lorebook, so it remembers next time." }
-	}
-])
 
 /** @public */
 export const chatGenre = genre(CHAT_GENRE_ID, {
@@ -654,7 +550,6 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 		].join("\n\n")
 	},
 	members: "solo",
-	tasks: CHAT_TASKS,
 	shape: {
 		/** Nobody from the library sits here: the one speaker is the Assistant (§1-8). */
 		characters: { min: 0, max: 0 },
@@ -664,7 +559,7 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 		composer: "text",
 		voice: "character",
 		/**
-		 * Lore writes only through the `memory` task or the `lorebook-write`
+		 * Lore writes only through the *Remember things* routine (`core:spec/assistant-memory`) or the `lorebook-write`
 		 * tool, each Review or Off unless the person turns it Full (★J); no
 		 * scenes — a conversation with an assistant has none to open.
 		 */
@@ -691,8 +586,7 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 					{ key: "history", label: { en: "Search this conversation" } }
 				],
 				default: []
-			},
-			tasks: TASKS_FIELD
+			}
 		}
 	},
 	envoys: [
@@ -787,12 +681,24 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 	name: { en: "Guide" },
 	family: "assistant",
 	/**
-	 * 🚧 Solo (R2 ruling 3, 2026-10-19): never a group session — the Guide's
-	 * tools reach the app, so guests, invites and lanes are refused for it.
+	 * 🚧 Solo (R2 ruling 3, 2026-10-19): never a group session — one
+	 * person's questions about the app, so guests, invites and lanes are
+	 * refused for it. (Ruled while it declared a `tools` field that reached
+	 * the app; the field is gone since 2026-10-23, the rule stays.)
 	 */
 	members: "solo",
 	description: {
 		en: "Talk to Serene, Serene Pub's guide, about the app itself — no characters, no story; just questions and answers grounded in the docs."
+	},
+	/** 🚧 The card's long copy (2026-10-23, PLAN-genres-seams S8): who is in the room, what it costs, when to pick Chat. */
+	about: {
+		en: [
+			"Ask Serene, Serene Pub's guide, how to use the app: she answers from its documentation.",
+			"Who's in the room: you and Serene. You may write as yourself or as one persona; there are no characters, and the Guide is just for you, never a group session.",
+			"What it costs: one model call a turn. Serene can't browse: each question looks up the sections of the docs that match it, and she answers only from those, naming the page she used.",
+			"Required: nothing. Optional: a lorebook of your own notes, which she reads beside the docs and never writes to.",
+			"Pick Chat to talk to the model about anything else, or Story to play with characters."
+		].join("\n\n")
 	},
 	shape: {
 		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
@@ -823,20 +729,11 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		greeting: { enabled: false },
 		// No turn-order swaps: one in-turn envoy and no characters, nothing to choose between.
 		/**
-		 * 🚧 The tools Serene may use (2026-10-19): the web tool alone, on by
-		 * default. Web search is offered to the Guide and Chat and to no other
-		 * genre (R4).
+		 * 🚧 No fields (2026-10-23, PLAN-genres-seams S8, ★E): the `tools`
+		 * field (*Search the web*, 2026-10-19) is dropped — `guide-respond`
+		 * has no tool loop and Serene's instructions say she cannot browse,
+		 * so the setting did nothing. Web search stays Chat's (Agentic).
 		 */
-		fields: {
-			tools: {
-				type: "string[]",
-				label: { en: "Tools" },
-				description: { en: "What Serene may use while she answers." },
-				of: ["web"],
-				members: [{ key: "web", label: { en: "Search the web" } }],
-				default: ["web"]
-			}
-		}
 	},
 	envoys: [
 		{
@@ -883,36 +780,45 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 /* ── Lair ───────────────────────────────────────────────────────────────── */
 
 /**
- * The **reverse dungeon crawler** (plans/genres §3): the person at the keyboard
- * *is* the dungeon. They build the rooms, they steer the narration, and an AI
- * party delves into what they made.
+ * The **reverse dungeon crawl** (rewritten 2026-10-21, PROPOSAL-lair-rewrite
+ * R1–R13): the person who starts a Lair is its **game master** — they are the
+ * dungeon — and an AI party, perhaps with friends seated beside it, delves
+ * into what they build.
  *
- * ## The one new posture, and where it lives
+ * ## The loop is the party and the GM
  *
- * The composer's text is **direction, not a line**. Nothing in the shape says
- * so and nothing needs to: `personas: { max: 0 }` already means the user is
- * prose rather than a participant, and what that prose *means* is the respond
- * spec's to decide — its planner reads `$.input.text` as instructions from the
- * dungeon's master and the seed line never carries the user. A shape value for
- * it would be a fourth way to say what two existing ones already say.
+ * Direction → the Castellan's plan → checks → the voices → the books. The
+ * GM's lines are direction, never a line somebody in the scene said; the
+ * Castellan plans the party's turn (who acts, what they attempt, what is
+ * risky); the session's ruleset decides what a check is and the Oracle asks
+ * the GM to call it (or rolls it, on auto roll); each named AI delver takes a
+ * character turn of their own, and a delver a person plays waits for them;
+ * the keeper routine keeps the books after each round. Everything else is a
+ * **layer**: the rules (the ruleset and the session's rigour), rooms
+ * (`roomsLayer`), the table (seated guests), memory (routines).
  *
- * ## The pipeline's own voice is the Castellan's (R5, R6, owner 2026-09-28)
+ * ## Unopinionated (D8)
  *
- * `voice: 'narrator'` stays: the turn order's null entry, `carryOnEntry`, the
- * Narrate press and the seed line all key on it. It no longer means a
- * narrator writes each turn — **the person is the narrator** here. The voice
- * is named by the genre's **fallback envoy**, the **Castellan**, the
- * dungeon's steward: every line nobody claims, and the null entry itself,
- * carry its name (`ownVoiceName`), seated or not.
+ * The Lair declares no stats, items or races: the party's attributes are
+ * whatever the chosen ruleset declares (🚧 RF fix 8: a genre brings none),
+ * and the host keeps only its GM's two tools for it — the standing direction
+ * and the whisper. It recommends a
+ * ruleset; it never says what exists.
  *
- * ## The Sanctum (R6)
+ * ## Two envoys (D4)
  *
- * A second channel, `sanctum`: the table outside the story, where the
- * Castellan and the Dungeon Master talk — ideas, corrections, the map ahead.
- * Its composer offers Continue and Narrate but neither Pick who speaks nor
- * Regenerate the last turn (a Castellan reply there is one row, which keeps
- * the row regenerate with swipes). The Castellan greets every new session
- * there with a declared line (`LAIR_CASTELLAN_GREETING`), written by
+ * The **Castellan**, the dungeon's steward — plans, narrates when asked,
+ * talks with the GM in the Sanctum, drafts rooms — is the fallback: every
+ * line nobody claims carries its name. The **Oracle** speaks only mechanics:
+ * roll forms, dice, the knock's question. Its lines are blocks, so they stay
+ * out of the story's prose except as results.
+ *
+ * ## The Sanctum (D6, R7)
+ *
+ * A second channel, `sanctum`, the GM's private table with the Castellan —
+ * `audience: 'owner'`: guests never see it, and the host filters its rows,
+ * pushes and composer switch for everyone but the owner. The Castellan
+ * greets every new session there with a declared line, written by
  * `lair-create` without a model call.
  * @experimental
  */
@@ -936,7 +842,15 @@ export const POST_HISTORY_TOKEN_TRIGGER = 3000
 /** The Lair envoy's key — the address `envoy:castellan` (R6). @internal */
 export const LAIR_CASTELLAN_KEY = "castellan"
 
-/** The Lair's out-of-fiction channel slug (R6). @internal */
+/**
+ * 🚧 The Lair's mechanical voice — the address `envoy:oracle` (D4, owner R11
+ * 2026-10-21): the one who answers what the dice say. A label within one
+ * genre; ⚠ not the SDK's node kind *oracle* (a model call), which is code
+ * vocabulary. @experimental
+ */
+export const LAIR_ORACLE_KEY = "oracle"
+
+/** The Lair's out-of-fiction channel slug (R6) — the GM's alone (D6). @internal */
 export const SANCTUM_CHANNEL = "sanctum"
 
 /**
@@ -955,6 +869,19 @@ const LAIR_CASTELLAN_IMAGE =
 			"</svg>"
 	)
 
+/** 🚧 The Oracle's glyph: a die's face on the same disc, in the same palette. */
+const LAIR_ORACLE_IMAGE =
+	"data:image/svg+xml;utf8," +
+	encodeURIComponent(
+		'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">' +
+			'<circle cx="32" cy="32" r="30" fill="#e8e4f3" stroke="#6b5cb8" stroke-width="2"/>' +
+			'<rect x="18" y="18" width="28" height="28" rx="5" fill="none" stroke="#6b5cb8" stroke-width="4"/>' +
+			'<circle cx="25" cy="25" r="2.6" fill="#6b5cb8"/>' +
+			'<circle cx="32" cy="32" r="2.6" fill="#6b5cb8"/>' +
+			'<circle cx="39" cy="39" r="2.6" fill="#6b5cb8"/>' +
+			"</svg>"
+	)
+
 /**
  * The Castellan's instructions for **Sanctum talk** (R6) — out of the
  * fiction, with the {{playerLabel}}. Interpolated by the envoy road's
@@ -962,22 +889,39 @@ const LAIR_CASTELLAN_IMAGE =
  * `{{locationEntry}}` are the rooms the listing holds and the one the party
  * stand in, `{{recentStory}}` is the story's latest rows as prose. Asked to
  * narrate, it says what it would play and points at **Narrate** (the plan's
- * QA (a)): the person, not the model, decides when the story moves.
+ * QA (a)): the person, not the model, decides when the story moves. That
+ * boundary is the FIRST paragraph (lair fix 2, 2026-10-22): seventh, a 14B
+ * model answered a GM line with the story itself. The reminder after the
+ * talk repeats it (`LAIR_CASTELLAN_REMINDER`).
  * `{{sanctumSteers}}` (the genre field, R13) says whether this talk shapes
  * the next turn, and `{{scratchpad}}` is its own running notes (the annex
  * field `castellan-scratchpad`, R13).
  * @internal
  */
 export const LAIR_CASTELLAN_SYSTEM_PROMPT = [
-	"You are {{char}}, the steward of a dungeon, talking with the {{playerLabel}}: the person who built this dungeon and narrates it. This conversation is the Sanctum, your table outside the story. Nothing said here happens in the dungeon, and the party never hear it.",
+	"You are {{char}}, the steward of a dungeon, talking with the {{playerLabel}} in the Sanctum, your table outside the story. Here you never narrate the story, and you never write a line, an action or a thought for anyone in the party. If the {{playerLabel}} asks you to narrate, say in a sentence what you would play, and that pressing Narrate plays it.",
+	"The {{playerLabel}} is the person who runs this dungeon and narrates it. Nothing said here happens in the dungeon, and nobody in the party ever hears it.",
 	"The party delving the dungeon: {{characterNames}}. They speak and act for themselves.",
-	"Your work: you run the dungeon's side of each turn. You plan the party's moves, keep the books on their health, their haul and where they stand, and knock when they reach a room nobody has built yet. The {{playerLabel}} narrates: what they write in the story is what the dungeon does. You suggest; the {{playerLabel}} decides.",
+	"Your work: you plan the party's moves each turn, and when they reach a room nobody has built yet, the turn stops so the {{playerLabel}} can describe it. The {{playerLabel}} narrates: what they write in the story is what the dungeon does. When the rules call for a roll, the Oracle asks the {{playerLabel}} to call it; the dice are never yours. You suggest; the {{playerLabel}} decides.",
 	"Here you help them run their dungeon: brainstorm rooms, traps and treasure, plan what lies ahead, answer questions about the party and the story so far, and take corrections without argument.",
 	"{{#if knownLocations}}The rooms the dungeon holds: {{knownLocations}}.{{else}}The dungeon holds no rooms yet.{{/if}} Name only these as rooms that exist. Anything else is an idea until the {{playerLabel}} builds it.{{#if locationEntry}}\n\nThe room the party are in:\n{{locationEntry}}{{/if}}{{#if recentStory}}\n\nThe story so far, most recent last:\n{{recentStory}}{{/if}}",
 	"{{#if sanctumSteers}}What you two settle here shapes the next turn.{{else}}This is brainstorming. Nothing here reaches the story unless they Nudge, file a room, or press Narrate here.{{/if}}{{#if scratchpad}}\n\nYour scratchpad, the running notes you keep here (rooms planned, intentions, corrections):\n{{scratchpad}}{{/if}}",
-	"Never write a line for any of the party, and never narrate the story here. If the {{playerLabel}} asks you to narrate what happens next, say in a sentence or two what you would play, and tell them that pressing Narrate will play it.",
 	"Talk plainly, out of character, and briefly: a few sentences unless you are asked for more."
 ].join("\n\n")
+
+/**
+ * The Castellan's **reminder** (lair fix 2, 2026-10-22): its
+ * `postHistoryInstructions`, placed after the Sanctum talk, just before it
+ * answers — the role boundary again, where a model reads it last. A GM line
+ * such as *Suzume gets sucked into an underground dungeon* reads like a story
+ * prompt, and a model two messages into a conversation answered it by
+ * narrating, with the boundary only in the system prompt's seventh paragraph.
+ * The Sanctum's assemble places it whatever the talk's length
+ * (`postHistoryTokenTrigger` 0 there, `reply.ts`).
+ * @internal
+ */
+export const LAIR_CASTELLAN_REMINDER =
+	"Answer as {{char}}, out of the story: plainly and briefly. Do not narrate, and do not write for anyone in the party. Asked to narrate, say in a sentence what you would play, and that pressing Narrate plays it."
 
 /**
  * The Castellan's greeting (R6, owner F1 2026-09-28): the first line of every
@@ -991,8 +935,8 @@ export const LAIR_CASTELLAN_SYSTEM_PROMPT = [
 export const LAIR_CASTELLAN_GREETING = [
 	"Welcome, {{playerLabel}}. I am {{char}}, steward of this dungeon, and you are its master.",
 	"This is a reverse dungeon crawl: you don't play the hero, you are the dungeon. {{#if characterNames}}{{characterNames}} have come to delve into it{{else}}A party will come to delve into it{{/if}}, and they speak and act for themselves. You are the narrator. Whatever you write in the story is what the dungeon does: a door grinds open, a torch gutters, something moves in the dark.",
-	"I run the dungeon's side of each turn. I plan the party's moves, keep the books on their health and their haul, and when they reach a room you haven't built yet, I'll knock and ask you to describe it.",
-	"This is the Sanctum, our table outside the story. The party never hear what we say here. Use it to brainstorm, plan rooms before they're needed, fix a mistake, or ask me to narrate what happens next.",
+	"Each turn I plan the party's moves and post the plan here. When they try something risky and the rules call for a roll, the Oracle asks you to call it. When they reach a room you haven't built yet, I'll stop and ask you to describe it.",
+	"This is the Sanctum, our table outside the story. Only you see it: the party and anyone you invite never hear what we say here. Use it to brainstorm, plan rooms before they're needed, fix a mistake, or ask me what should happen next: I'll tell you what I would play, and pressing Narrate plays it. I never narrate here.",
 	"To begin, describe where the party stands in the story, or press **Continue** there and I'll bring them in."
 ].join("\n\n")
 
@@ -1002,21 +946,40 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 	family: "adventure",
 	members: "group",
 	/**
-	 * 🚧 What the Lair uses of a ruleset (PLAN-genre-restructure §11): nothing
-	 * it cannot do without — its keeper sets values and moves items itself,
-	 * and the ruleset's health, conditions and casting are read where they
-	 * exist.
+	 * 🚧 What the Lair uses of a ruleset (D8, PROPOSAL §6): nothing it cannot
+	 * run without — its plan, voices and books work in words — and it plays
+	 * better with dice, conditions and casting where the ruleset has them. So
+	 * every ruleset fits, and a fit rating explains itself.
 	 */
 	uses: {
 		verbs: [],
 		dice: "optional",
-		optional: { slots: ["hp"], conditions: true, casting: true }
+		// 🚧 RF fix 8: the party's health, what ails them and what they carry, where the rules keep them.
+		optional: { attributes: [HEALTH], entryTypes: [CONDITIONS], zoneTypes: [INVENTORY], conditions: true, casting: true }
 	},
 	description: {
-		en: "You are the dungeon. Build the rooms, point the party at them, and watch an AI delve into what you made."
+		en: "You are the dungeon. Build it, direct it, and watch an AI party — and any friends you invite — delve into what you made."
 	},
-	/** 🚧 Vis Itineris recommended, any ruleset allowed; rules without dice by default (rulesets plan §13). */
-	rulesets: { recommended: [visItinerisRuleset.id], default: visItinerisRuleset.id },
+	/** 🚧 The card's long copy (2026-10-23, PLAN-genres-seams S8). */
+	about: {
+		en: [
+			"You are the dungeon and its game master: build the rooms, direct what happens, and watch an AI party delve into what you made.",
+			"Who's in the room: the party — at least one character the AI plays, and any friends you invite, each playing a delver of their own. You never appear in the story: what you write is what the dungeon does.",
+			"Who drives: you do, with two helpers. The Castellan plans each turn and talks the dungeon through with you in the Sanctum, which only you see; the Oracle asks you to call each check the rules want, and says how it came out.",
+			"What it costs: on Words only, one model call a turn and one for each delver who speaks; on Rules and The rules decide, one more after each round to keep the books.",
+			"Required: at least one character for the party, and a lorebook — the dungeon itself, one entry per room. Optional: rules that decide checks, such as Vis Itineris or Wherewithal, and friends to fill the seats.",
+			"Pick the Dungeon Crawler to let the AI run the dungeon while you play a character, or Story to tell a story without a game master's screen.",
+			"Words only: the party and you, in words, with no checks and no rooms to build. Rules: rooms to build, and the books kept after each round. The rules decide: every risky moment is the rules' to decide, called by you or decided at once."
+		].join("\n\n")
+	},
+	/**
+	 * 🚧 Freeform by default, Vis Itineris for rules and a d20 — the ruleset
+	 * the Dungeon Crawler plays (D8) — and (2026-10-23, AUDIT-core-genres Lair
+	 * 2) Wherewithal for rules with no dice: pools spent, a contest weighed.
+	 * Any ruleset allowed: the rules follow the ruleset, never the genre (R2).
+	 */
+	rulesets: { recommended: [freeformRuleset.id, visItinerisRuleset.id, wherewithalRuleset.id], default: freeformRuleset.id },
+	/** 🚧 Rules by default (the preset *Rules*); *Words only* is `prose`, *The rules decide* `scripts` (was *Rules and dice*, 2026-10-22). */
 	rigour: { options: ["prose", "mechanics", "scripts"], default: "mechanics" },
 	shape: {
 		/** The settings form's sections (PLAN-turn-order §4.11): declared, never automatic. */
@@ -1025,46 +988,39 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		/** The party. One delver is a thin game; none is no game at all. */
 		characters: { min: 1 },
 		/**
-		 * **Nobody plays a person here**, and that is the genre. The dungeon's
-		 * master is not in the scene: what they type is direction, and a persona
-		 * would put them on the floor with the party they are supposed to be
-		 * hunting.
+		 * 🚧 **Guests join as participants** (R4, D5): a person's seat is a
+		 * delver they play — a persona, or a seat of their own — and its
+		 * turns wait for them. The game master is never in the scene: the
+		 * session's owner writes direction, labelled by `playerLabel`. None
+		 * is preselected — a seat is a guest's, never the owner's.
 		 */
-		personas: { min: 0, max: 0 },
+		personas: { min: 0, preselectDefault: false },
 		/**
-		 * Required, and it is the dungeon itself: one entry per location, each
-		 * naming the ways out of it. A Lair with no lorebook is a party in an
-		 * empty room with no doors.
+		 * The dungeon itself: one entry per location, each naming the ways out
+		 * of it. Offered, never required (RF fix 2, 2026-10-23; `'required'`
+		 * is retired): every session has one — its phantom book when none is
+		 * chosen (R9) — so the rooms layer is always available.
 		 */
-		lorebook: "required",
+		lorebook: "optional",
 		/**
-		 * Written on purpose (R-B), and the one genre so far that says so. The
-		 * *Build room* action adds a location entry, and a room the party finds
-		 * that nobody built becomes one. A genre whose loop writes lore has to
+		 * Written on purpose (R-B). *Build room*, the knock's answer and *File
+		 * as a room* add place entries. A genre whose loop writes lore has to
 		 * declare it, or the write site refuses it.
 		 */
 		writes: { lore: true, scenes: true },
 		composer: "text",
-		/** The seed line carries the narrator; the cast get their own calls. */
+		/** The seed line carries the Castellan; the party get their own turns. */
 		voice: "narrator",
 		/**
-		 * No prefill extend (lair pass D4): a composed plan-narrate-voices
-		 * reply cannot be extended mid-sentence, and the respond spec has no
-		 * extend tail. The composer's Continue — the turn control that
-		 * fires the next turn (`turnControls.advance`) — stays on.
+		 * No prefill extend (lair pass D4): a planned turn cannot be extended
+		 * mid-sentence. The composer's Continue stays on.
 		 */
 		messageVerbs: { extend: false },
 		/**
-		 * The turn controls (lair pass B8, owner rulings D2/D3; R12): Continue,
-		 * Pick who speaks and Narrate, all always present. The Lair is cast
-		 * only (owner 2026-09-28): the party speak for themselves, so there is
-		 * always somebody to pick, and the pipeline's own voice can be fired
-		 * on its own.
-		 *
-		 * And **Regenerate the last turn** (`retake`, R2, owner 2026-09-28): a
-		 * Lair turn writes several rows — the planner's, then each delver's —
-		 * so the composer's Regenerate deletes that turn's yield and takes it
-		 * again, rather than rewriting its last row alone.
+		 * The turn controls (R12): Continue, Pick who speaks, Narrate, and
+		 * **Regenerate the last turn** (`retake`): a Lair turn writes several
+		 * rows — the plan, the roll forms, each delver's line — so the
+		 * composer's Regenerate takes that whole turn again.
 		 */
 		turnControls: {
 			advance: true,
@@ -1073,57 +1029,45 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 			retake: true
 		},
 		/**
-		 * The story on `main`, and the **Sanctum** beside it (R6): the table
-		 * outside the story, where the Castellan talks with the person. A
-		 * Castellan reply there is one row, so it keeps the ordinary row
+		 * The story on `main`, and the **Sanctum** beside it (R6, D6): the
+		 * GM's table with the Castellan, `audience: 'owner'` — never a guest's.
+		 * A Castellan reply there is one row, so it keeps the ordinary row
 		 * regenerate and offers no retake; and Pick who speaks has nobody to
-		 * pick at a table the party never sit at. Continue answers a pending
-		 * Sanctum line; Narrate stays, because it is how the person asks the
-		 * Castellan to play what they just talked through.
+		 * pick at a table the party never sit at.
 		 *
-		 * ⚠ **No `voice` of its own.** The genre's `narrator` voice seeds
-		 * under the own voice's name, which IS the Castellan, so the seed is
-		 * right either way; and a channel whose voice differed from the
-		 * genre's would make the Lair shape channels (`channelShapingOf`),
-		 * stamping `main`'s voice on every regenerate and seeding a delver's
-		 * re-voice under the Castellan. `main` stays byte-identical.
+		 * ⚠ **No `voice` of its own** — a channel whose voice differed from
+		 * the genre's would make the Lair shape channels (`channelShapingOf`).
 		 */
 		channels: [
-			"main",
+			// 🚧 Labelled (lair fix 2): the story's channel tab reads *Story*
+			// beside the *Sanctum* (`messages.channel-tabs`).
+			{ slug: "main", label: { en: "Story" } },
 			{
 				slug: SANCTUM_CHANNEL,
 				label: { en: "Sanctum" },
 				role: "conversation",
+				audience: "owner",
 				turnControls: { pick: false, retake: false }
 			}
 		],
 		/**
 		 * Nobody to greet with from the cards: a dungeon does not welcome the
 		 * party. Its steward welcomes its master — the Castellan's declared
-		 * greeting (`EnvoyDecl.greeting`), written on the Sanctum by
-		 * `lair-create`.
+		 * greeting, written on the Sanctum by `lair-create`.
 		 */
 		greeting: { enabled: false },
 		/**
 		 * 🚧 Where the story is (live scenes §15 G2): the room the party stand
-		 * in, the world's `location` — Adventure's place, for the same reason.
-		 * The Lair's own boundary trigger (a new floor) rides its
-		 * summarize-scene spec (`genres/lair/summarizeScene.ts`, ★9).
+		 * in, the world's `location`. *The place changes* follows it.
 		 */
 		scenes: { place: { stateKey: "location" } },
-		// No turn-order swaps: the planner decides who speaks — see Adventure's note.
+		// No turn-order swaps: the plan decides who speaks.
 		fields: {
-			/**
-			 * The Lair's own levers. It has no turn-style field (R12, owner
-			 * 2026-09-28): the Lair is cast only, so the party speak every
-			 * turn — how, is `partySpeech`. A stored `turnStyle` is an
-			 * undeclared key, and undeclared keys are not fields.
-			 */
 			tone: {
 				type: "enum",
 				label: { en: "Tone" },
 				description: {
-					en: "How the narrator writes. Interpolated into the narrator's own instructions."
+					en: "How the Castellan narrates, and how the party carry themselves."
 				},
 				of: ["grounded", "pulpy", "grim", "whimsical"],
 				members: [
@@ -1136,62 +1080,27 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 				quick: true
 			},
 			/**
-			 * **How the party speak** (owner ruling 2026-09-30) — the
-			 * Lair's party speech, read by `lair-respond`'s `speech`
-			 * junction:
-			 *
-			 *  · `each` (the default) — each delver speaks: every delver
-			 *    the plan names takes a **character turn** of their own, in
-			 *    the plan's order — a run each, fired off the turn order,
-			 *    streaming their line, reading only their own private lore
-			 *    and keeping only their own stats. Pick who speaks gives the
-			 *    picked delver that same turn.
-			 *  · `castellan` — the Castellan speaks for the party: one call
-			 *    writes every named delver's lines for the turn, reading
-			 *    only lore everyone may know and hearing no whisper. Pick
-			 *    who speaks asks it for that delver's line alone.
-			 *
-			 * Nobody leads: the planner's order is the order they speak in.
+			 * 🚧 **The rooms layer** (PROPOSAL §3, §11; R10): on, the party
+			 * knock at a room nobody built and the GM builds and files rooms;
+			 * off — *Words only* — the dungeon lives in the GM's words alone
+			 * and nothing knocks. Rooms are optional context: the loop never
+			 * depends on them.
 			 */
-			partySpeech: {
-				type: "enum",
-				label: { en: "How the party speak" },
-				description: {
-					en: "Each delver speaks: every delver the Castellan plans to speak takes a turn of their own, in their own voice, knowing only what they know. Castellan speaks for the party: one call writes the whole party's lines, knowing only what everyone may know — fewer calls, one voice."
-				},
-				of: ["each", "castellan"],
-				members: [
-					{ key: "each", label: { en: "Each delver speaks" } },
-					{ key: "castellan", label: { en: "Castellan speaks for the party" } }
-				],
-				default: "each",
-				quick: true
-			},
-			/**
-			 * Whose bookkeeping is trusted (relabelled 2026-09-28, lair re-plan
-			 * R8 follow-up): the person is the narrator here, so the field
-			 * never meant trusting a narrator — it is whether the Castellan's
-			 * stat changes land without asking. The key stays `trustNarrator`:
-			 * it is the stored per-session value, and Adventure's and
-			 * Whodunit's keeper junctions read the same key.
-			 */
-			trustNarrator: {
+			roomsLayer: {
 				type: "boolean",
-				label: { en: "Apply the Castellan's stat changes without asking" },
+				label: { en: "Rooms" },
 				description: {
-					en: "The Castellan keeps the books after each turn: health, the haul, where the party stand. On, its changes land as it makes them. Off, each one waits for you to accept it. Off is the safe default: a model that can set a number silently can rewrite the story between two messages."
+					en: "Build the dungeon room by room: when the party reach a room nobody has built, the turn stops and asks you to describe it. Off, the dungeon lives in your words alone."
 				},
-				default: false,
+				default: true,
 				quick: true
 			},
 			/**
-			 * **Sanctum talk steers the story** (lair re-plan R13, owner F3 and
-			 * QB 2026-09-28): on by default. On, the Castellan's planner and
-			 * its narration read the Sanctum talk since the story's last line
-			 * — and its scratchpad — as plans, not facts. Off, the Sanctum is
-			 * for brainstorming, and only the explicit crossings reach the
-			 * story: Nudge, a filed room, and Narrate pressed in the Sanctum
-			 * (which plays that talk once, switch or no switch).
+			 * **Sanctum talk steers the story** (lair re-plan R13): on, the
+			 * Castellan's planner reads the Sanctum talk since the story's last
+			 * line — and its scratchpad — as plans, not facts. Off, only the
+			 * explicit crossings reach the story: Nudge, a filed room, and
+			 * Narrate pressed in the Sanctum.
 			 */
 			sanctumSteers: {
 				type: "boolean",
@@ -1201,52 +1110,90 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 				},
 				default: true,
 				quick: true
-			}
+			},
+			/**
+			 * 🚧 **Ask me before each check** (D3, D7; was *Ask me before
+			 * rolling* until 2026-10-23, PLAN-genres-seams — no setting is named
+			 * for dice; the id `askBeforeRolling` kept ⏳, stored sessions hold
+			 * it): when the ruleset decides checks and the plan calls a moment
+			 * risky, the Oracle puts a roll form to the GM — which check, how
+			 * hard, or No check — and the party's turns wait for the answers.
+			 * Off (and *Decide checks at once* off): risky moments are told in
+			 * words.
+			 */
+			askBeforeRolling: {
+				type: "boolean",
+				label: { en: "Ask me before each check" },
+				description: {
+					en: "When the rules call for a check, the Oracle asks you which check and how hard before it is decided, and the party wait for your answer. Off, risky moments are told in words, unless Decide checks at once is on."
+				},
+				default: true,
+				quick: true
+			},
+			/**
+			 * 🚧 **Decide checks at once** (D7; was *Auto roll* until
+			 * 2026-10-23, PLAN-genres-seams — the id `autoRoll` kept ⏳): at a
+			 * table where the rules decide (rigour `scripts`, *The rules
+			 * decide* — was *Rules and dice*), every check the plan calls for is
+			 * decided at once against the ruleset's usual difficulty — no form.
+			 */
+			autoRoll: {
+				type: "boolean",
+				label: { en: "Decide checks at once" },
+				description: {
+					en: "When the rules decide, every check the plan calls for is decided at once, against the rules' usual difficulty, without asking you first."
+				},
+				default: false
+			},
+			/** 🚧 **Show outcomes** (D3): the shared field (`SHOW_OUTCOMES_FIELD`), under its kept key ⏳ `showDice`. */
+			showDice: SHOW_OUTCOMES_FIELD
 		}
 	},
-	/** Adventure's cast four plus the whisper, and the dungeon's own four. */
-	slots: LAIR_SLOTS as unknown as AttributeSlotDecl[],
-	sheets: [LAIR_SHEET],
-	// Its sessions may carry in their world's attributes and add their own.
-	customAttributes: 'allow',
+	// 🚧 No slots, no sheet (RF fix 8): the session's rules bring the party's
+	// attributes; the GM's whisper and standing direction are the host's tool
+	// state for the Lair (`registry/hostState.ts`), the room the scene's place.
 	/**
-	 * What the person's own lines are called (R4, owner ruling 3,
-	 * 2026-09-28): the person is the narrator here, and nobody plays a
-	 * persona, so their lines carry this name in the log and in every prompt.
-	 * A session may rename it ("Game Master").
+	 * What the GM's own lines are called (R4, owner ruling 3, 2026-09-28): the
+	 * GM is the narrator here, never in the scene, so their lines carry this
+	 * name in the log and in every prompt. A session may rename it.
 	 */
 	playerLabel: { en: "Dungeon Master" },
 	/**
-	 * The **Castellan** (R6, owner F1/F2 2026-09-28): the dungeon's steward.
-	 * It runs the dungeon's turns, narrates when fired, and talks with its
-	 * master in the Sanctum. The **fallback** envoy, so the pipeline's own
-	 * voice and every line nobody claims carry its name, seated or not
-	 * (`ownVoiceName`). Seated by default, and never a Pick candidate: the
-	 * turn-order pool is `NOBODY`, so its turns come from the strategy's
-	 * null entry and its narrations from Narrate.
+	 * The **Castellan** (R6, D4): the dungeon's steward — the default and the
+	 * fallback, so the pipeline's own voice and every unclaimed line carry its
+	 * name. The **Oracle** (D4, R11): mechanics only — roll forms, dice, the
+	 * knock's question. Declared, never seated: a line under a declared envoy
+	 * needs no seat, and the Oracle takes no turns (the turn order admits no
+	 * envoy) and gives no greeting.
 	 */
 	envoys: [
 		{
 			key: LAIR_CASTELLAN_KEY,
 			name: { en: "Castellan" },
 			description: {
-				en: "The dungeon's steward. Plans the party's moves, keeps the books, knocks at rooms you haven't built, and talks the dungeon through with you in the Sanctum."
+				en: "The dungeon's steward. Plans the party's moves, narrates when you ask, drafts rooms, and talks the dungeon through with you in the Sanctum."
 			},
 			image: LAIR_CASTELLAN_IMAGE,
-			prompts: { systemPrompt: LAIR_CASTELLAN_SYSTEM_PROMPT },
+			prompts: { systemPrompt: LAIR_CASTELLAN_SYSTEM_PROMPT, postHistoryInstructions: LAIR_CASTELLAN_REMINDER },
 			default: true,
 			fallback: true,
 			speaks: "in-turn",
 			greeting: { channel: SANCTUM_CHANNEL, text: { en: LAIR_CASTELLAN_GREETING } }
+		},
+		{
+			key: LAIR_ORACLE_KEY,
+			name: { en: "Oracle" },
+			description: {
+				en: "Answers what the dice say. Asks you to call the rolls, reports how they came out, and knocks when the party reach a room nobody built. Never narrates."
+			},
+			image: LAIR_ORACLE_IMAGE,
+			speaks: "in-turn"
 		}
 	],
 	events: {
 		/**
-		 * The turn-order events (§4.5). Four, not nine: this genre's order
-		 * is one narrator entry or none, decided by whether the newest
-		 * visible row is a person's, so only a row landing or leaving
-		 * (deleted, hidden, shown) and a branch move it. A cast change or a
-		 * settings save cannot (lair pass B9).
+		 * The turn-order events (§4.5): a row landing or leaving, and a branch
+		 * move — what changes whose turn it is under a plan.
 		 */
 		[sessionEvents.messageCompleted]: {},
 		[sessionEvents.messageDeleted]: {},
@@ -1254,35 +1201,47 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		[sessionEvents.sessionBranched]: {},
 		[sessionEvents.messageRespond]: { required: true },
 		[sessionEvents.sessionAction]: { open: true },
+		/** A seat taken — `lair-welcome` tells the GM in the Sanctum (D5). */
 		[sessionEvents.memberAdded]: {},
 		[sessionEvents.memberRemoved]: {},
 		/**
-		 * Bound here, unlike Adventure's optional use of it, because this genre
-		 * puts a form to the **owner** when the party knocks at a room that does
-		 * not exist. A form addressed to a person waits for their click; this
-		 * event is the other arm, for the day a Lair session seats an AI in a
-		 * seat a form is addressed to.
+		 * Bound, because this genre puts forms to the **owner**: the knock and
+		 * the roll forms. A form addressed to a person waits for their click;
+		 * this event is the other arm, for a form addressed to a seat the AI
+		 * portrays.
 		 */
 		[sessionEvents.formAddressed]: {}
 	},
-	/** The layout this genre ships (R71): its default. */
 	/** The author's note is Story's alone (Chat's until 2026-10-19; owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
-	layouts: [layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT })],
+	/**
+	 * The GM's layout (its default, R71) and the **party's** — a guest's view,
+	 * and the layout a guest's first open copies (`forGuests`): the story and
+	 * the sheets, the rooms and the Party panel, no Sanctum and no scratchpad
+	 * (D6, lane L5).
+	 */
+	layouts: [
+		layout({ slug: "default", name: { en: "Lair" }, preset: LAIR_LAYOUT }),
+		layout({
+			slug: "party",
+			name: { en: "Party" },
+			description: { en: "A player's view: the story, the party's sheets, the rooms, and who the turn waits for. No Sanctum." },
+			preset: LAIR_PARTY_LAYOUT,
+			forGuests: true
+		})
+	],
 	/** 🚧 The spec this genre's scenes are summarized with — the one that reads the Sanctum (live scenes §13). */
 	summarize: { scene: LAIR_SUMMARIZE_SCENE_SPEC_ID }
 })
 
 /* ── Dungeon Crawler 🚧 ─────────────────────────────────────────────────────
  *
- * PLAN-dungeon-crawler-2026-10-14. A light, self-running table where the AI is
- * the whole Dungeon Master and each person only ever plays their character.
- * The world is generated, not written: no lorebook, nothing added to anybody's
- * library. Foundation only so far — the declaration, its names, its slots, its
- * layout and its turn order. ⚠ Not yet in `coreExtension().genres` nor in
- * `TURN_ORDER_BY_GENRE`: a genre is listed from its published create spec, and
- * a turn-order spec cannot be published before it, so the create lane adds
- * both, with a preset, in the same change.
+ * PLAN-dungeon-crawler-2026-10-14 (v1 and multiplayer built 2026-10-15). A
+ * light, self-running table where the AI is the whole Dungeon Master and each
+ * person only ever plays their character. The world is generated, not
+ * written: no lorebook, nothing added to anybody's library. Published with
+ * its create spec, its preset and its turn order (`coreGenres()`,
+ * `TURN_ORDER_BY_GENRE`).
  */
 
 /** @experimental */
@@ -1341,22 +1300,48 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 	 * `DUNGEON_CRAWLER_DELTA_OPS`: add · spend · set · remove · hit · use ·
 	 * traverse). Those ops are the handler's own, not a ruleset's verbs: what
 	 * a ruleset must provide is what a `hit` and a `use` resolve through —
-	 * harm, heal, cure, consume — and the repertoires its kits hand pieces
-	 * out of (`DUNGEON_CRAWLER_REPERTOIRE_SLOTS`, ways out excepted: a way out
-	 * is written inside its place). Health, level and class are the genre's
-	 * own slots, read from the ruleset where it has them.
+	 * harm, heal, cure, consume — and (🚧 RF fix 8) what it plays best with by
+	 * tag: a health and a level to count, and the kinds of kit its heroes
+	 * carry. Rules that lack one play it in words; nothing is locked.
 	 */
 	uses: {
 		verbs: ["harm", "heal", "cure", "consume"],
-		pieces: ["weapons", "armour", "gear", "consumables", "spells", "features", "conditions"],
 		conditions: true,
 		dice: "optional",
-		optional: { slots: ["hp", "level", "character-class"], casting: true }
+		// 🚧 RF fix 8: by tag, never a ruleset's own lists — the crawl counts a
+		// hero's health and level, and hands out kit of these kinds; rules that
+		// lack one play it in words (Freeform, Wherewithal).
+		attributes: [HEALTH, expectation("level", "a level", "Heroes grow as they survive; without one, growth is told in words.", NUMBER_ATTRIBUTE_KINDS)],
+		entryTypes: [
+			expectation("weapon", "weapons", "A blow does what the weapon in hand says; without them, fights are told in words."),
+			expectation("armour", "armour", "What someone wears turns blows aside."),
+			expectation("gear", "gear", "Tools and lights open doors and light the dark."),
+			expectation("consumable", "things used up", "Potions and rations run out as they are used."),
+			expectation("casting", "spells", "A caster's magic is counted and spent."),
+			expectation("feature", "what training lets someone do", "Each hero has something only they can do."),
+			CONDITIONS
+		],
+		optional: {
+			attributes: [expectation("class", "a calling", "What a hero is trained for shapes how they solve things.")],
+			entryTypes: [expectation("class", "callings with a starting kit", "A new hero starts with their calling's kit; without one, they start with nothing.")],
+			casting: true
+		}
 	},
 	description: {
 		en: "The AI is the whole Dungeon Master. Make a character, walk into a world it generates, and play only your own part — alone or with friends."
 	},
-	/** 🚧 Vis Itineris recommended, any ruleset allowed; rules and dice by default (rulesets plan §13). */
+	/** 🚧 The card's long copy (2026-10-23, PLAN-genres-seams S8). */
+	about: {
+		en: [
+			"The AI is the whole Dungeon Master: make a character, walk into a world it generates, and play only your own part.",
+			"Who's in the room: you and your character, and any friends you invite, each with a character of their own; companions you add travel with the party. The Planner talks with each player in their own channel, out of character; the Narrator tells the story.",
+			"Who drives: the table. Before play the Planner asks you what kind of adventure, how hard, whether the goal is shared or secret, and who your character is. Then each round everyone says what their character does, and the Narrator tells what happens.",
+			"What it costs: several model calls a round — the Planner keeps the books, then the Narrator tells the story — and one each time you talk to the Planner.",
+			"Required: nothing. Optional: a persona to start your character from, and companions. The world is made as you play and kept in the session; nothing is added to your lorebooks or your library.",
+			"Pick the Lair to run the dungeon yourself, or Story to tell a story without a Dungeon Master."
+		].join("\n\n")
+	},
+	/** 🚧 Vis Itineris recommended, any ruleset allowed; the rules decide by default (rigour `scripts`, rulesets plan §13). */
 	rulesets: { recommended: [visItinerisRuleset.id], default: visItinerisRuleset.id },
 	rigour: { options: ["prose", "mechanics", "scripts"], default: "scripts" },
 	shape: {
@@ -1441,29 +1426,14 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 		/** No card greetings: the Planner opens the session on the Planner channel. */
 		greeting: { enabled: false },
 		fields: {
-			/**
-			 * 🚧 **Honour mode** (owner ruling 2026-10-15). A key core reads,
-			 * the way it reads `autoAdvance`: a genre that declares it keeps
-			 * its story turns — an older turn on a channel that offers the
-			 * retake is never deleted (retake from the latest instead), and
-			 * the latest is deleted by the session owner alone, only while
-			 * this is on (`turnDeleteVerdict`, app `messages/verbs.ts`). The
-			 * retake is the owner's whatever it says. 🚧 And (2026-10-16) a
-			 * player edits their own sheet by hand only while this is on; the
-			 * host always may, and the pipeline is untouched
-			 * (`assertSessionOwner`, app `state/write.ts`).
-			 */
-			honorMode: {
-				type: "boolean",
-				label: { en: "Honour mode" },
-				description: { en: "Lets the host delete the latest turn, and lets players edit their own sheets by hand. Off: turns can only be retaken." },
-				default: false
-			}
+			/** 🚧 **Honour mode** (owner ruling 2026-10-15): the shared field (`HONOR_MODE_FIELD`), a key core reads. */
+			honorMode: HONOR_MODE_FIELD
 		},
 	},
-	slots: DUNGEON_CRAWLER_SLOTS as unknown as AttributeSlotDecl[],
-	sheets: [DUNGEON_CRAWLER_SHEET],
-	customAttributes: "allow",
+	// 🚧 No slots, no sheet (RF fix 8): the session's rules bring a hero's
+	// attributes (Vis Itineris's abilities, skills and spell points among
+	// them); the crawl's standing orders, fate, time and piece lists are the
+	// host's tool state for it (`registry/hostState.ts`).
 	/** A person's line before their character has a name. */
 	playerLabel: { en: "Adventurer" },
 	envoys: [
@@ -1508,7 +1478,7 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 		/** The interview's questions are forms addressed to players. */
 		[sessionEvents.formAddressed]: {}
 	},
-	/** No lorebook, so nothing that reads one; and the Author's note is Chat's. */
+	/** No lorebook, so nothing that reads one; and the Author's note is Story's alone. */
 	omitWidgets: [
 		coreWidgets.authorsNote,
 		coreWidgets.chronicle,

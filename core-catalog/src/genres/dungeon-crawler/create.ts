@@ -3,12 +3,13 @@
  * features 1, 9 and 16): the tavern opens, everyone gets a Planner lane.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, slot, spec, sessionEvents, coreEvents, ITEM, type OutPortsOf, type SpecBuilder } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { dungeonCrawlerGenre } from '../../registry/genres.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, DUNGEON_CRAWLER_PLANNER_KEY, DUNGEON_CRAWLER_STORY_CHANNEL, PARLEY_CHANNEL } from './names.js'
 import { DUNGEON_CRAWLER_LANES_SCRIPT } from './scripts.js'
-import { applyWiring, at, jsonPart, scriptStep, textPart, wiring, type Wiring } from './calls.js'
+import { applyWiring, jsonPart, scriptStep, textPart, wiring, type Plus, type ReadOn, type Wiring } from './calls.js'
+import { crawlTimeSlot, difficultySlot, goalModeSlot } from '../../registry/slots.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_CREATE_SPEC_ID = 'core:spec/dungeon-crawler-create'
@@ -58,98 +59,127 @@ export const DUNGEON_CRAWLER_EPOCH = '1-01-01 08:00'
  * alone. Each row carries its first question as a form addressed to that
  * person.
  */
-const openLanes = (c: any, w: Wiring, session: ($: any) => unknown, scope: ($: any) => unknown) =>
-	scriptStep(c, w, '', 'lanes', DUNGEON_CRAWLER_LANES_SCRIPT.seedKey, ($) => ({ session: session($) }), 'Who to greet on a Planner lane')
-		.junction('opened', { on: ($: any) => $.lanes.main }, (j: any) =>
-			j.when('greet', { path: 'greet', truthy: true }, (g: any) =>
-				jsonPart(g, w, 'opened.greet.', 'list', ($) => $.lanes.main, 'greet', 'The people to greet').junction(
+const openLanes = <B extends SpecBuilder<{ welcome: Ports<typeof C.envoyGreeting.v1> }, any>>(
+	c: B,
+	w: Wiring,
+	session: ReadOn<B>,
+	scope: ReadOn<B>,
+): Plus<B, 'lanes', Ports<typeof C.runScript.v1>> => {
+	const spine: SpecBuilder<{ welcome: Ports<typeof C.envoyGreeting.v1> }, any> = c
+	scriptStep(spine, w, 'lanes', DUNGEON_CRAWLER_LANES_SCRIPT.seedKey, ($) => ({ session: session($ as never) }), 'Who to greet on a Planner lane')
+		.junction('opened', { on: ($) => $.lanes.main }, (j) =>
+			j.when('greet', { path: (v: Lanes) => v.greet, truthy: true }, (g) =>
+				jsonPart(g, w, 'list', ($) => $.lanes.main, 'greet', 'The people to greet').junction(
 					'planner',
-					{ on: ($: any) => $.welcome.text },
-					(p: any) =>
-						p.when('seated', { truthy: true }, (s: any) =>
+					{ on: ($) => $.welcome.text },
+					(p) =>
+						p.when('seated', { truthy: true }, (s) =>
 							s.each(
 								'lane',
-								{ over: ($: any) => $.opened.greet.list.main, max: 16, mode: 'sequential' },
-								(m: any) => greetLane(m, w, 'opened.greet.planner.seated.lane', scope),
+								{ over: ($) => $.opened.greet.list.main, max: 16, mode: 'sequential' },
+								/**
+								 * One person's lane: core opens it (or answers the one they have), and an
+								 * opened lane is greeted with its question and the line. An `each` keys its
+								 * members under `<clause>.item.`, beside the item itself.
+								 *
+								 * A player's greeting is read HERE, beside the person, and not inside the
+								 * junction's branch: a branch inside an `each` does not see the item, so
+								 * a guest's lane opened with its question and no greeting (round 2).
+								 */
+								(m) =>
+									jsonPart(
+										jsonPart(
+											textPart(textPart(m, w, 'addressee', ($) => $[ITEM], 'addressee', 'Whose lane'), w, 'line', ($) => $[ITEM], 'text', "A player's greeting"),
+											w,
+											'blocks',
+											($) => $[ITEM],
+											'blocks',
+											"The lane's first question",
+										),
+										w,
+										'owner',
+										($) => $[ITEM],
+										'owner',
+										"Whether it is the owner's lane",
+									)
+										.query(
+											'mine',
+											($) =>
+												C.channelLane.v1({
+													scope: scope($ as never) as any,
+													channel: PARLEY_CHANNEL,
+													person: $.addressee.text,
+												}),
+											{ expose: { label: 'Open their Planner lane' } },
+										)
+										.junction('fresh', { on: ($) => $.mine }, (f) =>
+											f.when('opened', { path: (v: Lane) => v.opened, truthy: true }, (o) =>
+												// 🚧 Their Story composer waits for their character (owner ruling
+												// 2026-10-15): closed as their lane opens, opened by the
+												// interview's sheet.
+												o
+													.outlet(
+														'closeStory',
+														($) =>
+															C.setComposerState.v1({
+																channel: DUNGEON_CRAWLER_STORY_CHANNEL,
+																open: false as any,
+																reason: DUNGEON_CRAWLER_STORY_WAITING,
+																person: $.opened.greet.planner.seated.lane.item.addressee.text,
+															}),
+														{ expose: { label: 'Close their Story until their character is made' } },
+													)
+													.junction('who', { on: ($) => $.opened.greet.planner.seated.lane.item.owner.main }, (j) =>
+														j
+															.when('owner', { truthy: true }, (ow) =>
+																ow.outlet(
+																	'write',
+																	($) =>
+																		C.createMessage.v1({
+																			text: $.welcome.text,
+																			channel: $.opened.greet.planner.seated.lane.item.mine.lane,
+																			speaker: PLANNER as any,
+																			blocks: $.opened.greet.planner.seated.lane.item.blocks.main,
+																		}),
+																	{ expose: { label: 'Greet the owner' } },
+																),
+															)
+															.otherwise('player', (pl) =>
+																pl.outlet(
+																	'write',
+																	($) =>
+																		C.createMessage.v1({
+																			text: $.opened.greet.planner.seated.lane.item.line.text,
+																			channel: $.opened.greet.planner.seated.lane.item.mine.lane,
+																			speaker: PLANNER as any,
+																			blocks: $.opened.greet.planner.seated.lane.item.blocks.main,
+																		}),
+																	{ expose: { label: 'Greet a player' } },
+																),
+															),
+													),
+											),
+										),
 							),
 						),
 				),
 			),
 		)
+	return c as never
+}
 
-/**
- * One person's lane: core opens it (or answers the one they have), and an
- * opened lane is greeted with its question and the line. An `each` keys its
- * members under `<clause>.item.`, beside the item itself.
- */
-const greetLane = (m: any, w: Wiring, clause: string, scope: ($: any) => unknown) => {
-	const item = ($: any) => at($, `${clause}.item`)
-	const prefix = `${clause}.item.`
-	// A player's greeting is read HERE, beside the person, and not inside the
-	// junction's branch: a branch inside an \`each\` does not see the item, so
-	// a guest's lane opened with its question and no greeting (round 2).
-	const withWho = textPart(m, w, prefix, 'addressee', item, 'addressee', 'Whose lane')
-	const withLine = textPart(withWho, w, prefix, 'line', item, 'text', "A player's greeting")
-	const withBlocks = jsonPart(withLine, w, prefix, 'blocks', item, 'blocks', "The lane's first question")
-	const withOwner = jsonPart(withBlocks, w, prefix, 'owner', item, 'owner', "Whether it is the owner's lane")
-	const asked = withOwner.query(
-		'mine',
-		($: any) =>
-			C.channelLane.v1({
-				scope: scope($) as any,
-				channel: PARLEY_CHANNEL,
-				person: at($, `${prefix}addressee`).text,
-			}),
-		{ expose: { label: 'Open their Planner lane' } },
-	)
-	return asked.junction('fresh', { on: ($: any) => at($, `${prefix}mine`) }, (f: any) =>
-		f.when('opened', { path: 'opened', truthy: true }, (o: any) =>
-			// 🚧 Their Story composer waits for their character (owner ruling
-			// 2026-10-15): closed as their lane opens, opened by the
-			// interview's sheet.
-			o
-				.outlet(
-					'closeStory',
-					($: any) =>
-						C.setComposerState.v1({
-							channel: DUNGEON_CRAWLER_STORY_CHANNEL,
-							open: false as any,
-							reason: DUNGEON_CRAWLER_STORY_WAITING,
-							person: at($, `${prefix}addressee`).text,
-						}),
-					{ expose: { label: 'Close their Story until their character is made' } },
-				)
-				.junction('who', { on: ($: any) => at($, `${prefix}owner`).main }, (j: any) =>
-					j
-						.when('owner', { truthy: true }, (ow: any) =>
-							ow.outlet(
-								'write',
-								($: any) =>
-									C.createMessage.v1({
-										text: $.welcome.text,
-										channel: at($, `${prefix}mine`).lane,
-										speaker: PLANNER as any,
-										blocks: at($, `${prefix}blocks`).main,
-									}),
-								{ expose: { label: 'Greet the owner' } },
-							),
-						)
-						.otherwise('player', (pl: any) =>
-							pl.outlet(
-								'write',
-								($: any) =>
-									C.createMessage.v1({
-										text: at($, `${prefix}line`).text,
-										channel: at($, `${prefix}mine`).lane,
-										speaker: PLANNER as any,
-										blocks: at($, `${prefix}blocks`).main,
-									}),
-								{ expose: { label: 'Greet a player' } },
-							),
-						),
-				),
-		),
-	)
+type Ports<F extends (...args: never[]) => unknown> = OutPortsOf<ReturnType<F>>
+
+/** What the lanes script hands its junctions (`DUNGEON_CRAWLER_LANES_SCRIPT`): who to greet, who to ask. */
+interface Lanes {
+	readonly greet: unknown
+	readonly ask: unknown
+}
+
+/** A person's lane, as core answered the ask (`core:query/channel-lane@1`). */
+interface Lane {
+	readonly opened: unknown
+	readonly lane: unknown
 }
 
 /**
@@ -189,19 +219,16 @@ export const dungeonCrawlerCreateSpec = () => {
 			envoys: dungeonCrawlerGenre.envoys,
 		},
 	})
-		.inlet('input', C.sessionCreated.v1(), {
-			genre: dungeonCrawlerGenre,
-			event: sessionEvents.sessionCreated,
-		})
+		.inlet('input', C.sessionCreated.v1(), { suits: [coreEvents.sessionCreated] })
 		/** The Planner's greeting, interpolated — empty when it is not seated. */
 		.query('welcome', ($) => C.envoyGreeting.v1({ scope: $.input.sessionScope, params: slot.params() }))
 		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
 		.query('rules', ($) =>
 			C.resolveStateChanges.v1({
 				changes: [
-					{ owner: 'world', slot: 'core:slot/difficulty@1', value: 'fair' },
-					{ owner: 'world', slot: 'core:slot/goal-mode@1', value: 'shared' },
-					{ owner: 'world', slot: 'core:slot/crawl-time@1', value: DUNGEON_CRAWLER_EPOCH },
+					{ owner: 'world', slot: difficultySlot.id, value: 'fair' },
+					{ owner: 'world', slot: goalModeSlot.id, value: 'shared' },
+					{ owner: 'world', slot: crawlTimeSlot.id, value: DUNGEON_CRAWLER_EPOCH },
 				] as any,
 				scope: $.input.sessionScope,
 				base: $.state.version,
@@ -231,7 +258,7 @@ export const dungeonCrawlerCreateSpec = () => {
 	const built = openLanes(graph, w, ($) => $.input.session, ($) => $.input.sessionScope)
 	return compile(
 		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) =>
+			.defaults((p) =>
 				applyWiring(p.params('welcome', { envoy: DUNGEON_CRAWLER_PLANNER_KEY }).params('apply', { mode: 'apply' }), w),
 			)
 			.build(),
@@ -245,45 +272,44 @@ export const dungeonCrawlerCreateSpec = () => {
  * that person's own lane, its form the question. Only while the Planner is
  * seated, as the greetings are. Read beside the item, as `greetLane` does.
  */
-const askStandingOrders = (c: any, w: Wiring) =>
-	c.junction('standing', { on: ($: any) => $.lanes.main }, (j: any) =>
-		j.when('asked', { path: 'ask', truthy: true }, (a: any) =>
-			jsonPart(a, w, 'standing.asked.', 'list', ($) => $.lanes.main, 'ask', 'Who is asked their standing order').junction(
+const askStandingOrders = <B extends SpecBuilder<{ welcome: Ports<typeof C.envoyGreeting.v1>; lanes: Ports<typeof C.runScript.v1> }, any>>(
+	c: B,
+	w: Wiring,
+): B => {
+	const spine: SpecBuilder<{ welcome: Ports<typeof C.envoyGreeting.v1>; lanes: Ports<typeof C.runScript.v1> }, any> = c
+	spine.junction('standing', { on: ($) => $.lanes.main }, (j) =>
+		j.when('asked', { path: (v: Lanes) => v.ask, truthy: true }, (a) =>
+			jsonPart(a, w, 'list', ($) => $.lanes.main, 'ask', 'Who is asked their standing order').junction(
 				'planner',
-				{ on: ($: any) => $.welcome.text },
-				(p: any) =>
-					p.when('seated', { truthy: true }, (s: any) =>
-						s.each(
-							'player',
-							{ over: ($: any) => at($, 'standing.asked.list').main, max: 16 },
-							(m: any) => {
-								const prefix = 'standing.asked.planner.seated.player.item.'
-								const item = ($: any) => at($, 'standing.asked.planner.seated.player.item')
-								return jsonPart(
-									textPart(textPart(m, w, prefix, 'lane', item, 'lane', 'Their lane'), w, prefix, 'line', item, 'text', 'Why they are asked'),
-									w,
-									prefix,
-									'blocks',
-									item,
-									'blocks',
-									'The standing order, asked',
-								).outlet(
-									'write',
-									($: any) =>
-										C.createMessage.v1({
-											text: at($, `${prefix}line`).text,
-											channel: at($, `${prefix}lane`).text,
-											speaker: PLANNER as any,
-											blocks: at($, `${prefix}blocks`).main,
-										}),
-									{ expose: { label: 'Ask their standing order' } },
-								)
-							},
+				{ on: ($) => $.welcome.text },
+				(p) =>
+					p.when('seated', { truthy: true }, (s) =>
+						s.each('player', { over: ($) => $.standing.asked.list.main, max: 16 }, (m) =>
+							jsonPart(
+								textPart(textPart(m, w, 'lane', ($) => $[ITEM], 'lane', 'Their lane'), w, 'line', ($) => $[ITEM], 'text', 'Why they are asked'),
+								w,
+								'blocks',
+								($) => $[ITEM],
+								'blocks',
+								'The standing order, asked',
+							).outlet(
+								'write',
+								($) =>
+									C.createMessage.v1({
+										text: $.line.text,
+										channel: $.lane.text,
+										speaker: PLANNER as any,
+										blocks: $.blocks.main,
+									}),
+								{ expose: { label: 'Ask their standing order' } },
+							),
 						),
 					),
 			),
 		),
 	)
+	return c
+}
 
 /**
  * 🚧 **Welcome** — somebody new at the table (`member-added`): a player seat
@@ -305,15 +331,12 @@ export const dungeonCrawlerWelcomeSpec = () => {
 		version: DUNGEON_CRAWLER_CREATE_VERSION,
 		taxonomy: { role: 'maintenance' },
 	})
-		.inlet('event', C.sessionEvent.v1(), {
-			genre: dungeonCrawlerGenre,
-			events: [sessionEvents.memberAdded],
-		})
+		.inlet('event', C.sessionEvent.v1(), { suits: [coreEvents.memberAdded] })
 		.query('welcome', ($) => C.envoyGreeting.v1({ scope: $.event.sessionScope, params: slot.params() }))
 	const built = askStandingOrders(openLanes(graph, w, ($) => $.event.session, ($) => $.event.sessionScope), w)
 	return compile(
 		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) =>
+			.defaults((p) =>
 				applyWiring(p.params('welcome', { envoy: DUNGEON_CRAWLER_PLANNER_KEY }), w),
 			)
 			.build(),

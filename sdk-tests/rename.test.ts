@@ -143,13 +143,16 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 		}
 	})
 
-	test('no document carries `subscribes`; the lock is on `input`', () => {
+	test('no document carries `subscribes`; what a pipeline suits is on `suits`', () => {
 		for (const s of SHIPPED) {
 			const doc: SpecDocument = s.build()
 			assert.equal('subscribes' in doc, false, s.slug)
 		}
+		// 🚧 Locks retired (PLAN-layering D3, 2026-10-20): no genre, no event on the
+		// document — the events it suits, for pickers; registrations mount it.
 		const respond = built('core:spec/story-respond')
-		assert.equal(respond.input?.event, 'core:event/message-respond@1')
+		assert.equal(respond.input, undefined)
+		assert.deepEqual(respond.suits, ['core:event/message-respond@1'])
 	})
 
 	test('an action says its venues; nothing says kind, pick, zone or triggers', () => {
@@ -177,7 +180,8 @@ describe('R-4 · one event registry; the inlet lock is the only subscription', (
 
 describe('R-10 · the scope chain is session · config · defaults · author', () => {
 	test('the constant and the matrix agree', () => {
-		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
+		// PLAN-layering D5 (R38): configurations retire; `config` reads as `preset` (⏳).
+		assert.deepEqual(SCOPE_ORDER, ['session', 'preset', 'genre', 'defaults', 'author'])
 		for (const scopes of Object.values(WRITE_MATRIX))
 			for (const s of scopes) assert.ok(SCOPE_ORDER.includes(s), `matrix names ${s}`)
 	})
@@ -210,7 +214,7 @@ describe('R-7 P2 · one params owner per setting per spec', () => {
 				.query('b', ($) => lane.v1({ scope: $.input.sessionScope, ...second }))
 				.build(),
 		)
-	const p2 = (doc: ReturnType<typeof two>) => validate(doc).filter((f) => f.law === '12 §2 P2')
+	const p2 = (doc: SpecDocument) => validate(doc).filter((f) => f.law === '12 §2 P2')
 
 	test('two own-node params slots declaring the same shared field is a diagnostic', () => {
 		const f = p2(two({ params: slot.params() }))

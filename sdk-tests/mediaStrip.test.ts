@@ -86,3 +86,25 @@ test('vocabulary 1.2: an img loads lazily, decodes async, and raises error', () 
 	assert.equal(hostEventAllowed('img', 'error'), true)
 	assert.equal(hostEventAllowed('img', 'load'), false)
 })
+
+// 🚧 O11 (2026-10-21): a voice note or a spoken reply, and a clip, are players.
+test('audio and video parts are read as players, in order, and named', () => {
+	const items = mediaStripItems(
+		[
+			part(1, 0, 0, 10, 'core:audio', { assetId: 7, name: 'note.mp3', mime: 'audio/mpeg', duration: 4.2 }),
+			part(2, 0, 0, 11, 'core:video', { assetId: 8, mime: 'video/mp4' }),
+			part(3, 0, 0, 12, 'core:audio', { assetId: 9, mime: 'audio/wav' }),
+		] as never,
+		null,
+	)
+	assert.deepEqual(
+		items.map((i) => [i.partId, i.kind, i.assetId, i.label]),
+		[
+			[1, 'audio', 7, 'note.mp3'],
+			[2, 'video', 8, 'Video'],
+			[3, 'audio', 9, 'Audio'],
+		],
+	)
+	assert.equal(fileIcon('audio/mpeg'), 'file-audio')
+	assert.equal(fileIcon('video/mp4'), 'file-video')
+})

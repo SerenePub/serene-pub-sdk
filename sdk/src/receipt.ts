@@ -10,6 +10,7 @@
 import { renderPreview } from './preview.js'
 import { renderStatusText } from './status.js'
 import type { ScopeKind } from './config.js'
+import type { TriggerFamily } from './registrations.js'
 
 /** @experimental */
 export type Outcome = 'ok' | 'err' | 'cancelled' | 'halt'
@@ -215,6 +216,16 @@ export interface Receipt {
 	schemaVersion: 1
 	seed: string
 	triggerSource: 'input' | 'event' | 'hook' | 'ui' | 'schedule'
+	/**
+	 * 🚧 The **trigger family** that started the run (LS2, PLAN-layering
+	 * D7): `event`, `action`, `routine` — an open family, so a later one
+	 * (Live) needs no change here. What R13 is worded by: routines wait for
+	 * action and event runs only.
+	 * @ruling LS2, R13
+	 */
+	triggerFamily?: TriggerFamily
+	/** 🚧 The registration that started the run — its derived key (`message-respond→story-reply`). */
+	registrationKey?: string
 	triggerRef?: string
 	actorUserId?: string
 	parentRunId?: string

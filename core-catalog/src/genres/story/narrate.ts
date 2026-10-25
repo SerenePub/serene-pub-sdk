@@ -194,6 +194,10 @@ export const STORY_NARRATE_SPEC_ID = 'core:spec/story-narrate'
 // (`spritePick`, `spriteShow`), as on every reply spec (owner ruling D-a);
 // `semantic.arm.queries` wires its own embedding connection, since
 // `embed-text` declares none.
+// ⚠ Edited in place (2026-10-21, omni O5/O7/O9) — content-addressed;
+// `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
+// before placement hears the audio the reply cannot; `generate` names its
+// speech sampling, and `save` writes the reply's media parts in order.
 /** @internal */
 export const STORY_NARRATE_VERSION = '1.11.0'
 
@@ -247,10 +251,7 @@ export const narrateSpec = () =>
 			// Manually triggered — a person asks the narrator to speak. Unlike the
 			// reply pipeline, nothing about a new message should start one.
 			/** The usage lock (24 §4): a person-invoked action on Chat sessions. */
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			/**
 			 * The narration row, created by the pipeline that fills it (R-17)
 			 * — see `respond`'s `placeholder`. Narration: no character, the
@@ -467,7 +468,7 @@ export const narrateSpec = () =>
 								texts: $.names.arm.mentions.texts,
 								// One `enabled` switch for both embed nodes (R-7 P2): the
 								// semantic mechanism's embed owns it, this one reads it.
-								params: slot.params({ node: 'semantic.arm.embed' }),
+								params: slot.params($.semantic.arm.embed),
 							}),
 							{ expose: { label: 'Embed the mentions' } },
 						)
@@ -551,10 +552,26 @@ export const narrateSpec = () =>
 				}),
 			)
 			// 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+			/**
+			 * 🚧 Audio the reply cannot hear, heard first (O9) — see
+			 * `chat/respond.ts`. Nothing to hear sends nothing.
+			 */
+			.oracle(
+				'heard',
+				($) =>
+					C.transcribeAudio.v1({
+						messages: $.lines.messages,
+						attachments: $.attachments.attachments,
+						hears: $.contextBudget.reads,
+						connection: slot.connection(),
+						params: slot.params(),
+					}),
+				{ expose: { label: 'Transcribe audio' } },
+			)
 			.task('attached', ($) =>
 				C.placeAttachments.v1({
 					messages: $.lines.messages,
-					attachments: $.attachments.attachments,
+					attachments: $.heard.attachments,
 					connection: slot.connectionOf('generate'),
 					params: slot.params(),
 				}),
@@ -577,7 +594,7 @@ export const narrateSpec = () =>
 					// The context builder's authored text, by reference — one
 					// prompt, written once, read where the template asks for
 					// `{{systemPrompt}}` (13 §12 finding i).
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					// Assemble's own layouts — the lore and history *it*
 					// produced, laid out after the budget decided what fit.
 					// Its own slot, not the context builder's: no earlier node
@@ -610,6 +627,7 @@ export const narrateSpec = () =>
 					// See the note above `STORY_NARRATE_VERSION`.
 					connection: slot.connection(),
 					sampling: slot.sampling(),
+					speechSampling: slot.speechSampling(),
 					// And the third: `params.stopSequences` has had a reader
 					// since the stop-sequence ruling (2026-09-10) and no spec
 					// named the slot, so the control rendered and the value
@@ -630,6 +648,7 @@ export const narrateSpec = () =>
 					target: $.placeholder.messageId,
 					text: $.generate.text,
 					reasoning: $.generate.reasoning,
+					parts: $.generate.parts,
 				}),
 			)
 			/**
@@ -657,8 +676,9 @@ export const narrateSpec = () =>
 				}),
 			)
 			/** The narration runs on the Reply loadout (I12). */
-			.preset('default', { label: 'Default', default: true }, (p) =>
-				p.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
+			.defaults((p) =>
+				p.loadout('generate', slot.loadout(CORE_LOADOUT.reply))
+					.loadout('heard', slot.loadout(CORE_LOADOUT.transcription)),
 			)
 			.build(),
 	)

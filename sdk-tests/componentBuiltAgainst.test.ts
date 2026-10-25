@@ -81,6 +81,9 @@ const SHAPE_AT_VERSION: Record<string, string> = {
 	// divider's start dragged between the log's rows), raising `move`.
 	// Grew only.
 	'1.4': '98058e33e2ec23c1661b6d6768c7815c7a469c27cded8fe76816820b2a9a6feb',
+	// 1.5 (omni-models, lane 8, 2026-10-21): `audio`, `video`, `track`, `figure`,
+	// `figcaption` for the media players. Grew only.
+	'1.5': 'ecea4f1740982b0d1d55e17c6361000c83ea2c5680c7de3f4adb452d1055f038',
 }
 
 test('the host-element vocabulary version is pinned to its shape — change the table, bump the version', () => {

@@ -105,7 +105,7 @@ export const spriteSetFillSpec = () =>
 					series: $.series.series,
 				}),
 			)
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.params('draw', {
 						orientation: 'portrait',
@@ -115,10 +115,6 @@ export const spriteSetFillSpec = () =>
 					})
 					.params('cutOut', { mode: 'auto' })
 					.loadout('draw', slot.loadout(CORE_LOADOUT.sprites)),
-			)
-			/** Opt-in: a look at the first picture's prompt before anything is drawn. */
-			.preset('review-on', { label: 'Review the prompt before drawing' }, (p) =>
-				p.settings('draw', { review: 'on' }).loadout('draw', slot.loadout(CORE_LOADOUT.sprites)),
 			)
 			.build(),
 	)

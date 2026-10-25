@@ -1,11 +1,13 @@
 /**
- * The attribute slots core's own genres bring.
+ * The attribute slots core declares.
  *
  * A slot is declared once and attached where it is true (`defineAttributeSlot`,
- * SDK attributes.ts); a genre carries the declarations it wants so that a
- * session of that genre has a vocabulary and a session of any other genre has
- * none. The standard Chat genre declares nothing here on purpose — the
- * one-LLM-call rule holding at the surface, so a newcomer never sees a bar.
+ * SDK attributes.ts). 🚧 Since RF fix 8 (owner ruling 2026-10-23) no genre
+ * carries any: a session's attributes are its rules' (a ruleset borrows
+ * core's — Vis Itineris its level, class and health), and the host keeps the
+ * place, the time and a genre tool's own state beside them
+ * (`registry/hostState.ts`). Every slot here stays declared, because a
+ * stored value may name it and a ruleset may borrow it.
  *
  * ## `descriptor` is the contract; `label` and `description` are not
  *
@@ -24,10 +26,9 @@
  * key, and raising the declared default later reaches every owner who never
  * overrode it.
  */
-import { defineAttributeSheet, defineAttributeSlot } from "@serene-pub/sdk"
+import { defineAttributeSlot } from "@serene-pub/sdk"
 // The catalogue first: a slot naming a stat shape nothing declares is refused.
 import { choiceStatShape, listStatShape, numberStatShape, storyTimeStatShape } from "./statShapes.js"
-import { DUNGEON_CRAWLER_ABILITY_SLOTS, DUNGEON_CRAWLER_DYING_SLOTS, DUNGEON_CRAWLER_POOL_SLOTS, DUNGEON_CRAWLER_RETIRED_SLOT_IDS, DUNGEON_CRAWLER_RULESET_SLOTS, DUNGEON_CRAWLER_SKILL_SLOTS } from "../genres/dungeon-crawler/sheet.js"
 
 /**
  * 🚧 A choice whose options read as words (round 2, owner walkthrough
@@ -210,64 +211,105 @@ export const inventorySlot = defineAttributeSlot("core:slot/inventory@1", {
 	appliesTo: ["cast", "world", "location"],
 })
 
-/**
- * The eight (Adventure's until 2026-10-19, Story's since), in the order a genre declares them: the cast's four, then the
- * world's three, then the inventory both carry (phase 3b). A genre that wants
- * only some of them names those.
- * @internal
- */
-export const STORY_SLOTS = [
-	hpSlot,
-	staminaSlot,
-	moodSlot,
-	trustSlot,
-	locationSlot,
-	timeOfDaySlot,
-	weatherSlot,
-	inventorySlot,
-] as const
+/* ── The shared vocabulary's own (A19, R27, R28; 2026-10-20) ──────────── */
 
 /**
- * A sheet entry for one slot — with `location` put on the WORLD, explicitly.
- *
- * `core:slot/location@1` attaches to the world and the cast alike (a premade
- * stat, 2026-09-26), so a sheet that means "where the scene is" has to say so:
- * these three genres always kept it on the world, and they still do, by
- * choice rather than by default.
- * @internal
+ * 🚧 **Currency** — what a character has to spend, in whatever coin the
+ * world uses (R28: the shared vocabulary adds it). A number, never below
+ * nothing. A ruleset that calls it something else ("Gold") gives the member
+ * its own title; the slug stays `currency`.
+ * @experimental
  */
-const onTheWorld = (id: string): { id: string; appliesTo?: readonly ("world")[] } =>
-	id === locationSlot.id ? { id, appliesTo: ["world"] } : { id }
-
-/**
- * The same eight as a **sheet** — one named bundle a genre points at, instead
- * of a list it repeats.
- *
- * Declared below the slots because a sheet gathers declarations that already
- * exist, and refuses an id nothing declares. It names them and no more: each
- * slot's own `config` and `default` are already the opening offer every layer
- * deviates from, and restating them here would be a second place to edit the
- * moment one of them moves.
- *
- * The Story genre carries both this and `STORY_SLOTS`, which changes
- * nothing about what a session has — `genreSlots` dedups the union by id — and
- * is how the sheet arrives without anything that reads the list changing shape.
- * @internal
- */
-export const STORY_SHEET = defineAttributeSheet("core:sheet/story@1", {
-	label: { en: "Story" },
-	description: {
-		en: "What an adventuring character is carrying through a scene, and what the world is doing around them."
-	},
-	slots: STORY_SLOTS.map((slot) => onTheWorld(slot.id))
+export const currencySlot = defineAttributeSlot("core:slot/currency@1", {
+	shape: numberStatShape.id,
+	label: { en: "Currency" },
+	description: { en: "What this character has to spend, in whatever coin the world uses." },
+	descriptor:
+		"What they have to spend, counted in the world's own coin. It rises when they are paid or find some and falls when they buy, pay or lose; it never falls below nothing.",
+	appliesTo: ["cast"],
+	config: { min: 0 },
+	default: 0,
 })
+
+/**
+ * 🚧 **Conditions** — what ails or marks a character, as a list: hurt,
+ * tired, poisoned, inspired, each in a word or two (A19: the shared
+ * vocabulary's; a session may attach a ruleset's conditions repertoire to
+ * it, `config.repertoire`). Not a ruleset's repertoire itself — that names
+ * the pieces' shape; this is where a character's are kept.
+ * @experimental
+ */
+export const conditionsSlot = defineAttributeSlot("core:slot/conditions@1", {
+	shape: listStatShape.id,
+	label: { en: "Conditions" },
+	description: { en: "What ails or marks this character right now — hurt, tired, inspired." },
+	descriptor:
+		"What is true of them for now and will pass: hurt, tired, poisoned, inspired. Each shapes what they can do and how they feel until it ends.",
+	appliesTo: ["cast"],
+})
+
+/**
+ * 🚧 **Relationships** — how this character stands with the others, one
+ * line each (R28: the shared vocabulary adds it). Words, not the story
+ * graph: the graph is the lorebook's record of who knows whom; this is what
+ * a sheet shows of it.
+ * @experimental
+ */
+export const relationshipsSlot = defineAttributeSlot("core:slot/relationships@1", {
+	shape: listStatShape.id,
+	label: { en: "Relationships" },
+	description: { en: "How this character stands with the others, one line each." },
+	descriptor:
+		"How they stand with the people around them, one line each: who they trust, who they owe, who they cannot stand. It changes when the story gives them reason.",
+	appliesTo: ["cast"],
+})
+
+/**
+ * 🚧 **Ways out** — the ways out of a place, as a list: a door, a path, a
+ * stair, and how each stands (A19: the shared vocabulary's; a session may
+ * attach a ruleset's exits repertoire to it).
+ * @experimental
+ */
+export const waysOutSlot = defineAttributeSlot("core:slot/ways-out@1", {
+	shape: listStatShape.id,
+	label: { en: "Ways out" },
+	description: { en: "The ways out of this place — a door, a path, a stair — and how each stands." },
+	descriptor:
+		"The ways out of this place and how each looks and stands. A closed or locked way is not crossed without dealing with it; a hidden one is not known until found.",
+	appliesTo: ["location"],
+})
+
+/**
+ * 🚧 **Notes** — anything worth remembering about a place, in words (A19:
+ * the shared vocabulary's).
+ * @experimental
+ */
+export const notesSlot = defineAttributeSlot("core:slot/notes@1", {
+	type: "text",
+	label: { en: "Notes" },
+	description: { en: "Anything worth remembering about this place." },
+	descriptor: "Things worth remembering about this place. Keep them in mind; they are not instructions.",
+	appliesTo: ["location"],
+	config: { maxLength: 2000 },
+})
+
+/*
+ * 🚧 Retired (RF fix 8, 2026-10-23): `STORY_SLOTS` and `STORY_SHEET` — the
+ * eight Story carried (health, stamina, mood, trust, location, time of day,
+ * weather, inventory). A Story session's attributes are its rules'; the
+ * place is the host's, the time its story clock. A value stored on one of
+ * them is carried onto the rules' own attribute of the same tag, else into
+ * the session's notes (data upgrade 0126).
+ */
 
 /* ── Lair ───────────────────────────────────────────────────────────────────
  *
- * The reverse crawler's own four, declared here beside Adventure's because a
- * slot is declared once and attached where it is true: Lair reuses the cast's
- * four and the world's `location` verbatim (a party is still a party) and adds
- * what a dungeon has that a road does not.
+ * The Lair plays the shared vocabulary (PROPOSAL-lair-rewrite D8, 2026-10-21)
+ * and declares no stats of its own beyond its game master's two tools — the
+ * standing direction (Nudge) and the whisper (heard by its holder alone).
+ * `floor` and `gold` were the old Lair's own; they stay declared below, because
+ * a stored value may still name them (the app's data upgrade carries them
+ * forward), but no genre lists them.
  */
 
 /** @internal */
@@ -345,37 +387,11 @@ export const whisperSlot = defineAttributeSlot("core:slot/whisper@1", {
 	earshot: "holder"
 })
 
-/**
- * Lair's ten, in the order a genre declares them: the cast's four and the
- * whisper, then the world's location, floor, gold and direction, then the
- * inventory both carry (phase 3b).
- *
- * `timeOfDay` and `weather` are deliberately absent. A dungeon has neither —
- * a genre that declared them would draw two chips nothing under this floor can
- * change, and the state block would teach the narrator to describe a sky.
- * @internal
+/*
+ * 🚧 Retired (RF fix 8): `LAIR_SLOTS` and `LAIR_SHEET`. The party's
+ * attributes are the rules'; the whisper and the standing direction above
+ * are the host's tool state for the Lair, the room the scene's place.
  */
-export const LAIR_SLOTS = [
-	hpSlot,
-	staminaSlot,
-	moodSlot,
-	trustSlot,
-	whisperSlot,
-	locationSlot,
-	floorSlot,
-	goldSlot,
-	directionSlot,
-	inventorySlot
-] as const
-
-/** The same ten as one named bundle — `STORY_SHEET`'s reasoning, applied. @internal */
-export const LAIR_SHEET = defineAttributeSheet("core:sheet/lair@1", {
-	label: { en: "Lair" },
-	description: {
-		en: "What a delving party is carrying through a dungeon, and what the dungeon's master has told them."
-	},
-	slots: LAIR_SLOTS.map((slot) => onTheWorld(slot.id))
-})
 
 /* ── Dungeon Crawler 🚧 ────────────────────────────────────────────────────
  *
@@ -521,49 +537,11 @@ export const goalModeSlot = defineAttributeSlot("core:slot/goal-mode@1", {
 	default: "shared"
 })
 
-/**
- * Dungeon Crawler's baseline, in the order its sheet draws them: the
- * character's eight, then the session's four, then (2026-10-17) the Vis Itineris
- * ruleset fields (`core:slot/crawl-*@1`, `genres/dungeon-crawler/sheet.ts`) and
- * its six ability scores, then (🚧 2026-10-18, P2-4) its spell-point pool.
- * `abilities` and `inventory` are **retired**
- * (`DUNGEON_CRAWLER_RETIRED_SLOT_IDS`): tracked so an older session reads
- * them, never on the sheet.
- * @internal
+/*
+ * 🚧 Retired (RF fix 8): `DUNGEON_CRAWLER_SLOTS` and `DUNGEON_CRAWLER_SHEET`.
+ * A hero's attributes are the rules' — Vis Itineris's health, level, class,
+ * abilities, skills and spell points among them, never the genre's; the
+ * crawl's standing order, fate, death saves, time, difficulty, goal and its
+ * ⏳ piece lists are the host's tool state for it (`registry/hostState.ts`).
+ * `abilities`, `inventory` and ⏳ `stat-mode` are no longer kept at all.
  */
-export const DUNGEON_CRAWLER_SLOTS = [
-	hpSlot,
-	levelSlot,
-	characterClassSlot,
-	abilitiesSlot,
-	inventorySlot,
-	standingOrderSlot,
-	fateSlot,
-	// 🚧 Beside Fate, drawn only while somebody lies dying (Q3-8).
-	...DUNGEON_CRAWLER_DYING_SLOTS,
-	locationSlot,
-	crawlTimeSlot,
-	difficultySlot,
-	statModeSlot,
-	goalModeSlot,
-	...DUNGEON_CRAWLER_RULESET_SLOTS,
-	...DUNGEON_CRAWLER_ABILITY_SLOTS,
-	// 🚧 Its trained skills (★4, after walk #3): proficiency on a pick.
-	...DUNGEON_CRAWLER_SKILL_SLOTS,
-	...DUNGEON_CRAWLER_POOL_SLOTS
-] as const
-
-/**
- * 🚧 The same as one sheet — with `location` on the CAST, not the world: the
- * party may split (feature 19), so where somebody is belongs to them.
- * @internal
- */
-export const DUNGEON_CRAWLER_SHEET = defineAttributeSheet("core:sheet/dungeon-crawler@1", {
-	label: { en: "Dungeon Crawler" },
-	description: {
-		en: "An adventurer's character sheet, and the rules the table agreed on."
-	},
-	slots: DUNGEON_CRAWLER_SLOTS.filter((slot) => !(DUNGEON_CRAWLER_RETIRED_SLOT_IDS as readonly string[]).includes(slot.id)).map((slot) =>
-		slot.id === locationSlot.id ? { id: slot.id, appliesTo: ["cast"] as const } : { id: slot.id }
-	)
-})

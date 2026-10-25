@@ -6,6 +6,7 @@
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { lairGenre } from '../../registry/genres.js'
+import { whisperSlot } from '../../registry/slots.js'
 
 /** @internal */
 export const LAIR_WHISPER_SPEC_ID = 'core:spec/lair-whisper'
@@ -54,7 +55,7 @@ export const lairWhisperSpec = () =>
 							recipients: {
 								label: { en: 'Who hears it' },
 								min: 1,
-								overwrites: 'core:slot/whisper@1',
+								overwrites: whisperSlot.id,
 							},
 							text: { need: 'required', label: { en: 'What do you whisper?' } },
 						},
@@ -66,10 +67,7 @@ export const lairWhisperSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
 			/**
 			 * One change naming no owner, made once per recipient: the
@@ -94,7 +92,7 @@ export const lairWhisperSpec = () =>
 					params: slot.params(),
 				}),
 			)
-			.preset('lair', { label: 'Lair', default: true }, (p) =>
+			.defaults((p) =>
 				p.params('apply', { mode: 'apply' }),
 			)
 			.build(),

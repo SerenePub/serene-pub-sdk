@@ -13,8 +13,9 @@
  *   spriteShow  (outlet show-sprite, `source: 'picker'`)  record it on the line
  *
  * Seven specs carry it: chat-respond, tool-loop, chat-side-character,
- * guide-respond, adventure-respond, chat-narrate, and lair-respond (in its
- * character turn, the one branch where a single delver speaks). A spec whose line has no character —
+ * guide-respond, adventure-respond, chat-narrate, and lair-reply (in its
+ * character turn, the one branch where a single delver speaks; lair-respond's
+ * until 2026-10-21). A spec whose line has no character —
  * a narrator's — wires no speaker, and the picker picks nothing.
  *
  * ⚠ **No wrapper.** Until 2026-10-05 `withSpriteTail(builder)` appended four
@@ -61,9 +62,9 @@ export const SHOW_SPRITE_SPEC_ID = 'core:spec/show-sprite'
 
 /**
  * The picker's node key on a reply spec's spine — the address its session
- * settings are stored at. Six of the seven specs place it here; lair-respond
+ * settings are stored at. Six of the seven specs place it here; lair-reply
  * places it inside its character turn
- * (`via.turn.channel.story.door.play.speech.each.character.turn.spritePick`).
+ * (`via.turn.channel.story.pick.picked.spritePick`, 2026-10-21).
  * @internal
  */
 export const SPRITE_PICKER_NODE_KEY = 'spritePick'

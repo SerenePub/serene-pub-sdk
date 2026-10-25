@@ -444,6 +444,40 @@ export const turnSelect = defineScriptKind({
 })
 
 /**
+ * 🚧 Is a routine due? — a plugin **cadence**, as a script (PLAN-layering
+ * D2, R5, R9). The host runs it at the events its cadence declares it wakes
+ * on (D11: events, never "moments"), handing it the event on the port still
+ * named ⏳ `moment` (what happened: a turn's number, a tick's time, an event
+ * and its payload, the clock's from and to — a contract port, renamed only
+ * with the kind's next version), the registration's
+ * `options` (the cadence's own field values) and the `state` it returned
+ * last time; it answers `{ due, state }`.
+ *
+ * A **verdict**, and a narrow one: it says due or not and keeps its own
+ * bookkeeping — it passes **no data** to the routine's pipeline (R9), which
+ * reads what its cause carries and queries the rest. Core's ten cadences are
+ * evaluated natively (`cadenceDue`); this kind is for the ones a plugin
+ * declares (`definePluginCadence`).
+ * @experimental
+ * @ruling R5, R9
+ */
+export const cadenceDueScript = defineScriptKind({
+	id: 'core:script:cadence/due@1',
+	i18n: {
+		name: { en: 'Decide when a routine runs' },
+		description: {
+			en: 'Answer, at a session event, whether a routine is due — every few turns, when a value crosses a line, on a calendar day.',
+		},
+	},
+	blastRadius: { en: 'Decides when routines run' },
+	semantics: 'verdict',
+	ports: {
+		in: { moment: JSON_SHAPE, options: JSON_SHAPE, state: JSON_SHAPE },
+		out: { due: JSON_SHAPE, state: JSON_SHAPE },
+	},
+})
+
+/**
  * Every content scope core ships, in panel order.
  *
  * Derived from the registry rather than restated, so a scope arrives the moment

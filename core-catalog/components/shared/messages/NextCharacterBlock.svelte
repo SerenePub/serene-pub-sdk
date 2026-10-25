@@ -24,6 +24,14 @@
 	 * channel's entry. "Someone else" asks the page to open the turn picker.
 	 * With `mode: 'list'` the entries after the head follow as one quiet line.
 	 *
+	 * 🚧 **Continue moves past a waiting player** (Lair rewrite D5,
+	 * 2026-10-21): a planned turn a person plays (`via: 'plan'`, a seated
+	 * player's delver) at the head waits for them — "Waiting for Maren".
+	 * The session's owner alone gets Continue there too, with the sentence
+	 * that says what it does: it moves past them (the server skips the seat,
+	 * `skipWaitingTurn`) and the next planned turn takes its place. Anyone
+	 * else waits; the player writes.
+	 *
 	 * It draws the turn line's right half (`TurnLine`, PLAN-core-widgets
 	 * §3.16). Its parts are `messages.turn-line-*` (STYLE-GUIDE §6.16), each
 	 * beside its old name `messages.next-up-*`, ⏳ kept one release so a
@@ -58,6 +66,8 @@
 		viewerUserId?: number | null
 		/** 🚧 Whom the round waits on (Q3-3): "Waiting for Maren Holt". */
 		waitingFor?: readonly string[]
+		/** 🚧 The viewer owns the session: their Continue moves past a waiting player (D5). */
+		viewerIsOwner?: boolean
 	}
 
 	let {
@@ -70,7 +80,8 @@
 		onSomeoneElse,
 		canChooseSomeoneElse = true,
 		viewerUserId = null,
-		waitingFor = []
+		waitingFor = [],
+		viewerIsOwner = false
 	}: Props = $props()
 	const waitingWords = $derived(
 		waitingFor.length ? `Waiting for ${new Intl.ListFormat("en", { style: "long", type: "conjunction" }).format([...waitingFor])}` : ""
@@ -100,12 +111,21 @@
 			viewerUserId != null &&
 			byRef.get(head!.ref as string)?.ownerUserId === viewerUserId
 	)
+	/**
+	 * 🚧 The head is a planned turn somebody else plays (a seated player's
+	 * delver, D5): the turn waits for them.
+	 */
+	const headWaits = $derived(headIsPerson && !headIsMine && head?.via === "plan")
+	/** 🚧 …and the owner may move past them: Continue skips the seat. */
+	const ownerSkips = $derived(headWaits && viewerIsOwner)
 	const line = $derived(
 		headIsMine
 			? "Your turn"
-			: headIsPerson
-				? `${headName}'s turn`
-				: `${headName} is ready to continue`
+			: headWaits
+				? `Waiting for ${headName}`
+				: headIsPerson
+					? `${headName}'s turn`
+					: `${headName} is ready to continue`
 	)
 	const face = $derived(head?.ref ? avatarFor?.(head.ref) : undefined)
 	const after = $derived(mode === "list" ? here.slice(1) : [])
@@ -163,9 +183,27 @@
 						<sp-icon name="play"></sp-icon>
 						<span>Continue</span>
 					</button>
+				{:else if ownerSkips}
+					<!-- 🚧 D5: the owner's Continue moves past the waiting player. -->
+					<button
+						type="button"
+						data-widget-part="messages.turn-line-continue messages.next-up-continue"
+						data-skips=""
+						onclick={() => onContinue(channel)}
+						title="Move past {headName}: the next turn goes ahead without them"
+						aria-label="Continue without {headName}"
+					>
+						<sp-icon name="skip-forward"></sp-icon>
+						<span>Continue</span>
+					</button>
 				{/if}
 			</div>
 		</div>
+		{#if ownerSkips}
+			<p data-widget-part="messages.turn-line-skip">
+				Continue moves past {headName}: their turn is skipped this round.
+			</p>
+		{/if}
 		{#if after.length}
 			<p data-widget-part="messages.turn-line-after messages.next-up-after">
 				Then {after.map((e) => nameOf(e.ref)).join(", ")}

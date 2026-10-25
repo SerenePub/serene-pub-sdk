@@ -1,6 +1,6 @@
 # `@serene-pub/conformance`
 
-Thirty-three executable requirements a Serene Pub executor must satisfy. Run by SP Core against
+Thirty-seven executable requirements a Serene Pub executor must satisfy. Run by SP Core against
 its own implementation, and by any alternate host.
 
 **Plugin authors need one part of it:** the six package cases (C28–C33, `conformPackage`) over
@@ -69,9 +69,9 @@ page an author reads, which is the failure this kit exists to prevent.
 | Id  | Law | Holds that | What breaks when it fails |
 | --- | --- | ---------- | ------------------------- |
 | C21 | F7, 01 §4 | **One live row per run, never inside a repeat, and no second message on its channel** (restated W1, 2026-09-23). (a) `validate()` refuses `fx.twoWrites()` — two reply rows — under F7 with a fix naming the alternatives: update the one row through its target, write anything else beside it, or put a second message on another channel. (b) `fx.writeInClause()` — the live row inside an `each` — is refused under 01 §4, with the spine named as where it goes instead. Other writes, in clauses or not, are unlimited. | One turn leaves two reply rows behind, or N of them from inside a repeat, and nothing can say which row to stream into or finalise. |
-| C22 | F8, F32 | **No pipeline triggers another.** Four halves, because there are four doors: no published definition is a trigger outlet (the host's own registry is the evidence); `assertHookSurface` refuses `trigger`, `run` and `call` on a hook surface; any definition that names the event it causes from its config (`causesEventFrom`, as `record-event` does for a package's own events) is a write outlet; and `validate()` refuses a node declaring `emits` under F8, naming the one path — a write causes the event its outlet declares, and a preset binds a pipeline to that event. | Runs start runs. A model call nobody asked for appears on no receipt as anything's consequence, and a loop between two specs has no budget and no place to break it. |
+| C22 | F8, F32 | **No pipeline triggers another.** Four halves, because there are four doors: no published definition is a trigger outlet (the host's own registry is the evidence); `assertHookSurface` refuses `trigger`, `run` and `call` on a hook surface; any definition that names the event it causes from its config (`causesEventFrom`, as `record-event` does for a package's own events) is a write outlet; and `validate()` refuses a node declaring `emits` under F8, naming the one path — a write causes the event its outlet declares, and a genre's defaults or a preset registers a pipeline on that event. | Runs start runs. A model call nobody asked for appears on no receipt as anything's consequence, and a loop between two specs has no budget and no place to break it. |
 | C23 | F41 | **The effects line at a block.** (a) At publish: `form` is the one venue a block reaches, so a `world` action declaring it is refused by `validate()` under F41. (b) At the write: `worldBlockFunctions(blocks, doc)` names any `world` action a `choices` block carries, and the host refuses the write. (b) is a runtime law **because no document carries a block tree** — a spec's blocks are a node's output — with a negative control, since a gate that refused every block would break every message that offers a choice. | A block a node wrote puts an out-of-fiction button in front of a character, and permission stops being the owner's to give. |
-| C24 | R-15 | **Every genre can be addressed by a form, and every shipped preset binds the pipeline that answers one** (ruled 2026-09-17). Read off `HostUnderTest.shipped()`: each genre declares `core:event/form-addressed@1` and does not make it required, and each preset binds a spec to it. | A pipeline writes a form, the reader fills it in, the press reaches no run, and no error says why. |
+| C24 | R-15 | **Every genre can be addressed by a form, and every shipped preset registers the pipeline that answers one** (ruled 2026-09-17). Read off `HostUnderTest.shipped()`: each genre declares `core:event/form-addressed@1` and does not make it required, and each preset's effective registrations (its genre's defaults ⊕ its changes, or ⏳ its `bindings`) put a pipeline on it. | A pipeline writes a form, the reader fills it in, the press reaches no run, and no error says why. |
 | C25 | plans/29 R-3, F11, F32 | **The plugin grant table.** The table itself is pinned against `hookCtxGrants` — task and chain-link get neither grant, query/outlet/event/lifecycle get `storage`, the oracle gets `storage` and `fetch` — and then the host's own endowment is judged per kind through `hookCtxKeys(kind)`: the keys equal `hookCtxKeysFor(kind)`, and `read`, `call` and `commit` reach no plugin handler. The absent `commit` is also why **a plugin write-class outlet is not available**: it emits the event it declares and core's outlet does the writing (the packager refuses the declaration up front, `E_PLUGIN_WRITE_OUTLET`). | A package reaches through a door nobody granted, and the permissions an administrator reads stop describing what it can do. |
 | C26 | 20 §12, F32 | **A frame has no ambient authority.** From `HostUnderTest.frameMount()`: the sandbox is `allow-scripts` and nothing else (no `allow-same-origin`, so an opaque origin; no `allow-forms`, so a submit does not leave), and the CSP names a `default-src` floor, `script-src 'self'` — no inline script, no script from anywhere else — `form-action 'none'`, no `'unsafe-eval'` and no `'unsafe-inline'` outside `style-src`, and no off-origin source outside `connect-src` (which carries only the hosts the package declared) and the reporting directives. Supplied `accepts`, the port answers an action-firing message and nothing that commits. | A package's UI reads the session's cookies, calls the app's API as the signed-in user, or posts to an origin nobody granted. |
 
@@ -120,6 +120,22 @@ in for the source, the cast, the model calls and the save; the host's own bindin
 | Id  | Law | Holds that | What breaks when it fails |
 | --- | --- | ---------- | ------------------------- |
 | C34 | live scenes §13.5 | **A genre's summarize-scene spec accepts `summarize-request@1`, ends in `save` (with `synth` and `naming` beside it), survives an empty span and an aside on an undeclared channel, and renders transcript units that each carry a message id of the span — every row in some unit.** | A scene of that genre cannot be summarized, or its summary cannot be traced to its rows. |
+
+## Registrations (C35–C37) 🚧
+
+Added 2026-10-21 with the layering restructure (a pipeline is **registered** on an event, an
+action or a routine's cadence; the genre carries its defaults; a preset is one set of changes on
+them). All three read the host's catalogue, `HostUnderTest.shipped()`, and quote the SDK's own
+verdicts rather than restating them (01 §13): C35 and C36 run the registration door
+(`registrationFindings`) and keep one law each, C37 runs `presetLevelFindings`.
+Supply `shipped().pipelines` (the published documents) for C35 and the pipeline half of C36 to be
+judged; without them each says what went unjudged.
+
+| Case | Law | What is checked | What breaks when it fails |
+| --- | --- | --- | --- |
+| C35 | R4, A11, A17 | **Every registration fits its pipeline.** Each registration of each genre's defaults, and each one a preset adds, is judged by `registrationFindings`' `registration fit` law: everything the pipeline's steps read is carried by its trigger. A pipeline the catalogue does not ship is another package's, judged where it is installed. | A pipeline runs on a trigger that does not carry what it reads, and the first turn fails in a session instead of the registration being refused in words. |
+| C36 | R1, A10 (10-12) | **Model plumbing never reaches a member.** No genre field (`exposureFindings`) and no registered pipeline's settings (`exposed plumbing`) declare a connection, sampling, loadout, prompt or template with `reach: 'owner'`. | A session owner who is not an administrator is offered the model plumbing members were ruled never to touch. |
+| C37 | R2, R3, R22 | **One level.** Every shipped preset names a genre the catalogue ships, names no parent (`extends`, `base`, …), and drops or changes only what its genre's defaults (or its own `register`) hold; no genre has two default presets. | A preset reads differently on every pub depending on another preset, and which preset a new session starts from is left to chance. |
 
 ## A package's own artifact (C30–C33)
 

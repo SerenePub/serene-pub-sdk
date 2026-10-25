@@ -10,7 +10,7 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
 	CLOCK_STEP_MAX,
-	actionFindings,
+	actionDocumentFindings,
 	actionsOf,
 	clockStepRefusal,
 	collectsFindings,
@@ -25,7 +25,6 @@ import {
 	storyRestSpec,
 	storyGenre,
 	coreSpec,
-	lairAdvanceTimeSpec,
 	storyRespondSpec,
 } from '@serene-pub/core-catalog'
 
@@ -70,7 +69,7 @@ describe('the clock step a press collects', () => {
 describe('Time passes… — every genre, no model', () => {
 	for (const [name, build, id] of [
 		['Story', storyAdvanceTimeSpec, 'core:spec/story-advance-time'],
-		['the Lair', lairAdvanceTimeSpec, 'core:spec/lair-advance-time'],
+		// The Lair's left with its rewrite (2026-10-21): not one of its actions (D7).
 	] as const)
 		test(`${name}'s: the stepper, the step, and the clock behind a junction on whether it moves`, () => {
 			const doc = build() as any
@@ -80,7 +79,8 @@ describe('Time passes… — every genre, no model', () => {
 			assert.equal(a!.key, ADVANCE_TIME_ACTION_KEY)
 			assert.equal(a!.quick, true)
 			assert.deepEqual(a!.collects, TIME_PASSES_COLLECTS)
-			assert.deepEqual(actionFindings(a as any, id), [])
+			// 🚧 No lock (PLAN-layering D3, 2026-10-20): judged as a document whose actions registrations offer.
+			assert.deepEqual(actionDocumentFindings(doc), [])
 			const kinds = doc.nodes.map((n: any) => `${n.key}:${n.definitionId}`)
 			assert.deepEqual(kinds, [
 				'input:core:inlet/user-message',
@@ -95,14 +95,14 @@ describe('Time passes… — every genre, no model', () => {
 
 	// 🚧 2026-10-19: Adventure's keeper-run Time passes retired with the genre;
 	// Story's is the shared stepper graph above. Rest still collects no step.
-	test("Rest collects no step; its one clock move is its keeper's, when the sheets apply", () => {
+	test("Rest collects no step; its one clock move is its keeper's, after its changes apply", () => {
 		const rest = storyRestSpec() as any
 		assert.equal(actionsOf(rest)[0]!.collects, undefined)
-		// 🚧 Rest's one clock move is its keeper's, and only when *Keep the
-		// sheets* is Full (★3, lane F; the task replaced Trust the narrator).
+		// 🚧 Rest's one clock move is its keeper's, after its changes apply
+		// (★3, lane F) — at the action's own mode since GM 2026-10-23 (G1 ★3).
 		assert.deepEqual(
 			rest.nodes.filter((n: any) => n.definitionId === 'core:outlet/advance-story-clock').map((n: any) => n.key),
-			['commit.applied.keeperClock.moves.advance'],
+			['keeperClock.moves.advance'],
 		)
 	})
 })
@@ -117,6 +117,9 @@ describe("Story's reply tick (the roleplay Chat's)", () => {
 		assert.ok(doc.nodes.some((n: any) => n.key === 'clock.moves.advance' && n.definitionId === 'core:outlet/advance-story-clock' && n.clauseId))
 		const by = (getDefinition('core:task/clock-step@1')!.slots as any).params.schema.by
 		assert.equal(by.default, 0, 'off unless the session sets it')
-		assert.equal(doc.input?.genre, storyGenre.id)
+		// 🚧 No lock (PLAN-layering D3, 2026-10-20): Story's defaults register it on message-respond.
+		assert.equal(doc.input, undefined)
+		assert.deepEqual(doc.suits, ['core:event/message-respond@1'])
+		void storyGenre
 	})
 })

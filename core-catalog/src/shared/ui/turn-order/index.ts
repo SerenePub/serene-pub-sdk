@@ -287,6 +287,15 @@ export function turnOrderView(input: TurnOrderInputs): TurnOrderView {
 	const headName = head ? nameOf(head.ref) : ''
 	const headIsPerson = !!head && isPerson(head.ref)
 	const headIsMine = !!head && isMine(head.ref)
+	/**
+	 * 🚧 The head is a planned turn somebody else plays (a seated player's
+	 * delver, Lair rewrite D5): the turn waits for them — _Waiting for
+	 * Maren_, as the composer's line says — and the session's owner (the one
+	 * viewer who is no guest) may Continue past them; the server skips the
+	 * seat (`skipWaitingTurn`).
+	 */
+	const headWaits = headIsPerson && !headIsMine && head?.via === 'plan'
+	const ownerSkips = headWaits && !viewer.isGuest
 
 	const status: TurnOrderView['status'] = head
 		? 'ordered'
@@ -300,9 +309,11 @@ export function turnOrderView(input: TurnOrderInputs): TurnOrderView {
 				? t('Waiting for a message — or pick who speaks next')
 				: headIsMine
 					? t('Your turn')
-					: headIsPerson
-						? t("{name}'s turn").replace('{name}', headName)
-						: t('{name} is ready to continue').replace('{name}', headName)
+					: headWaits
+						? t('Waiting for {name}').replace('{name}', headName)
+						: headIsPerson
+							? t("{name}'s turn").replace('{name}', headName)
+							: t('{name} is ready to continue').replace('{name}', headName)
 	const empty =
 		status !== 'empty'
 			? null
@@ -332,7 +343,9 @@ export function turnOrderView(input: TurnOrderInputs): TurnOrderView {
 		const label =
 			head && !headIsPerson
 				? t('Continue with {name}').replace('{name}', headName)
-				: t('Continue')
+				: ownerSkips
+					? t('Continue without {name}').replace('{name}', headName)
+					: t('Continue')
 		const channel = head ? channelOf(head) : undefined
 		const gate = advance ?? watching
 		if (gate && !gate.enabled) return { ...gate, label, ...(channel ? { channel } : {}) }
@@ -343,6 +356,8 @@ export function turnOrderView(input: TurnOrderInputs): TurnOrderView {
 			return advance?.enabled && !viewer.isGuest
 				? { enabled: true, reason: null, label }
 				: { enabled: false, reason: t('Nothing is prepared to take a turn.'), label }
+		// 🚧 D5: the owner moves past a waiting player; the player writes.
+		if (ownerSkips) return { enabled: true, reason: null, label, channel }
 		if (headIsPerson)
 			return {
 				enabled: false,

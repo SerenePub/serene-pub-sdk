@@ -11,20 +11,28 @@
  *
  * **Death's door.** Every living seat the turn leaves at 0 health or less —
  * and ONLY such a seat (AUDIT A7: the Planner once named whom it liked, and a
- * healthy character rolled for their life) — rolls a bare d20 against the
- * difficulty's door (Gentle 8 · Fair 10 · Brutal 12): at or over, it
- * **survives** on 1 health; under, it is **taken out** on Gentle and **dead**
- * on Fair and Brutal. No death without a roll — at every rigour; at `prose`
- * the line shows no numbers.
+ * healthy character rolled for their life) — rolls a bare die of the
+ * session's ruleset against its **fall rule** (`core:function/at-zero-health@1`,
+ * the reference the inlet's ruleset carries — `rulesetGistOf`; lane G3,
+ * 2026-10-23, ★I), the door moved a step by the difficulty
+ * (`DUNGEON_CRAWLER_DIFFICULTY_STEPS`, the genre's dial): at or over, it
+ * **survives** on the rule's health; under, it is **taken out** on Gentle
+ * and **dead** on Fair and Brutal. No death without a roll — at every
+ * rigour; at `prose` the line shows no numbers. 🚧 A ruleset with no fall
+ * rule (Freeform, Wherewithal) rolls nothing and assumes no die: the seat is
+ * **taken out**, told in words (`fell: "words"`).
  *
- * 🚧 **Death saves** (2026-10-18, owner ruling ★7): when the session plays
- * Vis Itineris with _At zero health: Death saves_, a seat at 0 health rolls
- * one bare d20 a round instead — 10 or more a pass, under it a failure, a
- * natural 1 two failures, a natural 20 back on 1 health. Three passes and
- * they are **stable** (down until the party rests); three failures and they
- * are dead (taken out on Gentle). Between rolls they lie **dying**, the
- * tally kept in the crawl's bookkeeping (`progress.deathSaves`, `death.ts`),
- * and a heal brings them back. Fair and Brutal otherwise keep their one roll.
+ * 🚧 **Death saves** (2026-10-18, owner ruling ★7): when the session's fall
+ * rule plays its saves (`playsSaves`: Vis Itineris's _At zero health: Death
+ * saves_), a seat at 0 health rolls one bare die a round instead, by the
+ * rule's numbers: at or over its target a pass, under it a failure, its
+ * lowest natural face more failures, its highest back up at once. Enough
+ * passes and they are **stable** (down until the party rests); enough
+ * failures and they are dead (taken out on Gentle). Between rolls they lie
+ * **dying**, the tally kept in the crawl's bookkeeping
+ * (`progress.deathSaves`, `death.ts`), and a heal brings them back. The
+ * numbers are the ruleset's (Lair rewrite D9, 2026-10-21), never the
+ * genre's; what one roll decides is the fall rule's (`atZeroHealthOf`).
  *
  * A seeded `core:script:data/transform@1` row (`core:script/dungeon-crawler-door`)
  * the story turn runs after the handler's `apply` (`story.ts`). The sandbox's
@@ -33,31 +41,26 @@
  * **The table's line**: one row on the 🚧 **table** channel, anchored to the
  * Narrator's row (PLAN-rulesets §30) — each of the handler's outcomes
  * (`⚄ …`), a check's with its **explain** (how the number was reached:
- * `d20 12 + dex 3 = 15 vs 14`) at the end of its line; 🚧 each condition the
- * turn put on or took off someone ("Ann: Poisoned, 1 hour" — PLAN §7: an
- * added condition once landed in silence); then death's door (`☠ …`). The
+ * `<die> 12 + dex 3 = 15 vs 14`) at the end of its line; 🚧 each condition the
+ * turn put on or took off someone ("Ann: <the condition>, 1 hour" — PLAN
+ * §7: an added condition once landed in silence); then death's door (`☠ …`). The
  * table's alone: never in a prompt.
  *
  * Returns `{ deaths, line }`.
  */
 
 import { DUNGEON_CRAWLER_STORY_PREAMBLE, storySeed } from './storyScripts.js'
-import { DUNGEON_CRAWLER_CONDITION_ROWS } from './sheet.js'
-
-/** The door a seat at 0 health must roll to stay alive, by difficulty. @experimental */
-export const DUNGEON_CRAWLER_DEATHS_DOOR = Object.freeze({ gentle: 8, fair: 10, brutal: 12 } as const)
-
-/** 🚧 What a death save must reach to pass (Vis Itineris's _Death saves_, ★7). @experimental */
-export const DUNGEON_CRAWLER_DEATH_SAVE_DC = 10
+import { DUNGEON_CRAWLER_DIFFICULTY_STEPS } from './fromRuleset.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_DOOR_SCRIPT = storySeed(
 	'core:script/dungeon-crawler-door',
 	"Dungeon Crawler: death's door, and the table's line",
 	`${DUNGEON_CRAWLER_STORY_PREAMBLE}
-var DOOR = ${JSON.stringify(DUNGEON_CRAWLER_DEATHS_DOOR)};
-var SAVE_DC = ${DUNGEON_CRAWLER_DEATH_SAVE_DC};
-var CONDITIONS = ${JSON.stringify(DUNGEON_CRAWLER_CONDITION_ROWS)};
+// The genre's dial: how many steps the difficulty moves the ruleset's door.
+var STEPS = ${JSON.stringify(DUNGEON_CRAWLER_DIFFICULTY_STEPS)};
+// 🚧 The session's rules' conditions as the table says them (S4), off the books.
+var CONDITIONS = own(own(own(v.books).conditions).rows);
 var b = own(v.books);
 var applied = own(v.applied);
 var facts = own(applied.facts);
@@ -76,13 +79,18 @@ function seatFor(list0, ref) {
 	for (var j = 0; j < list0.length; j++) if (text(list0[j].name).toLowerCase() === lower) return list0[j];
 	return null;
 }
-function d20() { return 1 + Math.floor(Math.random() * 20); }
+// 🚧 The session's fall rule (★I), as the books read it off the inlet: its
+// die, its door, its saves — or none, and then nothing is rolled.
+var FALL = b.fall && typeof b.fall === "object" ? b.fall : null;
+var SIDES = FALL ? num(FALL.sides, 0) : 0;
+function roll() { return 1 + Math.floor(Math.random() * SIDES); }
 
 var deaths = [];
 if (b.fresh) {
 	// Who stands at death's door: every seat alive when the turn began that
 	// the turn's changes left at 0 health or less — and nobody else.
-	var difficulty = DOOR[own(b.rules).difficulty] ? own(b.rules).difficulty : "fair";
+	var difficulty = STEPS[own(b.rules).difficulty] !== undefined ? own(b.rules).difficulty : "fair";
+	var down = difficulty === "gentle" ? "taken-out" : "dead";
 	for (var y = 0; y < seats.length; y++) {
 		// 🚧 A seat lying dying rolls its death save again (Q3-8: its fate says so now).
 		if (seats[y].fate && seats[y].fate !== "alive" && seats[y].fate !== "dying") continue;
@@ -90,28 +98,22 @@ if (b.fresh) {
 		if (!seatMade(progressOf(core), seats[y])) continue;
 		var now = seatFor(seatsNow, seats[y].ref);
 		if (!now || now.hp === null || now.hp > 0) continue;
-		var dr = d20();
-		if (b.deathSaves) {
-			// 🚧 One death save this round, on the tally the rounds before kept.
-			var tally = own(own(progressOf(core).deathSaves)[seats[y].ref]);
-			var passed = num(tally.passed, 0), failed = num(tally.failed, 0);
-			var saved;
-			if (dr === 20) saved = "survives";
-			else {
-				if (dr === 1) failed += 2; else if (dr >= SAVE_DC) passed += 1; else failed += 1;
-				saved = failed >= 3 ? (difficulty === "gentle" ? "taken-out" : "dead") : passed >= 3 ? "stable" : "dying";
-			}
-			deaths.push({
-				seat: seats[y].ref, name: seats[y].name, user: seats[y].user, roll: dr, dc: SAVE_DC,
-				saves: true, passed: Math.min(passed, 3), failed: Math.min(failed, 3), outcome: saved
-			});
+		if (!FALL) {
+			// 🚧 No fall rule (a ruleset that keeps none): no die is assumed —
+			// the seat is down and out of the fight, alive, told in words.
+			deaths.push({ seat: seats[y].ref, name: seats[y].name, user: seats[y].user, words: true, outcome: "taken-out" });
 			continue;
 		}
-		var dc = DOOR[difficulty];
-		deaths.push({
-			seat: seats[y].ref, name: seats[y].name, user: seats[y].user, roll: dr, dc: dc,
-			outcome: dr >= dc ? "survives" : difficulty === "gentle" ? "taken-out" : "dead"
-		});
+		var dr = roll();
+		// 🚧 One death save this round, on the tally the rounds before kept —
+		// else the one roll at the door, moved by the difficulty's steps.
+		var tally = b.deathSaves ? own(own(progressOf(core).deathSaves)[seats[y].ref]) : null;
+		var fell = atZeroHealthOf(FALL, dr, tally, b.deathSaves === true, STEPS[difficulty]);
+		var outcome = fell.outcome === "down" ? down : fell.outcome;
+		var death = { seat: seats[y].ref, name: seats[y].name, user: seats[y].user, roll: dr, dc: fell.target, outcome: outcome };
+		if (fell.outcome === "survives") death.upOn = num(fell.upOn, 1);
+		if (fell.saves) { death.saves = true; death.passed = fell.passed; death.failed = fell.failed; }
+		deaths.push(death);
 	}
 }
 
@@ -201,7 +203,7 @@ for (var l = 0; l < outcomes.length; l++) {
 	if (!text(oc.text)) continue;
 	if (slotSpendLine(oc)) continue;
 	// A check shows how its number was reached, at the end of its line
-	// (\`d20 12 + dex 3 = 15 vs 14\`) — the table's, never the story's.
+	// (\`<die> 12 + dex 3 = 15 vs 14\`) — the table's, never the story's.
 	// 🚧 A traverse is rolled by its actor (Q2-1): its working is filed under them.
 	var how = !counted ? "" : oc.check ? explainOf[(text(own(oc.check).actor) || text(oc.owner)) + "." + text(own(oc.check).selector)] : text(oc.explainKey) ? explainOf[text(oc.explainKey)] || "" : "";
 	// At \`prose\` no die: the line says what happened in words (walk 6, 2026-10-17).
@@ -237,14 +239,19 @@ for (var c = 0; c < planned.length; c++) {
 var WORD = { survives: "survives", "taken-out": "taken out", dead: "dead", stable: "stable", dying: "still dying" };
 for (var m = 0; m < deaths.length; m++) {
 	var dd = deaths[m];
+	if (dd.words) {
+		// 🚧 No fall rule: nothing rolled, nothing numbered.
+		deathLines.push("☠ " + dd.name + " at death's door — " + WORD[dd.outcome]);
+		continue;
+	}
 	if (dd.saves) {
 		// 🚧 A death save (★7): the roll, and the tally where numbers show.
-		deathLines.push("☠ " + dd.name + " at death's door" + (counted ? ": death save d20 " + dd.roll + " vs " + dd.dc : "") + " — " +
-			(dd.outcome === "survives" ? "back up on 1 health" : WORD[dd.outcome]) +
+		deathLines.push("☠ " + dd.name + " at death's door" + (counted ? ": death save d" + SIDES + " " + dd.roll + " vs " + dd.dc : "") + " — " +
+			(dd.outcome === "survives" ? "back up on " + dd.upOn + " health" : WORD[dd.outcome]) +
 			(counted && dd.outcome !== "survives" ? " (" + deathSaveWords(dd.passed, dd.failed) + ")" : ""));
 		continue;
 	}
-	deathLines.push("☠ " + dd.name + " at death's door" + (counted ? ": d20 " + dd.roll + " vs DC " + dd.dc : "") + " — " + WORD[dd.outcome]);
+	deathLines.push("☠ " + dd.name + " at death's door" + (counted ? ": d" + SIDES + " " + dd.roll + " vs DC " + dd.dc : "") + " — " + WORD[dd.outcome]);
 }
 said = deathLines.concat(checkLines, said, placeLines);
 // 🚧 Every change the turn proposed that did not happen, one line each, in

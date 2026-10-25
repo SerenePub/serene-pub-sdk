@@ -106,8 +106,10 @@ describe('generate-text can finally receive media', () => {
 
 	test('it declares both directions', () => {
 		assert.ok(d, 'the provider type is registered')
-		assert.deepEqual([...(d!.media?.accepts ?? [])], ['image', 'document'])
-		assert.deepEqual([...(d!.media?.emits ?? [])], ['image'])
+		// `audio` since O4 (2026-10-21): a voice note a pair that hears is sent.
+		assert.deepEqual([...(d!.media?.accepts ?? [])], ['image', 'document', 'audio'])
+		// `audio` since O6 (2026-10-20): a spoken reply's audio part.
+		assert.deepEqual([...(d!.media?.emits ?? [])], ['image', 'audio'])
 	})
 
 	test('there is an inbound port for attachments', () => {

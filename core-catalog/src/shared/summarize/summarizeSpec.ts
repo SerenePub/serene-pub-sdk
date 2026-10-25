@@ -26,9 +26,37 @@
  * ordering. A loop would impose a sequence the work does not have.
  */
 
-import { compile, spec, slot } from "@serene-pub/sdk"
+import { compile, spec, slot, ITEM, type ActionDecl } from "@serene-pub/sdk"
+import { chainIf } from '../chains.js'
 import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from "@serene-pub/contracts"
+
+/**
+ * 🚧 **The summarize action** (R50, 2026-10-21; lane F1): what every
+ * summarize pipeline — world, character, scene, history, and a genre's own
+ * summarize-scene — declares, so a genre's defaults can register it
+ * (`register(spec.actions['summarize-world'], spec)`) and its values resolve
+ * through that registration (genre < preset < session), like every other
+ * pipeline's. Keyed by what it summarizes, so one genre's four never share a
+ * slash name.
+ *
+ * Never pressed as an action: a summary is still fired by the host's
+ * summarize path (the summarize modal, a scene's close, the history
+ * compile), which runs the pipeline it names. Hence the `form` venue — the
+ * one no listing offers — and an audience that names nobody: no one sees it
+ * among a session's actions, and no one presses it.
+ * @experimental
+ */
+export const summarizeAction = <K extends "world" | "character" | "scene" | "history">(
+	what: K
+): Readonly<Omit<ActionDecl, "genre"> & { key: `summarize-${K}` }> =>
+	Object.freeze({
+		key: `summarize-${what}` as const,
+		venue: { kind: "form" as const },
+		audience: { see: [], act: [] },
+		label: { en: `Summarize (${what})` },
+		description: { en: `Summarize part of the session — the ${what} — held for review.` }
+	})
 
 // 1.1.0: the request travels to the drafting, synthesis and cast steps, so a
 // topic focuses every prompt and the known-cast list reaches extraction. A
@@ -91,12 +119,16 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 				 * A person asks for one, but a summary runs off the turn's
 				 * critical path and writes lore, not a line of the story.
 				 */
-				taxonomy: { role: "maintenance" }
+				taxonomy: { role: "maintenance" },
+				// 🚧 R50: the action a genre's defaults register it on, so its
+				// values resolve through that registration (see `summarizeAction`).
+				contributes: { actions: [summarizeAction(loreType)] }
 			})
 				// Manually triggered: a person asks for a summary. ACTION events
 				// carry no write targets, so this drops out of the cycle check by
 				// construction rather than by exception (13 §7g).
-				.inlet("input", C.summarizeRequest.v1())
+				// 🚧 R50: made for no event — the summarize action is its registration.
+				.inlet("input", C.summarizeRequest.v1(), { suits: [] })
 				.query("transcript", ($) =>
 					C.summarizeSource.v1({
 						scope: $.input.scope,
@@ -134,15 +166,15 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 				)
 				.each(
 					"drafting",
-					{ over: ($: any) => $.batches.batches, max: MAX_BATCHES },
+					{ over: ($) => $.batches.batches, max: MAX_BATCHES },
 					(m) =>
-						m.oracle("draft", ($: any) =>
+						m.oracle("draft", ($) =>
 							C.summarizeBatch.v1({
 								// The one batch this iteration drafts. Without it
 								// the node has no input and every draft is written
 								// against nothing — which produces plausible
 								// summaries of a conversation that did not happen.
-								batch: $.drafting.item,
+								batch: $[ITEM],
 								// The person's ask — the topic line, most
 								// visibly. Wired to every drafting iteration
 								// because the focus has to hold *per batch*,
@@ -162,7 +194,7 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 							},
 						)
 				)
-				.oracle("synth", ($: any) =>
+				.oracle("synth", ($) =>
 					C.summarizeSynth.v1({
 						drafts: $.drafting.main,
 						request: $.input.request,
@@ -178,7 +210,7 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 						},
 					},
 				)
-				.oracle("naming", ($: any) =>
+				.oracle("naming", ($) =>
 					C.nameEntry.v1({
 						content: $.synth.content,
 						loreType,
@@ -194,8 +226,8 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 					},
 				)
 
-			const withCast = extractsCast
-				? base.oracle("cast", ($: any) =>
+			const withCast = chainIf(!!extractsCast, base, (b) =>
+				b.oracle("cast", ($) =>
 						C.extractCast.v1({
 							content: $.synth.content,
 							// The known-cast list ([id: N] entries), so the
@@ -206,11 +238,11 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 							sampling: slot.sampling(),
 							prompts: slot.prompts()
 						})
-					)
-				: base
+					),
+			)
 
 			return withCast
-				.outlet("save", ($: any) =>
+				.outlet("save", ($) =>
 					C.createLoreEntry.v1({
 						name: $.naming.name,
 						content: $.synth.content,
@@ -226,7 +258,7 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 				 * loadout (I12): it reads a passage and answers in a fixed
 				 * shape. Unfilled, it falls back to Reply.
 				 */
-				.preset("default", { label: "Default", default: true }, (p: any) => {
+				.defaults((p) => {
 					const named = p
 						.loadout("drafting.item.draft", slot.loadout(CORE_LOADOUT.extraction))
 						.loadout("synth", slot.loadout(CORE_LOADOUT.extraction))

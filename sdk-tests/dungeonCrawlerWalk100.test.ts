@@ -7,7 +7,19 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
+import { getRuleset } from '@serene-pub/sdk'
 import * as cat from '../core-catalog/src/index.js'
+
+/**
+ * 🚧 The session's ruleset as the host lays it on the inlet (S4, lane G3,
+ * 2026-10-23): id, rigour, settings, what it rolls (whether chance decides,
+ * its bands) and its gist (`rulesetGistOf`) — the scripts read nothing else.
+ */
+const rulesetIn = (id: string, rigour: string, settings: Record<string, string> = {}) => ({
+	id, rigour, settings, chance: id.includes('vis-itineris'), bands: [],
+	...cat.rulesetGistOf(getRuleset(id)! as never, settings),
+})
+const VI_IN = rulesetIn('core:ruleset/vis-itineris@1', 'scripts', { casting: 'slots', dying: 'dying-1-4' })
 
 const specById = (id: string) => cat.CORE_SPECS.find((x) => x.slug === id)!.build() as any
 const presetValues = (doc: any) => doc.presets.find((p: any) => p.default).values as any[]
@@ -78,8 +90,8 @@ const planOf = (deltas: unknown[]) =>
 	runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, {
 		json: { deltas, world: { rooms: [], npcs: [], leads: [], goalProgress: 'none', notes: '' }, clock: { minutes: 5 }, narratorBrief: 'On.', roundSummary: '', secrets: [] },
 	})
-const booksOf = (s: any, st: any, story: unknown[] = [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }]) =>
-	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story, places: PLACES, people: [], fallen: [], log: [] })
+const booksOf = (s: any, st: any, story: unknown[] = [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], ruleset: unknown = VI_IN) =>
+	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story, places: PLACES, people: [], fallen: [], log: [], ruleset })
 const turnOf = (s: any, st: any, deltas: unknown[]) =>
 	runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { session: s, books: booksOf(s, st), first: planOf(deltas), state: st })
 
@@ -111,7 +123,7 @@ test("P1-1: deltas normalised before the handler refuses them — names, an over
 	assert.deepEqual(t.deltas[1], { owner: 'player-seat:4', op: 'use', piece: 'potion-of-healing', reason: 'drinks it' })
 	const storyBooks = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
 		session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], fallen: [], log: [],
-		ruleset: { id: 'core:ruleset/freeform@1', rigour: 'prose', settings: {} },
+		ruleset: rulesetIn('core:ruleset/freeform@1', 'prose'),
 	})
 	// 🚧 A table of words is asked in its own branch (PLAN-dc-after-walk2 Q2-3): its answer is `firstWords`.
 	const inWords = runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { session: s, books: storyBooks, firstWords: planOf([delta({ owner: 'player-seat:4', op: 'use', piece: 'potion-of-healing', reason: 'drinks it' })]), state: st })
@@ -143,7 +155,7 @@ test('P1-2: every refused change is a table line in human words, and the Narrato
 test('P1-3: the Planner talk knows the player — their reference, their sheet, how the table plays', () => {
 	const s = session(made({ 'user:1': { name: 'Mira', class: 'Wizard', made: true } }))
 	const st = state({ 'player_seat:4': bag({ hp: 6, 'crawl-conditions': [{ kind: 'compendium', pieceId: 'poisoned' }], 'crawl-spell-slots': [{ kind: 'inline', name: 'Level 1', level: 1, max: 2, used: 1 }] }) })
-	const crib = runScript(cat.DUNGEON_CRAWLER_CRIB_SCRIPT, { session: s, lane: 'parley', places: PLACES, people: [], state: st, ruleset: { id: 'core:ruleset/vis-itineris@1', rigour: 'scripts' } })
+	const crib = runScript(cat.DUNGEON_CRAWLER_CRIB_SCRIPT, { session: s, lane: 'parley', places: PLACES, people: [], state: st, ruleset: VI_IN })
 	assert.match(crib.text, /Their character's sheet: Mira \(player-seat:4, Wizard, level 1, health 6\/20, armour class 10, at The Sunken Gate\); conditions: Poisoned; spell slots level 1: 1 of 2 left\./)
 	// 🚧 …and the rules' options it plays (PLAN-dc-after-walk2 Q2-4).
 	assert.match(crib.text, /This table: plays Vis Itineris; the table rolls the dice in the open and keeps the numbers; difficulty fair; at zero health: one roll at death's door decides; spells: spell slots, one a spell, back after a long rest\./)
@@ -175,7 +187,7 @@ test('P1-4: a traverse names the way by the place that holds it; a success opens
 	const failed = [{ ...outcomes[0], check: { selector: 'skill.sleight-of-hand', five: 'fail' } }]
 	assert.equal(runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: s, books: b, turn: t, door: doorStep, applied: { facts: { rigour: 'scripts' }, blocks: {}, outcomes: failed }, after: st, state: st, row: 99 }).replay, null)
 	// The Planner is told how.
-	assert.match(row(cat.DUNGEON_CRAWLER_PROMPT_KEYS.turn).systemPrompt, /op traverse: owner the place that holds the way \[location:<id>\], piece the way's name exactly as that place lists it/)
+	assert.match(row(cat.DUNGEON_CRAWLER_PROMPT_KEYS.turn).systemPrompt, /op traverse: owner the place that holds the way \[location:<id>\], name the way's name exactly as that place lists it/)
 })
 
 test('P1-8: a spell at no slot left is refused in words, and the sheet block says the slots left', () => {
@@ -236,6 +248,7 @@ test('P3-4 / P3-7: genesis hears the difficulty, the backstories and the compani
 	const plan = { addressee: 'user:1', justPlay: true, isOwner: true, currentName: null }
 	const out = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, {
 		session: session({}, []), plan, json: { name: 'Juniper', class: '', backstory: 'A sellsword owed a debt.', shape: 'dungeon', difficulty: 'brutal', goalMode: 'shared' }, state: { world: {} },
+		ruleset: VI_IN,
 	})
 	const cls = out.seatChanges.find((c: any) => c.slot === 'core:slot/character-class@1')
 	assert.ok(cls && cls.value, 'a class is chosen')
@@ -298,12 +311,12 @@ test("P0-4: the guest's greeting says where the world stands now; the sheet's ch
 
 /* ── Lane B (P2, owner rulings ★4, ★7, ★10) ── */
 
-const VI = { id: 'core:ruleset/vis-itineris@1', rigour: 'scripts', settings: { casting: 'slots', dying: 'dying-1-4' } }
-const STORY_RS = { id: 'core:ruleset/freeform@1', rigour: 'prose', settings: {} }
+const VI = VI_IN
+const STORY_RS = rulesetIn('core:ruleset/freeform@1', 'prose')
 const booksIn = (s: any, st: any, ruleset: unknown) =>
 	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], fallen: [], log: [], ruleset })
-const fieldsIn = (b: any, rigour = 'scripts') =>
-	runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: [], facts: { rigour }, books: b, state: state() })
+const fieldsIn = (b: any, rigour = 'scripts', ruleset: unknown = VI_IN) =>
+	runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: [], facts: { rigour }, books: b, state: state(), ruleset })
 
 test('P2-1: a hit or a use keeps who it is aimed at — a seat or a place by reference, a companion or a foe by name', () => {
 	const s = session(made())
@@ -342,7 +355,7 @@ test('P2-4: Casting — spell points: the kit fills a pool, no slots; the books 
 	const plan = { addressee: 'user:1', justPlay: false, isOwner: true, currentName: 'Mira' }
 	const s = session(made({ 'user:1': { name: 'Mira', class: 'Wizard' } }))
 	const sheetUnder = (ruleset: unknown) => runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: s, plan, json: { name: 'Mira', class: 'Wizard', backstory: 'Bookish.' }, state: state(), ruleset })
-	const points = sheetUnder({ ...VI, settings: { casting: 'points' } })
+	const points = sheetUnder(rulesetIn('core:ruleset/vis-itineris@1', 'scripts', { casting: 'points' }))
 	assert.ok(!points.kit.deltas.some((d: any) => d.repertoire === 'spell-slots'))
 	assert.deepEqual(points.seatChanges.find((c: any) => c.slot === 'core:slot/itineris-spell-points@1'), { slot: 'core:slot/itineris-spell-points@1', value: 4 })
 	const slots = sheetUnder(VI)
@@ -350,10 +363,10 @@ test('P2-4: Casting — spell points: the kit fills a pool, no slots; the books 
 	assert.equal(slots.seatChanges.find((c: any) => c.slot === 'core:slot/itineris-spell-points@1'), undefined)
 	// The books' prompt lines follow the choice.
 	const st = state()
-	const pb = booksIn(s, st, { ...VI, settings: { casting: 'points' } })
+	const pb = booksIn(s, st, rulesetIn('core:ruleset/vis-itineris@1', 'scripts', { casting: 'points' }))
 	assert.equal(pb.casting, 'points')
 	const f = fieldsIn(pb)
-	assert.match(f.castingLine, /spend the spell \(repertoire spells, op spend, piece the spell's name\): it costs its level in spell points/)
+	assert.match(f.castingLine, /spend the spell \(entryType spells, op spend, name the spell's name\): it costs its level in spell points/)
 	assert.doesNotMatch(f.piecesLine, /spell-slots|spell slot/)
 	const t = runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, {
 		session: s, books: pb, first: planOf([delta({ owner: 'player-seat:4', op: 'spend', repertoire: 'spell-slots', piece: '1', reason: 'Bless' })]), state: st,
@@ -373,7 +386,7 @@ test('P2-4: Casting — spell points: the kit fills a pool, no slots; the books 
 test('P2-4: At zero health — Death saves: a bare d20 a round, tallied in the books, until stable, dead or back up', () => {
 	const s = session(made())
 	const fallen = state({ 'player_seat:4': bag({ hp: 0 }) })
-	const b = { ...booksIn(s, state(), { ...VI, settings: { dying: 'death-saves' } }), fresh: true }
+	const b = { ...booksIn(s, state(), rulesetIn('core:ruleset/vis-itineris@1', 'scripts', { dying: 'death-saves' })), fresh: true }
 	assert.equal(b.deathSaves, true)
 	const turn = { plan: planOf([]).plan }
 	const doorWith = (face: number, tally?: { passed: number; failed: number }) => {
@@ -426,8 +439,9 @@ test('P2-6: under the Story ruleset the books name no Vis Itineris word, the kit
 	const s = session(made())
 	const st = state()
 	const b = booksIn(s, st, STORY_RS)
-	assert.equal(b.kit, false)
-	const f = fieldsIn(b, 'prose')
+	// 🚧 The rules decide nothing (S4: \`rulesetDecides\`, never "not Vis Itineris").
+	assert.equal(b.decides, false)
+	const f = fieldsIn(b, 'prose', STORY_RS)
 	const said = [f.piecesLine, f.conditionsLine, f.castingLine, f.effectsLine].join(' ')
 	assert.doesNotMatch(said, /spell-slots|spell slot|Prone|Restrained|Envenomed|attack\.|Vis Itineris/)
 	assert.equal(f.castingLine, '')
@@ -436,7 +450,8 @@ test('P2-6: under the Story ruleset the books name no Vis Itineris word, the kit
 	const plan = { addressee: 'user:1', justPlay: false, isOwner: true, currentName: 'Mira' }
 	const sheet = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, { session: session(made({ 'user:1': { name: 'Mira', class: 'Wizard' } })), plan, json: { name: 'Mira', class: 'Wizard', backstory: 'B.' }, state: st, ruleset: STORY_RS })
 	assert.ok(!sheet.kit.deltas.some((d: any) => d.repertoire === 'spell-slots'))
-	assert.ok(sheet.kit.deltas.some((d: any) => d.repertoire === 'spells'), 'the spells are still kept, in words, by the handler')
+	// 🚧 Freeform keeps no class rows (S4): no kit at all — the character starts with what the interview gave.
+	assert.deepEqual(sheet.kit.deltas, [])
 })
 
 test('P4-7: a slot spent reads "Level 1 slots 2 → 1"; the fold opens on death\'s door; a way listed again as it stands changes nothing', () => {

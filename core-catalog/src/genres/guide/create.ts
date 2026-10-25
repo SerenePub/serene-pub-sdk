@@ -3,7 +3,7 @@
  * and the notes on both, are `respond.ts`'s.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, slot, spec, sessionEvents, coreEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { GUIDE_MASCOT_KEY, guideGenre } from '../../registry/genres.js'
 
@@ -47,10 +47,7 @@ export const createGuideSpec = () =>
 				envoys: guideGenre.envoys,
 			},
 		})
-			.inlet('input', C.sessionCreated.v1(), {
-				genre: guideGenre,
-				event: sessionEvents.sessionCreated,
-			})
+			.inlet('input', C.sessionCreated.v1(), { suits: [coreEvents.sessionCreated] })
 			.query('collect', ($) => C.sessionGreetings.v1({ scope: $.input.sessionScope }))
 			.outlet('seed', ($) =>
 				C.seedGreetings.v1({
@@ -62,9 +59,9 @@ export const createGuideSpec = () =>
 			.query('welcome', ($) =>
 				C.envoyGreeting.v1({ scope: $.input.sessionScope, params: slot.params() }),
 			)
-			.junction('greet', { on: ($: any) => $.welcome.text }, (g) =>
+			.junction('greet', { on: ($) => $.welcome.text }, (g) =>
 				g.when('greets', { truthy: true }, (c) =>
-					c.outlet('write', ($: any) =>
+					c.outlet('write', ($) =>
 						C.createMessage.v1({
 							text: $.welcome.text,
 							channel: SERENE_GREETING_CHANNEL,
@@ -73,7 +70,7 @@ export const createGuideSpec = () =>
 					),
 				),
 			)
-			.preset('guide', { label: 'Guide', default: true }, (p) =>
+			.defaults((p) =>
 				p.params('welcome', { envoy: GUIDE_MASCOT_KEY }),
 			)
 			.build(),

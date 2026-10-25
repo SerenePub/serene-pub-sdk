@@ -81,8 +81,6 @@ export type FieldType =
 	 *  totalling 100%, so there is no invalid state to explain. Zero is a
 	 *  member's off switch. */
 	| 'share'
-	/** 🚧 Background tasks grouped by trigger (`TaskSettingsV1`, `tasks.ts`): one grouped control. */
-	| 'tasks'
 	/** A plain number per band over `members` — a ceiling, a minimum, a count. */
 	| 'perMember'
 	/**
@@ -170,6 +168,25 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	quick?: boolean
 	/** 🚧 Folded under "Advanced" until opened (2026-10-19): genre pins the fold, the host owns it. */
 	advanced?: true
+	/**
+	 * 🚧 How far this setting may ever reach (A10, R1): `'admin'` — only an
+	 * administrator sees it; `'owner'` — the session's owner sees it too,
+	 * unless a layer above locked it. A genre field defaults to `'owner'`, a
+	 * pipeline's setting to `'admin'` (`resolveExposure`'s `defaultReach`).
+	 * **Model plumbing** — connection, sampling, loadout, prompts, templates —
+	 * is never `'owner'`: `exposureFindings` refuses it (ruled 10-12).
+	 * ⚠ Not an action's **audience** (who sees and acts on a button).
+	 * @ruling A10, R1, R32
+	 */
+	reach?: 'admin' | 'owner'
+	/**
+	 * 🚧 **Fixed at start** (R32): resolved through the cascade once, when the
+	 * session is created — asked on the start form when it is open to the
+	 * owner, else taken from the cascade — and read-only for everyone after.
+	 * The rules a session plays are one.
+	 * @ruling R32
+	 */
+	fixedAtStart?: true
 	/**
 	 * Which lens renders this one field, when it is not the slot's.
 	 *

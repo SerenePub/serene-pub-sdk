@@ -51,15 +51,18 @@ import {
 	CORE_EVENTS,
 	definitionFindings,
 	describeOutletDefinition,
+	effectiveRegistrations,
 	effectsOf,
 	findFormBlock,
 	formAnswerSchema,
 	formBlocksOf,
 	formFireOf,
+	genreDefaultsOf,
 	isChannelHead,
 	isFormStale,
 	isOwnerAddressed,
 	pin,
+	presetChangesOf,
 	reviewFieldsFinding,
 	S,
 	sessionEvents,
@@ -444,7 +447,9 @@ describe('R-15 · review fields are declared on every shipped effectful definiti
 		assert.deepEqual(fields('core:outlet/answer-form@1'), ['answer'])
 		assert.deepEqual(fields('core:oracle/generate-text@1'), [])
 		assert.deepEqual(fields('core:oracle/generate-image@1'), ['prompt', 'negative'])
-		assert.deepEqual(fields('core:outlet/create-lore-entry@1'), ['name', 'content'])
+		// 🚧 2026-10-21 (Lair rewrite D2): the typed fields are retypeable too.
+		assert.deepEqual(fields('core:outlet/create-lore-entry@1'), ['name', 'content', 'fields'])
+		assert.deepEqual(fields('core:outlet/update-lore-entry@1'), ['name', 'content', 'fields'])
 	})
 
 	test('a new effectful definition without them registers with a finding, and validate() warns', () => {
@@ -486,7 +491,8 @@ describe('R-15 · answer-form@1 belongs on form-addressed@1', () => {
 				[],
 				entry.slug,
 			)
-			assert.equal(doc.input?.event, sessionEvents.formAddressed)
+			// 🚧 No lock (PLAN-layering D3, 2026-10-20): it suits form-addressed; its genre's defaults register it there.
+			assert.deepEqual(doc.suits, [sessionEvents.formAddressed])
 			assert.ok(doc.nodes.some((n) => n.key === 'answer' && n.definitionId === 'core:outlet/answer-form'))
 		}
 	})
@@ -543,12 +549,18 @@ describe('R-15 · staleness and order — the event and the ports (U5f)', () => 
 	})
 
 	test('the keeper graphs hand the version they read back as base', () => {
-		// Story's reckoning (its words branch) and Rest (2026-10-19); Time
-		// passes is the shared stepper graph now, which reads no state.
-		for (const slug of [
-			'core:spec/story-respond',
-			'core:spec/story-rest',
-		]) {
+		// Story's reckoning (its words branch — a routine of its own since
+		// 2026-10-20) and Rest (2026-10-19); Time passes is the shared stepper
+		// graph now, which reads no state.
+		// The set-state arms each graph has: the reckoning's words branch applies
+		// or proposes by its routine's mode; Story's own Rest always applies — an
+		// action registration carries no mode (R37), so its Review arm went
+		// (PLAN-genres-seams G1 ★3, ruled at the merge GM, 2026-10-23).
+		const arms: Record<string, number> = {
+			'core:spec/story-reckoning': 2,
+			'core:spec/story-rest': 1,
+		}
+		for (const slug of Object.keys(arms)) {
 			const entry = CORE_SPECS.find((s) => s.slug === slug)
 			assert.ok(entry, slug)
 			const doc: SpecDocument = entry!.build()
@@ -566,12 +578,11 @@ describe('R-15 · staleness and order — the event and the ports (U5f)', () => 
 			const targets = baseEdges
 				.map((e) => doc.nodes.find((n) => n.key === e.to)?.definitionId)
 				.sort()
-			// Both set-state arms and the resolver, in every keeper graph.
+			// Every set-state arm and the resolver, in every keeper graph.
 			assert.deepEqual(targets, [
 				'core:query/resolve-state-changes',
-				'core:task/set-state',
-				'core:task/set-state',
-			])
+				...Array.from({ length: arms[slug]! }, () => 'core:task/set-state'),
+			], slug)
 		}
 	})
 })
@@ -588,7 +599,7 @@ describe('R-15 · the events and the surface', () => {
 		assert.equal(sessionEvents.formAddressed, 'core:event/form-addressed@1')
 	})
 
-	test('every shipped genre offers the event, optional, and every shipped preset binds it', () => {
+	test('every shipped genre offers the event, optional, and every shipped preset registers it', () => {
 		const { document } = coreAnnouncement()
 		for (const g of document.genres) {
 			const decl = g.events?.[sessionEvents.formAddressed]
@@ -599,11 +610,13 @@ describe('R-15 · the events and the surface', () => {
 		// `assistant`, its specs' stem (2026-10-19): the roleplay Chat's
 		// `chat-*` ids are Story's, and a new Chat never reuses one (§2-7 a).
 		const stem = (genre: string) => (genre === 'core:genre/chat' ? 'assistant' : genre.split('/').at(-1))
-		for (const p of document.presets)
-			assert.equal(
-				p.bindings[sessionEvents.formAddressed]?.spec,
-				`core:spec/${stem(p.genre)}-answer-form`,
-				p.slug,
+		// 🚧 By registration (PLAN-layering D4, 2026-10-20): the genre's defaults ⊕ the preset's changes.
+		for (const p of document.presets) {
+			const defaults = genreDefaultsOf(document.genres.find((g) => g.id === p.genre))?.registrations
+			const answering = effectiveRegistrations(defaults, presetChangesOf(p, defaults)).filter(
+				(r) => r.trigger.family === 'event' && r.trigger.event === sessionEvents.formAddressed,
 			)
+			assert.deepEqual(answering.map((r) => r.pipeline), [`core:spec/${stem(p.genre)}-answer-form`], p.slug)
+		}
 	})
 })

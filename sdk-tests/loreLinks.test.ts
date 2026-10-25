@@ -46,8 +46,9 @@ test('the wording both ways is a parameter: leads to, one way, unless told', () 
 test('a reviewer may retype the words and the name, never the ends', () => {
 	assert.deepEqual(link().review.fields, ['linkType', 'reverseLinkType', 'name', 'description'])
 	// create-lore-entry's `links` stays out of its review form: a list of
-	// references is not a value a reader can retype.
-	assert.deepEqual(save().review.fields, ['name', 'content'])
+	// references is not a value a reader can retype. (Its typed `fields` are
+	// values, and joined the form 2026-10-21, Lair rewrite D2.)
+	assert.deepEqual(save().review.fields, ['name', 'content', 'fields'])
 })
 
 test('LoreLinkInput and LoreLinkRow speak the same four words', () => {

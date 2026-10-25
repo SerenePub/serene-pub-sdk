@@ -14,7 +14,6 @@ import {
 	boundaryTriggersOf,
 	declaredScenePlace,
 	declaredTriggerStates,
-	defineAttributeSlot,
 	genre,
 	resolveSceneSettings,
 	sceneSettingsDecl,
@@ -154,29 +153,23 @@ describe('🚧 the place (live scenes §15 G2)', () => {
 		assert.deepEqual(resolveSceneSettings({ scenes: { place: { stateKey: 'location' } } }), DEFAULT_SCENE_SETTINGS)
 	})
 
-	test('genre() refuses a place that names no slot the genre declares', () => {
-		const where = defineAttributeSlot('g2.test:slot/where@1', {
-			type: 'text',
-			label: { en: 'Where' },
-			descriptor: 'Where the story is happening.',
-			appliesTo: ['world'],
-		})
+	test("genre() refuses a place other than the host's own", () => {
+		// A genre declares no slots: the place its scenes are placed
+		// by is the one the host keeps on the world, `location`.
 		const ok = genre('g2.test:genre/placed', {
 			name: 'Placed',
 			family: 'test',
-			slots: [where],
-			shape: { scenes: { place: { stateKey: 'where' } } },
+			shape: { scenes: { place: { stateKey: 'location' } } },
 		})
-		assert.deepEqual(declaredScenePlace(ok.shape), { stateKey: 'where' })
+		assert.deepEqual(declaredScenePlace(ok.shape), { stateKey: 'location' })
 		assert.throws(
 			() =>
 				genre('g2.test:genre/misplaced', {
 					name: 'Misplaced',
 					family: 'test',
-					slots: [where],
 					shape: { scenes: { place: { stateKey: 'room' } } },
 				}),
-			/g2\.test:genre\/misplaced\.scenes\.place\.stateKey: 'room' is not a slot this genre declares \(where\)/,
+			/g2\.test:genre\/misplaced\.scenes\.place\.stateKey: 'room' is not a place the host keeps — the place is 'location'/,
 		)
 	})
 })

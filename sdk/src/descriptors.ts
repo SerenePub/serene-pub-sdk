@@ -8,6 +8,9 @@
  * @ruling 01 §1, 04 §3, NOMENCLATURE §5, 10 §10.2
  */
 
+import type { EntityKind } from './entities.js'
+import type { Finding } from './validate.js'
+import { exposureFindings } from './exposure.js'
 import { pluginRuleRef } from './pluginRuleRef.js'
 import type { ShapeId } from './shapes.js'
 import type { CapabilityId } from './capabilities.js'
@@ -596,6 +599,41 @@ export function turnControlPresent(
 }
 
 /**
+ * ⏳ The finding a retired `lorebook: 'required'` gets on declare (RF fix 2,
+ * 2026-10-23): a warning, never a refusal, for one release. The phantom
+ * lorebook made it moot — a session always has a world to write to, so a
+ * genre no longer asks for a book before it starts.
+ * @experimental
+ */
+export const LOREBOOK_REQUIRED_RETIRED = 'lorebook-required-retired'
+
+/**
+ * ⏳ A session shape's lorebook findings: one warning when it still says
+ * `'required'` (`LOREBOOK_REQUIRED_RETIRED`), none otherwise.
+ * @experimental
+ */
+export function lorebookShapeFindings(shape: SessionShape | undefined, at: string): Finding[] {
+	if (shape?.lorebook !== 'required') return []
+	return [
+		{
+			law: LOREBOOK_REQUIRED_RETIRED,
+			severity: 'warning',
+			message: `${at}: 'required' is retired — every session has a world (its own lorebook when none is attached), so it reads as 'optional'`,
+			fix: "say lorebook: 'optional'",
+		},
+	]
+}
+
+/**
+ * ⏳ The shape as every reader takes it: a retired `lorebook: 'required'`
+ * reads as `'optional'`; any other shape is returned as it is.
+ * @experimental
+ */
+export function lorebookReadOptional<S extends SessionShape | undefined>(shape: S): S {
+	return shape?.lorebook === 'required' ? ({ ...shape, lorebook: 'optional' } as S) : shape
+}
+
+/**
  * A `turnControls` declaration's faults, refused at the declaration: an
  * unknown control, a value that is neither a boolean nor `{ presentWhen }`,
  * a present-when the enabled-when grammar refuses, or a present-when over
@@ -749,6 +787,26 @@ export const BUILTIN_OUTLET_IDS = Object.freeze({
 	branch: 'core:outlet/branch-session@1',
 } as const)
 
+/**
+ * 🚧 **A deletion pipeline's inlet** (RF fix 5, owner ruling 2026-10-23:
+ * deletion requires a pipeline, so the genre manages it): what
+ * `core:event/message-deletion-asked@1` lands on. `delete-message@1` may be
+ * placed outside the built-in's own spec in a document whose inlet is this
+ * one, and only there (`validate()`; the host refuses the commit on the
+ * same test). There it takes THE deletion the event carried on its `asked`
+ * port, wired from this inlet's `main` and from nothing else (`validate()`
+ * again): the door — the message, the person's right to it — was judged by
+ * the host before it dispatched the event, as the built-in's handler judged
+ * it.
+ * @experimental
+ * @ruling owner 2026-10-23, R-15
+ */
+export const DELETION_ASKED_INLET_ID = 'core:inlet/message-deletion-asked@1'
+
+/** May this outlet stand in a document entered through this inlet, though it is not a built-in's own spec? @experimental */
+export const deletionPipelinePlaces = (outletId: string, inletId: string | undefined): boolean =>
+	outletId === BUILTIN_OUTLET_IDS.delete && inletId === DELETION_ASKED_INLET_ID
+
 /** Is this definition id one of the five built-in write outlets? @experimental */
 export const isBuiltInOutlet = (definitionId: string): boolean =>
 	(Object.values(BUILTIN_OUTLET_IDS) as string[]).includes(definitionId)
@@ -884,7 +942,15 @@ export interface SessionShape {
 	 * @experimental
 	 */
 	personas?: { min: number; max?: number; preselectDefault?: boolean }
-	/** The lorebook attachment picker, and retrieval satisfiability. */
+	/**
+	 * The lorebook attachment picker: `'optional'` offers it, absent hides it.
+	 *
+	 * ⏳ `'required'` is retired (RF fix 2, 2026-10-23): every session has a
+	 * world — its phantom lorebook when none is attached — so no genre needs
+	 * one attached to start. Accepted for one release, read as `'optional'`
+	 * (`lorebookReadOptional`), and warned on declare
+	 * (`lorebookShapeFindings`, `lorebook-required-retired`).
+	 */
 	lorebook?: 'optional' | 'required'
 	/** What the send surface is. `none` for purely trigger-driven modes. */
 	composer?: 'text' | 'none'
@@ -1167,7 +1233,28 @@ export interface ChannelDecl {
 	 * hiding this replaces.
 	 */
 	lanes?: ChannelLaneMode
+	/**
+	 * 🚧 Who reads the channel (Lair rewrite D6, 2026-10-21). `all` (the
+	 * default): every member of the session, as before. `owner`: the
+	 * session's owner alone — the Lair's Sanctum, the game master's private
+	 * talk with the Castellan. The **host** holds it, never a display claim:
+	 * it sends the channel's rows and pushes to the owner only, refuses a
+	 * non-owner's send to it, and leaves it out of a non-owner's composer
+	 * switch (`channelAudience`). A pipeline still reads it — the AI is not a
+	 * member.
+	 *
+	 * ⚠ A channel mode, like `lanes` — not an action's **audience** of
+	 * participant references, though it answers the same question for the
+	 * channel's rows.
+	 * @ruling Lair rewrite R7, D6 (2026-10-21)
+	 */
+	audience?: ChannelAudience
 }
+
+/** 🚧 Who reads a channel: every member (`all`, the default) or the session's owner alone (`owner`). @experimental */
+export const CHANNEL_AUDIENCES = ['all', 'owner'] as const
+/** @experimental */
+export type ChannelAudience = (typeof CHANNEL_AUDIENCES)[number]
 
 /** 🚧 Whose a channel's lanes are: the genre's (`shared`) or one per person (`personal`). @experimental */
 export const CHANNEL_LANE_MODES = ['shared', 'personal'] as const
@@ -1239,6 +1326,7 @@ export function channelDecls(shape: unknown): ChannelDecl[] {
 			...(isI18n(decl.label) ? { label: localeMapOf(decl.label) } : {}),
 			...(controls ? { turnControls: controls as SessionShape['turnControls'] } : {}),
 			...(decl.lanes ? { lanes: decl.lanes } : {}),
+			...(decl.audience ? { audience: decl.audience } : {}),
 		}
 	}
 	const declared = (Array.isArray(s.channels) ? s.channels : [])
@@ -1246,6 +1334,21 @@ export function channelDecls(shape: unknown): ChannelDecl[] {
 		.filter((d): d is ChannelDecl => d !== undefined)
 	const main = declared.find((d) => d.slug === DEFAULT_CHANNEL)
 	return [main ?? resolve(DEFAULT_CHANNEL)!, ...declared.filter((d) => d !== main)]
+}
+
+/**
+ * 🚧 Who reads `channel` in a session of this shape — `owner` only when its
+ * declaration says so, else `all` (an undeclared channel, a lane of a
+ * declared one, and `main` included). The host's one reader for the rows,
+ * the pushes, the send gate and the composer switch (D6). `channel` may be
+ * `slug:lane`; the slug decides.
+ * @experimental
+ * @ruling Lair rewrite D6 (2026-10-21)
+ */
+export function channelAudience(shape: unknown, channel: string): ChannelAudience {
+	const slug = parseChannel(channel).slug
+	const decl = channelDecls(shape).find((d) => d.slug === slug)
+	return decl?.audience === 'owner' ? 'owner' : 'all'
 }
 
 /**
@@ -1263,7 +1366,7 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 	if (!Array.isArray(channels))
 		throw new Error(
 			`${who} declares a 'channels' that is not an array. A genre's channels are a list ` +
-				`of slugs, each a bare string or a { slug, role?, voice?, messageVerbs?, label?, turnControls? } (R-C).`,
+				`of slugs, each a bare string or a { slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience? } (R-C).`,
 		)
 	for (const raw of channels) {
 		const isString = typeof raw === 'string'
@@ -1271,7 +1374,7 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 			throw new Error(
 				`${who} declares a channel that is neither a slug nor a declaration: ` +
 					`${JSON.stringify(raw)}. Each channel is a bare string or a ` +
-					`{ slug, role?, voice?, messageVerbs?, label?, turnControls? } (R-C).`,
+					`{ slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience? } (R-C).`,
 			)
 		const decl = (isString ? { slug: raw } : raw) as ChannelDecl
 		const slug = typeof decl.slug === 'string' ? decl.slug.trim() : ''
@@ -1309,6 +1412,24 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 			throw new Error(
 				`${at} declares personal lanes. '${DEFAULT_CHANNEL}' is the channel every member ` +
 					`reads; declare another channel for lanes of one person each.`,
+			)
+		// 🚧 D6: who reads it — a mode, and two refusals where it cannot mean what it says.
+		if (decl.audience !== undefined && !CHANNEL_AUDIENCES.includes(decl.audience))
+			throw new Error(
+				`${at} declares audience '${String(decl.audience)}'. A channel's audience is ` +
+					`${CHANNEL_AUDIENCES.map((a) => `'${a}'`).join(' or ')} — every member, or the ` +
+					`session's owner alone.`,
+			)
+		if (slug === DEFAULT_CHANNEL && decl.audience === 'owner')
+			throw new Error(
+				`${at} declares audience 'owner'. '${DEFAULT_CHANNEL}' is the channel every member ` +
+					`reads; declare another channel for the owner alone — the Lair's Sanctum.`,
+			)
+		if (decl.audience === 'owner' && decl.lanes === 'personal')
+			throw new Error(
+				`${at} declares audience 'owner' and personal lanes. A personal lane is sent to its ` +
+					`person, and an owner-only channel to nobody else — say one: personal lanes, or ` +
+					`one channel for the owner.`,
 			)
 		assertMessageVerbFloors({ messageVerbs: decl.messageVerbs }, at)
 		// R6: the display name is display text, and the per-channel turn
@@ -1451,6 +1572,17 @@ export interface Descriptor<
 	 * @ruling plans/29 R-2 (2026-09-17), plans/14, plans/28, plans/31 V6 (2026-09-17 — reversing U6's choice)
 	 */
 	provisional?: true
+	/**
+	 * 🚧 A preview runs THROUGH this oracle rather than stopping before it
+	 * (O9, 2026-10-21). A preview stops before the first oracle on the spine —
+	 * the call that sends the prompt — and an oracle that only PREPARES the
+	 * prompt (the transcribe step, hearing audio before placement) is not
+	 * that call: stopping there would preview a context that had not been
+	 * placed yet. **Policy, never hashed**, like `provisional`. `true` or
+	 * absent.
+	 * @ruling O9
+	 */
+	previewRunsThrough?: true
 	/**
 	 * Interior script points: named moments *inside* the binding's
 	 * work where user text-transform chains may run — a drafting loop's
@@ -1681,6 +1813,20 @@ export interface Descriptor<
 	 * @experimental
 	 */
 	prefers?: Prefers
+	/**
+	 * 🚧 Inlet only: what each out-port **stands for** — `{ speaker:
+	 * 'speaker', sessionScope: 'session', presser: 'actor' }` — the entity a
+	 * trigger must carry for a pipeline reading that port to fit it
+	 * (PLAN-layering D3, R4). A port maps only where reading it *needs* the
+	 * entity: an optional port (the user-message inlet's `messageId`, null on
+	 * a fresh turn) is left out, so reading it never narrows fit.
+	 *
+	 * **Policy** (`DESCRIPTOR_POLICY_KEYS`): it is how the registration door
+	 * judges a pipeline, never what the node does — changing it moves no pin.
+	 * @experimental
+	 * @ruling R4, D3
+	 */
+	entities?: Readonly<Record<string, EntityKind>>
 }
 
 const types = new Map<string, Descriptor>()
@@ -1771,11 +1917,13 @@ export const DESCRIPTOR_POLICY_KEYS = [
 	'reviewDefault',
 	'toggleable',
 	'provisional',
+	'previewRunsThrough',
 	'public',
 	'timeoutMs',
 	'timeoutKind',
 	'usage',
 	'prefers',
+	'entities',
 ] as const satisfies readonly (keyof Descriptor)[]
 
 /** @experimental */
@@ -2070,6 +2218,8 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 	// Before the id is claimed, so a refused declaration can be fixed and retried.
 	checkModeTitled(d as Descriptor)
 	checkDisplayText(d as Descriptor)
+	checkEntities(d as Descriptor)
+	checkExposure(d as Descriptor)
 	// Bands (typed templates P2) and static `renders` (2026-10-13): identifier
 	// keys, a registered variable whose scope names the key, never one of
 	// Assemble's own names. One meaning per key is a per-document rule
@@ -2088,6 +2238,28 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 	else registrationFindings.delete(d.id)
 	types.set(d.id, d as Descriptor)
 	return d
+}
+
+/** 🚧 A node's settings may reach the owner; model plumbing never does (A10, R1 — ruled 10-12). */
+function checkExposure(d: Descriptor): void {
+	const found: string[] = []
+	for (const [slotName, slot] of Object.entries(d.slots ?? {}))
+		found.push(...exposureFindings(slot?.schema as never, `${d.id} slots.${slotName}.schema`))
+	if (found.length) throw new Error(found.join('\n'))
+}
+
+/** An inlet's `entities` name its own out-ports, each with an entity kind; any other kind declares none. */
+function checkEntities(d: Descriptor): void {
+	if (d.entities === undefined) return
+	if (d.kind !== 'inlet')
+		throw new Error(`${d.id}: 'entities' is an inlet's — what its out-ports stand for; a ${d.kind} declares none`)
+	const out = d.ports?.out ?? {}
+	for (const [port, kind] of Object.entries(d.entities)) {
+		if (!(port in out))
+			throw new Error(`${d.id}: entities names port '${port}', which the inlet does not publish — one of ${Object.keys(out).join(', ')}`)
+		if (typeof kind !== 'string' || !kind)
+			throw new Error(`${d.id}: entities.${port} is an entity kind — 'session', 'speaker', 'message', …`)
+	}
 }
 
 /**
@@ -2868,6 +3040,19 @@ function registerEntryType<const Id extends string>(d: EntryTypeDecl<Id>, door: 
 		ports: {},
 		entryShape: shape,
 	}) as EntryDescriptor<Id>
+}
+
+/**
+ * 🚧 Forget one derived entry type — a ruleset's, never core's (`core:` is
+ * refused). `_withdrawRuleset` calls it for every entryable repertoire of
+ * the ruleset it withdraws; a core entry type arrives and leaves with the
+ * catalogue.
+ * @internal
+ */
+export function _withdrawEntryType(id: string): boolean {
+	const held = types.get(id)
+	if (!held || held.kind !== 'entry' || id.startsWith('core:')) return false
+	return types.delete(id)
 }
 
 /** Every entry type this build declares. @internal */

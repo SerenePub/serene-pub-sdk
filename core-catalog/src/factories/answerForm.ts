@@ -55,7 +55,7 @@
  * an answer to a question it has just been asked.
  */
 
-import { compile, handlebars, slot, spec, sessionEvents, type GenreDecl } from '@serene-pub/sdk'
+import { compile, handlebars, slot, spec, sessionEvents, type GenreDecl, coreEvents } from '@serene-pub/sdk'
 import { CORE_LOADOUT } from '../loadouts.js'
 import * as C from '@serene-pub/contracts'
 
@@ -133,10 +133,7 @@ export const answerFormSpec = (id: string, genre: GenreDecl, options: AnswerForm
 			version: ANSWER_FORM_VERSION,
 			taxonomy: { role: 'action'},
 		})
-			.inlet('input', C.formAddressed.v1(), {
-				genre,
-				event: sessionEvents.formAddressed,
-			})
+			.inlet('input', C.formAddressed.v1(), { suits: [coreEvents.formAddressed] })
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
@@ -219,7 +216,7 @@ export const answerFormSpec = (id: string, genre: GenreDecl, options: AnswerForm
 					messages: $.attached.messages,
 					templateContext: $.form.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('generate'),
@@ -245,7 +242,7 @@ export const answerFormSpec = (id: string, genre: GenreDecl, options: AnswerForm
 					addressee: $.input.addressee,
 				}),
 			)
-			.preset('answer-form', { label: 'Answer a form', default: true }, (p) => {
+			.defaults((p) => {
 				const templated = p
 					.template('prompt', {
 						source: ANSWER_FORM_TEMPLATE,

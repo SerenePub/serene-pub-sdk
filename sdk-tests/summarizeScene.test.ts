@@ -161,12 +161,13 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 			channels: { story: 'main' },
 			boundaries: [floor],
 		})
-		assert.deepEqual(doc.contributes, { boundaryTriggers: [floor] })
+		assert.deepEqual(doc.contributes.boundaryTriggers, [floor])
+		assert.equal(doc.contributes.actions?.length, 1, 'the summarize action (R50) rides beside the triggers')
 		assert.deepEqual(validate(doc).filter((f: any) => f.severity === 'error'), [])
 		const bare: any = summarizeScene('test.sum:spec/b2', { version: '1.0.0', genre: lairGenre, channels: { story: 'main' } })
-		assert.equal('contributes' in bare && bare.contributes !== undefined, false)
+		assert.equal(bare.contributes?.boundaryTriggers, undefined, 'no triggers when none are declared')
 		const empty: any = summarizeScene('test.sum:spec/b3', { version: '1.0.0', genre: lairGenre, channels: { story: 'main' }, boundaries: [] })
-		assert.equal(empty.contributes, undefined)
+		assert.equal(empty.contributes?.boundaryTriggers, undefined)
 	})
 
 	test('refused at the declaration: an unknown predicate, a channel the genre does not declare', () => {
@@ -192,14 +193,13 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 		)
 	})
 
-	test("the Lair's declares one: a new floor on main", () => {
-		const lair: any = CORE_SPECS.find((s: any) => s.slug === LAIR_SUMMARIZE_SCENE_SPEC_ID)!.build()
-		assert.deepEqual(lair.contributes?.boundaryTriggers, [
-			{ key: 'newFloor', label: { en: 'the party reached a new floor' }, when: { channel: 'main', stateKey: 'floor' } },
-		])
-		for (const id of [STORY_SUMMARIZE_SCENE_SPEC_ID, STORY_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
+	// 2026-10-21 (the Lair's rewrite, D8): the new-floor trigger read the
+	// world's `floor`, which the Lair no longer declares — no core genre
+	// declares a trigger of its own now; *the place changes* is the genre's place.
+	test("no core genre's summarize-scene declares a trigger of its own (the Lair's new floor left with `floor`)", () => {
+		for (const id of [LAIR_SUMMARIZE_SCENE_SPEC_ID, STORY_SUMMARIZE_SCENE_SPEC_ID, GUIDE_SUMMARIZE_SCENE_SPEC_ID]) {
 			const doc: any = CORE_SPECS.find((s: any) => s.slug === id)!.build()
-			assert.equal(doc.contributes, undefined, `${id} declares no trigger of its own`)
+			assert.equal(doc.contributes?.boundaryTriggers, undefined, `${id} declares no trigger of its own`)
 		}
 	})
 })

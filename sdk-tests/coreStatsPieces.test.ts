@@ -19,6 +19,8 @@ import assert from 'node:assert/strict'
 import { resolve } from 'node:path'
 import { i18nText, type SessionStateRepertoireV1, type SessionStateV1, type SlotPiece } from '@serene-pub/sdk'
 import { visItinerisRuleset } from '../core-catalog/src/registry/rulesets.js'
+// 🚧 Its repertoires are entry types in the sections since 2026-10-23; the parts are read as the host reads a repertoire.
+import { VIS_ITINERIS_REPERTOIRES } from '../core-catalog/src/rulesets/vis-itineris/repertoires.js'
 import { mountComponent, type MountedComponent } from '../cli/src/testing.js'
 import {
 	formatSlotValue,
@@ -56,16 +58,16 @@ const oldSword = { kind: 'lore', entryId: 7, count: 3, name: 'Grandfather’s sw
 
 /** The host's side (§8): a repertoire's name and piece shape, by address. */
 const REPERTOIRES: Record<string, SessionStateRepertoireV1> = Object.fromEntries(
-	visItinerisRuleset.repertoires.map((r) => [`${VIS}#${r.id}`, { label: i18nText(r.label) ?? r.id, piece: r.piece }]),
+	VIS_ITINERIS_REPERTOIRES.map((r) => [`${VIS}#${r.id}`, { label: i18nText(r.label) ?? r.id, piece: r.piece }]),
 )
 /** The host's side (§8): a compendium reference with its row read into `resolved`. */
 function hostRead<P extends SlotPiece>(piece: P, repertoireId: string): P {
 	if (piece.kind !== 'compendium') return piece
-	const row = visItinerisRuleset.compendium?.rows?.[repertoireId]?.find((r) => r.id === piece.pieceId)
+	const row = visItinerisRuleset.library?.rows?.[repertoireId]?.find((r) => r.id === piece.pieceId)
 	if (!row) return piece
 	// A row's piece is nested (2026-10-17); its bookkeeping stays outside.
 	const props = row.piece as Record<string, unknown>
-	const shape = visItinerisRuleset.repertoires.find((r) => r.id === repertoireId)?.piece
+	const shape = VIS_ITINERIS_REPERTOIRES.find((r) => r.id === repertoireId)?.piece
 	return {
 		...piece,
 		resolved: {

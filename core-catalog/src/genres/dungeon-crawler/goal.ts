@@ -21,7 +21,7 @@
  *    epilogue, no Planner; the session stays readable.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { actionIdentity, compile, slot, spec, sessionEvents, type ChainBuilder } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { dungeonCrawlerGenre } from '../../registry/genres.js'
 import { DUNGEON_CRAWLER_PROMPT_KEYS } from '../../seed/prompts.js'
@@ -29,15 +29,28 @@ import { PLANNER } from './create.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, TRAVELOGUE_CHANNEL } from './names.js'
 import { DUNGEON_CRAWLER_ENTRY_TYPES } from './lore.js'
 import { DUNGEON_CRAWLER_STORY_PREAMBLE, storySeed } from './storyScripts.js'
-import { applyWiring, at, DUNGEON_CRAWLER_NARRATE_TEMPLATE, jsonPart, modelCall, scriptStep, textPart, wiring, type Wiring } from './calls.js'
+import {
+	applyWiring,
+	DUNGEON_CRAWLER_NARRATE_TEMPLATE,
+	jsonPart,
+	modelCall,
+	on,
+	scriptStep,
+	textPart,
+	wiring,
+	type Wiring,
+} from './calls.js'
+import type { ChainNodes } from '../../shared/chains.js'
 import { NARRATOR } from './genesis.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_GOAL_SPEC_ID = 'core:spec/dungeon-crawler-goal'
 /** @internal */
 export const DUNGEON_CRAWLER_GOAL_VERSION = '1.0.0'
+/** The goal action's key, as the spec declares it. */
+const GOAL_ACTION_KEY = 'goal'
 /** What the goal form's options fire. @experimental */
-export const DUNGEON_CRAWLER_GOAL_ACTION = `${DUNGEON_CRAWLER_GOAL_SPEC_ID}#goal`
+export const DUNGEON_CRAWLER_GOAL_ACTION = actionIdentity({ specSlug: DUNGEON_CRAWLER_GOAL_SPEC_ID, key: GOAL_ACTION_KEY })
 /** The goal form's three options, by the key its block carries. @experimental */
 export const DUNGEON_CRAWLER_GOAL_CHOICES = Object.freeze({
 	carryOn: 'continue',
@@ -169,23 +182,94 @@ return out;
 `,
 )
 
+/**
+ * What the goal script hands its junctions — judging a press or filing a new
+ * goal (`DUNGEON_CRAWLER_GOAL_SCRIPT`): each member `null` unless the press
+ * needs it.
+ */
+interface GoalStep {
+	readonly lane: unknown
+	readonly text: unknown
+	readonly world: unknown
+	readonly journal: unknown
+	readonly brief: unknown
+	readonly crib: unknown
+	readonly notes: unknown
+	readonly notesRevealed: unknown
+	readonly epilogue: unknown
+}
+
+/** The spine before the route: the press, the reads, the judge, and the owner's lane. */
+const goalHead = (w: Wiring) =>
+	textPart(
+		scriptStep(
+			spec(DUNGEON_CRAWLER_GOAL_SPEC_ID, {
+				version: DUNGEON_CRAWLER_GOAL_VERSION,
+				taxonomy: { role: 'action' },
+				contributes: {
+					actions: [
+						{
+							key: GOAL_ACTION_KEY,
+							venue: { kind: 'form' },
+							audience: { see: ['participant'], act: ['participant'] },
+							icon: 'flag',
+							label: { en: 'Decide' },
+							description: { en: 'Decide what comes after the goal: carry on, a new goal, or the end.' },
+						},
+					],
+				},
+			})
+				.inlet('input', C.userMessage.v1(), { suits: [] })
+				.task('answer', ($) => C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }))
+				.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
+				/** The state: the world's goal mode says whether the goal is kept secret. */
+				.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
+				.query('story', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+					expose: { label: 'The story so far' },
+				})
+				// The world as the session's own lorebook holds it, and the Journal's newest lines.
+				.query('places', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+					expose: { label: 'The places' },
+				})
+				.query('log', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+					expose: { label: 'The journal so far' },
+				}),
+			w,
+			'step',
+			DUNGEON_CRAWLER_GOAL_SCRIPT.seedKey,
+			($) => ({
+				session: $.input.session,
+				choice: $.answer.choice,
+				addressee: $.answer.addressee,
+				places: $.places.entries,
+				log: $.log.messages,
+				state: $.state.state,
+			}),
+			'Judge the press',
+		),
+		w,
+		'lane',
+		($) => $.step.main,
+		'lane',
+		"The owner's lane",
+	)
+
 /** The epilogue, at `route.closing.`: the Narrator's row, its call, its words. */
-const closing = (c: any, w: Wiring) => {
-	const Q = 'route.closing.'
-	w.prompts.push([`${Q}context`, DUNGEON_CRAWLER_PROMPT_KEYS.narrate])
-	w.templates.push([`${Q}prompt`, DUNGEON_CRAWLER_NARRATE_TEMPLATE])
+const closing = (c: ChainBuilder<ChainNodes<ReturnType<typeof goalHead>>, 'route.closing'>, w: Wiring) => {
+	w.prompts.push([on(c, 'context'), DUNGEON_CRAWLER_PROMPT_KEYS.narrate])
+	w.templates.push([on(c, 'prompt'), DUNGEON_CRAWLER_NARRATE_TEMPLATE])
 	const telling = { expose: { status: 'The Narrator closes the adventure' } }
-	return textPart(c, w, Q, 'brief', ($: any) => $.step.main, 'epilogue', 'The epilogue, asked')
+	return textPart(c, w, 'brief', ($) => $.step.main, 'epilogue', 'The epilogue, asked')
 		.outlet('placeholder', () => C.createMessage.v1({ generating: true, channel: 'main', speaker: NARRATOR as any }), {
 			expose: { label: "Open the Narrator's last line", status: 'The Narrator closes the adventure' },
 		})
 		.task(
 			'context',
-			($: any) =>
+			($) =>
 				C.buildTemplateContext.v1({
 					cast: $.cast.cast,
 					speaker: NARRATOR as any,
-					turnDirection: at($, `${Q}brief`).text,
+					turnDirection: $.brief.text,
 					fields: { diceRolled: '' } as any,
 					prompts: slot.prompts(),
 					variables: slot.variables(),
@@ -194,37 +278,39 @@ const closing = (c: any, w: Wiring) => {
 		)
 		.task(
 			'lines',
-			($: any) =>
+			($) =>
 				C.processMessages.v1({
 					messages: $.story.messages,
 					cast: $.cast.cast,
-					templateContext: at($, `${Q}context`).templateContext,
-					seedName: at($, `${Q}context`).seedName,
+					templateContext: $.context.templateContext,
+					seedName: $.context.seedName,
 				}),
 			telling,
 		)
 		.task(
 			'prompt',
-			($: any) =>
+			($) =>
 				C.assemble.v2({
-					messages: at($, `${Q}lines`).messages,
-					templateContext: at($, `${Q}context`).templateContext,
+					messages: $.lines.messages,
+					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: `${Q}context` }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
-					connection: slot.connectionOf(`${Q}say`),
+					connection: slot.connectionOf('route.closing.say'),
 				}),
 			telling,
 		)
 		.oracle(
 			'say',
-			($: any) =>
+			($) =>
 				C.generateText.v1({
-					context: at($, `${Q}prompt`).context,
+					context: $.prompt.context,
 					connection: slot.connection(),
 					sampling: slot.sampling(),
 					params: slot.params(),
+					// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+					speechSampling: slot.speechSampling(),
 				}),
 			{
 				expose: {
@@ -237,11 +323,11 @@ const closing = (c: any, w: Wiring) => {
 		)
 		.outlet(
 			'save',
-			($: any) =>
+			($) =>
 				C.updateMessage.v1({
-					target: at($, `${Q}placeholder`).messageId,
-					text: at($, `${Q}say`).text,
-					reasoning: at($, `${Q}say`).reasoning,
+					target: $.placeholder.messageId,
+					text: $.say.text,
+					reasoning: $.say.reasoning,
 				}),
 			{ expose: { label: 'Fill the epilogue' } },
 		)
@@ -253,63 +339,22 @@ const closing = (c: any, w: Wiring) => {
  */
 export const dungeonCrawlerGoalSpec = () => {
 	const w = wiring()
-	const step = ($: any) => $.step.main
 	w.params.push(['story', { channel: 'main', limit: 8, tableLines: false }]) // 🚧 no roll lines: the table's, never the story's speech
 	w.params.push(['places', { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.place] }])
 	w.params.push(['log', { channel: TRAVELOGUE_CHANNEL, limit: 8 }])
-	let graph: any = spec(DUNGEON_CRAWLER_GOAL_SPEC_ID, {
-		version: DUNGEON_CRAWLER_GOAL_VERSION,
-		taxonomy: { role: 'action' },
-		contributes: {
-			actions: [
-				{
-					key: 'goal',
-					venue: { kind: 'form' },
-					audience: { see: ['participant'], act: ['participant'] },
-					icon: 'flag',
-					label: { en: 'Decide' },
-					description: { en: 'Decide what comes after the goal: carry on, a new goal, or the end.' },
-				},
-			],
-		},
-	})
-		.inlet('input', C.userMessage.v1(), { genre: dungeonCrawlerGenre, event: sessionEvents.sessionAction })
-		.task('answer', ($) => C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }))
-		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
-		/** The state: the world's goal mode says whether the goal is kept secret. */
-		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
-		.query('story', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The story so far' },
-		})
-		// The world as the session's own lorebook holds it, and the Journal's newest lines.
-		.query('places', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The places' },
-		})
-		.query('log', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The journal so far' },
-		})
-	graph = scriptStep(graph, w, '', 'step', DUNGEON_CRAWLER_GOAL_SCRIPT.seedKey, ($) => ({
-		session: $.input.session,
-		choice: $.answer.choice,
-		addressee: $.answer.addressee,
-		places: $.places.entries,
-		log: $.log.messages,
-		state: $.state.state,
-	}), 'Judge the press')
-	graph = textPart(graph, w, '', 'lane', step, 'lane', "The owner's lane")
-	const built = graph.junction('route', { on: step }, (j: any) =>
+	const built = goalHead(w).junction('route', { on: ($) => $.step.main }, (j) =>
 		j
-			.when('said', { path: 'text', truthy: true }, (c: any) =>
-				textPart(c, w, 'route.said.', 'line', step, 'text', "The Planner's answer").outlet(
+			.when('said', { path: (v: GoalStep) => v.text, truthy: true }, (c) =>
+				textPart(c, w, 'line', ($) => $.step.main, 'text', "The Planner's answer").outlet(
 					'write',
-					($: any) => C.createMessage.v1({ text: $.route.said.line.text, channel: $.lane.text, speaker: PLANNER as any }),
+					($) => C.createMessage.v1({ text: $.line.text, channel: $.lane.text, speaker: PLANNER as any }),
 					{ expose: { label: "Say the Planner's answer" } },
 				),
 			)
-			.when('world', { path: 'world', truthy: true }, (c: any) =>
-				jsonPart(c, w, 'route.world.', 'value', step, 'world', 'The world, decided').outlet(
+			.when('world', { path: (v: GoalStep) => v.world, truthy: true }, (c) =>
+				jsonPart(c, w, 'value', ($) => $.step.main, 'world', 'The world, decided').outlet(
 					'write',
-					($: any) => C.setSessionAnnex.v1({ value: { [K.progress]: $.route.world.value.main } as any, params: slot.params() }),
+					($) => C.setSessionAnnex.v1({ value: { [K.progress]: $.value.main } as any, params: slot.params() }),
 					{ expose: { label: 'Keep the decision' } },
 				),
 			)
@@ -320,19 +365,17 @@ export const dungeonCrawlerGoalSpec = () => {
 			 * (`DUNGEON_CRAWLER_NARRATE_TEMPLATE`). No numbers: an epilogue
 			 * rolls nothing.
 			 */
-			.when('closing', { path: 'epilogue', truthy: true }, (c: any) => closing(c, w))
-			.when('renew', { path: 'brief', truthy: true }, (c: any) => {
-				const P = 'route.renew.'
+			.when('closing', { path: (v: GoalStep) => v.epilogue, truthy: true }, (c) => closing(c, w))
+			.when('renew', { path: (v: GoalStep) => v.brief, truthy: true }, (c) => {
 				const asked = modelCall(
-					textPart(textPart(c, w, P, 'brief', step, 'brief', 'What the new goal is for'), w, P, 'crib', step, 'crib', "The Planner's crib"),
+					textPart(textPart(c, w, 'brief', ($) => $.step.main, 'brief', 'What the new goal is for'), w, 'crib', ($) => $.step.main, 'crib', "The Planner's crib"),
 					w,
-					P,
 					'goal',
 					{
 						speaker: PLANNER,
 						prompt: DUNGEON_CRAWLER_PROMPT_KEYS.goal,
-						brief: ($) => $.route.renew.brief.text,
-						crib: ($) => $.route.renew.crib.text,
+						brief: ($) => $.brief.text,
+						crib: ($) => $.crib.text,
 						cast: ($) => $.cast.cast,
 						history: ($) => $.story.messages,
 						schema: DUNGEON_CRAWLER_GOAL_SCHEMA,
@@ -344,49 +387,45 @@ export const dungeonCrawlerGoalSpec = () => {
 						},
 					},
 				)
-				const filed = ($: any) => at($, `${P}filed`).main
 				const parts = jsonPart(
 					jsonPart(
 						textPart(
-							scriptStep(asked, w, P, 'filed', DUNGEON_CRAWLER_GOAL_SCRIPT.seedKey, ($) => ({
+							scriptStep(asked, w, 'filed', DUNGEON_CRAWLER_GOAL_SCRIPT.seedKey, ($) => ({
 								session: $.input.session,
 								addressee: $.answer.addressee,
 								filing: true,
-								json: at($, `${P}goalWrite`).json,
+								json: $.goalWrite.json,
 								state: $.state.state,
 							}), 'Draw up the new goal'),
 							w,
-							P,
 							'notes',
-							filed,
+							($) => $.filed.main,
 							'notes',
 							"The Planner's notes, with the new goal",
 						),
 						w,
-						P,
 						'journal',
-						filed,
+						($) => $.filed.main,
 						'journal',
 						'The journal, with the new goal',
 					),
 					w,
-					P,
 					'world',
-					filed,
+					($) => $.filed.main,
 					'world',
 					'The world, with the new goal',
 				)
 				return parts
-					.junction('kept', { on: filed }, (k: any) =>
-						k.when('goal', { path: 'world', truthy: true }, (g: any) =>
+					.junction('kept', { on: ($) => $.filed.main }, (k) =>
+						k.when('goal', { path: (v: GoalStep) => v.world, truthy: true }, (g) =>
 							g.outlet(
 								'write',
-								($: any) =>
+								($) =>
 									C.setSessionAnnex.v1({
 										value: {
-											[K.progress]: at($, `${P}world`).main,
-											[K.journal]: at($, `${P}journal`).main,
-											[K.planningNotes]: at($, `${P}notes`).text,
+											[K.progress]: $.route.renew.world.main,
+											[K.journal]: $.route.renew.journal.main,
+											[K.planningNotes]: $.route.renew.notes.text,
 										} as any,
 										params: slot.params(),
 									}),
@@ -394,26 +433,26 @@ export const dungeonCrawlerGoalSpec = () => {
 							),
 						),
 					)
-					.junction('revealed', { on: filed }, (k: any) =>
-						k.when('notes', { path: 'notesRevealed', truthy: true }, (n: any) =>
-							textPart(n, w, `${P}revealed.notes.`, 'line', filed, 'notesRevealed', 'The notes, as revealed').outlet(
+					.junction('revealed', { on: ($) => $.filed.main }, (k) =>
+						k.when('notes', { path: (v: GoalStep) => v.notesRevealed, truthy: true }, (n) =>
+							textPart(n, w, 'line', ($) => $.route.renew.filed.main, 'notesRevealed', 'The notes, as revealed').outlet(
 								'write',
-								($: any) =>
+								($) =>
 									C.setSessionAnnex.v1({
-										value: { [K.planningNotesRevealed]: at($, `${P}revealed.notes.line`).text } as any,
+										value: { [K.planningNotesRevealed]: $.line.text } as any,
 										params: slot.params(),
 									}),
 								{ expose: { label: 'Keep the revealed notes in step' } },
 							),
 						),
 					)
-					.junction('told', { on: filed }, (k: any) =>
-						k.when('line', { path: 'text', truthy: true }, (t: any) =>
-							textPart(t, w, `${P}told.line.`, 'line', filed, 'text', 'The new goal, told').outlet(
+					.junction('told', { on: ($) => $.filed.main }, (k) =>
+						k.when('line', { path: (v: GoalStep) => v.text, truthy: true }, (t) =>
+							textPart(t, w, 'line', ($) => $.route.renew.filed.main, 'text', 'The new goal, told').outlet(
 								'write',
-								($: any) =>
+								($) =>
 									C.createMessage.v1({
-										text: at($, `${P}told.line.line`).text,
+										text: $.line.text,
 										channel: $.lane.text,
 										speaker: PLANNER as any,
 									}),
@@ -425,7 +464,7 @@ export const dungeonCrawlerGoalSpec = () => {
 	)
 	return compile(
 		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) => applyWiring(p, w))
+			.defaults((p) => applyWiring(p, w))
 			.build(),
 	)
 }

@@ -8,3 +8,5 @@ export * from './create.js'
 export * from './respond.js'
 export * from './answerForm.js'
 export * from './turnOrder.js'
+// 🚧 *Remember things*, a routine (PLAN-layering §4, 2026-10-20).
+export * from './memory.js'

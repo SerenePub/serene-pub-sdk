@@ -474,6 +474,21 @@ export const generateText = pin(
 					'The sampling settings — temperature and friends — used for this request.',
 			},
 			/**
+			 * 🚧 **Speech sampling** (O7, evolved in place 2026-10-21): the
+			 * second sampling slot a call takes when its `outputs` ask for
+			 * audio — the TTS vocabulary (voice, speed, …) beside the text one
+			 * above, one sampling per kind written. Read only when audio is
+			 * asked for; unset, it is the Narration loadout's (`text->audio`
+			 * default) sampling. ⚠ Not `sampling`: that one says how the reply
+			 * is WRITTEN, this one how it is SPOKEN.
+			 * @ruling O7
+			 */
+			speechSampling: {
+				kind: 'sampling',
+				shape: S.tts,
+				description: 'How a spoken reply sounds — the voice and its speed. Read only when this step asks for audio.',
+			},
+			/**
 			 * ⚠ No `prompts` slot, and there was one — `system` and
 			 * `postHistory`, "the written instructions sent with every request
 			 * from this step" (culled 2026-09-16). No handler read it:
@@ -505,6 +520,25 @@ export const generateText = pin(
 							'Sequences that end the reply the moment the model writes one. One per line.',
 					},
 					streaming: streamingParam(),
+					/**
+					 * 🚧 The **requested outputs** (O6, evolved in place
+					 * 2026-10-20 — no @2 before 0.7): the kinds this call asks
+					 * the model to write, in order. `['text']` — today's reply
+					 * — unless stated. Asking for `audio` beside text makes the
+					 * connection's requirement `text->text+audio`
+					 * (`requirementForOutputs`): the bind check and fit derive
+					 * it from here, and refuse in words where no reachable model
+					 * writes audio. Open by kind (O1).
+					 * @ruling O6
+					 */
+					outputs: {
+						type: 'string[]',
+						label: { en: 'Outputs' },
+						description: {
+							en: 'What the model is asked to write, in order — text, and audio for a spoken reply. Text unless set.',
+						},
+						default: ['text'],
+					},
 				},
 			},
 		},
@@ -523,8 +557,10 @@ export const generateText = pin(
 		 * resolved at bind time.
 		 */
 		media: {
-			accepts: ['image', 'document'],
-			emits: ['image'],
+			// `audio` (O4, 2026-10-21): a voice note a pair that hears is sent.
+			accepts: ['image', 'document', 'audio'],
+			// `audio` (O6, 2026-10-20): a spoken reply's audio part.
+			emits: ['image', 'audio'],
 		},
 		ports: {
 			in: {
@@ -881,6 +917,92 @@ export const speak = pin(
 			},
 		},
 		ports: { in: { text: S.text }, out: { main: S.audio, audio: S.audio } },
+	}),
+)
+
+/**
+ * 🚧 **Transcribe audio** (O9, 2026-10-21) — the explicit step that turns a
+ * sound the reply cannot hear into the words it says, BEFORE placement.
+ *
+ * Reads the transcript's files by message (`core:query/history-attachments@1`)
+ * and what the reply's call HEARS — `hears`, the `reads` the context budget
+ * publishes off the same pair (`ConnectionReadsV1`). Each audio file within
+ * `mediaLookback` messages of the end that the call cannot hear and that has
+ * no transcript yet is sent to this step's own model (`audio->text`, the
+ * Transcription loadout); the words are cached on the file, so a file is
+ * heard once, and handed on as `transcript` (and `text`, when the person gave
+ * no description). Placement then names the file with its words:
+ * `[audio: note.mp3 — "…"]`.
+ *
+ * Never silent, never a refusal of the reply: a call that hears audio itself,
+ * a transcript with no audio, and a cached transcript send nothing; with no
+ * model set up to transcribe, the files pass through untouched and `notes`
+ * says so on the receipt. `attachments` is the same record, transcripts
+ * filled in — wire it into `place-attachments@1` in place of the query's.
+ * ⚠ Not `speak@1` — that one SPEAKS; this one HEARS.
+ * @experimental
+ * @ruling O9
+ */
+export const transcribeAudio = pin(
+	describeOracleDefinition({
+		id: 'core:oracle/transcribe-audio@1',
+		i18n: { name: { en: 'Transcribe audio' } },
+		shape: S.transcription,
+		effects: 'external',
+		/** It prepares the prompt; a preview stops at the call that sends it. */
+		previewRunsThrough: true,
+		/** The request is the file itself; there is nothing to correct before it is heard. */
+		review: { fields: [] },
+		timeoutMs: 120000,
+		slots: {
+			loadout: LOADOUT_SLOT,
+			connection: {
+				kind: 'connection',
+				quick: true,
+				shape: S.transcription,
+				requires: [tf({ in: [IoKinds.audio], out: [IoKinds.text] })],
+				description: 'Which model hears the audio the reply cannot.',
+			},
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					mediaLookback: {
+						type: 'integer',
+						min: 0,
+						default: 10,
+						label: { en: 'Media lookback (messages)' },
+						description: {
+							en: 'Audio in the last this-many messages is transcribed when the reply cannot hear it; older audio is sent as its name. Match the placement step.',
+						},
+					},
+					language: {
+						type: 'string',
+						label: { en: 'Language' },
+						description: {
+							en: 'The language spoken, as a code such as "en" or "fr". Empty lets the model detect it.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** The processed lines, for which messages are within the lookback. */
+				messages: S.messages,
+				/** The files by message, from `core:query/history-attachments@1`. */
+				attachments: S.mediaByMessage,
+				/** What the reply's call reads — `context-budget@1`'s `reads`. */
+				hears: S.json,
+			},
+			out: {
+				main: S.mediaByMessage,
+				/** The same files, transcripts filled in. */
+				attachments: S.mediaByMessage,
+				/** Sentences for the receipt: what was transcribed, and what was not and why. */
+				notes: S.json,
+			},
+		},
 	}),
 )
 

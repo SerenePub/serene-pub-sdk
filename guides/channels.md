@@ -42,6 +42,25 @@ options:
 
 `main` can only be a conversation.
 
+A channel can also say who reads it. **`audience: 'owner'`** keeps it to the session's owner:
+the Lair's Sanctum, where the game master plans with the Castellan, is one. The server keeps it.
+Nobody else is sent its messages or can post to it, and your pipelines still read and write it.
+`all`, every member, is the default. `main` is always read by everyone, and an owner-only channel
+cannot also have personal lanes.
+
+<!-- prelude:
+import { genre } from '@serene-pub/sdk'
+-->
+```ts
+export const lair = genre('acme.lair:genre/lair', {
+	name: { en: 'Lair' },
+	family: 'adventure',
+	shape: {
+		channels: ['main', { slug: 'sanctum', audience: 'owner', label: { en: 'Sanctum' } }],
+	},
+})
+```
+
 A channel can also have **channel lanes**: `phone:2`, `phone:3`, for several private
 conversations under one slug — a persona texting three characters is one `phone` channel with
 three lanes. Lanes are not declared. Your pipelines create them by writing to them, and keep
@@ -82,6 +101,7 @@ channels it shows (`widget({ …, channels: ['board'] })`).
 
 ## Channels are not private
 
-A channel's messages are sent to the people in the session like any other message. So anything
-the player must not see (an opponent's fleet, the answer to a riddle) must never be written to a
-channel at all. Keep it in your plugin's [storage](storage.md).
+A channel's messages are sent to the people in the session like any other message, unless the
+channel is declared `audience: 'owner'`, and then only the owner sees them. So anything a player
+must not see (an opponent's fleet, the answer to a riddle) must never be written to a channel
+they read. Keep it in your plugin's [storage](storage.md).

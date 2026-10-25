@@ -43,7 +43,7 @@
  *    embedding arms: a keyword read costs no model call, and nothing here is
  *    capped at one call per turn the way Chat's reply is.
  */
-import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, handlebars, slot, spec, sessionEvents, coreEvents } from '@serene-pub/sdk'
 import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { GUIDE_MASCOT_KEY, guideGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
@@ -68,6 +68,10 @@ export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond'
 // `specHashes.test.ts` records the move. The sprite step is written out after
 // `save` (`spritePick`, `spriteShow`) where the retired `withSpriteTail`
 // wrapper appended nodes this source never named.
+// ⚠ Edited in place (2026-10-21, omni O5/O7/O9) — content-addressed;
+// `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
+// before placement hears the audio the reply cannot; `generate` names its
+// speech sampling, and `save` writes the reply's media parts in order.
 /** @internal */
 export const GUIDE_RESPOND_VERSION = '1.2.0'
 
@@ -176,10 +180,7 @@ export const guideRespondSpec = () =>
 			version: GUIDE_RESPOND_VERSION,
 			taxonomy: { role: 'primary'},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: guideGenre,
-				event: sessionEvents.messageRespond,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })
 			/**
 			 * The reply row, created by the pipeline that fills it (R-17) —
 			 * **directly after the inlet** (PLAN-turn-order §4.4).
@@ -325,10 +326,26 @@ export const guideRespondSpec = () =>
 				}),
 			)
 			// 🚧 Each line's attachments, placed on `generate`'s pair (§3.5).
+			/**
+			 * 🚧 Audio the reply cannot hear, heard first (O9) — see
+			 * `chat/respond.ts`. Nothing to hear sends nothing.
+			 */
+			.oracle(
+				'heard',
+				($) =>
+					C.transcribeAudio.v1({
+						messages: $.lines.messages,
+						attachments: $.gather.history.attachments.attachments,
+						hears: $.contextBudget.reads,
+						connection: slot.connection(),
+						params: slot.params(),
+					}),
+				{ expose: { label: 'Transcribe audio' } },
+			)
 			.task('attached', ($) =>
 				C.placeAttachments.v1({
 					messages: $.lines.messages,
-					attachments: $.gather.history.attachments.attachments,
+					attachments: $.heard.attachments,
 					connection: slot.connectionOf('generate'),
 					params: slot.params(),
 				}),
@@ -351,7 +368,7 @@ export const guideRespondSpec = () =>
 					// mascot's text arrives through `templateContext`: the
 					// builder resolved it, and `assemble` spreads the context
 					// over the raw slot (U5g review, S1).
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('generate'),
@@ -363,6 +380,7 @@ export const guideRespondSpec = () =>
 					currentCharacterId: $.input.characterId,
 					connection: slot.connection(),
 					sampling: slot.sampling(),
+					speechSampling: slot.speechSampling(),
 					params: slot.params(),
 				}),
 				{ expose: { stream: true, status: '{speaker} is typing' } },
@@ -372,6 +390,7 @@ export const guideRespondSpec = () =>
 					target: $.placeholder.messageId,
 					text: $.generate.text,
 					reasoning: $.generate.reasoning,
+					parts: $.generate.parts,
 				}),
 			)
 			/**
@@ -399,14 +418,15 @@ export const guideRespondSpec = () =>
 				}),
 			)
 			/** The guide's own template (1.2.0) — see `GUIDE_RESPOND_TEMPLATE`. */
-			.preset('guide', { label: 'Guide', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.template('prompt', {
 						source: GUIDE_RESPOND_TEMPLATE,
 						engine: handlebars.id,
 					})
 					.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
-					.loadout('generate', slot.loadout(CORE_LOADOUT.reply)),
+					.loadout('generate', slot.loadout(CORE_LOADOUT.reply))
+					.loadout('heard', slot.loadout(CORE_LOADOUT.transcription)),
 			)
 			.build(),
 	)

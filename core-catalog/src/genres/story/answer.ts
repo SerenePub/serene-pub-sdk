@@ -50,10 +50,7 @@ export const storyAnswerSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.task('answer', ($) =>
 				C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }),
 			)

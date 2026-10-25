@@ -1,0 +1,401 @@
+[
+	{
+		"id": "fighter",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Fighter",
+			"description": "Trained for battle in any armour: strong, hardy and hard to put down.",
+			"hitDie": "d10",
+			"abilities": {
+				"strength": 16,
+				"dexterity": 13,
+				"constitution": 14,
+				"intelligence": 8,
+				"wisdom": 12,
+				"charisma": 10
+			},
+			"skills": [
+				"athletics",
+				"perception"
+			],
+			"startingKit": {
+				"weapons": [
+					"longsword",
+					"handaxe"
+				],
+				"armour": [
+					"chain-mail",
+					"shield"
+				],
+				"gear": [
+					"backpack",
+					"rope",
+					"torch"
+				],
+				"consumables": [
+					"potion-of-healing"
+				]
+			},
+			"features": [
+				{
+					"name": "Second wind",
+					"description": "Catch your breath mid-fight and shake off some harm.",
+					"activation": "bonus-action",
+					"usesMax": 1,
+					"recharge": "short"
+				}
+			],
+			"alsoCalled": [
+				"warrior",
+				"knight",
+				"soldier",
+				"barbarian",
+				"paladin",
+				"guard",
+				"sellsword",
+				"mercenary",
+				"champion"
+			]
+		}
+	},
+	{
+		"id": "rogue",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Rogue",
+			"description": "Quick hands and a quiet step: locks, traps, shadows and the blow nobody saw coming.",
+			"hitDie": "d8",
+			"abilities": {
+				"strength": 8,
+				"dexterity": 16,
+				"constitution": 14,
+				"intelligence": 13,
+				"wisdom": 12,
+				"charisma": 10
+			},
+			"skills": [
+				"sleight-of-hand",
+				"stealth",
+				"acrobatics",
+				"perception"
+			],
+			"startingKit": {
+				"weapons": [
+					"rapier",
+					"dagger",
+					"shortbow"
+				],
+				"armour": [
+					"leather-armour"
+				],
+				"gear": [
+					"thieves-tools",
+					"crowbar",
+					"hooded-lantern"
+				],
+				"consumables": [
+					"potion-of-healing"
+				]
+			},
+			"features": [
+				{
+					"name": "Sneak attack",
+					"description": "Strike harder at a foe who is distracted or caught off guard.",
+					"activation": "passive"
+				}
+			],
+			"alsoCalled": [
+				"thief",
+				"scout",
+				"assassin",
+				"burglar",
+				"cutpurse",
+				"spy",
+				"smuggler"
+			]
+		}
+	},
+	{
+		"id": "wizard",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Wizard",
+			"description": "A scholar of magic who casts from study: fragile in a fight, formidable from afar.",
+			"hitDie": "d6",
+			"abilities": {
+				"strength": 8,
+				"dexterity": 13,
+				"constitution": 14,
+				"intelligence": 16,
+				"wisdom": 12,
+				"charisma": 10
+			},
+			"skills": [
+				"arcana",
+				"history"
+			],
+			"startingKit": {
+				"weapons": [
+					"quarterstaff",
+					"dagger"
+				],
+				"gear": [
+					"backpack",
+					"tinderbox",
+					"torch"
+				],
+				"spells": [
+					"fire-bolt",
+					"light",
+					"mage-hand",
+					"magic-missile",
+					"shield",
+					"detect-magic"
+				]
+			},
+			"spellSlots": [
+				{
+					"level": 1,
+					"max": 2
+				}
+			],
+			"features": [
+				{
+					"name": "Arcane recovery",
+					"description": "Recover a little spent magic during a short rest, once a day.",
+					"activation": "free",
+					"usesMax": 1,
+					"recharge": "long"
+				}
+			],
+			"alsoCalled": [
+				"mage",
+				"sorcerer",
+				"warlock",
+				"witch",
+				"magician",
+				"arcanist",
+				"enchanter",
+				"necromancer",
+				"conjurer"
+			]
+		}
+	},
+	{
+		"id": "cleric",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Cleric",
+			"description": "A servant of a power beyond the world, who heals friends and turns back the restless dead.",
+			"hitDie": "d8",
+			"abilities": {
+				"strength": 13,
+				"dexterity": 10,
+				"constitution": 14,
+				"intelligence": 8,
+				"wisdom": 16,
+				"charisma": 12
+			},
+			"skills": [
+				"religion",
+				"medicine"
+			],
+			"startingKit": {
+				"weapons": [
+					"mace"
+				],
+				"armour": [
+					"chain-shirt",
+					"shield"
+				],
+				"gear": [
+					"backpack",
+					"bedroll"
+				],
+				"consumables": [
+					"antitoxin"
+				],
+				"spells": [
+					"sacred-flame",
+					"light",
+					"cure-wounds",
+					"detect-magic"
+				]
+			},
+			"spellSlots": [
+				{
+					"level": 1,
+					"max": 2
+				}
+			],
+			"features": [
+				{
+					"name": "Turn the dead",
+					"description": "Present your holy symbol and make the restless dead flee.",
+					"activation": "action",
+					"usesMax": 1,
+					"recharge": "short"
+				}
+			],
+			"alsoCalled": [
+				"priest",
+				"priestess",
+				"healer",
+				"druid",
+				"monk",
+				"templar",
+				"acolyte",
+				"oracle",
+				"shaman"
+			]
+		}
+	},
+	{
+		"id": "ranger",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Ranger",
+			"description": "A hunter and tracker at home in the wild, deadly with a bow.",
+			"hitDie": "d10",
+			"abilities": {
+				"strength": 12,
+				"dexterity": 16,
+				"constitution": 14,
+				"intelligence": 10,
+				"wisdom": 13,
+				"charisma": 8
+			},
+			"skills": [
+				"survival",
+				"perception",
+				"stealth"
+			],
+			"startingKit": {
+				"weapons": [
+					"longbow",
+					"spear"
+				],
+				"armour": [
+					"studded-leather"
+				],
+				"gear": [
+					"rope",
+					"bedroll",
+					"tinderbox"
+				],
+				"consumables": [
+					"rations"
+				]
+			},
+			"features": [
+				{
+					"name": "Wilderness wise",
+					"description": "Never lost in the wild; find food, water and the trail.",
+					"activation": "passive"
+				}
+			],
+			"alsoCalled": [
+				"hunter",
+				"archer",
+				"tracker",
+				"woodsman",
+				"woodswoman",
+				"trapper",
+				"warden",
+				"outrider"
+			]
+		}
+	},
+	{
+		"id": "bard",
+		"version": "1.1.0",
+		"source": {
+			"document": "SRD 5.2.1",
+			"licence": "CC-BY-4.0"
+		},
+		"piece": {
+			"name": "Bard",
+			"description": "A performer whose words and songs carry magic, and lend others their nerve.",
+			"hitDie": "d8",
+			"abilities": {
+				"strength": 8,
+				"dexterity": 14,
+				"constitution": 13,
+				"intelligence": 10,
+				"wisdom": 12,
+				"charisma": 16
+			},
+			"skills": [
+				"performance",
+				"persuasion",
+				"deception"
+			],
+			"startingKit": {
+				"weapons": [
+					"rapier",
+					"light-crossbow"
+				],
+				"armour": [
+					"leather-armour"
+				],
+				"gear": [
+					"backpack",
+					"torch"
+				],
+				"consumables": [
+					"alchemists-fire"
+				],
+				"spells": [
+					"light",
+					"mage-hand",
+					"cure-wounds"
+				]
+			},
+			"spellSlots": [
+				{
+					"level": 1,
+					"max": 2
+				}
+			],
+			"features": [
+				{
+					"name": "Inspiration",
+					"description": "A word or a song that lends an ally your nerve.",
+					"activation": "bonus-action",
+					"usesMax": 3,
+					"recharge": "long"
+				}
+			],
+			"alsoCalled": [
+				"minstrel",
+				"skald",
+				"singer",
+				"poet",
+				"performer",
+				"troubadour",
+				"storyteller",
+				"jester"
+			]
+		}
+	}
+]

@@ -75,6 +75,20 @@ export const userMessage = pin(
 					'Scripts over the message that triggered this turn — expand shorthand, resolve dice notation — as retrieval and the prompt will see it. The stored message is not changed.',
 			},
 		},
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			fields: 'session',
+			speaker: 'speaker',
+			characterId: 'speaker',
+			presser: 'actor',
+			recipients: 'cast-member',
+		},
 		ports: {
 			out: {
 				main: S.json,
@@ -311,6 +325,15 @@ export const userMessage = pin(
 export const builtInRequest = pin(
 	describeInletDefinition({
 		id: 'core:inlet/built-in-request@1',
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+		},
 		ports: {
 			out: {
 				main: S.json,
@@ -379,6 +402,16 @@ export const sessionCreated = pin(
 				en: 'Fires once, when a session of this genre is created — the pipeline that answers it seeds greetings, channels and initial state.',
 			},
 		},
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			fields: 'session',
+		},
 		ports: {
 			out: {
 				main: S.json,
@@ -444,6 +477,16 @@ export const sessionEvent = pin(
 		 * payload is the envelope's `payload`.
 		 */
 		payloads: [S.sessionChange, S.castChange, S.annexChange, S.recordedEvent],
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionId: 'session',
+			sessionScope: 'session',
+			session: 'session',
+			cast: 'session',
+		},
 		ports: {
 			out: {
 				/** The event id that fired — `core:event/message-completed@1`. */
@@ -545,6 +588,18 @@ export const sideCharacterTurn = pin(
 				description:
 					'Scripts over the instructions this turn was triggered with, as retrieval and the prompt will see them. The speaker rides along read-only — including whether the lorebook already knows them, so a script can offer to add somebody new.',
 			},
+		},
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			fields: 'session',
+			speaker: 'speaker',
+			characterId: 'speaker',
 		},
 		ports: {
 			out: {
@@ -653,6 +708,22 @@ export const formAddressed = pin(
 				en: 'A question or form in a message was put to a participant the AI portrays this turn — the pipeline that answers it reads the addressee\'s card and the conversation, and answers against the form\'s schema.',
 			},
 		},
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			fields: 'session',
+			messageId: 'message',
+			blockId: 'form',
+			form: 'form',
+			action: 'form',
+			addressee: 'cast-member',
+			characterId: 'cast-member',
+		},
 		ports: {
 			out: {
 				main: S.formAddressed,
@@ -713,6 +784,17 @@ export const messageOffered = pin(
 				en: 'A person sent a message. The pipeline that answers it saves the message — or refuses it with a sentence, and the person keeps their text.',
 			},
 		},
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			person: 'actor',
+			speaker: 'speaker',
+		},
 		ports: {
 			out: {
 				main: S.messageOffered,
@@ -744,6 +826,63 @@ export const messageOffered = pin(
 	}),
 )
 
+// ── A deletion asked (owner ruling 2026-10-23) ──────────────────────────────
+
+/**
+ * 🚧 A person asked for a message to be deleted: a **deletion pipeline**'s
+ * trigger (RF fix 5). Deletion requires a pipeline, so the genre manages it:
+ * the host checks the door (the message is the session's, the person may act
+ * on it) and dispatches `core:event/message-deletion-asked@1`; the pipeline
+ * registered there ends in `core:outlet/delete-message@1`, handed the
+ * deletion whole on its `asked` port
+ * (`C.deleteMessage.v1({ asked: $.input.main })`): it deletes THE message
+ * the event carried and takes back everything it changed — and the pipeline
+ * may put steps of its own around it. Core ships no such pipeline: with none
+ * registered, no message offers Delete.
+ *
+ * The payload is `core:shape/deletion-asked@1`, published whole on `main`
+ * (the delete's `asked`); the ports beside it are it taken apart, for the
+ * steps around the delete. No lock: registrations mount a pipeline on its
+ * event.
+ * @experimental
+ */
+export const messageDeletionAsked = pin(
+	describeInletDefinition({
+		id: 'core:inlet/message-deletion-asked@1',
+		i18n: {
+			name: { en: 'Deletion asked' },
+			description: {
+				en: 'A person asked for a message to be deleted. The pipeline that answers it deletes the message, and what it changed goes with it.',
+			},
+		},
+		/** 🚧 What each port stands for — fit (PLAN-layering D3, R4). */
+		entities: {
+			sessionScope: 'session',
+			sessionId: 'session',
+			session: 'session',
+			messageId: 'message',
+			person: 'actor',
+		},
+		ports: {
+			out: {
+				main: S.deletionAsked,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				/** The session's **settings document**, as on every session inlet. */
+				session: S.sessionSettings,
+				/** The message the person asked to delete (the delete itself reads it off `main`). */
+				messageId: S.rowIds,
+				/** Its channel, canonical. */
+				channel: S.text,
+				/** Who asked — `user:<id>`, the run's owner. */
+				person: S.participantRef,
+				/** Why it fired (`EventCause`) — a person's press, `{ kind: 'user', userId }`. */
+				cause: S.json,
+			},
+		},
+	}),
+)
+
 // ── Summarization ───────────────────────────────────────────────────────────
 //
 // Two phases, and the split is the whole design (see `utils/summarizer`):
@@ -763,6 +902,14 @@ export const messageOffered = pin(
 export const summarizeRequest = pin(
 	describeInletDefinition({
 		id: 'core:inlet/summarize-request@1',
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			scope: 'session',
+			session: 'session',
+		},
 		ports: {
 			out: {
 				main: S.summarizeRequest,
@@ -815,6 +962,13 @@ export const summarizeRequest = pin(
 export const cardAction = pin(
 	describeInletDefinition({
 		id: 'core:inlet/card-action@1',
+		/**
+		 * 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the
+		 * ports whose reads need the entity: an optional port is left out.
+		 */
+		entities: {
+			characterId: 'subject',
+		},
 		ports: {
 			out: {
 				main: S.json,
@@ -838,6 +992,147 @@ export const cardAction = pin(
 				labels: S.json,
 				/** 🚧 Portrait: how many pictures to offer (a whole number, 1–4 on the form). */
 				count: S.json,
+			},
+		},
+	}),
+)
+
+// ── 🚧 Routines (PLAN-layering D2, R9; 2026-10-20) ─────────────────────────
+
+/**
+ * 🚧 Where a **routine** enters — a pipeline registered on a cadence
+ * (`register(everyNTurns({ n: 5 }), storySweep)`), run when the cadence says
+ * so. Nothing opinionated (R9): a routine's pipeline gets the session, the
+ * metadata of where the routine resides, and the parameters of the moment
+ * its cadence listened to — and queries everything else through the SDK.
+ *
+ *  · `session` / `sessionScope` / `sessionId` — the session, always: routines
+ *    live in sessions (R9).
+ *  · `routine` — `RoutineFiring`: the registration key, the preset, the
+ *    cadence and its option values, the mode, the turn / round / scene it
+ *    fired on, and room for a note (§11-5).
+ *  · `cause` — `RoutineCause`: what the moment carries, whole.
+ *  · `ruleset` — the ruleset the session plays, `{ id, rigour, settings }`,
+ *    as the user-message inlet carries it (2026-10-20, lane 3): where the
+ *    session resides, not what the moment carried — a reckoning branches on
+ *    `rigour` (`scripts` routes the deltas to the ruleset handler).
+ *  · `message` · `speaker` · `actor` · `castMember` · `subject` · `user` ·
+ *    `slot` · `clock` · `scene` — the same moment's entities, one port each,
+ *    filled when the moment carries them. Ports are flat (a reference cannot
+ *    reach into `cause`), so these are what fit reads: a routine whose steps
+ *    read `subject` takes only a cadence whose moment carries one (R12).
+ * @experimental
+ * @ruling R9, R12, §11-5
+ */
+export const routine = pin(
+	describeInletDefinition({
+		id: 'core:inlet/routine@1',
+		i18n: {
+			name: { en: 'Routine' },
+			description: {
+				en: 'A routine came due — every few turns, after a scene, on a schedule. The pipeline that runs reads the session and what the moment carried, and queries the rest.',
+			},
+		},
+		entities: {
+			session: 'session',
+			sessionScope: 'session',
+			sessionId: 'session',
+			ruleset: 'session',
+			message: 'message',
+			speaker: 'speaker',
+			actor: 'actor',
+			castMember: 'cast-member',
+			subject: 'subject',
+			user: 'user',
+			slot: 'slot',
+			clock: 'clock',
+			scene: 'scene',
+		},
+		ports: {
+			out: {
+				main: S.json,
+				session: S.sessionSettings,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				routine: S.json,
+				cause: S.json,
+				ruleset: S.json,
+				message: S.rowIds,
+				speaker: S.participantRef,
+				actor: S.participantRef,
+				castMember: S.participantRef,
+				subject: S.participantRef,
+				user: S.participantRef,
+				slot: S.text,
+				clock: S.json,
+				scene: S.rowIds,
+			},
+		},
+	}),
+)
+
+// ── 🚧 A ruleset's action (PLAN-rulesets-functions D6; 2026-10-23) ──────────
+
+/**
+ * 🚧 Where the one generic **rules-action** pipeline enters
+ * (`core:spec/rules-action`): a person invoked one of the functions the
+ * session's ruleset uses — an **invokable** function, which the host offers
+ * as an action registration of that pipeline, its label and form the
+ * function header's (`jsonSchemaOf(fn, { part: 'invokable' })`).
+ *
+ *  · `function` — the function's key in the ruleset (`rest`, `draw`), as
+ *    its reference names it;
+ *  · `answer` — what its form collected (null when it asks nothing);
+ *  · `actor` — who invokes it; `aimedAt` — at whom, when anyone;
+ *  · `mode` — the action registration's mode in force: `full` applies what
+ *    the function changes, `review` holds each change for the session's
+ *    owner (absent: `full`);
+ *  · `session` / `sessionScope` / `sessionId` / `ruleset` — the session, as
+ *    the routine inlet carries it;
+ *  · `main` — the payload whole (`{ session, actor, function, answer,
+ *    aimedAt }`): what `ruleset-resolve`'s `actions` port takes to run the
+ *    function with its answer.
+ *
+ * No lock and no shape: every genre's session may play a ruleset with
+ * actions, and the pipeline is the same for all of them.
+ * @experimental
+ * @ruling PLAN-rulesets-functions D6
+ */
+export const rulesAction = pin(
+	describeInletDefinition({
+		id: 'core:inlet/rules-action@1',
+		i18n: {
+			name: { en: 'A ruleset action' },
+			description: {
+				en: "Someone used one of the rules' actions — rested, drew a card, gave a gift. The pipeline runs the rule with what they chose, then applies or proposes what it changed.",
+			},
+		},
+		/** 🚧 What each port stands for — fit (PLAN-layering D3, R4). Only the ports whose reads need the entity. */
+		entities: {
+			session: 'session',
+			sessionScope: 'session',
+			sessionId: 'session',
+			ruleset: 'session',
+			actor: 'actor',
+		},
+		ports: {
+			out: {
+				main: S.json,
+				session: S.sessionSettings,
+				sessionScope: S.sessionScope,
+				sessionId: S.rowIds,
+				/** The ruleset the session plays, `{ id, rigour, settings }`. */
+				ruleset: S.json,
+				/** Who invokes the function. */
+				actor: S.participantRef,
+				/** The function's key in the session's ruleset. */
+				function: S.text,
+				/** What the function's form collected; null when it asks nothing. */
+				answer: S.json,
+				/** Whom it is aimed at, when anyone. */
+				aimedAt: S.participantRef,
+				/** The action registration's mode: `full` or `review`. */
+				mode: S.text,
 			},
 		},
 	}),

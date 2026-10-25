@@ -71,8 +71,20 @@ import type { I18nText } from './settings.js'
  * @experimental
  */
 export const IO_KINDS = ['text', ...MEDIA_KINDS, 'embedding', 'entities'] as const
-/** @experimental */
-export type IoKind = (typeof IO_KINDS)[number]
+/**
+ * 🚧 A transform endpoint core knows by name — one of `IO_KINDS`, the KNOWN list.
+ * @experimental
+ * @ruling O1, LS4
+ */
+export type KnownIoKind = (typeof IO_KINDS)[number]
+/**
+ * A transform endpoint: one core knows (`IO_KINDS`), or any other kind a
+ * plugin or a later release introduces (O1, LS4). Known kinds keep their
+ * place in the canonical order; unknown ones follow, alphabetically.
+ * @experimental
+ * @ruling O1, LS4, R41
+ */
+export type IoKind = KnownIoKind | (string & {})
 
 /** @experimental */
 export interface Transform {
@@ -92,12 +104,35 @@ export interface Transform {
  */
 export type TransformId = `${string}->${string}`
 
-const KIND_ORDER = new Map(IO_KINDS.map((k, i) => [k, i]))
+const KIND_ORDER = new Map<string, number>(IO_KINDS.map((k, i) => [k, i]))
 
-const side = (kinds: readonly IoKind[]): string =>
-	[...new Set(kinds)]
-		.sort((a, b) => (KIND_ORDER.get(a) ?? 99) - (KIND_ORDER.get(b) ?? 99))
-		.join('+')
+/**
+ * The canonical order of a transform side (O1): the known kinds in `IO_KINDS`
+ * order — today's ids are unchanged — then any unknown kinds, alphabetically.
+ * One comparator, so `transformId()` and `validate()` can never disagree.
+ * @internal
+ */
+export const compareIoKinds = (a: string, b: string): number => {
+	const ia = KIND_ORDER.get(a)
+	const ib = KIND_ORDER.get(b)
+	if (ia !== undefined && ib !== undefined) return ia - ib
+	if (ia !== undefined) return -1
+	if (ib !== undefined) return 1
+	return a < b ? -1 : a > b ? 1 : 0
+}
+
+/** Is this kind one of `IO_KINDS`? An unknown kind is still a kind (O1). @experimental */
+export const isKnownIoKind = (k: unknown): k is KnownIoKind =>
+	typeof k === 'string' && KIND_ORDER.has(k)
+
+/**
+ * The shape an unknown kind must have to be a kind at all: one lowercase
+ * token — it can hold neither `+` nor `->`, which separate kinds and sides.
+ * @experimental
+ */
+export const IO_KIND_TOKEN = /^[a-z][a-z0-9_-]*$/
+
+const side = (kinds: readonly IoKind[]): string => [...new Set(kinds)].sort(compareIoKinds).join('+')
 
 /** Read an id back apart, for a UI that wants the kinds rather than the string. @internal */
 export function parseTransform(id: TransformId): Transform {
@@ -125,9 +160,10 @@ export function parseTransform(id: TransformId): Transform {
  * literal that already says `kind: 'oracle'`. `IoKinds` also matches the two
  * spellings already here, `IoKind` and `IO_KINDS`.
  *
- * `satisfies Record<IoKind, IoKind>` is load-bearing in both directions: adding
- * a kind to `IO_KINDS` without adding it here stops compiling, and so does a
- * member here whose value is not its own name.
+ * `satisfies { [K in KnownIoKind]: K }` is load-bearing in both directions:
+ * adding a kind to `IO_KINDS` without adding it here stops compiling, and so
+ * does a member here whose value is not its own name. (Over the KNOWN kinds:
+ * `IoKind` is open since O1, and a `Record` over an open key checks nothing.)
  * @experimental
  */
 export const IoKinds = {
@@ -138,7 +174,7 @@ export const IoKinds = {
 	document: 'document',
 	embedding: 'embedding',
 	entities: 'entities',
-} as const satisfies Record<IoKind, IoKind>
+} as const satisfies { readonly [K in KnownIoKind]: K }
 
 /**
  * Non-empty, structurally.
@@ -157,7 +193,10 @@ export interface TransformShape {
 
 /**
  * Walk the CANONICAL order keeping members of `Ks` — sorting and deduping fall
- * out free.
+ * out free. Only ever applied to KNOWN kinds: `Side` widens to `string` the
+ * moment a side holds a kind `IO_KINDS` does not name (O1), because an unknown
+ * kind sorts alphabetically after the known ones and no positional walk can
+ * place it — so the type never claims an id the runtime would not build.
  *
  * We filter the fixed six-element `IO_KINDS` tuple rather than sorting the
  * author's, so this mirrors the runtime `side()` by CONSTRUCTION: recursion
@@ -170,11 +209,11 @@ export interface TransformShape {
  * `tf()` call becomes an unassignable `never` rather than a wrong string.
  */
 type InOrder<
-	O extends readonly IoKind[],
+	O extends readonly KnownIoKind[],
 	Ks extends readonly IoKind[],
 > = O extends readonly [
-	infer H extends IoKind,
-	...infer T extends readonly IoKind[],
+	infer H extends KnownIoKind,
+	...infer T extends readonly KnownIoKind[],
 ]
 	? H extends Ks[number]
 		? [H, ...InOrder<T, Ks>]
@@ -192,11 +231,24 @@ type Join<T extends readonly string[]> = T extends readonly [
 		? `${H}+${Join<R>}`
 		: never
 
+/** True when every kind of the side is a KNOWN literal kind — not `string`, not an unknown token. */
+type AllKnown<Ks extends readonly IoKind[]> = [Ks[number]] extends [KnownIoKind] ? true : false
+
 type Side<Ks extends readonly IoKind[]> = Join<InOrder<typeof IO_KINDS, Ks>>
 
-/** The exact id a shape denotes, as a literal type. @experimental */
+/**
+ * The exact id a shape denotes, as a literal type — when every kind is a
+ * known one. A side holding a kind `IO_KINDS` does not name (O1) widens the
+ * id to `TransformId`: the runtime places it alphabetically after the known
+ * kinds, and the type says only what it can promise.
+ * @experimental
+ */
 export type IdOf<T extends TransformShape> =
-	`${Side<T['in']>}->${Side<T['out']>}`
+	AllKnown<T['in']> extends true
+		? AllKnown<T['out']> extends true
+			? `${Side<T['in']>}->${Side<T['out']>}`
+			: TransformId
+		: TransformId
 
 /**
  * A transform id, from the kinds rather than from a string.
@@ -242,6 +294,23 @@ const build = (t: Transform): string => `${side(t.in)}->${side(t.out)}`
  */
 export const transformId = (t: Transform): TransformId =>
 	build(t) as TransformId
+
+/**
+ * 🚧 The transform a connection must meet when a model call **asks for output
+ * kinds** (O6): `base` with its output side replaced by `outputs`, in canonical
+ * order. `requirementForOutputs('text->text', ['text', 'audio'])` is
+ * `'text->text+audio'` — a spoken reply needs a model that writes both. An
+ * absent or empty `outputs` asks for nothing new and returns `base` as given.
+ * The bind check and fit read requested outputs through this, never by
+ * building the id themselves.
+ * @experimental
+ * @ruling O6
+ */
+export function requirementForOutputs(base: TransformId, outputs?: readonly IoKind[] | null): TransformId {
+	const kinds = (outputs ?? []).filter((k): k is IoKind => typeof k === 'string' && k.length > 0)
+	if (!kinds.length) return base
+	return transformId({ in: parseTransform(base).in, out: kinds })
+}
 
 // ── The named transforms ────────────────────────────────────────────────────
 
@@ -299,6 +368,16 @@ export const TRANSFORMS = {
 	'audio->text': {
 		i18n: { en: 'Transcription' },
 		tagline: { en: 'Turns speech into text.' },
+	},
+	/** 🚧 O4 (2026-10-21): a reply that hears a voice note itself. */
+	'text+audio->text': {
+		i18n: { en: 'Hearing' },
+		tagline: { en: 'Can listen to audio you send it.' },
+	},
+	/** 🚧 O6 (2026-10-21): one call writes a reply and speaks it. */
+	'text->text+audio': {
+		i18n: { en: 'Spoken reply' },
+		tagline: { en: 'Writes a reply and speaks it in the same call.' },
 	},
 	'text->audio': {
 		i18n: { en: 'Speech' },
@@ -373,8 +452,17 @@ export const FEATURES = [
 	'wire_chat',
 	'wire_completion',
 ] as const
-/** @experimental */
-export type FeatureId = (typeof FEATURES)[number]
+/** 🚧 A feature core knows by name — one of `FEATURES`, the KNOWN list. @experimental */
+export type KnownFeatureId = (typeof FEATURES)[number]
+/**
+ * A feature: one core knows (`FEATURES`, the KNOWN list), or one a later
+ * release adds (LS4 — a `live` feature arrives without breaking SDK 1).
+ * `validate()` still refuses a feature it does not know: a feature names a
+ * mechanism an adapter implements, and only core ships adapters (R44).
+ * @experimental
+ * @ruling LS4, O1
+ */
+export type FeatureId = KnownFeatureId | (string & {})
 
 /** @experimental */
 export type CapabilityId = TransformId | FeatureId
@@ -391,7 +479,7 @@ export const isTransformId = (id: string): id is TransformId => id.includes('->'
  * the weaker forms.
  * @internal
  */
-export const IMPLIES: Partial<Record<FeatureId, readonly FeatureId[]>> = {
+export const IMPLIES: Partial<Record<KnownFeatureId, readonly KnownFeatureId[]>> = {
 	strict_schema: ['json_schema'],
 	json_schema: ['json_object'],
 }
@@ -405,7 +493,7 @@ export const IMPLIES: Partial<Record<FeatureId, readonly FeatureId[]>> = {
  * rather than re-derived inside each adapter that happens to have a grammar.
  * @internal
  */
-export const EMULATABLE_VIA: Partial<Record<FeatureId, readonly FeatureId[]>> = {
+export const EMULATABLE_VIA: Partial<Record<KnownFeatureId, readonly KnownFeatureId[]>> = {
 	json_object: ['json_schema', 'grammar'],
 	json_schema: ['grammar'],
 	tools: ['json_schema', 'grammar'],
@@ -961,7 +1049,7 @@ export function wireModeOf(have: CapabilitySet): WireMode | undefined {
 
 // ── Naming ──────────────────────────────────────────────────────────────────
 
-const FEATURE_LABELS: Record<FeatureId, string> = {
+const FEATURE_LABELS: Record<KnownFeatureId, string> = {
 	json_object: 'JSON output',
 	json_schema: 'JSON schema',
 	strict_schema: 'Strict JSON schema',
@@ -996,7 +1084,7 @@ export function capabilityLabel(id: CapabilityId): string {
 		if (!label) return id
 		return typeof label === 'string' ? label : label.en
 	}
-	return FEATURE_LABELS[id as FeatureId] ?? id
+	return (FEATURE_LABELS as Record<string, string>)[id] ?? id
 }
 
 /** The one-liner under the name, when there is one. @internal */

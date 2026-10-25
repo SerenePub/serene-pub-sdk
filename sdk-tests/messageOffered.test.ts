@@ -10,10 +10,13 @@ import assert from 'node:assert/strict'
 import {
 	announce,
 	CORE_EVENTS,
+	effectiveRegistrations,
 	eventById,
 	genre,
+	genreDefaultsOf,
 	genreHasEvent,
 	preset,
+	presetChangesOf,
 	S,
 	SAVE_MESSAGE_SPEC_ID,
 	sessionEvents,
@@ -21,7 +24,7 @@ import {
 	use,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { storyGenre, corePresets, saveMessageSpec } from '@serene-pub/core-catalog'
+import { storyGenre, corePresets, coreGenres, saveMessageSpec } from '@serene-pub/core-catalog'
 
 const g = genre('offered:genre/table', {
 	name: { en: 'Table' },
@@ -140,9 +143,17 @@ describe('core:spec/save-message', () => {
 		assert.equal(save.config.role, 'user')
 	})
 
-	test("every core preset shows the save — the one it binds is core's default", () => {
-		for (const p of corePresets())
-			assert.deepEqual(p.bindings[sessionEvents.messageOffered], { spec: SAVE_MESSAGE_SPEC_ID }, p.slug)
+	test("every core preset shows the save — the one it registers is core's default", () => {
+		// 🚧 By registration (PLAN-layering D4, 2026-10-20): each genre's
+		// defaults register the save on `message-offered`, and no preset drops it.
+		const genres = coreGenres()
+		for (const p of corePresets()) {
+			const defaults = genreDefaultsOf(genres.find((g) => g.id === p.genre))!.registrations
+			const saves = effectiveRegistrations(defaults, presetChangesOf(p, defaults)).filter(
+				(r) => r.trigger.family === 'event' && r.trigger.event === sessionEvents.messageOffered,
+			)
+			assert.deepEqual(saves.map((r) => r.pipeline), [SAVE_MESSAGE_SPEC_ID], p.slug)
+		}
 		assert.ok(corePresets().some((p) => p.genre === storyGenre.id))
 	})
 })

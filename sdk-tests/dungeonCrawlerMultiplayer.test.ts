@@ -48,8 +48,12 @@ test('reveal: an owner-only composer action, published and in the preset, no mod
 	const keys = doc.nodes.map((n: any) => n.key)
 	for (const k of ['reveal', 'lane', 'route.refused.write', 'route.revealed.copy', 'route.revealed.tell']) assert.ok(keys.includes(k), k)
 	assert.deepEqual(named(doc, 'scripts').reveal, [{ seedKey: cat.DUNGEON_CRAWLER_REVEAL_SCRIPT.seedKey }])
-	const preset = cat.corePresets().find((p) => p.slug === 'dungeon-crawler-default')!
-	assert.ok(preset.actions?.include?.includes(`${cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID}#reveal`))
+	// 🚧 Registered in the genre's defaults (PLAN-layering D4, 2026-10-20).
+	assert.ok(
+		cat
+			.dungeonCrawlerRegistrations()
+			.actions.some((r) => r.trigger.family === 'action' && r.trigger.action === `${cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID}#reveal`),
+	)
 	// The notice is a side note: it does not end the round.
 	const tell = doc.nodes.find((n: any) => n.key === 'route.revealed.tell')
 	assert.equal(JSON.stringify(tell).includes('"narration":true'), true)
@@ -127,15 +131,16 @@ test('deliverSecrets: a fragment any story branch can carry — script by seed k
 		genre: cat.dungeonCrawlerGenre,
 		event: sessionEvents.messageRespond,
 	})
-	const built = cat.deliverSecrets(b, w, '', { session: ($: any) => $.input.session, secrets: ($: any) => $.input.payload })
+	const built = cat.deliverSecrets(b, w, { session: ($: any) => $.input.session, secrets: ($: any) => $.input.payload })
 	const doc = compile(built.build()) as any
 	const keys = doc.nodes.map((n: any) => n.key)
 	for (const k of ['told', 'secrets', 'secret.due.list', 'secret.due.one.item.lane', 'secret.due.one.item.line', 'secret.due.one.item.write'])
 		assert.ok(keys.includes(k), k)
-	assert.deepEqual(w.scripts[0], ['secrets', cat.DUNGEON_CRAWLER_SECRETS_SCRIPT.seedKey])
+	// The wiring names each step on the chain that declares it (A18: its key read off that chain, never spelled).
+	assert.deepEqual([w.scripts[0][0].key, w.scripts[0][1]], ['secrets', cat.DUNGEON_CRAWLER_SECRETS_SCRIPT.seedKey])
 	// What the lanes were told: the whole Planner channel, every lane.
 	assert.deepEqual(
-		w.params.find(([k]: [string]) => k === 'told')[1],
+		w.params.find(([k]: [{ key: string }]) => k.key === 'told')[1],
 		{ channel: cat.PARLEY_CHANNEL, limit: cat.DUNGEON_CRAWLER_SECRETS_TOLD_WINDOW },
 	)
 	assert.ok(cat.CORE_SCRIPTS.some((x) => x.seedKey === cat.DUNGEON_CRAWLER_SECRETS_SCRIPT.seedKey))

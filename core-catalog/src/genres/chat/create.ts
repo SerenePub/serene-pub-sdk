@@ -9,7 +9,7 @@
  * (★C), so a new Chat opens empty — the create run publishes the genre's
  * declaration on the version row and writes nothing.
  */
-import { compile, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, spec, sessionEvents, coreEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { chatGenre } from '../../registry/genres.js'
 
@@ -35,10 +35,7 @@ export const createAssistantSpec = () =>
 				envoys: chatGenre.envoys,
 			},
 		})
-			.inlet('input', C.sessionCreated.v1(), {
-				genre: chatGenre,
-				event: sessionEvents.sessionCreated,
-			})
+			.inlet('input', C.sessionCreated.v1(), { suits: [coreEvents.sessionCreated] })
 			/**
 			 * The cast's greetings, as every create pipeline reads them — none
 			 * here (no characters, greetings off), so `seed` writes nothing. Kept

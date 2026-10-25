@@ -22,7 +22,7 @@ import {
 	PARLEY_CHANNEL,
 } from './names.js'
 import { DATA_TRANSFORM_KIND, DUNGEON_CRAWLER_PREAMBLE, type CoreScriptSeed } from './preamble.js'
-import { applyWiring, at, jsonPart, scriptStep, textPart, wiring } from './calls.js'
+import { applyWiring, jsonPart, scriptStep, textPart, wiring } from './calls.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_REVEAL_SPEC_ID = 'core:spec/dungeon-crawler-reveal'
@@ -76,6 +76,15 @@ return {
 	varsOut: Object.freeze(['value']),
 })
 
+/** What the press's judge hands the route junction (`core:script/dungeon-crawler-reveal`). */
+interface Judged {
+	readonly lane: unknown
+	readonly refusal: unknown
+	readonly notes: unknown
+	readonly notice: unknown
+	readonly journal: unknown
+}
+
 /**
  * **Reveal the planning notes** — the owner's action (composer venue; seen
  * and pressed by the owner alone). `reveal` judges the press; the `route`
@@ -85,7 +94,7 @@ return {
  */
 export const dungeonCrawlerRevealSpec = () => {
 	const w = wiring()
-	let graph: any = spec(DUNGEON_CRAWLER_REVEAL_SPEC_ID, {
+	const head = spec(DUNGEON_CRAWLER_REVEAL_SPEC_ID, {
 		version: DUNGEON_CRAWLER_REVEAL_VERSION,
 		taxonomy: { role: 'action' },
 		contributes: {
@@ -112,51 +121,45 @@ export const dungeonCrawlerRevealSpec = () => {
 				},
 			],
 		},
-	}).inlet('input', C.userMessage.v1(), {
-		genre: dungeonCrawlerGenre,
-		event: sessionEvents.sessionAction,
-	})
-	graph = scriptStep(graph, w, '', 'reveal', DUNGEON_CRAWLER_REVEAL_SCRIPT.seedKey, ($) => ({ session: $.input.session }), 'Check the notes')
-	const judged = ($: any) => $.reveal.main
-	graph = textPart(graph, w, '', 'lane', judged, 'lane', "The owner's lane")
-	const built = graph.junction('route', { on: judged }, (j: any) =>
+	}).inlet('input', C.userMessage.v1(), { suits: [] })
+	const judged = textPart(
+		scriptStep(head, w, 'reveal', DUNGEON_CRAWLER_REVEAL_SCRIPT.seedKey, ($) => ({ session: $.input.session }), 'Check the notes'),
+		w,
+		'lane',
+		($) => $.reveal.main,
+		'lane',
+		"The owner's lane",
+	)
+	const built = judged.junction('route', { on: ($) => $.reveal.main }, (j) =>
 		j
-			.when('refused', { path: 'refusal', truthy: true }, (c: any) =>
-				textPart(c, w, 'route.refused.', 'line', judged, 'refusal', 'The refusal').outlet(
+			.when('refused', { path: (v: Judged) => v.refusal, truthy: true }, (c) =>
+				textPart(c, w, 'line', ($) => $.reveal.main, 'refusal', 'The refusal').outlet(
 					'write',
-					($: any) =>
+					($) =>
 						C.createMessage.v1({
-							text: $.route.refused.line.text,
+							text: $.line.text,
 							channel: $.lane.text,
 							speaker: PLANNER as any,
 						}),
 					{ expose: { label: 'Say: already revealed' } },
 				),
 			)
-			.when('revealed', { path: 'notes', truthy: true }, (c: any) =>
-				textPart(
-					textPart(c, w, 'route.revealed.', 'notes', judged, 'notes', 'The notes'),
-					w,
-					'route.revealed.',
-					'notice',
-					judged,
-					'notice',
-					'The notice',
-				)
+			.when('revealed', { path: (v: Judged) => v.notes, truthy: true }, (c) =>
+				textPart(textPart(c, w, 'notes', ($) => $.reveal.main, 'notes', 'The notes'), w, 'notice', ($) => $.reveal.main, 'notice', 'The notice')
 					.outlet(
 						'copy',
-						($: any) =>
+						($) =>
 							C.setSessionAnnex.v1({
-								value: { [K.planningNotesRevealed]: at($, 'route.revealed.notes').text } as any,
+								value: { [K.planningNotesRevealed]: $.notes.text } as any,
 								params: slot.params(),
 							}),
 						{ expose: { label: 'Reveal the notes to everyone' } },
 					)
 					.outlet(
 						'tell',
-						($: any) =>
+						($) =>
 							C.createMessage.v1({
-								text: $.route.revealed.notice.text,
+								text: $.notice.text,
 								channel: 'main',
 								speaker: PLANNER as any,
 								/** A side note, not a turn: it does not end the round (`DUNGEON_CRAWLER_DECLARED_RULE`). */
@@ -165,18 +168,17 @@ export const dungeonCrawlerRevealSpec = () => {
 						{ expose: { label: 'Tell the table' } },
 					),
 			)
-			.when('goal', { path: 'journal', truthy: true }, (c: any) =>
-				jsonPart(c, w, 'route.goal.', 'journal', judged, 'journal', 'The journal, the goal out').outlet(
+			.when('goal', { path: (v: Judged) => v.journal, truthy: true }, (c) =>
+				jsonPart(c, w, 'journal', ($) => $.reveal.main, 'journal', 'The journal, the goal out').outlet(
 					'write',
-					($: any) =>
-						C.setSessionAnnex.v1({ value: { [K.journal]: $.route.goal.journal.main } as any, params: slot.params() }),
+					($) => C.setSessionAnnex.v1({ value: { [K.journal]: $.journal.main } as any, params: slot.params() }),
 					{ expose: { label: 'Show the goal in the journal' } },
 				),
 			),
 	)
 	return compile(
 		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) => applyWiring(p, w))
+			.defaults((p) => applyWiring(p, w))
 			.build(),
 	)
 }

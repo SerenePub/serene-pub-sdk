@@ -27,9 +27,11 @@
  * Narrator's row.
  */
 
+import { ITEM } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { TRAVELOGUE_CHANNEL } from './names.js'
-import { at, jsonPart, textPart, type Wiring } from './calls.js'
+import { jsonPart, textPart, type Wiring } from './calls.js'
+import type { StoryKept } from './story.js'
 
 /**
  * 🚧 The Journal's line kinds (PLAN-sheet-widget-redesign §16), in the order
@@ -147,37 +149,29 @@ if (b.fresh) {
 `
 
 /**
- * The round's journal lines, at `prefix` (a junction branch that fired on the
- * ledger's `journalLines`): `list` → one `line` each (`text`, `kind`) →
- * `write`, a whole row on the folio with its kind (`metadata.kind`), in no
- * voice — nobody speaks there — anchored to the turn's row (`anchor`, the
- * Narrator's) so a retake or a delete of the turn takes its lines too. An
- * `each` keys its members under `<clause>.item.`, read beside the item.
+ * The round's journal lines, in the story turn's `after.journal` branch (it
+ * fired on the ledger's `journalLines`): `list` → one `line` each (`text`,
+ * `kind`) → `write`, a whole row on the folio with its kind
+ * (`metadata.kind`), in no voice — nobody speaks there — anchored to the
+ * turn's row (the Narrator's) so a retake or a delete of the turn takes its
+ * lines too. An `each` keys its members under `<clause>.item.`, read beside
+ * the item.
  * @internal
  */
-export const journalWrites = (
-	c: any,
-	w: Wiring,
-	prefix: string,
-	ledger: ($: any) => unknown,
-	anchor: ($: any) => unknown,
-) =>
-	jsonPart(c, w, prefix, 'list', ledger, 'journalLines', "The round's journal lines").each(
+export const journalWrites = (c: StoryKept<'channel.story.after.journal'>, w: Wiring): StoryKept<'channel.story.after.journal'> =>
+	jsonPart(c, w, 'list', ($) => $.channel.story.ledger.main, 'journalLines', "The round's journal lines").each(
 		'line',
-		{ over: ($: any) => at($, `${prefix}list`).main, max: 32 },
-		(m: any) => {
-			const M = `${prefix}line.item.`
-			const item = ($: any) => at($, `${prefix}line.item`)
-			return textPart(textPart(m, w, M, 'text', item, 'text', 'The journal line'), w, M, 'kind', item, 'kind', "The line's kind").outlet(
+		{ over: ($) => $.list.main, max: 32 },
+		(m) =>
+			textPart(textPart(m, w, 'text', ($) => $[ITEM], 'text', 'The journal line'), w, 'kind', ($) => $[ITEM], 'kind', "The line's kind").outlet(
 				'write',
-				($: any) =>
+				($) =>
 					C.createMessage.v1({
-						text: at($, `${M}text`).text,
+						text: $.text.text,
 						channel: TRAVELOGUE_CHANNEL,
-						kind: at($, `${M}kind`).text,
-						tableLine: anchor($) as any,
+						kind: $.kind.text,
+						tableLine: $.channel.story.placeholder.messageId as any,
 					}),
 				{ expose: { label: 'Write a journal line' } },
-			)
-		},
+			),
 	)

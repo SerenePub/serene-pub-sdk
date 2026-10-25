@@ -11,11 +11,9 @@
 	import {
 		exactPaletteMatch,
 		exactSlashCommand,
-		canonicalListedChannel,
 		composerClosedOn,
 		composerClosedPlaceholder,
 		filterPaletteActions,
-		isNoLaneChannel,
 		paletteRowState,
 		slashArgumentHint,
 		slashArgumentRefusal,
@@ -58,10 +56,6 @@
 	const conv = useConversation()
 	const c = $derived(conv.dossier?.composer)
 	const hideCompose = $derived(!!c?.hidden)
-	// 🚧 The no-lane marker is never a channel to write on (channelLanes.ts),
-	// nor the channel this copy draws inline under its anchors (`interleave`):
-	// the conversation's own list, which leaves it out.
-	const channels = $derived((conv.channels ?? c?.channels ?? []).filter((ch) => !isNoLaneChannel(ch)))
 	const overflowActions = $derived((c?.overflow ?? []) as WidgetAction[])
 	const paletteActions = $derived((c?.palette ?? []) as PaletteAction[])
 	const newestItem = $derived((c?.newest ?? null) as ItemValues | null)
@@ -74,6 +68,28 @@
 	 */
 	const closed = $derived(composerClosedOn(c?.closed, conv.lane.current))
 	const actionsListed = $derived(!!c?.actions)
+
+	/**
+	 * 🚧 **Take a seat** (Lair rewrite D5, 2026-10-21): a guest who plays, in
+	 * a genre of player seats, with no seat yet (`takeSeat`) is offered one
+	 * on the story in place of the field — name the character they will
+	 * play (`take-seat`, a card-less player seat), or bring a persona
+	 * (`add-persona`). Never on another lane, and a closed composer's reason
+	 * wins (Dungeon Crawler seats people through its Planner's interview).
+	 */
+	const takeSeatHere = $derived(!!c?.takeSeat && (conv.lane.current || "main") === "main" && !closed)
+	let seatName = $state("")
+	let seatRefusal = $state<string | null>(null)
+	async function takeSeat() {
+		const name = seatName.trim()
+		if (!name) return
+		seatRefusal = null
+		try {
+			await conv.request("take-seat", { name })
+		} catch (e) {
+			seatRefusal = e instanceof Error && e.message ? e.message : "That did not go through. Try again."
+		}
+	}
 
 	/**
 	 * The draft: the composer's own between the host's writes. A write — the
@@ -241,13 +257,6 @@
 	/** "Open the picker" filter — the kinds this reply reads, by mime and extension. */
 	const pickerAccept = $derived(readers?.accept ?? "")
 	const progressOf = (t: TrayItemV1) => Math.round(Math.min(Math.max(t.progress, 0), 1) * 100)
-
-	/**
-	 * What a channel is CALLED: its declared label (`ChannelDecl.label`, the
-	 * Lair's _Sanctum_), else its slug title-cased — the conversation's one
-	 * reading (S1), so the strip and a pinned copy's head never disagree.
-	 */
-	const channelLabel = (slug: string) => conv.channelName(slug)
 
 	// Unique per instance: a session page can hold more than one composer on
 	// screen at a time, and a shared id sends every `for`/`aria-describedby` to
@@ -592,7 +601,54 @@
 	role="group"
 	aria-label="Compose"
 >
-	{#if c?.addPersona && !closed}
+	{#if takeSeatHere}
+		<!-- 🚧 A guest's seat (Lair rewrite D5): name the character you'll
+		     play, or bring a persona. Their lines are that character's turns. -->
+		<div data-widget-part="messages.join" data-join="seat">
+			<div data-widget-part="messages.join-text">
+				<sp-icon name="armchair" size="48" data-widget-part="messages.join-icon"></sp-icon>
+				<h3 data-widget-part="messages.join-title">Take a seat</h3>
+				<p data-widget-part="messages.join-note">
+					Name the character you'll play. What you write is their turn.
+				</p>
+			</div>
+			<div data-widget-part="messages.join-seat">
+				<input
+					type="text"
+					data-widget-part="messages.join-name"
+					aria-label="Your character's name"
+					placeholder="Your character's name"
+					value={seatName}
+					oninput={(e) => (seatName = e.currentTarget.value)}
+					onkeydown={(e) => {
+						if (e.key === "Enter") {
+							e.preventDefault()
+							void takeSeat()
+						}
+					}}
+				/>
+				<button
+					type="button"
+					data-widget-part="messages.join-button"
+					disabled={!seatName.trim()}
+					onclick={() => void takeSeat()}
+				>
+					<sp-icon name="armchair" size="20"></sp-icon>
+					Take a seat
+				</button>
+			</div>
+			{#if seatRefusal}
+				<p data-widget-part="messages.join-refusal" role="alert">{seatRefusal}</p>
+			{/if}
+			<button
+				type="button"
+				data-widget-part="messages.join-alternative"
+				onclick={() => void conv.request("add-persona", {})}
+			>
+				Play one of your personas instead
+			</button>
+		</div>
+	{:else if c?.addPersona && !closed}
 		<!-- Guests without a persona get the one thing they can do here —
 		     unless the genre closed this composer: its waiting reason wins
 		     (2026-10-16). -->
@@ -618,122 +674,105 @@
 		     has to stay visible while the transcript scrolls. -->
 		<sp-host-view name="run-progress" channel={conv.lane.current}></sp-host-view>
 
+		<!-- The Actions row, open: ONE group of chips above the card. Its toggle
+		     is the footer's (polish parity L1, 2026-10-24: the composer is one
+		     row at rest — persona · Actions · attach · preview · more · Send). -->
+		{#if actionsLabelShown && actionsOpen}
 		<div data-widget-part="messages.composer-disclosure">
-			<div data-widget-part="messages.composer-disclosure-bar">
-				{#if actionsLabelShown}
-					<button
-						type="button"
-						data-widget-part="messages.composer-actions-toggle"
-						aria-expanded={actionsOpen}
-						aria-controls={actionsId}
-						onclick={() => (actionsOpen = !actionsOpen)}
-					>
-						<span>Actions</span>
-						<sp-icon name="chevron-down" size="12" data-widget-part="messages.composer-actions-chevron"></sp-icon>
-					</button>
-				{/if}
-				{#if ragVisible}
-					<div data-widget-part="messages.composer-notice">
-						<sp-host-view name="retrieval-notice"></sp-host-view>
-					</div>
-				{/if}
-			</div>
-
-			{#if actionsLabelShown && actionsOpen}
-				<div
-					id={actionsId}
-					data-widget-part="messages.composer-actions-row"
-					role="group"
-					aria-label="Session actions"
-				>
-					<!-- ONE group, ONE chip (next-pass note 30, 2026-10-02): the turn
-					     controls first — Continue, Pick who speaks, Regenerate — then
-					     the genre's actions, then More. The page's two host views
-					     draw their chips straight into this row (the row lays out
-					     `sp-host-view`'s children as its own), so they wrap, space
-					     and look as one set. -->
-					<div data-widget-part="messages.composer-actions messages.composer-chips">
-						{#if turnControls}
-							<!-- This composer's channel's turn controls (S1): a copy pinned to the
-							     Sanctum draws the Sanctum's listing. -->
-							<sp-host-view name="session-controls" channel={conv.lane.current}></sp-host-view>
-						{/if}
-						{#if actionsListed}
-							<sp-host-view name="session-actions" channel={conv.lane.current}></sp-host-view>
-						{/if}
-						{#if overflowActions.length}
-							<!-- The overflow (R-15, F38): every enabled action
-							     the primary row leaves out, never hidden by
-							     prominence. A Menu — these are actions, not a
-							     field. A newcomer marks the trigger until the
-							     menu has been opened once. -->
-							<!-- `sp-menu` (§3.5): each `sp-menu-item`'s own content is its row. -->
-							<sp-menu
-								placement="top-start"
-								label="More actions"
-								open={overflowOpen}
-								onopen-change={(e: CustomEvent<{ open: boolean }>) =>
-									handleOverflowOpen(e.detail.open)}
-								onselect={(e: CustomEvent<{ value: string }>) => {
-									const a = overflowActions.find(
-										(x) => actionIdentity(x) === e.detail.value
-									)
-									// The wire's reason is a locale map; the palette's
-									// shape carries a sentence, and the fire needs neither.
-									if (a) conv.invoke(actionIdentity(a))
-								}}
+			<div
+				id={actionsId}
+				data-widget-part="messages.composer-actions-row"
+				role="group"
+				aria-label="Session actions"
+			>
+				<!-- ONE group, ONE chip (next-pass note 30, 2026-10-02): the turn
+				     controls first — Continue, Pick who speaks, Regenerate — then
+				     the genre's actions, then More. The page's two host views
+				     draw their chips straight into this row (the row lays out
+				     `sp-host-view`'s children as its own), so they wrap, space
+				     and look as one set. -->
+				<div data-widget-part="messages.composer-actions messages.composer-chips">
+					{#if turnControls}
+						<!-- This composer's channel's turn controls (S1): a copy pinned to the
+						     Sanctum draws the Sanctum's listing. -->
+						<sp-host-view name="session-controls" channel={conv.lane.current}></sp-host-view>
+					{/if}
+					{#if actionsListed}
+						<sp-host-view name="session-actions" channel={conv.lane.current}></sp-host-view>
+					{/if}
+					{#if overflowActions.length}
+						<!-- The overflow (R-15, F38): every enabled action
+						     the primary row leaves out, never hidden by
+						     prominence. A Menu — these are actions, not a
+						     field. A newcomer marks the trigger until the
+						     menu has been opened once. -->
+						<!-- `sp-menu` (§3.5): each `sp-menu-item`'s own content is its row. -->
+						<sp-menu
+							placement="top-start"
+							label="More actions"
+							open={overflowOpen}
+							onopen-change={(e: CustomEvent<{ open: boolean }>) =>
+								handleOverflowOpen(e.detail.open)}
+							onselect={(e: CustomEvent<{ value: string }>) => {
+								const a = overflowActions.find(
+									(x) => actionIdentity(x) === e.detail.value
+								)
+								// The wire's reason is a locale map; the palette's
+								// shape carries a sentence, and the fire needs neither.
+								if (a) conv.invoke(actionIdentity(a))
+							}}
+						>
+							<button
+								slot="trigger"
+								type="button"
+								data-widget-part="messages.composer-more-actions"
+								title={overflowNew.length
+									? `More actions (${overflowNew.length} new)`
+									: "More actions"}
+								aria-label={overflowNew.length
+									? `More actions (${overflowNew.length} new)`
+									: "More actions"}
 							>
-								<button
-									slot="trigger"
-									type="button"
-									data-widget-part="messages.composer-more-actions"
-									title={overflowNew.length
-										? `More actions (${overflowNew.length} new)`
-										: "More actions"}
-									aria-label={overflowNew.length
-										? `More actions (${overflowNew.length} new)`
-										: "More actions"}
+								<sp-icon name="ellipsis" size="14"></sp-icon>
+								More
+								{#if overflowNew.length}
+									<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>
+								{/if}
+							</button>
+							{#each overflowActions as a (actionIdentity(a))}
+								{@const iconName = a.icon || "play"}
+								{@const row = paletteRowState(overflowRow(a), {
+									generating: isGenerating,
+									newest: newestItem
+								})}
+								<!-- Grey, listed, with its reason (R-15, U5e): the
+								     audience's word, the declared enabled-when's, or
+								     the busy rule — as a second line and to a screen
+								     reader, never dropped from the list. -->
+								<sp-menu-item
+									value={actionIdentity(a)}
+									disabled={row.disabled || !!closed}
+									data-widget-part="messages.composer-overflow-item"
 								>
-									<sp-icon name="ellipsis" size="14"></sp-icon>
-									More
-									{#if overflowNew.length}
-										<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>
-									{/if}
-								</button>
-								{#each overflowActions as a (actionIdentity(a))}
-									{@const iconName = a.icon || "play"}
-									{@const row = paletteRowState(overflowRow(a), {
-										generating: isGenerating,
-										newest: newestItem
-									})}
-									<!-- Grey, listed, with its reason (R-15, U5e): the
-									     audience's word, the declared enabled-when's, or
-									     the busy rule — as a second line and to a screen
-									     reader, never dropped from the list. -->
-									<sp-menu-item
-										value={actionIdentity(a)}
-										disabled={row.disabled || !!closed}
-										data-widget-part="messages.composer-overflow-item"
-									>
-										<sp-icon name={iconName} size="12"></sp-icon>
-										<span title={a.description}>
-											{a.name}
-											<span data-widget-part="messages.composer-overflow-slash">/{a.slash}</span>
-											{#if row.reason}
-												<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
-											{/if}
-										</span>
-										{#if a.isNew || overflowNewOnOpen.has(actionIdentity(a))}
-											<span data-widget-part="messages.composer-new">New</span>
+									<sp-icon name={iconName} size="12"></sp-icon>
+									<span title={a.description}>
+										{a.name}
+										<span data-widget-part="messages.composer-overflow-slash">/{a.slash}</span>
+										{#if row.reason}
+											<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
 										{/if}
-									</sp-menu-item>
-								{/each}
-							</sp-menu>
-						{/if}
-					</div>
+									</span>
+									{#if a.isNew || overflowNewOnOpen.has(actionIdentity(a))}
+										<span data-widget-part="messages.composer-new">New</span>
+									{/if}
+								</sp-menu-item>
+							{/each}
+						</sp-menu>
+					{/if}
 				</div>
-			{/if}
+			</div>
 		</div>
+		{/if}
 
 		<!-- Files dropped onto the composer, or pasted into it (a screenshot),
 		     join the tray; a drag shows "Drop to attach" (STYLE-GUIDE §6.7).
@@ -906,11 +945,27 @@
 							{:else}
 								<sp-icon
 									data-widget-part="messages.composer-tray-icon"
-									name={t.kind === "image" ? "image" : "file-text"}
+									name={t.kind === "image"
+										? "image"
+										: t.kind === "audio"
+											? "file-audio"
+											: t.kind === "video"
+												? "file-video"
+												: "file-text"}
 									size="20"
 								></sp-icon>
 							{/if}
 							<span data-widget-part="messages.composer-tray-name" title={t.filename}>{t.filename}</span>
+							{#if t.status === "ready" && t.kind === "audio" && t.previewSrc}
+								<!-- 🚧 O11: play an attached sound before sending it. -->
+								<audio
+									data-widget-part="messages.composer-tray-audio"
+									controls
+									preload="none"
+									src={t.previewSrc}
+									aria-label="Play {t.filename}"
+								></audio>
+							{/if}
 							{#if t.status === "uploading"}
 								<span
 									data-widget-part="messages.composer-tray-progress"
@@ -945,29 +1000,9 @@
 				</ul>
 			{/if}
 			<div data-widget-part="messages.composer-footer">
-				<!-- Which channel this line lands on. Drawn only when there is
-				     a choice: one channel is every session that exists today,
-				     and a picker with one option is a control that teaches
-				     nothing. The chosen one is its `aria-pressed`. -->
-				{#if channels.length > 1}
-					<div
-						data-widget-part="messages.composer-channels"
-						role="group"
-						aria-label="Which channel you are writing on"
-					>
-						{#each channels as slug (slug)}
-							<button
-								type="button"
-								data-widget-part="messages.composer-channel"
-								aria-pressed={canonicalListedChannel(slug) === conv.lane.current}
-								title="Write on {channelLabel(slug)}"
-								onclick={() => conv.lane.set(slug)}
-							>
-								{channelLabel(slug)}
-							</button>
-						{/each}
-					</div>
-				{/if}
+				<!-- 🚧 Which channel this line lands on is the widget's channel tabs
+				     now (lair fix 2, `messages.channel-tabs` above the log): the
+				     composer writes on the tab shown. -->
 				{#if activePersona}
 					{#if personaCount > 1}
 						<!-- `sp-popover` (§3.5): our button is the trigger, the card the panel. -->
@@ -1015,7 +1050,30 @@
 					{/if}
 				{/if}
 
+				{#if actionsLabelShown}
+					<!-- The Actions disclosure (its row opens above the card): a
+					     disclosure, not a menu — it closes on its toggle and on
+					     Escape, never because focus left it. -->
+					<button
+						type="button"
+						data-widget-part="messages.composer-actions-toggle"
+						aria-expanded={actionsOpen}
+						aria-controls={actionsId}
+						onclick={() => (actionsOpen = !actionsOpen)}
+					>
+						<span>Actions</span>
+						<sp-icon name="chevron-down" size="12" data-widget-part="messages.composer-actions-chevron"></sp-icon>
+					</button>
+				{/if}
+
 				<div data-widget-part="messages.composer-footer-end">
+					{#if ragVisible}
+						<!-- The retrieval notice (the page's view): a line the first
+						     time a session shows it, an icon here after that. -->
+						<span data-widget-part="messages.composer-notice">
+							<sp-host-view name="retrieval-notice"></sp-host-view>
+						</span>
+					{/if}
 					{#if offersAttachments}
 						<!-- Attach: the device's picker, filtered to what this reply
 						     reads. Its body is our own button; the picker is the
@@ -1150,7 +1208,9 @@
 				<div data-widget-part="messages.composer-readers">
 					<p data-widget-part="messages.composer-readers-line">{readersLine}</p>
 					<ul data-widget-part="messages.composer-readers-kinds" aria-label="Kinds of file">
-						{#each ATTACHMENT_KINDS_V1 as k (k)}
+						<!-- Every kind the host answered for (O1: a kind with no
+						     row is not offered, and not listed). -->
+						{#each ATTACHMENT_KINDS_V1.filter((k) => !readers || readers.kinds[k]) as k (k)}
 							{@const v = readers?.kinds[k]}
 							<li data-widget-part="messages.composer-readers-kind" data-allowed={v?.allowed ? "" : undefined}>
 								<strong>{KIND_NAME[k]}</strong>

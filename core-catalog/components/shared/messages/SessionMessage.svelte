@@ -13,7 +13,7 @@
 	import { mediaStripItems, viewImageParams } from "./mediaStrip"
 	import MessageStateLedger from "./MessageStateLedger.svelte"
 	import { useWidgetContext } from "../context"
-	import { staleOf } from "@serene-pub/core-catalog/conversation"
+	import { isDiceLine, staleOf } from "@serene-pub/core-catalog/conversation"
 	import { untrack } from "svelte"
 	import { useConversation } from "./conversation.svelte"
 	import type { MessageV1, WidgetAction } from "@serene-pub/sdk/component"
@@ -184,6 +184,14 @@
 		const extra = (conv.ctx.actions?.v1 as Record<string, { primary?: Array<{ key?: string; specSlug?: string }>; overflow?: Array<{ key?: string; specSlug?: string }> }> | undefined)?.extra
 		return [...(extra?.primary ?? []), ...(extra?.overflow ?? [])].some((a) => a.key === "retake" && a.specSlug === "core")
 	})
+	/**
+	 * 🚧 A **dice line** (Lair rewrite D3): the rules speaking — a roll form,
+	 * a dice result, or a roll form's answer (`isDiceLine`). Drawn whole,
+	 * under its speaker (the Lair's Oracle), as mechanics rather than speech:
+	 * `data-msg-dice-line` is what the widget stylesheet and a pack key the
+	 * look off. ⚠ Not a table line, which is drawn in no voice.
+	 */
+	const diceLine = $derived(!tableLine && isDiceLine(msg as never, allMessages as never))
 	/** Only the content cell is drawn: a folio's paragraph, or a table line. */
 	const contentOnly = $derived(folio || tableLine)
 	// Two independent classifications the style packs (sessionLayout skins) key
@@ -438,6 +446,7 @@
 	data-msg-hidden={msg.isHidden ? "" : undefined}
 	data-msg-greeting={isGreeting ? "" : undefined}
 	data-msg-table-line={tableLine ? "" : undefined}
+	data-msg-dice-line={diceLine ? "" : undefined}
 	data-msg-newest={isLastMessage ? "" : undefined}
 	tabindex="-1"
 	role="article"
@@ -518,12 +527,14 @@
 				</span>
 			{/if}
 			{#if msg.isHidden}
+				<!-- Hidden (RF fix 5's member copy): the line stays said — what it
+				     changed stands — and the characters no longer read it. -->
 				<span
-					data-widget-part="messages.message-badge"
-					role="img"
-					aria-label="Hidden from the model"
+					data-widget-part="messages.message-badge messages.message-badge-hidden"
+					title="Hidden from the story: the characters no longer read this line. What it changed stays."
 				>
 					<sp-icon name="ghost" size="14"></sp-icon>
+					<span data-widget-part="messages.message-badge-text">Hidden from the story</span>
 				</span>
 			{/if}
 			{#if sceneName}

@@ -37,11 +37,29 @@
  * @experimental
  */
 export const MEDIA_KINDS = ['image', 'audio', 'video', 'document'] as const
-/** @experimental */
-export type MediaKind = (typeof MEDIA_KINDS)[number]
+/**
+ * 🚧 A media kind core knows by name — one of `MEDIA_KINDS`, the KNOWN list.
+ * @experimental
+ * @ruling O1, LS4, R41
+ */
+export type KnownMediaKind = (typeof MEDIA_KINDS)[number]
+/**
+ * A media kind: one core knows (`MEDIA_KINDS`), or any other a plugin or a
+ * later release introduces (O1, LS4 — owner, 2026-10-20: "nothing in 1.0 may
+ * assume the list of media kinds is closed"). Autocomplete still offers the
+ * known ones; an unknown kind passes through every SDK table untouched, and
+ * a table keyed by kind falls back where it has no row for one.
+ * @experimental
+ * @ruling O1, LS4, R41
+ */
+export type MediaKind = KnownMediaKind | (string & {})
 
-/** @experimental */
-export const isMediaKind = (v: unknown): v is MediaKind =>
+/**
+ * Is this a media kind core KNOWS — one of `MEDIA_KINDS`? Still "known", not
+ * "well-formed": an unknown kind is a valid `MediaKind` and answers false here.
+ * @experimental
+ */
+export const isMediaKind = (v: unknown): v is KnownMediaKind =>
 	typeof v === 'string' && (MEDIA_KINDS as readonly string[]).includes(v)
 
 /**
@@ -122,9 +140,19 @@ export interface ImageSeriesItemV1 {
  * @ruling PLAN-composer-attachments §3.5
  */
 export interface HistoryAttachmentV1 extends MediaRef {
-	/** `image` / `text` / `pdf`, decided from the stored mime; `null` for any
-	 *  other file, which every call is shown as a name. */
-	attachmentKind: 'image' | 'text' | 'pdf' | null
+	/** `image` / `text` / `pdf` / `audio` / `video`, decided from the stored
+	 *  mime; `null` for any other file, which every call is shown as a name.
+	 *  `audio` and `video` since O2/O4 (2026-10-21). */
+	attachmentKind: 'image' | 'text' | 'pdf' | 'audio' | 'video' | null
+	/**
+	 * 🚧 What an audio (or video) file says, when a transcription step has
+	 * heard it — cached on the file, so it is heard once (O9). Placement
+	 * writes it into the name a call that cannot hear the file is shown:
+	 * `[audio: note.mp3 — "…"]`. `text` carries the same words when the
+	 * person gave no description of their own.
+	 * @ruling O9
+	 */
+	transcript?: string
 	/** A text file's body, read up to the query's cap. Absent for other files. */
 	body?: string
 	/** True when `body` stopped at the query's cap rather than at the file's end. */
@@ -141,14 +169,91 @@ export interface HistoryAttachmentV1 extends MediaRef {
  * @ruling PLAN-composer-attachments §5.2
  */
 export interface ConnectionReadsV1 {
-	/** The pair sends images to its model on its wire mode. */
+	/**
+	 * 🚧 What the pair reads, **by media kind** (O2, evolved in place
+	 * 2026-10-20): for each kind the host has an answer for, whether the pair
+	 * sends it to its model on its wire mode, why not (a sentence that names
+	 * no connection), and what one placed item is estimated to cost. A kind
+	 * with no row is not read — `connectionReadsKind` answers that for you.
+	 * Open by kind (O1): audio, video, and kinds a later release brings.
+	 * @ruling O2, O1, O10
+	 */
+	kinds: Partial<Record<MediaKind, ConnectionKindReadV1>>
+	/**
+	 * The pair sends images to its model on its wire mode.
+	 * @deprecated ⏳ Read `kinds.image.reads` (O2). Kept readable for one release; hosts still write it.
+	 */
 	image: boolean
-	/** The pair sends PDFs to its model on its wire mode. */
+	/**
+	 * The pair sends PDFs to its model on its wire mode.
+	 * @deprecated ⏳ Read `kinds.document.reads` (O2). Kept readable for one release; hosts still write it.
+	 */
 	pdf: boolean
-	/** Why not, per kind — a sentence that names no connection. */
+	/**
+	 * Why not, per kind — a sentence that names no connection.
+	 * @deprecated ⏳ Read `kinds.<kind>.why` (O2). Kept readable for one release.
+	 */
 	why?: { image?: string; pdf?: string }
-	/** Estimated prompt tokens one placed image costs. An estimate, never a cap. */
+	/**
+	 * Estimated prompt tokens one placed image costs. An estimate, never a cap.
+	 * @deprecated ⏳ Read `kinds.image.cost.perItem` (O2, O10). Kept readable for one release.
+	 */
 	tokensPerImage?: number
+}
+
+/**
+ * 🚧 What a pair reads of one media kind — a row of `ConnectionReadsV1.kinds`.
+ * @experimental
+ * @ruling O2, O10
+ */
+export interface ConnectionKindReadV1 {
+	/** The pair sends this kind to its model on its wire mode. */
+	reads: boolean
+	/** Why not — a sentence that names no connection. Absent when it reads. */
+	why?: string
+	/**
+	 * Estimated prompt tokens one placed item costs: `perItem` for a picture
+	 * or a page, `perSecond` for audio or video. An estimate, never a cap.
+	 */
+	cost?: { perItem?: number; perSecond?: number }
+	/**
+	 * 🚧 The pair also takes this kind back on the MODEL's own turns — a
+	 * spoken reply sent back as audio rather than as its transcript (O13).
+	 * Absent: only on a person's turns, and a model's earlier audio goes
+	 * back as the words it said.
+	 * @ruling O13
+	 */
+	assistantTurns?: boolean
+	/**
+	 * 🚧 The formats the pair takes of this kind, when it names them and
+	 * nothing converts to them — audio and video today (O4). A file of
+	 * another format is not sent: placement names it, and a transcribe step
+	 * hears it instead. Absent: every format of a read kind is sent.
+	 * @ruling O4
+	 */
+	accepts?: string[]
+}
+
+/**
+ * 🚧 The one reading of `ConnectionReadsV1` per kind (O2): the `kinds` row
+ * when there is one; else, for a value written before `kinds` existed, the
+ * deprecated `image` / `pdf` booleans (a PDF is the `document` kind); else
+ * not read. Placement, the composer line and fit ask this — never the
+ * fields directly — so the deprecated ones can leave without a hunt.
+ * @experimental
+ * @ruling O2
+ */
+export function connectionReadsKind(
+	reads: Partial<ConnectionReadsV1> | null | undefined,
+	kind: MediaKind,
+): ConnectionKindReadV1 {
+	const row = reads?.kinds?.[kind]
+	if (row) return row
+	const legacy = kind === 'image' ? reads?.image : kind === 'document' ? reads?.pdf : undefined
+	if (legacy === undefined) return { reads: false }
+	const why = kind === 'image' ? reads?.why?.image : reads?.why?.pdf
+	const cost = kind === 'image' && reads?.tokensPerImage !== undefined ? { cost: { perItem: reads.tokensPerImage } } : {}
+	return { reads: legacy === true, ...(why && legacy !== true ? { why } : {}), ...cost }
 }
 
 /**
@@ -164,7 +269,7 @@ export interface ConnectionReadsV1 {
 export interface MediaCapability {
 	/** Kinds this can take as input. Absent or empty: text only. */
 	accepts?: readonly MediaKind[]
-	/** Kinds this can produce. Absent or empty: text only. */
+	/** Kinds this can produce. Absent or empty: text only. Open by kind (O1). */
 	emits?: readonly MediaKind[]
 	/** Mime allow-list, when a kind is too coarse — e.g. a model that reads
 	 *  `image/png` and `image/jpeg` but not `image/gif`. Absent means every
@@ -229,3 +334,29 @@ export function partsToMedia(parts: readonly OutputPart[]): MediaRef[] {
 		.filter((p): p is Extract<OutputPart, { t: 'media' }> => p.t === 'media')
 		.map((p) => p.ref)
 }
+
+/**
+ * 🚧 The message part types that show one stored file, by media kind (O5):
+ * a picture is `core:image`, a sound `core:audio`, a moving picture
+ * `core:video`, and every other kind — a PDF, a text file, a kind a later
+ * release brings — `core:file`. Every part carries `data.assetId`.
+ * @experimental
+ * @ruling O5
+ */
+export const MEDIA_PART_TYPES = ['core:image', 'core:audio', 'core:video', 'core:file'] as const
+/** @experimental */
+export type MediaPartType = (typeof MEDIA_PART_TYPES)[number]
+
+/**
+ * 🚧 The part type a file of this kind is shown with — unknown kinds are
+ * `core:file` (O1: a kind passes through, it is never refused here).
+ * @experimental
+ * @ruling O5
+ */
+export function mediaPartTypeFor(kind: MediaKind | null | undefined): MediaPartType {
+	return kind === 'image' ? 'core:image' : kind === 'audio' ? 'core:audio' : kind === 'video' ? 'core:video' : 'core:file'
+}
+
+/** 🚧 Is this a part type that shows one stored file? @experimental */
+export const isMediaPartType = (type: unknown): type is MediaPartType =>
+	typeof type === 'string' && (MEDIA_PART_TYPES as readonly string[]).includes(type)

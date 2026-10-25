@@ -528,7 +528,8 @@ describe('13 · configuration resolves per slot through four layers', () => {
 		// config an admin edits IS the instance's configuration (ruled
 		// 2026-08-24, folded 2026-09-16). A scope the SDK does not know is not a
 		// scope a host may write at.
-		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
+		// PLAN-layering D5 (R38): configurations retire; `config` reads as `preset` (⏳).
+		assert.deepEqual(SCOPE_ORDER, ['session', 'preset', 'genre', 'defaults', 'author'])
 		assert.equal(mayWrite('connection', 'defaults'), false)
 		assert.equal(mayWrite('connection', 'config'), true)
 		assert.equal(mayWrite('prompts', 'session'), true)

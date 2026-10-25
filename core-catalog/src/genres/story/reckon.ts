@@ -1,142 +1,83 @@
 /**
- * 🚧 What happens **around** a Story reply (PLAN-genre-restructure §4, R4,
- * ruled 2026-10-19): the tail of `core:spec/story-respond`, after the reply
- * is saved, its sprite shown and the reply tick taken.
+ * 🚧 Story's background work, as **routines** (PLAN-layering §4, R5, R37;
+ * 2026-10-20 — was the tail of `core:spec/story-respond`, behind the retired
+ * background tasks' junctions): what the reckoning and the sweep ask, how
+ * their answers are sorted, and the branches that file them. The pipelines
+ * that run them are their own — `core:spec/story-reckoning` (`reckoning.ts`)
+ * and `core:spec/story-sweep` (`sweep.ts`) — registered on cadences in the
+ * Story genre's defaults; the reply is one call again.
  *
- *  1. `tasks` — `core:task/resolve-tasks@1`: the genre's `STORY_TASKS`, each
- *     at the session's mode, else its preset's, else the default. The host
- *     decides when a sweep is due (`sweep`), and the spec only reads what
- *     this step publishes. A task that is **Off** is skipped at its branch —
- *     one pipeline, never one per toggle (owner ruling 2026-10-19).
- *  2. `reckon` — **the reckoning**, ONE JSON call after the reply when any
- *     task of the `reckoning` group is on (the Dungeon Crawler's Planner
- *     pattern: read the reply, emit deltas). Its crib is the cast's sheets,
- *     the reply and the ruleset's voice; its answer is the delta grammar
- *     (`STORY_RECKON_SCHEMA`). At `scripts` rigour the ruleset handler
- *     resolves the deltas (`core:task/ruleset-resolve@1`, `apply` — the DC
- *     pattern, `parley.ts`, `rest.ts`); otherwise the changes are written in
- *     words: resolved by name (`resolve-state-changes@1`) and applied when
- *     *Keep the sheets* is **Full**, held as proposals when it is **Review**.
- *     The clock moves by the reply's own time when *Move the clock* is Full;
- *     on Review the move is a proposal like any change.
- *  3. `sweep` — **the sweep**, ONE batched JSON call every few turns (or after
- *     each scene) when any `sweep` task is on and one is due: its prompt asks
- *     only for what the enabled tasks write, and each answer lands through
- *     the writes core already has — a history entry for the summary, lore,
- *     people and places as lorebook entries (Full: written; Review: held at
- *     the write's review gate), the world's state as changes (applied or
- *     proposed), the goals as the session's note.
+ *  - **the reckoning** — ONE JSON call after a round (or a turn: an
+ *    administrator swaps the cadence, R36), when any of its duties is on (the
+ *    Dungeon Crawler's Planner pattern: read the story's newest lines, emit
+ *    changes). Its crib is the cast's sheets, those lines and the ruleset's
+ *    voice; its answer is 🚧 the session's rules' own change grammar (S1 —
+ *    `ruleset-resolve`'s `replySchema`, `STORY_RECKON_SCHEMA` its envelope).
+ *    What the rules keep goes through the ruleset handler
+ *    (`core:task/ruleset-resolve@1`, `apply` / `propose`); what they keep
+ *    nothing of is written in words: resolved by name
+ *    (`resolve-state-changes@1`) and applied when the routine's mode is
+ *    **Full**, held as proposals when it is **Review**. The clock moves by the story's own time; a new place
+ *    is filed with its ways out. Its grammar, its two scripts and its branch
+ *    are every reckoning's — `shared/reckoning.ts` (2026-10-23, S5), which
+ *    the Lair's keeper builds on too; this file re-exports them.
+ *  - **the sweep** — ONE batched JSON call every few turns, when any of its
+ *    duties is on: its prompt asks only for what the duties on write, and
+ *    each answer lands through the writes core already has — a history entry
+ *    for the summary, lore, people and places as lorebook entries (Full:
+ *    written; Review: held at the write's review gate), the world's state as
+ *    changes (applied or proposed), the goals as the session's note, how the
+ *    characters stand as a graph proposal.
  *
- * Minimal pins every task Off, so nothing after the tick runs: one call a
- * turn. Living and Rule Based pin the defaults: two calls a turn, plus the
- * sweep every few turns.
+ * Each duty is a switch on the routine's own duties step
+ * (`core:task/reckoning-duties@1`, `core:task/sweep-duties@1`) — the
+ * pipeline's own settings (A6) — and each publishes `modes` keyed as these
+ * scripts and junctions always read them (`attributes`, `places-on-move`,
+ * `world-state` …), so the seeded scripts read what they read before.
  *
- * 🚧 Lane 2 (2026-10-19) wired the rest, each where its event is:
- *
- *  - the `reply` group is the reply's own (`respond.ts`): the `tasks` step
- *    moved to its head, *Read the lorebook* is the `retrieval` junction
- *    before `rank`, *Read the scene* the `scene` gate before `context`;
- *  - the reckoning carries every change on Review as a proposal (the
- *    handler's `propose` mode) instead of dropping its pieces, checks a
- *    lorebook item's supply (phase 3b), and files the place a move reached
- *    (*Describe new places*, `place`);
- *  - the sweep proposes how the characters stand on the Graph's review
- *    screen (`relationships`, `core:outlet/graph-proposal@1`), and keeps the
- *    goals as a checklist the host reads for *Mark goals reached*;
- *  - the host owns *End what runs out* (the ruleset handler's expiry),
- *    *Mark goals reached* (the annex write), *Picture each new scene* (a
- *    scene opening) and the voices group (`core:task/turn-unprompted@1` in
- *    the turn-order spec).
- *
- * Retired from the declaration in lane 2: *Route whispers* (no path
- * delivers a line to some characters only — the reply reads no state and
- * the transcript has one audience) and *Let the storyteller lead* (Story
- * seats no envoy).
+ * Minimal drops both routines: one call a turn. Living registers both: the
+ * reply, then the reckoning — two calls a turn, plus the sweep every few.
+ * The host owns what a duty reads beyond the graph: *End what runs out*
+ * (the ruleset handler's expiry) and *Mark goals reached* (the annex write).
  */
 
-import { slot } from '@serene-pub/sdk'
+import { slot, ITEM, type ChainBuilder, type OutPortsOf } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { STORY_PROMPT_KEYS } from '../../seed/prompts.js'
-import { seedScript, type CoreScriptSeed } from '../dungeon-crawler/preamble.js'
-import { at, jsonPart, modelCall, scriptStep, textPart, type Wiring } from '../../shared/calls.js'
-import { DELTA_OF_JS } from '../../shared/deltas.js'
+import { seedScript, type CoreScriptSeed } from '../../shared/scriptSeed.js'
+import {
+	jsonPart,
+	modelCall,
+	on,
+	scriptStep,
+	textPart,
+	type BranchOf,
+	type NodeOn,
+	type Plus,
+	type Wiring,
+} from '../../shared/calls.js'
 import { STORY_GENRE_ID } from '../../registry/genres.js'
 import { STORY_GOALS_KEY } from '../../shared/annexField.js'
+import {
+	STORY_PREAMBLE,
+	STORY_RECKON_CRIB_SCRIPT,
+	STORY_RECKON_SCRIPT,
+	type ReckonTerms,
+} from '../../shared/reckoning.js'
+import type { SweepDue } from './sweep.js'
+import { bareEntryTypeId, characterLoreEntryType, historyEntryType, locationEntryType, worldLoreEntryType } from '../../registry/entries.js'
 
-/**
- * 🚧 One change the reckoning may propose — the Dungeon Crawler's delta
- * grammar (`DUNGEON_CRAWLER_DELTA_SCHEMA`), **open**: `op`, `slot`,
- * `repertoire` and `check` are whatever the session's ruleset provides
- * (`GenreDecl.uses.verbs: 'any'`), so they are words here, not enums, and
- * the prompt names what this table offers. Every member required (the
- * grammar-compiling families); empty text and `0` say "none".
- * @experimental
- */
-export const STORY_DELTA_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: {
-		owner: { type: 'string', description: 'Whose: a reference from the crib, or world.' },
-		op: { type: 'string', description: 'add, spend, set or remove — or a verb the rules name.' },
-		slot: { type: 'string', description: 'The value changed (hp, mood, location …), or empty for a piece.' },
-		repertoire: { type: 'string', description: 'The list a piece is kept on (things, conditions …), or empty.' },
-		piece: { type: 'string', description: 'The piece by its name, or empty.' },
-		value: { type: 'string', description: 'An amount (add, spend), or the new value (set). Empty when none.' },
-		check: { type: 'string', description: 'A check the rules roll for it, or empty.' },
-		against: { type: 'integer', description: 'The difficulty a check is against; 0 when none.' },
-		reason: { type: 'string' },
-	},
-	required: ['owner', 'op', 'slot', 'repertoire', 'piece', 'value', 'check', 'against', 'reason'],
-	additionalProperties: false,
-})
-
-/**
- * 🚧 The reckoning's answer: the **deltas** the reply made true, and how
- * much story time it took (`clock`, a list so the grammar can say none —
- * Adventure's keeper `clock`, kept). Was `ADVENTURE_KEEPER_SCHEMA`'s place:
- * the keeper's `{ values, inventory, clock }` became the delta grammar.
- * @experimental
- */
-export const STORY_RECKON_SCHEMA = {
-	type: 'object',
-	properties: {
-		deltas: { type: 'array', maxItems: 12, items: STORY_DELTA_SCHEMA },
-		clock: {
-			type: 'array',
-			maxItems: 1,
-			items: {
-				type: 'object',
-				properties: {
-					by: { type: 'integer' },
-					unit: { type: 'string', enum: ['minutes', 'hours', 'days', 'months', 'years'] },
-				},
-				required: ['by', 'unit'],
-				additionalProperties: false,
-			},
-		},
-		/**
-		 * 🚧 *Describe new places* (`places-on-move`, lane 2): when the reply
-		 * moved the story somewhere the lorebook has not described — the
-		 * place, what it is like, and the places its ways out lead to.
-		 * Empty when nothing moved, or the task is off.
-		 */
-		place: {
-			type: 'array',
-			maxItems: 1,
-			items: {
-				type: 'object',
-				properties: {
-					name: { type: 'string' },
-					content: { type: 'string' },
-					ways: { type: 'array', maxItems: 6, items: { type: 'string' } },
-				},
-				required: ['name', 'content', 'ways'],
-				additionalProperties: false,
-			},
-		},
-	},
-	required: ['deltas', 'clock', 'place'],
-	additionalProperties: false,
-} as const
+// 🚧 The reckoning's grammar, scripts and branch are every reckoning's (`shared/reckoning.ts`,
+// 2026-10-23, PLAN-genres-seams S5: the Lair's keeper is the same graph); re-exported from their old home.
+export {
+	// 🚧 S1 (2026-10-23): the one change grammar, open — `STORY_DELTA_SCHEMA` retired.
+	RECKON_CHANGE_SCHEMA,
+	STORY_RECKON_SCHEMA,
+	STORY_RECKON_CRIB_SCRIPT,
+	STORY_RECKON_SCRIPT,
+	reckonBranch,
+	type ReckonTerms,
+} from '../../shared/reckoning.js'
 
 const NAMED = {
 	type: 'object',
@@ -146,8 +87,8 @@ const NAMED = {
 } as const
 
 /**
- * 🚧 The sweep's answer — one member per `sweep` task, each empty when its
- * task is off or nothing changed: the story so far (`summary`), new lore,
+ * 🚧 The sweep's answer — one member per sweep duty, each empty when its
+ * duty is off or nothing changed: the story so far (`summary`), new lore,
  * new people (`cast`), the world's state, how the characters stand
  * (`relationships`), the places used (`scenes`) and the running goals.
  * @experimental
@@ -185,257 +126,15 @@ export const STORY_SWEEP_SCHEMA = {
 	additionalProperties: false,
 } as const
 
-/**
- * The Story scripts' one preamble: the readers `deltaOf` needs (`own`,
- * `text`, `num`, `ucSlotName`, an empty `NOT_FOR_DELTAS` — every slot may
- * move here), `deltaOf` itself (`shared/deltas.ts`), the state key a
- * reference reads under, the cast as the settings document seats it, and a
- * task's mode. Plain ES5 so any sandbox runs it.
- */
-const STORY_PREAMBLE = `
-var v = value || {};
-function own(o) { var out = {}; if (o && typeof o === "object" && !Array.isArray(o)) for (var k in o) out[k] = o[k]; return out; }
-function text(x) { return typeof x === "string" ? x.trim() : typeof x === "number" ? String(x) : ""; }
-function num(x, d) { var n = Number(x); return x !== null && x !== "" && isFinite(n) ? n : d; }
-function ucSlotName(id) { return String(id).replace(/^core:slot\\//, "").replace(/@\\d+$/, ""); }
-var NOT_FOR_DELTAS = [];
-${DELTA_OF_JS}
-function stateKeyOf(ref) {
-	var r = String(ref);
-	var m = /^player-seat:(\\d+)$/.exec(r);
-	if (m) return "player_seat:" + m[1];
-	var c = /^character:(\\d+)$/.exec(r);
-	return c ? c[1] : r;
-}
-// Everyone seated and switched on: { ref, name, plays } — a persona seat
-// is somebody a person plays.
-function peopleOf(doc) {
-	var cast = own(own(doc).cast), out = [];
-	var cs = Array.isArray(cast.sessionCharacters) ? cast.sessionCharacters : [];
-	for (var i = 0; i < cs.length; i++) {
-		var s = own(cs[i]), ch = own(s.character);
-		if (s.enabled === false || s.removedAt || ch.id === undefined) continue;
-		out.push({ ref: "character:" + ch.id, name: text(ch.name), plays: false });
-	}
-	var ps = Array.isArray(cast.sessionPersonas) ? cast.sessionPersonas : [];
-	for (var j = 0; j < ps.length; j++) {
-		var p = own(ps[j]), pe = p.persona ? own(p.persona) : null;
-		if (p.enabled === false || p.removedAt) continue;
-		if (pe && pe.id !== undefined) out.push({ ref: "character:" + pe.id, name: text(pe.name), plays: true });
-		else if (p.seatId !== undefined) out.push({ ref: "player-seat:" + p.seatId, name: text(p.seatName) || "a player", plays: true });
-	}
-	return out;
-}
-function modeOf(modes, key) { var m = text(own(modes)[key]); return m === "full" || m === "review" ? m : "off"; }
-function bagLine(bag) {
-	var parts = [];
-	for (var k in bag) {
-		var x = bag[k];
-		if (x === null || x === undefined || x === "") continue;
-		if (Array.isArray(x)) { var names = []; for (var i = 0; i < x.length; i++) { var t = x[i] && typeof x[i] === "object" ? text(x[i].name || x[i].text) : text(x[i]); if (t) names.push(t); } if (names.length) parts.push(k + ": " + names.join(", ")); }
-		else if (typeof x === "object") continue;
-		else parts.push(k + ": " + text(x));
-	}
-	return parts.join("; ");
-}
-`
-
+/** The Story scripts' one preamble (`shared/reckoning.ts`, the reckoning's): the sweep's scripts open on it too. */
 const storySeed = (seedKey: string, name: string, body: string): CoreScriptSeed =>
 	seedScript(seedKey, name, `${STORY_PREAMBLE}\n${body}`)
 
 /**
- * 🚧 `core:script/story-reckon-crib`: what the reckoning reads. Handed
- * `{ session, state, reply, blocks, ruleset, modes }` — the settings
- * document, the session's state, the reply just written, the ruleset
- * handler's `resolve` blocks, the inlet's ruleset and the resolved task
- * modes. Returns `{ crib, brief, owners, fields }`: the crib (the world and
- * each seated person's sheet, by reference), the brief (the reply, and what
- * to answer), the owners the handler resolves, and the prompt's named
- * fields — `rulesetVoice`, `rulesetSheet`, `rigourLine`, `canChange`,
- * `difficulty`.
- * @experimental
- */
-export const STORY_RECKON_CRIB_SCRIPT = storySeed(
-	'core:script/story-reckon-crib',
-	'Story: what the reckoning reads',
-	`
-var doc = own(v.session), state = own(v.state), modes = own(v.modes);
-var people = peopleOf(doc);
-var lines = [];
-// 🚧 The places the lorebook already describes (lane 2: *Describe new places*).
-var placeNames = [];
-var placeRows = Array.isArray(v.places) ? v.places : [];
-for (var pl = 0; pl < placeRows.length && placeNames.length < 40; pl++) { var pn = text(own(placeRows[pl]).name); if (pn) placeNames.push(pn); }
-var world = bagLine(own(state.world));
-lines.push("The world [world]: " + (world || "nothing tracked yet") + ".");
-var byId = own(own(state.cast).byId);
-for (var i = 0; i < people.length; i++) {
-	var p = people[i];
-	var sheet = bagLine(own(byId[stateKeyOf(p.ref)]));
-	lines.push("- " + (p.name || "someone") + " [" + p.ref + "]" + (p.plays ? " (played by a person)" : "") + ": " + (sheet || "nothing tracked yet") + ".");
-}
-var owners = ["session:" + text(doc.sessionId)];
-for (var o = 0; o < people.length; o++) owners.push(people[o].ref);
-var blocks = own(v.blocks);
-function blockText(b) { return b && typeof b === "object" ? text(b.text) : text(b); }
-var rigour = text(own(v.ruleset).rigour) || "prose";
-var counted = rigour === "mechanics" || rigour === "scripts";
-var can = [];
-if (modeOf(modes, "attributes") !== "off") can.push("a value the reply changed — health, mood, where someone is, what they carry (slot; op set with the new value, or add or spend with an amount)");
-if (modeOf(modes, "conditions") !== "off") can.push("a condition put on or taken off — hurt, tired, poisoned, inspired (repertoire conditions; op add or remove; piece the condition in a word or two)");
-if (modeOf(modes, "attributes") !== "off") can.push("a thing gained, lost or used up (repertoire things; op add, remove or spend; piece its name)");
-if (modeOf(modes, "time") !== "off") can.push("how much story time the reply took, when it took meaningful time (clock)");
-if (modeOf(modes, "places-on-move") !== "off") can.push("the place the reply moved the story to, when the lorebook does not describe it yet (place: its name, what it is like, and the places its ways out lead to)" + (placeNames.length ? " — the lorebook already describes: " + placeNames.join(", ") : ""));
-var reply = text(v.reply);
-return {
-	crib: lines.join("\\n"),
-	brief: "The reply just written:\\n" + (reply || "(empty)") + "\\n\\nWhat did it change?",
-	owners: owners,
-	fields: {
-		rulesetVoice: blockText(blocks.voice),
-		rulesetSheet: blockText(blocks.sheet),
-		rigourLine: counted
-			? "The table's rules decide the numbers: propose changes, never totals, and a check (with what it is against) for anything risky."
-			: "Nothing is rolled at this table: propose no checks, and say a change in words where no number is kept.",
-		canChange: can.length ? can.join("; ") : "nothing",
-		difficulty: text(own(doc.fields).difficulty) || "normal"
-	}
-};
-`,
-)
-
-/**
- * 🚧 `core:script/story-reckon`: the reckoning's answer, sorted. Handed
- * `{ json, modes, state, ruleset, supply }`. Each delta read one way
- * (`deltaOf`, `shared/deltas.ts`); a value change kept only while *Keep the
- * sheets* is on, a condition only while *Track conditions* is, the clock
- * only while *Move the clock* is — and each kept by its own task's mode,
- * Full or Review (lane 2, 2026-10-19: Review used to drop the pieces).
- * Returns:
- *
- *  - `scripts` · `scriptsReview` — the deltas, when the table resolves by
- *    script: the ruleset handler applies the Full ones and files the Review
- *    ones for review (its `propose` mode);
- *  - `pieces` · `piecesReview` — at a table of words, the piece deltas
- *    (things, conditions), the same way round;
- *  - `words` — at a table of words, the value changes made whole — a set as
- *    it is, an add or a spend counted from what the state holds now — and
- *    🚧 a thing the session's lorebook keeps as an item (`supply`, the
- *    `core:query/item-supply@1` answer) as an item line `{ owner, entryId,
- *    delta }`, so `resolve-state-changes@1` checks its supply (phase 3b: a
- *    unique item held is not handed out again), for
- *    `resolve-state-changes@1`;
- *  - `owners` — whose rules the deltas touch;
- *  - `clock` — `{ by, unit }` to move now (time Full), else null;
- *    `clockReview` — `{ clock: [{ by, unit }] }` to propose (time Review),
- *    else `{ clock: [] }`.
- * @experimental
- */
-export const STORY_RECKON_SCRIPT = storySeed(
-	'core:script/story-reckon',
-	'Story: what the reply changed',
-	`
-var j = own(v.json), modes = own(v.modes), state = own(v.state);
-var raw = Array.isArray(j.deltas) ? j.deltas : [];
-function taskOf(d) { return text(d.repertoire) === "conditions" ? "conditions" : "attributes"; }
-var deltas = [], owners = [], seen = {};
-for (var i = 0; i < raw.length; i++) {
-	var d = deltaOf(raw[i]);
-	if (!d) continue;
-	if (modeOf(modes, taskOf(d)) === "off") continue;
-	deltas.push(d);
-	if (!seen[d.owner]) { seen[d.owner] = true; owners.push(d.owner); }
-}
-var rigour = text(own(v.ruleset).rigour);
-var byScript = rigour === "scripts";
-function nowOf(owner, slot) {
-	var bag = owner === "world" ? own(state.world) : own(own(own(state.cast).byId)[stateKeyOf(owner)]);
-	return bag[ucSlotName(slot)];
-}
-// The session's lorebook items, by name (phase 3b): a thing one names is an
-// item line, so its supply is checked before it changes hands.
-var supply = Array.isArray(v.supply) ? v.supply : [];
-function itemNamed(name) {
-	var n = text(name).toLowerCase();
-	if (!n) return null;
-	for (var s = 0; s < supply.length; s++) {
-		var row = own(supply[s]);
-		if (typeof row.entryId === "number" && text(row.name).toLowerCase() === n) return row;
-	}
-	return null;
-}
-var scripts = [], scriptsReview = [], pieces = [], piecesReview = [], words = [];
-for (var k = 0; k < deltas.length; k++) {
-	var x = deltas[k];
-	var full = modeOf(modes, taskOf(x)) === "full";
-	if (byScript) { (full ? scripts : scriptsReview).push(x); continue; }
-	if (x.repertoire) {
-		var item = text(x.repertoire) !== "conditions" ? itemNamed(x.piece) : null;
-		if (item && (x.op === "add" || x.op === "remove" || x.op === "spend")) {
-			var many = Math.max(1, Math.round(Math.abs(num(x.value, 1))));
-			words.push({ owner: x.owner, entryId: item.entryId, delta: x.op === "add" ? many : -many });
-			continue;
-		}
-		(full ? pieces : piecesReview).push(x);
-		continue;
-	}
-	{
-		if (!x.slot) continue;
-		if (x.op === "set") { words.push({ owner: x.owner, slot: x.slot, value: x.value }); continue; }
-		if (x.op === "add" || x.op === "spend") {
-			var now = num(nowOf(x.owner, x.slot), null), by = num(x.value, null);
-			if (now === null || by === null) continue;
-			words.push({ owner: x.owner, slot: x.slot, value: x.op === "add" ? now + by : now - by });
-		}
-	}
-}
-var c = Array.isArray(j.clock) && j.clock.length ? own(j.clock[0]) : null;
-var move = c && Math.round(num(c.by, 0)) > 0 ? { by: Math.round(num(c.by, 0)), unit: text(c.unit) || "minutes" } : null;
-var time = modeOf(modes, "time");
-// 🚧 *Describe new places* (lane 2): a new place is an entry, its ways out
-// links to the places the book knows (a way to an unknown place is said in
-// its text — a link to nothing would refuse the whole entry). A place the
-// book already holds is left as written.
-var placeMode = modeOf(modes, "places-on-move");
-var known = {};
-var placeList = Array.isArray(v.places) ? v.places : [];
-for (var q = 0; q < placeList.length; q++) { var row = own(placeList[q]); var nm = text(row.name).toLowerCase(); if (nm && typeof row.id === "number") known[nm] = row; }
-var newPlace = null;
-var pr = placeMode !== "off" && Array.isArray(j.place) && j.place.length ? own(j.place[0]) : null;
-if (pr && text(pr.name)) {
-	var pname = text(pr.name), here = known[pname.toLowerCase()] || null;
-	var said = [], links = [];
-	var wl = Array.isArray(pr.ways) ? pr.ways : [];
-	for (var z = 0; z < wl.length && z < 6; z++) {
-		var wn = text(wl[z]);
-		if (!wn || wn.toLowerCase() === pname.toLowerCase()) continue;
-		var there = known[wn.toLowerCase()];
-		if (there) links.push({ to: there.id, linkType: "leads to", reverseLinkType: "leads to" });
-		else said.push(wn);
-	}
-	if (!here && text(pr.content))
-		newPlace = { name: pname, content: text(pr.content) + (said.length ? "\\n\\nWays out: " + said.join(", ") + "." : ""), links: links };
-}
-return {
-	placeFull: newPlace && placeMode === "full" ? newPlace : null,
-	placeReview: newPlace && placeMode === "review" ? newPlace : null,
-	scripts: scripts.length ? scripts : null,
-	scriptsReview: scriptsReview.length ? scriptsReview : null,
-	pieces: pieces.length ? pieces : null,
-	piecesReview: piecesReview.length ? piecesReview : null,
-	words: words.length || (move && time === "review") ? words : null,
-	owners: owners,
-	clock: move && time === "full" ? move : null,
-	clockReview: { clock: move && time === "review" ? [move] : [] }
-};
-`,
-)
-
-/**
  * 🚧 `core:script/story-sweep-crib`: what the sweep is asked. Handed
  * `{ session, state, modes }`. Returns `{ crib, brief, fields }`: the crib
- * (the world as it stands and who is seated), the brief (each enabled
- * sweep task's question, and that every other member stays empty) and the
+ * (the world as it stands and who is seated), the brief (each sweep duty
+ * that is on, as its question, and that every other member stays empty) and the
  * prompt's named fields (`difficulty`).
  * @experimental
  */
@@ -454,7 +153,10 @@ var asks = [];
 if (modeOf(modes, "summary") !== "off") asks.push("summary: what happened since the last summary, as a history entry — { name: a short title, content: a few plain sentences }");
 if (modeOf(modes, "lore") !== "off") asks.push("lore: facts about the world the story established that are worth remembering — places' histories, customs, objects — each { name, content }");
 if (modeOf(modes, "cast") !== "off") asks.push("cast: people the story introduced who are not seated (" + (names.length ? "seated: " + names.join(", ") : "nobody is seated") + "), each { name, content: who they are, in a sentence or two }");
-if (modeOf(modes, "world-state") !== "off") asks.push("worldState: what changed about the world — where the story is (slot location), the time of day (time-of-day), the weather — each { slot, value }");
+// 🚧 RF fix 8: the world's values are the session's own — the host's place and whatever the rules keep on the world — never a list the genre spells.
+var worldKeys = [], tracked = Array.isArray(state.slots) ? state.slots : [];
+for (var k = 0; k < tracked.length; k++) { var ts = own(tracked[k]); if (Array.isArray(ts.appliesTo) && ts.appliesTo.indexOf("world") >= 0 && ts.key && ts.type !== "derived") worldKeys.push(ts.key); }
+if (modeOf(modes, "world-state") !== "off" && worldKeys.length) asks.push("worldState: what changed about the world — " + worldKeys.join(", ") + " (by those words; location is where the story is) — each { slot, value }");
 if (modeOf(modes, "relationships") !== "off") asks.push("relationships: how two characters now stand with each other, each { from, to, how }");
 if (modeOf(modes, "scenes") !== "off") asks.push("scenes: each place the story used, each { name, content: what it is like }");
 if (modeOf(modes, "goals") !== "off") asks.push("goals: what the characters are after now, as a checklist — one goal a line, '- [ ] the goal' while it is open and '- [x] the goal' once the story has reached it; keep the goals already noted (" + (goalsNow ? "below" : "none yet") + "), tick the ones reached, add new ones");
@@ -467,9 +169,9 @@ return {
 )
 
 /**
- * 🚧 `core:script/story-sweep`: the sweep's answer, sorted by task and mode.
+ * 🚧 `core:script/story-sweep`: the sweep's answer, sorted by duty and mode.
  * Handed `{ json, modes }`. Each list lands under `<member>Full` or
- * `<member>Review` by its task's mode — absent when the task is off or the
+ * `<member>Review` by its duty's mode — absent when the duty is off or the
  * answer empty — so a junction reads which write runs: `summaryFull`,
  * `summaryReview` (one `{ name, content }`), `loreFull` · `loreReview`,
  * `castFull` · `castReview`, `scenesFull` · `scenesReview` (lists),
@@ -520,7 +222,7 @@ return out;
 /**
  * 🚧 `core:script/story-scene-reading`: *Read the scene* (`scene-reading`,
  * lane 2, 2026-10-19), the gate on what the reply's context builder is
- * handed. Handed `{ modes, state, places }` — the resolved task modes, the
+ * handed. Handed `{ modes, state, places }` — the resolved duty modes, the
  * session's state and the lorebook's places with their ways out. On, it
  * passes the two on, and the builder makes `{{locationEntry}}` (the place
  * the world's `location` names: its name, what it is like, the ways from
@@ -541,6 +243,78 @@ return on
 `,
 )
 
+/**
+ * 🚧 `core:script/story-rest-crib`: what Story's **Rest** reads of the
+ * session's rules (PLAN-genres-seams S3, 2026-10-23 — `TRACKED_SLOTS`
+ * retired). Handed `{ ruleset, fields }` — the inlet's ruleset (its
+ * `attributes`, with their tags) and the session's genre fields. Returns the
+ * fields with `restores`: each attribute the rules tag `resource` — the ones
+ * a rest brings back — as "Name (id), up to N", joined; empty when the rules
+ * tag none, and the keeper's prompt says what a rest restores in words.
+ * @experimental
+ */
+export const STORY_REST_CRIB_SCRIPT = storySeed(
+	'core:script/story-rest-crib',
+	'Story: what a rest brings back',
+	`
+var r = own(v.ruleset), out = own(v.fields), names = [];
+var attrs = Array.isArray(r.attributes) ? r.attributes : [];
+for (var i = 0; i < attrs.length; i++) {
+	var a = own(attrs[i]), tags = Array.isArray(a.tags) ? a.tags : [];
+	if (tags.indexOf("resource") < 0 || !text(a.id)) continue;
+	var max = own(a.bounds).max;
+	names.push((text(a.name) ? text(a.name) + " (" + text(a.id) + ")" : text(a.id)) + (typeof max === "number" ? ", up to " + max : ""));
+}
+out.restores = names.join("; ");
+return out;
+`,
+)
+
+/**
+ * 🚧 `core:script/story-after-rest`: how far a rest the rules raised moves
+ * Story's clock (GM 2026-10-23, G1 ★5; PLAN-genres-seams S3). Handed
+ * `{ cause, ruleset }` — the routine's moment (`rest-taken`'s payload, its
+ * `values.rest` the rest the rules raised) and the inlet's ruleset (its
+ * `rests`, longest first, read at run time: `rulesetGistOf`). Returns a clock
+ * step `{ by, unit }` in minutes: the raised rest's, else the rules' longest;
+ * `by` 0 — no move — where they keep no rest, name one they do not keep, or
+ * keep it without minutes (Wherewithal's).
+ * @experimental
+ */
+export const STORY_AFTER_REST_SCRIPT = storySeed(
+	'core:script/story-after-rest',
+	'Story: how long the rest took',
+	`
+var cause = own(v.cause), raised = text(own(own(cause.payload).values).rest) || text(own(cause.values).rest);
+var rests = Array.isArray(own(v.ruleset).rests) ? own(v.ruleset).rests : [];
+var taken = null;
+for (var i = 0; i < rests.length; i++) if (raised && text(own(rests[i]).id) === raised) taken = own(rests[i]);
+if (!taken && !raised && rests.length) taken = own(rests[0]);
+var minutes = taken ? Math.floor(num(taken.minutes, 0)) : 0;
+return { by: minutes > 0 ? minutes : 0, unit: "minutes" };
+`,
+)
+
+/**
+ * 🚧 `core:script/story-reply-owners`: whose changes a reply that carries
+ * them may name (PLAN-genres-seams S2, 2026-10-23 — found by the first end-to-
+ * end run of *Replies carry changes*: with no owners the ruleset handler
+ * refused every change as `unknown-owner`). Handed `{ session }`, the settings
+ * document; returns the owners the ruleset handler resolves — the world
+ * (`session:<id>`) and everyone seated and switched on, by reference — for
+ * the reply schema (its `owner` words) and the commit.
+ * @experimental
+ */
+export const STORY_REPLY_OWNERS_SCRIPT = storySeed(
+	'core:script/story-reply-owners',
+	'Story: whose changes a reply may carry',
+	`
+var doc = own(v.session), people = peopleOf(doc), out = ["session:" + text(doc.sessionId)];
+for (var i = 0; i < people.length; i++) out.push(people[i].ref);
+return out;
+`,
+)
+
 /** 🚧 The Story scripts core seeds, in seed order. @experimental */
 export const STORY_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 	STORY_RECKON_CRIB_SCRIPT,
@@ -548,321 +322,83 @@ export const STORY_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 	STORY_SWEEP_CRIB_SCRIPT,
 	STORY_SWEEP_SCRIPT,
 	STORY_SCENE_READING_SCRIPT,
+	STORY_REST_CRIB_SCRIPT,
+	STORY_REPLY_OWNERS_SCRIPT,
+	STORY_AFTER_REST_SCRIPT,
 ])
 
-/** What the reckoning and the sweep read of the reply graph. @internal */
-export interface StoryTasksTerms {
-	cast: ($: any) => unknown
-	history: ($: any) => unknown
+/**
+ * 🚧 What the sweep's sort hands its junctions (`core:script/story-sweep`):
+ * `<member>Full` or `<member>Review` by its duty's mode, absent when off or
+ * empty; `goals` and `relationships` either way. @internal
+ */
+interface Swept {
+	readonly summaryFull: unknown
+	readonly summaryReview: unknown
+	readonly loreFull: unknown
+	readonly loreReview: unknown
+	readonly castFull: unknown
+	readonly castReview: unknown
+	readonly scenesFull: unknown
+	readonly scenesReview: unknown
+	readonly worldFull: unknown
+	readonly worldReview: unknown
+	readonly goals: unknown
+	readonly relationships: unknown
 }
 
-/** The reckoning — `reckon.on.*`. */
-const reckonBranch = (r: any, w: Wiring, terms: StoryTasksTerms, review: string[]) => {
-	const R = 'reckon.on.'
-	const crib = ($: any) => at($, `${R}crib`).main
-	const reckoned = ($: any) => at($, `${R}reckoned`).main
-	const read = r
-		.query('state', ($: any) => C.sessionState.v1({ scope: $.input.sessionScope }), {
-			expose: { label: 'The sheets as the reply left them', status: 'Noting what changed' },
-		})
-		/** The ruleset's labelled blocks — its voice and the sheet — for the crib; no dice, no writes. */
-		.task(
-			'rules',
-			($: any) =>
-				C.rulesetResolve.v1({
-					scope: $.input.sessionScope,
-					mode: 'resolve',
-				}),
-			{ expose: { label: "Read the table's rules", status: 'Noting what changed' } },
-		)
-		/**
-		 * 🚧 The session's lorebook items and how many are left (phase 3b,
-		 * restored lane 2): a thing the reckoning names that the book keeps as
-		 * an item becomes an item line, and its supply is checked.
-		 */
-		.query('supply', ($: any) => C.itemSupply.v1({ scope: $.input.sessionScope }), {
-			expose: { label: 'How many of each item are left', status: 'Noting what changed' },
-		})
-		/** 🚧 The places the lorebook describes, with their ways out (*Describe new places*, lane 2). */
-		.query('places', ($: any) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The places the lorebook knows', status: 'Noting what changed' },
-		})
-	const cribbed = jsonPart(
-		jsonPart(
-			textPart(
-				textPart(
-					scriptStep(read, w, R, 'crib', STORY_RECKON_CRIB_SCRIPT.seedKey, ($) => ({
-						session: $.input.session,
-						state: at($, `${R}state`).state,
-						reply: $.generate.text,
-						blocks: at($, `${R}rules`).blocks,
-						ruleset: $.input.ruleset,
-						modes: $.tasks.modes,
-						places: at($, `${R}places`).entries,
-					}), 'What the reckoning reads', 'Noting what changed'),
-					w,
-					R,
-					'cribText',
-					crib,
-					'crib',
-					'The sheets, as text',
-				),
-				w,
-				R,
-				'brief',
-				crib,
-				'brief',
-				'The reply, and the question',
-			),
-			w,
-			R,
-			'owners',
-			crib,
-			'owners',
-			'Whose sheets',
-		),
-		w,
-		R,
-		'fields',
-		crib,
-		'fields',
-		"The rules, for the reckoning's prompt",
-	)
-	const asked = modelCall(cribbed, w, R, 'reckon', {
-		prompt: STORY_PROMPT_KEYS.reckon,
-		brief: ($) => at($, `${R}brief`).text,
-		crib: ($) => at($, `${R}cribText`).text,
-		fields: ($) => at($, `${R}fields`).main,
-		cast: terms.cast,
-		history: terms.history,
-		schema: STORY_RECKON_SCHEMA,
-		briefTurn: true,
-		expose: {
-			status: 'Noting what changed',
-			label: 'What the reply changed',
-			purpose:
-				'Reads the finished reply and notes what it made true — health, conditions, belongings, the place, the time — for the sheets.',
-		},
-	})
-	const sorted = scriptStep(asked, w, R, 'reckoned', STORY_RECKON_SCRIPT.seedKey, ($) => ({
-		json: at($, `${R}reckonWrite`).json,
-		modes: $.tasks.modes,
-		state: at($, `${R}state`).state,
-		ruleset: $.input.ruleset,
-		supply: at($, `${R}supply`).supply,
-		places: at($, `${R}places`).entries,
-	}), 'What the reply changed, sorted', 'Noting what changed')
-	const C1 = `${R}commit.`
-	/**
-	 * One arm through the ruleset handler: `apply` for a task on Full,
-	 * `propose` for one on Review (lane 2: the handler files every change
-	 * for review instead of dropping it).
-	 */
-	const handlerArm = (k: any, arm: string, member: string, mode: 'apply' | 'propose', what: string, label: string) =>
-		jsonPart(k, w, `${C1}${arm}.`, 'deltas', reckoned, member, what).task(
-			mode,
-			($: any) =>
-				C.rulesetResolve.v1({
-					scope: $.input.sessionScope,
-					owners: at($, `${R}owners`).main,
-					deltas: at($, `${C1}${arm}.deltas`).main,
-					mode,
-				}),
-			{ expose: { label, status: 'Noting what changed' } },
-		)
-	const committed = sorted.junction('commit', { on: reckoned }, (j: any) =>
-		j
-			/** At `scripts` rigour: the ruleset handler validates, rolls and applies every delta. */
-			.when('scripts', { path: 'scripts', truthy: true }, (k: any) =>
-				handlerArm(k, 'scripts', 'scripts', 'apply', 'The changes, for the rules', 'Apply the rules'),
-			)
-			/** At `scripts` rigour, a task on Review: validated and rolled the same, filed for review. */
-			.when('scriptsHeld', { path: 'scriptsReview', truthy: true }, (k: any) =>
-				handlerArm(k, 'scriptsHeld', 'scriptsReview', 'propose', 'The changes, for review', 'Propose by the rules'),
-			)
-			/** At a table of words: the pieces (things, conditions) through the handler, at the session's rigour. */
-			.when('pieces', { path: 'pieces', truthy: true }, (k: any) =>
-				handlerArm(k, 'pieces', 'pieces', 'apply', 'The pieces gained and lost', 'Keep the pieces'),
-			)
-			/** The same, for a task on Review: offered, never dropped. */
-			.when('piecesHeld', { path: 'piecesReview', truthy: true }, (k: any) =>
-				handlerArm(k, 'piecesHeld', 'piecesReview', 'propose', 'The pieces, for review', 'Propose the pieces'),
-			)
-			/** At a table of words: the values, by name; applied on Full, held for review otherwise. */
-			.when('words', { path: 'words', truthy: true }, (k: any) => {
-				const Wd = `${C1}words.`
-				return jsonPart(
-					jsonPart(k, w, Wd, 'changes', reckoned, 'words', 'The values changed'),
-					w,
-					Wd,
-					'clockAsk',
-					reckoned,
-					'clockReview',
-					'A clock move to propose',
-				)
-					.query('resolve', ($: any) =>
-						C.resolveStateChanges.v1({
-							changes: at($, `${Wd}changes`).main,
-							clock: at($, `${Wd}clockAsk`).main,
-							base: at($, `${R}state`).version,
-							scope: $.input.sessionScope,
-							// 🚧 Phase 3b, restored: an item line past its supply is a sentence.
-							supply: at($, `${R}supply`).supply,
-						}),
-					)
-					.junction('mode', { on: ($: any) => $.tasks.modes }, (m: any) =>
-						m
-							.when('applied', { path: 'attributes', equals: 'full' }, (a: any) =>
-								a.task(
-									'apply',
-									($: any) =>
-										C.setState.v1({
-											changes: at($, `${Wd}resolve`).changes,
-											scope: $.input.sessionScope,
-											base: at($, `${R}state`).version,
-											worldRow: $.save.messageId,
-											params: slot.params(),
-										}),
-									{ expose: { label: 'Apply the changes' } },
-								),
-							)
-							.otherwise('held', (a: any) =>
-								a.task(
-									'propose',
-									($: any) =>
-										C.setState.v1({
-											changes: at($, `${Wd}resolve`).changes,
-											scope: $.input.sessionScope,
-											base: at($, `${R}state`).version,
-											worldRow: $.save.messageId,
-											params: slot.params(),
-										}),
-									{ expose: { label: 'Propose the changes' } },
-								),
-							),
-					)
-			}),
-	)
-	w.params.push([`${C1}words.mode.applied.apply`, { mode: 'apply' }])
-	w.params.push([`${R}places`, { entryTypes: ['core:entry/location'], withLinks: true }])
-	/**
-	 * 🚧 *Describe new places* (`places-on-move`, lane 2): a new place, filed
-	 * with its ways out to the places the book knows — each link both ways, so
-	 * the place the party came from leads to it too; on Review, held at the
-	 * review gate. ⏳ A place the book already holds is left as written: no
-	 * outlet rewrites an entry, and a link between two standing places takes
-	 * an id the reckoning cannot hand over (the Dungeon Crawler's same gap).
-	 */
-	const placed = committed
-		.junction('place', { on: reckoned }, (j: any) => {
-			const arm = (b: any, mode: 'full' | 'review') => {
-				const X = `${R}place.${mode}.`
-				w.params.push([`${X}write`, { entryType: 'core:entry/location' }])
-				if (mode === 'review') review.push(`${X}write`)
-				const doc = ($: any) => at($, `${X}doc`).main
-				const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-				return jsonPart(
-					textPart(
-						textPart(jsonPart(b, w, X, 'doc', reckoned, mode === 'full' ? 'placeFull' : 'placeReview', rv('The new place')), w, X, 'name', doc, 'name', rv("The place's name")),
-						w,
-						X,
-						'content',
-						doc,
-						'content',
-						rv('What the place is like'),
-					),
-					w,
-					X,
-					'links',
-					doc,
-					'links',
-					rv('Its ways out'),
-				).outlet(
-					'write',
-					($: any) =>
-						C.createLoreEntry.v1({
-							name: at($, `${X}name`).text,
-							content: at($, `${X}content`).text,
-							links: at($, `${X}links`).main,
-							params: slot.params(),
-						}),
-					{ expose: { label: mode === 'full' ? 'File the place' : 'Hold the place for review' } },
-				)
-			}
-			return j
-				.when('full', { path: 'placeFull', truthy: true }, (b: any) => arm(b, 'full'))
-				.when('review', { path: 'placeReview', truthy: true }, (b: any) => arm(b, 'review'))
-		})
-	return placed.junction('time', { on: reckoned }, (j: any) =>
-		j.when('moves', { path: 'clock', truthy: true }, (k: any) => {
-			const T = `${R}time.moves.`
-			return jsonPart(k, w, T, 'step', reckoned, 'clock', 'The time the reply took')
-				.task('decided', ($: any) =>
-					C.clockStep.v1({
-						step: at($, `${T}step`).main,
-						unless: $.input.continuationPrefill,
-						params: slot.params(),
-					}),
-				)
-				.junction('clock', { on: ($: any) => at($, `${T}decided`).moves }, (c: any) =>
-					c.when('moves', { truthy: true }, (o: any) =>
-						o.outlet(
-							'advance',
-							($: any) =>
-								C.advanceStoryClock.v1({
-									by: at($, `${T}decided`).by,
-									unit: at($, `${T}decided`).unit,
-									cause: 'keeper',
-									onRefusal: 'skip',
-									params: slot.params(),
-								}),
-							{ expose: { label: 'Move the story clock' } },
-						),
-					),
-				)
-		}),
-	)
-}
+/** Story's reckoning terms. @internal */
+export const STORY_RECKON_TERMS: ReckonTerms = Object.freeze<ReckonTerms>({
+	prompt: STORY_PROMPT_KEYS.reckon,
+	ruleset: ($) => $.input.ruleset,
+})
 
-/** Lorebook entries from a list, Full and Review alike — `<prefix><key>.full.*` / `.review.*`. */
-const entryWrites = (
-	c: any,
+/** The nodes the sweep's lorebook writes read: the routine's inlet, and the sweep's sorted answer. */
+type SweepSorted = ChainBuilder<
+	{
+		input: OutPortsOf<ReturnType<typeof C.routine.v1>>
+		'sweep.due.swept': OutPortsOf<ReturnType<typeof C.runScript.v1>>
+	},
+	'sweep.due'
+>
+
+/**
+ * Lorebook entries from a list, Full and Review alike — `<key>.full.*` /
+ * `<key>.review.*` on the sweep's chain. Adds the junction to `c` and hands
+ * `c` back as it came: nothing after reads it.
+ */
+const entryWrites = <B extends SweepSorted>(
+	c: B,
 	w: Wiring,
-	review: string[],
-	S: string,
-	swept: ($: any) => unknown,
-	key: string,
-	member: string,
+	review: NodeOn[],
+	key: 'lore' | 'cast' | 'scenes',
 	entryType: string,
 	noun: string,
 	max: number,
-) =>
-	c.junction(key, { on: swept }, (j: any) => {
-		const arm = (b: any, mode: 'full' | 'review') => {
-			const X = `${S}${key}.${mode}.`
-			const M = `${X}entry.item.`
-			w.params.push([`${M}write`, { entryType }])
-			if (mode === 'review') review.push(`${M}write`)
+): B => {
+	const sweep: SweepSorted = c
+	sweep.junction(key, { on: ($) => $.swept.main }, (j) => {
+		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
 			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-			return jsonPart(b, w, X, 'list', swept, `${member}${mode === 'full' ? 'Full' : 'Review'}`, rv(`The ${noun}s`)).each(
+			return jsonPart(b, w, 'list', ($) => $.sweep.due.swept.main, `${key}${mode === 'full' ? 'Full' : 'Review'}`, rv(`The ${noun}s`)).each(
 				'entry',
-				{ over: ($: any) => at($, `${X}list`).main, max },
-				(m: any) => {
-					const item = ($: any) => at($, M.slice(0, -1))
+				{ over: ($) => $.list.main, max },
+				(m) => {
+					w.params.push([on(m, 'write'), { entryType }])
+					if (mode === 'review') review.push(on(m, 'write'))
 					return textPart(
-						textPart(m, w, M, 'name', item, 'name', rv(`The ${noun}'s name`)),
+						textPart(m, w, 'name', ($) => $[ITEM], 'name', rv(`The ${noun}'s name`)),
 						w,
-						M,
 						'content',
-						item,
+						($) => $[ITEM],
 						'content',
 						rv(`What the ${noun} says`),
 					).outlet(
 						'write',
-						($: any) =>
+						($) =>
 							C.createLoreEntry.v1({
-								name: at($, `${M}name`).text,
-								content: at($, `${M}content`).text,
+								name: $.name.text,
+								content: $.content.text,
 								params: slot.params(),
 							}),
 						{ expose: { label: mode === 'full' ? `File the ${noun}` : `Hold the ${noun} for review` } },
@@ -871,131 +407,137 @@ const entryWrites = (
 			)
 		}
 		return j
-			.when('full', { path: `${member}Full`, truthy: true }, (b: any) => arm(b, 'full'))
-			.when('review', { path: `${member}Review`, truthy: true }, (b: any) => arm(b, 'review'))
+			.when('full', { path: (v: Swept) => v[`${key}Full`], truthy: true }, (b) => arm(b, 'full'))
+			.when('review', { path: (v: Swept) => v[`${key}Review`], truthy: true }, (b) => arm(b, 'review'))
 	})
+	return c
+}
 
-/** The sweep — `sweep.due.*`. Returns the chain and the write steps the preset holds at the review gate. */
-const sweepBranch = (s: any, w: Wiring, terms: StoryTasksTerms, review: string[]) => {
-	const S = 'sweep.due.'
-	const crib = ($: any) => at($, `${S}crib`).main
-	const swept = ($: any) => at($, `${S}swept`).main
-	const read = s.query('state', ($: any) => C.sessionState.v1({ scope: $.input.sessionScope }), {
+/** The sweep's branch — `sweep.due.*`; `review` collects the write steps the declared defaults hold at the review gate. @internal */
+export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<SweepDue, 'sweepWrite', OutPortsOf<ReturnType<typeof C.generateJson.v1>>> => {
+	const read = s.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }), {
 		expose: { label: 'The world as it stands', status: 'Looking back over the story' },
 	})
 	const cribbed = jsonPart(
 		textPart(
 			textPart(
-				scriptStep(read, w, S, 'crib', STORY_SWEEP_CRIB_SCRIPT.seedKey, ($) => ({
+				scriptStep(read, w, 'crib', STORY_SWEEP_CRIB_SCRIPT.seedKey, ($) => ({
 					session: $.input.session,
-					state: at($, `${S}state`).state,
-					modes: $.tasks.modes,
+					state: $.state.state,
+					modes: $.duties.modes,
 				}), 'What the sweep is asked', 'Looking back over the story'),
 				w,
-				S,
 				'cribText',
-				crib,
+				($) => $.crib.main,
 				'crib',
 				'The world, as text',
 			),
 			w,
-			S,
 			'brief',
-			crib,
+			($) => $.crib.main,
 			'brief',
 			'What to look for',
 		),
 		w,
-		S,
 		'fields',
-		crib,
+		($) => $.crib.main,
 		'fields',
 		"The sweep's prompt fields",
 	)
-	const asked = modelCall(cribbed, w, S, 'sweep', {
+	const asked = modelCall(cribbed, w, 'sweep', {
 		prompt: STORY_PROMPT_KEYS.sweep,
-		brief: ($) => at($, `${S}brief`).text,
-		crib: ($) => at($, `${S}cribText`).text,
-		fields: ($) => at($, `${S}fields`).main,
-		cast: terms.cast,
-		history: terms.history,
+		brief: ($) => $.brief.text,
+		crib: ($) => $.cribText.text,
+		fields: ($) => $.fields.main,
+		cast: ($) => $.cast.cast,
+		history: ($) => $.history.messages,
 		schema: STORY_SWEEP_SCHEMA,
 		briefTurn: true,
 		expose: {
 			status: 'Looking back over the story',
-			label: 'Look back over the story',
+			// Not the routine's name, which titles its duties card (S7): two steps of one group never share a heading.
+			label: 'File what is worth keeping',
 			purpose:
 				'Every few turns, looks back over the story and files what is worth keeping: a summary, new lore and people, the world as it now stands.',
 		},
 	})
-	const sorted = scriptStep(asked, w, S, 'swept', STORY_SWEEP_SCRIPT.seedKey, ($) => ({
-		json: at($, `${S}sweepWrite`).json,
-		modes: $.tasks.modes,
+	const sorted = scriptStep(asked, w, 'swept', STORY_SWEEP_SCRIPT.seedKey, ($) => ({
+		json: $.sweepWrite.json,
+		modes: $.duties.modes,
 	}), 'What the sweep found, sorted', 'Looking back over the story')
 	/** The summary — one history entry. */
-	const summarized = sorted.junction('summary', { on: swept }, (j: any) => {
-		const arm = (b: any, mode: 'full' | 'review') => {
-			const X = `${S}summary.${mode}.`
+	const summarized = sorted.junction('summary', { on: ($) => $.swept.main }, (j) => {
+		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
 			const member = mode === 'full' ? 'summaryFull' : 'summaryReview'
-			w.params.push([`${X}write`, { entryType: 'core:entry/history' }])
-			if (mode === 'review') review.push(`${X}write`)
-			const doc = ($: any) => at($, `${X}doc`).main
+			w.params.push([on(b, 'write'), { entryType: bareEntryTypeId(historyEntryType) }])
+			if (mode === 'review') review.push(on(b, 'write'))
 			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
 			return textPart(
-				textPart(jsonPart(b, w, X, 'doc', swept, member, rv('The summary, as written')), w, X, 'name', doc, 'name', rv("The summary's title")),
+				textPart(
+					jsonPart(b, w, 'doc', ($) => $.sweep.due.swept.main, member, rv('The summary, as written')),
+					w,
+					'name',
+					($) => $.doc.main,
+					'name',
+					rv("The summary's title"),
+				),
 				w,
-				X,
 				'content',
-				doc,
+				($) => $.doc.main,
 				'content',
 				rv('The summary'),
 			).outlet(
 				'write',
-				($: any) =>
+				($) =>
 					C.createLoreEntry.v1({
-						name: at($, `${X}name`).text,
-						content: at($, `${X}content`).text,
+						name: $.name.text,
+						content: $.content.text,
 						params: slot.params(),
 					}),
 				{ expose: { label: mode === 'full' ? 'File the summary' : 'Hold the summary for review' } },
 			)
 		}
 		return j
-			.when('full', { path: 'summaryFull', truthy: true }, (b: any) => arm(b, 'full'))
-			.when('review', { path: 'summaryReview', truthy: true }, (b: any) => arm(b, 'review'))
+			.when('full', { path: (v: Swept) => v.summaryFull, truthy: true }, (b) => arm(b, 'full'))
+			.when('review', { path: (v: Swept) => v.summaryReview, truthy: true }, (b) => arm(b, 'review'))
 	})
-	const lored = entryWrites(summarized, w, review, S, swept, 'lore', 'lore', 'core:entry/world-lore', 'lore entry', 6)
-	const peopled = entryWrites(lored, w, review, S, swept, 'cast', 'cast', 'core:entry/character-lore', 'person', 4)
-	const placed = entryWrites(peopled, w, review, S, swept, 'scenes', 'scenes', 'core:entry/location', 'location', 4)
+	const lored = entryWrites(summarized, w, review, 'lore', bareEntryTypeId(worldLoreEntryType), 'lore entry', 6)
+	const peopled = entryWrites(lored, w, review, 'cast', bareEntryTypeId(characterLoreEntryType), 'person', 4)
+	const placed = entryWrites(peopled, w, review, 'scenes', bareEntryTypeId(locationEntryType), 'location', 4)
 	/** The world's state — changes on the world, applied on Full, proposed on Review. */
-	const worlded = placed.junction('world', { on: swept }, (j: any) => {
-		const arm = (b: any, mode: 'full' | 'review') => {
-			const X = `${S}world.${mode}.`
-			if (mode === 'full') w.params.push([`${X}apply`, { mode: 'apply' }])
-			return jsonPart(b, w, X, 'changes', swept, mode === 'full' ? 'worldFull' : 'worldReview', mode === 'review' ? "The world's changes (for review)" : "The world's changes")
-				.query('resolve', ($: any) =>
+	const worlded = placed.junction('world', { on: ($) => $.swept.main }, (j) => {
+		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
+			if (mode === 'full') w.params.push([on(b, 'apply'), { mode: 'apply' }])
+			return jsonPart(
+				b,
+				w,
+				'changes',
+				($) => $.sweep.due.swept.main,
+				mode === 'full' ? 'worldFull' : 'worldReview',
+				mode === 'review' ? "The world's changes (for review)" : "The world's changes",
+			)
+				.query('resolve', ($) =>
 					C.resolveStateChanges.v1({
-						changes: at($, `${X}changes`).main,
-						base: at($, `${S}state`).version,
+						changes: $.changes.main,
+						base: $.sweep.due.state.version,
 						scope: $.input.sessionScope,
 					}),
 				)
 				.task(
 					mode === 'full' ? 'apply' : 'propose',
-					($: any) =>
+					($) =>
 						C.setState.v1({
-							changes: at($, `${X}resolve`).changes,
+							changes: $.resolve.changes,
 							scope: $.input.sessionScope,
-							base: at($, `${S}state`).version,
-							worldRow: $.save.messageId,
+							base: $.sweep.due.state.version,
 							params: slot.params(),
 						}),
 					{ expose: { label: mode === 'full' ? "Keep the world's state" : "Propose the world's state" } },
 				)
 		}
 		return j
-			.when('full', { path: 'worldFull', truthy: true }, (b: any) => arm(b, 'full'))
-			.when('review', { path: 'worldReview', truthy: true }, (b: any) => arm(b, 'review'))
+			.when('full', { path: (v: Swept) => v.worldFull, truthy: true }, (b) => arm(b, 'full'))
+			.when('review', { path: (v: Swept) => v.worldReview, truthy: true }, (b) => arm(b, 'review'))
 	})
 	/**
 	 * 🚧 How the characters stand (lane 2, 2026-10-19): the ties the sweep
@@ -1003,23 +545,23 @@ const sweepBranch = (s: any, w: Wiring, terms: StoryTasksTerms, review: string[]
 	 * — the existing relationship proposal path. A proposal on Full and on
 	 * Review alike: the graph never applies itself.
 	 */
-	const tied = worlded.junction('relationships', { on: swept }, (j: any) =>
-		j.when('proposed', { path: 'relationships', truthy: true }, (b: any) =>
-			jsonPart(b, w, `${S}relationships.proposed.`, 'ties', swept, 'relationships', 'How they stand').outlet(
+	const tied = worlded.junction('relationships', { on: ($) => $.swept.main }, (j) =>
+		j.when('proposed', { path: (v: Swept) => v.relationships, truthy: true }, (b) =>
+			jsonPart(b, w, 'ties', ($) => $.sweep.due.swept.main, 'relationships', 'How they stand').outlet(
 				'propose',
-				($: any) => C.graphProposal.v1({ proposal: at($, `${S}relationships.proposed.ties`).main }),
+				($) => C.graphProposal.v1({ proposal: $.ties.main }),
 				{ expose: { label: 'Propose how they stand' } },
 			),
 		),
 	)
 	/** The goals — the session's running note (`annex.core['story-goals']`). */
-	return tied.junction('goals', { on: swept }, (j: any) =>
-		j.when('noted', { path: 'goals', truthy: true }, (b: any) =>
-			textPart(b, w, `${S}goals.noted.`, 'text', swept, 'goals', 'The goals, as text').outlet(
+	return tied.junction('goals', { on: ($) => $.swept.main }, (j) =>
+		j.when('noted', { path: (v: Swept) => v.goals, truthy: true }, (b) =>
+			textPart(b, w, 'text', ($) => $.sweep.due.swept.main, 'goals', 'The goals, as text').outlet(
 				'write',
-				($: any) =>
+				($) =>
 					C.setSessionAnnex.v1({
-						value: { [STORY_GOALS_KEY]: at($, `${S}goals.noted.text`).text } as any,
+						value: { [STORY_GOALS_KEY]: $.text.text } as any,
 						params: slot.params(),
 					}),
 				{ expose: { label: 'Keep the goals' } },
@@ -1027,20 +569,3 @@ const sweepBranch = (s: any, w: Wiring, terms: StoryTasksTerms, review: string[]
 		),
 	)
 }
-
-/**
- * 🚧 The tail: the reckoning and the sweep behind their junctions, on what
- * the reply's head resolved — its `tasks` step (`respond.ts`, moved there in
- * lane 2 so the reply group obeys its own tasks). `review` collects the
- * write steps the spec's preset puts behind the review gate
- * (`settings(node, { review: 'on' })`).
- * @internal
- */
-export const storyTasksTail = (c: any, w: Wiring, terms: StoryTasksTerms, review: string[]) =>
-	c
-		.junction('reckon', { on: ($: any) => $.tasks.reckoning }, (j: any) =>
-			j.when('on', { truthy: true }, (r: any) => reckonBranch(r, w, terms, review)),
-		)
-		.junction('sweep', { on: ($: any) => $.tasks.sweep }, (j: any) =>
-			j.when('due', { truthy: true }, (s: any) => sweepBranch(s, w, terms, review)),
-		)

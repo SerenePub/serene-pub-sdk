@@ -156,7 +156,8 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 			assert.match(text(view.query('[role="status"]'))!, /Loading the world's stats/)
 			assert.equal(view.query('[data-state-widget]')!.getAttribute('data-arrangement'), 'list')
 			await view.push('scoped', { session_state: sessionState({ slots: [] }) })
-			assert.match(text(view.root)!, /Nothing in this session declares world stats/)
+			// 🚧 RF fix 8: attributes are the rules' — rules that declare none say so.
+			assert.match(text(view.root)!, /This session's rules declare no attributes/)
 			await view.push('scoped', {
 				session_state: sessionState({ owners: sessionState().owners.filter((o) => o.key !== 'world') }),
 			})
@@ -334,7 +335,7 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 			await view.push('scoped', { session_state: sessionState({ resolved: { world: {}, cast: {} } }) })
 			assert.match(text(view.root)!, /No one in the cast has a stat in play yet/)
 			await view.push('scoped', { session_state: sessionState({ slots: [] }) })
-			assert.match(text(view.root)!, /Nothing in this session declares stats/)
+			assert.match(text(view.root)!, /This session's rules declare no attributes/)
 			await view.push('scoped', { session_state: sessionState({ loaded: false }) })
 			assert.match(text(view.query('[role="status"]'))!, /Loading the cast's stats/)
 		} finally {
@@ -499,7 +500,7 @@ describe("core's state widgets draw and edit every catalogue shape", { timeout: 
 			assert.equal(text(view.query('[data-widget-part~="stats.empty"]')), 'Your sheet appears once your character is made.')
 			// Without one, the widget's own sentence.
 			await view.push('settings', {})
-			assert.match(text(view.root)!, /Nothing in this session declares stats/)
+			assert.match(text(view.root)!, /This session's rules declare no attributes/)
 		} finally {
 			await view.unmount()
 		}

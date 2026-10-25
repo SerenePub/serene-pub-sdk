@@ -28,8 +28,11 @@ import { DUNGEON_CRAWLER_REPERTOIRE_SLOTS } from './sheet.js'
 import { DUNGEON_CRAWLER_PREAMBLE, seedScript, type CoreScriptSeed } from './preamble.js'
 
 export { DATA_TRANSFORM_KIND, DUNGEON_CRAWLER_SLOT_DEFAULTS, type CoreScriptSeed } from './preamble.js'
+// 🚧 Every genre's generic reader (`shared/scriptSeed.ts`, 2026-10-23, S5); re-exported from its old home.
+export { READ_PATH_SCRIPT } from '../../shared/scriptSeed.js'
 
 /** The interview's answer action — what every question's block fires. @experimental */
+// derive-don't-spell: the interview spec (`interview.ts`) imports this module, and its scripts read the identity as they load.
 export const DUNGEON_CRAWLER_INTERVIEW_ACTION = 'core:spec/dungeon-crawler-interview#answer'
 
 /**
@@ -83,6 +86,11 @@ var JUST_PLAY = ${JSON.stringify(JUST_PLAY_CHOICE)};
 var MAKE_CHARACTER = ${JSON.stringify(MAKE_CHARACTER_CHOICE)};
 var STANDING = ${JSON.stringify(DUNGEON_CRAWLER_STANDING_ORDERS)};
 var STANDING_Q = ${JSON.stringify(STANDING_ORDER_QUESTION)};
+${DUNGEON_CRAWLER_KIT_JS}
+// 🚧 The classes the session's ruleset knows (Lair rewrite D9; read off the
+// inlet since 2026-10-23, S4): the Planner names one, or a name for one, so
+// the class finds its starting kit — nothing said where the rules keep none.
+var CLASS_LINE = KIT_LABELS.length ? "Each class is one of the ruleset's — " + classList() + " — or a name for one of them that fits the world." : "";
 function choices(addressee, referent, question, options) {
 	var actions = [];
 	for (var i = 0; i < options.length; i++) actions.push({ fn: "answer", action: ACTION, choice: options[i][0], label: options[i][1] });
@@ -119,30 +127,6 @@ function justPlayBlock(who) {
 /** The interview's ES5: the preamble, then its forms. */
 const PREAMBLE = `${DUNGEON_CRAWLER_PREAMBLE}
 ${INTERVIEW_JS}`
-
-/**
- * 🚧 `core:script/read-path`: one part of a document, by dotted path —
- * `{ from, path }` → the value at `from.<path>`, or `null`. The generic
- * reader the graph language lacks; the text twin is `join-text@1`'s `path`.
- * @experimental
- */
-export const READ_PATH_SCRIPT = seedScript(
-	'core:script/read-path',
-	'Read a part of a document',
-	`
-var v = value || {};
-var cur = v.from;
-var path = typeof v.path === "string" ? v.path : "";
-if (path) {
-	var parts = path.split(".");
-	for (var i = 0; i < parts.length; i++) {
-		if (cur === null || cur === undefined || typeof cur !== "object") { cur = null; break; }
-		cur = cur[parts[i]];
-	}
-}
-return cur === undefined ? null : cur;
-`,
-)
 
 /**
  * 🚧 `core:script/dungeon-crawler-lanes`: who at the table is greeted on
@@ -305,7 +289,7 @@ function named(given, fromPersona) {
 	// a persona's name is the table's to say.
 	if (fromPersona) plan.note = "Name: " + given + ", from your persona.";
 	else plan.echo = "Name: " + given + ".";
-	plan.classBrief = worldLine() + "\\nThe character is called " + given + ". Offer three to five classes that fit this world, each a short name.";
+	plan.classBrief = worldLine() + "\\nThe character is called " + given + ". Offer three to five classes that fit this world, each a short name. " + CLASS_LINE;
 }
 // Ask the name — or, for a persona's seat, take the persona's and go on to the class.
 function askName(intro) {
@@ -321,8 +305,8 @@ function sheetBrief(how) {
 	var lines = [worldLine()];
 	if (plan.justPlay) {
 		lines.push(isOwner
-			? "The player chose Just play: choose everything for them. Pick the world's shape (dungeon or open-world), the difficulty (gentle, fair or brutal), the goal (shared or secret), and their character: a name, a class and a short backstory."
-			: "The player chose Just play: make their character for them — a name, a class and a short backstory. The world is already chosen; leave shape, difficulty and goal empty.");
+			? "The player chose Just play: choose everything for them. Pick the world's shape (dungeon or open-world), the difficulty (gentle, fair or brutal), the goal (shared or secret), and their character: a name, a class and a short backstory. " + CLASS_LINE
+			: "The player chose Just play: make their character for them — a name, a class and a short backstory. The world is already chosen; leave shape, difficulty and goal empty. " + CLASS_LINE);
 	} else {
 		lines.push("The character is " + (name || "unnamed") + (hero["class"] ? ", a " + hero["class"] : "") + ".");
 		lines.push("Their name is chosen: write it as it is. Leave class empty: it is chosen. Give a short backstory.");
@@ -523,7 +507,7 @@ if (!name) {
 var cls = justPlay ? text(json["class"]) : text(hero["class"]);
 // 🚧 Just play with no class from the model (the 100-turn walk, B20): the
 // table picks one — its kit with it — never a sheet left "not set".
-if (justPlay && !cls) cls = KIT_LABELS[Math.floor(Math.random() * KIT_LABELS.length)] || "Fighter";
+if (justPlay && !cls) cls = KIT_LABELS[Math.floor(Math.random() * KIT_LABELS.length)] || "";
 var whoMatch = /^user:(\\d+)$/.exec(who);
 var sheetSeat = whoMatch ? seatOf(doc, Number(whoMatch[1])) : null;
 var sheetRef = sheetSeat ? seatRefOf(sheetSeat) : null;
@@ -538,9 +522,9 @@ var kitList = kitDeltas(kitKey, sheetRef || SEAT_TOKEN);
 // 🚧 How the session's ruleset casts (P2-4, P2-6): spell slots are the
 // kits' ruleset's, at a table that plays slots; spell points are a pool.
 var rulesNow = rulesetOf(v.ruleset);
-if (!rulesNow.kit || rulesNow.casting === "points") {
+if (!rulesNow.decides || rulesNow.casting === "points") {
 	var keptKit = [];
-	for (var kk = 0; kk < kitList.length; kk++) if (kitList[kk].repertoire !== "spell-slots") keptKit.push(kitList[kk]);
+	for (var kk = 0; kk < kitList.length; kk++) if (kitList[kk].repertoire !== text(KITS.slotType)) keptKit.push(kitList[kk]);
 	kitList = keptKit;
 }
 // 🚧 Full health is the seat's own hp max — a stat configuration
@@ -548,15 +532,17 @@ if (!rulesNow.kit || rulesNow.casting === "points") {
 // Vis Itineris's level-1 rule: the class's hit die plus the Constitution
 // modifier (\`kitMaxHp\`), never a number the model picks (2026-10-17).
 var maxNow = sheetRef ? maxHpOf(state, sheetRef) : null;
+// 🚧 None where the session's rules keep no kits (S4): health stays the sheet's own.
 var maxHp = kitMaxHp(kitKey);
-var healthConfig = maxHp !== maxNow ? { max: maxHp } : null;
+var healthConfig = maxHp !== null && maxHp !== maxNow ? { max: maxHp } : null;
 // 🚧 A new sheet is a living character at full health (a newcomer after a
 // death: \`death.ts\`), with the class's six ability scores.
 var changes = [{ slot: SL.level, value: 1 }, { slot: SL.fate, value: "alive" }];
-changes.push({ slot: SL.hp, value: maxHp });
+if (maxHp !== null) changes.push({ slot: SL.hp, value: maxHp });
+else if (maxNow !== null) changes.push({ slot: SL.hp, value: maxNow });
 var scores = kitAbilityChanges(kitKey);
 for (var ab = 0; ab < scores.length; ab++) changes.push(scores[ab]);
-// 🚧 …and the class's trained skills (owner ruling ★4): a rogue's pick adds proficiency.
+// 🚧 …and the class's trained skills (owner ruling ★4): a trained check adds proficiency.
 var trained = kitSkillChanges(kitKey);
 for (var tk = 0; tk < trained.length; tk++) changes.push(trained[tk]);
 // 🚧 At a spell-points table the class's pool, full (P2-4) — none for a class that casts nothing.
@@ -565,10 +551,10 @@ for (var tk = 0; tk < trained.length; tk++) changes.push(trained[tk]);
 // beside a second row saying the most; a class that casts nothing holds a
 // pool of none, which the sheet does not draw.
 var pointsConfig = null;
-if (rulesNow.kit && rulesNow.casting === "points") {
+if (rulesNow.casting === "points" && rulesNow.pointsSlot) {
 	var pool = kitSpellPoints(kitKey);
-	changes.push({ slot: SPELL_POINTS_SLOT, value: pool });
-	var poolNow = sheetRef ? own(own(own(state).configs)[stateKeyOf(sheetRef)])[SPELL_POINTS_SLOT] : null;
+	changes.push({ slot: rulesNow.pointsSlot, value: pool });
+	var poolNow = sheetRef ? own(own(own(state).configs)[stateKeyOf(sheetRef)])[rulesNow.pointsSlot] : null;
 	if (!poolNow || poolNow.max !== pool) pointsConfig = { max: pool };
 }
 if (justPlay && cls) changes.push({ slot: SL.characterClass, value: cls });
@@ -678,7 +664,10 @@ if (genesisDue) {
 		(companions0.length ? "\\nTravelling with them, voiced by the Narrator: " + companions0.join(", ") + "." : "");
 } else if (built) openStory = [who];
 return {
-	seatName: name, seatChanges: changes.length ? changes : null, healthConfig: healthConfig, pointsConfig: pointsConfig, worldChanges: worldChanges, world: world,
+	seatName: name, seatChanges: changes.length ? changes : null, healthConfig: healthConfig, pointsConfig: pointsConfig,
+	// 🚧 The pool the config bounds — the session's rules' (S4).
+	pointsSlot: pointsConfig ? rulesNow.pointsSlot : null,
+	worldChanges: worldChanges, world: world,
 	kit: kitOut,
 	text: lines.join("\\n\\n"), after: after, genesisBrief: genesisBrief, goalMode: genesisBrief ? goalMode : null,
 	openStory: openStory && openStory.length ? openStory : null,
@@ -828,22 +817,23 @@ var seatName = seatNameOf(seat);
 // world pushes — the Planner answers rules questions from them.
 var rs = own(v.ruleset);
 var rsId = text(rs.id);
-var rsName = /vis-itineris/.test(rsId) ? "Vis Itineris" : /freeform|ruleset\\/story@/.test(rsId) ? "Freeform" : rsId ? rsId.replace(/^core:ruleset\\//, "").replace(/@\\d+$/, "").replace(/-/g, " ") : "";
+// 🚧 The ruleset by its own name (its gist, S4), else its id in words.
+var rsName = text(rs.name) || (rsId ? rsId.replace(/^[a-z0-9.-]+:ruleset\\//, "").replace(/@\\d+$/, "").replace(/-/g, " ") : "");
 var rigour0 = text(rs.rigour);
-var playsWords = rigour0 === "prose" ? "nothing is rolled and no number is told: everything is said in words" : rigour0 ? "the table rolls the dice in the open and keeps the numbers" : "";
+var playsWords = rigour0 === "prose" || (rigour0 && rs.decides === false)
+	? "nothing is rolled and no number is told: everything is said in words"
+	: rigour0 ? (rs.chance === true ? "the table rolls the dice in the open and keeps the numbers" : "the table decides each check by its rules in the open and keeps the numbers") : "";
 var difficulty0 = text(own(state.world).difficulty);
 // 🚧 The rules' options this table chose (PLAN-dc-after-walk2 Q2-4, the walk's
 // #22): what happens at zero health and how spells are paid for — so "what
-// happens if I drop?" has an answer. Only where the kits' ruleset is played.
+// happens if I drop?" has an answer — 🚧 read off the session's rules (S4):
+// their fall rule (★I), else down and out with nothing rolled; their casting.
 var rl0 = rulesetOf(v.ruleset);
-var options0 = rl0.kit
-	? [
-		rl0.deathSaves
-			? "at zero health: death saves — a roll each round, three passes and they are stable, three failures and they die"
-			: "at zero health: one roll at death's door decides",
-		rl0.casting === "points" ? "spells: spell points, a spell costing its level" : "spells: spell slots, one a spell, back after a long rest"
-	]
-	: [];
+var options0 = [];
+if (rl0.fall) options0.push(rl0.deathSaves ? "at zero health: death saves — a roll each round, " + deathSavesRule(rl0.fall, true) : "at zero health: one roll at death's door decides");
+else if (rl0.decides) options0.push("at zero health: down and out until a rest — nothing is rolled");
+if (rl0.casting === "points") options0.push("spells: spell points, a spell costing its level");
+else if (rl0.decides && text(own(rs.kits).slotType)) options0.push("spells: spell slots, one a spell, back after a long rest");
 if (rsName || playsWords || difficulty0 || options0.length)
 	lines.push("This table: " + [rsName ? "plays " + rsName : "", playsWords, difficulty0 ? "difficulty " + difficulty0 : ""].concat(options0).filter(function (x) { return x; }).join("; ") + ".");
 if (hero.name) {
@@ -955,7 +945,7 @@ var rd = Array.isArray(json.deltas) ? json.deltas : [];
 // the asking player's own character (P1-1, P1-3).
 if (ref) for (var re0 = 0; re0 < rd.length; re0++) if (rd[re0] && typeof rd[re0] === "object" && !text(rd[re0].owner)) { rd[re0] = own(rd[re0]); rd[re0].owner = ref; }
 for (var i = 0; i < rd.length && deltas.length < 8; i++) {
-	var d = deltaOf(rd[i]);
+	var d = deltaOf(asDelta(rd[i]));
 	if (!d) continue;
 	// A seat, a companion or a place named by its name is its reference
 	// (P1-1); an owner left empty is the asking player's own character.

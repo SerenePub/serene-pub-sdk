@@ -37,9 +37,10 @@ const NOBODY: TurnPoolParams = { characters: 'none', personas: 'none', envoys: '
  * annex moving (a declaration, a skip, a resolved round — and a lane
  * opening).
  *
- * ⚠ Not `member-added`: a preset binds one spec per event, and that one is
- * the welcome's (`create.ts`), which opens the newcomer's lane — an annex
- * write, so the order is recomputed on `annex-changed` all the same. A seat
+ * ⚠ Not `member-added`: the welcome answers it (`create.ts`) by opening the
+ * newcomer's lane — an annex write — so the order is recomputed on
+ * `annex-changed` all the same. (A preset once bound one spec per event;
+ * registrations allow several since R24, and this list needs none.) A seat
  * a pipeline names (the interview) is no member event either; the annex
  * writes beside it recompute the order.
  * @experimental

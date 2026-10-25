@@ -116,6 +116,13 @@ const actionKeysOf = (v: SpecRef): string[] | undefined => {
 	return actionsOf({ id: v.id, contributes }).map((a) => a.key)
 }
 import { genre as makeGenre, genreIdOf, sessionEvents, type GenreDecl, type GenreProps } from './genres.js'
+import {
+	registrationRange,
+	type PresetRegistrationChanges,
+	type RegistrationChange,
+	type RegistrationDecl,
+} from './registrations.js'
+import type { SettingValue } from './exposure.js'
 import { eventById, isEventId, isSessionEventDecl, type SessionEventDecl } from './events.js'
 import { makeValueToolkit, type ValueToolkit } from './values.js'
 import { SAVE_MESSAGE_SPEC_ID } from './descriptors.js'
@@ -333,7 +340,35 @@ export interface PresetDecl {
 	 */
 	label: I18n
 	description?: I18n
+	/**
+	 * ⏳ Which spec answers each event, keyed by event id.
+	 * @deprecated An alias to 0.7 (PLAN-layering D4): a preset is **changes
+	 * on the genre's defaults** — `registrations`. `presetChangesOf(decl)`
+	 * reads these as registrations. A preset declared with `register` /
+	 * `drop` / `change` stores `{}` here.
+	 */
 	bindings: Record<string, PresetBinding>
+	/**
+	 * 🚧 This preset's **changes on the genre's defaults** (R2, PLAN-layering
+	 * D4): registrations it adds, the keys it drops, and changes to the rest.
+	 * Present only when declared with `register` / `drop` / `change`; a
+	 * preset still on `bindings` is read through `presetChangesOf`.
+	 * @ruling R2, R3, R22
+	 */
+	registrations?: PresetRegistrationChanges
+	/**
+	 * 🚧 The genre's **default preset** (R22, A18): marked here, by the
+	 * preset itself, never by a slug on the genre. Absent: not the default.
+	 */
+	default?: true
+	/**
+	 * 🚧 What this preset builds on beyond its own package (A16, R6): package
+	 * requirements with version ranges — `acme.dice@^1.2`. Collected from
+	 * `use('…@range')` pipelines and stated ones; the host withdraws the preset
+	 * when one is disabled or missing, and deletes nothing. Absent when none.
+	 * @ruling A16
+	 */
+	requires?: string[]
 	/**
 	 * For the open `session-action` slot: which actions come along, each by
 	 * its **identity** — `<spec slug>#<key>`. A preset
@@ -341,17 +376,29 @@ export interface PresetDecl {
 	 * function are two entries, and including one says nothing about the
 	 * other. Absent means the host's companion rule (every action from the
 	 * genre owner's own namespace).
+	 * @deprecated ⏳ An alias to 0.7 (PLAN-layering D4): an action is offered
+	 * by an action registration — `register(spec.actions.<key>, spec)` in the
+	 * genre's defaults or a preset's `register`. `presetChangesOf` reads the
+	 * include list as action registrations.
 	 * @ruling U5c review, W-A
 	 */
 	actions?: { include: string[] }
 	/** What starting from this preset pre-fills the creation form with. */
 	defaults?: PresetDefaults
-	/** 🚧 Model calls one turn costs on this preset, as the card prints it (PLAN-genre-restructure §3, 2026-10-19); the host's parity test measures a real turn against it. Absent means "as the genre". */
+	/**
+	 * 🚧 Model calls one turn costs on this preset, as the card prints it (PLAN-genre-restructure §3, 2026-10-19); the host's parity test measures a real turn against it. Absent means "as the genre".
+	 * @deprecated ⏳ Accepted and kept as stated until calls per turn are derived from what is registered (PLAN-layering D4).
+	 */
 	callsPerTurn?: number
 	/** 🚧 The cast floor this preset lowers (never raises) the shape's to — `{ characters: 0 }` lets a Minimal story start with nobody in it. */
 	cast?: { characters?: number; personas?: number }
-	/** 🚧 Values this preset pins, keyed by setting key — the preset layer of the cascade: `session > preset > genre > core`. A `tasks` key pins the background tasks (`TaskSettingsV1`). Never stored per session. */
-	settings?: Readonly<Record<string, unknown>>
+	/**
+	 * 🚧 Values this preset sets, keyed by setting key — the preset layer of
+	 * the cascade: `session > preset > genre > core`. Each a plain value, or
+	 * `{ value, lock?, askAtStart? }` (`SettingValue`, A10): lock it for the
+	 * layers below, or place it on the start form. Never stored per session.
+	 */
+	settings?: Readonly<Record<string, SettingValue>>
 	/**
 	 * Whether the instance should offer this preset the moment the package is
 	 * enabled. **Absent means no**, and that is the interesting half.
@@ -487,18 +534,149 @@ export interface PresetInput {
 	 */
 	label: I18n
 	description?: I18n
-	bindings: BindingEntry[]
-	/** Absent means the host's companion rule — see `PresetDecl.actions`. */
+	/**
+	 * 🚧 This is the genre's **default preset** (R22) — marked here, never by
+	 * a slug on the genre (A18).
+	 */
+	default?: true
+	/** 🚧 Registrations this preset adds to the genre's defaults — `register(…)` values (R2). */
+	register?: readonly RegistrationDecl[]
+	/** 🚧 Registrations of the genre's defaults this preset drops — the registration objects, never keys. */
+	drop?: readonly RegistrationDecl[]
+	/**
+	 * 🚧 Changes to registrations of the genre's defaults — `{ of: reckoning, mode: 'review' }`:
+	 * the registration object, and the fields that differ.
+	 */
+	change?: ReadonlyArray<{ of: RegistrationDecl } & Partial<Pick<RegistrationDecl, 'values' | 'mode' | 'when' | 'allowStacking' | 'caps' | 'order' | 'label'>>>
+	/** 🚧 Package requirements with version ranges — `acme.dice@^1.2` (A16). `use('…@range')` pipelines add their own. */
+	requires?: readonly string[]
+	/**
+	 * ⏳ Which spec answers which event.
+	 * @deprecated An alias to 0.7 — state `register` / `drop` / `change` on the genre's defaults.
+	 */
+	bindings?: BindingEntry[]
+	/**
+	 * ⏳ Which actions come along. Absent means the host's companion rule — see `PresetDecl.actions`.
+	 * @deprecated An alias to 0.7 — register each action: `register(spec.actions.<key>, spec)`.
+	 */
 	actions?: { include: ActionPick[] }
 	defaults?: PresetDefaultsInput
-	/** 🚧 See `PresetDecl.callsPerTurn`. */
+	/**
+	 * 🚧 See `PresetDecl.callsPerTurn`.
+	 * @deprecated ⏳ Accepted; derived from what is registered later (PLAN-layering D4).
+	 */
 	callsPerTurn?: number
 	/** 🚧 See `PresetDecl.cast`. */
 	cast?: { characters?: number; personas?: number }
-	/** 🚧 See `PresetDecl.settings`. */
-	settings?: Readonly<Record<string, unknown>>
+	/** 🚧 See `PresetDecl.settings` — each a value, or `{ value, lock?, askAtStart? }`. */
+	settings?: Readonly<Record<string, SettingValue>>
 	/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
 	enabled?: boolean
+}
+
+/**
+ * Keys that would make a preset build on another preset — refused (R2).
+ * @experimental
+ * @ruling R2
+ */
+export const PRESET_PARENT_KEYS: readonly string[] = Object.freeze(['extends', 'base', 'parent', 'from', 'preset', 'inherits'])
+
+/** The one sentence for a preset that names a parent — the builder's refusal and C37's. */
+const presetParentSentence = (where: string, k: string): string =>
+	`${where} names '${k}' — a preset never builds on another preset (R2): it is one set of changes on ` +
+	`the genre's defaults. To start from another preset, copy its register / drop / change / settings`
+
+/**
+ * 🚧 **One level**, judged on a STORED preset (R2, R3) — the verdict the
+ * builder's refusal gives at `preset()`, for a preset that arrives as data (an
+ * announcement, a manifest, a row): it names a parent (`extends`, `base`, …),
+ * it belongs to no genre, or it drops or changes a registration that neither
+ * its genre's defaults nor its own `register` list holds (a change on a
+ * change). As sentences; empty when it is one set of changes on one genre's
+ * defaults. Conformance C37 reads it; a host's install may too.
+ * @experimental
+ * @ruling R2, R3, R22
+ */
+export function presetLevelFindings(
+	preset: { slug?: string; genre?: unknown; registrations?: PresetRegistrationChanges } | null | undefined,
+	genreDefaults?: readonly RegistrationDecl[],
+): string[] {
+	if (!preset || typeof preset !== 'object') return ['a preset is an object — make it with preset({ … })']
+	const where = `preset '${preset.slug ?? '?'}'`
+	const out: string[] = []
+	for (const k of PRESET_PARENT_KEYS)
+		if ((preset as Record<string, unknown>)[k] !== undefined) out.push(presetParentSentence(where, k))
+	if (typeof preset.genre !== 'string' || !preset.genre)
+		out.push(`${where} names no genre — a preset belongs to one genre (R3) and changes that genre's defaults`)
+	const changes = preset.registrations
+	if (changes && genreDefaults) {
+		const held = new Set<string>([...genreDefaults.map((r) => r.key), ...(changes.register ?? []).map((r) => r.key)])
+		for (const key of changes.drop ?? [])
+			if (!held.has(key))
+				out.push(`${where} drops '${key}', which its genre's defaults do not register — a preset changes the genre's defaults, never another preset's changes (R2)`)
+		for (const c of changes.change ?? [])
+			if (!held.has(c.key))
+				out.push(`${where} changes '${c.key}', which its genre's defaults do not register — a preset changes the genre's defaults, never another preset's changes (R2)`)
+	}
+	return out
+}
+
+const isRegistrationShaped = (v: unknown): v is RegistrationDecl =>
+	!!v &&
+	typeof v === 'object' &&
+	typeof (v as RegistrationDecl).key === 'string' &&
+	!!(v as RegistrationDecl).trigger &&
+	typeof (v as RegistrationDecl).pipeline === 'string'
+
+const isPresetShaped = (v: unknown): boolean =>
+	!!v && typeof v === 'object' && typeof (v as { slug?: unknown }).slug === 'string' && ('bindings' in (v as object) || 'genre' in (v as object))
+
+/** The fields a preset's `change` may state beside `of`. */
+const PRESET_CHANGE_KEYS = ['values', 'mode', 'when', 'allowStacking', 'caps', 'order', 'label'] as const
+
+/** `<package>@<range>` — a package requirement with a semver range (A16). */
+const PACKAGE_REQUIREMENT = /^([a-z0-9]+(?:[.-][a-z0-9]+)*)@([~^<>=]*\s*\d[\w.+\-<>=|^~* ]*)$/
+
+/**
+ * 🚧 One `requires` entry read (A16): a package with a version range
+ * (`acme.dice@^1.2`), or a declared id (`acme:spec/x`, `core:event/x@1` — the
+ * `@1` of an event is its version, part of the id) with an optional range
+ * written after it (`acme:spec/x@^2`). `undefined` when it is neither.
+ * @experimental
+ * @ruling A16
+ */
+export function parseRequirement(entry: string): { requirement: string; package: string; id?: string; range?: string } | undefined {
+	if (typeof entry !== 'string' || !entry) return undefined
+	if (!entry.includes(':')) {
+		const m = PACKAGE_REQUIREMENT.exec(entry)
+		if (m) return { requirement: entry, package: m[1]!, range: m[2]!.trim() }
+		return /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/.test(entry) ? { requirement: entry, package: entry } : undefined
+	}
+	const pkg = entry.slice(0, entry.indexOf(':'))
+	const at = entry.lastIndexOf('@')
+	if (at > entry.indexOf(':')) {
+		const tail = entry.slice(at + 1)
+		// A whole number is a declared id's version (`core:event/x@1`), not a range.
+		if (!/^\d+$/.test(tail)) return { requirement: entry, package: pkg, id: entry.slice(0, at), range: tail }
+	}
+	return { requirement: entry, package: pkg, id: entry }
+}
+
+/**
+ * 🚧 The version ranges a manifest's (or an announcement's) `requires`
+ * names (A16) — one per entry that carries a range. The host enforces them
+ * at install (lane 5b); a preset whose requirement is missing or disabled is
+ * withdrawn, and nothing is deleted.
+ * @experimental
+ * @ruling A16
+ */
+export function requirementRanges(manifest: { requires?: readonly string[] } | null | undefined): Array<{ requirement: string; package: string; id?: string; range: string }> {
+	const out: Array<{ requirement: string; package: string; id?: string; range: string }> = []
+	for (const entry of manifest?.requires ?? []) {
+		const r = parseRequirement(entry)
+		if (r?.range) out.push({ requirement: r.requirement, package: r.package, ...(r.id ? { id: r.id } : {}), range: r.range })
+	}
+	return out
 }
 
 const isBindingObject = (v: unknown): v is { spec: SpecRef; config?: ConfigInput<any>; events?: string[] } =>
@@ -520,13 +698,34 @@ export function preset(input: PresetInput): PresetDecl {
 		)
 	const genre = isExternalRef(input.genre) ? input.genre.id : genreIdOf(input.genre)
 
+	// One level (R2): a preset is one set of changes on the genre's
+	// defaults, never on another preset. Cloning copies the changes.
+	for (const k of PRESET_PARENT_KEYS)
+		if ((input as unknown as Record<string, unknown>)[k] !== undefined) throw new Error(presetParentSentence(where, k))
+	const registrations = presetRegistrationsOf(input, where)
+	if (input.default !== undefined && input.default !== true)
+		throw new Error(`${where}.default: true, or leave it out`)
+	const requires = new Set<string>()
+	for (const r of input.requires ?? []) {
+		if (!parseRequirement(r))
+			throw new Error(`${where}.requires: '${r}' is not a requirement — '<package>@<range>', such as 'acme.dice@^1.2'`)
+		requires.add(r)
+	}
+	for (const d of [...(input.register ?? []), ...(input.change ?? []).map((c) => c.of)]) {
+		const range = d ? registrationRange(d) : undefined
+		if (range) requires.add(`${d.pipeline.slice(0, d.pipeline.indexOf(':'))}@${range}`)
+	}
+
 	const bindings: Record<string, PresetBinding> = {}
-	if (!Array.isArray(input.bindings))
+	// ⏳ The bindings alias (D4): kept exactly as it was, so a preset still
+	// declared with it stores — and hashes — as it always did.
+	const aliased = input.bindings !== undefined
+	if (aliased && !Array.isArray(input.bindings))
 		throw new Error(
 			`${where}: bindings is a list of specs — [createSession, { spec: respond, config: tuned }]; ` +
 				`each is bound on the events its inlet lock answers`,
 		)
-	for (const [i, raw] of input.bindings.entries()) {
+	for (const [i, raw] of (input.bindings ?? []).entries()) {
 		const entry = isBindingObject(raw) ? raw : { spec: raw as SpecRef }
 		const at = `${where} binding ${i + 1}`
 		const id = specIdOf(entry.spec, at)
@@ -577,7 +776,7 @@ export function preset(input: PresetInput): PresetDecl {
 	 * than a host deciding it out of sight. A preset that binds its own spec
 	 * there (a genre that refuses, rewrites or routes a message) keeps it.
 	 */
-	if (!bindings[sessionEvents.messageOffered])
+	if (aliased && !bindings[sessionEvents.messageOffered])
 		bindings[sessionEvents.messageOffered] = { spec: SAVE_MESSAGE_SPEC_ID }
 
 	const include = (pick: ActionPick, n: number): string[] => {
@@ -622,6 +821,10 @@ export function preset(input: PresetInput): PresetDecl {
 		label: input.label,
 		description: input.description,
 		bindings,
+		// 🚧 D4: present only when declared, so a preset on the aliases hashes as it did.
+		...(registrations ? { registrations } : {}),
+		...(input.default ? { default: true as const } : {}),
+		...(requires.size ? { requires: [...requires].sort() } : {}),
 		...(input.actions ? { actions: { include: input.actions.include.flatMap(include) } } : {}),
 		...(input.defaults
 			? {
@@ -654,6 +857,47 @@ const assertCastFloor = (v: { characters?: number; personas?: number }, where: s
 			throw new Error(`${where}.cast.${k} is a whole number (0 or more)`)
 	}
 	return { ...(v.characters !== undefined ? { characters: v.characters } : {}), ...(v.personas !== undefined ? { personas: v.personas } : {}) }
+}
+
+/**
+ * A preset's `register` / `drop` / `change`, read down to the stored changes
+ * (keys for the dropped and changed, derived from the registrations handed
+ * in). Throws the first mistake, with the fix.
+ */
+function presetRegistrationsOf(input: PresetInput, where: string): PresetRegistrationChanges | undefined {
+	if (input.register === undefined && input.drop === undefined && input.change === undefined) return undefined
+	const one = (v: unknown, at: string): RegistrationDecl => {
+		if (isPresetShaped(v) && !isRegistrationShaped(v))
+			throw new Error(`${at} names a preset — a preset never builds on another preset (R2); name registrations`)
+		if (!isRegistrationShaped(v))
+			throw new Error(`${at} is not a registration — make it with register(trigger, pipeline, { … })`)
+		return v
+	}
+	const list = (v: unknown, name: string): unknown[] => {
+		if (v === undefined) return []
+		if (!Array.isArray(v)) throw new Error(`${where}.${name} is a list of registrations`)
+		return v
+	}
+	const register = list(input.register, 'register').map((r, i) => one(r, `${where}.register[${i}]`))
+	const drop = list(input.drop, 'drop').map((r, i) => one(r, `${where}.drop[${i}]`).key)
+	const change: RegistrationChange[] = list(input.change, 'change').map((raw, i) => {
+		const at = `${where}.change[${i}]`
+		if (!raw || typeof raw !== 'object') throw new Error(`${at}: { of: registration, …changes }`)
+		const c = raw as Record<string, unknown>
+		const of = one(c.of, `${at}.of`)
+		for (const k of Object.keys(c))
+			if (k !== 'of' && !(PRESET_CHANGE_KEYS as readonly string[]).includes(k))
+				throw new Error(`${at}: '${k}' is not something a preset changes — one of ${PRESET_CHANGE_KEYS.join(', ')}`)
+		return Object.freeze({
+			key: of.key,
+			...Object.fromEntries(PRESET_CHANGE_KEYS.filter((k) => c[k] !== undefined).map((k) => [k, c[k]])),
+		}) as RegistrationChange
+	})
+	return Object.freeze({
+		...(register.length ? { register: Object.freeze(register) } : {}),
+		...(drop.length ? { drop: Object.freeze(drop) } : {}),
+		...(change.length ? { change: Object.freeze(change) } : {}),
+	})
 }
 
 /**

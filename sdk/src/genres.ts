@@ -23,6 +23,8 @@ import {
 	assertSessionWrites,
 	assertTurnControls,
 	channelDecls,
+	lorebookReadOptional,
+	lorebookShapeFindings,
 	widgetDeclsFindings,
 	type I18n,
 	type SessionShape,
@@ -32,12 +34,13 @@ import { assertSceneSettings, declaredScenePlace } from './sceneSettings.js'
 import { i18nFindings, localeMapOf, type LocaleMap } from './i18n.js'
 import { eventById, notADeclaredEvent } from './events.js'
 import { settingsSchemaFindings } from './settings.js'
-import { taskDeclsFindings, type TaskDecl } from './tasks.js'
+import type { RegistrationDecl } from './registrations.js'
+import { exposureFindings, type SettingValue } from './exposure.js'
 import { genreUsesFindings, type GenreUses } from './fit.js'
-import { getAttributeSlot, type AttributeSlotDecl } from './attributes.js'
-import type { AttributeSheetDecl } from './sheets.js'
+import { _withdrawHostStateOf, declareHostState, HOST_PLACE_KEY } from './hostState.js'
+import type { SlotAppliesTo } from './attributes.js'
 import { refuseUnlessIdentical } from './hash.js'
-import { getRuleset, RIGOURS, type Rigour } from './rulesets.js'
+import { getRuleset, handbookFindings, isRulesetTemplateId, RIGOURS, type HandbookPage, type Rigour } from './rulesets.js'
 import { finding, RULESET_ID_PATTERN, RulesetError } from './repertoires.js'
 import { isActionIdentity, parseSpecId, assertSpecId } from './identity.js'
 import {
@@ -84,6 +87,12 @@ export const sessionEvents = Object.freeze({
 	 * binds a spec of its own.
 	 */
 	messageOffered: 'core:event/message-offered@1',
+	/**
+	 * 🚧 A person asked for a message to be deleted; the pipeline registered
+	 * here deletes it (owner ruling 2026-10-23). Core registers none, so
+	 * Delete is offered nowhere until a genre or an administrator does.
+	 */
+	messageDeletionAsked: 'core:event/message-deletion-asked@1',
 	/**
 	 * Arbitrary buttons/triggers — the existing functions surface.
 	 * @ruling 19 §3
@@ -139,6 +148,17 @@ export const sessionEvents = Object.freeze({
 	 * `genre()` refuses it in `events`, so no preset can bind it.
 	 */
 	turnOrderChanged: 'core:event/turn-order-changed@1',
+	// ── 🚧 The session events the host raises (PLAN-layering D7, 2026-10-20; D11) ──
+	/** 🚧 A turn ended — a speaker's line landed and what it set off settled. */
+	turnEnded: 'core:event/turn-ended@1',
+	/** 🚧 A round ended — everyone the turn order seats has taken a turn. */
+	roundEnded: 'core:event/round-ended@1',
+	/** 🚧 A live scene was opened. */
+	sceneOpened: 'core:event/scene-opened@1',
+	/** 🚧 A live scene was closed. */
+	sceneClosed: 'core:event/scene-closed@1',
+	/** 🚧 The session's story clock moved. */
+	storyClockMoved: 'core:event/story-clock-moved@1',
 } as const)
 
 /** @experimental */
@@ -191,38 +211,59 @@ export interface GenreDecl {
 	readonly description?: I18n
 	/** 🚧 The card's long copy (PLAN-genre-restructure §6, 2026-10-19): who's in the room, who drives, calls per turn in plain words, what's required and optional, when to pick a sibling. Two lines show; "More" unfolds it in place; the docs compiler reuses it. */
 	readonly about?: I18n
-	/** 🚧 Who may sit here (ruled 2026-10-19): `'solo'` — never a group session: the form hides the group switch and the host refuses `isGroup`, invites, guest claims and lanes (the Guide, whose tools reach the app). `'group'` (default) — as the shape allows. */
+	/**
+	 * 🚧 The author's own **handbook** pages (2026-10-23, D8) beside the generated _How to play_ page; documentation, never a prompt block. Absent when unstated.
+	 * Spelled out rather than `HandbookPage`, as `uses` is: this interface is frozen and the handbook is still 🚧.
+	 */
+	readonly handbook?: readonly { readonly title: string; readonly body: string }[]
+	/** 🚧 Who may sit here (ruled 2026-10-19): `'solo'` — never a group session: the form hides the group switch and the host refuses `isGroup`, invites, guest claims and lanes (the Guide: one person's questions about the app). `'group'` (default) — as the shape allows. */
 	readonly members?: 'solo' | 'group'
-	/** 🚧 What this genre uses of a ruleset (PLAN-genre-restructure §11): the verbs its scripts emit (or `'any'`), the slots it reads, the repertoires it hands pieces from; `rulesetFit` rates every ruleset against it. */
+	/**
+	 * 🚧 What this genre **plays best with** (PLAN-genre-restructure §11; RF fix 8, owner ruling
+	 * 2026-10-23: "genres expect, never lock"): the verbs its scripts emit (or `'any'`), and the
+	 * attributes, entry types and zone types it reads by **tag** (`health`, `inventory`,
+	 * `condition`), each with the sentence the picker says why; `rulesetFit` rates every ruleset
+	 * against it and a ruleset lacking one plays it in words. Never a requirement a ruleset must
+	 * meet: a genre that needs a shape degrades in words when the rules lack it.
+	 */
 	readonly uses?: {
 		// Spelled out rather than `GenreUses`, as `rigour` is: this interface
 		// is frozen and the fit vocabulary is still 🚧 (`fit.ts`).
 		readonly verbs: readonly string[] | 'any'
-		readonly slots?: readonly string[]
-		readonly pieces?: readonly string[]
+		readonly attributes?: readonly { readonly tag: string; readonly kinds?: readonly string[]; readonly label: string; readonly why: string }[]
+		readonly entryTypes?: readonly { readonly tag: string; readonly label: string; readonly why: string }[]
+		readonly zoneTypes?: readonly { readonly tag: string; readonly label: string; readonly why: string }[]
 		readonly conditions?: boolean
 		readonly casting?: boolean
 		readonly dice?: 'required' | 'optional'
 		readonly optional?: {
 			readonly verbs?: readonly string[]
-			readonly slots?: readonly string[]
-			readonly pieces?: readonly string[]
+			readonly attributes?: readonly { readonly tag: string; readonly kinds?: readonly string[]; readonly label: string; readonly why: string }[]
+			readonly entryTypes?: readonly { readonly tag: string; readonly label: string; readonly why: string }[]
+			readonly zoneTypes?: readonly { readonly tag: string; readonly label: string; readonly why: string }[]
 			readonly conditions?: boolean
 			readonly casting?: boolean
 		}
 	}
-	/** 🚧 The background tasks this genre offers (PLAN-genre-restructure §4): chosen per session in a `'tasks'` field, pinned per preset, branched on by the genre's pipelines. */
-	readonly tasks?: readonly {
-		// Spelled out rather than `TaskDecl` for the same reason (`tasks.ts`).
-		readonly key: string
-		readonly label: I18n
-		readonly description?: I18n
-		readonly group: 'reply' | 'reckoning' | 'sweep' | 'events' | 'voices'
-		readonly kind: 'prose' | 'script' | 'both'
-		readonly default: 'full' | 'review' | 'off'
-		readonly detachable?: boolean
-		readonly reviewable?: boolean
-	}[]
+	/**
+	 * 🚧 **The genre's defaults** (R22, PLAN-layering D4): the registrations
+	 * every session of this genre starts from — which pipeline answers which
+	 * event, which actions are offered, which routines run on which cadence —
+	 * and the setting values the genre sets, locks or asks at start. Every
+	 * preset is one set of changes on top of these (R2).
+	 *
+	 * Spelled out loosely here rather than as `GenreDefaults` (this interface
+	 * is frozen, and the registration vocabulary is still 🚧): read it typed
+	 * with `genreDefaultsOf(genre)`. Declared with `genre(id, { defaults })`
+	 * or, when the registrations name pipelines that import the genre,
+	 * `withGenreDefaults(genre, { … })`. Absent when unstated, so a genre that
+	 * says nothing hashes as it did.
+	 * @ruling R2, R22, R38
+	 */
+	readonly defaults?: {
+		readonly registrations: readonly { readonly key: string; readonly trigger: { readonly family: string }; readonly pipeline: string }[]
+		readonly settings?: Readonly<Record<string, unknown>>
+	}
 	/**
 	 * The standing SessionShape every surface asks about.
 	 * @ruling 19 §1
@@ -234,46 +275,14 @@ export interface GenreDecl {
 	 * is added if absent — a genre without a create pipeline is not a genre.
 	 */
 	readonly events: Readonly<Record<string, GenreEventDecl>>
-	/**
-	 * The attribute slots this genre brings — `hp` and `gold` for a dungeon
-	 * crawl, `weather` and `time-of-day` for an adventure.
-	 *
-	 * The declarations themselves, not ids: a genre that names a slot nothing
-	 * declared would be a session whose stats validate against nothing. Core
-	 * owns the *types* (attributes.ts); a genre composes definitions from them,
-	 * which is why this list is a genre's to carry and not core's.
-	 *
-	 * A genre that advertises none — the standard chat — is a session where no
-	 * bar is ever drawn, which is the one-LLM-call rule holding at the surface.
+	/*
+	 * 🚧 Retired (RF fix 8, owner ruling 2026-10-23): `slots`, `sheets` and
+	 * `customAttributes`. A genre brings no attributes — the session's rules
+	 * do (their sections' attributes), and the host keeps the place, the time
+	 * and a genre tool's own state beside them (`hostState.ts`). What a genre
+	 * plays best with is said in `uses`; `genre()` refuses the three, and a
+	 * stored manifest that still carries them has them dropped.
 	 */
-	readonly slots?: readonly AttributeSlotDecl[]
-	/**
-	 * The attribute **sheets** this genre brings — named, ordered bundles of
-	 * the same slots (`sheets.ts`).
-	 *
-	 * Beside `slots` rather than instead of it, and both are read: a genre may
-	 * name a handful of loose slots, a sheet, or both, and `genreSlots` is the
-	 * one union of the two. A sheet is what carries the things a loose list
-	 * cannot — the order the slots are drawn and evaluated in, and the
-	 * `required`/`default`/`config` a genre decides per slot — so a genre with
-	 * anything to say about those says it with a sheet.
-	 */
-	readonly sheets?: readonly AttributeSheetDecl[]
-	/**
-	 * 🚧 Whether a session of this genre may track attributes **beyond** the
-	 * genre's own `slots` and `sheets` (its baseline) — ruled 2026-09-25:
-	 * "genres set the baseline and allow/deny custom attributes from being
-	 * added". `'allow'`: a session reads its world's attributes (the sheets
-	 * on its lorebook and cast members, and every slot the world's timeline
-	 * holds), on by default and picked slot by slot, and may add its own.
-	 * `'deny'` (the default when unstated): the session tracks exactly the
-	 * baseline — the standard chat denies, so a chat session never grows a
-	 * bar because its lorebook happens to carry one.
-	 *
-	 * Not `slots`: those are what the genre brings; this is whether anything
-	 * else may come in.
-	 */
-	readonly customAttributes?: CustomAttributes
 	/**
 	 * The **envoys** this genre brings with it (built 2026-09-16) — speakers
 	 * that exist nowhere in
@@ -403,18 +412,16 @@ export interface GenreProps {
 	description?: I18n
 	/** 🚧 The card's long copy — see `GenreDecl.about`. */
 	about?: I18n
+	/** 🚧 The author's own handbook pages — see `GenreDecl.handbook`. */
+	handbook?: readonly HandbookPage[]
 	/** 🚧 `'solo'` refuses group sessions — see `GenreDecl.members`. */
 	members?: 'solo' | 'group'
 	/** 🚧 What the genre uses of a ruleset — see `GenreDecl.uses`. */
 	uses?: GenreUses
-	/** 🚧 The background tasks the genre offers — see `GenreDecl.tasks`. */
-	tasks?: readonly TaskDecl[]
+	/** 🚧 The genre's defaults — its registrations and setting values; see `GenreDecl.defaults`. */
+	defaults?: GenreDefaults
 	shape?: SessionShape
 	events?: Record<string, GenreEventDecl>
-	slots?: readonly AttributeSlotDecl[]
-	sheets?: readonly AttributeSheetDecl[]
-	/** Whether sessions may track attributes beyond the baseline — see `GenreDecl.customAttributes`. */
-	customAttributes?: CustomAttributes
 	envoys?: readonly EnvoyDecl[]
 	/** What a person's persona-less line is called — see `GenreDecl.playerLabel`. */
 	playerLabel?: I18n
@@ -451,6 +458,7 @@ export type GenreRulesets = { only: readonly string[] } | { recommended: readonl
  * its reason's name: `bad-rigour` (no options, an unknown rigour, a default
  * outside the options) · `bad-rulesets` (both or neither form, an empty
  * list, a default outside `recommended`, the retired `strict`) · `bad-ruleset-id` ·
+ * 🚧 `template-ruleset` (a ruleset template, 2026-10-22) ·
  * `unknown-ruleset` — a `core:` id or one under the genre's own namespace
  * that no registered ruleset is (declare it above the genre). An id under
  * another package's namespace is the package's `requires`, resolved at
@@ -496,6 +504,11 @@ export function genreRulesetFindings(id: string, props: Pick<GenreProps, 'rigour
 				out.push(finding('bad-ruleset-id', `${id}.rulesets names '${String(rid)}', not a ruleset id ('owner:ruleset/name@N').`))
 				continue
 			}
+			// 🚧 A template is copied, never played (2026-10-22): no genre offers one.
+			if (isRulesetTemplateId(rid)) {
+				out.push(finding('template-ruleset', `${id}.rulesets names ${rid}, a ruleset template — an archetype to copy, never one a session plays. Name a ruleset made from it.`))
+				continue
+			}
 			const ns = rid.slice(0, rid.indexOf(':'))
 			if ((ns === 'core' || ns === own) && !getRuleset(rid))
 				out.push(finding('unknown-ruleset', `${id}.rulesets names ${rid}, which no registered ruleset is. Declare it above the genre.`))
@@ -504,12 +517,17 @@ export function genreRulesetFindings(id: string, props: Pick<GenreProps, 'rigour
 	return out
 }
 
-/** 🚧 Whether a genre's sessions may track attributes beyond its baseline (`GenreDecl.customAttributes`). @experimental */
-export type CustomAttributes = 'allow' | 'deny'
+/**
+ * 🚧 The retired attribute keys of a genre declaration (RF fix 8): what a
+ * genre may no longer say, and why — refused by `genre()`, dropped from a
+ * stored manifest.
+ * @internal
+ */
+export const RETIRED_GENRE_ATTRIBUTE_KEYS = Object.freeze(['slots', 'sheets', 'customAttributes'] as const)
 
-/** Does this genre let its sessions track attributes beyond its own? Unstated is `'deny'`. @experimental */
-export const genreAllowsCustomAttributes = (g: GenreDecl | string): boolean =>
-	(typeof g === 'string' ? registry.get(g) : g)?.customAttributes === 'allow'
+/** The sentence `genre()` refuses a retired attribute key with. @internal */
+const retiredGenreKeyFinding = (id: string, key: string): string =>
+	`${id}.${key}: a genre brings no attributes any more — the session's rules do. Say what it plays best with in \`uses\` (attributes, entry types and zone types by tag), and keep a tool's own state in its annex fields.`
 
 /* ── Envoys ─────────────────────────────────────────────────────────────── */
 
@@ -797,11 +815,8 @@ function assertEnabledWhen(
 
 /**
  * Every display string a genre carries: `name` (required) and
- * `description`; the shape's `fields` schema and its `panels[]` titles; and
- * the `label` / `description` of every slot and sheet it brings. The slots and
- * sheets passed their own doors already; they are read again here because a
- * genre is the declaration a session is created under, and a picker card that
- * lists a slot with no label is this genre's defect to hear about.
+ * `description`; and the shape's `fields` schema and its `panels[]` titles
+ * (🚧 a genre brings no slots or sheets since RF fix 8).
  * @experimental
  * @ruling R-20
  */
@@ -813,14 +828,6 @@ export function genreDisplayTextFindings(props: GenreProps, at: string): string[
 	if (props.shape) {
 		out.push(...settingsSchemaFindings(props.shape.fields, `${at}.shape.fields`))
 		out.push(...widgetDeclsFindings(props.shape.panels, `${at}.shape.panels`))
-	}
-	for (const slot of props.slots ?? []) {
-		out.push(...i18nFindings(slot.label, `${at}.slots[${slot.id}].label`))
-		out.push(...i18nFindings(slot.description, `${at}.slots[${slot.id}].description`))
-	}
-	for (const sheet of props.sheets ?? []) {
-		out.push(...i18nFindings(sheet.label, `${at}.sheets[${sheet.id}].label`, { required: true }))
-		out.push(...i18nFindings(sheet.description, `${at}.sheets[${sheet.id}].description`))
 	}
 	return out
 }
@@ -891,6 +898,14 @@ function assertGenreWidgets(props: GenreProps, id: string): { omitWidgets: strin
 	// default by its slug.
 	if (layouts.length && layouts[0]!.slug !== 'default')
 		problems.push(`${id} layouts: the first is the genre's default — give it slug 'default' (it is '${layouts[0]!.slug}')`)
+	// 🚧 One guests' layout at most, and never the default: the default is the owner's.
+	const forGuests = layouts.filter((l) => l.forGuests === true)
+	if (forGuests.length > 1)
+		problems.push(
+			`${id} layouts: ${forGuests.map((l) => `'${l.slug}'`).join(' and ')} are both forGuests — a guest's first open copies one`,
+		)
+	if (layouts[0]?.forGuests === true)
+		problems.push(`${id} layouts: the default is the owner's — mark another layout forGuests, or none`)
 	const slugs = new Set<string>()
 	for (const l of layouts) {
 		if (slugs.has(l.slug)) problems.push(`${id} layouts: two layouts are '${l.slug}' — a slug names one`)
@@ -961,23 +976,18 @@ export function genreSummarizeFindings(raw: unknown, at = 'summarize'): string[]
 const slotLocalKey = (slotId: string) => slotId.replace(/^.*:slot\//, '').replace(/@\d+$/, '')
 
 /**
- * 🚧 A genre's `shape.scenes.place` (live scenes §15 G2) must name a slot the
- * genre declares — in its `slots` or its `sheets` — by the key a template
- * reads it under: a place the genre's state never holds would name no scene
- * and fire no *place changed*. Refused here, where the author is.
+ * 🚧 A genre's `shape.scenes.place` (live scenes §15 G2) must name the
+ * host's place (`HOST_PLACE_KEY`, `location`) — the value the host keeps on
+ * the world for every genre whose scenes are placed by it (RF fix 8: a genre
+ * declares no slots, so the place is the host's). A place nothing keeps would
+ * name no scene and fire no *place changed*. Refused here, where the author is.
  */
 function assertScenePlaceDeclared(props: GenreProps, id: string): void {
 	const place = declaredScenePlace(props.shape)
 	if (!place) return
-	const keys = new Set<string>([
-		...(props.slots ?? []).map((s) => slotLocalKey(s.id)),
-		...(props.sheets ?? []).flatMap((sheet) => (sheet.slots ?? []).map((e) => slotLocalKey(e.id))),
-	])
-	if (!keys.has(place.stateKey))
+	if (place.stateKey !== HOST_PLACE_KEY)
 		throw new Error(
-			`${id}.scenes.place.stateKey: '${place.stateKey}' is not a slot this genre declares` +
-				(keys.size ? ` (${[...keys].join(', ')})` : ' — it declares none') +
-				` — the place must be a state value its sessions hold`,
+			`${id}.scenes.place.stateKey: '${place.stateKey}' is not a place the host keeps — the place is '${HOST_PLACE_KEY}', the host's own (a genre declares no slots)`,
 		)
 }
 
@@ -987,7 +997,26 @@ function assertScenePlaceDeclared(props: GenreProps, id: string): void {
  * references.
  * @public
  */
-export function genre(id: string, props: GenreProps): GenreDecl {
+export function genre<const P extends GenreProps>(
+	id: string,
+	props: P,
+): GenreDecl & {
+	readonly __declared?: {
+		readonly fields: {
+			readonly [K in keyof NonNullable<NonNullable<P['shape']>['fields']>]: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'boolean' }
+				? 'boolean'
+				: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'number' | 'integer' }
+					? 'number'
+					: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'enum'; readonly of: readonly (infer O extends string)[] }
+						? readonly ['enum', O]
+						: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'enum' }
+							? readonly ['enum', string]
+							: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'string' | 'text' }
+								? 'string'
+								: 'unknown'
+		}
+	}
+} {
 	assertGenreId(id)
 	// The floors (R-15): a genre that switches off stop, branch or edit is
 	// refused here, at the declaration, on the same terms as an inlet's shape.
@@ -999,6 +1028,10 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	assertSessionWrites(props.shape, id)
 	assertTurnControls(props.shape, id)
 	assertChannelDecls(props.shape, id)
+	// ⏳ `lorebook: 'required'` (retired RF fix 2, 2026-10-23): accepted for
+	// one release, warned here, and read as 'optional' in the declaration.
+	for (const f of lorebookShapeFindings(props.shape, `${id}.shape.lorebook`))
+		console.warn(`[genres] ${f.law}: ${f.message} — ${f.fix}`)
 	// 🚧 The scene settings (live scenes §4): refused here on the same terms —
 	// a mode or a trigger that does not read is an authoring mistake, not a
 	// default to fall back to silently.
@@ -1041,8 +1074,9 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 	// authoring mistake, not a button to grey with no sentence.
 	const enabledWhen = assertEnabledWhen(props.enabledWhen, id)
 	const { omitWidgets, layouts } = assertGenreWidgets(props, id)
-	if (props.customAttributes !== undefined && props.customAttributes !== 'allow' && props.customAttributes !== 'deny')
-		throw new Error(`${id}.customAttributes: 'allow' or 'deny' — not ${JSON.stringify(props.customAttributes)}`)
+	// 🚧 RF fix 8: a genre brings no attributes — refused by name, with where to say it instead.
+	for (const key of RETIRED_GENRE_ATTRIBUTE_KEYS)
+		if ((props as unknown as Record<string, unknown>)[key] !== undefined) throw new Error(retiredGenreKeyFinding(id, key))
 	const playerLabel = assertPlayerLabel(props, id)
 	const summarizeFindings = genreSummarizeFindings(props.summarize, `${id}.summarize`)
 	if (summarizeFindings.length) throw new Error(summarizeFindings.join('\n'))
@@ -1052,8 +1086,13 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		throw new Error(`${id}.members: 'solo' or 'group' — not ${JSON.stringify(props.members)}`)
 	const usesFound = genreUsesFindings(props.uses, `${id}.uses`)
 	if (usesFound.length) throw new Error(usesFound.join('\n'))
-	const tasksFound = taskDeclsFindings(props.tasks, `${id}.tasks`)
-	if (tasksFound.length) throw new Error(tasksFound.join('\n'))
+	const handbookFound = handbookFindings(props.handbook, id)
+	if (handbookFound.length) throw new Error(handbookFound.join('\n'))
+	const defaultsFound = genreDefaultsShapeFindings(props.defaults, `${id}.defaults`)
+	if (defaultsFound.length) throw new Error(defaultsFound.join('\n'))
+	// 🚧 Exposure (A10, R1): a genre's field may reach the owner; model plumbing never does.
+	const exposureFound = exposureFindings(props.shape?.fields as never, `${id}.shape.fields`)
+	if (exposureFound.length) throw new Error(exposureFound.join('\n'))
 	const summarize =
 		props.summarize?.scene !== undefined ? Object.freeze({ scene: props.summarize.scene }) : undefined
 	const decl: GenreDecl = Object.freeze({
@@ -1062,15 +1101,14 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		family: props.family,
 		description: props.description,
 		...(props.about !== undefined ? { about: props.about } : {}),
+		// 🚧 2026-10-23: absent when unstated, so a genre that says nothing hashes as it did.
+		...(props.handbook !== undefined ? { handbook: Object.freeze(props.handbook.map((p) => Object.freeze({ title: p.title, body: p.body }))) } : {}),
 		...(props.members === 'solo' ? { members: 'solo' as const } : {}),
 		...(props.uses ? { uses: Object.freeze(JSON.parse(JSON.stringify(props.uses)) as GenreUses) } : {}),
-		...(props.tasks && props.tasks.length ? { tasks: Object.freeze(props.tasks.map((t) => Object.freeze({ ...t }))) } : {}),
-		shape: props.shape,
+		// PLAN-layering D4: absent when unstated, so a genre that says nothing hashes as it did.
+		...(props.defaults ? { defaults: freezeGenreDefaults(props.defaults) } : {}),
+		shape: lorebookReadOptional(props.shape),
 		events: Object.freeze(events),
-		slots: props.slots ? Object.freeze([...props.slots]) : undefined,
-		sheets: props.sheets ? Object.freeze([...props.sheets]) : undefined,
-		// Absent unless allowed, so a genre that denies (or says nothing) hashes as it did.
-		...(props.customAttributes === 'allow' ? { customAttributes: 'allow' as const } : {}),
 		...(envoys.length ? { envoys: Object.freeze(envoys) } : {}),
 		// R4: absent when unstated, so a genre that says nothing hashes as it did.
 		...(playerLabel ? { playerLabel } : {}),
@@ -1092,10 +1130,122 @@ export function genre(id: string, props: GenreProps): GenreDecl {
 		...(props.rulesets ? { rulesets: Object.freeze(freezeRulesets(props.rulesets)) } : {}),
 	})
 	const existing = registry.get(id)
-	if (existing)
-		refuseUnlessIdentical(existing, decl, `duplicate genre id: ${id}`, GENRE_DISPLAY_KEYS)
+	if (existing) {
+		// A genre whose defaults were added after it (`withGenreDefaults`) is
+		// the same genre re-declared without them — a module re-evaluating —
+		// so it compares as the bare declaration it was.
+		const { defaults: _added, ...bare } = existing
+		refuseUnlessIdentical(decl.defaults ? existing : (bare as GenreDecl), decl, `duplicate genre id: ${id}`, GENRE_DISPLAY_KEYS)
+	}
 	registry.set(id, decl)
-	return decl
+	// `__declared` is a phantom (never set): each field's value kind, kept in
+	// the TYPE so `sessionOf(genre)` can derive what a condition may test (A5;
+	// a genre brings no slots since RF fix 8). Only those, so genres that differ in name
+	// or events still share a type — and the fields projected to plain kinds
+	// (spelled inline, naming no type), so a frozen genre's inferred type
+	// names nothing unfrozen (the surface audit, R37).
+	return decl as GenreDecl & {
+		readonly __declared?: {
+			readonly fields: {
+			readonly [K in keyof NonNullable<NonNullable<P['shape']>['fields']>]: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'boolean' }
+				? 'boolean'
+				: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'number' | 'integer' }
+					? 'number'
+					: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'enum'; readonly of: readonly (infer O extends string)[] }
+						? readonly ['enum', O]
+						: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'enum' }
+							? readonly ['enum', string]
+							: NonNullable<NonNullable<P['shape']>['fields']>[K] extends { readonly type: 'string' | 'text' }
+								? 'string'
+								: 'unknown'
+		}
+		}
+	}
+}
+
+/**
+ * 🚧 **The genre's defaults** as authored (R22, PLAN-layering D4): the
+ * registrations every session of the genre starts from, and the setting
+ * values the genre sets — each a plain value, or `{ value, lock?, askAtStart? }`
+ * (`SettingValue`, A10). The genre's **default preset** is not named here:
+ * a preset says so itself (`preset({ …, default: true })`, A18).
+ * @experimental
+ * @ruling R2, R22, A10
+ */
+export interface GenreDefaults {
+	readonly registrations: readonly RegistrationDecl[]
+	readonly settings?: Readonly<Record<string, SettingValue>>
+}
+
+/** The genre's defaults, typed — `GenreDecl.defaults` read back as what was declared. @experimental */
+export const genreDefaultsOf = (g: GenreDecl | null | undefined): GenreDefaults | undefined =>
+	g?.defaults as GenreDefaults | undefined
+
+/**
+ * The shape of a genre's defaults, refused at the declaration: a list of
+ * registrations (each made by `register()` — a key, a trigger, a pipeline)
+ * and a settings map. What the registrations MEAN — fit, cadence options,
+ * duplicates, cycles — is `registrationFindings`'s, the one door (§11-2),
+ * which a package build and a host both call; a duplicate never refuses here
+ * (R34).
+ * @experimental
+ */
+export function genreDefaultsShapeFindings(raw: unknown, at = 'defaults'): string[] {
+	if (raw === undefined) return []
+	const out: string[] = []
+	if (!raw || typeof raw !== 'object' || Array.isArray(raw))
+		return [`${at}: the genre's defaults are { registrations: [ … ], settings? } — got ${Array.isArray(raw) ? 'a list' : typeof raw}`]
+	const d = raw as { registrations?: unknown; settings?: unknown }
+	if (!Array.isArray(d.registrations))
+		out.push(`${at}.registrations: a list of registrations — register(trigger, pipeline, { … })`)
+	else
+		d.registrations.forEach((r, i) => {
+			const reg = r as { key?: unknown; trigger?: { family?: unknown }; pipeline?: unknown } | null
+			if (!reg || typeof reg !== 'object' || typeof reg.key !== 'string' || !reg.trigger || typeof reg.trigger.family !== 'string' || typeof reg.pipeline !== 'string')
+				out.push(`${at}.registrations[${i}]: not a registration — make each with register(trigger, pipeline, { … })`)
+		})
+	if (d.settings !== undefined && (!d.settings || typeof d.settings !== 'object' || Array.isArray(d.settings)))
+		out.push(`${at}.settings: a map of setting key → value (or { value, lock?, askAtStart? })`)
+	for (const k of Object.keys(d))
+		if (k !== 'registrations' && k !== 'settings')
+			out.push(
+				`${at}.${k} is not part of the genre's defaults — registrations and settings; the default preset ` +
+					`says so itself (preset({ …, default: true }))`,
+			)
+	return out
+}
+
+const freezeGenreDefaults = (d: GenreDefaults): GenreDecl['defaults'] =>
+	Object.freeze({
+		// The registrations themselves, not copies: the registration door
+		// recognises what `register()` handed out (a string reference warns, R30).
+		registrations: Object.freeze([...d.registrations]),
+		...(d.settings && Object.keys(d.settings).length ? { settings: Object.freeze({ ...d.settings }) } : {}),
+	}) as GenreDecl['defaults']
+
+/**
+ * 🚧 A genre with its defaults stated — for the common case where the
+ * registrations name pipelines that import the genre (so the genre cannot
+ * name them at its own declaration without an import cycle). Returns the
+ * genre carrying `defaults` and registers it in place of the one passed: the
+ * declaration is the same genre with its defaults added, so nothing that
+ * holds the id sees two genres. Pass the returned value to
+ * `defineExtension({ genres })`.
+ *
+ * Refuses a genre that already states different defaults — one genre, one
+ * set of defaults.
+ * @experimental
+ * @ruling R22
+ */
+export function withGenreDefaults<G extends GenreDecl>(g: G, defaults: GenreDefaults): G {
+	const found = genreDefaultsShapeFindings(defaults, `${g.id}.defaults`)
+	if (found.length) throw new Error(found.join('\n'))
+	const next: GenreDecl = Object.freeze({ ...g, defaults: freezeGenreDefaults(defaults) })
+	const existing = registry.get(g.id)
+	if (existing?.defaults)
+		refuseUnlessIdentical(existing, next, `genre '${g.id}' states its defaults twice, differently`, GENRE_DISPLAY_KEYS)
+	registry.set(g.id, next)
+	return next as G
 }
 
 const freezeRulesets = (r: GenreRulesets): GenreRulesets =>
@@ -1106,13 +1256,10 @@ const freezeRulesets = (r: GenreRulesets): GenreRulesets =>
 /**
  * Declared genres, by id.
  *
- * ⚠ **Registered, not merely returned**, and the reason is `slots`. A genre
- * carries the attribute slots it brings, and the only party that can answer
- * "does THIS session have health?" is the genre the session was created under —
- * the declarations registry is global, so a reader that walked it would put a
- * health bar on every chat session on the instance, which is the one thing the
- * stats design says a newcomer must never see. A session holds a genre id;
- * this is what turns that id back into the list.
+ * ⚠ **Registered, not merely returned**: a session holds a genre id, and this
+ * is what turns that id back into its shape, envoys, defaults and what it
+ * plays best with. (🚧 Since RF fix 8 a genre brings no attribute slots: the
+ * session's rules answer "does THIS session have health?".)
  *
  * Stored as a fact about the running code, like every other registry here: an
  * identical re-declaration is a no-op so a dev-server reload does not throw,
@@ -1162,7 +1309,20 @@ export function _registerPackageGenre(packageId: string, raw: GenreDecl): GenreD
 	// A stored `summarize` the authoring door would refuse is dropped rather
 	// than refused: the host then runs core's default summarizer, which is the
 	// standing "fall back, never strand the session" rule for a stale binding.
-	const { summarize: storedSummarize, ...rest } = raw
+	// 🚧 RF fix 8: a manifest built before genres stopped bringing attributes
+	// may still carry `slots`, `sheets` or `customAttributes` — never refused
+	// (a stored row is not the author). ⏳ What its `slots` and `sheets` named
+	// becomes the genre's TOOL STATE (`declareHostState`): its own pipelines
+	// keep writing it, and it is never an attribute — until the package moves
+	// it to annex fields, as `genre()` now tells its author to.
+	const { summarize: storedSummarize, slots: storedSlots, sheets: storedSheets, customAttributes: _custom, ...rest } = raw as GenreDecl & Record<'slots' | 'sheets' | 'customAttributes', unknown>
+	const kept: { slot: string; owners?: readonly SlotAppliesTo[] }[] = []
+	for (const sheet of Array.isArray(storedSheets) ? storedSheets : [])
+		for (const e of Array.isArray((sheet as { slots?: unknown })?.slots) ? ((sheet as { slots: unknown[] }).slots as { id?: unknown; appliesTo?: unknown }[]) : [])
+			if (typeof e?.id === 'string' && !kept.some((k) => k.slot === e.id))
+				kept.push({ slot: e.id, ...(Array.isArray(e.appliesTo) && e.appliesTo.length ? { owners: e.appliesTo as SlotAppliesTo[] } : {}) })
+	for (const d of Array.isArray(storedSlots) ? (storedSlots as { id?: unknown }[]) : [])
+		if (typeof d?.id === 'string' && !kept.some((k) => k.slot === d.id)) kept.push({ slot: d.id })
 	const summarize =
 		storedSummarize !== undefined && !genreSummarizeFindings(storedSummarize).length
 			? storedSummarize
@@ -1171,10 +1331,10 @@ export function _registerPackageGenre(packageId: string, raw: GenreDecl): GenreD
 		...rest,
 		...(summarize?.scene !== undefined ? { summarize: Object.freeze({ scene: summarize.scene }) } : {}),
 		events: Object.freeze(events),
-		...(raw.slots ? { slots: Object.freeze([...raw.slots]) } : {}),
-		...(raw.sheets ? { sheets: Object.freeze([...raw.sheets]) } : {}),
 	})
 	registry.set(id, decl)
+	_withdrawHostStateOf(id)
+	if (kept.length) declareHostState(kept.map((k) => ({ slot: k.slot, role: 'tool' as const, genres: [id], ...(k.owners ? { owners: k.owners } : {}) })))
 	return decl
 }
 
@@ -1187,59 +1347,14 @@ export function _registerPackageGenre(packageId: string, raw: GenreDecl): GenreD
  */
 export function _withdrawGenre(id: string): boolean {
 	if (id.startsWith('core:')) return false
+	// 🚧 RF fix 8: what the host kept for its tools goes with it.
+	_withdrawHostStateOf(id)
 	return registry.delete(id)
 }
 
 /**
- * The attribute slots a session of this genre carries — its sheets' and its own
- * loose list, as one vocabulary.
- *
- * Sheets first, in the order the genre names them and each in its own order,
- * then whatever the genre lists loose that no sheet already brought. Deduped by
- * id, and the *first* mention is what fixes a slot's position: order here is
- * not decoration — it is what a panel draws, what a state block renders, and
- * what rules run in — so the union preserves it rather than sorting it.
- *
- * An id this build does not declare answers with an empty list rather than
- * with every slot in the registry: an unknown genre is a genre whose vocabulary
- * this install cannot state, and guessing it is how a stat appears where the
- * author never put one. A sheet entry naming a slot this build no longer
- * declares is skipped on the same terms. Values already stored against such a
- * session are untouched — they are read as opaque data, which is the standing
- * "never refuse, fall back and say so" rule for a stale binding.
- * @experimental
- */
-export const genreSlots = (id: string): readonly AttributeSlotDecl[] => {
-	const g = registry.get(id)
-	if (!g) return []
-	const out: AttributeSlotDecl[] = []
-	const seen = new Set<string>()
-	const take = (decl: AttributeSlotDecl | undefined) => {
-		if (!decl || seen.has(decl.id)) return
-		seen.add(decl.id)
-		out.push(decl)
-	}
-	for (const sheet of g.sheets ?? [])
-		for (const entry of sheet.slots) take(getAttributeSlot(entry.id))
-	for (const decl of g.slots ?? []) take(decl)
-	return out
-}
-
-/**
- * The sheets a genre brings, by id or by declaration — empty for a genre this
- * build does not declare, on the same "never guess" terms as `genreSlots`.
- *
- * The declarations and not just their slots, because `required`, `default` and
- * the per-slot `config` are what session creation and the panels read, and
- * `genreSlots` has deliberately flattened those away.
- * @internal
- */
-export const genreSheets = (g: GenreDecl | string): readonly AttributeSheetDecl[] =>
-	(typeof g === 'string' ? registry.get(g)?.sheets : g.sheets) ?? []
-
-/**
  * The envoys a genre declares, by id — empty for a genre this build does not
- * declare, on the same "never guess" terms as `genreSlots`.
+ * declare: an unknown genre's envoys are never guessed.
  * @experimental
  */
 export const genreEnvoys = (id: string): readonly EnvoyDecl[] => registry.get(id)?.envoys ?? []
@@ -1262,7 +1377,7 @@ export const genreEnvoy = (
 /**
  * The genre's enabled-when default for one function, by id or declaration —
  * empty for a genre this build does not declare or a function it says
- * nothing about, on the same "never guess" terms as `genreSlots`.
+ * nothing about, on the same "never guess" terms as `genreEnvoys`.
  * @internal
  */
 export const genreEnabledWhen = (g: GenreDecl | string, fn: string): readonly EnabledWhen[] =>

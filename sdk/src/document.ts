@@ -9,7 +9,7 @@
  * @ruling 04 §5a, F3, F6
  */
 
-import type { BuiltSpec, BuiltNode } from './builder.js'
+import type { BuiltSpec, BuiltNode, BuiltSpecWithActions } from './builder.js'
 import { collectDataRefs, envoyConfigKey, isEnvoyConfigKey, isSlotRef, type SlotRef } from './refs.js'
 import { getDefinition } from './descriptors.js'
 import { getGenre } from './genres.js'
@@ -18,8 +18,9 @@ import { envoySlugOf, envoySlugOfRef } from './participants.js'
 /** The message write whose `speaker` a document may name literally. */
 const CREATE_MESSAGE_ID = 'core:outlet/create-message'
 import { requiredConnections, type ConnectionRequirement } from './connections.js'
-import { isStreaming } from './shapes.js'
+import { assignable, isStreaming } from './shapes.js'
 import { canonicalize, contentHash } from './hash.js'
+import { actionHandlesOf, type ActionHandle } from './registrations.js'
 import type { I18n } from './i18n.js'
 
 /** @experimental */
@@ -57,7 +58,16 @@ export interface DocNode {
 	 * only when stated.
 	 * @ruling PLAN-turn-order §4.11, R28, lair pass B3/B18 (2026-09-27), 2026-09-30
 	 */
-	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n; label?: I18n; purpose?: I18n }
+	expose?: {
+		session?: boolean
+		swaps?: string[]
+		stream?: true
+		status?: I18n
+		label?: I18n
+		purpose?: I18n
+		/** 🚧 R54: the session's owner chooses this step's prompt, among those not hidden. */
+		promptReach?: 'owner'
+	}
 	/**
 	 * What this placement's rendered keys **mean** (owner ruling 2026-10-13):
 	 * a key its definition's `variables` slot renders, re-pointed at another
@@ -101,6 +111,22 @@ export interface SpecDocument {
 	 * @ruling 24 §4, R-4
 	 */
 	input?: { genre?: string; event?: string; events?: string[] }
+	/**
+	 * 🚧 The events the pipeline suits — hints for pickers only (PLAN-layering
+	 * D3). Present only on a pipeline declared with `{ suits }` (no lock);
+	 * a locked one's are its `input`'s (`suitsOf`). Hashed with the document.
+	 */
+	suits?: string[]
+	/** 🚧 The events the pipeline emits (R6). Present only when stated. Hashed with the document. */
+	emits?: string[]
+	/**
+	 * 🚧 D3 (2026-10-23): `false` — the events a ruleset's functions raise in
+	 * this pipeline's resolve steps are reported on their facts and never
+	 * emitted, whatever each step's own `emits` says. Absent: on. ⚠ Not
+	 * `emits` (R6), the events the pipeline itself declares. Present only
+	 * when stated, so a spec that says nothing hashes as it did.
+	 */
+	functionEvents?: false
 	includes: Array<{ key: string; fragmentId: string }>
 	/**
 	 * Author-shipped presets. Execution-affecting, so they round-trip.
@@ -146,17 +172,34 @@ export function junctionBranchEnds(
 }
 
 /**
- * The shape every branch of junction `id` agrees `port` has, else undefined.
+ * 🚧 The shape a junction's branches **agree** a result port has (M4; RF fix
+ * 3, 2026-10-23): the one among theirs that every branch's shape is
+ * assignable to — the same rule an edge is checked by. Alike shapes agree as
+ * they always did; a model call's `text-stream` and a task's `text` agree on
+ * `text` (Story's reply: the prose call's words, or the JSON answer's
+ * `message`), so the step after the junction reads ONE port whichever branch
+ * fired. Undefined when a branch publishes none, or no shape takes them all.
+ * @internal
+ */
+export function agreedShape(shapes: ReadonlyArray<string | undefined>): string | undefined {
+	if (!shapes.length || shapes.some((s) => !s)) return undefined
+	const all = shapes as readonly string[]
+	return all.find((to) => all.every((from) => assignable(from, to)))
+}
+
+/**
+ * The shape every branch of junction `id` agrees `port` has (`agreedShape`), else undefined.
  * @ruling M4
  */
 function junctionPortShape(built: BuiltSpec, id: string, port: string): string | undefined {
 	const clause = built.clauses.find((c) => c.id === id)
 	if (!clause || clause.kind !== 'junction' || JUNCTION_CLAUSE_PORTS.has(port))
 		return undefined
-	const shapes = junctionBranchEnds(built.nodes, clause, built.clauses).map(({ node }) =>
-		node ? getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.ports.out?.[port] : undefined,
+	return agreedShape(
+		junctionBranchEnds(built.nodes, clause, built.clauses).map(({ node }) =>
+			node ? getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.ports.out?.[port] : undefined,
+		),
 	)
-	return shapes.length && shapes.every((s) => s && s === shapes[0]) ? shapes[0] : undefined
 }
 
 /** Nodes that participate in the top-level sequential spine (not inside a clause). */
@@ -170,14 +213,45 @@ const spineOf = (nodes: BuiltNode[]) => nodes.filter((n) => !n.clauseId)
  * `validate()`, which every stored document meets.
  * @experimental
  */
-export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
+export function compile<A extends string>(built: BuiltSpecWithActions<A>): CompiledSpec<A>
+export function compile(built: BuiltSpec | SpecDocument): CompiledSpec
+export function compile(built: BuiltSpec | SpecDocument): CompiledSpec {
 	if ('schemaVersion' in built) {
 		if (built.schemaVersion !== 1)
 			throw new Error(
 				`spec '${built.id}' is a document for schema ${String(built.schemaVersion)} — this SDK compiles schema 1`,
 			)
-		return importDocument(built)
+		return withActionHandles(importDocument(built))
 	}
+	return withActionHandles(compileBuilt(built))
+}
+
+/**
+ * 🚧 A compiled document with its **action handles** — `doc.actions.<key>`
+ * for every action it contributes, typed from the declarations when the
+ * built spec carried them (`spec<const A>`): what `register()` takes to make
+ * an action pipeline (derive, don't spell; A18). Non-enumerable, so nothing
+ * that serializes, hashes or compares a document sees them (lane 3,
+ * 2026-10-20: core's specs are compiled documents, and a registration of a
+ * core action names it by handle).
+ * @experimental
+ * @ruling A18, D1
+ */
+export type CompiledSpec<A extends string = string> = SpecDocument & {
+	readonly actions: Readonly<Record<A, ActionHandle>>
+}
+
+function withActionHandles(doc: SpecDocument): CompiledSpec {
+	Object.defineProperty(doc, 'actions', {
+		value: Object.freeze(actionHandlesOf(doc)),
+		enumerable: false,
+		configurable: true,
+		writable: false,
+	})
+	return doc as CompiledSpec
+}
+
+function compileBuilt(built: BuiltSpec): SpecDocument {
 	const nodes: DocNode[] = built.nodes.map((n) => ({
 		key: n.key,
 		kind: n.kind,
@@ -264,7 +338,11 @@ export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
 								? ` — it declares ${known.envoys.map((e) => `'${e.key}'`).join(', ')}`
 								: ' — it declares no envoys'),
 					)
-				if (!genreId)
+				// 🚧 A pipeline mounted by registrations (the suits form, D3)
+				// names no genre: the envoy is checked against the genre that
+				// registers it, at the registration door and the host's
+				// publish — not refused here.
+				if (!genreId && !(built.suits && !built.input))
 					throw new Error(
 						`node '${n.key}' references the prompts of envoy '${ref.ofEnvoy}', but the spec ` +
 							`serves no genre — an envoy is a genre's (or an action's), and the inlet lock ` +
@@ -300,6 +378,8 @@ export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
 		)
 		if (own.includes(slug)) continue
 		if (genreId && !known) continue
+		// 🚧 Unlocked (D3): the registering genre's envoys are checked where it registers.
+		if (!genreId && built.suits && !built.input) continue
 		if (known?.envoys?.some((e) => e.key === slug)) continue
 		const declared = [...(known?.envoys ?? []).map((e) => e.key), ...own]
 		throw new Error(
@@ -315,6 +395,11 @@ export function compile(built: BuiltSpec | SpecDocument): SpecDocument {
 		version: built.meta.version,
 		genre: built.meta.genre,
 		input: built.input,
+		// 🚧 D3/R6: present only when stated in the new form, so a locked
+		// spec — and every spec that states neither — hashes as it did.
+		...(built.suits && !built.input ? { suits: [...built.suits] } : {}),
+		...(built.emits?.length ? { emits: [...built.emits] } : {}),
+		...(built.functionEvents === false ? { functionEvents: false as const } : {}),
 		contributes: built.meta.contributes,
 		taxonomy: built.meta.taxonomy,
 		includes: built.includes,

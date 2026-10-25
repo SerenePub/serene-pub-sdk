@@ -14,6 +14,7 @@ import { spec } from '@serene-pub/sdk'
 import { compile, canonicalHash, importDocument } from '@serene-pub/sdk'
 import { validate, assertValid } from '@serene-pub/sdk'
 import { run, replay, ok, halt } from '@serene-pub/sdk'
+import { registrationKeyOf } from '@serene-pub/sdk'
 import { slot, $ref } from '@serene-pub/sdk'
 import {
 	actionsOf,
@@ -57,7 +58,9 @@ import {
 import * as C from '@serene-pub/contracts'
 import {
 	coreAnnouncement,
+	CORE_RULESETS,
 	CORE_SPECS,
+	RULESET_TEMPLATES,
 	DEFAULT_TRANSCRIPT_TEMPLATE,
 	STORY_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
@@ -482,7 +485,8 @@ const sdk: HostUnderTest = {
 	// the app seeds from — the same object `forms.test.ts` holds to the rule.
 	shipped: () => {
 		const { document } = coreAnnouncement()
-		return { genres: document.genres, presets: document.presets }
+		// 🚧 C38 (2026-10-22): core's rulesets and ruleset templates, held to the ruleset laws.
+		return { genres: document.genres, presets: document.presets, pipelines: document.pipelines, rulesets: CORE_RULESETS, rulesetTemplates: RULESET_TEMPLATES }
 	},
 	hookCtxKeys: async (kind) => (await pluginCtxKeys()).get(kind),
 	frameMount: () => ({ sandbox: 'allow-scripts', csp: FRAME_CSP, accepts: frameAccepts() }),
@@ -1353,8 +1357,8 @@ test('95d · the six laws the showcase lanes hit each fail on a host that gets t
 	assert.match(await failing(sdk, 'C23', noWorld), /contributes no action with `effects: 'world'`/)
 
 	// C24 — a host whose genre cannot be addressed by a form, and one whose
-	// preset binds nothing to it. Both are a form that renders and answers to
-	// nobody.
+	// preset registers nothing on it. Both are a form that renders and answers
+	// to nobody.
 	const shipped = (await sdk.shipped!()) as { genres: any[]; presets: any[] }
 	const EVENT = sessionEvents.formAddressed
 	const noEvent: HostUnderTest = {
@@ -1368,19 +1372,24 @@ test('95d · the six laws the showcase lanes hit each fail on a host that gets t
 		}),
 	}
 	assert.match(await failing(noEvent, 'C24'), /does not declare core:event\/form-addressed@1/)
+	// 🚧 Registrations (PLAN-layering D4): the genres' defaults lose the
+	// answer pipeline's registration, and no preset adds one back.
 	const noBinder: HostUnderTest = {
 		...sdk,
 		shipped: () => ({
-			genres: shipped.genres,
-			presets: shipped.presets.map((p) => ({
-				...p,
-				bindings: Object.fromEntries(
-					Object.entries(p.bindings).filter(([k]) => k !== EVENT),
-				),
+			genres: shipped.genres.map((g) => ({
+				...g,
+				defaults: {
+					...g.defaults,
+					registrations: g.defaults.registrations.filter(
+						(r: any) => !(r.trigger.family === 'event' && r.trigger.event === EVENT),
+					),
+				},
 			})),
+			presets: shipped.presets,
 		}),
 	}
-	assert.match(await failing(noBinder, 'C24'), /binds no pipeline to/)
+	assert.match(await failing(noBinder, 'C24'), /registers no pipeline on/)
 	const noCatalogue = await result({ ...sdk, shipped: undefined }, 'C24')
 	assert.equal(noCatalogue.pass, true)
 	assert.match(noCatalogue.skipped!.join(' '), /supply `shipped\(\)`/)
@@ -1642,4 +1651,100 @@ test('C34 · every core genre’s summarize-scene passes, and the kit fails a re
 	const none = await c34(sdk, { ...fixtures, summarizeScenes: undefined })
 	assert.equal(none.pass, true)
 	assert.match(none.skipped!.join(' '), /supply `summarizeScenes\(\)`/)
+})
+
+test('C38 · the ruleset laws: core’s rulesets and templates pass; a catalogue that breaks each fails in words', async () => {
+	const result = async (host: HostUnderTest) => (await conform(host, fixtures, { only: ['C38'] }))[0]!
+	const ok = await result(sdk)
+	assert.equal(ok.pass, true, ok.error)
+	assert.equal(ok.skipped, undefined, `C38 skipped on core's catalogue: ${ok.skipped?.join('; ')}`)
+	const shipped = (await sdk.shipped!()) as unknown as { genres: any[]; rulesets: any[]; rulesetTemplates: any[] }
+	const template = shipped.rulesetTemplates[0]!
+	const broken: HostUnderTest = {
+		...sdk,
+		shipped: () => ({
+			...(shipped as any),
+			// A genre offering a template; a ruleset with an untagged repertoire.
+			genres: shipped.genres.map((g) =>
+				g.id === 'core:genre/story' ? { ...g, rulesets: { ...g.rulesets, recommended: [...g.rulesets.recommended, template.id] } } : g,
+			),
+			rulesets: shipped.rulesets.map((r) => (r.id === 'core:ruleset/freeform@1' ? { ...r, repertoires: r.repertoires.map(({ tags: _t, ...x }: any) => x) } : r)),
+		}),
+	}
+	const bad = await result(broken)
+	assert.equal(bad.pass, false)
+	// The first template _New ruleset_ offers: an archetype since 2026-10-23.
+	assert.match(bad.error!, /\[template-recommended\] core:genre\/story names core:ruleset\/template-romance@1/)
+	assert.match(bad.error!, /\[untagged-repertoire\] core:ruleset\/freeform@1's repertoire 'things'/)
+	const none = await result({ ...sdk, shipped: () => ({ genres: shipped.genres, presets: [] }) })
+	assert.equal(none.pass, true)
+	assert.match(none.skipped!.join(' '), /shipped\(\)\.rulesets/)
+})
+
+test('C35–C37 · the layering laws: core’s catalogue passes, and a catalogue that breaks each fails in words', async () => {
+	const result = async (host: HostUnderTest, id: string) => (await conform(host, fixtures, { only: [id] }))[0]!
+	const failing = async (host: HostUnderTest, id: string) => {
+		const r = await result(host, id)
+		assert.equal(r.pass, false, `${id} passed on a catalogue that breaks it`)
+		return r.error!
+	}
+	for (const id of ['C35', 'C36', 'C37']) {
+		const r = await result(sdk, id)
+		assert.equal(r.pass, true, `${id}: ${r.error}`)
+		assert.equal(r.skipped, undefined, `${id} skipped on core's catalogue: ${r.skipped?.join('; ')}`)
+	}
+	const shipped = (await sdk.shipped!()) as { genres: any[]; presets: any[]; pipelines: any[] }
+	const STORY = 'core:genre/story'
+
+	// C35 — Story's reply registered on a moment that carries no message.
+	const trigger = { family: 'event', event: 'core:event/scene-opened@1' } as const
+	const misfit = { key: registrationKeyOf(trigger, 'core:spec/story-respond'), trigger, pipeline: 'core:spec/story-respond' }
+	const misfitHost: HostUnderTest = {
+		...sdk,
+		shipped: () => ({
+			...shipped,
+			genres: shipped.genres.map((g) =>
+				g.id === STORY ? { ...g, defaults: { ...g.defaults, registrations: [...g.defaults.registrations, misfit] } } : g,
+			),
+		}),
+	}
+	assert.match(await failing(misfitHost, 'C35'), /carries none/)
+	const noPipelines = await result({ ...sdk, shipped: () => ({ genres: shipped.genres, presets: shipped.presets }) }, 'C35')
+	assert.equal(noPipelines.pass, true)
+	assert.match(noPipelines.skipped!.join(' '), /shipped\(\)\.pipelines/)
+
+	// C36 — a genre field named for a connection, offered to the owner.
+	const plumbing: HostUnderTest = {
+		...sdk,
+		shipped: () => ({
+			...shipped,
+			genres: shipped.genres.map((g) =>
+				g.id === STORY
+					? { ...g, shape: { ...g.shape, fields: { ...g.shape?.fields, connection: { type: 'string', reach: 'owner' } } } }
+					: g,
+			),
+		}),
+	}
+	assert.match(await failing(plumbing, 'C36'), /model plumbing/)
+
+	// C37 — a preset built on another, and a genre with two defaults.
+	const living = shipped.presets.find((p) => p.slug === 'story-living')!
+	const onTop: HostUnderTest = {
+		...sdk,
+		shipped: () => ({ ...shipped, presets: [...shipped.presets, { ...living, slug: 'story-more', default: undefined, extends: 'story-living' }] }),
+	}
+	assert.match(await failing(onTop, 'C37'), /never builds on another preset/)
+	const twoDefaults: HostUnderTest = {
+		...sdk,
+		shipped: () => ({ ...shipped, presets: [...shipped.presets, { ...living, slug: 'story-also' }] }),
+	}
+	assert.match(await failing(twoDefaults, 'C37'), /2 default presets/)
+	const dangling: HostUnderTest = {
+		...sdk,
+		shipped: () => ({
+			...shipped,
+			presets: [...shipped.presets, { ...living, slug: 'story-dangling', default: undefined, registrations: { drop: ['nothing→nowhere'] } }],
+		}),
+	}
+	assert.match(await failing(dangling, 'C37'), /drops 'nothing→nowhere'/)
 })

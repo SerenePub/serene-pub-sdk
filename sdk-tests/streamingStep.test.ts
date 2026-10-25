@@ -50,12 +50,13 @@ describe('B3 · which step streams is declared', () => {
 	// `partySpeech` streams the Voices call's first line — the picked
 	// delver's on a pick — or the Castellan's lines for the party, on the
 	// `speech` junction's two arms.
-	test("the Lair streams the Castellan's narration, its talk, the party's lines or a character turn — never the planner", () => {
-		assert.deepEqual(streamingOf(doc('core:spec/lair-respond')), [
+	// And 2026-10-21 (the Lair's rewrite): the party speech left — each
+	// delver's line is a character turn, on the `pick` junction's `picked` arm.
+	test("the Lair streams the Castellan's narration, its talk or a character turn — never the planner", () => {
+		assert.deepEqual(streamingOf(doc('core:spec/lair-reply')), [
 			'via.narrate.say',
 			'via.turn.channel.sanctum.say',
-			'via.turn.channel.story.door.play.speech.castellan.party.speaks.say',
-			'via.turn.channel.story.door.play.speech.each.character.turn.say',
+			'via.turn.channel.story.pick.picked.say',
 		])
 	})
 
@@ -68,8 +69,10 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('the single-step reply specs stream their generate', () => {
-		for (const slug of ['core:spec/story-respond', 'core:spec/story-narrate', 'core:spec/story-side-character', 'core:spec/guide-respond'])
+		for (const slug of ['core:spec/story-narrate', 'core:spec/story-side-character', 'core:spec/guide-respond'])
 			assert.deepEqual(streamingOf(doc(slug)), ['generate'], slug)
+		// 🚧 D7 (2026-10-23, A2): Story's reply streams its prose branch's; its `changes` branch answers in JSON and streams nothing.
+		assert.deepEqual(streamingOf(doc('core:spec/story-respond')), ['reply.prose.generate'])
 	})
 
 	test('no core spec declares a JSON step streaming, and every core spec validates', () => {
@@ -77,13 +80,9 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('a JSON step declared streaming is refused, and the finding names the fix', () => {
-		const lair = doc('core:spec/lair-respond')
+		const lair = doc('core:spec/lair-reply')
 		const bad = marked(
-			marked(
-				marked(lair, 'via.turn.channel.story.door.play.speech.each.character.turn.say', undefined),
-				'via.turn.channel.story.door.play.speech.castellan.party.speaks.say',
-				undefined,
-			),
+			marked(lair, 'via.turn.channel.story.pick.picked.say', undefined),
 			'via.turn.channel.story.pick.planned.planWrite',
 			{ stream: true },
 		)
@@ -111,7 +110,7 @@ describe('B3 · which step streams is declared', () => {
 	})
 
 	test('a spec that declares nothing streams nothing, and that is valid', () => {
-		const d = marked(doc('core:spec/story-respond'), 'generate', undefined)
+		const d = marked(doc('core:spec/story-respond'), 'reply.prose.generate', undefined)
 		assert.deepEqual(streamingOf(d), [])
 		assert.deepEqual(errors(d), [])
 	})
@@ -219,21 +218,21 @@ describe('W2 · one streaming step per execution path', () => {
 })
 
 describe('B18 · a step declares its status', () => {
-	test("the Lair's planner reads as the Castellan planning the turn, its keeper as keeping the books (R8)", () => {
-		const lair = doc('core:spec/lair-respond')
+	test("the Lair's planner reads as the Castellan planning the turn (R8); its books are the keeper routine's", () => {
+		const lair = doc('core:spec/lair-reply')
 		const status = (key: string) =>
 			(lair.nodes.find((n) => n.key === key)!.expose as { status?: unknown } | undefined)?.status
 		assert.equal(status('via.turn.channel.story.pick.planned.planWrite'), 'The Castellan is planning the turn')
-		assert.equal(status('keep.played.keeperWrite'), 'Keeping the books')
 		assert.equal(status('via.narrate.say'), 'The Castellan narrates')
-		assert.ok(status('via.turn.channel.story.door.play.speech.each.character.turn.say'))
+		assert.ok(status('via.turn.channel.story.pick.picked.say'))
+		assert.equal(status('via.turn.channel.story.pick.planned.door.play.checks.rolled.apply'), 'Deciding the checks')
 	})
 
 	test('every model step of a multi-step core reply spec declares one', () => {
 		// Story's reply is single-step but for its background tasks: every
 		// model step there says what it is doing (the reckoning, the sweep);
 		// the reply's own retrieval and sprite steps keep the host's wording.
-		for (const slug of ['core:spec/lair-respond']) {
+		for (const slug of ['core:spec/lair-reply']) {
 			const d = doc(slug)
 			for (const n of d.nodes.filter((n) => n.kind === 'oracle'))
 				assert.ok((n.expose as { status?: unknown } | undefined)?.status, `${slug} ${n.key}`)
@@ -246,7 +245,7 @@ describe('B18 · a step declares its status', () => {
 	})
 
 	test('a status that is not display text is refused', () => {
-		const bad = marked(doc('core:spec/story-respond'), 'generate', { stream: true, status: 42 })
-		assert.ok(validate(bad).some((f) => f.severity === 'error' && f.nodeKey === 'generate' && /status/.test(f.message)))
+		const bad = marked(doc('core:spec/story-respond'), 'reply.prose.generate', { stream: true, status: 42 })
+		assert.ok(validate(bad).some((f) => f.severity === 'error' && f.nodeKey === 'reply.prose.generate' && /status/.test(f.message)))
 	})
 })

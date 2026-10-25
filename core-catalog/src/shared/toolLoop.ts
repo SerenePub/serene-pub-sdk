@@ -232,10 +232,10 @@ export const toolLoopSpec = () =>
 					params: slot.params(),
 				}),
 			)
-			.loop('tools', { repeatWhile: ($: any) => $.tools.item.parse.call, max: 6 }, (l) =>
+			.loop('tools', { max: 6 }, (l) =>
 				l
 					/** The carry — see the header. Empty on the first pass. */
-					.task('results', ($: any) =>
+					.task('results', ($) =>
 						C.joinText.v1({
 							items: $.tools.values,
 							// `path` defaults to `text`, which is the
@@ -246,12 +246,12 @@ export const toolLoopSpec = () =>
 						}),
 						{ expose: { label: 'Carry the tool results' } },
 					)
-					.task('prompt', ($: any) =>
+					.task('prompt', ($) =>
 						C.assemble.v2({
 							messages: $.attached.messages,
 							templateContext: {
 								advertisement: $.advertise.prompt,
-								results: $.tools.item.results.text,
+								results: $.results.text,
 							},
 							/**
 							 * The slot, with the shipped text in the preset
@@ -286,22 +286,24 @@ export const toolLoopSpec = () =>
 							connection: slot.connectionOf('tools.item.generate'),
 						}),
 					)
-					.oracle('generate', ($: any) =>
+					.oracle('generate', ($) =>
 						C.generateText.v1({
-							context: $.tools.item.prompt.context,
+							context: $.prompt.context,
 							connection: slot.connection(),
 							sampling: slot.sampling(),
 							params: slot.params(),
 							// No `prompts` here: the contract declares no
 							// such slot any more (culled 2026-09-16, R-12);
 							// `prompt` owns the pool and the text rides in
-							// `context`.
+							// `context`.,
+							// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+							speechSampling: slot.speechSampling(),
 						}),
 						{ expose: { status: 'Thinking' } },
 					)
-					.task('parse', ($: any) =>
+					.task('parse', ($) =>
 						C.parseToolCall.v1({
-							text: $.tools.item.generate.text,
+							text: $.generate.text,
 							tools: $.available.tools,
 						}),
 					)
@@ -310,16 +312,18 @@ export const toolLoopSpec = () =>
 					 * model rather than ending the run, so a bad call costs
 					 * one iteration of the six instead of the turn.
 					 */
-					.oracle('tool', ($: any) =>
+					.oracle('tool', ($) =>
 						C.runTool.v1({
-							call: $.tools.item.parse.call,
+							call: $.parse.call,
 							tools: $.available.tools,
-							text: $.tools.item.parse.text,
+							text: $.parse.text,
 						}),
 						{ expose: { status: 'Using a tool' } },
-					),
+					)
+					/** Another pass while the model called a tool; it answered when it did not. */
+					.repeatWhile(($) => $.parse.call),
 			)
-			.task('answer', ($: any) =>
+			.task('answer', ($) =>
 				C.joinText.v1({
 					items: $.tools.values,
 					// `path: 'answer'` — the iteration that answered instead of
@@ -332,7 +336,7 @@ export const toolLoopSpec = () =>
 				{ expose: { label: 'Take the answer' } },
 			)
 			/** The answer's row, filled — see `placeholder`. */
-			.outlet('save', ($: any) =>
+			.outlet('save', ($) =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
 					text: $.answer.text,
@@ -344,7 +348,7 @@ export const toolLoopSpec = () =>
 			 */
 			.oracle(
 				'spritePick',
-				($: any) =>
+				($) =>
 					C.pickSprite.v1({
 						text: $.answer.text,
 						speaker: $.input.speaker,
@@ -353,7 +357,7 @@ export const toolLoopSpec = () =>
 					}),
 				{ expose: { session: true } },
 			)
-			.outlet('spriteShow', ($: any) =>
+			.outlet('spriteShow', ($) =>
 				C.showSprite.v1({
 					target: $.save.messageId,
 					pick: $.spritePick.main,
@@ -368,7 +372,7 @@ export const toolLoopSpec = () =>
 			 * rather than with two empty pickers above a prompt that advertises
 			 * nothing.
 			 */
-			.preset('tool-loop', { label: 'Tool loop', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.template('tools.item.prompt', {
 						source: TOOL_LOOP_TEMPLATE,

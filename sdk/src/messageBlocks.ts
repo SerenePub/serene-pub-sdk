@@ -26,6 +26,9 @@ import {
 	type EffectsLineDeclarationInput,
 } from './actions.js'
 import { isParticipantRef, type ParticipantRef } from './participants.js'
+import { i18nText } from './i18n.js'
+import { FIVE_BANDS, rulesetDifficultyBands, type FiveBand, type RulesetProps } from './rulesets.js'
+import type { CheckMethodKind } from './checkMethods.js'
 // The two verdicts declared here rather than in `verdicts.ts` (01 §13): their
 // judges call `worldBlockFunctions` and `isFormStale`, which live here, and
 // `verdicts.ts` must stay below every door — see its docblock.
@@ -197,8 +200,173 @@ export type MessageBlock =
 	 * submitting fires `fn` with the entered values as the payload.
 	 */
 	| ({ kind: 'form'; fields: SettingsSchema; label?: string } & BlockActionRef & FormBlockFields)
+	/**
+	 * 🚧 A **roll form** — a check put to the person who decides it (the
+	 * Lair's game master: `addressee: 'owner'`): which check (`stat`, or one
+	 * of `stats`), against which **difficulty band** (one of `bands`, the
+	 * session's ruleset's — `rollBlockBands`), or _No check_. Answered
+	 * through the form door like a `form`: the press fires `fn` with
+	 * `{ check, stat, band, target? }` (`formFireOf`). See `RollBlock`
+	 * (Lair rewrite D3, 2026-10-21).
+	 */
+	| RollBlock
+	/**
+	 * 🚧 An **outcome block** (stored kind `dice`) — how a check was
+	 * decided, against what, and how it came out: a result, never a
+	 * question. See `OutcomeBlock` (Lair rewrite D3; method-aware since
+	 * 2026-10-22).
+	 */
+	| OutcomeBlock
 	/** Nesting, one layout hint. Depth-capped by the validator. */
 	| { kind: 'group'; layout?: 'row' | 'column'; blocks: MessageBlock[] }
+
+/**
+ * 🚧 One difficulty band as a `roll` block carries it: plain data, the
+ * label already in words (a block is rendered, never translated).
+ * @experimental
+ */
+export interface RollBlockBand {
+	id: string
+	label: string
+	/** The total the check must reach. Absent: the band names no number (a prose ruleset's). */
+	target?: number
+}
+
+/**
+ * 🚧 A check a roll form offers by key — a selector of the session's
+ * ruleset (`dex`, `skill.stealth`) and the words a person reads.
+ * @experimental
+ */
+export interface RollBlockCheck {
+	key: string
+	label: string
+}
+
+/**
+ * 🚧 The **roll form**: a check put to the person who decides it. The
+ * three answers are *roll this check against this band*, the same with a
+ * different check or band, or _No check_ — the attempt simply happens, or
+ * simply fails, as the story says.
+ *
+ *  - `stat` — the check proposed, by key; with `stats`, one of their keys.
+ *  - `stats` — the checks the answer may pick from instead, in order.
+ *    Absent: `stat` is the only one.
+ *  - `bands` — the difficulty bands offered, in the ruleset's order
+ *    (`rollBlockBands(ruleset)`); `band`, the one proposed.
+ *  - `by` — who attempts it (`character:12`), when anybody in particular.
+ *    ⚠ Not `answered.by` — who answered the form.
+ *
+ * The answer document is `{ check, stat, band }` (`formAnswerSchema`), and
+ * the press fires `fn` with `{ check, stat, band, target? }`: `check: false`
+ * is _No check_, and then `stat` and `band` say only what was offered.
+ * @experimental
+ * @ruling Lair rewrite D3 (2026-10-21)
+ */
+export interface RollBlock extends BlockActionRef, FormBlockFields {
+	kind: 'roll'
+	stat: string
+	stats?: RollBlockCheck[]
+	bands: RollBlockBand[]
+	band?: string
+	by?: ParticipantRef
+}
+
+/**
+ * 🚧 One card an outcome block shows drawn: its words (_Queen of cups_)
+ * and the rank it counted for.
+ * @experimental
+ */
+export interface OutcomeCard {
+	label: string
+	rank?: number
+}
+
+/**
+ * 🚧 The **outcome block** — how a check was decided, in the story where it
+ * happened, under the speaker that reports mechanics (the Lair's Oracle).
+ * The **dice block** of 2026-10-21, evolved in place (PLAN-rulesets-authoring
+ * D1/D2, 2026-10-22): its stored kind stays `'dice'`, so every block already
+ * written reads as it did, and a block that names no `method` is a
+ * die-target's.
+ *
+ *  - `method` — the kind of check method that decided it
+ *    (`CheckMethodKind`: `die-target`, `dice-pool`, `card-draw`, `compare`,
+ *    `bid`, `none`, or a package's own). Absent: `die-target`.
+ *  - `stat` — what was checked, in words (_Stealth_).
+ *  - `rolled` — the number the method came to: a die's total, the
+ *    successes a pool counted, the cards' total, the value compared, the
+ *    amount spent. Left out only under `none` (nothing came to a number).
+ *  - `faces` — the die faces it came from (a pool's every die).
+ *  - `pool` — a dice pool's size, the successes it counted, and the face a
+ *    success needed.
+ *  - `cards` — the cards drawn, in order.
+ *  - `compare` — what a comparison was made against, in words
+ *    (_Mara's Will_); `against` holds its number.
+ *  - `against` — the target (or the other side's value) it was set
+ *    against, when there was one.
+ *  - `outcome` — how it came out, in the ruleset's own words (_Success_);
+ *    `five`, the same on the one five-band scale (`FIVE_BANDS`), for a
+ *    renderer's tone.
+ *  - `explain` — how the number was reached (`d20 12 + dex 3 = 15 vs 14`).
+ *  - `by` — who made the check (`character:12`).
+ *  - 🚧 `follows` — the rows on the lorebook that followed a tie this
+ *    moment moved (_Lorebook: Wren's side of the tie with Mara now reads
+ *    close_; ties on the graph, T2, 2026-10-23): told under the outcome,
+ *    each a sentence, never a change to keep or undo of its own.
+ *
+ * ⚠ Not the table channel's outcome rows, not the ruleset handler's
+ * `outcomes` prompt block, and not a degree band (`DegreeBand`): this is
+ * one check as a reader sees it.
+ * @experimental
+ * @ruling Lair rewrite D3 (2026-10-21); PLAN-rulesets-authoring D1 (2026-10-22)
+ */
+export interface OutcomeBlock {
+	/** ⏳ The stored kind, kept from the dice block so every written block still reads. */
+	kind: 'dice'
+	method?: CheckMethodKind
+	stat: string
+	rolled?: number
+	faces?: number[]
+	pool?: { size: number; successes: number; successOn?: number }
+	cards?: OutcomeCard[]
+	compare?: { versus: string }
+	against?: number
+	outcome: string
+	five?: FiveBand
+	explain?: string
+	by?: ParticipantRef
+	/** 🚧 The lorebook rows that followed a tie the moment moved, in words (T2). */
+	follows?: readonly string[]
+}
+
+/**
+ * ⏳ The outcome block's name before 2026-10-22, when every check was a
+ * die's. Say `OutcomeBlock`.
+ * @experimental
+ */
+export type DiceBlock = OutcomeBlock
+
+/**
+ * 🚧 A ruleset's difficulty bands as a `roll` block offers them — the
+ * declaration read into block data, labels in `language` (A18: derived from
+ * the declaration, never retyped). 🚧 The bands of the check method
+ * `methodKey` names, else the default method's, else the first method's
+ * that holds any (`rulesetDifficultyBands`; the ⏳ top-level
+ * `difficultyBands` read as the `die` method's). Empty for a ruleset whose
+ * methods hold none.
+ * @experimental
+ */
+export function rollBlockBands(
+	ruleset: Partial<Pick<RulesetProps, 'difficultyBands' | 'conventions'>>,
+	language = 'en',
+	methodKey?: string,
+): RollBlockBand[] {
+	return rulesetDifficultyBands(ruleset, methodKey).map((b) => ({
+		id: b.id,
+		label: i18nText(b.label, language) ?? b.id,
+		target: b.target,
+	}))
+}
 
 /** @experimental */
 export interface MessageBlockFinding {
@@ -216,6 +384,13 @@ export const MESSAGE_BLOCK_LIMITS = {
 	maxRows: 64,
 	maxActions: 12
 } as const
+
+/**
+ * Every block kind the validator accepts, in the order the docs list them.
+ * 🚧 `roll` and `dice` added 2026-10-21 (Lair rewrite D3).
+ * @experimental
+ */
+export const MESSAGE_BLOCK_KINDS = ['md', 'kv', 'table', 'stat', 'image', 'choices', 'form', 'roll', 'dice', 'group'] as const
 
 /** The longest block id the validator accepts; a host's uuid is 36. @experimental */
 export const BLOCK_ID_MAX_LENGTH = 64
@@ -307,6 +482,124 @@ export function checkMessageBlocks(value: unknown): MessageBlockFinding[] {
 					"omit it — the host stamps { by, at, choice? } once the form is answered",
 				),
 			)
+	}
+
+	/** A non-empty key — a check's, a band's. */
+	const key = (v: unknown, path: string, what: string): v is string => {
+		if (typeof v === 'string' && v.length > 0 && v.length <= BLOCK_ID_MAX_LENGTH) return true
+		f.push(finding(path, `${what} is not a key`, `name it with a non-empty string of at most ${BLOCK_ID_MAX_LENGTH} characters`))
+		return false
+	}
+
+	/** 🚧 A `roll` block's own fields (D3): the check, the checks, the bands, the proposed band, the roller. */
+	const rollFields = (b: Record<string, unknown>, p: string): void => {
+		key(b.stat, `${p}.stat`, 'stat')
+		let checks: Set<string> | undefined
+		if (b.stats !== undefined) {
+			if (!Array.isArray(b.stats) || !b.stats.length)
+				f.push(finding(`${p}.stats`, 'is empty or not an array', 'list the checks the answer may pick from, or omit it'))
+			else {
+				if (b.stats.length > MESSAGE_BLOCK_LIMITS.maxRows)
+					f.push(finding(`${p}.stats`, `more than ${MESSAGE_BLOCK_LIMITS.maxRows} checks`, 'offer fewer checks'))
+				checks = new Set()
+				b.stats.forEach((c: unknown, i: number) => {
+					const row = (c ?? {}) as Record<string, unknown>
+					if (key(row.key, `${p}.stats[${i}].key`, 'key')) {
+						if (checks!.has(row.key as string))
+							f.push(finding(`${p}.stats[${i}].key`, `repeats the check '${String(row.key)}'`, 'list each check once'))
+						checks!.add(row.key as string)
+					}
+					str(row.label, `${p}.stats[${i}].label`, 'label')
+				})
+				if (typeof b.stat === 'string' && !checks.has(b.stat))
+					f.push(finding(`${p}.stat`, `'${b.stat}' is not among the offered checks`, 'propose one of `stats`, or add it to them'))
+			}
+		}
+		if (!Array.isArray(b.bands) || !b.bands.length) {
+			f.push(
+				finding(
+					`${p}.bands`,
+					'is empty or not an array',
+					"offer the ruleset's difficulty bands — rollBlockBands(ruleset); a ruleset with none has no roll to ask for",
+				),
+			)
+			return
+		}
+		if (b.bands.length > MESSAGE_BLOCK_LIMITS.maxRows)
+			f.push(finding(`${p}.bands`, `more than ${MESSAGE_BLOCK_LIMITS.maxRows} bands`, 'offer fewer bands'))
+		const ids = new Set<string>()
+		b.bands.forEach((band: unknown, i: number) => {
+			const row = (band ?? {}) as Record<string, unknown>
+			if (key(row.id, `${p}.bands[${i}].id`, 'id')) {
+				if (ids.has(row.id as string))
+					f.push(finding(`${p}.bands[${i}].id`, `repeats the band '${String(row.id)}'`, 'offer each band once'))
+				ids.add(row.id as string)
+			}
+			str(row.label, `${p}.bands[${i}].label`, 'label')
+			if (row.target !== undefined && !Number.isInteger(row.target))
+				f.push(finding(`${p}.bands[${i}].target`, 'is not a whole number', 'send the target a total must reach, or omit it'))
+		})
+		if (b.band !== undefined && (typeof b.band !== 'string' || !ids.has(b.band)))
+			f.push(finding(`${p}.band`, `'${String(b.band)}' is not among the offered bands`, 'propose one of `bands` by its id, or omit it'))
+		if (b.by !== undefined && !isParticipantRef(b.by))
+			f.push(finding(`${p}.by`, 'is not a participant reference', "name who attempts it — 'character:<id>' — or omit it"))
+	}
+
+	/**
+	 * 🚧 An outcome block (stored kind `dice`; D3, method-aware 2026-10-22):
+	 * a result — what was checked, the number it came to, against what, how
+	 * it came out, and what the method shows (a pool, cards, a comparison).
+	 */
+	const diceFields = (b: Record<string, unknown>, p: string): void => {
+		str(b.stat, `${p}.stat`, 'stat')
+		str(b.outcome, `${p}.outcome`, 'outcome')
+		if (b.method !== undefined && (typeof b.method !== 'string' || !/^[a-z0-9]+(?:[.:-][a-z0-9]+)*$/.test(b.method)))
+			f.push(finding(`${p}.method`, 'is not a check method kind', "name the kind that decided it — 'die-target', 'dice-pool', 'card-draw', 'compare', 'bid', 'none' — or omit it for a die"))
+		if (b.rolled === undefined ? b.method !== 'none' : typeof b.rolled !== 'number' || !Number.isFinite(b.rolled))
+			f.push(finding(`${p}.rolled`, 'is not a number', "send the number the check came to — only a 'none' outcome has none"))
+		if (b.pool !== undefined) {
+			const pool = (b.pool ?? {}) as Record<string, unknown>
+			const whole = (v: unknown) => Number.isInteger(v) && (v as number) >= 0
+			if (!b.pool || typeof b.pool !== 'object' || !whole(pool.size) || !whole(pool.successes) || (pool.successOn !== undefined && !whole(pool.successOn)))
+				f.push(finding(`${p}.pool`, 'is not { size, successes, successOn? } in whole numbers', 'send the pool as rolled, or omit it'))
+		}
+		if (b.cards !== undefined) {
+			if (!Array.isArray(b.cards) || !b.cards.length)
+				f.push(finding(`${p}.cards`, 'is empty or not a list', 'send the cards drawn, or omit them'))
+			else if (b.cards.length > MESSAGE_BLOCK_LIMITS.maxRows)
+				f.push(finding(`${p}.cards`, `more than ${MESSAGE_BLOCK_LIMITS.maxRows} cards`, 'show fewer cards'))
+			else
+				b.cards.forEach((c: unknown, i: number) => {
+					const card = (c ?? {}) as Record<string, unknown>
+					str(card.label, `${p}.cards[${i}].label`, 'label')
+					if (card.rank !== undefined && !Number.isInteger(card.rank))
+						f.push(finding(`${p}.cards[${i}].rank`, 'is not a whole number', 'send the rank it counted for, or omit it'))
+				})
+		}
+		if (b.compare !== undefined) {
+			const cmp = (b.compare ?? {}) as Record<string, unknown>
+			if (!b.compare || typeof b.compare !== 'object' || typeof cmp.versus !== 'string' || !cmp.versus.trim())
+				f.push(finding(`${p}.compare`, 'is not { versus }', 'say in words what it was compared against, or omit it'))
+		}
+		if (b.faces !== undefined) {
+			if (!Array.isArray(b.faces) || !b.faces.every((x) => Number.isInteger(x)))
+				f.push(finding(`${p}.faces`, 'is not a list of whole numbers', 'send the die faces, or omit them'))
+			else if (b.faces.length > MESSAGE_BLOCK_LIMITS.maxRows)
+				f.push(finding(`${p}.faces`, `more than ${MESSAGE_BLOCK_LIMITS.maxRows} faces`, 'sum the dice into fewer faces'))
+		}
+		if (b.against !== undefined && (typeof b.against !== 'number' || !Number.isFinite(b.against)))
+			f.push(finding(`${p}.against`, 'is not a number', 'send the target it was rolled against, or omit it'))
+		if (b.follows !== undefined) {
+			if (!Array.isArray(b.follows) || b.follows.some((x) => typeof x !== 'string' || !x.trim()))
+				f.push(finding(`${p}.follows`, 'is not a list of sentences', 'say each lorebook row that followed in words, or omit it'))
+			else if (b.follows.length > MESSAGE_BLOCK_LIMITS.maxRows)
+				f.push(finding(`${p}.follows`, `more than ${MESSAGE_BLOCK_LIMITS.maxRows} rows`, 'tell fewer rows'))
+		}
+		if (b.five !== undefined && !(FIVE_BANDS as readonly unknown[]).includes(b.five))
+			f.push(finding(`${p}.five`, `is not one of ${FIVE_BANDS.join(', ')}`, 'say where the outcome sits on the five-band scale, or omit it'))
+		if (b.explain !== undefined) str(b.explain, `${p}.explain`, 'explain')
+		if (b.by !== undefined && !isParticipantRef(b.by))
+			f.push(finding(`${p}.by`, 'is not a participant reference', "name who rolled — 'character:<id>' — or omit it"))
 	}
 
 	const walk = (blocks: unknown[], path: string, depth: number): void => {
@@ -433,6 +726,16 @@ export function checkMessageBlocks(value: unknown): MessageBlockFinding[] {
 							f.push(finding(`${p}.fields.${sf.field ?? ''}`, sf.message, sf.fix))
 					break
 				}
+				case 'roll': {
+					str(b.fn, `${p}.fn`, 'fn')
+					identity(b.action, `${p}.action`)
+					formFields(b, p)
+					rollFields(b, p)
+					break
+				}
+				case 'dice':
+					diceFields(b, p)
+					break
 				case 'group':
 					if (!Array.isArray(b.blocks))
 						f.push(finding(`${p}.blocks`, 'is not an array', 'nest an array of blocks'))
@@ -443,7 +746,7 @@ export function checkMessageBlocks(value: unknown): MessageBlockFinding[] {
 						finding(
 							p,
 							`unknown block kind '${String(b.kind)}'`,
-							'use one of: md, kv, table, stat, image, choices, form, group',
+							`use one of: ${MESSAGE_BLOCK_KINDS.join(', ')}`,
 						),
 					)
 			}
@@ -492,6 +795,7 @@ export function stampBlockActions(
 				case 'choices':
 					return { ...b, actions: b.actions.map(stamp) }
 				case 'form':
+				case 'roll':
 					return stamp(b)
 				case 'group':
 					return { ...b, blocks: walk(b.blocks) }
@@ -517,19 +821,19 @@ export function isFormAnswered(v: unknown): v is FormAnswered {
 	)
 }
 
-/** One form in a block tree — a `choices` or `form` block, located. @experimental */
-export type FormBlock = Extract<MessageBlock, { kind: 'choices' | 'form' }>
+/** One form in a block tree — a `choices`, `form` or (🚧) `roll` block, located. @experimental */
+export type FormBlock = Extract<MessageBlock, { kind: 'choices' | 'form' | 'roll' }>
 
 /**
- * Every `choices` and `form` block in a tree, in render order, groups
- * flattened — the blocks a fire, an event or an answer can name.
+ * Every `choices`, `form` and (🚧) `roll` block in a tree, in render
+ * order, groups flattened — the blocks a fire, an event or an answer can name.
  * @internal
  */
 export function formBlocksOf(blocks: MessageBlock[]): FormBlock[] {
 	const out: FormBlock[] = []
 	const walk = (list: MessageBlock[]): void => {
 		for (const b of list) {
-			if (b.kind === 'choices' || b.kind === 'form') out.push(b)
+			if (b.kind === 'choices' || b.kind === 'form' || b.kind === 'roll') out.push(b)
 			else if (b.kind === 'group') walk(b.blocks)
 		}
 	}
@@ -798,6 +1102,7 @@ export function assignBlockIds(blocks: MessageBlock[], makeId: () => string): Me
 			switch (b.kind) {
 				case 'choices':
 				case 'form':
+				case 'roll':
 					return b.id ? b : { ...b, id: makeId() }
 				case 'group':
 					return { ...b, blocks: walk(b.blocks) }
@@ -827,6 +1132,7 @@ export function assignBlockHead(blocks: MessageBlock[], head: number): MessageBl
 			switch (b.kind) {
 				case 'choices':
 				case 'form':
+				case 'roll':
 					return { ...b, head }
 				case 'group':
 					return { ...b, blocks: walk(b.blocks) }
@@ -898,6 +1204,9 @@ export const stalenessVerdict = defineVerdict<StalenessInput>({
  *
  *  - `choices` → `{ choice: <enum of the option keys> }`, required.
  *  - `form` → the field schema, mapped field by field (`fieldsToJsonSchema`).
+ *  - 🚧 `roll` → `{ check, stat, band }`, every key required: `check` a
+ *    boolean (false is _No check_), `stat` an enum of the offered checks,
+ *    `band` an enum of the offered bands' ids.
  *
  * A `choices` block whose options carry no keys yields an empty enum, which
  * is what the validator refuses on an addressed block before it is written.
@@ -905,6 +1214,7 @@ export const stalenessVerdict = defineVerdict<StalenessInput>({
  * @ruling R-15
  */
 export function formAnswerSchema(block: FormBlock): Record<string, unknown> {
+	if (block.kind === 'roll') return rollAnswerSchema(block)
 	if (block.kind === 'choices')
 		return {
 			type: 'object',
@@ -918,6 +1228,21 @@ export function formAnswerSchema(block: FormBlock): Record<string, unknown> {
 			additionalProperties: false,
 		}
 	return fieldsToJsonSchema(block.fields)
+}
+
+/** The answer a roll form takes: every key required, nothing else — a grammar can hold it. */
+function rollAnswerSchema(block: RollBlock): Record<string, unknown> {
+	const checks = block.stats?.length ? block.stats.map((c) => c.key) : [block.stat]
+	return {
+		type: 'object',
+		properties: {
+			check: { type: 'boolean', description: 'false for No check: the attempt is told without a roll.' },
+			stat: { type: 'string', enum: checks },
+			band: { type: 'string', enum: block.bands.map((b) => b.id) },
+		},
+		required: ['check', 'stat', 'band'],
+		additionalProperties: false,
+	}
 }
 
 /**
@@ -990,7 +1315,9 @@ function fieldToJsonSchema(decl: FieldDecl): Record<string, unknown> {
  * The fire a form's answer becomes — what a press sends, and what the
  * answer pipeline commits "exactly as a click would": the block's function,
  * its stamped identity, and the payload. For `choices` the payload is
- * `{ choice }`; for `form` it is the answered values. Null when the answer
+ * `{ choice }`; for `form` it is the answered values; for (🚧) `roll` it is
+ * `{ check, stat, band, target? }` — `target` the chosen band's, read off
+ * the stored block, never the answer. Null when the answer
  * names no option the block offers, or is not an object — an oracle's
  * answer is checked here before anything is fired.
  * @internal
@@ -1001,6 +1328,7 @@ export function formFireOf(
 ): { fn: string; action?: string; payload: Record<string, unknown>; label?: string } | null {
 	if (!answer || typeof answer !== 'object' || Array.isArray(answer)) return null
 	const a = answer as Record<string, unknown>
+	if (block.kind === 'roll') return rollFireOf(block, a)
 	if (block.kind === 'choices') {
 		const option = block.actions.find((o) => o.choice !== undefined && o.choice === a.choice)
 		if (!option) return null
@@ -1012,4 +1340,33 @@ export function formFireOf(
 		}
 	}
 	return { fn: block.fn, action: block.action, payload: { ...a } }
+}
+
+/**
+ * A roll form's answer, checked against what the block offered: `check`
+ * true or false, `stat` one of the offered checks, `band` one of the offered
+ * bands. A _No check_ answer may leave `stat` and `band` out — they fall back
+ * to what the block proposed. The label is the answer in words, for the
+ * stamp's `value`.
+ */
+function rollFireOf(
+	block: RollBlock,
+	a: Record<string, unknown>,
+): { fn: string; action?: string; payload: Record<string, unknown>; label?: string } | null {
+	if (typeof a.check !== 'boolean') return null
+	const checks = block.stats?.length ? block.stats : [{ key: block.stat, label: block.stat }]
+	const stat = a.stat === undefined && !a.check ? block.stat : a.stat
+	const check = checks.find((c) => c.key === stat)
+	if (!check) return null
+	const bandId = a.band === undefined && !a.check ? (block.band ?? block.bands[0]?.id) : a.band
+	const band = block.bands.find((b) => b.id === bandId)
+	if (!band) return null
+	const payload: Record<string, unknown> = { check: a.check, stat: check.key, band: band.id }
+	if (a.check && band.target !== undefined) payload.target = band.target
+	return {
+		fn: block.fn,
+		action: block.action,
+		payload,
+		label: a.check ? `${check.label} — ${band.label}` : 'No check',
+	}
 }

@@ -8,7 +8,7 @@
  * conventions cannot say: derived values, a spell cast in a higher slot, a
  * level gained by class table, and carried load.
  */
-import { DATA_TRANSFORM_KIND, type CoreScriptSeed } from "../genres/dungeon-crawler/scripts.js"
+import { DATA_TRANSFORM_KIND, type CoreScriptSeed } from "../shared/scriptSeed.js"
 import { VIS_ITINERIS_ARMOUR_CLASS_JS, VIS_ITINERIS_SPELL_POINTS_JS } from "../rulesets/vis-itineris/rules.js"
 
 const seed = (seedKey: string, name: string, source: string): CoreScriptSeed =>

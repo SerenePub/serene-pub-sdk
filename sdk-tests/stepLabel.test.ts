@@ -15,7 +15,7 @@ import assert from 'node:assert/strict'
 import { compile, contentHash, slot, spec, validate, type SpecDocument } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 
-type Expose = { label?: unknown; purpose?: unknown; status?: unknown }
+type Expose = { label?: unknown; purpose?: unknown; status?: unknown; promptReach?: unknown }
 
 /** A two-step reply: a context build (no model) and the model call. */
 const reply = (assembleExpose?: Expose, generateExpose?: Expose) =>
@@ -83,5 +83,21 @@ describe('step label and step purpose', () => {
 		const found = validate(doc).filter((f) => f.law === 'R-20' && f.nodeKey === 'generate')
 		assert.equal(found.length, 1)
 		assert.match(found[0]!.message, /expose\.label/)
+	})
+})
+
+/**
+ * 🚧 R54 (2026-10-21): a step with a prompts slot may hand its owner the
+ * choice of prompt — `expose: { promptReach: 'owner' }` — never its text.
+ */
+describe('the prompt choice an owner may make (expose.promptReach, R54)', () => {
+	test('lands on the node, beside the other marks, only when stated', () => {
+		assert.deepEqual(exposeOf(compile(reply({ promptReach: 'owner' })), 'prompt'), { promptReach: 'owner' })
+		assert.equal(exposeOf(compile(reply()), 'prompt'), undefined)
+	})
+
+	test('only on a step that declares a prompts slot, and only "owner"', () => {
+		assert.throws(() => reply(undefined, { promptReach: 'owner' }), /declares no prompts slot/)
+		assert.throws(() => reply({ promptReach: 'admin' }), /promptReach is 'owner' or absent/)
 	})
 })

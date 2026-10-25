@@ -39,9 +39,11 @@ One step in a spec, named by a key and added with the builder method for its kin
 
 ### inlet
 
-The kind of node a run enters by. Exactly one per spec, first, and it ties the spec to one genre
-and one event. Only core ships inlets.
-`.inlet('input', C.userMessage.v1(), { genre, event: sessionEvents.messageRespond })`.
+The kind of node a run enters by. Exactly one per spec, first. It decides what the run is handed
+(a message, a session event, a routine's cause), and with it which triggers the spec can be
+registered on. It may name the events the spec **suits**, a hint for pickers; it never ties the
+spec to a genre. Only core ships inlets.
+`.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })`.
 [Canon §4, node kind](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#4-pipeline)
 
 ### query
@@ -112,9 +114,10 @@ The record of a run: each node, its outcome, its inputs and outputs, and what we
 
 ### event
 
-Something that happened in a session. A spec answers one through its inlet. Core records its
-own events, and a plugin can declare and record its own.
-`sessionEvents.messageRespond` is `core:event/message-respond@1`.
+Something that happened in a session. A pipeline **registered** on it runs; what the event
+**carries** (the session, a message, a speaker, a scene, the clock) is all that pipeline may read.
+Core records its own events, and a plugin can declare and record its own.
+`coreEvents.messageRespond` is `core:event/message-respond@1`.
 [Canon §9, under action](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session)
 
 ### action
@@ -123,6 +126,28 @@ Anything a person can press: a composer button, a message-menu item, a slash com
 a widget. It is declared on the spec that answers it.
 `contributes: { actions: [{ key: 'roll', label: 'Roll', description: 'Roll the dice and post the result.', venue: { kind: 'composer' } }] }`.
 [Canon §9](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#9-session)
+
+### registration
+
+"This trigger runs this pipeline": an event, an action or a routine's cadence, and the spec it
+starts. A genre's defaults are a list of them, and a session preset changes that list.
+`register(coreEvents.messageRespond, reply)` makes one; see
+[Genres, presets and routines](genres-presets-and-routines.md).
+[Canon §4, registrations](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#registrations-routines-and-cadences--built-2026-10-2021)
+
+### routine
+
+A pipeline that runs when its cadence says so rather than when someone acts, once the
+session's other runs have finished, with the session owner's authority.
+`register(everyNTurns({ n: 5 }), sweep)` makes the sweep a routine.
+[Canon §4, registrations](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#registrations-routines-and-cadences--built-2026-10-2021)
+
+### cadence
+
+When a routine is due: after each turn or round, every few turns, when a scene opens, every hour
+of real time or story time. It says due or not, and passes no data.
+`afterEachRound()` is `core:cadence/after-each-round@1`.
+[Canon §4, registrations](https://github.com/doolijb/serene-pub/blob/main/NOMENCLATURE.md#registrations-routines-and-cadences--built-2026-10-2021)
 
 ## What a session holds
 
@@ -184,8 +209,9 @@ The numbered checks a package is held to, each one runnable from a test.
 
 ## Words you can skip for now
 
-- **session preset**: which pipelines a new session of a genre runs. You meet it when your
-  plugin ships a genre.
+- **session preset**: one set of changes on a genre's defaults: which pipelines a session runs,
+  and its settings. A person picks one when they start a session. You meet it when your plugin
+  ships a genre, or a preset for someone else's.
 - **shape**: the type of a port, such as `S.text`.
 - **channel**: a named stream of a session's messages. Every session has `main`; a genre can
   declare more. See [Channels](channels.md).
@@ -211,5 +237,5 @@ The numbered checks a package is held to, each one runnable from a test.
 - **dowry**: what a character card brings into a world: its stat sheets and their values. You
   meet it on a card's **Stats** tab; the word is only in code and on the wire.
 
-Where a value comes from (a node's options, a genre field, the node definition a session runs)
-is [its own page](where-values-come-from.md).
+Where a value comes from (a step's values, a genre setting, which pipelines run, the node
+definition a session runs) is [its own page](where-values-come-from.md).

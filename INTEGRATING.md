@@ -321,9 +321,15 @@ with lorebooks, sessions at the context limit, sessions with custom prompt confi
 
 ### Step 5 — Migrate user configuration (U16, `08 §5b`)
 
-Existing prompt configs become presets. `migratedSlug(table, id)` derives the slug so the
-job is **safely re-runnable** — a migration that generates fresh ids on every run cannot be
-resumed after it half-finishes at 3am.
+Existing prompt configs become values on registrations (2026-10-20: named pipeline
+configurations are retired, R38; see [§1i](#1i-registrations--how-a-pipeline-is-mounted-2026-10-20)).
+The 0.5.3 attic first writes them as it always did, then the app's `0108` data upgrade converts
+them: a configuration a preset bound becomes that preset's changes, one a session selected
+becomes that session's values, one selected for the whole pub on a registered pipeline becomes
+an administrator's change to the genre's defaults, and an unselected one of an administrator's
+becomes a disabled preset of its genre, named after it, carrying its values — so no tuning is
+lost. `migratedSlug(table, id)` derives the slug so the job is **safely re-runnable** — a
+migration that generates fresh ids on every run cannot be resumed after it half-finishes at 3am.
 
 Two things must not happen: a config that lands nowhere without a report, and a config that
 lands at the wrong scope. `MigrationReport` requires a reason on every non-migrated entry,
@@ -501,10 +507,12 @@ returning. A person or nobody: the block waits. Four things a host wired by hand
   `session.generating`, `session.fields`, the resolver's `state`, and `item` for the message a
   press names — `shared/actions/itemValues.ts` is the shape the client builds per row) and
   evaluates each action's effective predicate set with the SDK's `evaluateEnabledWhen`: the
-  session's binding override (`pipeline_bindings.enabled_when` on the action's identity, set
-  through `sessions:bindFunction` with a `subject`), else the declaration's `enabledWhen` (an
-  explicit `[]` opts out of the genre's default), else the genre's default for that identity
-  (`genreEnabledWhen`; plans/31 V2 — the identity `<spec slug>#<key>` is the one key). `fireAction`
+  declaration's `enabledWhen` (an explicit `[]` opts out of the genre's default), else the genre's
+  default for that identity (`genreEnabledWhen`; plans/31 V2 — the identity `<spec slug>#<key>`
+  is the one key) — and, ANDed with it, the `when` of the action's effective registration (the
+  genre's defaults ⊕ the preset's change ⊕ the session's row, judged with `evaluateCondition`,
+  2026-10-20; the session's row is what `sessions:bindFunction` on an action's identity writes —
+  the ⏳ `pipeline_bindings.enabled_when` override it replaced is read by nothing). `fireAction`
   asks `enablementVerdict` after the audience and before routing — a form's answer and a
   hand-made `sessions:fireAction` alike — and refuses with the failing predicate's `reason`
   rendered in the actor's language; the core verb handlers ask the same through `verbRefusal`'s
@@ -569,15 +577,18 @@ generates the negative list for the consent screen — generated, so it cannot f
 Permissions are compiled from usage at build time and **re-checked at runtime** against the
 admin's grants.
 
-Since R-4 (2026-09-16) the inlet lock is a pipeline's one subscription, so the packager emits
-`event:<inlet lock>` for **every pipeline with an `input.event`** — a package that answers
-`core:event/message-respond@1` lists `event:core:event/message-respond@1` whether or not it
-registers an event listener. Before the fold only `.on()` subscriptions surfaced, and a
-pipeline that ran on every primary turn listed nothing; a manifest rebuilt against this
-release therefore carries one permission per locked pipeline that its previous build did
-not. Preset `bindings` are keyed by event **id** (`core:event/message-respond@1`), never by
-bare name; `announce.build()` refuses a bare key, and `syncPluginPresets` skips and reports one
-it finds in an installed manifest, logging once per preset — never written.
+A pipeline no longer subscribes through its inlet (2026-10-20, §1i): it is **registered** on an
+event, an action or a cadence by its genre's defaults or a preset, and its inlet only names the
+events it **suits**. ⚠ The packager (`cli/src/compiler.ts`) still derives a package's `event:`
+permissions from inlet locks alone (`event:<input.event>` for every pipeline with one, the R-4
+fold of 2026-09-16), so a `suits` pipeline registered on an event lists none — the derivation
+must move to the package's registrations (genre defaults and presets) before a plugin built on
+registrations needs the permission. Preset changes name registrations by their derived **key**
+(`message-respond→story-respond`); ⏳ a preset still declared with `bindings` keys them by event
+**id** (`core:event/message-respond@1`), never by bare name — `announce.build()` refuses a bare
+key, and `syncPluginPresets` skips and reports one it finds in an installed manifest. A preset
+whose `requires` names a package that is missing, disabled or outside the range is withdrawn,
+never deleted, and restored when it returns (A16).
 
 A plugin's session widgets declare per-instance settings the same way core's do: a
 `settings` schema on `WidgetDecl` (`sdk/src/layout.ts`), written in the SDK's one field
@@ -1039,12 +1050,13 @@ Send ─► door (access · genre · persona · length · channel)
   persona (`personaId`), their card-less seat (stamped `player-seat:<id>`, as before) or
   themselves — commits the tray in one transaction with the row (`commitTraySend`), and fires the
   row's `message-completed` under `{ kind: 'user' }`, so turn order and auto-advance are unchanged.
-- **The preset shows it.** `preset()` writes `{ spec: 'core:spec/save-message' }` on
-  `message-offered` whenever the preset binds nothing of its own there; a genre that wants to
-  refuse, rewrite or route a message binds its own spec (locked to its genre) and that wins. The
-  app writes the same binding into older rows at boot (`backfillDefaultSave`) and into a preset an
-  administrator creates; a session on no preset falls to it as the event's one default
-  (`defaultEventSpec`).
+- **The genre's defaults register it.** Every core genre's defaults hold
+  `register(coreEvents.messageOffered, saveMessageSpec())`; a genre that wants to refuse, rewrite
+  or route a message registers its own spec there instead, and a preset may change or replace it
+  like any registration (2026-10-20). ⏳ A preset still declared with `bindings` gets
+  `{ spec: 'core:spec/save-message' }` on `message-offered` written in when it binds nothing
+  there, and the app writes the same into older rows at boot (`backfillDefaultSave`); a session
+  on no preset falls to it as the event's one default (`defaultEventSpec`).
 - **The answer, and never losing text.** The dispatch is waited on (the save calls no model):
   `{ accepted: true, runId, sessionMessage }` — the row, linked to its run through
   `pipeline_run_artifacts` — or `{ refused: sentence }` for a door refusal, a genre spec's halt,
@@ -1230,6 +1242,97 @@ contract below is published; the app binds the handler (`src/lib/server/rulesets
 
 ---
 
+## 1i. Registrations — how a pipeline is mounted (2026-10-20)
+
+A pipeline says what happens; a **registration** says when (PLAN-layering, rulings R1–R48). It
+replaces four things a host used to keep: the inlet lock (`.inlet(k, node, { genre, event })`),
+the pipeline binding (`pipeline_bindings`, session → preset → pub → companion rule), the named
+pipeline configuration (`pipeline_configs` and the session's Configuration pick) and the genre's
+background tasks (`TaskDecl`, `resolve-tasks@1`). Each is ⏳ read where old data still holds it
+and written nowhere.
+
+- **Three triggers, one door.** `register(trigger, pipeline, opts)` — an event (`coreEvents.…`),
+  an action handle (`spec.actions.<key>`) or a cadence (`everyNTurns({ n: 5 })`). The key is
+  derived (`message-respond→story-respond`); `opts` carry `when`, `values`, `order` and, for a
+  routine, `mode`, `allowStacking`, `caps`. Every origin — a package build, an install, the preset
+  editor, a session's settings, a future tool — calls ONE door: the SDK's `registrationFindings`
+  (fit, cadence options, routine fields, values that never name a connection, exposed plumbing,
+  duplicates warn, emitted-event cycles refuse), wrapped by the app's `registrationDoor`
+  (`registrations/door.ts`) with the host's facts: published documents, the system cron caps,
+  the story clock, the registering genre's envoys.
+- **Layers.** `GenreDecl.defaults` (stated with `withGenreDefaults`, because pipelines import the
+  genre) holds the genre's registrations and setting values, and its default preset is the one
+  marked `default: true`. A preset is ONE set of changes on them (`register` · `drop` · `change`,
+  `settings` as `SettingValue`s, `requires` with version ranges) — never on another preset. A
+  session adds rows (switch an action or routine off, a mode, a `when`, cadence options).
+  `effectiveRegistrations(genreDefaults, presetChanges, sessionRows)` is the one merge; the app
+  stores every layer as `registrations` rows (scope `genre` · `preset` · `session`, origin, key,
+  trigger, spec slug, values, mode, state) and projects core's and packages' declarations into
+  them at boot (`registrations/project.ts`).
+- **Fit (R4) is derived.** `entitiesRead(pipeline)` walks the inlet ports a pipeline's steps
+  read; each event declares what it `carries`, an action carries `ACTION_CARRIES`, a cadence its
+  moment's entities. `fitOf(pipeline, trigger)` answers in words. The host re-checks every
+  registration naming a changed thing on install, update and publish (`registrations/fit.ts`);
+  a broken one is set aside and the layer under it answers, with a notice.
+- **Values, one cascade (R38).** A step's values: the pipeline's declared defaults (`.defaults()`)
+  < the genre's defaults (and an administrator's saves on the pipeline page, kept as `admin:<key>`
+  change rows) < the preset's changes < the session (what is exposed). Stored by registration,
+  so two pipelines' `mode` never collide, and a dropped pipeline's session values stay dormant.
+  The receipt's `configLayers` name `session` · `preset` · `genre` · `defaults` · `author`
+  (⏳ `config` reads as `preset`).
+- **Exposure (R1, R32, A10).** `FieldDecl.reach` (`admin` · `owner`), `fixedAtStart`, and each
+  layer's `setting(value, { lock, askAtStart })`. Model plumbing never reaches an owner:
+  `genre()`, `describe*Definition` and the door refuse it. The app derives the session's settings
+  form from what is registered (`sessions/settingsForm.ts`, `sessions:settingsForm` /
+  `sessions:updateSetting`), and the start form's asks from the preset (`PresetRow.asks`).
+- **Routines.** A routine starts through `core:inlet/routine@1` (`session`, `routine`, `cause`,
+  `ruleset`). The host emits the session moments `turn-ended`, `round-ended`, `scene-opened`,
+  `scene-closed` and `story-clock-moved` (off the ledger), evaluates each routine's cadence only
+  at the moments it wakes on (`cadenceDue`; a plugin's in the sandbox through
+  `core:script:cadence/due@1`), and queues firings per session behind every action and event
+  run (`pipelines/routines/`). A routine never wakes itself or another; Allow stacking off
+  refuses a firing while one waits; real-time routines pause on the idle timeout and the
+  runs-in-a-row cap (system ≥ user ≥ routine) and after a restart until an interaction (R21).
+  Runs record `pipeline_runs.trigger_family`, and the model queue serves interactive work, then
+  events, then routines (A13). A routine acts as the session's owner (A14).
+- **Conformance.** C35 (every shipped registration fits), C36 (no plumbing reaches a member) and
+  C37 (every preset is one level on one genre, one default per genre) judge a host's
+  `shipped()` catalogue — pass its `pipelines` too, or C35 and half of C36 say what went
+  unjudged.
+
+---
+
+## 1j. Lair rewrite primitives — typed entry fields, roll forms, owner-only channels (2026-10-21)
+
+🚧 Declared in the SDK (Lair rewrite L1, D1–D3, D5–D6); the host half is the app's.
+
+- **Typed entry fields.** `core:outlet/create-lore-entry@1` gained a `fields` in-port (`S.json`,
+  the entry type's typed fields, its title-role `name` field excepted — that is the `name` port),
+  reviewable at the gate. 🚧 `core:outlet/update-lore-entry@1` is new: `entry` (an id, a write
+  result, or a name in the session's lorebook — `link-lore-entries@1`'s `to` rule), optional
+  `name` · `content` · `fields`, the last a **patch** (named keys laid over the stored ones, `null`
+  clears); it causes no event yet. The host holds both `fields` to the entry's type with
+  `fieldsFindings(type, fields, { partial })` — the bare `entryType` id resolves — at the review
+  gate and the commit, refusing a misfit with the field named, never trimming it. A pipeline asks
+  for them with `jsonSchemaOf(type)` into `generate-json@1`'s `schema` (strict: every property
+  required, `additionalProperties: false` — what the grammar compiler accepts) and may check the
+  answer with `validateAgainst(type, answer)`.
+- **The roll form and the dice block.** `MessageBlock` gained `roll` (a form: `fn`/`action` and
+  `FormBlockFields`, plus `stat`, `stats?`, `bands`, `band?`, `by?`) and `dice` (a result: `stat`,
+  `rolled`, `faces?`, `against?`, `outcome`, `five?`, `explain?`, `by?`). `formBlocksOf`,
+  `assignBlockIds`, `assignBlockHead`, `stampBlockActions` and the effects line treat a roll as a
+  form; `formAnswerSchema(roll)` is `{ check, stat, band }`, and `formFireOf` fires
+  `{ check, stat, band, target? }` with the target read off the stored block. A host's own
+  per-kind code must learn `roll` too (the answered stamp, the fire's value check). Bands come from
+  the ruleset (`RulesetProps.difficultyBands`, `rollBlockBands`, `defaultDifficultyBand`).
+- **Owner-only channels.** `ChannelDecl.audience: 'owner'` (default `all`; `channelAudience(shape,
+  channel)` is the one reader) — the host sends the channel's rows and pushes to the session's
+  owner only, refuses another member's send to it and leaves it out of their composer switch.
+  Pipelines read and write it as before. `main` is never owner-only; an owner-only channel has no
+  personal lanes.
+
+---
+
 ## 2. Seams that will need work — known, not discovered
 
 These are places where the draft is deliberately minimal. Each one is a substitution, not a
@@ -1265,10 +1368,11 @@ to the verdict instead. The kit's **C27** holds a host to this through `HostUnde
 
 ## 3. What "integrated" means, as a checklist
 
-- [ ] `@serene-pub/conformance` runs in CI against core's executor, all 33 green
+- [ ] `@serene-pub/conformance` runs in CI against core's executor, all 37 green
 - [x] one real session turn runs as a pipeline end to end, from a real event
 - [ ] the parity corpus is byte-identical over fixtures drawn from real sessions
-- [ ] every existing user prompt config appears as a preset, or as a reported exception
+- [ ] every existing user prompt config appears as a preset's change, a session's values or a
+      disabled preset of its genre, or as a reported exception
 - [ ] debug mode reads from the preview, and the preview matches the send
 - [ ] a plugin built with `serene-pub build` installs, and one built against another
       release is refused with a message naming the drift
@@ -1313,8 +1417,11 @@ uses a lowercase `seam` header so the census test does not read it.)
 | **Node kinds**: `inlet` · `query` · `task` · `oracle` · `outlet`, and `entry` for entry types | `handler()` @public · `Kind` @experimental | Core's catalog ships definitions of every kind. A package's `task`, `query`, `oracle` and `outlet` definitions run through `handler()` in the sandbox. Only core ships inlets and entry types | *task*: `sdk-tests/pluginHarness.test.ts` › `a task is pure: neither storage nor fetch` · *query, outlet*: `sdk-tests/pluginHarness.test.ts` › `a query and an outlet get the extension’s own rows, and no network` · *oracle*: `sdk-tests/pluginHarness.test.ts` › `an oracle is the one kind that calls out` · *inlet*: `sdk-tests/messageVerbs.test.ts` › `each compiles clean, under its declared id, as one inlet straight into one outlet` · *entry*: `sdk-tests/entries.test.ts` › `an entry type is a registry row like any other, with kind entry` |
 | **Provisional node definitions**: `core:oracle/speak@1` · `core:oracle/mcp-tool@1` · `core:oracle/mcp-resource@1` (`core:task/ruleset-resolve@1` left the list 2026-10-17 — the app binds it) | `C.speak`, `C.mcpTool`, `C.mcpResource` @experimental, with `provisional: true` | **None.** They are declared and have no handler. `validate()` refuses a document that places one, and none of them can be a swap | `sdk-tests/rulings.test.ts` › `the core definitions their plans own carry the flag, and no other core one does` · `sdk-tests/rulings.test.ts` › `a document that reached the executor anyway halts on the law, not on "no binding registered"` · `sdk-tests/modderPass.test.ts` › `a provisional definition cannot be a swap — it has no handler` |
 | **Specs** (pipelines) | `spec()`, `pin()`, `slot()`, `use()` @public | Core's catalog specs. A package's own, under `pipelines` | *core*: `sdk-tests/coreCatalog.test.ts` › `the announcement builds — genres, pipelines, hooks validated as one package` · *package*: `sdk-tests/plugin.test.ts` › `it produces a manifest and the pipeline documents` |
-| **Genres** | `genre()`, `GenreDecl` @public | Chat, Adventure, Guide and Lair; Whodunit and Writing Room are showcase plugins (`serene-pub-plugin-whodunit`, `serene-pub-plugin-writing-room`). A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `nobody plays a person, and the dungeon is required` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |
-| **Presets** | `PresetInput` @experimental | Core's presets, one per genre. A package's own presets | `sdk-tests/presets.test.ts` › `three presets, one default, addressed by node key` · `sdk-tests/announce.test.ts` › `a preset leaving a required slot unbound refuses, and coverage says MISSING` |
+| **Genres** | `genre()`, `GenreDecl` @public | Story, Chat, Guide, the Lair and the Dungeon Crawler, each with its defaults (`withGenreDefaults`); Whodunit and Writing Room are showcase plugins (`serene-pub-plugin-whodunit`, `serene-pub-plugin-writing-room`). A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `the GM is never in the scene; guests join as participants; the dungeon is offered, never required` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |
+| **Presets** | `PresetInput` @experimental | Core's eight presets, each one set of changes on its genre's defaults (`register` · `drop` · `change` · `settings`). A package's own presets, for its genre or another's | `sdk-tests/presetsAsChanges.test.ts` › `the stored form: keys, never objects; bindings empty; no save-message written in; default marked` · `sdk-tests/presets.test.ts` › `three presets, one default, addressed by node key` · `sdk-tests/announce.test.ts` › `a preset leaving a required slot unbound refuses, and coverage says MISSING` |
+| **Registrations**: an event, an action or a cadence runs a pipeline | `register()`, `RegistrationDecl`, `registrationFindings`, `fitOf` @experimental | Core's five genres' defaults (`coreGenres()`), the app's `registrations` rows and its door (`registrationDoor`). A package's genre defaults and presets | `sdk-tests/registrations.test.ts` › `registrationKeyOf is pure and agrees with register()` · `sdk-tests/fit.test.ts` › `the ruled sentence: a reply reads the speaker; scene-opened carries none` · `sdk-tests/coreGenreDefaults.test.ts` › `every genre states its defaults, and every preset is changes on them` · `sdk-tests/conformance.test.ts` › `C35–C37 · the layering laws: core’s catalogue passes, and a catalogue that breaks each fails in words` |
+| **Cadences**: when a routine is due | `coreCadences`, `definePluginCadence`, `cadenceDue`, `simulateCadence` @experimental | Core's ten cadences, evaluated natively by the app; a plugin's through `core:script:cadence/due@1` in the sandbox | `sdk-tests/cadences.test.ts` › `every core cadence has a stable id, options as fields, the moments it wakes on and what it carries` · `sdk-tests/cadences.test.ts` › `the plugin cadence script kind is a verdict` |
+| **Settings exposure**: what reaches a session's owner | `FieldDecl.reach`, `fixedAtStart`, `setting()`, `resolveExposure` @experimental | The app's derived settings form (`sessions/settingsForm.ts`) and start asks | `sdk-tests/exposure.test.ts` › `values follow the chain; the owner sees an owner-reach setting nobody locked` · `sdk-tests/exposure.test.ts` › `a lock stops every layer below; a locked setting is the admin’s to read` |
 | **Turn strategies** | `TurnStrategyPin`, `turnOrderSpec` @public · the pins (`C.turnRoundRobin`, …) @experimental | Round robin, round robin by user (`turn-user-split`), random, scripted, manual and narrator, plus the model path's advise oracle (`turn-advise`). A package's own strategy | *round robin*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `lists everyone who has not spoken since the person did, in candidate order` · *by user*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrows to the last sender's own candidates` · *random*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `prepares exactly one entry, and the same one for the same seed` · *scripted*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `takes the chain's order, marking what it changed` · *manual*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `manual prepares nothing, whatever the history` · *narrator*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrator prepares one entry in nobody's name after a person's line` · *advise*: `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `turnMode model: the model's order stands, via model, and the receipt names the oracle` · *package*: `sdk-tests/packageConformance.test.ts` › `C32 and C33 pass on a strategy that fits core’s chat turn order and behaves as a hook` |
 | **Swaps**: definitions a person may put in a node's place | `expose.swaps`, `SwapContribution` @experimental | Chat's five turn-strategy swaps. A package's swap contributions onto another package's spec | `sdk-tests/modderPass.test.ts` › `swaps land on the built node and in the document as definition ids, pin never repeated` · `sdk-tests/modderPass.test.ts` › `announce().swaps() lands on the document, the definition as its id` · `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `the order names the strategy that ran — a pub-scope swap included (A7r)` |
 | **Event listeners** | `eventListener()` @public · `EventListenerDecl` @experimental | The app's event host fans each core event out to the plugins listening for it | `serene-pub/src/lib/server/plugins/eventHost.test.ts` › `runs every subscriber of an event, in dispatch order` · `serene-pub/src/lib/server/plugins/eventHost.test.ts` › `keeps a thrown subscriber from touching its sibling's result` |

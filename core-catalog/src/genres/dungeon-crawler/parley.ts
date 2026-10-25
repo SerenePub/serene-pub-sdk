@@ -11,40 +11,17 @@ import { DUNGEON_CRAWLER_PROMPT_KEYS } from '../../seed/prompts.js'
 import { DUNGEON_CRAWLER_CRIB_SCRIPT, DUNGEON_CRAWLER_EDITS_SCRIPT } from './scripts.js'
 import { PLANNER } from './create.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K } from './names.js'
-import { DUNGEON_CRAWLER_STANDING_ORDERS } from './round.js'
-import { DUNGEON_CRAWLER_ROOM_SCHEMA } from './lore.js'
-import { DUNGEON_CRAWLER_DELTA_SCHEMA } from './story.js'
-import { at, jsonPart, modelCall, scriptStep, textPart, type Wiring } from './calls.js'
+import { DUNGEON_CRAWLER_SHAPE_SCRIPT } from './shape.js'
+import { jsonPart, modelCall, on, scriptStep, textPart, type Wiring } from './calls.js'
+import type { ParleyOn } from './respond.js'
 
-/**
- * 🚧 What a player's talk with the Planner may change (PLAN-sheet-widget-redesign
- * §13–14, 2026-10-17: "introduce an alley"):
- *
- *  - `standingOrder` — one of the slot's four, or empty; only at a table of
- *    more than one (`manyAtTable`: the edits script refuses it in solo);
- *  - `asks` — what the player wants the story to bring in ("introduce an
- *    alley"), appended to the Planner's notes under *Asks*, which the story
- *    turn honours when the scene allows;
- *  - `deltas` — changes in the story turn's own delta shape
- *    (`DUNGEON_CRAWLER_DELTA_SCHEMA`), applied by the ruleset handler: the
- *    host's lane any seat or the world, a guest's only their own seat;
- *  - `rooms` — the host's alone: a place the book holds with a new or
- *    changed way out inside it (the one exit model, `lore.ts`) — the alley.
- *
- * Every member required (the grammar-compiling families); empty says "none".
- * @experimental
+/*
+ * 🚧 What a player's talk with the Planner may change — its standing order,
+ * its asks, changes in the session's rules' grammar, the host's places — is
+ * laid at run time over the session's ruleset since 2026-10-23 (lane G3, S1:
+ * `DUNGEON_CRAWLER_EDITS_FRAME`, `shape.ts`); ⏳ `DUNGEON_CRAWLER_EDITS_SCHEMA`,
+ * spelled from Vis Itineris at build, is retired.
  */
-export const DUNGEON_CRAWLER_EDITS_SCHEMA = {
-	type: 'object',
-	properties: {
-		standingOrder: { type: 'string', enum: ['', ...DUNGEON_CRAWLER_STANDING_ORDERS.map((o) => o.key)] },
-		asks: { type: 'array', maxItems: 4, items: { type: 'string' } },
-		deltas: { type: 'array', maxItems: 8, items: DUNGEON_CRAWLER_DELTA_SCHEMA },
-		rooms: { type: 'array', maxItems: 4, items: DUNGEON_CRAWLER_ROOM_SCHEMA },
-	},
-	required: ['standingOrder', 'asks', 'deltas', 'rooms'],
-	additionalProperties: false,
-} as const
 
 /**
  * The Planner's reply in the lane the line was sent on (`input.channel`,
@@ -61,7 +38,9 @@ export const DUNGEON_CRAWLER_EDITS_SCHEMA = {
  *     one player's private talk to another's Planner);
  *  4. `talk*` — ONE streamed call: the lane as the conversation, the story's
  *     newest rows as background (`{{recentStory}}`);
- *  5. `edits*` — ONE JSON call over the same crib (`DUNGEON_CRAWLER_EDITS_SCHEMA`):
+ *  5. `edits*` — ONE JSON call over the same crib, 🚧 its grammar laid over the
+ *     session's rules (`editsShape` reads `ruleset-resolve`'s `replySchema`,
+ *     `editsSchema` the rest — `shape.ts`, S1):
  *     the prompt says what may change, and an answer that changes nothing is
  *     empty (AUDIT A23: no keyword gate decides whether it is asked);
  *     `core:script/dungeon-crawler-edits` lands it — the standing order on
@@ -70,22 +49,10 @@ export const DUNGEON_CRAWLER_EDITS_SCHEMA = {
  *     anchored to the Planner's reply, so deleting the reply takes it back.
  * @internal
  */
-export const parleyBranch = (
-	c: any,
-	w: Wiring,
-	prefix: string,
-	terms: {
-		cast: ($: any) => unknown
-		history: ($: any) => unknown
-		/** `core:query/lorebook-entries@1` — the places, with their links. */
-		places: ($: any) => unknown
-		/** `core:query/lorebook-entries@1` — the people. */
-		people: ($: any) => unknown
-	},
-) => {
+export const parleyBranch = (c: ParleyOn, w: Wiring): ParleyOn => {
 	const opened = c.outlet(
 		'placeholder',
-		($: any) =>
+		($) =>
 			C.createMessage.v1({
 				generating: true,
 				channel: $.input.channel,
@@ -94,54 +61,47 @@ export const parleyBranch = (
 			}),
 		{ expose: { label: "Open the Planner's reply" } },
 	)
-	const row = ($: any) => at($, `${prefix}placeholder`).messageId
-	w.params.push([`${prefix}lane`, { limit: 40 }])
+	w.params.push([on(c, 'lane'), { limit: 40 }])
 	const heard = opened.query(
 		'lane',
-		($: any) =>
-			C.sessionHistory.v1({ scope: $.input.sessionScope, channelLane: $.input.channel, params: slot.params() }),
+		($) => C.sessionHistory.v1({ scope: $.input.sessionScope, channelLane: $.input.channel, params: slot.params() }),
 		{ expose: { label: "This lane's talk", status: 'The Planner is thinking' } },
 	)
-	const cribbed = ($: any) => at($, `${prefix}crib`).main
 	const booked = textPart(
 		textPart(
-			scriptStep(heard, w, prefix, 'crib', DUNGEON_CRAWLER_CRIB_SCRIPT.seedKey, ($) => ({
+			scriptStep(heard, w, 'crib', DUNGEON_CRAWLER_CRIB_SCRIPT.seedKey, ($) => ({
 				session: $.input.session,
 				lane: $.input.channel,
-				places: terms.places($),
-				people: terms.people($),
+				places: $.places.entries,
+				people: $.people.entries,
 				state: $.state.state,
 				// 🚧 How the table plays (P1-3).
 				ruleset: $.input.ruleset,
 			}), "The Planner's crib"),
 			w,
-			prefix,
 			'cribText',
-			cribbed,
+			($) => $.crib.main,
 			'text',
 			"The Planner's out-of-character crib, as text",
 		),
 		w,
-		prefix,
 		'canChange',
-		cribbed,
+		($) => $.crib.main,
 		'canChange',
 		'What this player may change',
 	)
-	const crib = ($: any) => at($, `${prefix}cribText`).text
 	/**
 	 * This lane's rows — each answer the person pressed (a table line of kind
 	 * `answer`, said for them) reads as their own line (🚧 P3-5).
 	 */
-	const lane = ($: any) => at($, `${prefix}lane`).messages
-	const talked = modelCall(booked, w, prefix, 'talk', {
+	const talked = modelCall(booked, w, 'talk', {
 		speaker: PLANNER,
 		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.parley,
 		brief: ($) => $.input.text,
-		crib,
-		cast: terms.cast,
-		history: lane,
-		recentStory: terms.history,
+		crib: ($) => $.cribText.text,
+		cast: ($) => $.cast.cast,
+		history: ($) => $.lane.messages,
+		recentStory: ($) => $.story.messages,
 		expose: {
 			stream: true,
 			status: 'The Planner is thinking',
@@ -150,130 +110,174 @@ export const parleyBranch = (
 		},
 	}).outlet(
 		'save',
-		($: any) =>
+		($) =>
 			C.updateMessage.v1({
-				target: row($),
-				text: at($, `${prefix}talkWrite`).text,
-				reasoning: at($, `${prefix}talkWrite`).reasoning,
+				target: $.placeholder.messageId,
+				text: $.talkWrite.text,
+				reasoning: $.talkWrite.reasoning,
 			}),
 		{ expose: { label: "Fill the Planner's reply" } },
 	)
-	const read = modelCall(talked, w, prefix, 'edits', {
+	/** 🚧 What a change may name under the session's rules (S1): no dice, no writes. */
+	const shaped = scriptStep(
+		talked.task(
+			'editsShape',
+			($) =>
+				C.rulesetResolve.v1({
+					params: slot.params(),
+					scope: $.input.sessionScope,
+					mode: 'resolve',
+					actions: { replyShape: true } as any,
+				}),
+			{ expose: { label: 'What the Planner may change', status: 'The Planner notes what you asked' } },
+		),
+		w,
+		'editsSchema',
+		DUNGEON_CRAWLER_SHAPE_SCRIPT.seedKey,
+		($) => ({ shape: $.editsShape.replySchema, ruleset: $.input.ruleset, want: 'edits' }),
+		"The Planner's grammar",
+	)
+	const read = modelCall(shaped, w, 'edits', {
 		speaker: PLANNER,
 		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.edits,
 		brief: ($) => $.input.text,
-		crib,
-		fields: ($) => ({ canChange: at($, `${prefix}canChange`).text }),
-		cast: terms.cast,
-		history: lane,
-		schema: DUNGEON_CRAWLER_EDITS_SCHEMA,
+		crib: ($) => $.cribText.text,
+		fields: ($) => ({ canChange: $.canChange.text }),
+		cast: ($) => $.cast.cast,
+		history: ($) => $.lane.messages,
+		schema: ($) => $.editsSchema.main,
 		expose: {
 			status: 'The Planner notes what you asked',
 			label: 'What you asked for',
 			purpose: 'What you ask the Planner for lands: your standing order, an ask the story will honour, a change to your sheet — and, from the host, a change to the world.',
 		},
 	})
-	/** A table line on this lane, anchored to the Planner's reply. */
-	const tableLine = (k: any, Q: string, from: ($: any) => unknown, path: string, what: string) =>
-		textPart(k, w, Q, 'line', from, path, what).outlet(
-			'write',
-			($: any) =>
-				C.createMessage.v1({
-					text: at($, `${Q}line`).text,
-					channel: $.input.channel,
-					tableLine: row($) as any,
-				}),
-			{ expose: { label: `Say: ${what.toLowerCase()}` } },
-		)
-	return scriptStep(read, w, prefix, 'edit', DUNGEON_CRAWLER_EDITS_SCRIPT.seedKey, ($) => ({
+	return scriptStep(read, w, 'edit', DUNGEON_CRAWLER_EDITS_SCRIPT.seedKey, ($) => ({
 		session: $.input.session,
 		lane: $.input.channel,
-		json: at($, `${prefix}editsWrite`).json,
+		json: $.editsWrite.json,
 		state: $.state.state,
-		places: terms.places($),
-	}), 'Read what was asked').junction('kept', { on: ($: any) => at($, `${prefix}edit`).main }, (k: any) => {
-		const Q = `${prefix}kept.`
-		const edit = ($: any) => at($, `${prefix}edit`).main
-		w.params.push([`${Q}changed.apply`, { mode: 'apply' }])
+		places: $.places.entries,
+	}), 'Read what was asked').junction('kept', { on: ($) => $.edit.main }, (k) => {
 		return k
-			.when('changed', { path: 'changes', truthy: true }, (ch: any) =>
-				jsonPart(ch, w, `${Q}changed.`, 'changes', edit, 'changes', 'The standing order')
-					.query('resolve', ($: any) =>
+			.when('changed', { path: (v: Edited) => v.changes, truthy: true }, (ch) => {
+				w.params.push([on(ch, 'apply'), { mode: 'apply' }])
+				return jsonPart(ch, w, 'changes', ($) => $.channel.parley.edit.main, 'changes', 'The standing order')
+					.query('resolve', ($) =>
 						C.resolveStateChanges.v1({
-							changes: at($, `${Q}changed.changes`).main,
+							changes: $.changes.main,
 							scope: $.input.sessionScope,
 							base: $.state.version,
 						}),
 					)
-					.task('apply', ($: any) =>
+					.task('apply', ($) =>
 						C.setState.v1({
-							changes: at($, `${Q}changed.resolve`).changes,
+							changes: $.resolve.changes,
 							scope: $.input.sessionScope,
 							base: $.state.version,
-							worldRow: row($),
+							worldRow: $.channel.parley.placeholder.messageId,
 							params: slot.params(),
 						}),
-					),
-			)
-			.when('noted', { path: 'notes', truthy: true }, (n: any) =>
-				textPart(n, w, `${Q}noted.`, 'notes', edit, 'notes', "The Planner's notes, with the asks").outlet(
+					)
+			})
+			.when('noted', { path: (v: Edited) => v.notes, truthy: true }, (n) =>
+				textPart(n, w, 'notes', ($) => $.channel.parley.edit.main, 'notes', "The Planner's notes, with the asks").outlet(
 					'write',
-					($: any) =>
+					($) =>
 						C.setSessionAnnex.v1({
-							value: { [K.planningNotes]: at($, `${Q}noted.notes`).text } as any,
+							value: { [K.planningNotes]: $.notes.text } as any,
 							params: slot.params(),
 						}),
 					{ expose: { label: 'Keep the asks in the notes' } },
 				),
 			)
 			/** 🚧 The notes once out: the revealed copy follows (AUDIT A24). */
-			.when('revealed', { path: 'notesRevealed', truthy: true }, (n: any) =>
-				textPart(n, w, `${Q}revealed.`, 'notes', edit, 'notesRevealed', 'The notes, as revealed — the Planner lane').outlet(
+			.when('revealed', { path: (v: Edited) => v.notesRevealed, truthy: true }, (n) =>
+				textPart(n, w, 'notes', ($) => $.channel.parley.edit.main, 'notesRevealed', 'The notes, as revealed — the Planner lane').outlet(
 					'write',
-					($: any) =>
+					($) =>
 						C.setSessionAnnex.v1({
-							value: { [K.planningNotesRevealed]: at($, `${Q}revealed.notes`).text } as any,
+							value: { [K.planningNotesRevealed]: $.notes.text } as any,
 							params: slot.params(),
 						}),
 					{ expose: { label: 'Keep the revealed notes in step — the Planner lane' } },
 				),
 			)
-			.when('said', { path: 'said', truthy: true }, (t: any) =>
-				tableLine(t, `${Q}said.`, edit, 'said', 'What was noted'),
+			/** A table line on this lane, anchored to the Planner's reply. */
+			.when('said', { path: (v: Edited) => v.said, truthy: true }, (t) =>
+				textPart(t, w, 'line', ($) => $.channel.parley.edit.main, 'said', 'What was noted').outlet(
+					'write',
+					($) =>
+						C.createMessage.v1({
+							text: $.line.text,
+							channel: $.input.channel,
+							tableLine: $.channel.parley.placeholder.messageId as any,
+						}),
+					{ expose: { label: 'Say: what was noted' } },
+				),
 			)
-			.when('ruled', { path: 'deltas', truthy: true }, (r: any) => {
-				const R = `${Q}ruled.`
-				return scriptStep(
-					jsonPart(jsonPart(r, w, R, 'deltas', edit, 'deltas', 'The changes asked for'), w, R, 'owners', edit, 'owners', 'Whose rules they touch').task(
+			.when('ruled', { path: (v: Edited) => v.deltas, truthy: true }, (r) =>
+				scriptStep(
+					jsonPart(
+						jsonPart(r, w, 'deltas', ($) => $.channel.parley.edit.main, 'deltas', 'The changes asked for'),
+						w,
+						'owners',
+						($) => $.channel.parley.edit.main,
+						'owners',
+						'Whose rules they touch',
+					).task(
 						'apply',
-						($: any) =>
+						($) =>
 							C.rulesetResolve.v1({
+								params: slot.params(),
 								scope: $.input.sessionScope,
-								owners: at($, `${R}owners`).main,
-								deltas: at($, `${R}deltas`).main,
+								owners: $.owners.main,
+								deltas: $.deltas.main,
 								mode: 'apply',
 							}),
 						{ expose: { label: 'Apply what was asked', status: 'The Planner notes what you asked' } },
 					),
 					w,
-					R,
 					'told',
 					DUNGEON_CRAWLER_EDITS_SCRIPT.seedKey,
 					($) => ({
 						// The table's names for its refusals (P1-2).
 						session: $.input.session,
-						places: terms.places($),
+						places: $.places.entries,
 						applied: {
-							outcomes: at($, `${R}apply`).outcomes,
-							rejected: at($, `${R}apply`).rejected,
+							outcomes: $.apply.outcomes,
+							rejected: $.apply.rejected,
 						},
 					}),
 					'What the rules made of it',
-				).junction('shown', { on: ($: any) => at($, `${R}told`).main }, (j: any) =>
-					j.when('line', { path: 'line', truthy: true }, (t: any) =>
-						tableLine(t, `${R}shown.line.`, ($: any) => at($, `${R}told`).main, 'line', 'What changed'),
+				).junction('shown', { on: ($) => $.told.main }, (j) =>
+					j.when('line', { path: (v: Edited) => v.line, truthy: true }, (t) =>
+						textPart(t, w, 'line', ($) => $.channel.parley.kept.ruled.told.main, 'line', 'What changed').outlet(
+							'write',
+							($) =>
+								C.createMessage.v1({
+									text: $.line.text,
+									channel: $.input.channel,
+									tableLine: $.channel.parley.placeholder.messageId as any,
+								}),
+							{ expose: { label: 'Say: what changed' } },
+						),
 					),
-				)
-			})
+				),
+			)
 	})
+}
+
+/**
+ * What the edits script hands its junctions (`core:script/dungeon-crawler-edits`):
+ * each member `null` when empty; handed the handler's `apply`, `{ line }`.
+ */
+interface Edited {
+	readonly changes: unknown
+	readonly notes: unknown
+	readonly notesRevealed: unknown
+	readonly deltas: unknown
+	readonly owners: unknown
+	readonly said: unknown
+	readonly line: unknown
 }

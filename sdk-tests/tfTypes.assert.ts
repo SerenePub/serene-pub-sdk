@@ -59,8 +59,14 @@ const _wrong: 'text->image' = tf({ in: [IoKinds.text], out: [IoKinds.text] })
 // @ts-expect-error — a mistyped kind MEMBER: the case the ruling names, where 'text+imgae->text' compiles fine
 tf({ in: [IoKinds.text, IoKinds.imgae], out: [IoKinds.text] })
 
-// @ts-expect-error — a raw string is not a kind, however plausible it looks
-tf({ in: ['txet'], out: [IoKinds.text] })
+// O1 (2026-10-20): kinds are OPEN — a raw string is a kind a plugin or a later
+// release may bring, so it compiles. But only to the widened `TransformId`:
+// the type never claims a literal the canonical order did not compute (an
+// unknown kind sorts alphabetically after the known ones, which no positional
+// walk can place).
+const _open: TransformId = tf({ in: ['txet'], out: [IoKinds.text] })
+// @ts-expect-error — an unknown kind widens the id: no literal is promised for it
+const _openLiteral: 'txet->text' = tf({ in: ['txet'], out: [IoKinds.text] })
 
 // @ts-expect-error — an EMPTY input side; `TransformId` is `${string}->${string}`, so '->' is legal to IT
 tf({ in: [], out: [IoKinds.text] })
@@ -86,4 +92,6 @@ export type _Used = [
 	typeof _novel,
 	typeof _wrong,
 	typeof _widened,
+	typeof _open,
+	typeof _openLiteral,
 ]

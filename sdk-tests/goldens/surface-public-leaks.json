@@ -129,9 +129,6 @@
 	"@serene-pub/sdk": {
 		".": {
 			"GenreDecl": [
-				"AttributeSheetDecl @experimental",
-				"AttributeSlotDecl @experimental",
-				"CustomAttributes @experimental",
 				"EnabledWhen @experimental",
 				"EnvoyDecl @experimental",
 				"GenreEventDecl @experimental",

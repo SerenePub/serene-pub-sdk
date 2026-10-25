@@ -86,8 +86,8 @@ export const STORY_LAYOUT: SessionLayoutV1 = {
  * "collapsed to the rail" means:
  * the lore is one click away and costs no width until you want it. It holds
  * the Chronicle (the story's history and its clock) and Lore entries (what
- * the book has, and what was read) — an adventure's lorebook is required, so
- * both always have a book to read.
+ * the book has, and what was read) — every session has a book (its own, the
+ * phantom lorebook, when none is attached), so both always have one to read.
  *
  * Places, Turn order, Album, Actions and Who's here are left to the tray: an
  * adventure has room for them, but none is what every adventure needs on its
@@ -166,48 +166,80 @@ export const STORY_WORLD_LAYOUT: SessionLayoutV1 = {
  * are a reference and the talk is the work. Titled with the field's label,
  * since an Annex panel's head otherwise reads "Annex".
  *
- * **The Sanctum, at the bottom** (lair re-plan S1). The master's side-talk
- * with the Castellan is its own channel, so it gets its own panel: a second
- * copy of the `messages` widget, placed under the **widget instance id**
- * `messages#sanctum` and pinned to the channel by its `channel` setting. It
- * opens on the Castellan's greeting (the channel's first row), writes on the
- * Sanctum, and draws the Sanctum's turn controls — Continue and Narrate; Pick
- * and retake are off there (`ChannelDecl.turnControls`). The middle's
- * conversation is then the story alone: a channel a placed copy claims leaves
- * the primary log and its channel strip. `minimal` because a side panel is
- * narrow and talk is short; it is the copy's own setting, so a person who
- * wants the card gets it without touching the story's composer. On a phone
- * the right side is a sheet, so the Sanctum is one of its views.
+ * 🚧 **The Sanctum, a tab beside the story** (lair fix 2, owner 2026-10-22;
+ * was its own panel at the bottom of the right column, lair re-plan S1). The
+ * master's side-talk with the Castellan is its own channel, and no placed
+ * copy claims it, so the middle's conversation shows the story and the
+ * Sanctum as **channel tabs** above its log (`messages.channel-tabs`): the
+ * log shows the tab chosen and the composer writes there, with the Sanctum's
+ * turn controls — Continue and Narrate; Pick and retake are off there
+ * (`ChannelDecl.turnControls`). On the Sanctum tab the composer is the
+ * single-line pill (`otherTabsComposer: "minimal"`); a Castellan line that
+ * lands there while the story is shown puts a dot on its tab. A guest is
+ * never told the owner-only Sanctum, so their story draws no tabs.
  * @internal
  */
 export const LAIR_LAYOUT: SessionLayoutV1 = {
 	/**
-	 * Both sides docked: Stats alone on the left; on the right the rooms, the
-	 * note and the talk, a panel each, top to bottom — the Sanctum its own
-	 * panel, never a tab of the story's, so both conversations stay in view.
+	 * Both sides docked: Stats alone on the left; on the right the rooms over
+	 * the Castellan's scratchpad. 🚧 The Sanctum is a **tab beside the story**
+	 * (lair fix 2, owner 2026-10-22), not a panel of its own: no copy claims
+	 * it, so the story's copy shows both channels as tabs — *Story* and
+	 * *Sanctum* — and writes on the one shown, the Sanctum with the
+	 * single-line composer (`otherTabsComposer`). A guest is never told the
+	 * Sanctum (`audience: 'owner'`), so their story has no tabs.
 	 */
 	panels: {
 		version: 1,
 		left: [{ key: "p2", tabs: ["stats"] }],
 		middle: { above: [], primary: { key: "p1", tabs: ["messages"] }, below: [] },
 		right: [
-			// The old 4/2/6 row split, kept as shares: the Sanctum's talk takes the most room.
-			{ key: "p3", tabs: ["places"], height: { share: 4 } },
-			{ key: "p4", tabs: ["annex#castellan"], height: { share: 2 } },
-			{ key: "p5", tabs: ["messages#sanctum"], height: { share: 6 } }
+			{ key: "p3", tabs: ["places"], height: { share: 3 } },
+			{ key: "p4", tabs: ["annex#castellan"], height: { share: 2 } }
 		]
 	},
 	/**
-	 * The right column's settings: the room list's, the note's key, and the
-	 * Sanctum copy's claim that makes it the Sanctum.
+	 * The story's tabs' composer, the room list's settings, and the note's key.
 	 */
 	widgetSettings: {
+		messages: { otherTabsComposer: "minimal" },
 		places: { view: "list", highlight: "both" },
 		"annex#castellan": {
 			key: "core.castellan-scratchpad",
 			title: "Castellan's scratchpad"
-		},
-		"messages#sanctum": { channel: "sanctum", composer: "minimal" }
+		}
+	}
+}
+
+/**
+ * 🚧 The Lair's **party** layout (D6, 2026-10-21): a guest's view, and the
+ * genre's guests' layout (`forGuests`: what a guest's first open copies) —
+ * the story in the middle, the party's sheets on the left, and on the right
+ * the dungeon's rooms over the **Party** panel, where the Sanctum sits in the
+ * GM's: neither the Sanctum (the GM's alone, `audience: 'owner'`) nor the
+ * Castellan's scratchpad (the owner's) is here.
+ *
+ * The Party panel (lane L5) is two of core's widgets as its tabs, titled
+ * _Party_: **Turn order** — whose turn it is and who the turn waits for (a
+ * seated player's planned turn reads _Your turn_ to its player and _Waiting
+ * for ‹name›_ to the others), faces on — and **Who's here** — who has the
+ * session open, as which delver each plays, who is typing. A panel, not a
+ * widget of its own: both widgets already say exactly this, everywhere.
+ * @internal
+ */
+export const LAIR_PARTY_LAYOUT: SessionLayoutV1 = {
+	panels: {
+		version: 1,
+		left: [{ key: "p2", tabs: ["stats"] }],
+		middle: { above: [], primary: { key: "p1", tabs: ["messages"] }, below: [] },
+		right: [
+			{ key: "p3", tabs: ["places"], height: { share: 5 } },
+			{ key: "p4", tabs: ["turn-order", "attendance"], height: { share: 7 }, title: "Party" }
+		]
+	},
+	widgetSettings: {
+		places: { view: "list", highlight: "both" },
+		"turn-order": { showStrategy: false }
 	}
 }
 

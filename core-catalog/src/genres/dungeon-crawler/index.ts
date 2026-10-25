@@ -15,9 +15,8 @@ export {
 	DUNGEON_CRAWLER_NARRATOR_SYSTEM_PROMPT,
 } from '../../registry/genres.js'
 export { DUNGEON_CRAWLER_LAYOUT } from '../../registry/layouts.js'
+// 🚧 RF fix 8: no slot list and no sheet — the rules bring a hero's attributes, the host keeps the crawl's tools.
 export {
-	DUNGEON_CRAWLER_SLOTS,
-	DUNGEON_CRAWLER_SHEET,
 	levelSlot,
 	characterClassSlot,
 	abilitiesSlot,
@@ -51,7 +50,11 @@ export * from './storyScripts.js'
 export * from './lore.js'
 export * from './sheet.js'
 export * from './kits.js'
+// 🚧 What the genre reads of the session's ruleset at run time: its gist (S4, 2026-10-23).
+export * from './fromRuleset.js'
 export * from './story.js'
+// 🚧 The Planner's grammar over the session's rules (S1, 2026-10-23).
+export * from './shape.js'
 export * from './dice.js'
 export * from './death.js'
 export * from './goal.js'

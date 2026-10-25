@@ -24,8 +24,9 @@
  * and 🚧 (2026-10-18, owner ruling ★4: the ruleset handler executes a
  * piece's effects, never a model's arithmetic) five that act **when a piece
  * is used** (`on: 'hit'` or `'use'`): `rollWith` (the check rolls with the
- * best of some modifiers), `harm` and `heal` (dice a piece field holds, on a
- * stat), `cure` (pieces with a trait leave) and `consume` (one use spent).
+ * best of some modifiers), `harm` and `heal` (an **amount** — dice, a number
+ * or a selector's value, `AmountExpr` — on a stat), `cure` (pieces with a
+ * trait leave) and `consume` (one use spent).
  * Each may fire `on` an event and hold under a `predicate`. How long an
  * effect lasts is the **piece's** `duration` (a universal part, counted down
  * by the host), never the mechanic's: a mechanic holds while its piece is
@@ -62,7 +63,8 @@ import type { StoryTime } from './storyTime.js'
 // ── Vocabulary ──────────────────────────────────────────────────────────────
 
 /** The depths, shallowest first — the order a budget degrades through. */
-const RENDER_DEPTHS = ['index', 'summary', 'full'] as const
+/** 🚧 The render depths, shallowest first; the editor's choices. @experimental */
+export const RENDER_DEPTHS = ['index', 'summary', 'full'] as const
 
 /**
  * 🚧 How deep a piece renders into a prompt: one line (`index`), the
@@ -72,8 +74,54 @@ const RENDER_DEPTHS = ['index', 'summary', 'full'] as const
  */
 export type RenderDepth = (typeof RENDER_DEPTHS)[number]
 
+/**
+ * 🚧 The **repertoire tags** core reads (2026-10-22): what a repertoire's
+ * pieces are, said once on the declaration (`tags: ['condition']`), so what a
+ * ruleset provides — conditions, casting — is read from the declaration,
+ * never guessed from a repertoire's name (`rulesetProvides`). The list is
+ * open: a ruleset may tag with words of its own, lowercase and joined by
+ * '-'. ⚠ Always _repertoire tag_ where it could stand alone (R3): not a
+ * **Tag** label (§22), not a **cast tag** (`{{char:N}}`), not a piece's
+ * `traits`.
+ * @experimental
+ * @ruling PLAN-rulesets-authoring D1 (2026-10-22)
+ */
+export const REPERTOIRE_TAGS = [
+	'condition',
+	'casting',
+	'weapon',
+	'armour',
+	'relationship',
+	'resource',
+	'exit',
+	'note',
+	'creature',
+	'class',
+] as const
+/** 🚧 A repertoire tag: one of core's (`REPERTOIRE_TAGS`), or a ruleset's own word. @experimental */
+export type RepertoireTag = (typeof REPERTOIRE_TAGS)[number] | (string & {})
+
+/**
+ * 🚧 An **amount expression** (2026-10-22) — how much a `harm` or `heal`
+ * moves a stat:
+ *
+ *  · a number — that much (`3`);
+ *  · a dice string — thrown (`'2d6+1'`, `'d8'`): only in a ruleset one of
+ *    whose check methods throws dice (`die-target`, `dice-pool`) —
+ *    `amount-needs-dice` otherwise;
+ *  · `{ selector }` — the value a selector of the ruleset holds
+ *    (`{ selector: 'level' }`), or a field of the piece used
+ *    (`{ selector: 'piece.damage' }`), itself a number or, under a dice
+ *    method, a dice string.
+ * @experimental
+ */
+export type AmountExpr = number | string | { readonly selector: string }
+
 /** The verbs a mechanic may use — closed, single pass. */
-const MECHANIC_VERBS = ['modify', 'set', 'adjustDegree', 'rider', 'rollWith', 'harm', 'heal', 'cure', 'consume'] as const
+/** 🚧 The closed verb set a mechanic uses (`MechanicDecl.verb`); the editor's choices. @experimental */
+export const MECHANIC_VERBS = ['modify', 'set', 'adjustDegree', 'rider', 'rollWith', 'harm', 'heal', 'cure', 'consume'] as const
+/** @experimental */
+export type MechanicVerb = (typeof MECHANIC_VERBS)[number]
 
 /**
  * 🚧 The verbs that act when a piece is used (2026-10-18): they need the
@@ -87,8 +135,10 @@ export const PIECE_USE_VERBS: ReadonlySet<string> = new Set(['rollWith', 'harm',
  * three that resolve a check; `traverse` is a relational repertoire's (an
  * exit is crossed). `elapsed` names `every`; `at` names a story date.
  */
-const MECHANIC_EVENTS = ['hit', 'use', 'rest', 'equip', 'turn', 'elapsed', 'at', 'change', 'traverse'] as const
-type MechanicEvent = (typeof MECHANIC_EVENTS)[number]
+/** 🚧 The moments a mechanic may fire on (`MechanicDecl.on`); the editor's choices. @experimental */
+export const MECHANIC_EVENTS = ['hit', 'use', 'rest', 'equip', 'turn', 'elapsed', 'at', 'change', 'traverse'] as const
+/** @experimental */
+export type MechanicEvent = (typeof MECHANIC_EVENTS)[number]
 
 /** The events that resolve a check — the only ones a degree can touch. */
 const CHECK_EVENTS: ReadonlySet<MechanicEvent> = new Set(['hit', 'use', 'traverse'])
@@ -197,23 +247,25 @@ interface MechanicBase {
  *  · `rollWith` — a check made with the piece on `target` (a check or a
  *    family) rolls with the highest of the `from` selectors as its modifier
  *    instead of its own `base` — a finesse blade with Strength or Dexterity.
- *  · `harm` — on a landed check (or a use against nothing), roll the dice
- *    the piece field `dice` holds (`piece.damage`: `{ dice, die }`,
- *    `{ formula }` or `'2d4+2'`), add `plus` — `'check'` (the modifier the
- *    check rolled with) or the highest of some selectors — and the
- *    ruleset's `tally` modifies, and take the total off `stat` on the
- *    **target** the change names. With no target owner the roll is only told.
- *  · `heal` — the same dice and `plus`, added to `stat` on the target (else
- *    the holder), never past the stat's maximum.
+ *  · `harm` — on a landed check (or a use against nothing), take its
+ *    `amount` (`AmountExpr`: dice, a number, or a selector — a piece field
+ *    holding `{ dice, die }`, `{ formula }`, `'2d4+2'` or a number), add
+ *    `plus` — `'check'` (the modifier the check rolled with) or the highest
+ *    of some selectors — and the ruleset's `tally` modifies, and take the
+ *    total off `stat` on the **target** the change names. With no target
+ *    owner the amount is only told. ⏳ `dice: 'piece.damage'` (the shape
+ *    before 2026-10-22) means `amount: { selector: 'piece.damage' }`.
+ *  · `heal` — the same amount and `plus`, added to `stat` on the target
+ *    (else the holder), never past the stat's maximum.
  *  · `cure` — on the target (else the holder), every held piece carrying
  *    one of `traits` leaves, and none carrying one lands for the rest of the
  *    change set.
  *  · `consume` — one use of the piece is spent whenever it is used, landed
  *    or not (`uses`, else the stack's `count`; the last leaves).
  *
- * ⚠ `harm`/`heal` roll dice, so a host runs them only where dice count
- * (the `mechanics` rigour and up); `cure` and `consume` change no number
- * and apply at every rigour.
+ * ⚠ `harm`/`heal` move numbers, so a host runs them only where numbers
+ * count (the `mechanics` rigour and up); `cure` and `consume` change no
+ * number and apply at every rigour.
  * @experimental
  */
 export type MechanicDecl = MechanicBase &
@@ -223,8 +275,8 @@ export type MechanicDecl = MechanicBase &
 		| { verb: 'adjustDegree'; target: string; by: -1 | 1 }
 		| { verb: 'rider'; text: string; target?: string }
 		| { verb: 'rollWith'; target: string; from: readonly string[] }
-		| { verb: 'harm'; dice: string; stat: string; plus?: 'check' | readonly string[] }
-		| { verb: 'heal'; dice: string; stat: string; plus?: readonly string[] }
+		| { verb: 'harm'; amount?: AmountExpr; /** ⏳ say `amount: { selector }` */ dice?: string; stat: string; plus?: 'check' | readonly string[] }
+		| { verb: 'heal'; amount?: AmountExpr; /** ⏳ say `amount: { selector }` */ dice?: string; stat: string; plus?: readonly string[] }
 		| { verb: 'cure'; traits: readonly string[] }
 		| { verb: 'consume' }
 	)
@@ -362,6 +414,12 @@ interface RepertoireProps {
 	/** Its pieces may become lorebook entries of a derived entry type. */
 	entryable?: boolean
 	/**
+	 * 🚧 What its pieces are (`REPERTOIRE_TAGS`, open): `['condition']`,
+	 * `['casting']`. Read by `rulesetProvides`; absent when unstated, so a
+	 * repertoire that says nothing hashes as it did.
+	 */
+	tags?: readonly RepertoireTag[]
+	/**
 	 * Piece fields renamed since an earlier version, old → new — so stored
 	 * pieces read through. Required by `rulesetUpgradeFindings` for a field
 	 * that disappears.
@@ -462,6 +520,11 @@ function ownFindings(id: string, props: Omit<RepertoireProps, 'piece'> & { piece
 		out.push(finding('bad-earshot', `${at} is gmOnly and heard by its holder alone — no prompt would read it. Say one.`))
 	if (props.appliesTo !== undefined && (!Array.isArray(props.appliesTo) || !props.appliesTo.length || props.appliesTo.some((o) => !['cast', 'world', 'location'].includes(o))))
 		out.push(finding('bad-applies-to', `${at}.appliesTo is a non-empty list of 'cast', 'world' and 'location'; leave it out for cast members.`))
+	if (props.tags !== undefined) {
+		const tags = props.tags as readonly unknown[]
+		if (!Array.isArray(tags) || tags.some((t) => typeof t !== 'string' || !REPERTOIRE_NAME.test(t)) || new Set(tags).size !== tags.length)
+			out.push(finding('bad-tags', `${at}.tags is a list of distinct lowercase words joined by '-' — ${REPERTOIRE_TAGS.slice(0, 3).map((t) => `'${t}'`).join(', ')}, or a word of the ruleset's own.`))
+	}
 	if (props.renderDepth !== undefined && !RENDER_DEPTHS.includes(props.renderDepth))
 		out.push(finding('bad-render-depth', `${at}.renderDepth is '${String(props.renderDepth)}'. Say 'index', 'summary' or 'full'.`))
 	const fields = new Set(Object.keys((built ?? wholePiece(props)).fields ?? {}))
@@ -509,6 +572,11 @@ export interface RepertoireContext {
 	repertoires: ReadonlyMap<string, RepertoireDecl>
 	timeUnit?: string
 	/**
+	 * 🚧 Whether one of the ruleset's check methods throws dice — what a
+	 * dice-string amount needs (2026-10-22). Absent: not judged.
+	 */
+	rollsDice?: boolean
+	/**
 	 * Extra paths a predicate may name, never a target — a bridge's own field,
 	 * by its bare key and its id, and their properties (`mood`, `mood.tone`).
 	 * Added 2026-10-17.
@@ -545,6 +613,37 @@ function predicateFindings(p: unknown, at: string, ok: (path: string) => boolean
 	if (!ok(o.path))
 		return [finding('unknown-selector', `${at}.path '${o.path}' names no selector this ruleset declares, and no field of the piece. Declare it, or correct the spelling — an unknown path would never hold.`)]
 	return []
+}
+
+/** The dice grammar an amount is thrown by — `d20` · `2d6` · `2d6+1` · `d8-2`, 1 to 100 dice. */
+const DICE = /^\s*(\d*)\s*d\s*(\d+)\s*(?:([+-])\s*(\d+))?\s*$/i
+
+/** Why a value is not an amount expression, or `null` when it is one. */
+function amountProblem(a: unknown): string | null {
+	if (typeof a === 'number') return Number.isFinite(a) && a >= 0 ? null : `is ${a}. A number amount is zero or more.`
+	if (typeof a === 'string') {
+		const m = DICE.exec(a)
+		if (!m) return `is '${a}', which is no dice. Write 'd8', '2d6' or '2d6+1' — or a number, or { selector }.`
+		const count = m[1] ? Number(m[1]) : 1
+		return count >= 1 && count <= 100 && Number(m[2]) >= 1 ? null : `is '${a}', which nobody could throw: 1 to 100 dice of at least one face.`
+	}
+	if (a && typeof a === 'object' && !Array.isArray(a)) {
+		const keys = Object.keys(a)
+		const sel = (a as { selector?: unknown }).selector
+		return keys.length === 1 && typeof sel === 'string' && !!sel.trim() ? null : `is { selector } — a selector of the ruleset or 'piece.<field>', nothing beside.`
+	}
+	return `is a number, dice ('2d6+1') or { selector }.`
+}
+
+/**
+ * 🚧 The amount a `harm` or `heal` moves its stat by: its `amount`, else the
+ * ⏳ `dice: 'piece.<field>'` it said before 2026-10-22, read as
+ * `{ selector: 'piece.<field>' }`. `undefined` for any other verb.
+ * @experimental
+ */
+export function mechanicAmount(m: MechanicDecl): AmountExpr | undefined {
+	if (m.verb !== 'harm' && m.verb !== 'heal') return undefined
+	return m.amount ?? (typeof m.dice === 'string' ? { selector: m.dice } : undefined)
 }
 
 /** A non-empty list of non-empty names. */
@@ -609,7 +708,17 @@ function mechanicFindings(
 			break
 		case 'harm':
 		case 'heal':
-			need('dice', typeof mm.dice === 'string' && (mm.dice as string).startsWith('piece.'), "the piece field holding its dice — 'piece.damage'")
+			// 🚧 An amount (2026-10-22); ⏳ `dice: 'piece.<field>'` still reads.
+			if (mm.amount !== undefined && mm.dice !== undefined)
+				out.push(finding('bad-amount', `${at} (${verb}) says both amount and dice. Say amount alone — dice: 'piece.x' is the old way to say amount: { selector: 'piece.x' }.`))
+			else if (mm.amount === undefined)
+				need('amount', typeof mm.dice === 'string' && (mm.dice as string).startsWith('piece.'), "how much — a number, dice ('2d6+1') or { selector: 'piece.damage' }")
+			else {
+				const why = amountProblem(mm.amount)
+				if (why) out.push(finding('bad-amount', `${at} (${verb}).amount ${why}`))
+				else if (typeof mm.amount === 'string' && ctx?.rollsDice === false)
+					out.push(finding('amount-needs-dice', `${at} (${verb}) throws '${mm.amount}', and none of ${ctx.ruleset}'s check methods throws dice. Say a number or { selector }, or give the ruleset a die-target or dice-pool method.`))
+			}
 			need('stat', typeof mm.stat === 'string' && !!mm.stat, 'the stat it changes')
 			if (mm.plus !== undefined && !(verb === 'harm' && mm.plus === 'check') && !isNameList(mm.plus))
 				out.push(finding('malformed-mechanic', `${at} (${verb}) adds 'plus': ${verb === 'harm' ? "'check' (the modifier the check rolled with) or " : ''}a non-empty list of selectors, the highest added.`))
@@ -634,6 +743,9 @@ function mechanicFindings(
 	if (m.predicate !== undefined) out.push(...predicateFindings(m.predicate, `${at}.predicate`, pathOk))
 	if ((verb === 'harm' || verb === 'heal') && typeof mm.dice === 'string' && mm.dice.startsWith('piece.') && !pathOk(mm.dice))
 		out.push(finding('unknown-selector', `${at} reads its dice from '${mm.dice}', which is no field of the piece. Declare it, or correct the spelling.`))
+	const amountSel = (verb === 'harm' || verb === 'heal') && mm.amount && typeof mm.amount === 'object' ? (mm.amount as { selector?: unknown }).selector : undefined
+	if (typeof amountSel === 'string' && amountSel && (amountSel.startsWith('piece.') || ctx) && !pathOk(amountSel))
+		out.push(finding('unknown-selector', `${at} takes its amount from '${amountSel}', which is no selector of the ruleset and no field of the piece. Declare it, or correct the spelling.`))
 	if (ctx) {
 		// The selectors a piece-use verb reads or writes: each must be one.
 		const named = [
@@ -666,6 +778,15 @@ export const _mechanicFindings = (m: MechanicDecl, i: number, ctx: RepertoireCon
 	mechanicFindings({ id: where, piece: { type: 'object', fields: {} } }, m, i, ctx, where)
 
 /**
+ * 🚧 A repertoire's piece rules alone, checked against its ruleset — what a
+ * ruleset in sections asks of an entry type that carries ⏳ piece rules
+ * (its own words are the entry type's findings). `where` names it.
+ * @internal
+ */
+export const _repertoireMechanicFindings = (rep: RepertoireDecl, ctx: RepertoireContext, where: string): string[] =>
+	(rep.mechanics ?? []).flatMap((m, i) => mechanicFindings(rep, m, i, ctx, where))
+
+/**
  * 🚧 Every reason a repertoire is refused, each opened by its reason's name.
  * Without `ctx` it checks what the declaration says by itself; with one it
  * also checks the mechanics against the ruleset it sits in
@@ -678,7 +799,8 @@ export const _mechanicFindings = (m: MechanicDecl, i: number, ctx: RepertoireCon
  * `rename-still-declared` · `rename-to-nothing` · `retired-still-declared` ·
  * `unknown-verb` · `unknown-event` · `malformed-mechanic` · `inert-pairing` ·
  * `mechanic-duration` · `bad-predicate` · `unknown-selector` ·
- * `set-outside-owner`.
+ * `set-outside-owner` · 🚧 (2026-10-22) `bad-tags` · `bad-amount` ·
+ * `amount-needs-dice`.
  * @internal
  */
 export function repertoireFindings(decl: RepertoireDecl, ctx?: RepertoireContext): string[] {
@@ -746,6 +868,19 @@ export function _clearRepertoires(): void {
 	registry.clear()
 	compendia.clear()
 	timeUnits.clear()
+}
+
+/**
+ * 🚧 Forget one ruleset's repertoires, compendium ids and time unit — what
+ * `_registerRulesetRepertoires` filed under it. For a stored ruleset that is
+ * republished, retired or deleted; `_withdrawRuleset` calls it.
+ * @internal
+ */
+export function _withdrawRulesetRepertoires(rulesetId: string): void {
+	const prefix = `${rulesetId}#`
+	for (const address of [...registry.keys()]) if (address.startsWith(prefix)) registry.delete(address)
+	compendia.delete(rulesetId)
+	timeUnits.delete(rulesetId)
 }
 
 /** 🚧 The repertoire at an address (`core:ruleset/freeform@1#things`), when a registered ruleset declares it. @experimental */

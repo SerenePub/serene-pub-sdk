@@ -2,13 +2,19 @@
  * 🚧 Rulesets — a namespaced bundle of mechanics a session's owners are read
  * and resolved by.
  *
- * A ruleset is `<creator>:ruleset/<name>@N` (`core:ruleset/freeform@1`) and says,
- * in one declaration:
+ * A ruleset is `<creator>:ruleset/<name>@N` (`core:ruleset/freeform@1`).
+ * 🚧 Since 2026-10-23 it is declared in **seven sections** — attributes,
+ * functions, entry types, zone types, outcomes and time, library, options
+ * (`rulesetSections.ts`), nothing required beyond a name (R9: `{ name }` is
+ * a ruleset from scratch). ⏳ The shape before the sections, read into them
+ * by `rulesetSections` / `normaliseRuleset`, says in one declaration:
  *
  *  · its **voice** — per rigour, the short paragraph a model reads about how
  *    play runs under it;
- *  · its **conventions** — dice, the degree crosswalk onto the five bands,
- *    the unit time is kept in, actions and rests;
+ *  · its **conventions** — its check methods (how a risky moment is
+ *    decided: dice, cards, a spend, a comparison, or nobody's roll at all —
+ *    `checkMethods.ts`), the degree crosswalk onto the five bands, the unit
+ *    time is kept in, actions and rests;
  *  · its **stats** — attribute slots, as a sheet names them (`sheets.ts`);
  *  · its **selectors** — every name a mechanic may target or test, so an
  *    unknown one is refused when authored, never missed at runtime;
@@ -37,16 +43,24 @@ import { i18nFindings } from './i18n.js'
 import { refuseUnlessIdentical } from './hash.js'
 import {
 	_clearRulesetStats,
+	_defineRulesetAttributeSlot,
 	_registerRulesetStats,
+	_withdrawAttributeSlot,
+	_withdrawRulesetStats,
 	checkSlotValue,
 	getAttributeSlot,
+	isReservedAttributeOwner,
 	resolveSlotConfig,
+	type AttributeSlotDecl,
 	type SlotId,
 } from './attributes.js'
 import type { SheetSlotEntry } from './sheets.js'
+import type { PlaytestChange, PlaytestMember } from './rulesetTemplates.js'
+import { getVocabulary, isVocabulary, VOCABULARY_OWNERS, type Vocabulary, type VocabularyId } from './vocabularies.js'
 import {
 	_clearRepertoires,
 	_registerRulesetRepertoires,
+	_withdrawRulesetRepertoires,
 	checkPiece,
 	finding,
 	repertoireFindings,
@@ -55,9 +69,33 @@ import {
 	type RepertoireContext,
 	type RepertoireDecl,
 	type PieceProps,
+	type MechanicDecl,
 } from './repertoires.js'
 import { conversionFindings, type ConversionDecl } from './conversions.js'
-import { _describeRulesetEntryType, type EntryDescriptor, type EntryShape, type EntryTypeDecl } from './descriptors.js'
+import { _describeRulesetEntryType, _withdrawEntryType, type EntryDescriptor, type EntryShape, type EntryTypeDecl } from './descriptors.js'
+import {
+	checkMethodFindings,
+	checkMethodKind,
+	difficultyBandListFindings,
+	isPackageCheckMethodKind,
+	LEGACY_DIE_METHOD,
+	NONE_CHECK_METHOD,
+	type CheckMethodDecl,
+} from './checkMethods.js'
+import { functionProvides, functionRefDecides, functionWayKeys } from './functions.js'
+import {
+	_entryTypeAsRepertoire,
+	declaresSections,
+	entryTypeFields,
+	rulesetAttributeSlotDecls,
+	rulesetAttributeSlots,
+	rulesetSectionFindings,
+	rulesetSections,
+	sectionsConventions,
+	sectionsLegacyView,
+	sectionsSettings,
+	type RulesetSections,
+} from './rulesetSections.js'
 
 // ── Ids and vocabulary ──────────────────────────────────────────────────────
 
@@ -75,15 +113,35 @@ function assertRulesetId(id: string): void {
 /**
  * 🚧 How much of a ruleset a call resolves: `prose` (what things are, in
  * words), `mechanics` (adds the declared mechanics), `scripts` (adds the
- * ruleset's scripts and dice). Each level includes the ones before.
+ * ruleset's scripts and its check methods' chance — dice, cards). Each level
+ * includes the ones before.
  * @experimental
  */
 export type Rigour = 'prose' | 'mechanics' | 'scripts'
 /** @experimental */
 export const RIGOURS: readonly Rigour[] = ['prose', 'mechanics', 'scripts']
 
-/** The one scale every ruleset's degrees cross-walk onto, worst first. */
-const FIVE_BANDS = ['crit-fail', 'fail', 'partial', 'success', 'crit'] as const
+/**
+ * 🚧 **How strict**, in the interface's words (NOMENCLATURE §28): the rigour
+ * ids are never shown. `prose` → _Words only_, `mechanics` → _Rules_,
+ * `scripts` → _The rules decide_ (2026-10-22: no level is named for dice — a
+ * ruleset may decide by cards, a spend or no chance at all). The ids are
+ * unchanged, so a stored session's rigour reads as it did.
+ * @experimental
+ * @ruling PLAN-rulesets-authoring D1 (2026-10-22)
+ */
+export const RIGOUR_LABELS: Readonly<Record<Rigour, string>> = Object.freeze({
+	prose: 'Words only',
+	mechanics: 'Rules',
+	scripts: 'The rules decide',
+})
+
+/**
+ * 🚧 The one scale every ruleset's degrees cross-walk onto, worst first —
+ * exported for the `dice` message block, whose `five` is one of these.
+ * @experimental
+ */
+export const FIVE_BANDS = ['crit-fail', 'fail', 'partial', 'success', 'crit'] as const
 /** 🚧 One step of the one scale every ruleset's degrees cross-walk onto. @experimental */
 export type FiveBand = (typeof FIVE_BANDS)[number]
 
@@ -119,8 +177,22 @@ export interface DegreeCrosswalk {
 	natural?: { high?: { from: number; band: string }; low?: { to: number; band: string } }
 }
 
+/**
+ * 🚧 The degrees a ruleset that declares none reads by (2026-10-22: degrees
+ * are optional): _Failure_ (`fail`) below the target, _Success_ (`success`)
+ * at or above it. `FIVE_BANDS` stays the one outcome scale.
+ * @experimental
+ */
+export const DEFAULT_DEGREES: DegreeCrosswalk = Object.freeze({
+	bands: Object.freeze([
+		Object.freeze({ id: 'failure', label: { en: 'Failure' }, five: 'fail' as const }),
+		Object.freeze({ id: 'success', label: { en: 'Success' }, five: 'success' as const, from: 0 }),
+	]),
+}) as DegreeCrosswalk
+
 /** How bonuses stack: of each type keep the highest bonus and the lowest penalty, or add them all. */
-const BONUS_STACKINGS = ['highest-per-type', 'sum'] as const
+/** 🚧 How typed bonuses stack; the editor's choices. @experimental */
+export const BONUS_STACKINGS = ['highest-per-type', 'sum'] as const
 
 /**
  * 🚧 A ruleset's typed bonuses: the `bonusType`s a `modify` may name (Vis
@@ -138,21 +210,31 @@ export interface RulesetBonuses {
 }
 
 /**
- * The die a check rolls, and the selector whose value modifies a check that
- * names no `base` of its own — the fallback; a check selector says its own.
+ * ⏳ The die a check rolls, and the selector whose value modifies a check
+ * that names no `base` of its own — the shape before check methods
+ * (2026-10-22). Read as one die-target method keyed `die`
+ * (`normaliseRuleset`); say `methods` instead.
  */
 interface RulesetDice {
 	sides: number
 	modifierOf?: string
 }
 
-const RULESET_TIME_UNITS = ['round', 'minute', 'hour', 'day', 'scene'] as const
+/** 🚧 The units a ruleset keeps time in; the editor's choices. @experimental */
+export const RULESET_TIME_UNITS = ['round', 'minute', 'hour', 'day', 'scene'] as const
 /** 🚧 The unit a ruleset counts time in; `roundSeconds` for a round. @experimental */
 export interface RulesetTime {
 	unit: (typeof RULESET_TIME_UNITS)[number]
 	roundSeconds?: number
 }
 
+/**
+ * The turn economy: how many actions a turn holds (`perTurn`), whether a
+ * reaction is had besides, and the kinds of action a turn spends. 🚧
+ * `perTurn` (and `reaction`) is read by the handler into the voice block's
+ * **turn economy line** where numbers show — _A turn holds 3 actions and a
+ * reaction._ (PLAN-rulesets-authoring D1: read, not dropped; lane M2).
+ */
 interface RulesetActions {
 	perTurn?: number
 	reaction?: boolean
@@ -167,14 +249,95 @@ interface RulesetRest {
 	recharges?: readonly string[]
 }
 
+/**
+ * 🚧 **Casting from a pool** (2026-10-22, PLAN-rulesets-authoring D1: a
+ * ruleset's numbers live in its declaration, never in the engine) — what a
+ * cast costs when a ruleset spends a **pool** for it rather than the piece
+ * itself (Vis Itineris's _Spell points_, laid by its `casting: points`
+ * setting's choice):
+ *
+ *  · `pool` — the stat a cast spends from: its selector
+ *    (`itineris-spell-points`) or its slot id;
+ *  · `cost` — the piece field whose value a cast costs (`level`; `0` costs
+ *    nothing); `piece.level` reads the same;
+ *  · `repertoire` — the one repertoire casts come out of; absent, every
+ *    repertoire tagged `casting`;
+ *  · `refill` — the rest (`rest[].id`) that fills the pool back; absent, the
+ *    long rest, else the longest;
+ *  · `max` — the selector whose value the pool fills back to (a derived
+ *    value, `spell-points-max`); absent, the pool's own maximum.
+ *
+ * ⚠ Not a **casting** repertoire tag (what a repertoire's pieces are); a
+ * casting pool is what a cast from them spends. Read by the host's handler
+ * (`castingPoolOf`); refused when authored with the reason named
+ * (`bad-casting`, `unknown-selector`, `unknown-repertoire`).
+ * @experimental
+ * @ruling PLAN-rulesets-authoring D1 (2026-10-22)
+ */
+export interface RulesetCasting {
+	pool: string
+	cost: string
+	repertoire?: string
+	refill?: string
+	max?: string
+}
+
+/**
+ * 🚧 One of a ruleset's **difficulty bands** — a named target a check is
+ * rolled against (_Hard_, 20): its id, the word a person reads, the target
+ * number and, on exactly one band, `default: true` — the difficulty an
+ * automatic roll uses when nobody picked one (the Lair's _Decide checks at once_).
+ *
+ * What a `roll` message block offers the person deciding a check (the
+ * Lair's game master): the bands in the ruleset's order, plus _No check_.
+ * 🚧 Held by a check method that is made against a target (`die-target`,
+ * `card-draw`, `compare` — its `bands`); the top-level
+ * `RulesetProps.difficultyBands` is ⏳, read as the `die` method's.
+ *
+ * ⚠ Not a **degree band** (`DegreeBand`, what a roll's result reads as) —
+ * a difficulty band is what the roll is made against; not a budget band
+ * (an entry type's `sourceKind`); and not the Dungeon Crawler's
+ * `core:slot/difficulty@1` (how harsh the whole table is — Gentle, Fair,
+ * Brutal).
+ * @experimental
+ * @ruling Lair rewrite D3 (2026-10-21)
+ */
+export interface DifficultyBand {
+	id: string
+	label: I18n
+	description?: I18n
+	/** The total a check must reach — the target its margin is read from. A whole number. */
+	target: number
+	/** The band an automatic roll is made against. Exactly one band says so. */
+	default?: true
+}
+
 /** @experimental */
 export interface RulesetConventions {
+	/** ⏳ One die-target method, the shape before check methods — say `methods` (`normaliseRuleset`). */
 	dice?: RulesetDice
-	degrees: DegreeCrosswalk
+	/**
+	 * 🚧 How a risky moment is decided, by a name of the ruleset's own
+	 * (`{ d20: { kind: 'die-target', sides: 20 } }`): see `checkMethods.ts`.
+	 * Absent (and no `dice`): nothing is decided by chance; every check is
+	 * judged (`none`).
+	 * @ruling PLAN-rulesets-authoring R1, D1 (2026-10-22)
+	 */
+	methods?: Readonly<Record<string, CheckMethodDecl>>
+	/** 🚧 The method a check uses when its selector names none. Required when there are two or more. */
+	defaultMethod?: string
+	/**
+	 * The ruleset's own degrees, cross-walked onto `FIVE_BANDS`. 🚧 Optional
+	 * since 2026-10-22: absent, a check reads as _Failure_ or _Success_
+	 * (`DEFAULT_DEGREES`).
+	 */
+	degrees?: DegreeCrosswalk
 	time: RulesetTime
 	actions?: RulesetActions
 	rest?: readonly RulesetRest[]
 	bonuses?: RulesetBonuses
+	/** 🚧 What a cast spends when it spends a pool (`RulesetCasting`); absent, a cast spends its piece. */
+	casting?: RulesetCasting
 }
 
 /** The conventions a ruleset setting's choice may replace — every one but time, key by key. */
@@ -224,10 +387,13 @@ export interface RulesetPresetDecl {
  * stat is a selector by its slot name already):
  *
  *  · `stat` — another slot's value.
- *  · `check` — something rolled: the ruleset's die plus `base`, the selector
- *    whose value is the check's modifier (an ability modifier; proficiency
- *    arrives as a `modify` on the check). No `base`: the conventions'
- *    `dice.modifierOf`, else a bare die.
+ *  · `check` — something decided by a check method: `base` is the selector
+ *    whose value the check reads (a die-target's modifier — an ability
+ *    modifier, proficiency arriving as a `modify` on the check; a dice
+ *    pool's size; a comparison's value). No `base`: the method's fallback
+ *    (`modifierOf`, `poolOf`), else a bare die. 🚧 `method` names the check
+ *    method it is decided by (a key of `conventions.methods`); absent, the
+ *    ruleset's `defaultMethod` (2026-10-22).
  *  · `derived` — a value computed from other selectors (by a script). 🚧
  *    `onSheet: true` (2026-10-18) puts it on the ruleset's sheet beside the
  *    stats, under its `label` — armour class: worked out, never stored, and
@@ -247,7 +413,7 @@ export interface RulesetPresetDecl {
  */
 export type RulesetSelectorDecl =
 	| { kind: 'stat'; slot: SlotId }
-	| { kind: 'check'; base?: string; within?: string }
+	| { kind: 'check'; base?: string; within?: string; method?: string }
 	| { kind: 'derived'; from: readonly string[]; onSheet?: boolean; label?: I18n }
 	| { kind: 'tally' }
 
@@ -277,7 +443,8 @@ export interface CompendiumDecl {
 	rows: Readonly<Record<string, readonly CompendiumRow[]>>
 }
 
-const RULESET_SCRIPT_PHASES = ['effects', 'derived', 'pre-roll', 'post-roll', 'render'] as const
+/** 🚧 The handler's fixed phase order a ruleset script plugs into (§25); the editor shows it. @experimental */
+export const RULESET_SCRIPT_PHASES = ['effects', 'derived', 'pre-roll', 'post-roll', 'render'] as const
 /**
  * A script the handler runs at one phase of its fixed order, by priority
  * within the phase. `seedKey` names the seeded script row.
@@ -300,35 +467,214 @@ export interface RulesetStatEntry extends SheetSlotEntry {
 	borrowed?: true
 }
 
-/** @experimental */
-export interface RulesetProps {
+/**
+ * What `defineRuleset` takes: a name, and 🚧 the seven sections
+ * (`RulesetSections` — attributes, functions, entry types, zone types,
+ * outcomes, time, library, options), every one optional (R9). ⏳ The keys
+ * before the sections (`conventions`, `difficultyBands`, `settings`,
+ * `presets`, `stats`, `selectors`, `repertoires`, `compendium`, `scripts`,
+ * `conversions`, `entryable`) are still read — into the sections by
+ * `rulesetSections` — and refused beside the section each became
+ * (`legacy-beside-section`).
+ * @experimental
+ */
+export interface RulesetProps extends RulesetSections {
 	/** The name a person reads. Display text. */
 	name: I18n
 	description?: I18n
-	/** Per rigour, what a model reads about play under this ruleset. Model-facing; at most ~60 tokens each. */
-	voice: Partial<Record<Rigour, string>>
-	conventions: RulesetConventions
-	/** 🚧 The ways a table may play it, by setting name; each choice may lay conventions over `conventions`. */
+	/**
+	 * Per rigour, what a model reads about play under this ruleset. Model-facing; at most ~60 tokens each.
+	 * 🚧 Optional since 2026-10-23 (R9): a ruleset from scratch has no voice. Said, it says the prose line.
+	 */
+	voice?: Partial<Record<Rigour, string>>
+	/** ⏳ The shape before the sections: methods → `functions`, degrees → `outcomes`, time, actions and rests → `time`. */
+	conventions?: RulesetConventions
+	/**
+	 * ⏳ The targets a check may be rolled against, in the order a person
+	 * reads them (easiest first, by convention) — `DifficultyBand`. Since
+	 * 2026-10-22 a check method holds its own (`methods.<name>.bands`); this
+	 * top-level list is read as the ⏳ `conventions.dice` method's
+	 * (`normaliseRuleset`) and is refused beside `methods`. Absent when
+	 * unstated, so a ruleset that says nothing hashes as it did.
+	 * @ruling Lair rewrite D3 (2026-10-21); PLAN-rulesets-authoring D1 (2026-10-22)
+	 */
+	difficultyBands?: readonly DifficultyBand[]
+	/** ⏳ The ways a table may play it, by setting name; each choice may lay conventions over `conventions`. Read as `options`. */
 	settings?: Readonly<Record<string, RulesetSettingDecl>>
-	/** 🚧 Named sets of setting values offered as one pick. */
+	/** ⏳ Named sets of setting values offered as one pick. Read as `options.presets`. */
 	presets?: readonly RulesetPresetDecl[]
 	/**
-	 * The ruleset's stats, in order, as a sheet names slots. Each is owned by
-	 * the ruleset unless marked `borrowed`.
+	 * ⏳ The ruleset's stats, in order, as a sheet names slots — read as
+	 * `attributes`. Each is owned by the ruleset unless marked `borrowed`.
 	 */
-	stats: readonly RulesetStatEntry[]
+	stats?: readonly RulesetStatEntry[]
+	/** ⏳ Read as `functions` (checks, worked-out values, tallies) and `attributes` (another slot's name). */
 	selectors?: Readonly<Record<string, RulesetSelectorDecl>>
-	repertoires: readonly RepertoireDecl[]
+	/** ⏳ Read as `entryTypes`. */
+	repertoires?: readonly RepertoireDecl[]
+	/** ⏳ Read as `library`. */
 	compendium?: CompendiumDecl
+	/** ⏳ Read as function modules the ruleset carries (`functions`), their bodies the seeded rows. */
 	scripts?: readonly RulesetScriptDecl[]
+	/** ⏳ Read as `options.conversions`. */
 	conversions?: readonly ConversionDecl[]
-	/** Repertoire ids whose pieces become lorebook entry types. Absent: every repertoire declaring `entryable`. */
+	/** ⏳ Repertoire ids whose pieces become lorebook entry types. Absent: every repertoire declaring `entryable`. */
 	entryable?: readonly string[]
+	/**
+	 * 🚧 The **vocabularies this ruleset plays** (A19, R27): shared words it
+	 * answers to — the common vocabulary, a custom one another package shares
+	 * — natively, or with `map` onto its own stats. The declarations, never
+	 * ids (A18); stored as their ids. A ruleset is itself a vocabulary of its
+	 * own stats (`rulesetVocabulary`), so it never lists itself. Absent when
+	 * unstated, so a ruleset that says nothing hashes as it did.
+	 * @ruling A19, R27, R28
+	 */
+	plays?: readonly Vocabulary[]
+	/**
+	 * 🚧 Played members read as this ruleset's own stats (A19):
+	 * `[[common.cast.health, vigourSlot]]` — objects on both sides; the left a
+	 * member of a vocabulary it plays, the right one of its own `stats`.
+	 * Stored as slot-id pairs. A reference to the left resolves to the right
+	 * in a session on this ruleset (`resolveAttributeRef`).
+	 * @ruling A19
+	 */
+	map?: readonly (readonly [AttributeSlotDecl, AttributeSlotDecl])[]
+	/**
+	 * 🚧 A **ruleset template** (2026-10-22, PLAN-rulesets-authoring D3): an
+	 * archetype to start a ruleset of one's own from — complete and small,
+	 * with sample rows and a playtest scene beside it (`RulesetTemplate`) —
+	 * never one a session or lorebook plays. Declared with
+	 * `defineRulesetTemplate`; `defineRuleset` refuses it
+	 * (`template-not-played`), so it is never offered under Rules, and a copy
+	 * (`reidRulesetDocument`) is never a template. Absent when unstated, so a
+	 * ruleset that says nothing hashes as it did.
+	 * @ruling PLAN-rulesets-authoring D3 (2026-10-22)
+	 */
+	template?: true
+	/**
+	 * 🚧 The author's own **handbook** pages (2026-10-23, D8): `{ title, body }`
+	 * beside the pages the handbook generator writes from the sections. A page
+	 * titled as a generated one replaces it. Documentation for people: never
+	 * read into a prompt. Absent when unstated, so a ruleset that says nothing
+	 * hashes as it did.
+	 */
+	handbook?: readonly HandbookPage[]
+	/**
+	 * 🚧 Playtest scenes **saved as tests** (2026-10-23, D8): what the editor's
+	 * _Save as a test_ keeps and _Load_ reads back. No session plays them.
+	 * Absent when unstated, so a ruleset that says nothing hashes as it did.
+	 */
+	playtests?: readonly SavedPlaytest[]
 }
 
-/** @experimental */
-export interface RulesetDecl extends RulesetProps {
+/**
+ * 🚧 One page an author writes into a **handbook** (2026-10-23, D8): a
+ * title and its body, Markdown. A ruleset's or a genre's `handbook` lists
+ * them beside the generated pages.
+ * @experimental
+ */
+export interface HandbookPage {
+	title: string
+	body: string
+}
+
+/**
+ * 🚧 A playtest scene **saved as a test** (2026-10-23, D8): its name, the
+ * sample party, the situation, the one change it puts through the rules (or
+ * none), How strict it runs and the seed it rolls from.
+ * @experimental
+ */
+export interface SavedPlaytest {
+	name: string
+	party: readonly PlaytestMember[]
+	situation?: I18n
+	change: PlaytestChange | null
+	rigour?: Rigour
+	seed?: string
+}
+
+const isPlainRecord = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * 🚧 Every reason a `handbook` is refused (`bad-handbook`): a list of
+ * `{ title, body }`, each title said once.
+ * @experimental
+ */
+export function handbookFindings(handbook: unknown, at: string): string[] {
+	if (handbook === undefined) return []
+	if (!Array.isArray(handbook)) return [finding('bad-handbook', `${at}.handbook lists pages — handbook: [{ title, body }].`)]
+	const out: string[] = []
+	const titles = new Set<string>()
+	handbook.forEach((p, i) => {
+		if (!isPlainRecord(p) || typeof p.title !== 'string' || !p.title.trim() || typeof p.body !== 'string')
+			return void out.push(finding('bad-handbook', `${at}.handbook[${i}] is { title, body } — a title and its words.`))
+		const key = p.title.trim().toLowerCase()
+		if (titles.has(key)) out.push(finding('bad-handbook', `${at}.handbook has two pages titled '${p.title}'. Give each page a title of its own.`))
+		titles.add(key)
+	})
+	return out
+}
+
+/**
+ * 🚧 Every reason a ruleset's saved tests are refused (`bad-playtests`): a
+ * list of `{ name, party, situation?, change, rigour?, seed? }`, each named
+ * once, a party of one to four by name, a change or `null`. What a test
+ * names is not checked against the ruleset: a stale test is read, never
+ * refused.
+ * @experimental
+ */
+export function savedPlaytestFindings(playtests: unknown, at: string): string[] {
+	if (playtests === undefined) return []
+	if (!Array.isArray(playtests)) return [finding('bad-playtests', `${at}.playtests lists saved scenes — playtests: [{ name, party, situation, change }].`)]
+	const out: string[] = []
+	const names = new Set<string>()
+	playtests.forEach((t, i) => {
+		const here = `${at}.playtests[${i}]`
+		if (!isPlainRecord(t) || typeof t.name !== 'string' || !t.name.trim())
+			return void out.push(finding('bad-playtests', `${here} is { name, party, situation, change } — say its name.`))
+		if (names.has(t.name)) out.push(finding('bad-playtests', `${at}.playtests names '${t.name}' twice.`))
+		names.add(t.name)
+		const party = Array.isArray(t.party) ? t.party : undefined
+		if (!party || party.length < 1 || party.length > 4) out.push(finding('bad-playtests', `${here}.party seats ${party?.length ?? 0}. A playtest seats one to four.`))
+		party?.forEach((m, j) => {
+			if (!isPlainRecord(m) || typeof m.name !== 'string' || !m.name.trim()) out.push(finding('bad-playtests', `${here}.party[${j}] is { name, stats?, pieces? }.`))
+		})
+		if (t.change !== null && !isPlainRecord(t.change)) out.push(finding('bad-playtests', `${here}.change is { owner, op, … }, or null when nothing happens.`))
+		if (t.rigour !== undefined && !RIGOURS.includes(t.rigour as Rigour)) out.push(finding('bad-playtests', `${here}.rigour is one of ${RIGOURS.join(', ')}.`))
+		if (t.seed !== undefined && typeof t.seed !== 'string') out.push(finding('bad-playtests', `${here}.seed is words.`))
+		out.push(...i18nFindings(t.situation, `${here}.situation`).map((f) => finding('display-text', f)))
+	})
+	return out
+}
+
+/**
+ * 🚧 Where a ruleset's declaration came from: `code` (core or a plugin, at
+ * import) or `stored` (authored on the pub and loaded from a row —
+ * `defineStoredRuleset`). Absent on a declaration means `code`, so a code
+ * ruleset hashes as it always did.
+ * @experimental
+ */
+export type RulesetOrigin = 'code' | 'stored'
+
+/**
+ * A declared ruleset: its props as written, except `plays` and `map`, stored
+ * by id (the declarations' identities) — what `resolveAttributeRef` reads.
+ * @experimental
+ */
+export interface RulesetDecl extends Omit<RulesetProps, 'plays' | 'map' | 'stats' | 'repertoires'> {
 	readonly id: RulesetId
+	/** ⏳ The stats as declared — always a list on the registered declaration (empty for a ruleset in sections), so a reader of the shape before them reads nothing rather than throwing. */
+	readonly stats: readonly RulesetStatEntry[]
+	/** ⏳ The repertoires as declared — always a list on the registered declaration (empty for a ruleset in sections). */
+	readonly repertoires: readonly RepertoireDecl[]
+	/** 🚧 `stored` for an authored ruleset; left out for one declared in code. */
+	readonly origin?: 'stored'
+	/** 🚧 Who authored a stored ruleset (the pub's user id). */
+	readonly authorUserId?: number | string
+	/** 🚧 The ids of the vocabularies it plays, in its order (`RulesetProps.plays`). */
+	readonly plays?: readonly VocabularyId[]
+	/** 🚧 `[played member's slot id, own stat's slot id]` pairs (`RulesetProps.map`). */
+	readonly map?: readonly (readonly [SlotId, SlotId])[]
 }
 
 /** Display text outside `i18n`/`description`: band and rest labels, repertoire labels. */
@@ -408,12 +754,16 @@ export function rulesetContext(decl: RulesetDecl | (RulesetProps & { id: string 
 		ownStats: new Set((decl.stats ?? []).map((s) => slotName(s.id))),
 		repertoires: new Map((decl.repertoires ?? []).map((r) => [r.id, r])),
 		timeUnit: decl.conventions?.time?.unit,
+		rollsDice: rulesetRollsDice(decl),
 	}
 }
 
 /** 🚧 The repertoires whose pieces become lorebook entry types. @experimental */
-export const rulesetEntryable = (decl: Pick<RulesetProps, 'entryable' | 'repertoires'>): readonly string[] =>
-	decl.entryable ?? decl.repertoires.filter((r) => r.entryable).map((r) => r.id)
+export const rulesetEntryable = (decl: Pick<RulesetProps, 'entryable' | 'repertoires'> & Pick<RulesetSections, 'entryTypes'>): readonly string[] =>
+	// 🚧 A ruleset in sections: every entry type but one a repertoire said never was (2026-10-23, D2).
+	decl.entryTypes !== undefined
+		? decl.entryTypes.filter((e) => e?.entryable !== false).map((e) => e.id)
+		: (decl.entryable ?? (decl.repertoires ?? []).filter((r) => r.entryable).map((r) => r.id))
 
 /**
  * 🚧 The derived entry type an entryable repertoire yields —
@@ -452,11 +802,34 @@ export interface EntryUniversalParts extends Omit<EntryShape, 'fields'> {
  * shares a name with a universal entry field — the entry could not hold both.
  * @experimental
  */
-export function rulesetEntryTypeDecls(ruleset: Pick<RulesetDecl, 'id' | 'repertoires' | 'entryable'>, universal: EntryUniversalParts): EntryTypeDecl[] {
+export function rulesetEntryTypeDecls(
+	ruleset: Pick<RulesetDecl, 'id' | 'entryable'> & { repertoires?: RulesetDecl['repertoires'] } & Pick<RulesetSections, 'entryTypes'>,
+	universal: EntryUniversalParts,
+): EntryTypeDecl[] {
 	const found: string[] = []
 	const out: EntryTypeDecl[] = []
-	for (const repId of rulesetEntryable(ruleset)) {
-		const rep = ruleset.repertoires.find((r) => r.id === repId)
+	// 🚧 A ruleset in sections derives one per entry type (D2, D5): its whole
+	// field shape (`entryTypeFields`) — the ⏳ path below is the repertoires'.
+	if (ruleset.entryTypes !== undefined) {
+		for (const e of ruleset.entryTypes) {
+			if (!e || e.entryable === false) continue
+			const own = entryTypeFields(e)
+			for (const k of Object.keys(universal.fields))
+				if (k in own)
+					found.push(finding('entry-field-collision', `${ruleset.id} entry type '${e.id}' declares '${k}', which every entry already carries. Name the field otherwise.`))
+			const { fields: _f, ...parts } = universal
+			out.push({
+				...parts,
+				id: rulesetEntryTypeId(ruleset.id, e.id),
+				i18n: { name: e.name, ...(e.description !== undefined ? { description: e.description } : {}) },
+				fields: { ...own, ...universal.fields },
+			})
+		}
+		if (found.length) throw new RulesetError(`${ruleset.id}'s derived entry types`, found)
+		return out
+	}
+	for (const repId of rulesetEntryable(ruleset as Pick<RulesetProps, 'entryable' | 'repertoires'>)) {
+		const rep = (ruleset.repertoires ?? []).find((r) => r.id === repId)
 		if (!rep) continue
 		const pieceFields = rep.piece.fields ?? {}
 		for (const k of Object.keys(universal.fields))
@@ -483,7 +856,7 @@ export function rulesetEntryTypeDecls(ruleset: Pick<RulesetDecl, 'id' | 'reperto
  * @experimental
  */
 export function deriveRulesetEntryTypes(
-	ruleset: Pick<RulesetDecl, 'id' | 'repertoires' | 'entryable'>,
+	ruleset: Pick<RulesetDecl, 'id' | 'entryable'> & { repertoires?: RulesetDecl['repertoires'] } & Pick<RulesetSections, 'entryTypes'>,
 	universal: EntryUniversalParts,
 ): EntryDescriptor[] {
 	return rulesetEntryTypeDecls(ruleset, universal).map((d) => _describeRulesetEntryType(d))
@@ -501,6 +874,9 @@ export function derivedEntryTypeSource(entryTypeId: string): { ruleset: RulesetD
 	for (const r of registry.values()) {
 		if (!r.id.startsWith(`${m[1]}:ruleset/${m[2]}@`)) continue
 		if (!rulesetEntryable(r).includes(m[3]!)) continue
+		// 🚧 A ruleset in sections: its entry type, read as a repertoire (one piece checker for both).
+		const et = r.entryTypes?.find((x) => x.id === m[3])
+		if (et) return { ruleset: r, repertoire: _entryTypeAsRepertoire(et) }
 		const rep = r.repertoires.find((x) => x.id === m[3])
 		if (rep) return { ruleset: r, repertoire: rep }
 	}
@@ -509,10 +885,19 @@ export function derivedEntryTypeSource(entryTypeId: string): { ruleset: RulesetD
 
 // ── Findings ────────────────────────────────────────────────────────────────
 
-function conventionFindings(id: string, c: RulesetConventions | undefined, selectors: ReadonlyMap<string, RulesetSelectorDecl>): string[] {
+function conventionFindings(
+	id: string,
+	c: RulesetConventions | undefined,
+	selectors: ReadonlyMap<string, RulesetSelectorDecl>,
+	reps: readonly RepertoireDecl[] = [],
+	/** Check `casting` too — a setting's choice says so only when it lays one (else the ruleset's own is reported once). */
+	casting = true,
+): string[] {
 	const at = `${id}.conventions`
+	// 🚧 Optional since 2026-10-23 (R9): a ruleset from scratch keeps no time.
+	if (c === undefined) return []
 	if (!c || typeof c !== 'object')
-		return [finding('missing-conventions', `${id} declares no conventions. Every ruleset says at least its degrees and the unit it keeps time in.`)]
+		return [finding('missing-conventions', `${id}.conventions is an object — the shape before the sections; say time instead.`)]
 	const out: string[] = []
 	if (c.dice !== undefined) {
 		if (!(Number.isInteger(c.dice?.sides) && c.dice.sides >= 2))
@@ -520,9 +905,16 @@ function conventionFindings(id: string, c: RulesetConventions | undefined, selec
 		if (c.dice?.modifierOf !== undefined && !selectors.has(c.dice.modifierOf))
 			out.push(finding('unknown-selector', `${at}.dice.modifierOf names '${c.dice.modifierOf}', which no stat or selector of ${id} is.`))
 	}
+	// 🚧 Check methods (2026-10-22), read against the degrees in force.
+	const degreeIds = new Set(((c.degrees ?? DEFAULT_DEGREES).bands ?? []).map((b) => b?.id).filter((x): x is string => typeof x === 'string'))
+	const stats = new Set([...selectors].filter(([, d]) => d.kind === 'stat').map(([k]) => k))
+	out.push(...checkMethodFindings(at, c, { selectors: new Set(selectors.keys()), stats, degreeIds }))
 	const bands = c.degrees?.bands
-	if (!Array.isArray(bands) || !bands.length)
-		out.push(finding('no-bands', `${at}.degrees declares no bands. Map the ruleset's degrees onto ${FIVE_BANDS.join(' / ')} — even a prose ruleset names them in words.`))
+	// 🚧 Degrees are optional (2026-10-22): absent reads as DEFAULT_DEGREES.
+	if (c.degrees === undefined) {
+		// Nothing to check.
+	} else if (!Array.isArray(bands) || !bands.length)
+		out.push(finding('no-bands', `${at}.degrees declares no bands. Map the ruleset's degrees onto ${FIVE_BANDS.join(' / ')}, or leave degrees out to read as failure or success.`))
 	else {
 		const ids = new Set<string>()
 		let last = -Infinity
@@ -582,6 +974,54 @@ function conventionFindings(id: string, c: RulesetConventions | undefined, selec
 		if (r?.minutes !== undefined && !(typeof r.minutes === 'number' && r.minutes >= 0))
 			out.push(finding('bad-rest', `${at}.rest[${i}].minutes is ${String(r.minutes)}. A number of minutes, zero or more.`))
 	})
+	if (casting && c.casting !== undefined) out.push(...castingFindings(at, c, selectors, reps))
+	return out
+}
+
+/**
+ * 🚧 `conventions.casting` (2026-10-22): a pool that is a stat, a cost a
+ * piece field of the repertoire casts come out of, a rest the ruleset
+ * declares and a selector to fill back to.
+ */
+function castingFindings(
+	at: string,
+	c: RulesetConventions,
+	selectors: ReadonlyMap<string, RulesetSelectorDecl>,
+	reps: readonly RepertoireDecl[],
+): string[] {
+	const k = c.casting as Partial<RulesetCasting> | null
+	const where = `${at}.casting`
+	if (!k || typeof k !== 'object' || Array.isArray(k))
+		return [finding('bad-casting', `${where} is { pool, cost, repertoire?, refill?, max? } — the stat a cast spends and the piece field it costs.`)]
+	const out: string[] = []
+	for (const key of Object.keys(k))
+		if (!['pool', 'cost', 'repertoire', 'refill', 'max'].includes(key))
+			out.push(finding('bad-casting', `${where} says '${key}'. A casting pool is { pool, cost, repertoire?, refill?, max? }.`))
+	const pool = typeof k.pool === 'string' && k.pool.includes(':') ? slotName(k.pool) : k.pool
+	if (typeof pool !== 'string' || !pool) out.push(finding('bad-casting', `${where}.pool names the stat a cast spends from — its selector or its slot id.`))
+	else if (!selectors.has(pool)) out.push(finding('unknown-selector', `${where}.pool names '${String(k.pool)}', which no stat of the ruleset is.`))
+	else if (selectors.get(pool)!.kind !== 'stat')
+		out.push(finding('bad-casting', `${where}.pool is '${pool}', a ${selectors.get(pool)!.kind} selector. A cast spends from a stat a character holds.`))
+	const cost = typeof k.cost === 'string' ? k.cost.replace(/^piece\./, '') : undefined
+	if (!cost) out.push(finding('bad-casting', `${where}.cost names the piece field a cast costs — 'level'.`))
+	let from: readonly RepertoireDecl[] = []
+	if (k.repertoire !== undefined) {
+		const rep = reps.find((r) => r.id === k.repertoire)
+		if (!rep) out.push(finding('unknown-repertoire', `${where}.repertoire names '${String(k.repertoire)}', which the ruleset does not declare.`))
+		else from = [rep]
+	} else {
+		from = reps.filter((r) => Array.isArray(r.tags) && r.tags.includes('casting'))
+		if (reps.length && !from.length)
+			out.push(finding('bad-casting', `${where} names no repertoire, and none is tagged 'casting'. Say repertoire: 'spells', or tag the one casts come out of.`))
+	}
+	if (cost)
+		for (const r of from)
+			if (!Object.prototype.hasOwnProperty.call(r.piece?.fields ?? {}, cost))
+				out.push(finding('bad-casting', `${where}.cost is '${cost}', which no '${r.id}' piece has. Name one of its fields — the one a cast costs.`))
+	if (k.refill !== undefined && !(c.rest ?? []).some((r) => r?.id === k.refill))
+		out.push(finding('bad-casting', `${where}.refill names the rest '${String(k.refill)}', which the ruleset does not declare (${(c.rest ?? []).map((r) => r.id).join(', ') || 'no rests'}).`))
+	if (k.max !== undefined && (typeof k.max !== 'string' || !selectors.has(k.max)))
+		out.push(finding('unknown-selector', `${where}.max names '${String(k.max)}', which no stat or selector of the ruleset is.`))
 	return out
 }
 
@@ -611,8 +1051,13 @@ function settingFindings(id: string, props: RulesetProps, selectors: ReadonlyMap
 			if (c?.conventions !== undefined) {
 				if ('time' in (c.conventions as object))
 					out.push(finding('bad-setting', `${at}.choices[${i}] replaces time. A setting changes how play reads, never the unit time is kept in.`))
-				const merged = { ...props.conventions, ...c.conventions } as RulesetConventions
-				for (const f of conventionFindings(`${at}.choices[${i}]`, merged, selectors)) out.push(f)
+				if (props.conventions === undefined)
+					out.push(finding('bad-setting', `${at}.choices[${i}] lays conventions over a ruleset that declares none. Lay them over conventions, or say what the choice changes in options.lays.`))
+				else {
+					const merged = { ...props.conventions, ...c.conventions } as RulesetConventions
+					const lays = Object.prototype.hasOwnProperty.call(c.conventions, 'casting')
+					for (const f of conventionFindings(`${at}.choices[${i}]`, merged, selectors, props.repertoires ?? [], lays)) out.push(f)
+				}
 			}
 		})
 		if (!ids.has(decl?.default)) out.push(finding('bad-setting', `${at}.default is '${String(decl?.default)}', which is not one of its choices.`))
@@ -640,6 +1085,17 @@ function settingFindings(id: string, props: RulesetProps, selectors: ReadonlyMap
 }
 
 /**
+ * 🚧 A ruleset's settings in the shape before the sections — its ⏳
+ * `settings`, else its options' choices (`sectionsSettings`).
+ * @internal
+ */
+export const settingsOf = (decl: Pick<RulesetProps, 'settings' | 'options'>): Readonly<Record<string, RulesetSettingDecl>> =>
+	decl?.settings ?? sectionsSettings(decl?.options) ?? {}
+
+/** 🚧 A ruleset's presets: its ⏳ `presets`, else its options'. @internal */
+export const presetsOf = (decl: Pick<RulesetProps, 'presets' | 'options'>): readonly RulesetPresetDecl[] => decl?.presets ?? decl?.options?.presets ?? []
+
+/**
  * 🚧 A session's full setting values for a ruleset: each setting's default,
  * then the preset's values, then the session's own. A name the ruleset does
  * not declare, or a choice a setting does not offer, is left out — it reads
@@ -648,17 +1104,17 @@ function settingFindings(id: string, props: RulesetProps, selectors: ReadonlyMap
  * @experimental
  */
 export function rulesetSettingValues(
-	decl: Pick<RulesetProps, 'settings' | 'presets'>,
+	decl: Pick<RulesetProps, 'settings' | 'presets' | 'options'>,
 	chosen: { preset?: string; values?: Readonly<Record<string, string>> } = {},
 ): Record<string, string> {
 	const out: Record<string, string> = {}
-	const settings = decl.settings ?? {}
+	const settings = settingsOf(decl)
 	const lay = (values: Readonly<Record<string, string>> | undefined) => {
 		for (const [k, v] of Object.entries(values ?? {}))
 			if (settings[k]?.choices.some((c) => c.id === v)) out[k] = v
 	}
 	for (const [k, s] of Object.entries(settings)) out[k] = s.default
-	if (chosen.preset !== undefined) lay(decl.presets?.find((p) => p.id === chosen.preset)?.values)
+	if (chosen.preset !== undefined) lay(presetsOf(decl).find((p) => p.id === chosen.preset)?.values)
 	lay(chosen.values)
 	return out
 }
@@ -667,9 +1123,9 @@ export function rulesetSettingValues(
  * 🚧 The preset whose values these are exactly, if any — what a picker shows
  * as selected. @experimental
  */
-export function rulesetPresetOf(decl: Pick<RulesetProps, 'settings' | 'presets'>, values: Readonly<Record<string, string>>): string | undefined {
+export function rulesetPresetOf(decl: Pick<RulesetProps, 'settings' | 'presets' | 'options'>, values: Readonly<Record<string, string>>): string | undefined {
 	const full = rulesetSettingValues(decl, { values })
-	return decl.presets?.find((p) => {
+	return presetsOf(decl).find((p) => {
 		const v = rulesetSettingValues(decl, { preset: p.id })
 		return Object.keys(full).every((k) => full[k] === v[k])
 	})?.id
@@ -682,12 +1138,13 @@ export function rulesetPresetOf(decl: Pick<RulesetProps, 'settings' | 'presets'>
  * @experimental
  */
 export function rulesetConventionsFor(
-	decl: Pick<RulesetProps, 'conventions' | 'settings' | 'presets'>,
+	decl: Pick<RulesetProps, 'conventions' | 'settings' | 'presets' | 'options'> & RulesetSections,
 	values: Readonly<Record<string, string>> = {},
 ): RulesetConventions {
 	const full = rulesetSettingValues(decl, { values })
-	let out: RulesetConventions = { ...decl.conventions }
-	for (const [k, s] of Object.entries(decl.settings ?? {})) {
+	// 🚧 A ruleset in sections plays by what its sections read back as (`sectionsConventions`).
+	let out: RulesetConventions = { ...(declaresSections(decl) ? sectionsConventions(decl) : undefined), ...decl.conventions } as RulesetConventions
+	for (const [k, s] of Object.entries(settingsOf(decl))) {
 		const patch = s.choices.find((c) => c.id === full[k])?.conventions
 		if (patch) out = { ...out, ...patch }
 	}
@@ -717,6 +1174,12 @@ function selectorFindings(id: string, props: RulesetProps): string[] {
 					if (w && w.kind !== 'check')
 						out.push(finding('bad-selector', `${at} counts within '${sel.within}', a '${w.kind}' selector. A check counts within a check, or within a family name no selector claims.`))
 				}
+			}
+			// 🚧 The check method it is decided by (2026-10-22): one the ruleset declares.
+			if (sel.method !== undefined) {
+				const methods = normaliseConventions({ conventions: props.conventions ?? ({} as RulesetConventions), difficultyBands: props.difficultyBands }).conventions.methods
+				if (typeof sel.method !== 'string' || !Object.prototype.hasOwnProperty.call(methods, sel.method))
+					out.push(finding('unknown-method', `${at}.method names '${String(sel.method)}', which is none of ${id}'s check methods (${Object.keys(methods).join(', ') || 'none declared'}).`))
 			}
 		} else if (sel?.kind === 'tally') {
 			// A number modifies add up on; nothing more to say.
@@ -763,6 +1226,279 @@ function selectorFindings(id: string, props: RulesetProps): string[] {
 	return out
 }
 
+/**
+ * 🚧 `difficultyBands` (Lair rewrite D3), ⏳ since 2026-10-22: each a
+ * well-formed band (`difficultyBandListFindings`), and declared only beside
+ * the ⏳ `conventions.dice` it is read with — a band is a target a check is
+ * made against, and a check method holds its own (`methods.<name>.bands`).
+ */
+function difficultyBandFindings(id: string, props: RulesetProps): string[] {
+	const bands = props?.difficultyBands as readonly DifficultyBand[] | undefined
+	if (bands === undefined) return []
+	const at = `${id}.difficultyBands`
+	const out = difficultyBandListFindings(at, bands)
+	if (out.some((f) => f.startsWith('[bad-difficulty]') && f.includes('is a non-empty list'))) return out
+	if (props.conventions?.methods !== undefined)
+		out.unshift(finding('difficulty-beside-methods', `${at} is declared beside check methods. A method holds its own: move them under the method a check is made against (methods.<name>.bands).`))
+	else if (!props.conventions?.dice)
+		out.unshift(finding('difficulty-without-dice', `${at} is declared, and ${id} decides nothing against a target (no check method; conventions.dice). A difficulty band is a target a check is made against — declare a method that takes them, or leave the bands out.`))
+	return out
+}
+
+// ── Check methods, read through the ⏳ aliases ──────────────────────────────
+
+/**
+ * 🚧 A ruleset's conventions as a host reads them (`normaliseRuleset`):
+ * every check method by name — the ⏳ `dice` read as the `die` method, with
+ * the ⏳ top-level `difficultyBands` as its bands — the default method when
+ * one is in force, and the degrees in force (`DEFAULT_DEGREES` when none are
+ * declared).
+ * @experimental
+ */
+export interface NormalisedConventions extends Omit<RulesetConventions, 'dice' | 'methods' | 'defaultMethod' | 'degrees' | 'time'> {
+	methods: Readonly<Record<string, CheckMethodDecl>>
+	defaultMethod?: string
+	degrees: DegreeCrosswalk
+	/** 🚧 Absent for a ruleset that keeps no time (R9, 2026-10-23: a ruleset in sections may say none). */
+	time?: RulesetTime
+}
+
+/** What `normaliseRuleset` reads: a declaration, a document, or the parts of one. */
+type Normalisable = {
+	conventions?: RulesetConventions | NormalisedConventions
+	difficultyBands?: readonly DifficultyBand[]
+	repertoires?: readonly RepertoireDecl[]
+	settings?: RulesetProps['settings']
+	presets?: RulesetProps['presets']
+} & RulesetSections
+
+/**
+ * 🚧 A ruleset with its ⏳ aliases folded in — what `normaliseRuleset`
+ * returns: its conventions as today's readers take them, and 🚧 its seven
+ * `sections` (`rulesetSections`) as every new reader does.
+ * @experimental
+ */
+export type NormalisedRuleset<T> = Omit<T, 'conventions' | 'difficultyBands'> & { conventions: NormalisedConventions; sections: RulesetSections }
+
+/** A piece verb's ⏳ `dice: 'piece.<field>'`, as the amount it always meant. */
+const withAmount = (m: MechanicDecl): MechanicDecl => {
+	if ((m.verb !== 'harm' && m.verb !== 'heal') || m.dice === undefined || m.amount !== undefined) return m
+	const { dice, ...rest } = m
+	return { ...rest, amount: { selector: dice } } as MechanicDecl
+}
+
+/**
+ * 🚧 **The one reading of a ruleset's check methods** — what the host and
+ * the engine call at every entry (PLAN-rulesets-authoring D1, 2026-10-22).
+ * The ⏳ aliases folded in:
+ *
+ *  · `conventions.dice` → one die-target method keyed `die`
+ *    (`LEGACY_DIE_METHOD`, the default), its `sides` and `modifierOf`
+ *    carried over;
+ *  · the top-level `difficultyBands` → that method's `bands`;
+ *  · `degrees` absent → `DEFAULT_DEGREES`;
+ *  · `defaultMethod` absent with one method → that one;
+ *  · a `harm` / `heal` that says `dice: 'piece.<field>'` → `amount:
+ *    { selector: 'piece.<field>' }`.
+ *
+ * With `values` (a session's setting values), the conventions are the ones
+ * the session plays (`rulesetConventionsFor`) before they are read. Pure:
+ * the registry keeps the declaration as written (so a stored document, and
+ * its hash, is unchanged until rewritten — the data upgrade persists this
+ * result). Idempotent. A malformed declaration still reads (an empty method
+ * list); `rulesetFindings` is what refuses it.
+ * @experimental
+ * @ruling PLAN-rulesets-authoring D1, D6 (2026-10-22)
+ */
+export function normaliseRuleset<T extends Normalisable>(decl: T, values?: Readonly<Record<string, string>>): NormalisedRuleset<T> {
+	const { conventions } = normaliseConventions(decl, values)
+	const { conventions: _c, difficultyBands: _b, sections: _s, ...others } = (decl ?? {}) as Normalisable & Record<string, unknown>
+	const reps = decl?.repertoires
+	const needsAmount = (r: RepertoireDecl) => (r.mechanics ?? []).some((m) => withAmount(m) !== m)
+	const amounts = Array.isArray(reps) && reps.some(needsAmount) ? { repertoires: reps.map((r) => (needsAmount(r) ? { ...r, mechanics: r.mechanics!.map(withAmount) } : r)) } : {}
+	return {
+		...others,
+		...amounts,
+		conventions,
+		// 🚧 The seven sections (2026-10-23): declared, or read from the shapes before
+		// them — after the amounts are folded, so normalising twice reads the same.
+		sections: rulesetSections({ ...decl, ...amounts }),
+	} as unknown as NormalisedRuleset<T>
+}
+
+/**
+ * 🚧 The conventions half of `normaliseRuleset`: the ⏳ `dice` / top-level
+ * `difficultyBands` folded into `methods`, the default method, the degrees
+ * in force — from the declaration's ⏳ conventions, or, for a ruleset in
+ * sections, from what its sections read back as (`sectionsConventions`:
+ * deciding references to core's check-method functions, outcomes with a
+ * full ladder, time, turns, rests). With `values`, a session's setting
+ * values laid first (`rulesetConventionsFor`). Never reads `rulesetSections`
+ * of the shapes before them, so the two readings never call each other.
+ * @internal
+ */
+export function normaliseConventions(decl: Normalisable, values?: Readonly<Record<string, string>>): { conventions: NormalisedConventions } {
+	// Sections read back, then the ⏳ conventions over them key by key (a declaration may say some of each).
+	const back = declaresSections(decl) ? sectionsConventions(decl) : undefined
+	const own = (back || decl?.conventions ? { ...back, ...decl?.conventions } : undefined) as RulesetConventions | undefined
+	const conv: Partial<RulesetConventions> =
+		(values !== undefined && own ? rulesetConventionsFor({ ...(decl as Pick<RulesetProps, 'settings' | 'presets' | 'options'>), conventions: own }, values) : own) ?? {}
+	const { dice, methods, defaultMethod, degrees, ...rest } = conv
+	const top = decl?.difficultyBands
+	let named: Record<string, CheckMethodDecl> = methods && typeof methods === 'object' ? { ...methods } : {}
+	let def = typeof defaultMethod === 'string' ? defaultMethod : undefined
+	if (dice !== undefined && dice !== null && methods === undefined) {
+		named = {
+			[LEGACY_DIE_METHOD]: {
+				kind: 'die-target',
+				sides: (dice as RulesetDice).sides,
+				...((dice as RulesetDice).modifierOf !== undefined ? { modifierOf: (dice as RulesetDice).modifierOf } : {}),
+				...(Array.isArray(top) && top.length ? { bands: top } : {}),
+			},
+		}
+		def = def ?? LEGACY_DIE_METHOD
+	}
+	const keys = Object.keys(named)
+	if (def === undefined && keys.length === 1) def = keys[0]
+	return {
+		conventions: {
+			...(rest as Omit<RulesetConventions, 'dice' | 'methods' | 'defaultMethod' | 'degrees'>),
+			methods: named,
+			...(def !== undefined ? { defaultMethod: def } : {}),
+			degrees: degrees ?? DEFAULT_DEGREES,
+		},
+	}
+}
+
+/**
+ * 🚧 Whether a ruleset **decides** anything by its rules (D3, 2026-10-23):
+ * one of its function references (declared, or ⏳ read from its check
+ * methods) is a deciding function that decides — a dice, card, spend or
+ * comparison resolver, or a deciding module that is a way — its body
+ * exports `decide`, or one of its checks names it as its way
+ * (`functionRefDecides`, `functionWayKeys`). A ruleset that
+ * only judges in words (`none` / `core:function/judge@1`), or decides
+ * nothing, plays `prose` alone. What _The rules decide_ waits on (R6).
+ * @experimental
+ * @ruling PLAN-rulesets-functions D3 (2026-10-23)
+ */
+export const rulesetDecides = (decl: unknown): boolean => {
+	const functions = rulesetSections(decl).functions ?? []
+	const ways = functionWayKeys(functions)
+	return functions.some((f) => functionRefDecides(f, ways))
+}
+
+/**
+ * 🚧 The check method a check is decided by: the one its selector names
+ * (`method`), else the ruleset's default — with its key — or, when the
+ * ruleset names none, `{ key: null, method: NONE_CHECK_METHOD }`: nothing
+ * resolves it, the game master judges.
+ * @experimental
+ */
+export function rulesetCheckMethod(
+	decl: Normalisable & Pick<RulesetProps, 'stats' | 'selectors'>,
+	selector?: string,
+): { key: string | null; method: CheckMethodDecl } {
+	const n = normaliseConventions(decl)
+	const sel = selector !== undefined ? rulesetSelectors({ stats: decl?.stats ?? [], selectors: decl?.selectors }).get(selector) : undefined
+	const key = (sel?.kind === 'check' ? sel.method : undefined) ?? n.conventions.defaultMethod
+	const method = key !== undefined ? n.conventions.methods[key] : undefined
+	return method ? { key: key!, method } : { key: null, method: NONE_CHECK_METHOD }
+}
+
+/** 🚧 Whether any of a ruleset's check methods throws dice (`die-target`, `dice-pool`). @experimental */
+export const rulesetRollsDice = (decl: Normalisable): boolean =>
+	Object.values(normaliseConventions(decl).conventions.methods).some((m) => !!checkMethodKind(m?.kind)?.rollsDice) ||
+	// 🚧 A function the ruleset uses that throws dice (2026-10-23).
+	(Array.isArray(decl?.functions) && decl.functions.some((f) => functionProvides(f).rollsDice))
+
+/**
+ * 🚧 The difficulty bands a check is made against: the named method's
+ * (`methodKey`); else the default method's; else the first method's that
+ * holds any — what a `roll` block offers (`rollBlockBands`). The ⏳
+ * top-level `difficultyBands` read as the `die` method's. Empty when no
+ * method holds any.
+ * @experimental
+ */
+export function rulesetDifficultyBands(decl: Normalisable, methodKey?: string): readonly DifficultyBand[] {
+	const n = normaliseConventions(decl)
+	const methods = n.conventions.methods
+	const bandsOf = (k: string | undefined): readonly DifficultyBand[] | undefined => {
+		const m = k !== undefined ? (methods[k] as { bands?: readonly DifficultyBand[] } | undefined) : undefined
+		return Array.isArray(m?.bands) && m!.bands!.length ? m!.bands : undefined
+	}
+	if (methodKey !== undefined) return bandsOf(methodKey) ?? []
+	return (
+		bandsOf(n.conventions.defaultMethod) ??
+		Object.keys(methods).map(bandsOf).find((b) => b !== undefined) ??
+		// A declaration that names no method but bands still reads them (it is refused where it is authored).
+		(Array.isArray(decl?.difficultyBands) ? decl.difficultyBands : [])
+	)
+}
+
+/**
+ * 🚧 The band an automatic roll is made against — the one `default: true`
+ * difficulty band of the method a check uses (`rulesetDifficultyBands`) —
+ * or `undefined` when it holds none.
+ * @experimental
+ */
+export const defaultDifficultyBand = (decl: Normalisable, methodKey?: string): DifficultyBand | undefined =>
+	rulesetDifficultyBands(decl, methodKey).find((b) => b.default === true)
+
+/**
+ * 🚧 What a validator says about a ruleset beyond its refusals — each
+ * opened by its reason's name, none refusing (2026-10-22):
+ *
+ *  · `legacy-dice` ⏳ — `conventions.dice`: say a die-target method.
+ *  · `legacy-difficulty-bands` ⏳ — the top-level `difficultyBands`: a
+ *    method holds its own.
+ *  · `legacy-amount` ⏳ — a `harm` / `heal` that says `dice`: say `amount`.
+ *  · `package-method-kind` — a package's own check method kind: a host
+ *    with no resolver for it refuses its checks politely, in words (lane
+ *    M2, 2026-10-22: never a silent `none`).
+ *  · `untagged-repertoires` ⏳ — no repertoire declares `tags`, so what
+ *    the ruleset provides (conditions, casting) is guessed from repertoire
+ *    names (`guessRepertoireTags`).
+ *  · `natural-without-die` — `degrees.natural` / `naturalShift` read a die
+ *    face, and no die-target method throws one.
+ * @experimental
+ */
+export function rulesetWarnings(decl: RulesetProps | RulesetDecl): string[] {
+	const out: string[] = []
+	const id = (decl as { id?: string })?.id ?? 'The ruleset'
+	const c = decl?.conventions
+	if (c?.dice !== undefined)
+		out.push(finding('legacy-dice', `${id}.conventions.dice is the old way to say one die-target method. Say methods: { ${LEGACY_DIE_METHOD}: { kind: 'die-target', sides: ${String(c.dice?.sides)} } }.`))
+	if (decl?.difficultyBands !== undefined)
+		out.push(finding('legacy-difficulty-bands', `${id}.difficultyBands belong to the method a check is made against — move them under methods.<name>.bands.`))
+	const piecesSayingDice = (decl?.repertoires ?? []).flatMap((r) =>
+		(r.mechanics ?? []).filter((m) => (m.verb === 'harm' || m.verb === 'heal') && m.dice !== undefined).map(() => r.id),
+	)
+	if (piecesSayingDice.length)
+		out.push(
+			finding(
+				'legacy-amount',
+				`${piecesSayingDice.length} rule(s) in ${[...new Set(piecesSayingDice)].join(', ')} say dice: 'piece.<field>'. Say amount: { selector: 'piece.<field>' } — an amount may be dice, a number or a selector.`,
+			),
+		)
+	for (const [key, m] of Object.entries(c?.methods ?? {}))
+		if (isPackageCheckMethodKind(m?.kind))
+			out.push(finding('package-method-kind', `${id}.conventions.methods.${key} is a '${m.kind}' method, a package's own. A host with no resolver for it refuses its checks politely, in words ("this pub has no resolver for '${m.kind}'").`))
+	const reps = decl?.repertoires ?? []
+	if (reps.length && !reps.some((r) => r?.tags !== undefined))
+		out.push(
+			finding(
+				'untagged-repertoires',
+				`No repertoire of ${id} declares tags, so whether it has conditions or casting is guessed from repertoire names. Tag them — tags: ['condition'], tags: ['casting'], tags: ['weapon'].`,
+			),
+		)
+	const n = normaliseConventions(decl as Normalisable)
+	const deg = c?.degrees
+	if ((deg?.natural !== undefined || deg?.naturalShift !== undefined) && !Object.values(n.conventions.methods).some((m) => m?.kind === 'die-target'))
+		out.push(finding('natural-without-die', `${id}.conventions.degrees reads natural die faces, and no die-target method throws a die. They would never apply.`))
+	return out
+}
+
 function compendiumFindings(id: string, props: RulesetProps): string[] {
 	const c = props.compendium
 	if (!c) return []
@@ -796,7 +1532,10 @@ function compendiumFindings(id: string, props: RulesetProps): string[] {
 				out.push(finding('bad-row', `${at} has no piece. A row is { id, version, source?, lang?, piece: { name, description, … } }.`))
 				return
 			}
-			const why = checkPiece(rep, { kind: 'inline', ...piece } as never, { timeUnit: props.conventions?.time?.unit })
+			// 🚧 A relational repertoire's row names no one (2026-10-22, M3): who its
+			// piece points towards is said when it is held (`overrides.towards`).
+			const held = rep.relational && (piece as { towards?: unknown }).towards === undefined ? { ...piece, towards: 'said-when-held' } : piece
+			const why = checkPiece(rep, { kind: 'inline', ...held } as never, { timeUnit: props.conventions?.time?.unit })
 			if (why) out.push(finding('bad-row', `${at} is not a '${repId}' piece: ${why}`))
 		})
 	}
@@ -815,19 +1554,33 @@ function compendiumFindings(id: string, props: RulesetProps): string[] {
  * `duplicate-repertoire` · `unknown-repertoire` · `bad-row` ·
  * `duplicate-row` · `missing-source` · `bad-script-phase` · `bad-script` ·
  * `duplicate-script` · `bad-bonuses` · `bad-setting` · `setting-overlap` ·
- * `bad-preset` · every repertoire reason (`repertoireFindings`, in this
- * ruleset's context) and every conversion reason (`conversionFindings`).
+ * `bad-preset` · `bad-difficulty` · `duplicate-difficulty` ·
+ * `difficulty-default` · `difficulty-without-dice` · 🚧 (2026-10-22, check
+ * methods) `bad-method` · `unknown-method-kind` · `unknown-method` ·
+ * `no-default-method` · `unknown-degree` · `bands-without-target` ·
+ * `dice-beside-methods` · `difficulty-beside-methods` · 🚧 `bad-casting` ·
+ * `bad-template` (2026-10-22, M3) · every repertoire
+ * reason (`repertoireFindings`, in this ruleset's context — `bad-tags`,
+ * `bad-amount`, `amount-needs-dice` among them) and every conversion reason
+ * (`conversionFindings`). What warns and never refuses is `rulesetWarnings`.
  * @internal
  */
-export function rulesetFindings(id: string, props: RulesetProps): string[] {
+export function rulesetFindings(id: string, input: RulesetProps | RulesetDecl): string[] {
+	// A declaration read back stores `plays`/`map` by id; every other key is the props'.
+	// 🚧 Only what it says (2026-10-23): a registered ruleset in sections carries its ⏳ read-back
+	// in the shape before them unenumerated (`_rulesetDeclOf`), which is never judged.
+	const props = (input && typeof input === 'object' ? { ...input } : input) as RulesetProps
 	const out: string[] = []
 	if (typeof id !== 'string' || !RULESET_ID_PATTERN.test(id))
 		out.push(finding('invalid-id', `'${String(id)}' is not a ruleset id. Use 'owner:ruleset/name@N' — 'core:ruleset/freeform@1'.`))
 	out.push(...i18nFindings(props?.name, `${id} name`, { required: true }).map((f) => finding('display-text', f)))
 	out.push(...i18nFindings(props?.description, `${id} description`).map((f) => finding('display-text', f)))
+	if (props?.template !== undefined && props.template !== true)
+		out.push(finding('bad-template', `${id}.template is true or left out — true marks an archetype to copy, never one to play.`))
+	// 🚧 A voice is optional (R9, 2026-10-23); said, its floor is the prose line.
 	const voice = props?.voice ?? {}
-	if (typeof voice.prose !== 'string')
-		out.push(finding('missing-voice', `${id} has no prose voice. Every ruleset renders at prose; say in a sentence or two how play runs under it.`))
+	if (props?.voice !== undefined && typeof voice.prose !== 'string')
+		out.push(finding('missing-voice', `${id} has no prose voice. A voice says how play runs under it at prose first — or leave voice out.`))
 	for (const [k, v] of Object.entries(voice)) {
 		if (!RIGOURS.includes(k as Rigour)) out.push(finding('unknown-rigour', `${id}.voice.${k}: the rigours are ${RIGOURS.join(', ')}.`))
 		else if (typeof v !== 'string' || !v.trim()) out.push(finding('empty-voice', `${id}.voice.${k} is empty. Write it, or leave the key out.`))
@@ -835,8 +1588,8 @@ export function rulesetFindings(id: string, props: RulesetProps): string[] {
 			out.push(finding('voice-too-long', `${id}.voice.${k} is ${v.length} characters; a voice is at most ${VOICE_MAX_CHARS} (about 60 tokens) — it rides in every prompt at that rigour.`))
 	}
 	const selectors = rulesetSelectors({ stats: props?.stats ?? [], selectors: props?.selectors })
-	out.push(...conventionFindings(id, props?.conventions, selectors))
-	if (props?.conventions) out.push(...settingFindings(id, props, selectors))
+	out.push(...conventionFindings(id, props?.conventions, selectors, props?.repertoires ?? []))
+	if (props?.conventions || props?.settings !== undefined || props?.presets !== undefined) out.push(...settingFindings(id, props, selectors))
 	const seenStats = new Set<string>()
 	;(props?.stats ?? []).forEach((entry, i) => {
 		const decl = getAttributeSlot(entry?.id)
@@ -863,6 +1616,7 @@ export function rulesetFindings(id: string, props: RulesetProps): string[] {
 	const ctx = rulesetContext({ ...props, id, stats: props?.stats ?? [], repertoires: reps })
 	for (const r of reps) out.push(...repertoireFindings(r, ctx))
 	out.push(...compendiumFindings(id, { ...props, repertoires: reps }))
+	out.push(...difficultyBandFindings(id, props))
 	const seeds = new Set<string>()
 	;(props?.scripts ?? []).forEach((s, i) => {
 		const at = `${id}.scripts[${i}]`
@@ -876,6 +1630,73 @@ export function rulesetFindings(id: string, props: RulesetProps): string[] {
 	;(props?.conversions ?? []).forEach((c, i) => out.push(...conversionFindings(c, { ruleset: id }, `${id}.conversions[${i}]`)))
 	for (const r of props?.entryable ?? [])
 		if (!seenReps.has(r)) out.push(finding('unknown-repertoire', `${id}.entryable names '${r}', which ${id} does not declare.`))
+	out.push(...playsFindings(id, input))
+	// 🚧 The author's handbook pages and saved tests (2026-10-23, D8).
+	out.push(...handbookFindings(props?.handbook, id))
+	out.push(...savedPlaytestFindings(props?.playtests, id))
+	// 🚧 The seven sections (2026-10-23, D2), and the slots its attributes name.
+	if (declaresSections(props)) {
+		out.push(...rulesetSectionFindings(id, props))
+		;(Array.isArray(props.attributes) ? props.attributes : []).forEach((a, i) => {
+			if (typeof a?.slot !== 'string') return
+			const decl = getAttributeSlot(a.slot)
+			if (!decl) return void out.push(finding('unknown-stat', `${id}.attributes[${i}] names the slot '${a.slot}', which nothing declares. Declare the slot above the ruleset.`))
+			if (a.start !== undefined) {
+				const why = checkSlotValue(decl, a.start, resolveSlotConfig(decl, a.config))
+				if (why) out.push(finding('bad-stat-default', `${id}.attributes[${i}] starts '${a.slot}' at a value it refuses: ${why}`))
+			}
+		})
+	}
+	return out
+}
+
+/**
+ * 🚧 `plays` and `map` (A19): vocabularies by declaration, a map from a played
+ * member onto an own stat. Reads the authored form (objects) and the stored
+ * one (ids — a declaration read back) alike.
+ */
+function playsFindings(id: string, props: RulesetProps | RulesetDecl): string[] {
+	const out: string[] = []
+	const plays = props?.plays as readonly unknown[] | undefined
+	if (plays !== undefined && !Array.isArray(plays))
+		return [finding('bad-plays', `${id}.plays lists vocabularies — plays: [rulesets.common, scifi].`)]
+	const seen = new Set<string>()
+	const played: Vocabulary[] = []
+	;(plays ?? []).forEach((v, i) => {
+		const vid = typeof v === 'string' ? v : isVocabulary(v) ? v.id : undefined
+		if (vid === undefined) {
+			out.push(finding('bad-plays', `${id}.plays[${i}] is ${typeof v} — a ruleset plays vocabulary objects (vocabulary(…)).`))
+			return
+		}
+		if (vid === id) out.push(finding('bad-plays', `${id}.plays lists itself — a ruleset is already a vocabulary of its own stats.`))
+		if (seen.has(vid)) out.push(finding('bad-plays', `${id}.plays lists '${vid}' twice.`))
+		seen.add(vid)
+		const known = getVocabulary(vid)
+		if (!known) out.push(finding('unknown-vocabulary', `${id}.plays[${i}] '${vid}' is not registered — declare it with vocabulary(…).`))
+		else played.push(known)
+	})
+	// 🚧 Its own stats: the ⏳ stats, and every attribute's slot (2026-10-23).
+	const own = new Set([
+		...(props?.stats ?? []).map((s) => s?.id),
+		...(RULESET_ID_PATTERN.test(id) && Array.isArray(props?.attributes) ? [...rulesetAttributeSlots({ id, attributes: props.attributes }).values()] : []),
+	])
+	const mappedFrom = new Set<string>()
+	const slotIdOf = (x: unknown): string | undefined =>
+		typeof x === 'string' ? x : !!x && typeof x === 'object' && typeof (x as AttributeSlotDecl).id === 'string' ? (x as AttributeSlotDecl).id : undefined
+	;((props?.map ?? []) as readonly unknown[]).forEach((pair, i) => {
+		const at = `${id}.map[${i}]`
+		const from = Array.isArray(pair) && pair.length === 2 ? slotIdOf(pair[0]) : undefined
+		const to = Array.isArray(pair) && pair.length === 2 ? slotIdOf(pair[1]) : undefined
+		if (!from || !to) {
+			out.push(finding('bad-map', `${at} is [played member, own stat] — attribute slot declarations on both sides.`))
+			return
+		}
+		if (!own.has(to)) out.push(finding('bad-map', `${at} maps onto '${to}', which is not one of ${id}'s stats — the right side is its own stat.`))
+		if (!played.some((v) => VOCABULARY_OWNERS.some((o) => Object.values(v[o] as Record<string, AttributeSlotDecl>).some((m) => m.id === from))))
+			out.push(finding('bad-map', `${at} maps '${from}', which no vocabulary ${id} plays has — play it, or leave the entry out.`))
+		if (mappedFrom.has(from)) out.push(finding('bad-map', `${at} maps '${from}' a second time.`))
+		mappedFrom.add(from)
+	})
 	return out
 }
 
@@ -897,12 +1718,17 @@ export function rulesetUpgradeFindings(prev: RulesetDecl, next: RulesetDecl): st
 	if (prev.id !== next.id)
 		return [finding('not-same-ruleset', `${prev.id} and ${next.id} are two rulesets. An upgrade keeps the id; moving between rulesets is a conversion.`)]
 	const out: string[] = []
-	const nextStats = new Set(next.stats.map((s) => s.id))
-	for (const s of prev.stats)
-		if (!nextStats.has(s.id))
-			out.push(finding('dropped-stat', `${next.id} drops the stat '${s.id}'. Values stored under it would read through nothing; keep it on the ruleset.`))
-	const nextReps = new Map(next.repertoires.map((r) => [r.id, r]))
-	for (const r of prev.repertoires) {
+	// 🚧 A ruleset in sections (2026-10-23) is judged as one in the shape
+	// before them: attributes by the slot their values are filed under,
+	// entry types as repertoires.
+	const slotsOf = (d: RulesetDecl) => (d.attributes !== undefined ? [...rulesetAttributeSlots(d).values()] : (d.stats ?? []).map((s) => s.id))
+	const repsOf = (d: RulesetDecl) => (d.entryTypes !== undefined ? d.entryTypes.map(_entryTypeAsRepertoire) : (d.repertoires ?? []))
+	const nextStats = new Set(slotsOf(next))
+	for (const id of slotsOf(prev))
+		if (!nextStats.has(id))
+			out.push(finding('dropped-stat', `${next.id} drops the stat '${id}'. Values stored under it would read through nothing; keep it on the ruleset.`))
+	const nextReps = new Map(repsOf(next).map((r) => [r.id, r]))
+	for (const r of repsOf(prev)) {
 		const n = nextReps.get(r.id)
 		if (!n) {
 			out.push(finding('dropped-repertoire', `${next.id} drops the repertoire '${r.id}'. Pieces held in it would read through nothing; keep it and retire its fields instead.`))
@@ -936,24 +1762,108 @@ export function rulesetUpgradeFindings(prev: RulesetDecl, next: RulesetDecl): st
 
 const registry = new Map<RulesetId, RulesetDecl>()
 
-function register(id: RulesetId, props: RulesetProps): RulesetDecl {
-	const found = rulesetFindings(id, props)
-	if (found.length) throw new RulesetError(id, found)
-	const decl: RulesetDecl = Object.freeze({
-		...props,
+/**
+ * 🚧 Ids a ruleset template holds (`defineRulesetTemplate`): never a
+ * registered ruleset's, so an archetype is never offered under Rules.
+ */
+const templateIds = new Set<RulesetId>()
+
+/** 🚧 Reserve a template's id against the registry. Called by `rulesetTemplates.ts` only. @internal */
+export function _reserveRulesetTemplateId(id: RulesetId): void {
+	if (registry.has(id))
+		throw new RulesetError(id, [finding('template-not-played', `${id} is a registered ruleset, so a template may not take its id. Name the template under an id of its own.`)])
+	templateIds.add(id)
+}
+
+/** 🚧 Forget every reserved template id. Called by `_clearRulesetTemplates` only. @internal */
+export function _releaseRulesetTemplateIds(): void {
+	templateIds.clear()
+}
+
+/** 🚧 Whether an id is a ruleset template's — what a genre may never name. @experimental */
+export const isRulesetTemplateId = (id: unknown): boolean => typeof id === 'string' && templateIds.has(id)
+
+/**
+ * 🚧 A declaration as the registry keeps it — frozen, `plays` and `map` by
+ * id — whether or not it is registered (a template's is not).
+ * @internal
+ */
+export function _rulesetDeclOf(id: RulesetId, props: RulesetProps, stored?: { userId: number | string }): RulesetDecl {
+	// A document read back may carry `origin`/`authorUserId`; the registry says those itself.
+	const { plays, map, origin: _o, authorUserId: _a, ...rest } = props as RulesetProps & { origin?: unknown; authorUserId?: unknown }
+	// 🚧 ⏳ A ruleset in sections (2026-10-23): what each section reads back as in the shape before
+	// them, for that shape's readers — hung on the declaration unenumerated, so it is never hashed,
+	// never in its document and never said beside its sections (`sectionsLegacyView`).
+	const back = declaresSections(props) ? sectionsLegacyView(id, rulesetSections(props)) : {}
+	const derivedStats = props.stats === undefined && back.stats !== undefined
+	const derivedReps = props.repertoires === undefined && back.repertoires !== undefined
+	const decl = {
+		...(rest as Omit<RulesetProps, 'plays' | 'map'>),
 		id,
-		stats: Object.freeze([...props.stats]),
-		repertoires: Object.freeze([...props.repertoires]),
-	})
+		...(stored ? { origin: 'stored' as const, authorUserId: stored.userId } : {}),
+		// ⏳ Always lists on the registered declaration (2026-10-23): a ruleset in sections reads its own back.
+		...(derivedStats ? {} : { stats: Object.freeze([...(props.stats ?? [])]) }),
+		...(derivedReps ? {} : { repertoires: Object.freeze([...(props.repertoires ?? [])]) }),
+		// 🚧 A19: stored by id, and only when stated — a ruleset that plays
+		// nothing hashes as it did.
+		...(plays !== undefined
+			? { plays: Object.freeze(plays.map((v) => (typeof v === 'string' ? (v as string) : v.id))) }
+			: {}),
+		...(map !== undefined
+			? {
+					map: Object.freeze(
+						map.map(([f, t]) =>
+							Object.freeze([typeof f === 'string' ? (f as string) : f.id, typeof t === 'string' ? (t as string) : t.id] as const),
+						),
+					),
+				}
+			: {}),
+	}
+	const hang = (key: string, value: unknown) => Object.defineProperty(decl, key, { value, enumerable: false })
+	if (derivedStats) hang('stats', Object.freeze([...back.stats!]))
+	if (derivedReps) hang('repertoires', Object.freeze([...back.repertoires!]))
+	if (props.selectors === undefined && back.selectors !== undefined) hang('selectors', Object.freeze({ ...back.selectors }))
+	if (props.compendium === undefined && back.compendium !== undefined) hang('compendium', back.compendium)
+	return Object.freeze(decl) as RulesetDecl
+}
+
+function register(id: RulesetId, props: RulesetProps, stored?: { userId: number | string }): RulesetDecl {
+	const found = rulesetFindings(id, props)
+	// 🚧 A template is copied, never played (2026-10-22): nothing registers one.
+	if (props?.template === true)
+		found.push(finding('template-not-played', `${id} is a template — an archetype to copy, never one a session plays. Declare it with defineRulesetTemplate, or drop template: true.`))
+	if (templateIds.has(id))
+		found.push(finding('template-not-played', `${id} is a ruleset template's id. A ruleset made from it takes an id of its own.`))
+	if (found.length) throw new RulesetError(id, found)
+	const decl = _rulesetDeclOf(id, props, stored)
 	const existing = registry.get(id)
-	if (existing) refuseUnlessIdentical(existing, decl, `duplicate ruleset id: ${id}`, RULESET_DISPLAY_KEYS)
+	if (existing) {
+		const heldStored = existing.origin === 'stored'
+		if (heldStored !== !!stored) throw new Error(crossOriginRefusal(id, heldStored ? 'stored' : 'code'))
+		// A stored ruleset is replaced by its next publish; a code one must
+		// be the same declaration twice (HMR, a double import).
+		if (stored) _withdrawRuleset(id)
+		else refuseUnlessIdentical(existing, decl, `duplicate ruleset id: ${id}`, RULESET_DISPLAY_KEYS)
+	}
+	// 🚧 Its own attributes' slots (2026-10-23, D2), registered before the
+	// ruleset so a refused slot leaves nothing half-registered.
+	for (const { id: slotId, props: slotProps } of rulesetAttributeSlotDecls({ id, attributes: props.attributes })) _defineRulesetAttributeSlot(slotId, slotProps)
 	registry.set(id, decl)
+	const sections = rulesetSections(props)
 	const rows = new Map<string, ReadonlySet<string>>(
-		Object.entries(props.compendium?.rows ?? {}).map(([rep, list]) => [rep, new Set(list.map((r) => r.id))]),
+		Object.entries((props.compendium ?? props.library)?.rows ?? {}).map(([rep, list]) => [rep, new Set(list.map((r) => r.id))]),
 	)
-	_registerRulesetRepertoires(id, decl.repertoires, rows, props.conventions.time.unit)
+	// 🚧 A ruleset in sections files its entry types where a list slot's
+	// write reaches them by address (`<ruleset>#<entry type>`), as the
+	// repertoires of the shape before them were (2026-10-23).
+	const repertoires = props.entryTypes !== undefined ? (sections.entryTypes ?? []).map(_entryTypeAsRepertoire) : decl.repertoires
+	_registerRulesetRepertoires(id, repertoires, rows, props.conventions?.time?.unit ?? sections.time?.unit)
 	// What it lists, it owns — unless it borrows the slot (`RulesetStatEntry`).
-	_registerRulesetStats(id, decl.stats.filter((s) => s.borrowed !== true).map((s) => s.id))
+	// 🚧 A ruleset in sections owns its attributes' slots, borrowed ones aside.
+	const owned = props.attributes !== undefined
+		? props.attributes.filter((a) => a?.borrowed !== true).map((a) => rulesetAttributeSlots({ id, attributes: [a] }).get(a.id)!)
+		: decl.stats.filter((s) => s.borrowed !== true).map((s) => s.id)
+	_registerRulesetStats(id, owned)
 	return decl
 }
 
@@ -966,6 +1876,56 @@ function register(id: RulesetId, props: RulesetProps): RulesetDecl {
  */
 export function defineRuleset(id: RulesetId, props: RulesetProps): RulesetDecl {
 	return register(id, props)
+}
+
+const crossOriginRefusal = (id: string, held: RulesetOrigin): string =>
+	held === 'code'
+		? `'${id}' is declared in code by the package that owns it, so an authored ruleset may not ` +
+			`claim it: the id would mean one thing or another depending on what is installed. Author ` +
+			`it under your own owner name.`
+		: `'${id}' is a ruleset authored on this pub, so code may not declare it: the pub's row would ` +
+			`be redefined every time this package loaded. Publish it under the package's own owner name.`
+
+/**
+ * 🚧 Declare a ruleset **authored on the pub** — loaded from a stored row
+ * rather than imported from a package (PLAN-ruleset-editor §3). The same
+ * validation as `defineRuleset`, plus: the owner segment may not be `core`
+ * or an installed plugin's id (`reserveAttributeOwner` — one list of
+ * reserved owners for every stored declaration), and an id code holds is
+ * refused. Declaring a stored id a second time **replaces** it — that is
+ * what a publish does — where a code id must be identical.
+ * @experimental
+ */
+export function defineStoredRuleset(id: RulesetId, props: RulesetProps, meta: { userId: number | string }): RulesetDecl {
+	if (typeof id !== 'string' || !RULESET_ID_PATTERN.test(id))
+		throw new RulesetError(String(id), [finding('invalid-id', `'${String(id)}' is not a ruleset id. Use 'owner:ruleset/name@N'.`)])
+	const owner = id.slice(0, id.indexOf(':'))
+	if (isReservedAttributeOwner(owner))
+		throw new Error(
+			`'${id}' is authored under the reserved owner '${owner}'. 'core' and every installed plugin id ` +
+				`are reserved: a stored ruleset sharing one would be redefined the next time that package ` +
+				`loaded, and every session playing it would quietly change rules. Author it under your own owner name.`,
+		)
+	return register(id, props, meta)
+}
+
+/**
+ * 🚧 Forget a ruleset and everything registered with it — its repertoires,
+ * compendium ids, stat listings and derived entry types. Never `core:`'s. For
+ * a stored ruleset's republish, retire or delete, and a package's withdrawal.
+ * Values stored against it stay where they are (parked data).
+ * @internal
+ */
+export function _withdrawRuleset(id: RulesetId): boolean {
+	if (typeof id !== 'string' || id.startsWith('core:')) return false
+	const held = registry.get(id)
+	if (!held) return false
+	for (const rep of rulesetEntryable(held)) _withdrawEntryType(rulesetEntryTypeId(id, rep))
+	_withdrawRulesetRepertoires(id)
+	_withdrawRulesetStats(id)
+	// 🚧 Its own attributes' slots go with it; values filed under them stay (parked).
+	for (const { id: slotId } of rulesetAttributeSlotDecls({ id, attributes: held.attributes })) _withdrawAttributeSlot(slotId)
+	return registry.delete(id)
 }
 
 /** 🚧 The plugin-facing door — the same registration, minus core's namespace. @internal */

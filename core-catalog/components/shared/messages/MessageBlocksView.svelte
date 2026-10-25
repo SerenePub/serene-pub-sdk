@@ -41,6 +41,24 @@
 	 * Every drawing of a `choices` or `form` block carries its stamped id as
 	 * `data-block-id`: a notification's link lands on the form it names
 	 * (`?message=<id>&block=<blockId>`, the page's `messageLanding.ts`).
+	 *
+	 * 🚧 A **roll form** (`roll`, Lair rewrite D3, 2026-10-21) is a form put
+	 * to the person who calls the rolls — the Lair's game master: which check
+	 * (one of `stats`, else `stat` alone), how hard (one of `bands`, the
+	 * session's rules' difficulties, `band` proposed), then **Roll**, or
+	 * **No check** — the attempt simply happens as the story says. The press
+	 * is `{ check, stat, band }` (the server adds the band's target and
+	 * checks it all against the stored block, `formFireOf`). Answered,
+	 * superseded and somebody-else's read as a form's do; the answered line
+	 * is the server's words (_Stealth — Hard_, _No check_).
+	 *
+	 * 🚧 An **outcome block** (stored kind `dice`) is a result, never a
+	 * question: what was checked, what it came to, against what, and how it
+	 * came out in the rules' own words — its tone from the one five-band scale
+	 * (`data-five`) — with how the number was reached under it. Read aloud as
+	 * one sentence. 🚧 Method-aware (2026-10-22, `data-method`): a die's total,
+	 * a pool's successes, the cards drawn, a comparison, a spend, or a
+	 * judgement with no number at all.
 	 */
 	import MessageBlocksView from "./MessageBlocksView.svelte"
 	import { useT } from "./conversation.svelte"
@@ -119,6 +137,114 @@
 
 	const fieldLabel = (key: string, decl: any): string =>
 		typeof decl?.label === "string" ? decl.label : (decl?.label?.en ?? key)
+
+	/* ── 🚧 the roll form and the dice (Lair rewrite D3) ──────────────── */
+
+	type RollCheck = { key: string; label: string }
+	type RollBand = { id: string; label: string; target?: number }
+
+	/** The checks a roll form offers: its `stats`, else its `stat` alone. */
+	const rollChecks = (b: any): RollCheck[] => {
+		const listed = Array.isArray(b?.stats)
+			? (b.stats as any[]).filter(
+					(c) => typeof c?.key === "string" && c.key
+				).map((c) => ({ key: c.key as string, label: typeof c.label === "string" && c.label ? c.label : c.key }))
+			: []
+		if (listed.length) return listed
+		return typeof b?.stat === "string" && b.stat ? [{ key: b.stat, label: b.stat }] : []
+	}
+
+	/** The difficulties a roll form offers, in the rules' order. */
+	const rollBands = (b: any): RollBand[] =>
+		Array.isArray(b?.bands)
+			? (b.bands as any[])
+					.filter((x) => typeof x?.id === "string" && x.id)
+					.map((x) => ({
+						id: x.id as string,
+						label: typeof x.label === "string" && x.label ? x.label : x.id,
+						...(typeof x.target === "number" ? { target: x.target } : {})
+					}))
+			: []
+
+	/** A difficulty as an option reads: its words, and the number it asks for. */
+	const bandWords = (band: RollBand): string =>
+		band.target !== undefined ? `${band.label} (${band.target})` : band.label
+
+	/** Roll drafts — the check and difficulty picked — keyed by block index. */
+	let rollDrafts = $state<Record<number, { stat?: string; band?: string }>>({})
+
+	/** The check this roll form stands at: the picked one, else the proposed, else the first. */
+	const rollStat = (i: number, b: any): string => {
+		const checks = rollChecks(b)
+		const picked = rollDrafts[i]?.stat
+		if (picked && checks.some((c) => c.key === picked)) return picked
+		if (typeof b?.stat === "string" && checks.some((c) => c.key === b.stat)) return b.stat
+		return checks[0]?.key ?? ""
+	}
+
+	/** The difficulty this roll form stands at: the picked one, else the proposed, else the first. */
+	const rollBand = (i: number, b: any): string => {
+		const bands = rollBands(b)
+		const picked = rollDrafts[i]?.band
+		if (picked && bands.some((x) => x.id === picked)) return picked
+		if (typeof b?.band === "string" && bands.some((x) => x.id === b.band)) return b.band
+		return bands[0]?.id ?? ""
+	}
+
+	function pickRoll(i: number, key: "stat" | "band", value: string) {
+		rollDrafts[i] = { ...(rollDrafts[i] ?? {}), [key]: value }
+	}
+
+	/** Answer a roll form: roll the picked check at the picked difficulty, or No check. */
+	function answerRoll(i: number, block: any, check: boolean) {
+		if (!onAction) return
+		onAction(
+			block.fn,
+			{ check, stat: rollStat(i, block), band: rollBand(i, block) },
+			identityOf(block),
+			blockIdOf(block)
+		)
+	}
+
+	/** 🚧 The check method an outcome names; absent, a die against a target (every block before 2026-10-22). */
+	const methodOf = (b: any): string => (typeof b?.method === "string" && b.method ? b.method : "die-target")
+
+	/** 🚧 The glyph for how it was decided. */
+	const GLYPHS: Record<string, string> = { "die-target": "dices", "dice-pool": "dices", "card-draw": "spade", compare: "scale", bid: "coins", none: "gavel" }
+	const glyphOf = (b: any): string => GLYPHS[methodOf(b)] ?? "dices"
+
+	/** 🚧 What it came to, as the head shows it: a total, a pool's successes, a spend — nothing for a judgement. */
+	const tallyOf = (b: any): string => {
+		const m = methodOf(b)
+		if (m === "none" || typeof b?.rolled !== "number") return ""
+		if (m === "dice-pool" && b.pool && typeof b.pool.size === "number")
+			return `${b.rolled} ${b.rolled === 1 ? t("success") : t("successes")} / ${b.pool.size}`
+		if (m === "bid") return `${t("spent")} ${b.rolled}`
+		return String(b.rolled)
+	}
+
+	/** 🚧 What it was set against, in the head: a number, or the other side's value in words. */
+	const againstOf = (b: any): string => {
+		const versus = b?.compare && typeof b.compare.versus === "string" ? b.compare.versus : ""
+		if (versus) return `${t("against")} ${versus}${typeof b?.against === "number" ? ` (${b.against})` : ""}`
+		return typeof b?.against === "number" ? `${t("against")} ${b.against}` : ""
+	}
+
+	/** An outcome as one sentence: _Stealth: 15 against 14. Success._ — _Nerve: spent 2. Success._ */
+	const diceSentence = (b: any): string => {
+		const stat = typeof b?.stat === "string" && b.stat ? b.stat : t("A roll")
+		const tally = tallyOf(b)
+		const against = againstOf(b)
+		const cards = Array.isArray(b?.cards) && b.cards.length ? `${t("drew")} ${b.cards.map((c: any) => c?.label).join(", ")}, ` : ""
+		const said = [cards + tally, against].filter(Boolean).join(" ")
+		const outcome = typeof b?.outcome === "string" && b.outcome ? `${b.outcome}.` : ""
+		return `${stat}: ${[said ? `${said}.` : "", outcome].filter(Boolean).join(" ")}`
+	}
+
+	/** The five-band tone a dice result carries, when it names a known one. */
+	const FIVE = new Set(["crit-fail", "fail", "partial", "success", "crit"])
+	const fiveOf = (b: any): string | undefined =>
+		typeof b?.five === "string" && FIVE.has(b.five) ? b.five : undefined
 </script>
 
 <!-- The block tree's parts (`messages.block*`, STYLE-GUIDE §6.16): no look
@@ -351,6 +477,168 @@
 				>
 					{block.label ?? "Submit"}
 				</button>
+			</div>
+		{:else if block?.kind === "roll" && superseded(block)}
+			<!-- Superseded (U5f): the conversation moved on; one quiet line, no buttons. -->
+			<p
+				data-widget-part="messages.block-superseded"
+				data-superseded="true"
+				data-block-id={blockIdOf(block)}
+			>
+				<sp-icon name="history" size="14"></sp-icon>
+				<span>{t("Superseded — the conversation moved on")}</span>
+			</p>
+		{:else if block?.kind === "roll" && answeredOf(block)}
+			{@const answered = answeredOf(block)}
+			<!-- 🚧 A roll form, answered: the call in words (Stealth — Hard, No check). -->
+			<div
+				data-widget-part="messages.block-roll"
+				data-answered="true"
+				data-block-id={blockIdOf(block)}
+			>
+				{#if caption(block)}
+					<p data-widget-part="messages.block-caption">{caption(block)}</p>
+				{/if}
+				<p data-widget-part="messages.block-answered">
+					<sp-icon name="check" size="14"></sp-icon>
+					<span data-widget-part="messages.block-answered-label">{t("Answered")}</span>
+					{#if answered?.value}
+						<span>· {answered.value}</span>
+					{/if}
+				</p>
+			</div>
+		{:else if block?.kind === "roll" && !mayAnswer(block)}
+			<!-- 🚧 Somebody else calls this roll (the game master): the question, no controls. -->
+			<div data-widget-part="messages.block-roll" data-block-id={blockIdOf(block)}>
+				{#if caption(block)}
+					<p data-widget-part="messages.block-caption">{caption(block)}</p>
+				{/if}
+				<p data-widget-part="messages.block-awaiting">{t("Awaiting an answer")}</p>
+			</div>
+		{:else if block?.kind === "roll"}
+			{@const checks = rollChecks(block)}
+			{@const bands = rollBands(block)}
+			{@const stat = rollStat(i, block)}
+			{@const band = rollBand(i, block)}
+			<!-- 🚧 A roll form (Lair rewrite D3): which check, how hard, then Roll — or No check. -->
+			<div
+				data-widget-part="messages.block-roll"
+				role="group"
+				aria-label={caption(block) ?? t("A roll to call")}
+				data-block-id={blockIdOf(block)}
+			>
+				{#if caption(block)}
+					<p data-widget-part="messages.block-caption">{caption(block)}</p>
+				{/if}
+				<div data-widget-part="messages.block-roll-fields">
+					<div data-widget-part="messages.block-field messages.block-roll-check">
+						<!-- A list names itself (its own label); a lone value is named here. -->
+						{#if checks.length <= 1}
+							<span data-widget-part="messages.block-field-label">{t("Check")}</span>
+						{/if}
+						{#if checks.length > 1}
+							<sp-combobox
+								data-widget-part="messages.block-select"
+								label={t("Check")}
+								value={stat}
+								onchange={(e: CustomEvent<{ value: string }>) =>
+									pickRoll(i, "stat", e.detail.value)}
+							>
+								{#each checks as c (c.key)}
+									<sp-option value={c.key}>{c.label}</sp-option>
+								{/each}
+							</sp-combobox>
+						{:else}
+							<span data-widget-part="messages.block-roll-value">{checks[0]?.label ?? stat}</span>
+						{/if}
+					</div>
+					<div data-widget-part="messages.block-field messages.block-roll-band">
+						{#if bands.length <= 1}
+							<span data-widget-part="messages.block-field-label">{t("Difficulty")}</span>
+						{/if}
+						{#if bands.length > 1}
+							<sp-combobox
+								data-widget-part="messages.block-select"
+								label={t("Difficulty")}
+								value={band}
+								onchange={(e: CustomEvent<{ value: string }>) =>
+									pickRoll(i, "band", e.detail.value)}
+							>
+								{#each bands as b (b.id)}
+									<sp-option value={b.id}>{bandWords(b)}</sp-option>
+								{/each}
+							</sp-combobox>
+						{:else if bands.length}
+							<span data-widget-part="messages.block-roll-value">{bandWords(bands[0])}</span>
+						{/if}
+					</div>
+				</div>
+				<div data-widget-part="messages.block-choice-list messages.block-roll-answers">
+					<button
+						type="button"
+						data-widget-part="messages.block-submit messages.block-roll-go"
+						disabled={!onAction || !stat || !band}
+						onclick={() => answerRoll(i, block, true)}
+					>
+						<sp-icon name="dices" size="14"></sp-icon>
+						{t("Roll")}
+					</button>
+					<button
+						type="button"
+						data-widget-part="messages.block-choice messages.block-roll-skip"
+						disabled={!onAction}
+						onclick={() => answerRoll(i, block, false)}
+					>
+						{t("No check")}
+					</button>
+				</div>
+			</div>
+		{:else if block?.kind === "dice"}
+			{@const five = fiveOf(block)}
+			{@const tally = tallyOf(block)}
+			{@const against = againstOf(block)}
+			<!-- 🚧 An outcome (Lair rewrite D3; any check method since 2026-10-22): what, what it came to, against what, how it came out; its tone from the five bands, the whole sentence its title. -->
+			<div
+				data-widget-part="messages.block-dice"
+				data-five={five}
+				data-method={methodOf(block)}
+				title={diceSentence(block)}
+			>
+				<div data-widget-part="messages.block-dice-head">
+					<sp-icon name={glyphOf(block)} size="16" data-widget-part="messages.block-dice-glyph"></sp-icon>
+					<span data-widget-part="messages.block-dice-stat">{block.stat}</span>
+					{#if tally}
+						<span data-widget-part="messages.block-dice-total">{tally}</span>
+					{/if}
+					{#if against}
+						<span data-widget-part="messages.block-dice-against">{against}</span>
+					{/if}
+					{#if block.outcome}
+						<span data-widget-part="messages.block-dice-outcome chip">{block.outcome}</span>
+					{/if}
+				</div>
+				{#if typeof block.explain === "string" && block.explain}
+					<p data-widget-part="messages.block-dice-explain">{block.explain}</p>
+				{:else if Array.isArray(block.cards) && block.cards.length}
+					<p data-widget-part="messages.block-dice-explain">
+						{t("Drew")} {block.cards.map((c) => c?.label).join(", ")}
+					</p>
+				{:else if Array.isArray(block.faces) && block.faces.length}
+					<p data-widget-part="messages.block-dice-explain">
+						{t("Rolled")} {block.faces.join(", ")}
+					</p>
+				{/if}
+				<!-- 🚧 Ties on the graph (T2): the lorebook rows that followed a tie this moment moved. -->
+				{#if Array.isArray(block.follows)}
+					{#each block.follows as line, fi (fi)}
+						{#if typeof line === "string" && line}
+							<p data-widget-part="messages.block-dice-follows" data-follows>
+								<span>{line}</span>
+								<span data-widget-part="messages.block-dice-follows-note">{t("follows the tie")}</span>
+							</p>
+						{/if}
+					{/each}
+				{/if}
 			</div>
 		{:else if block?.kind === "group" && Array.isArray(block.blocks) && depth < 3}
 			<div

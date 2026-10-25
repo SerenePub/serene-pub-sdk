@@ -184,8 +184,9 @@ describe("core's annex declaration", () => {
 		// every rewrite of the notes keeps the revealed copy in step (A24).
 		// 🚧 And Story's sweep (2026-10-19): *Track goals* keeps the goals note.
 		assert.deepEqual(writers, [
-			'core:spec/story-respond#sweep.due.goals.noted.write:story-goals',
-			'core:spec/lair-respond#via.turn.channel.sanctum.padKeep.kept.write:castellan-scratchpad',
+			'core:spec/story-sweep#sweep.due.goals.noted.write:story-goals',
+			// 🚧 The Lair's scratchpad is a routine of its own since the rewrite (2026-10-21).
+			'core:spec/lair-scratchpad#kept.written.write:castellan-scratchpad',
 			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-progress',
 			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-journal',
 			'core:spec/dungeon-crawler-create#blank:dungeon-crawler-planning-notes',
@@ -206,6 +207,9 @@ describe("core's annex declaration", () => {
 			// Planner's notes rewritten; Rest's world; the goal's decision and
 			// its new goal.
 			'core:spec/dungeon-crawler-rest#rested.kept.write:dungeon-crawler-progress',
+			// 🚧 The crawl's own effects after the rules' Rest (PLAN-genres-seams S3, lane G3,
+			// 2026-10-23): the same body on the `rest-taken` routine — who is up again.
+			'core:spec/dungeon-crawler-after-rest#rested.kept.write:dungeon-crawler-progress',
 			'core:spec/dungeon-crawler-goal#route.world.write:dungeon-crawler-progress',
 			'core:spec/dungeon-crawler-goal#route.renew.kept.goal.write:dungeon-crawler-progress',
 			'core:spec/dungeon-crawler-goal#route.renew.kept.goal.write:dungeon-crawler-journal',

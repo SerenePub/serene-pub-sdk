@@ -1,7 +1,17 @@
 /**
- * Configuration resolution. Four layers, first hit wins, evaluated
+ * Configuration resolution. Layers, first hit wins, evaluated
  * independently per path — which is what makes an admin's connection change reach a
  * user who has customized their prompts.
+ *
+ * ## 🚧 The chain since PLAN-layering D5 (R38, 2026-10-20)
+ *
+ * **`session · preset · genre · defaults · author`.** Pipeline
+ * configurations retire: a pipeline's values come from its declared defaults
+ * (`author`), the instance's job defaults (`defaults`), the genre's defaults'
+ * registration values (`genre`), the preset's registration values (`preset`)
+ * and the session — only what is exposed (`session`). ⏳ A `config` row
+ * still resolves, at `preset` (`scopeKindOf`), until hosts stop writing them.
+ * The rest of this note is the chain as it stood before.
  *
  * ## The chain (ruled 2026-09-15)
  *
@@ -38,19 +48,47 @@
 
 import type { CapabilitySet } from './capabilities.js'
 
-/** @experimental */
-export type ScopeKind = 'session' | 'config' | 'defaults' | 'author'
-
-/** @internal */
-export const SCOPE_ORDER: ScopeKind[] = ['session', 'config', 'defaults', 'author']
+/**
+ * The value cascade's layers (R38, PLAN-layering D5), highest first:
+ * `session` (only what is exposed) · `preset` (the preset's registration
+ * values) · `genre` (the genre's defaults' registration values) ·
+ * `defaults` (the instance's job defaults — connection defaults, loadouts) ·
+ * `author` (the pipeline's declared defaults).
+ *
+ * ⏳ `config` — the retired named configuration's layer — stays in the type
+ * one release for stored provenance and the rows a host still projects at
+ * it: `scopeKindOf('config')` reads it as `preset`, the layer a selected
+ * configuration becomes (the data upgrade turns each into a preset's
+ * changes).
+ * @experimental
+ * @ruling R38
+ */
+export type ScopeKind = 'session' | 'preset' | 'genre' | 'defaults' | 'author' | 'config'
 
 /**
- * A row's scope kind. Anything that is not a `ScopeKind` is `undefined` — a
- * row at a scope nobody resolves at, which resolution skips rather than
+ * The cascade, highest first (R38). `config` is not in it: a `config` row
+ * resolves at `preset` (`scopeKindOf`).
+ * @internal
+ */
+export const SCOPE_ORDER: ScopeKind[] = ['session', 'preset', 'genre', 'defaults', 'author']
+
+/**
+ * ⏳ The retired scope words a stored row or receipt may still carry, and
+ * the layer each reads as: a named configuration's rows are the preset
+ * layer's now (R38).
+ * @experimental
+ */
+export const RETIRED_SCOPE_KINDS: Readonly<Record<string, ScopeKind>> = Object.freeze({ config: 'preset' })
+
+/**
+ * A row's scope kind — one of `SCOPE_ORDER`, with a ⏳ retired word read as
+ * the layer it became (`config` → `preset`). Anything else is `undefined` —
+ * a row at a scope nobody resolves at, which resolution skips rather than
  * guesses about.
  * @experimental 🚧
  */
 export function scopeKindOf(raw: unknown): ScopeKind | undefined {
+	if (typeof raw === 'string' && RETIRED_SCOPE_KINDS[raw]) return RETIRED_SCOPE_KINDS[raw]
 	return (SCOPE_ORDER as readonly unknown[]).includes(raw) ? (raw as ScopeKind) : undefined
 }
 
@@ -360,7 +398,9 @@ export function resolveConfigSources(
 					node[slot] ??= {}
 					node[slot]![path] = {
 						value: hit.value,
-						scopeKind: scope,
+						// The row's own word: a ⏳ `config` row resolves at
+						// `preset` and says it came from a configuration.
+						scopeKind: (hit.scopeKind as ScopeKind) ?? scope,
 						...(hit.scopeId !== undefined ? { scopeId: hit.scopeId } : {}),
 					}
 					break
@@ -398,32 +438,34 @@ export function resolveConfig(world: ConfigWorld, nodeKeys: string[]): ResolvedC
  */
 export const WRITE_MATRIX: Record<string, ScopeKind[]> = {
 	// A session names no connection (ruled 2026-09-30): the pair a step runs
-	// on is the pipeline configuration's, or the instance default, so the
-	// only scope that may write it is `config` — an admin's edit to the
-	// configuration itself. What a session tunes is `sampling` and `prompts`.
+	// on is the administrator's — a preset's (what the retired configuration
+	// held, R38), or the instance default. A genre's defaults are a package's
+	// and name no connection either (F20: an author knows no one's compute).
 	// ⚠ An AUTHOR preset (12 §3a, `PresetBuilder`) still may not carry a
 	// connection — it does not export — which is F20's actual concern; that
 	// refusal is `PresetBuilder`'s deliberate absence of `.connection()`.
-	connection: ['config'],
-	sampling: ['session', 'config'],
-	template: ['config'],
+	connection: ['preset'],
+	sampling: ['session', 'preset', 'genre'],
+	template: ['preset', 'genre'],
 	// How a context variable is presented is a property of the instance's
 	// configuration, not a personal preference: two users whose characters render
 	// differently are two users whose bug reports cannot be compared. Same
 	// scopes as `template`, which is the same decision one level up.
-	variables: ['config'],
-	prompts: ['session', 'config'],
-	params: ['session', 'config'],
-	settings: ['session', 'config'],
+	variables: ['preset', 'genre'],
+	prompts: ['session', 'preset', 'genre'],
+	params: ['session', 'preset', 'genre'],
+	settings: ['session', 'preset', 'genre'],
 	// A chain changes what every run of the pipeline sends — the `variables`
 	// argument one tier up: two users whose chains differ are two users whose
 	// reports cannot be compared. Same scopes as `template`; widening to
 	// session later is one entry here, additively (18 §4a).
-	scripts: ['config'],
+	scripts: ['preset', 'genre'],
 	// A loadout is the engine a step runs on (I12) — compute, like the
-	// connection beside it, so only the configuration may name one. A session
-	// never picks a loadout (09-30: a session never picks a connection).
-	loadout: ['config'],
+	// connection beside it, so only an administrator's layer may name one. A
+	// session never picks a loadout (09-30: a session never picks a
+	// connection); a genre's defaults may name a shipped one (it names a
+	// kind of engine, never anyone's compute).
+	loadout: ['preset', 'genre'],
 }
 
 /** @internal */

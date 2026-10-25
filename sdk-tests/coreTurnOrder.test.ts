@@ -215,6 +215,30 @@ describe('the view', () => {
 		assert.equal(voice.headIsVoice, true)
 		assert.equal(voice.continueTurn.channel, 'sanctum')
 	})
+	test("🚧 a planned turn somebody else plays waits for them; the owner may Continue past them (Lair D5)", () => {
+		const planned = doc({
+			order: [
+				{ ref: 'character:9', via: 'plan' },
+				{ ref: 'character:3', via: 'plan' },
+			],
+		})
+		const owner = view({ turnOrder: planned })
+		assert.equal(owner.head, 'Waiting for Sable')
+		assert.deepEqual(owner.continueTurn, {
+			enabled: true,
+			reason: null,
+			label: 'Continue without Sable',
+			channel: 'main',
+		})
+		// A guest waits; the player's own turn is theirs to write.
+		const guest = view({ turnOrder: planned, viewer: GUEST })
+		assert.equal(guest.head, 'Waiting for Sable')
+		assert.equal(guest.continueTurn.enabled, false)
+		assert.equal(guest.continueTurn.label, 'Continue')
+		const player = view({ turnOrder: planned, viewer: { userId: 3, isAdmin: false, isGuest: true } })
+		assert.equal(player.head, 'Your turn')
+		assert.equal(player.continueTurn.enabled, false)
+	})
 	test('nothing prepared: waiting with people to pick, else why it is empty', () => {
 		const waiting = view()
 		assert.equal(waiting.status, 'waiting')

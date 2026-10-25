@@ -5,6 +5,10 @@
  * publishes, taken from the branch that fired — so `$.decide.order` reads
  * like any node's port, and no fold node is needed. A ref to a clause port
  * not every branch publishes is refused at build.
+ *
+ * 🚧 RF fix 3 (2026-10-23): the branches' shapes AGREE when one of them takes
+ * them all (`agreedShape`) — a model call's text-stream and a task's text
+ * hand on a text, the way Story's reply hands its words to one shared save.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -34,6 +38,22 @@ const other = pin(
 		ports: { in: { text: S.text }, out: { main: S.text } },
 	}),
 )
+/** 🚧 RF fix 3: a branch end whose `word` streams, beside `pick-a`'s plain text. */
+const pickStream = pin(
+	describeTaskDefinition({
+		id: 'demo:task/pick-stream@1',
+		timeoutMs: 500,
+		ports: { in: { text: S.text }, out: { main: S.text, word: S.textStream } },
+	}),
+)
+/** 🚧 RF fix 3: a branch end whose `word` is rows — no shape takes both it and a text. */
+const pickRows = pin(
+	describeTaskDefinition({
+		id: 'demo:task/pick-rows@1',
+		timeoutMs: 500,
+		ports: { in: { text: S.text }, out: { main: S.text, word: S.rowIds } },
+	}),
+)
 const read = pin(
 	describeTaskDefinition({
 		id: 'demo:task/read-word@1',
@@ -42,7 +62,7 @@ const read = pin(
 	}),
 )
 
-const branching = (b: typeof pickB | typeof other = pickB) =>
+const branching = (b: typeof pickB | typeof other | typeof pickStream | typeof pickRows = pickB) =>
 	spec('demo:spec/junction-result', { version: '1.0.0' })
 		.inlet('input', C.userMessage.v1())
 		.junction('decide', { on: ($: any) => $.input.text }, (j) =>
@@ -86,6 +106,34 @@ describe('M4 · a junction passes its result on', () => {
 			errors.some((f: any) =>
 				/'decide\.word' is not published by every branch of junction 'decide' — 'b' ends in 'decide\.b\.go', which has no 'word'/.test(f.message),
 			),
+			errors.map((f: any) => f.message).join('\n'),
+		)
+	})
+
+	test('🚧 a text-stream and a text agree on text: the edge carries text, does not stream, and the read is clean', async () => {
+		const doc = publish(branching(pickStream))
+		const edge = doc.edges.find((e: any) => e.from === 'decide' && e.fromPort === 'word')
+		assert.equal(edge?.shape, S.text)
+		assert.equal(edge?.streaming, false)
+		assert.deepEqual(findings(branching(pickStream)).filter((f: any) => f.severity === 'error'), [])
+		const r: any = await run(doc, {
+			world,
+			input: { text: 'zzz' },
+			seed: 's',
+			triggerSource: 'event',
+			bindings: bindings({
+				'demo:task/pick-a@1': async () => ok({ main: 'A', word: 'from-a' }),
+				'demo:task/pick-stream@1': async () => ok({ main: 'S', word: 'from-stream' }),
+				'demo:task/read-word@1': async (i: any) => ok({ main: i.word }),
+			}),
+		})
+		assert.equal(r.nodes.find((n: any) => n.nodeKey === 'after').output.main, 'from-stream')
+	})
+
+	test('🚧 shapes no one of them takes are still refused, naming both', () => {
+		const errors = findings(branching(pickRows)).filter((f: any) => f.severity === 'error')
+		assert.ok(
+			errors.some((f: any) => /publish 'word' as different shapes/.test(f.message)),
 			errors.map((f: any) => f.message).join('\n'),
 		)
 	})

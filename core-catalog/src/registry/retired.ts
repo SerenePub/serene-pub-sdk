@@ -36,7 +36,8 @@ export interface RenamedCoreId {
 }
 
 /**
- * 🚧 Every id the 2026-10-19 restructure renamed, old → new — what a stored
+ * 🚧 Every id the 2026-10-19 restructure renamed (and, 2026-10-21, the
+ * Lair's rewrite), old → new — what a stored
  * row may still name. Spec slugs keep their rows (the roleplay specs are
  * Story's); the Freeform ruleset's derived entry types and repertoire
  * addresses follow its id. `core:genre/chat` is NOT here: it keeps its id
@@ -88,4 +89,12 @@ export const RENAMED_CORE_IDS: readonly RenamedCoreId[] = Object.freeze([
 	{ kind: 'entry-type', from: 'core:entry/story.things@1', to: 'core:entry/freeform.things@1' },
 	{ kind: 'entry-type', from: 'core:entry/story.conditions@1', to: 'core:entry/freeform.conditions@1' },
 	{ kind: 'sheet', from: 'core:sheet/adventure@1', to: 'core:sheet/story@1' },
+	/**
+	 * 🚧 The Lair's rewrite (2026-10-21, D11): its reply is `lair-reply` — the
+	 * plan, the checks, the voices; the books and the scratchpad left it for
+	 * routines of their own (`lair-keeper`, `lair-scratchpad`). A stored row
+	 * naming the old reply names the new one. (`core:spec/lair-advance-time`
+	 * left with no successor: the host's cull, not a rename.)
+	 */
+	{ kind: 'spec', from: 'core:spec/lair-respond', to: 'core:spec/lair-reply' },
 ])

@@ -208,8 +208,8 @@ export const STORY_GOALS_KEY = 'story-goals'
  * - **`castellan-scratchpad`** (owner QB answer 2026-09-28, lair re-plan
  *   R13): the Lair Castellan's running notes — rooms it has planned with the
  *   Dungeon Master, intentions, corrections. The one key a core **pipeline**
- *   writes: `lair-respond` rewrites it after each Sanctum reply (the
- *   `channel.sanctum.notes.*` step). Its audience is the Castellan and the
+ *   writes: the `lair-scratchpad` routine rewrites it after each of the
+ *   Castellan's Sanctum replies (rewrite, 2026-10-21; was `lair-respond`'s). Its audience is the Castellan and the
  *   session owner (`see: ['envoy:castellan', 'owner']`, ruled 2026-10-11 so
  *   the Annex widget can place it beside the story): the owner's view carries
  *   it, no other person's does, and it reaches no prompt but the Castellan's

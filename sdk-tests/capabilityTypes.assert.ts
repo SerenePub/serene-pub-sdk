@@ -127,8 +127,11 @@ const _banded: CapabilitySet = { 'text->text': 'native' }
 // plugin's transform grades correctly with nothing added to core's table.
 const _plugin: CapabilitySet = { 'audio+image->video': 1 }
 
-// @ts-expect-error — a feature, by contrast, names a mechanism something has to
-// implement, so that space is closed and a typo in one is caught here
-const _badFeature: CapabilitySet = { json_schmea: 1 }
+// LS4 / O1 (2026-10-20): the FEATURE space is open in the TYPE too, so a later
+// release's feature (`live`) is a key a stored set can hold without SDK 1
+// breaking. A typo in a feature is caught where a declaration is published —
+// `validate()`'s capabilities law refuses a feature this build does not know
+// (`capabilities.test.ts`, 'an unknown feature id is an error') — not here.
+const _laterFeature: CapabilitySet = { live: 1 }
 
 export {}

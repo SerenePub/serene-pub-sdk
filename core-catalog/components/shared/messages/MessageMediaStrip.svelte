@@ -11,7 +11,11 @@
 	 *   `MEDIA_STRIP_MAX_TILES` the rest fold into a count tile that opens
 	 *   the lightbox where the tiles stop;
 	 * - a file is a square **file tile**: its kind's icon, its name, its size
-	 *   when known, and a download link.
+	 *   when known, and a download link;
+	 * - 🚧 a sound or a moving picture (`core:audio` / `core:video`, O11) is a
+	 *   **player**: the browser's own `<audio controls>` / `<video controls>`,
+	 *   named by its label and captioned with it, so a voice note or a spoken
+	 *   reply plays where it was said.
 	 *
 	 * Every tile is a button (keyboard-reachable, named "Open image cat.png,
 	 * 1 of 3") that asks the page for its lightbox through `onOpen`. An image
@@ -53,6 +57,8 @@
 
 	const images = $derived(items.filter((i) => i.kind === 'image'))
 	const files = $derived(items.filter((i) => i.kind === 'file'))
+	/** 🚧 Sounds and moving pictures, each a player (O11). */
+	const players = $derived(items.filter((i) => i.kind === 'audio' || i.kind === 'video'))
 	/** What the lightbox can page through: every image still there. */
 	const openable = $derived(images.filter((i) => !missing.has(i.partId)))
 	const folds = $derived(images.length > MEDIA_STRIP_MAX_TILES)
@@ -146,6 +152,37 @@
 					</button>
 				{/if}
 			</div>
+		{/if}
+		{#if players.length}
+			<ul data-widget-part="messages.media-players">
+				{#each players as item (item.partId)}
+					<li data-widget-part="messages.media-item">
+						<figure data-widget-part="messages.media-player">
+							{#if item.kind === 'audio'}
+								<audio
+									data-widget-part="messages.media-audio"
+									controls
+									preload="metadata"
+									src={mediaSrc(item.assetId)}
+									aria-label="Play {item.label}"
+								></audio>
+							{:else}
+								<video
+									data-widget-part="messages.media-video"
+									controls
+									preload="metadata"
+									src={mediaSrc(item.assetId)}
+									aria-label="Play {item.label}"
+								>
+									<track kind="captions" />
+								</video>
+							{/if}
+							<figcaption data-widget-part="messages.media-player-caption">{item.label}</figcaption>
+						</figure>
+						{@render removeButton(item)}
+					</li>
+				{/each}
+			</ul>
 		{/if}
 		{#if files.length}
 			<ul data-widget-part="messages.media-files">

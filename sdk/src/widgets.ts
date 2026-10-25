@@ -229,7 +229,9 @@ export interface SessionBackdropV1 {
  * `queueItemId`, `debugMeta` (the compiled prompt — admins read it through
  * the host's `prompt-details`), `embedding` (the row's vector),
  * `embeddingModel`, `embeddingSourceHash` and `embedTextHash` (the hashes the
- * embedding queue compares), `vectorizedAt` and `version`. They are host
+ * embedding queue compares), `vectorizedAt`, `version`, and 🚧 the forward
+ * stack's `rewindOrdinal` and `rewindTaken` (RF fix 5: a rewound row never
+ * reaches a widget, and what Back took is the host's). They are host
  * bookkeeping, listed once in {@link MESSAGE_HOST_FIELDS}: a host strips them
  * from every row it posts ({@link projectMessageRow}), so a widget never
  * receives them.
@@ -343,6 +345,9 @@ export const MESSAGE_HOST_FIELDS = Object.freeze([
 	'embedTextHash',
 	'vectorizedAt',
 	'version',
+	// 🚧 The forward stack (RF fix 5): which Back took a row out, and what it took.
+	'rewindOrdinal',
+	'rewindTaken',
 ] as const)
 
 /** @experimental One of {@link MESSAGE_HOST_FIELDS}. */
@@ -712,6 +717,13 @@ export interface SessionStateV1 {
 	 * none waits. @experimental
 	 */
 	offers?: SessionStateOfferV1[]
+	/**
+	 * 🚧 The session's **story clock** in words (RF fix 8, 2026-10-23): when
+	 * the story is — the _when_ of a sheet's _Where and when_ row, the host's
+	 * own time. Absent when the session keeps no clock.
+	 * @experimental
+	 */
+	storyTime?: string
 }
 
 /**
@@ -818,6 +830,32 @@ export interface SessionStateSlotV1 {
 	 * @experimental
 	 */
 	shownWhenSet?: true
+	/**
+	 * 🚧 The rules' **attribute kind** (RF fix 8, 2026-10-23): number · pool ·
+	 * tally · label · list · text — what a stock widget picks its drawing
+	 * by. Absent on host state, and from a host that predates it (read the
+	 * kind off `field`/`type` then).
+	 * @experimental
+	 */
+	kind?: string
+	/**
+	 * 🚧 The attribute's **shown-as hint** (RF fix 8): how the rules would
+	 * like it drawn — `bar`, `pips`, `badge`, `count`, `words`, `list`, `fan`,
+	 * `ties`, or a package's own word. A widget that does not know the hint
+	 * draws the kind's default. Absent: the kind's default.
+	 * @experimental
+	 */
+	shownAs?: string
+	/**
+	 * 🚧 **Host state** (RF fix 8): what the host keeps beside the rules'
+	 * attributes — `place` and `time` (a sheet's _Where and when_ row), ⏳
+	 * `carried` (what someone carries, the host's carried zone kept as a
+	 * list) or a genre tool's own (`tool`: the Lair's whisper, the crawl's
+	 * fate). Never drawn among the attributes. Absent: one of the rules'
+	 * attributes.
+	 * @experimental
+	 */
+	hostState?: 'place' | 'time' | 'carried' | 'tool'
 }
 
 /**
@@ -902,6 +940,90 @@ export interface SessionStateOwnerV1 extends OwnerRefV1 {
 	 * @experimental
 	 */
 	derived?: SessionStateDerivedV1[]
+	/**
+	 * 🚧 The owner's **tie sides** (ties on the graph, T1–T5, 2026-10-23):
+	 * each side of a tie this owner holds — a bond, a rivalry — towards whom,
+	 * its words, and its numbers where the viewer may see them (its holder,
+	 * the game master, or a side shown to others), with the other person's
+	 * side as words (and its numbers once shown). A stock widget draws them as
+	 * a list of ties. Absent when the session's rules keep no ties, and from a
+	 * host that predates them.
+	 * @experimental
+	 */
+	ties?: SessionStateTieV1[]
+	/**
+	 * 🚧 What the owner **holds**, zone by zone (RF fix 8, 2026-10-23): each
+	 * of the session's rules' zone types this owner has an instance of — the
+	 * host's carried zone among them — with the held entries in it, as the
+	 * viewer may see them. A stock widget draws each by its shown-as hint (a
+	 * list, a fan). Absent when the owner holds nothing in any zone, and from
+	 * a host that predates zones on the wire.
+	 * @experimental
+	 */
+	zones?: SessionStateZoneV1[]
+	/**
+	 * 🚧 The owner's **attribute carries** (RF fix 8): each of the rules'
+	 * optional attributes this owner may hold, whether they carry it, and
+	 * whether the viewer may switch it (`set-attribute-carry`) — whoever plays
+	 * the holder, or the session's owner. An attribute switched off is not in
+	 * `configs` (not shown); this is where a widget offers it back. Absent
+	 * when the rules declare no optional attribute for this owner.
+	 * @experimental
+	 */
+	carries?: { slotId: string; label: string; carries: boolean; mayChange: boolean }[]
+}
+
+/**
+ * 🚧 One zone an owner holds ({@link SessionStateOwnerV1.zones}): its zone
+ * type's id and words, the shown-as hint a stock widget draws it by, and the
+ * held entries in it — each by its name, its entry type (`entryType`, and
+ * `typeLabel` the type's words), how many when more than one, and whether its
+ * holder has exposed it. @experimental
+ */
+export interface SessionStateZoneV1 {
+	zoneType: string
+	label: string
+	shownAs?: string
+	entries: { name: string; entryType: string; typeLabel?: string; count?: number; exposed?: boolean }[]
+}
+
+/**
+ * 🚧 One field of a tie side as a widget draws it: `field` its key,
+ * `label` its words, `value` the words or the number (a number with its
+ * bounds), `onto` when the lorebook graph reads it (the words everyone
+ * sees). @experimental
+ */
+export interface SessionStateTieFieldV1 {
+	field: string
+	label: string
+	value: string | number
+	min?: number
+	max?: number
+	onto?: true
+}
+
+/**
+ * 🚧 One tie side on an owner's sheet ({@link SessionStateOwnerV1.ties}):
+ * the tie's kind (`entryType`, `label`), whom it is towards (an owner key
+ * and a name), the relationship's name on the lorebook when it has one, this
+ * side's words and — where the viewer may see them — its numbers, whether it
+ * is shown to others (`shown`), whether the viewer may show or hide it
+ * (`mayShow`, its holder or the game master: `set-tie-shown`), and the other
+ * person's side towards this owner (`other`): its words, and its numbers
+ * once shown or to the game master.
+ * @experimental
+ */
+export interface SessionStateTieV1 {
+	entryType: string
+	label: string
+	towards: string
+	towardsLabel: string
+	name?: string
+	words: SessionStateTieFieldV1[]
+	numbers?: SessionStateTieFieldV1[]
+	shown: boolean
+	mayShow: boolean
+	other?: { words: SessionStateTieFieldV1[]; numbers?: SessionStateTieFieldV1[]; shown: boolean }
 }
 
 /**
@@ -1309,6 +1431,15 @@ export interface MenuResult {
  */
 export interface WidgetRequests {
 	/**
+	 * 🚧 **While you were away** (PLAN-layering A7, R23; lane 7): the
+	 * session's recent routine runs, newest first — what ran and what it
+	 * wrote, what was skipped or paused and why — and when a person last
+	 * played, so a widget can say which happened while nobody was here.
+	 * `limit` is a wish the host clamps (1–200); `since` (epoch ms) narrows
+	 * it.
+	 */
+	'routine-log': { params: { limit?: number; since?: number }; result: RoutineLogV1 }
+	/**
 	 * One page of the session's lines, for this widget's own window — never
 	 * the conversation's, so two paging widgets never take each other's
 	 * pages. Newest first on the first ask; `cursor` is the last page's
@@ -1353,8 +1484,12 @@ export interface WidgetRequests {
 	}
 	/** The prompt a message was generated from (admins, when context debugging is on). */
 	'prompt-details': { params: { messageId: number }; result: void }
-	/** The run that wrote a message, in the run inspector (admins). */
-	'inspect-run': { params: { messageId: number }; result: void }
+	/**
+	 * The run that wrote a message, in the run inspector (admins) — or 🚧
+	 * one run by its id (`runId`), as *While you were away* links a
+	 * routine's run (PLAN-layering A7; lane 7). One of the two.
+	 */
+	'inspect-run': { params: { messageId?: number; runId?: string }; result: void }
 	/** The host's "who speaks next" picker; resolves once a turn was fired or it was closed. */
 	'pick-turn': { params: Record<string, never>; result: void }
 	/**
@@ -1488,6 +1623,13 @@ export interface WidgetRequests {
 	/** 🚧 Core's composer: the host's "add your persona" flow, for a guest with none. */
 	'add-persona': { params: Record<string, never>; result: void }
 	/**
+	 * 🚧 Core's composer: a guest who plays takes a seat by naming the
+	 * character they will play — a card-less player seat (`seatName`), whose
+	 * lines are that character's turns (Lair rewrite D5, 2026-10-21). The
+	 * host refuses a blank name.
+	 */
+	'take-seat': { params: { name: string }; result: void }
+	/**
 	 * 🚧 Core's conversation: Continue — fire the first entry of the session's
 	 * turn order on `channel`, the channel of the composer it was pressed in.
 	 * Absent, the host answers for its own
@@ -1495,6 +1637,16 @@ export interface WidgetRequests {
 	 * @ruling lair re-plan R5 (2026-09-28)
 	 */
 	'fire-turn': { params: { channel?: string }; result: void }
+	/**
+	 * 🚧 Core's conversation: **Back** — take the newest turn of the story out
+	 * of the history, onto the session's forward stack (RF fix 5, owner ruling
+	 * 2026-10-23). The session's owner; the host's refusal (nothing to go back
+	 * to, a branch's fork, a reply being written) is said by the host, and
+	 * the strip's state arrives in the dossier (`SessionDossierV1.rewind`).
+	 */
+	'rewind-turn': { params: Record<string, never>; result: void }
+	/** 🚧 Core's conversation: **Forward** — bring the newest rewound turn back. */
+	'forward-turn': { params: Record<string, never>; result: void }
 	/** 🚧 Core's conversation: accept or reject a proposed change to the session's state. */
 	'decide-proposal': { params: { proposalId: number; accept: boolean }; result: void }
 	/**
@@ -1523,6 +1675,36 @@ export interface WidgetRequests {
 	'give-piece': {
 		params: { from: OwnerRefV1; to: OwnerRefV1; slotId: string; index: number; count?: number }
 		result: { given: 'direct' | 'offered' }
+	}
+	/**
+	 * 🚧 Show or hide one tie side's numbers to others (ties on the graph,
+	 * T1, 2026-10-23): `owner`'s side of the tie of type `entryType` towards
+	 * `towards` (an owner key, as {@link SessionStateTieV1.towards} names
+	 * it) — the side's `exposed` flag. Its holder's to set, or the game
+	 * master's; refused in words otherwise. The change arrives as the next
+	 * `session_state` push. A plugin's widget asks it holding the write grant
+	 * `session:state:write`, as for `set-attribute-value`.
+	 * @experimental
+	 */
+	'set-tie-shown': {
+		params: { owner: OwnerRefV1; entryType: string; towards: string; shown: boolean }
+		result: { shown: boolean }
+	}
+	/**
+	 * 🚧 Carry one of the rules' optional attributes, or stop carrying it
+	 * (an **attribute carry**; RF fix 8, 2026-10-23 — the switch Session
+	 * settings › Attributes offers, from the sheet too): `owner` carries
+	 * `slotId` when `carries` is true. Off, it is not shown, read or changed
+	 * for them; what it held comes back when it is on again. Whoever plays
+	 * the holder may switch their own, the session's owner anyone's; an
+	 * attribute the rules require is refused in words. The change arrives as
+	 * the next `session_state` push. A plugin's widget asks it holding the
+	 * write grant `session:state:write`, as for `set-attribute-value`.
+	 * @experimental
+	 */
+	'set-attribute-carry': {
+		params: { owner: OwnerRefV1; slotId: string; carries: boolean }
+		result: { carries: boolean }
 	}
 	/**
 	 * 🚧 Set one owner's value for one slot, as core's state widgets do, at
@@ -2127,6 +2309,41 @@ export interface SessionEntryV1 {
 }
 
 /**
+ * 🚧 One line of **While you were away** (PLAN-layering A7, R23): a
+ * routine's run, or a firing of it that did not run, as the host's routine
+ * log keeps it. `wrote` is what the run left (its artifacts); `reason` says
+ * why one was skipped, paused, failed or stopped, in a sentence.
+ * @experimental
+ */
+export interface RoutineLogEntryV1 {
+	runId: string
+	/** The registration it fired under. */
+	registrationKey: string
+	/** The pipeline it ran. */
+	pipeline: string
+	/** What the routine is called — its pipeline's name. */
+	name: string
+	kind: 'ran' | 'skipped' | 'paused' | 'failed' | 'stopped'
+	reason?: string
+	/** Epoch ms. */
+	startedAt: number
+	endedAt: number
+	wrote: Array<{ kind: string; entityId: number; action: string }>
+	/** The session's owner pressed Run now. */
+	runNow?: boolean
+}
+
+/**
+ * 🚧 What `routine-log` answers: the session's recent routine runs, newest
+ * first, and when a person last played (epoch ms; null when nobody has).
+ * @experimental
+ */
+export interface RoutineLogV1 {
+	lastInteractionAt: number | null
+	entries: RoutineLogEntryV1[]
+}
+
+/**
  * 🚧 Who a host answers a request kind for — its **askers**:
  *
  *  - `'any'` — any widget's, core's or a plugin's. The host still applies
@@ -2200,7 +2417,12 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	draft: Object.freeze({ scope: 'channel' as const, write: true as const }),
 	'switch-persona': 'core',
 	'add-persona': 'core',
+	// 🚧 A guest's seat, opened by name (Lair rewrite D5) — core's composer only.
+	'take-seat': 'core',
 	'fire-turn': 'core',
+	// 🚧 Back · Forward (RF fix 5): the session's history — core's conversation only.
+	'rewind-turn': 'core',
+	'forward-turn': 'core',
 	'decide-proposal': 'core',
 	// 🚧 Older lines of the page's log, per channel (★7) — core's conversation only.
 	'load-older': 'core',
@@ -2208,6 +2430,10 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'set-attribute-value': Object.freeze({ scope: 'session:state' as const, write: true as const }),
 	// 🚧 Give to… (★4): a write on two sheets, on the same grant.
 	'give-piece': Object.freeze({ scope: 'session:state' as const, write: true as const }),
+	// 🚧 A tie side shown or hidden (ties on the graph, T1): the same write grant.
+	'set-tie-shown': Object.freeze({ scope: 'session:state' as const, write: true as const }),
+	// 🚧 An attribute carried or not (RF fix 8): the same write grant.
+	'set-attribute-carry': Object.freeze({ scope: 'session:state' as const, write: true as const }),
 	'set-sprite-set': 'core',
 	'clear-scene-image': 'core',
 	// 🚧 Scene Portraits (W6): a member's gallery is part of the cast it was granted.
@@ -2238,6 +2464,8 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'set-owner-face': 'core',
 	// 🚧 Backdrop (D3, 2026-10-12): the session's generated pictures, for its chooser — core's only.
 	'session-images': 'core',
+	// 🚧 While you were away (A7, R23; lane 7): what the session's routines did — core's only for now.
+	'routine-log': 'core',
 })
 
 /** Every request kind — what a host checks an incoming `request` against. @experimental */

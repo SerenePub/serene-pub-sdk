@@ -32,7 +32,7 @@
  * version row so every "what is this session" check stays a SELECT; the id
  * association comes from the input lock's `genre` column.
  */
-import { compile, spec, sessionEvents } from "@serene-pub/sdk"
+import { compile, spec, sessionEvents, coreEvents } from "@serene-pub/sdk"
 import * as C from "@serene-pub/contracts"
 import { storyGenre } from "../../registry/genres.js"
 
@@ -60,10 +60,7 @@ export const createStorySpec = () =>
 				>
 			}
 		})
-			.inlet("input", C.sessionCreated.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionCreated
-			})
+			.inlet("input", C.sessionCreated.v1(), { suits: [coreEvents.sessionCreated] })
 			.query("collect", ($) =>
 				C.sessionGreetings.v1({ scope: $.input.sessionScope })
 			)

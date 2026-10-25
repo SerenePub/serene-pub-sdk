@@ -10,8 +10,8 @@
  * action) or a `request` (something the host opens). Nothing here imports a
  * store, the socket or the page: the same source runs in a UI worker.
  */
-import { getContext, setContext } from "svelte"
-import { SvelteSet } from "svelte/reactivity"
+import { getContext, setContext, untrack } from "svelte"
+import { SvelteMap, SvelteSet } from "svelte/reactivity"
 import { useWidgetContext } from "../context"
 import type { WidgetContextRef } from "@serene-pub/core-catalog/conversation"
 import {
@@ -161,6 +161,34 @@ export function createConversation(widget: WidgetContextRef) {
 		summaryEnded = n
 	})
 
+	/**
+	 * How long each run took, as this view saw it: `generation:start` to
+	 * `generation:end`, per reply. A run that finished before the page opened
+	 * has none, and a stopped run keeps none. Read by the newest reply's ⋮
+	 * menu (`MessageControls`), which says *Replied · 6.2 s* — the turn line's
+	 * pill said it at rest until polish parity L1 (2026-10-24).
+	 */
+	const runStartedAt = new Map<number, number>()
+	const runTook = new SvelteMap<number, number>()
+	$effect(() =>
+		untrack(() => {
+			const offStart = ctx().on("generation:start", (e) => {
+				if (e.kind === "generation:start" && e.messageId != null) runStartedAt.set(e.messageId, Date.now())
+			})
+			const offEnd = ctx().on("generation:end", (e) => {
+				if (e.kind !== "generation:end" || e.messageId == null) return
+				const t0 = runStartedAt.get(e.messageId)
+				runStartedAt.delete(e.messageId)
+				if (t0 === undefined || e.aborted) runTook.delete(e.messageId)
+				else runTook.set(e.messageId, (Date.now() - t0) / 1000)
+			})
+			return () => {
+				offStart()
+				offEnd()
+			}
+		})
+	)
+
 	/** `text`: what the press supplies — the composer's slash argument (S2). */
 	function invoke(key: string, subject?: Subject, payload?: Record<string, unknown>, text?: string) {
 		try {
@@ -206,6 +234,8 @@ export function createConversation(widget: WidgetContextRef) {
 			return dossier?.lines[id] ?? NO_LINE
 		},
 		t: (source: string) => ctx().t(source),
+		/** How long the run that wrote this reply took, in seconds, as this view saw it; undefined when it did not see it. */
+		runTook: (messageId: number): number | undefined => runTook.get(messageId),
 		/** A status sentence in the viewer's language. */
 		statusText: (status: StatusText | null | undefined) =>
 			statusTextIn(status, ctx().locale.v1, (source) => ctx().t(source)),
@@ -227,6 +257,22 @@ export function createConversation(widget: WidgetContextRef) {
 			invoke("swipe", subject, { direction })
 		},
 		request,
+
+		// ── 🚧 Back · Forward (RF fix 5): the session's forward stack ───────
+		rewind: {
+			/** The host's word (`SessionDossierV1.rewind`); null from a host that sends none. */
+			get state() {
+				return dossier?.rewind ?? null
+			},
+			/** Back: the newest turn out of the history. The host refuses in words. */
+			back() {
+				void request("rewind-turn", {})
+			},
+			/** Forward: the newest rewound turn back into it. */
+			forward() {
+				void request("forward-turn", {})
+			}
+		},
 
 		// ── editing: the widget's own state; saving is the `edit` verb ───────
 		edit: {

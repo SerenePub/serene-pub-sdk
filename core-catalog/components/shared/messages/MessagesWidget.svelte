@@ -14,12 +14,13 @@
 	export type NextUp = "head" | "list" | "hidden"
 
 	/**
-	 * How wide the log's rows and the composer run: the whole width the layout
-	 * gives the widget (`full`, the default), or a reading measure centred in
-	 * it (`comfortable`, about 640px of prose). Never a hidden cap: the widget
-	 * fills its box unless its settings say otherwise.
+	 * How wide the log's rows and the composer run: a reading column of about
+	 * 76 characters of the story's body text centred in the box (`column`,
+	 * the default since ★R1, 2026-10-24), the whole width the layout gives
+	 * the widget (`full`), or the narrower measure (`comfortable`, about
+	 * 640px of prose). Never a hidden cap: a setting a person sees and changes.
 	 */
-	export type LineWidth = "full" | "comfortable"
+	export type LineWidth = "column" | "full" | "comfortable"
 
 	/**
 	 * How the lines are drawn (PLAN-core-widgets §3.7): `rows`, the log as
@@ -40,6 +41,11 @@
 	export interface ConversationSettings {
 		order: MessageOrder
 		composerSkin: ComposerSkin
+		/**
+		 * 🚧 The composer while a tab other than the first is shown
+		 * (`otherTabsComposer`, lair fix 2), or `same` — `composerSkin`.
+		 */
+		otherTabsComposer: ComposerSkin | "same"
 		composerPosition: ComposerPosition
 		lineWidth: LineWidth
 		/**
@@ -81,8 +87,9 @@
 	export const CONVERSATION_DEFAULTS: ConversationSettings = {
 		order: "oldest-first",
 		composerSkin: "classic",
+		otherTabsComposer: "same",
 		composerPosition: "bottom",
-		lineWidth: "full",
+		lineWidth: "column",
 		presentation: "rows",
 		showMessages: true,
 		showComposer: true,
@@ -145,12 +152,17 @@
 		return {
 			order: pickEnum(v.order, ["oldest-first", "newest-first"], d.order),
 			composerSkin: folio && skin === d.composerSkin ? "quill" : skin,
+			otherTabsComposer: pickEnum(
+				v.otherTabsComposer,
+				["same", "classic", "minimal", "writer", "quill"],
+				d.otherTabsComposer
+			),
 			composerPosition: pickEnum(
 				v.composerPosition,
 				["bottom", "top"],
 				d.composerPosition
 			),
-			lineWidth: pickEnum(v.lineWidth, ["full", "comfortable"], d.lineWidth),
+			lineWidth: pickEnum(v.lineWidth, ["column", "full", "comfortable"], d.lineWidth),
 			presentation,
 			showMessages: pickBool(v.showMessages, d.showMessages),
 			showComposer: pickBool(v.showComposer, d.showComposer),
@@ -195,6 +207,9 @@
 	 * onto the root as data attributes, and decides which end the composer
 	 * sits at.
 	 */
+	import { untrack } from "svelte"
+	import { SvelteMap } from "svelte/reactivity"
+	import { channelTabDots, channelTabsOf, newestNewsOn, rewindStripState } from "@serene-pub/core-catalog/conversation"
 	import { useWidgetContext } from "../context"
 	import SessionContainer from "./SessionContainer.svelte"
 	import SessionComposer from "./SessionComposer.svelte"
@@ -262,6 +277,78 @@
 		)
 	})
 
+	/**
+	 * 🚧 **Channel tabs** (lair fix 2, 2026-10-22): a copy showing two or
+	 * more channels — the Lair's story with its Sanctum, for the GM — draws a
+	 * tab each above the log (`channelTabsOf`), in place of the composer's
+	 * old channel switch. The active tab is the conversation's lane: the log
+	 * shows its rows and the composer writes there. A guest is never told the
+	 * Sanctum (an owner-only channel), so their story has no tabs. The tabs
+	 * are the host's (`sp-tabs`): the page draws the tablist, its roving
+	 * focus and its arrow keys (STYLE-GUIDE §10), and raises `change`.
+	 */
+	// Never on a copy pinned to a channel: its claim is one channel, its head names it.
+	const tabs = $derived(conversation && !settings.channel ? channelTabsOf(conversation.channels) : [])
+	const activeTab = $derived(conversation?.lane.current ?? "main")
+	const viewerId = $derived.by((): number | null => {
+		const id = (ctx?.current.viewer?.v1 as { userId?: unknown } | undefined)?.userId
+		return typeof id === "number" ? id : null
+	})
+	/**
+	 * What each tab was last shown with (its newest line by somebody else):
+	 * the shown tab's mark follows its channel, a tab never seen starts with
+	 * its history read. Written by the effect below, never read tracked there.
+	 */
+	const seen = new SvelteMap<string, number>()
+	$effect(() => {
+		const rows = (conversation?.rows ?? []) as Parameters<typeof newestNewsOn>[0]
+		for (const tab of tabs) {
+			const newest = newestNewsOn(rows, tab, viewerId)
+			const active = tab === activeTab
+			untrack(() => {
+				if ((active || !seen.has(tab)) && seen.get(tab) !== newest) seen.set(tab, newest)
+			})
+		}
+	})
+	/** The tabs with a line nobody has shown the viewer yet. */
+	const dots = $derived(
+		channelTabDots(tabs, activeTab, (conversation?.rows ?? []) as Parameters<typeof newestNewsOn>[0], viewerId, seen)
+	)
+	/** A tab's name, said with its news to a screen reader (the trigger's own label). */
+	const tabLabel = (slug: string) =>
+		`${conversation?.channelName(slug) ?? slug}${dots.has(slug) ? " (new lines)" : ""}`
+	/**
+	 * The composer this tab is written with: the copy's `composer`, or —
+	 * on a tab other than the first — its `otherTabsComposer` when it says
+	 * one (the Lair's Sanctum pill).
+	 */
+	const composerSkin = $derived(
+		tabs.length > 1 && activeTab !== tabs[0] && settings.otherTabsComposer !== "same"
+			? settings.otherTabsComposer
+			: settings.composerSkin
+	)
+
+	/**
+	 * 🚧 **Back · Forward** (RF fix 5, owner ruling 2026-10-23): the composer's
+	 * note while the session is rewound, on a copy that shows the story (the
+	 * primary log, or one pinned to `main`), with Forward beside it for the
+	 * owner. The host says how many turns are ahead and why a press would be
+	 * refused (`dossier.rewind`); nothing presses while a reply is being
+	 * written. The two presses themselves are the session header's (polish
+	 * parity L1, 2026-10-24: chrome above the first message is at most two
+	 * rows), which reads the same state through `rewindStripState`.
+	 */
+	const generating = $derived(
+		((conversation?.ctx.messages.v1 ?? []) as Array<{ isGenerating?: boolean }>).some((m) => m.isGenerating)
+	)
+	const rewind = $derived(
+		rewindStripState({
+			rewind: conversation?.rewind.state,
+			isOwner: !!conversation?.dossier?.isOwner,
+			generating,
+			story: !settings.channel || settings.channel === "main" || settings.channel.startsWith("main:")
+		})
+	)
 	// Compared by value, the way `WidgetHost` compares its layout: the widget
 	// context re-projects on every message that lands, and the settings on it
 	// are the same object nearly every time.
@@ -282,7 +369,7 @@
 	data-widget-part="messages.root"
 	data-order={settings.order}
 	data-composer-position={settings.composerPosition}
-	data-composer-skin={settings.composerSkin}
+	data-composer-skin={composerSkin}
 	data-line-width={settings.lineWidth}
 	data-presentation={settings.presentation}
 	data-show-messages={settings.showMessages}
@@ -300,11 +387,40 @@
 			<h2 data-widget-part="messages.channel-title">{conversation.channelName(settings.channel)}</h2>
 		</header>
 	{/if}
+	{#if tabs.length > 1 && conversation}
+		<!-- 🚧 The channel tabs (lair fix 2): one per channel this copy shows,
+		     the active one the lane the log shows and the composer writes on.
+		     A tab not shown carries a dot when somebody else's line lands on
+		     its channel. -->
+		<sp-tabs
+			value={activeTab}
+			label="Conversations"
+			data-widget-part="messages.channel-tabs"
+			onchange={(e: CustomEvent<{ value: string }>) => {
+				if (e.target === e.currentTarget && e.detail?.value) conversation.lane.set(e.detail.value)
+			}}
+		>
+			<!-- One block per tab: an sp element seats each tab's content in its
+			     own trigger (see MessageComposer's tabs). -->
+			{#each tabs as slug (slug)}
+				<sp-tab
+					value={slug}
+					label={tabLabel(slug)}
+					data-widget-part="messages.channel-tab"
+					data-channel-tab={slug}
+					data-news={dots.has(slug) ? "" : undefined}
+				>
+					<span data-widget-part="messages.channel-tab-label">{conversation.channelName(slug)}</span>
+					{#if dots.has(slug)}<span data-widget-part="messages.channel-tab-dot" aria-hidden="true"></span>{/if}
+				</sp-tab>
+			{/each}
+		</sp-tabs>
+	{/if}
 	<!-- The whole panel scrolls: the log spans the widget's width, so its
 	     scrollbar sits at the panel's edge and the wheel works anywhere in it;
-	     the rows (the stage, `messages.stage`) and the composer take the
-	     widget's full width, or a centred reading measure when the Line width
-	     setting says Comfortable. DOM order is log then composer whichever end the
+	     the rows (the stage, `messages.stage`) and the composer take a centred
+	     reading measure when the Line width setting says Column (the default)
+	     or Comfortable, or the widget's full width at Full. DOM order is log then composer whichever end the
 	     composer is drawn at: the reading order a screen reader and the tab
 	     sequence follow is the conversation's, and `order` moves the box on
 	     screen. -->
@@ -451,7 +567,28 @@
 						</div>
 					</div>
 				{:else}
-					<SessionComposer composerSkin={settings.composerSkin} showActions={settings.showActions} />
+					{#if rewind.replaceText}
+						<!-- 🚧 While rewound (RF fix 5): a new line replaces the
+						     turns ahead — said before it is written, with Forward
+						     beside it for the owner. -->
+						<p data-widget-part="messages.rewind-replace" role="status">
+							<sp-icon name="undo-2" size="14" data-widget-part="messages.rewind-replace-icon"></sp-icon>
+							<span data-widget-part="messages.rewind-replace-text">{rewind.replaceText}</span>
+							{#if conversation.dossier?.isOwner}
+								<button
+									type="button"
+									data-widget-part="messages.rewind-replace-forward"
+									title={rewind.forward.reason ? `Forward — ${rewind.forward.reason}` : "Forward — bring the next turn back"}
+									aria-disabled={rewind.forward.disabled}
+									onclick={(e) => (rewind.forward.disabled ? e.preventDefault() : conversation.rewind.forward())}
+								>
+									<span>Forward</span>
+									<sp-icon name="redo-2" size="14"></sp-icon>
+								</button>
+							{/if}
+						</p>
+					{/if}
+					<SessionComposer {composerSkin} showActions={settings.showActions} />
 				{/if}
 			</div>
 		</div>

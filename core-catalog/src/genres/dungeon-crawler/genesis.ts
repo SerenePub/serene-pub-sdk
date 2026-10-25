@@ -11,125 +11,118 @@
  * under that branch (`route.sheet.after.begin.*`).
  */
 
-import { slot } from '@serene-pub/sdk'
+import { slot, ITEM } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { DUNGEON_CRAWLER_PROMPT_KEYS } from '../../seed/prompts.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, DUNGEON_CRAWLER_NARRATOR_KEY } from './names.js'
 import { DUNGEON_CRAWLER_GENESIS_SCRIPT } from './scripts.js'
-import { at, jsonPart, modelCall, scriptStep, textPart, type Wiring } from './calls.js'
-import { DUNGEON_CRAWLER_ENTRY_TYPES, DUNGEON_CRAWLER_ROOM_SCHEMA, loreWrites } from './lore.js'
+import { jsonPart, modelCall, on, scriptStep, textPart, type Wiring } from './calls.js'
+import type { BeginOn } from './interview.js'
+import { DUNGEON_CRAWLER_ENTRY_TYPES, loreWrites } from './lore.js'
+import { DUNGEON_CRAWLER_SHAPE_SCRIPT } from './shape.js'
 
 /** The Narrator, as a participant reference. @experimental */
 export const NARRATOR = `envoy:${DUNGEON_CRAWLER_NARRATOR_KEY}` as const
 
-/**
- * What the Planner answers genesis with (≤600 tokens, the prompt says): the
- * goal, four to seven places (the first is where the party starts) with
- * their ways out, two to four people, two leads and its secret notes. One
- * required key per member, for the grammar-compiling families.
- * @experimental
+/*
+ * What the Planner answers genesis with is laid at run time over the
+ * session's rules (lane G3, 2026-10-23, S4: `DUNGEON_CRAWLER_GENESIS_FRAME`,
+ * `shape.ts` — its places' ways out the rules' own); ⏳
+ * `DUNGEON_CRAWLER_GENESIS_SCHEMA`, spelled from Vis Itineris at build, is retired.
  */
-export const DUNGEON_CRAWLER_GENESIS_SCHEMA = {
-	type: 'object',
-	properties: {
-		goal: { type: 'string' },
-		// One exit model (AUDIT A12): a way out is written inside its place.
-		rooms: { type: 'array', minItems: 1, maxItems: 7, items: DUNGEON_CRAWLER_ROOM_SCHEMA },
-		npcs: {
-			type: 'array',
-			maxItems: 4,
-			items: {
-				type: 'object',
-				properties: { name: { type: 'string' }, description: { type: 'string' } },
-				required: ['name', 'description'],
-				additionalProperties: false,
-			},
-		},
-		leads: { type: 'array', maxItems: 4, items: { type: 'string' } },
-		notes: { type: 'string' },
-	},
-	required: ['goal', 'rooms', 'npcs', 'leads', 'notes'],
-	additionalProperties: false,
-} as const
 
-/** What genesis is handed by the step that placed it. @internal */
-export interface GenesisTerms {
-	/** What the world is for — the sheet step's `genesisBrief`, as text. */
-	brief: ($: any) => unknown
-	/** The sheet step's whole output, whose `world` this run already changed. */
-	sheet: ($: any) => unknown
-	session: ($: any) => unknown
-	/** The session's state (`session-state@1`), so a placement that changes nothing is dropped. */
-	state: ($: any) => unknown
-	cast: ($: any) => unknown
-	history: ($: any) => unknown
+/** What the genesis script hands its junctions (`DUNGEON_CRAWLER_GENESIS_SCRIPT`). */
+interface Filed {
+	readonly world: unknown
+	readonly journal: unknown
+	readonly notes: unknown
+	readonly openingBrief: unknown
+	readonly placements: unknown
+	readonly places: unknown
+	readonly people: unknown
+	readonly startedLanes: unknown
+	readonly startedLine: unknown
+	readonly ways: unknown
 }
 
 /**
- * **Genesis**, placed at `prefix`:
+ * **Genesis**, at the end of the interview's sheet path
+ * (`route.sheet.after.begin`):
  *
- *  1. `genesis*` — the Planner's world, one JSON call
- *     (`DUNGEON_CRAWLER_GENESIS_SCHEMA`, Background sampling);
- *  2. `filed` — `core:script/dungeon-crawler-genesis` files it: the crawl's
+ *  1. `brief` — what the world is for (the sheet step's `genesisBrief`);
+ *  2. `genesis*` — the Planner's world, one JSON call, 🚧 its grammar laid
+ *     over the session's rules (`worldSchema`, `shape.ts`; Background sampling);
+ *  3. `filed` — `core:script/dungeon-crawler-genesis` files it: the crawl's
  *     bookkeeping (`dungeon-crawler-progress`: the goal, where the party
  *     starts, `built`), the journal (the goal, or *secret*, and the leads),
  *     the Planner's notes (the secret goal and its notes) — one annex write
  *     (`write`); then the world itself, the places with
  *     their ways out and the people, as entries of the session's own
  *     lorebook (`lorePlaces` … `lorePeople`, `lore.ts`);
- *  3. `opening` — the Narrator's row on Story; `placed.set.*` — each player
+ *  4. `opening` — the Narrator's row on Story; `placed.set.*` — each player
  *     seat's `location` set to the first place, filed at that row;
- *  4. `scene*` → `save` — the Narrator's opening, one streamed call into
+ *  5. `scene*` → `save` — the Narrator's opening, one streamed call into
  *     its row, from the first place and a lead.
  * @internal
  */
-export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms) => {
-	const world = modelCall(c, w, prefix, 'genesis', {
-		speaker: `envoy:planner`,
-		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.genesis,
-		brief: t.brief,
-		cast: t.cast,
-		history: t.history,
-		schema: DUNGEON_CRAWLER_GENESIS_SCHEMA,
-		briefTurn: true,
-		expose: {
-			status: 'Building the world',
-			label: 'Build the world',
-			purpose: 'Once the characters are made, the Planner generates the world: where you start, what is near, who you may meet, the goal and its secrets.',
+export const genesisChain = (k: BeginOn, w: Wiring): BeginOn => {
+	/** 🚧 The world's grammar, its ways out the session's rules' own (S4, `shape.ts`). */
+	const shaped = scriptStep(
+		textPart(k, w, 'brief', ($) => $.route.sheet.apply.main, 'genesisBrief', 'What the world is for'),
+		w,
+		'worldSchema',
+		DUNGEON_CRAWLER_SHAPE_SCRIPT.seedKey,
+		($) => ({ shape: null, ruleset: $.input.ruleset, want: 'genesis' }),
+		"The world's grammar",
+	)
+	const world = modelCall(
+		shaped,
+		w,
+		'genesis',
+		{
+			speaker: `envoy:planner`,
+			prompt: DUNGEON_CRAWLER_PROMPT_KEYS.genesis,
+			brief: ($) => $.brief.text,
+			cast: ($) => $.cast.cast,
+			history: ($) => $.story.messages,
+			schema: ($) => $.worldSchema.main,
+			briefTurn: true,
+			expose: {
+				status: 'Building the world',
+				label: 'Build the world',
+				purpose: 'Once the characters are made, the Planner generates the world: where you start, what is near, who you may meet, the goal and its secrets.',
+			},
 		},
-	})
-	const filed = scriptStep(world, w, prefix, 'filed', DUNGEON_CRAWLER_GENESIS_SCRIPT.seedKey, ($) => ({
-		session: t.session($),
-		sheet: t.sheet($),
-		json: at($, `${prefix}genesisWrite`).json,
-		state: t.state($),
+	)
+	const filed = scriptStep(world, w, 'filed', DUNGEON_CRAWLER_GENESIS_SCRIPT.seedKey, ($) => ({
+		session: $.input.session,
+		sheet: $.route.sheet.apply.main,
+		json: $.genesisWrite.json,
+		state: $.state.state,
 	}), 'Read the generated world')
-	const doc = ($: any) => at($, `${prefix}filed`).main
 	const parts = jsonPart(
 		jsonPart(
-			textPart(filed, w, prefix, 'notes', doc, 'notes', "The Planner's notes"),
+			textPart(filed, w, 'notes', ($) => $.filed.main, 'notes', "The Planner's notes"),
 			w,
-			prefix,
 			'journal',
-			doc,
+			($) => $.filed.main,
 			'journal',
 			'The journal',
 		),
 		w,
-		prefix,
 		'world',
-		doc,
+		($) => $.filed.main,
 		'world',
 		"The crawl's bookkeeping",
 	)
 	const filedKeys = parts.outlet(
 		'write',
-		($: any) =>
+		($) =>
 			C.setSessionAnnex.v1({
 				value: {
-					[K.progress]: at($, `${prefix}world`).main,
-					[K.journal]: at($, `${prefix}journal`).main,
-					[K.planningNotes]: at($, `${prefix}notes`).text,
+					[K.progress]: $.world.main,
+					[K.journal]: $.journal.main,
+					[K.planningNotes]: $.notes.text,
 				} as any,
 				params: slot.params(),
 			}),
@@ -138,16 +131,8 @@ export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms)
 	// The world itself: its places with their ways out, and its people, in the
 	// session's own lorebook (`lore.ts`) — before the opening, which opens in
 	// the first place.
-	const written = loreWrites(filedKeys, w, prefix, doc)
-	const briefed = textPart(
-		written,
-		w,
-		prefix,
-		'openingBrief',
-		($) => at($, `${prefix}filed`).main,
-		'openingBrief',
-		'What the opening shows',
-	).outlet(
+	const written = loreWrites(filedKeys, w, ($) => $.route.sheet.after.begin.filed.main)
+	const briefed = textPart(written, w, 'openingBrief', ($) => $.filed.main, 'openingBrief', 'What the opening shows').outlet(
 		'opening',
 		() => C.createMessage.v1({ generating: true, channel: 'main', speaker: NARRATOR as any }),
 		{ expose: { label: 'Open the first scene' } },
@@ -156,31 +141,30 @@ export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms)
 	 * Where the party starts: each player seat's `location`, the first place
 	 * — filed at the opening's row, so the opening line says where they are.
 	 */
-	const P = `${prefix}placed.set.`
-	w.params.push([`${P}applied`, { mode: 'apply' }])
-	const placed = briefed.junction('placed', { on: doc }, (j: any) =>
-		j.when('set', { path: 'placements', truthy: true }, (k: any) =>
-			jsonPart(k, w, P, 'changes', doc, 'placements', 'Where the party starts')
-				.query('resolved', ($: any) =>
+	const placed = briefed.junction('placed', { on: ($) => $.filed.main }, (j) =>
+		j.when('set', { path: (v: Filed) => v.placements, truthy: true }, (s) => {
+			w.params.push([on(s, 'applied'), { mode: 'apply' }])
+			return jsonPart(s, w, 'changes', ($) => $.route.sheet.after.begin.filed.main, 'placements', 'Where the party starts')
+				.query('resolved', ($) =>
 					C.resolveStateChanges.v1({
-						changes: at($, `${P}changes`).main,
+						changes: $.changes.main,
 						scope: $.input.sessionScope,
 						base: $.state.version,
 					}),
 				)
 				.task(
 					'applied',
-					($: any) =>
+					($) =>
 						C.setState.v1({
-							changes: at($, `${P}resolved`).changes,
+							changes: $.resolved.changes,
 							scope: $.input.sessionScope,
 							base: $.state.version,
-							worldRow: at($, `${prefix}opening`).messageId,
+							worldRow: $.route.sheet.after.begin.opening.messageId,
 							params: slot.params(),
 						}),
 					{ expose: { label: 'Put the party in the first place' } },
-				),
-		),
+				)
+		}),
 	)
 	/**
 	 * 🚧 The world's ways out, held from the start (PLAN-dc-after-walk3 R2-2,
@@ -191,53 +175,51 @@ export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms)
 	 * listed again held its ways, and the first listing headed the round's
 	 * fold as if found.
 	 */
-	w.params.push([`${prefix}worldPlaces`, { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.place], withLinks: true }])
-	const W = `${prefix}hold.ways.`
+	w.params.push([on(placed, 'worldPlaces'), { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.place], withLinks: true }])
 	const ways = scriptStep(
-		placed.query('worldPlaces', ($: any) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+		placed.query('worldPlaces', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
 			expose: { label: 'The places, as written' },
 		}),
 		w,
-		prefix,
 		'ways',
 		DUNGEON_CRAWLER_GENESIS_SCRIPT.seedKey,
 		($) => ({
-			session: t.session($),
-			json: at($, `${prefix}genesisWrite`).json,
-			places: at($, `${prefix}worldPlaces`).entries,
-			state: t.state($),
+			session: $.input.session,
+			json: $.genesisWrite.json,
+			places: $.worldPlaces.entries,
+			state: $.state.state,
 		}),
 		'The ways out, as pieces',
 	)
-	const held = ways.junction('hold', { on: ($: any) => at($, `${prefix}ways`).main }, (j: any) =>
-		j.when('ways', { path: 'ways', truthy: true }, (k: any) =>
+	const held = ways.junction('hold', { on: ($) => $.ways.main }, (j) =>
+		j.when('ways', { path: (v: Filed) => v.ways, truthy: true }, (h) =>
 			jsonPart(
-				jsonPart(k, w, W, 'owners', ($: any) => at($, `${prefix}ways`).main, 'ways.owners', 'Whose ways out'),
+				jsonPart(h, w, 'owners', ($) => $.route.sheet.after.begin.ways.main, 'ways.owners', 'Whose ways out'),
 				w,
-				W,
 				'deltas',
-				($: any) => at($, `${prefix}ways`).main,
+				($) => $.route.sheet.after.begin.ways.main,
 				'ways.deltas',
 				'The ways out',
 			).task(
 				'apply',
-				($: any) =>
+				($) =>
 					C.rulesetResolve.v1({
+						params: slot.params(),
 						scope: $.input.sessionScope,
-						owners: at($, `${W}owners`).main,
-						deltas: at($, `${W}deltas`).main,
+						owners: $.owners.main,
+						deltas: $.deltas.main,
 						mode: 'apply',
 					}),
 				{ expose: { label: 'Hold the ways out' } },
 			),
 		),
 	)
-	return modelCall(held, w, prefix, 'scene', {
+	return modelCall(held, w, 'scene', {
 		speaker: NARRATOR,
 		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.opening,
-		brief: ($) => at($, `${prefix}openingBrief`).text,
-		cast: t.cast,
-		history: t.history,
+		brief: ($) => $.openingBrief.text,
+		cast: ($) => $.cast.cast,
+		history: ($) => $.story.messages,
 		briefTurn: true,
 		expose: {
 			stream: true,
@@ -248,11 +230,11 @@ export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms)
 	})
 		.outlet(
 			'save',
-			($: any) =>
+			($) =>
 				C.updateMessage.v1({
-					target: at($, `${prefix}opening`).messageId,
-					text: at($, `${prefix}sceneWrite`).text,
-					reasoning: at($, `${prefix}sceneWrite`).reasoning,
+					target: $.opening.messageId,
+					text: $.sceneWrite.text,
+					reasoning: $.sceneWrite.reasoning,
 				}),
 			{ expose: { label: 'Fill the opening scene' } },
 		)
@@ -260,23 +242,22 @@ export const genesisChain = (c: any, w: Wiring, prefix: string, t: GenesisTerms)
 		 * 🚧 Each made character's Planner lane hears the story has started
 		 * (PLAN-dc-after-walk2 Q3-3): a table line, after the opening is in.
 		 */
-		.junction('started', { on: doc }, (j: any) =>
-			j.when('told', { path: 'startedLanes', truthy: true }, (k: any) =>
+		.junction('started', { on: ($) => $.filed.main }, (j) =>
+			j.when('told', { path: (v: Filed) => v.startedLanes, truthy: true }, (t) =>
 				textPart(
-					jsonPart(k, w, `${prefix}started.told.`, 'lanes', doc, 'startedLanes', 'Whose lanes hear it'),
+					jsonPart(t, w, 'lanes', ($) => $.route.sheet.after.begin.filed.main, 'startedLanes', 'Whose lanes hear it'),
 					w,
-					`${prefix}started.told.`,
 					'line',
-					doc,
+					($) => $.route.sheet.after.begin.filed.main,
 					'startedLine',
 					'The story has started',
-				).each('lane', { over: ($: any) => at($, `${prefix}started.told.lanes`).main, max: 16 }, (m: any) =>
+				).each('lane', { over: ($) => $.lanes.main, max: 16 }, (m) =>
 					m.outlet(
 						'write',
-						($: any) =>
+						($) =>
 							C.createMessage.v1({
-								text: at($, `${prefix}started.told.line`).text,
-								channel: at($, `${prefix}started.told.lane.item`),
+								text: $.route.sheet.after.begin.started.told.line.text,
+								channel: $[ITEM],
 								speaker: `envoy:planner` as any,
 								tableLine: true,
 							}),

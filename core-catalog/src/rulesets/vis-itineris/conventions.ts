@@ -8,15 +8,21 @@
  * natural faces), the bonus stacking and the action count, and never a
  * script for them.
  */
+import { slotSlug } from "@serene-pub/sdk"
 import type {
 	DegreeCrosswalk,
+	DieTargetMethod,
+	DifficultyBand,
+	RulesetCasting,
 	RulesetConventions,
 	RulesetPresetDecl,
 	RulesetProps,
 	RulesetSelectorDecl,
 	RulesetSettingDecl
 } from "@serene-pub/sdk"
-import { VIS_ITINERIS_ABILITIES, VIS_ITINERIS_SKILLS } from "./slots.js"
+import { VIS_ITINERIS_ABILITIES, VIS_ITINERIS_SKILLS, visItinerisSpellPointsSlot } from "./slots.js"
+import { VIS_ITINERIS_FOCUS } from "./rules.js"
+import type { AtZeroHealthOptions } from "../../functions/atZeroHealth.js"
 
 /** Four degrees by margin (±10), a natural 20 or 1 moving the result one step. @internal */
 export const VIS_ITINERIS_FOURFOLD_DEGREES: DegreeCrosswalk = Object.freeze({
@@ -44,9 +50,44 @@ export const VIS_ITINERIS_CLASSIC_DEGREES: DegreeCrosswalk = Object.freeze({
 	natural: { high: { from: 20, band: "critical" }, low: { to: 1, band: "natural-one" } }
 }) as DegreeCrosswalk
 
+/**
+ * 🚧 The difficulty bands a check is rolled against (Lair rewrite D3,
+ * 2026-10-21) — the reference rules' typical difficulties, easiest first:
+ * what a roll form offers the game master, and _Medium_ what an automatic
+ * roll is made against. 🚧 Held by the `die` check method since 2026-10-22
+ * (M3), never beside it.
+ * @experimental
+ */
+export const VIS_ITINERIS_DIFFICULTY_BANDS: readonly DifficultyBand[] = Object.freeze<DifficultyBand[]>([
+	{ id: "very-easy", label: { en: "Very easy" }, target: 5 },
+	{ id: "easy", label: { en: "Easy" }, target: 10 },
+	{ id: "medium", label: { en: "Medium" }, target: 15, default: true },
+	{ id: "hard", label: { en: "Hard" }, target: 20 },
+	{ id: "very-hard", label: { en: "Very hard" }, target: 25 },
+	{ id: "nearly-impossible", label: { en: "Nearly impossible" }, target: 30 }
+])
+
+/**
+ * 🚧 Vis Itineris's one **check method** (2026-10-22, M3): a d20 plus the
+ * check's modifier against a target, its difficulty bands its own. Keyed
+ * `die` — the key the ⏳ `conventions.dice` it replaces is read under
+ * (`LEGACY_DIE_METHOD`), so a stored copy written before check methods reads
+ * as this one, and an outcome block's method key never moves. No
+ * `modifierOf`: every check names its `base`, and a bare roll (at death's
+ * door) adds nothing.
+ * @experimental
+ */
+export const VIS_ITINERIS_DIE_METHOD: DieTargetMethod = Object.freeze({
+	kind: "die-target" as const,
+	label: { en: "Roll a d20" },
+	sides: 20,
+	bands: VIS_ITINERIS_DIFFICULTY_BANDS
+})
+
 /** Vis Itineris's own conventions — its defaults; settings lay their choices over these. @internal */
 export const VIS_ITINERIS_CONVENTIONS: RulesetConventions = Object.freeze({
-	dice: { sides: 20 },
+	methods: { die: VIS_ITINERIS_DIE_METHOD },
+	defaultMethod: "die",
 	degrees: VIS_ITINERIS_FOURFOLD_DEGREES,
 	time: { unit: "round", roundSeconds: 6 },
 	actions: { perTurn: 3, reaction: true, kinds: ["action", "reaction", "free"] },
@@ -58,10 +99,58 @@ export const VIS_ITINERIS_CONVENTIONS: RulesetConventions = Object.freeze({
 }) as RulesetConventions
 
 /**
+ * 🚧 **What happens at zero health under Vis Itineris** — the options of its
+ * reference to core's fall rule (`core:function/at-zero-health@1`; lane G3,
+ * 2026-10-23, ★I), which replaced the module constant it was (`rules.ts`,
+ * 2026-10-21): a bare roll of its own die (the `die` way's faces, no
+ * modifier). _One roll at death's door_ (`dying: dying-1-4`): 10 or more,
+ * back up on 1; a table that plays harsher or gentler moves the target by 2.
+ * _Death saves_ (`dying: death-saves`, `savesWhen`): 10 or more a pass, three
+ * passes stable, three failures down, a natural 1 two failures, a natural 20
+ * back up on 1. Read by the `dying` setting's words below, and by a genre
+ * that plays a fall from the session's ruleset — never imported by one.
+ * @internal
+ */
+export const VIS_ITINERIS_AT_ZERO_HEALTH_RULE: AtZeroHealthOptions = Object.freeze({
+	sides: VIS_ITINERIS_DIE_METHOD.sides,
+	door: Object.freeze({ target: 10, step: 2, upOn: 1 }),
+	saves: Object.freeze({
+		target: 10,
+		passes: 3,
+		failures: 3,
+		low: Object.freeze({ face: 1, failures: 2 }),
+		high: Object.freeze({ face: VIS_ITINERIS_DIE_METHOD.sides, upOn: 1 })
+	}),
+	savesWhen: Object.freeze({ option: "dying", is: "death-saves" })
+})
+
+const DOOR = VIS_ITINERIS_AT_ZERO_HEALTH_RULE.door
+const SAVES = VIS_ITINERIS_AT_ZERO_HEALTH_RULE.saves!
+const HELD = VIS_ITINERIS_FOCUS.concentration
+
+/**
+ * 🚧 Spell points (`casting: points`, 2026-10-22, M3): a cast from `spells`
+ * spends its level from the spell-point pool; a long rest fills the pool
+ * back to the derive script's `spell-points-max`. The numbers the handler
+ * read by setting id until now, declared (`RulesetCasting`).
+ * @experimental
+ */
+export const VIS_ITINERIS_SPELL_POINTS: RulesetCasting = Object.freeze({
+	pool: slotSlug(visItinerisSpellPointsSlot.id),
+	cost: "level",
+	repertoire: "spells",
+	refill: "long",
+	max: "spell-points-max"
+})
+
+/**
  * 🚧 The ruleset settings. `degrees`, `actions` and `bonuses` replace
- * conventions; `dying`, `focus` and `casting` are read by the handler by
- * choice id (which slots a zero-health character moves, what ends a spell
- * held, and whether a cast spends a slot or spell points).
+ * conventions; 🚧 `casting: points` lays the spell-point pool
+ * (`conventions.casting`, 2026-10-22). `dying` and `focus` are read by the
+ * handler or a genre by choice id (which slots a zero-health character moves,
+ * what ends a spell held) — their numbers live in the fall rule's reference
+ * (`VIS_ITINERIS_AT_ZERO_HEALTH_RULE`, above; 🚧 2026-10-23, ★I) and
+ * `rules.ts` (`VIS_ITINERIS_FOCUS`), and the choices' words read them.
  * @experimental
  */
 export const VIS_ITINERIS_SETTINGS: Readonly<Record<string, RulesetSettingDecl>> = Object.freeze({
@@ -129,20 +218,45 @@ export const VIS_ITINERIS_SETTINGS: Readonly<Record<string, RulesetSettingDecl>>
 		label: { en: "At zero health" },
 		default: "dying-1-4",
 		choices: [
-			{ id: "dying-1-4", label: { en: "One roll at death's door" }, description: { en: "At zero health one roll decides: back up on 1 health, or down for good — dead, or taken out at a gentle table." } },
-			{ id: "death-saves", label: { en: "Death saves" }, description: { en: "At zero health a roll each round: three passes and they are stable, three failures and they die. Healing brings them back." } }
+			{
+				id: "dying-1-4",
+				label: { en: "One roll at death's door" },
+				description: {
+					en: `At zero health one roll decides: ${DOOR.target} or more and they are back up on ${DOOR.upOn} health; under it, down for good — dead, or taken out at a gentle table.`
+				}
+			},
+			{
+				id: "death-saves",
+				label: { en: "Death saves" },
+				description: {
+					en: `At zero health a roll each round, ${SAVES.target} or more a pass: ${SAVES.passes} passes and they are stable, ${SAVES.failures} failures and they die. A natural ${SAVES.low.face} counts ${SAVES.low.failures} failures; a natural ${SAVES.high.face} is back up on ${SAVES.high.upOn} health. Healing brings them back.`
+				}
+			}
 		]
 	},
 	focus: {
 		label: { en: "Holding a spell" },
 		default: "sustain",
 		choices: [
-			{ id: "sustain", label: { en: "Sustain" }, description: { en: "Spend an action each turn to keep a spell going; stop and it ends." } },
-			{ id: "concentration", label: { en: "Concentration" }, description: { en: "One spell held at a time; taking harm calls for a save to keep it." } }
+			{
+				id: "sustain",
+				label: { en: "Sustain" },
+				description: {
+					en: `Spend ${VIS_ITINERIS_FOCUS.sustain.actions === 1 ? "an action" : `${VIS_ITINERIS_FOCUS.sustain.actions} actions`} each turn to keep a spell going; stop and it ends.`
+				}
+			},
+			{
+				id: "concentration",
+				label: { en: "Concentration" },
+				description: {
+					en: `${HELD.held === 1 ? "One spell" : `${HELD.held} spells`} held at a time; taking harm calls for a Constitution save against ${HELD.target}, or half the harm if that is more, to keep it.`
+				}
+			}
 		]
 	},
 	// 🚧 2026-10-17 (PLAN-sheet-widget-redesign §8): spell points are our own
-	// rule, not the SRD's. Read by the handler by id: under `points` a cast
+	// rule, not the SRD's. 🚧 Declared since 2026-10-22 (M3): under `points`
+	// the choice lays its casting pool (`VIS_ITINERIS_SPELL_POINTS`) — a cast
 	// spends its level from `itineris-spell-points` instead of a slot.
 	casting: {
 		label: { en: "Casting" },
@@ -150,7 +264,12 @@ export const VIS_ITINERIS_SETTINGS: Readonly<Record<string, RulesetSettingDecl>>
 		default: "slots",
 		choices: [
 			{ id: "slots", label: { en: "Spell slots" }, description: { en: "A few slots of each level; a spell spends one of its level or higher." } },
-			{ id: "points", label: { en: "Spell points" }, description: { en: "One pool of points; a spell costs its level in points, a cantrip nothing." } }
+			{
+				id: "points",
+				label: { en: "Spell points" },
+				description: { en: "One pool of points; a spell costs its level in points, a cantrip nothing." },
+				conventions: { casting: VIS_ITINERIS_SPELL_POINTS }
+			}
 		]
 	}
 })

@@ -104,10 +104,11 @@ describe('every shipped genre layout', () => {
 
 		const lair = resolveDrawn(LAIR_LAYOUT, { inline: 1300 })
 		assert.deepEqual(ids(lair.left), ['stats'])
-		assert.deepEqual(ids(lair.right), ['places', 'annex#castellan', 'messages#sanctum'])
+		// 🚧 lair fix 2: the Sanctum is a tab of the story, not a panel here.
+		assert.deepEqual(ids(lair.right), ['places', 'annex#castellan'])
 		assert.deepEqual(
 			lair.right.instances.map((i) => i.widgetId),
-			['places', 'annex', 'messages'],
+			['places', 'annex'],
 		)
 		assert.ok(lair.right.panels.every((p) => p.pinned), 'the right column opens whole')
 		assert.equal(lair.left.zoneKey, null, 'panels only: no ⏳ zoneLayout zone names the side')

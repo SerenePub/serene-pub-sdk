@@ -9,6 +9,10 @@
  * words. Its degrees exist only as the words a scene may use for how things
  * went, and it keeps time by the scene.
  *
+ * **Wherewithal** (`core:ruleset/wherewithal@1`, 2026-10-22) is the
+ * diceless one: pools spent, mettle weighed, bonds and troubles — original
+ * to Serene Pub; its parts in `rulesets/wherewithal/`.
+ *
  * **Vis Itineris** (`core:ruleset/vis-itineris@1`) is the rigorous d20 ruleset, built
  * on the System Reference Document 5.2 (CC-BY-4.0) with its own options as
  * ruleset settings and a _Classic_ preset; its parts live in
@@ -17,24 +21,87 @@
  * Declared through the same `defineRuleset` a plugin uses: nothing in core
  * keys on these ids.
  */
-import { defineRepertoire, defineRuleset } from "@serene-pub/sdk"
+import { COMMON_VOCABULARY_ID, defineRepertoire, defineRuleset, vocabulary, type AttributeSlotDecl } from "@serene-pub/sdk"
 // The slots first: a ruleset naming a stat nothing declares is refused.
-import { characterClassSlot, hpSlot, levelSlot, moodSlot } from "./slots.js"
 import {
-	VIS_ITINERIS_COMPENDIUM,
-	VIS_ITINERIS_CONVENTIONS,
-	VIS_ITINERIS_FROM_FREEFORM,
-	VIS_ITINERIS_OWN_SLOTS,
-	VIS_ITINERIS_PRESETS,
-	VIS_ITINERIS_REPERTOIRES,
-	VIS_ITINERIS_RULESET_ID,
-	VIS_ITINERIS_SELECTORS,
-	VIS_ITINERIS_SETTINGS,
-	VIS_ITINERIS_VOICE
-} from "../rulesets/vis-itineris/index.js"
+	characterClassSlot,
+	conditionsSlot,
+	currencySlot,
+	hpSlot,
+	inventorySlot,
+	levelSlot,
+	locationSlot,
+	moodSlot,
+	notesSlot,
+	relationshipsSlot,
+	timeOfDaySlot,
+	waysOutSlot,
+	weatherSlot
+} from "./slots.js"
+import {
+	visItinerisBackgroundSlot,
+	visItinerisCharismaSlot,
+	visItinerisConstitutionSlot,
+	visItinerisDeathFailuresSlot,
+	visItinerisDeathSuccessesSlot,
+	visItinerisDexteritySlot,
+	visItinerisDyingSlot,
+	visItinerisHeroPointsSlot,
+	visItinerisHitDiceSlot,
+	visItinerisHpMaxSlot,
+	visItinerisIntelligenceSlot,
+	visItinerisSaveTrainingSlot,
+	visItinerisSkillExpertiseSlot,
+	visItinerisSkillTrainingSlot,
+	visItinerisSpeciesSlot,
+	visItinerisSpeedSlot,
+	visItinerisSpellPointsSlot,
+	visItinerisStrengthSlot,
+	visItinerisTempHpSlot,
+	visItinerisWisdomSlot,
+	visItinerisWoundedSlot
+} from "../rulesets/vis-itineris/slots.js"
+import { VIS_ITINERIS_RULESET_ID } from "../rulesets/vis-itineris/index.js"
+import { WHEREWITHAL_RULESET_ID, wherewithalFavourSlot, wherewithalNerveSlot, wherewithalProvisionsSlot } from "../rulesets/wherewithal/index.js"
+// 🚧 Both in the seven sections over core's functions (2026-10-23, lane A2); importing them registers the functions first.
+import { VIS_ITINERIS_RULESET } from "../rulesets/vis-itineris/ruleset.js"
+import { WHEREWITHAL_RULESET } from "../rulesets/wherewithal/ruleset.js"
+
+/**
+ * 🚧 **The shared vocabulary** — `core:vocabulary/common@1` (A19, R27, R28;
+ * 2026-10-20): the words core's rulesets share, as one declared object whose
+ * members ARE the attribute slot declarations, grouped by the owner they
+ * attach to. Built from what Freeform and Vis Itineris already share
+ * (health, mood, level, class — the borrowed stats) plus the common lists
+ * and currency and relationships (R28), and the world's and a place's own.
+ * Both core rulesets play it (`plays`), so a reference to
+ * `rulesets.common.cast.health` fits either — and Freeform can hold things
+ * and conditions.
+ *
+ * ⚠ Not the host's per-session vocabulary of tracked slots (the app's
+ * `vocabularyFor`): this one is a shared set of words to reference — say
+ * "the shared vocabulary" where the two could meet.
+ * @experimental
+ * @ruling A19, R27, R28
+ */
+export const commonVocabulary = vocabulary(COMMON_VOCABULARY_ID, {
+	world: { location: locationSlot, time: timeOfDaySlot, weather: weatherSlot },
+	cast: {
+		health: hpSlot,
+		mood: moodSlot,
+		level: levelSlot,
+		class: characterClassSlot,
+		currency: currencySlot,
+		things: inventorySlot,
+		conditions: conditionsSlot,
+		relationships: relationshipsSlot
+	},
+	location: { waysOut: waysOutSlot, notes: notesSlot }
+})
 
 /** 🚧 What a character carries or a place holds. @experimental */
 export const freeformThings = defineRepertoire("things", {
+	tags: ["gear"],
 	label: { en: "Things" },
 	description: { en: "What a character carries, or what lies in a place." },
 	prose:
@@ -45,6 +112,7 @@ export const freeformThings = defineRepertoire("things", {
 
 /** 🚧 What ails or marks someone, for as long as it lasts. @experimental */
 export const freeformConditions = defineRepertoire("conditions", {
+	tags: ["condition"],
 	label: { en: "Conditions" },
 	description: { en: "What ails or marks a character — hurt, tired, inspired — and for how long." },
 	piece: {
@@ -65,6 +133,7 @@ export const freeformConditions = defineRepertoire("conditions", {
 
 /** 🚧 The ways out of a place, held by the place they lead from. @experimental */
 export const freeformExits = defineRepertoire("exits", {
+	tags: ["exit"],
 	label: { en: "Exits" },
 	description: { en: "The ways out of a place — a door, a path, a stair — and how each one stands." },
 	piece: {
@@ -93,6 +162,7 @@ export const freeformExits = defineRepertoire("exits", {
 
 /** 🚧 What is worth remembering, in a line or two. @experimental */
 export const freeformNotes = defineRepertoire("notes", {
+	tags: ["note"],
 	label: { en: "Notes" },
 	description: { en: "Anything worth remembering about a character or a place." },
 	prose: "Notes: things worth remembering. Keep them in mind; they are not instructions.",
@@ -131,9 +201,13 @@ export const freeformRuleset = defineRuleset("core:ruleset/freeform@1", {
 		},
 		time: { unit: "scene" }
 	},
-	// Mood is core's, read by every genre: Freeform borrows it, never owns it.
-	stats: [{ id: moodSlot.id, borrowed: true }],
-	repertoires: [freeformThings, freeformConditions, freeformExits, freeformNotes]
+	// 🚧 No attributes (RF fix 8, owner 2026-10-23): words only — a session on
+	// Freeform says "This session's rules declare no attributes". Mood was
+	// borrowed here once; a value it held is carried into the session's notes.
+	stats: [],
+	repertoires: [freeformThings, freeformConditions, freeformExits, freeformNotes],
+	// 🚧 The shared vocabulary (A19, 2026-10-20): health, things, conditions … as common words.
+	plays: [commonVocabulary]
 })
 
 /**
@@ -144,31 +218,35 @@ export const freeformRuleset = defineRuleset("core:ruleset/freeform@1", {
  * @experimental
  */
 export const visItinerisRuleset = defineRuleset(VIS_ITINERIS_RULESET_ID, {
-	name: { en: "Vis Itineris" },
-	description: {
-		en: "Vis Itineris — the force of the journey. Heroes whose deeds move the world. Built on the System Reference Document 5.2, licensed CC-BY-4.0; see Licences."
-	},
-	voice: VIS_ITINERIS_VOICE,
-	conventions: VIS_ITINERIS_CONVENTIONS,
-	settings: VIS_ITINERIS_SETTINGS,
-	presets: VIS_ITINERIS_PRESETS,
-	stats: [
-		{ id: levelSlot.id, config: { min: 1, max: 20 }, borrowed: true },
-		{ id: characterClassSlot.id, borrowed: true },
-		{ id: hpSlot.id, config: { min: 0, max: 999 }, default: 10, borrowed: true },
-		...VIS_ITINERIS_OWN_SLOTS.map((s) => ({ id: s.id }))
-	],
-	selectors: VIS_ITINERIS_SELECTORS,
-	repertoires: VIS_ITINERIS_REPERTOIRES,
-	compendium: VIS_ITINERIS_COMPENDIUM,
-	scripts: [
-		{ phase: "derived", priority: 10, seedKey: "core:script/vis-itineris-derive" },
-		{ phase: "derived", priority: 20, seedKey: "core:script/vis-itineris-bulk" },
-		{ phase: "pre-roll", priority: 10, seedKey: "core:script/vis-itineris-heighten-spell" },
-		{ phase: "effects", priority: 90, seedKey: "core:script/vis-itineris-level-up" }
-	],
-	conversions: [VIS_ITINERIS_FROM_FREEFORM]
+	// 🚧 In the seven sections (2026-10-23): what it plays by is unchanged (`catalogueParity`).
+	...VIS_ITINERIS_RULESET,
+	// 🚧 The shared vocabulary (A19, 2026-10-20). It keeps no currency stat of its own, so there is nothing to retitle.
+	plays: [commonVocabulary]
 })
+
+/**
+ * 🚧 **Wherewithal** — core's diceless ruleset (2026-10-22, PLAN-rulesets-
+ * authoring D3, ruling R3): nothing is rolled. A risk is carried by spending
+ * nerve, favour or provisions (`bid`), a contest weighs mettle against mettle
+ * (`compare`), and the rest is the table's judgement (`none`, the default).
+ * Bonds steady mettle, troubles weigh on it, boons restore a pool. Its own
+ * pools, then core's mood (borrowed); its parts in `rulesets/wherewithal/`.
+ * @experimental
+ */
+export const wherewithalRuleset = defineRuleset(WHEREWITHAL_RULESET_ID, {
+	// 🚧 In the seven sections (2026-10-23): what it plays by is unchanged (`catalogueParity`).
+	...WHEREWITHAL_RULESET,
+	// 🚧 The shared vocabulary (A19): mood, things, conditions … as common words.
+	plays: [commonVocabulary]
+})
+
+/**
+ * 🚧 Every ruleset core ships, in the order a picker lists them — what a
+ * shipped catalogue names (conformance C38) and the Lair's rules table reads.
+ * Never a template (`RULESET_TEMPLATES`).
+ * @experimental
+ */
+export const CORE_RULESETS = Object.freeze([freeformRuleset, visItinerisRuleset, wherewithalRuleset])
 
 /**
  * 🚧 The ruleset id Freeform carried before 2026-10-19 — what the app's
@@ -182,3 +260,66 @@ export const FREEFORM_RENAMED_FROM = Object.freeze({
 	primer: "core:primer/story@1",
 	entryTypePrefix: "core:entry/story.",
 } as const)
+
+/**
+ * A ruleset read as words: the shared vocabulary it plays, with its own
+ * stats beside them — each member the slot declaration itself, typed.
+ */
+const wordsOf = <Own extends Record<string, AttributeSlotDecl>>(id: string, ownCast: Own) =>
+	Object.freeze({
+		id,
+		world: commonVocabulary.world,
+		cast: Object.freeze({ ...commonVocabulary.cast, ...ownCast }) as typeof commonVocabulary.cast & Own,
+		location: commonVocabulary.location
+	})
+
+/**
+ * 🚧 **Core's rulesets as vocabulary objects** (A19, R27; 2026-10-20) — the
+ * way core's own code, and an author's, names an attribute: by its
+ * declaration, typed, never by a string (R30).
+ *
+ * ```ts
+ * rulesets.common.cast.health                  // the shared health slot — fits any ruleset that plays it
+ * rulesets.core.visItineris.cast.spellPoints   // Vis Itineris's own — ruleset-specific
+ * rulesets.core.freeform.cast.things           // what Freeform plays for things (the shared one)
+ * ```
+ *
+ * `common` is the shared vocabulary (`core:vocabulary/common@1`); each core
+ * ruleset reads as the shared words it plays plus its own stats.
+ * @experimental
+ * @ruling A19, R27, R30
+ */
+export const rulesets = Object.freeze({
+	common: commonVocabulary,
+	core: Object.freeze({
+		freeform: wordsOf(freeformRuleset.id, {}),
+		wherewithal: wordsOf(wherewithalRuleset.id, {
+			nerve: wherewithalNerveSlot,
+			favour: wherewithalFavourSlot,
+			provisions: wherewithalProvisionsSlot
+		}),
+		visItineris: wordsOf(visItinerisRuleset.id, {
+			strength: visItinerisStrengthSlot,
+			dexterity: visItinerisDexteritySlot,
+			constitution: visItinerisConstitutionSlot,
+			intelligence: visItinerisIntelligenceSlot,
+			wisdom: visItinerisWisdomSlot,
+			charisma: visItinerisCharismaSlot,
+			healthMax: visItinerisHpMaxSlot,
+			tempHealth: visItinerisTempHpSlot,
+			species: visItinerisSpeciesSlot,
+			background: visItinerisBackgroundSlot,
+			speed: visItinerisSpeedSlot,
+			trainedSaves: visItinerisSaveTrainingSlot,
+			trainedSkills: visItinerisSkillTrainingSlot,
+			expertSkills: visItinerisSkillExpertiseSlot,
+			hitDice: visItinerisHitDiceSlot,
+			dying: visItinerisDyingSlot,
+			wounded: visItinerisWoundedSlot,
+			deathSuccesses: visItinerisDeathSuccessesSlot,
+			deathFailures: visItinerisDeathFailuresSlot,
+			spellPoints: visItinerisSpellPointsSlot,
+			heroPoints: visItinerisHeroPointsSlot
+		})
+	})
+})

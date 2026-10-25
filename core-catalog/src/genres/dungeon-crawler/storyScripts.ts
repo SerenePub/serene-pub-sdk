@@ -14,17 +14,6 @@ import { DUNGEON_CRAWLER_EXITS_JS } from './lore.js'
 
 export { DUNGEON_CRAWLER_LEAD_WORDS }
 
-/**
- * 🚧 How much a character's full health grows with each level gained
- * (2026-10-15). Full health is the seat's own **stat configuration** — the
- * hp slot's `max` for that owner, set when the sheet is made
- * (`core:outlet/set-stat-config@1`) and raised by this much a level by the
- * story turn's books — and read back off `state.configs`, the bar's own
- * number, by every script here.
- * @experimental
- */
-export const DUNGEON_CRAWLER_HP_PER_LEVEL = 4
-
 /** A seeded data-transform row, reading and returning `value`. @internal */
 export const storySeed = seedScript
 
@@ -45,19 +34,21 @@ export const DUNGEON_CRAWLER_CRIB_ROUNDS = 40
 export const DUNGEON_CRAWLER_DELTA_OPS = Object.freeze(['add', 'spend', 'set', 'remove', 'hit', 'use', 'traverse'] as const)
 
 /**
- * The story turn's rules over the preamble: `CRIB_ROUNDS`, `HP_PER_LEVEL`;
+ * The story turn's rules over the preamble: `CRIB_ROUNDS` (⏳ `HP_PER_LEVEL`
+ * retired 2026-10-23: what a level brings is the session's rules', the
+ * books' `levelHp`);
  * `sinceReply(msgs)` — this round's declarations; `fatesAfter` /
  * `keepFates` — who is out of the round; the clock (`addMinutes`,
  * `clockLabel`); `hooks` — the open leads; the exit model
  * (`DUNGEON_CRAWLER_EXITS_JS`); and `checkPlan(raw)` — the Planner's answer
- * normalised, or `null` when it is unusable (no `narratorBrief`). The JSON
- * schema is trusted for every enum (AUDIT C7): no op, slot or repertoire is
- * re-validated here. @internal
+ * normalised, or `null` when it is unusable (no `narratorBrief`), its deltas
+ * read from the session's rules' grammar (`asDelta`, S1) into the handler's.
+ * The JSON schema is trusted for every enum (AUDIT C7): no op, attribute or
+ * entry type is re-validated here. @internal
  */
 export const DUNGEON_CRAWLER_STORY_PREAMBLE = `${DUNGEON_CRAWLER_PREAMBLE}
 ${DUNGEON_CRAWLER_EXITS_JS}
 var CRIB_ROUNDS = ${DUNGEON_CRAWLER_CRIB_ROUNDS};
-var HP_PER_LEVEL = ${DUNGEON_CRAWLER_HP_PER_LEVEL};
 // This round's declarations — DUNGEON_CRAWLER_DECLARED_RULE (names.ts), read
 // exactly as the host reads it for the round script (\`selection.sentSinceReply\`):
 // the person lines after Story's newest visible reply. Hidden rows and
@@ -149,7 +140,7 @@ function checkPlan(raw) {
 	// the model proposes, never a total (\`deltaOf\`, the preamble's).
 	var deltas = [];
 	var rd = Array.isArray(raw.deltas) ? raw.deltas : [];
-	for (var i = 0; i < rd.length && deltas.length < 16; i++) { var d = deltaOf(rd[i]); if (d) deltas.push(d); }
+	for (var i = 0; i < rd.length && deltas.length < 16; i++) { var d = deltaOf(asDelta(rd[i])); if (d) deltas.push(d); }
 	var w = own(raw.world);
 	var npcs = [];
 	var rn = Array.isArray(w.npcs) ? w.npcs : [];

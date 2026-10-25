@@ -50,6 +50,7 @@ import {
 	storyGenre,
 	chatGenre,
 	corePresets,
+	storyRegistrations,
 	guideGenre,
 	lairGenre,
 	turnOrderSpec,
@@ -168,7 +169,9 @@ describe('M1 · turnOrderSpec (R27)', () => {
 			assert.ok(entry, `${row.slug} is in CORE_SPECS`)
 			const doc = entry!.build() as ReturnType<typeof turnOrderSpec>
 			assert.equal(doc.id, row.slug)
-			assert.deepEqual(doc.input, { genre: row.genre.id, events: [...row.events] })
+			// 🚧 No lock (PLAN-layering D3, 2026-10-20): the events it suits; the genre's defaults register it on each.
+			assert.equal(doc.input, undefined)
+			assert.deepEqual(doc.suits, [...row.events])
 			const node = strategyNode(doc)
 			assert.equal(node.definitionId, row.pin)
 			// No swaps, no control: the strategy node carries no mark at all (R28).
@@ -200,17 +203,20 @@ describe('M1 · turnOrderSpec (R27)', () => {
 		})
 		assert.equal(doc.id, 'acme.rp:spec/tavern-turn-order')
 		assert.equal(doc.version, '1.0.0')
-		assert.deepEqual(doc.input, {
-			genre: 'acme.rp:genre/tavern',
-			events: [sessionEvents.messageCompleted, sessionEvents.annexChanged],
-		})
+		assert.equal(doc.input, undefined)
+		assert.deepEqual(doc.suits, [sessionEvents.messageCompleted, sessionEvents.annexChanged])
 		assert.deepEqual(strategyNode(doc).expose, { session: true, swaps: ['core:task/turn-random@1'] })
 		assert.deepEqual(poolPreset(doc), { personas: 'none' })
 	})
 
-	test('a turn-order spec binds like any spec — on every event its lock lists (R48)', () => {
-		const story = corePresets().find((p) => p.slug === 'story-minimal')!
-		for (const e of TURN_ORDER_EVENTS) assert.equal(story.bindings[e]?.spec, STORY_TURN_ORDER_SPEC_ID)
+	test('a turn-order spec registers like any spec — on every event it suits (R48, R24)', () => {
+		// 🚧 Registrations (PLAN-layering D4, 2026-10-20): one per event, in the genre's defaults.
+		const regs = storyRegistrations().turnOrder
+		assert.deepEqual(
+			regs.map((r) => [(r.trigger as { event: string }).event, r.pipeline]),
+			TURN_ORDER_EVENTS.map((e) => [e, STORY_TURN_ORDER_SPEC_ID]),
+		)
+		void corePresets
 	})
 })
 

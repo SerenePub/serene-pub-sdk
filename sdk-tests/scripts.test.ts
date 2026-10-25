@@ -59,6 +59,9 @@ const CORE_V1 = [
 	// The generic scope, added 2026-10-12: JSON in, JSON out — the body of
 	// the script step (`core:task/run-script@1`).
 	'core:script:data/transform@1',
+	// The cadence scope, added 2026-10-20 (PLAN-layering D2): a plugin
+	// cadence's verdict — is a routine due — never data (R9).
+	'core:script:cadence/due@1',
 ]
 
 describe('18-S1 · the id grammar', () => {
@@ -146,17 +149,20 @@ describe('18-S1 · core ships eight contracts', () => {
 		}
 	})
 
-	test('stop is the verdict operation; the rest fold', () => {
+	test('stop and cadence/due are the verdict operations; the rest fold', () => {
 		// The distinction that makes cross-source merging well-defined: a
 		// verdict is reduced (earliest index wins) rather than folded, so
-		// connection ∪ pipeline ∪ chat needs no precedence rule.
-		assert.equal(getScriptKind('core:script:text/stop@1')!.semantics, 'verdict')
-		for (const id of CORE_V1.filter((i) => i !== 'core:script:text/stop@1'))
+		// connection ∪ pipeline ∪ chat needs no precedence rule. A cadence's
+		// due-or-not (PLAN-layering D2) is a verdict too: it passes no data (R9).
+		const verdicts = ['core:script:text/stop@1', 'core:script:cadence/due@1']
+		for (const id of verdicts) assert.equal(getScriptKind(id)!.semantics, 'verdict', id)
+		for (const id of CORE_V1.filter((i) => !verdicts.includes(i)))
 			assert.equal(getScriptKind(id)!.semantics, 'transform', id)
 	})
 
 	test('the content scopes are derived, not restated', () => {
 		assert.deepEqual(scriptContentScopes().sort(), [
+			'cadence',
 			'candidates',
 			'cast',
 			'context',

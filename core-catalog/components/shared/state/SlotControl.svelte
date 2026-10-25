@@ -42,6 +42,12 @@
 	 *
 	 * A widget may put something of its own at the end of the row — Stats'
 	 * **stat trail** (F2) — through `trail`; it carries that widget's parts.
+	 *
+	 * 🚧 **The rules' kind and hint** (RF fix 8): where the slot is one of the
+	 * rules' attributes, `drawnAs` picks the drawing by its kind and shown-as
+	 * hint — a number's `bar`, `count` or `badge`, a pool's `pips` or `bar`, a
+	 * word's `badge` or `words`, free text over several lines — on
+	 * `data-shown-as`; an unknown hint is the kind's default.
 	 */
 	import type { Snippet } from "svelte"
 	import type { SessionStateOwnerV1, SessionStateSlotV1 } from "@serene-pub/core-catalog/widgets"
@@ -66,6 +72,8 @@
 		slotKind,
 		slotWritable,
 		textDraftValue,
+		drawnAs,
+		pipsOf,
 		type GiveTarget,
 		type SlotWriteValue
 	} from "@serene-pub/core-catalog/session-state"
@@ -136,7 +144,14 @@
 	let textOpened = ""
 
 	let kind = $derived(slotKind(slot))
-	let bar = $derived(kind === "number" ? barView(value, config as { min?: number; max?: number }) : null)
+	/** 🚧 How this value is drawn (RF fix 8): its kind's way, by the rules' hint. */
+	let drawing = $derived(drawnAs(slot, config as { min?: number; max?: number }))
+	let bar = $derived(kind === "number" && drawing === "bar" ? barView(value, config as { min?: number; max?: number }) : null)
+	let pips = $derived(kind === "number" && drawing === "pips" ? pipsOf(value, config as { min?: number; max?: number }) : null)
+	/** 🚧 A word drawn in words, not a chip; free text over several lines (RF fix 8). */
+	let asWords = $derived(kind === "choice" && drawing === "words")
+	let multiline = $derived(kind === "text" && slot.kind === "text")
+	let textLines = $derived(multiline && typeof value === "string" && value.includes("\n") ? value.split("\n") : null)
 	let options = $derived(enumValues(config))
 	let items = $derived(listItemsOf(value))
 	/** 🚧 A list of a ruleset's pieces (`config.repertoire`): a row per piece, never one line of words. */
@@ -245,6 +260,14 @@
 	{#if invalid}<p data-widget-part="stat-slot.invalid" role="alert" title={invalid.detail ?? undefined}>{invalid.text}</p>{/if}
 {/snippet}
 
+{#snippet pipRow(p: { filled: number; total: number })}
+	<span data-widget-part="stat-slot.pips" role="img" aria-label="{slot.label} {p.filled}/{p.total}">
+		{#each Array.from({ length: p.total }, (_, i) => i) as i (i)}
+			<span data-widget-part="stat-slot.pip" data-filled={i < p.filled ? "" : undefined}></span>
+		{/each}
+	</span>
+{/snippet}
+
 {#snippet word(item: unknown)}
 	<span data-widget-part="stat-slot.item-text label">{itemText(item)}</span>
 {/snippet}
@@ -279,6 +302,7 @@
 	data-slot-id={slot.slotId}
 	data-slot-type={slot.type}
 	data-slot-shape={kind}
+	data-shown-as={drawing}
 	data-retired={slot.retired ? "" : undefined}
 	data-stacked={holdsPieces && density === "full" ? "" : undefined}
 	data-locked={locked ? "" : undefined}
@@ -317,7 +341,15 @@
 			/>
 		{:else if !writable}
 			<!-- Read-only: words, never a disabled control. -->
-			{#if bar}
+			{#if pips}
+				{@render pipRow(pips)}
+			{:else if kind === "number" && drawing === "badge"}
+				<span data-widget-part="stat-slot.chip chip" data-empty={value == null ? "" : undefined}>{shown || notSet}</span>
+			{:else if textLines}
+				<span data-widget-part="stat-slot.line value" data-multiline="">{#each textLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}</span>
+			{:else if asWords}
+				<span data-widget-part="stat-slot.line value" data-empty={value == null ? "" : undefined}>{shown || notSet}</span>
+			{:else if bar}
 				<span data-widget-part="stat-slot.bar" role="img" aria-label="{slot.label} {bar.label}">
 					<span data-widget-part="stat-slot.track meter">
 						<span data-widget-part="stat-slot.fill" style:--sp-fill="{bar.percent}%"></span>
@@ -386,6 +418,21 @@
 			/>
 		{:else if editing && kind === "story-time"}
 			<StoryTimeEditor {value} label={fieldLabel} {t} onsave={write} oncancel={() => (editing = false)} />
+		{:else if editing && multiline}
+			<!-- 🚧 Free text (RF fix 8): a few sentences over several lines. A box's textarea raises
+			     `change` when it is left (no keys, no blur): that commits it; Done does too. -->
+			<!-- svelte-ignore a11y_autofocus -->
+			<textarea
+				data-widget-part="stat-slot.field"
+				aria-label={fieldLabel}
+				rows="3"
+				autofocus
+				aria-invalid={invalid ? "true" : undefined}
+				bind:value={textDraft}
+				onchange={commitText}
+			></textarea>
+			<button type="button" data-widget-part="stat-slot.done" onclick={() => (textDraft === textOpened ? (editing = false) : void commitText())}>{t("Done")}</button>
+			{@render refusalLine()}
 		{:else if editing}
 			<!-- svelte-ignore a11y_autofocus -->
 			<input
@@ -400,6 +447,16 @@
 				onblur={() => onblur(textDraft === textOpened, commitText)}
 				onkey={(e: CustomEvent<HostKeyEventDetail>) => onkey(e, commitText)}
 			/>
+			{@render refusalLine()}
+		{:else if pips}
+			<button type="button" data-widget-part="stat-slot.pips-open" aria-label={editLabel} onclick={open}>
+				{@render pipRow(pips)}
+			</button>
+			{@render refusalLine()}
+		{:else if kind === "number" && drawing === "badge"}
+			<button type="button" data-widget-part="stat-slot.chip chip" data-empty={value == null ? "" : undefined} aria-label={editLabel} onclick={open}>
+				{shown || notSet}
+			</button>
 			{@render refusalLine()}
 		{:else if bar}
 			<button
@@ -420,7 +477,7 @@
 				<button
 					slot="trigger"
 					type="button"
-					data-widget-part="stat-slot.chip chip"
+					data-widget-part={asWords ? "stat-slot.line value" : "stat-slot.chip chip"}
 					data-empty={value == null ? "" : undefined}
 					aria-label={editLabel}
 				>
@@ -444,7 +501,7 @@
 				aria-label={editLabel}
 				onclick={open}
 			>
-				{#if itemLines}{#each itemLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}{:else}{kind === "list" ? (items.length ? shown : t("none")) : shown || notSet}{/if}
+				{#if itemLines}{#each itemLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}{:else if textLines}{#each textLines as line, j (j)}{#if j > 0}<br />{/if}{line}{/each}{:else}{kind === "list" ? (items.length ? shown : t("none")) : shown || notSet}{/if}
 			</button>
 			{@render refusalLine()}
 		{/if}

@@ -56,10 +56,7 @@ export const castellanAction = (
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			/**
 			 * The row, opened before anything is read — the Castellan's, by
 			 * name (R8, owner F2 2026-09-28: Trap and Reveal are the
@@ -196,7 +193,7 @@ export const castellanAction = (
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
@@ -208,6 +205,8 @@ export const castellanAction = (
 					connection: slot.connection(),
 					sampling: slot.sampling(),
 					params: slot.params(),
+					// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+					speechSampling: slot.speechSampling(),
 				}),
 				{ expose: { stream: true, status: trigger.status } },
 			)
@@ -229,7 +228,7 @@ export const castellanAction = (
 			 * session's growing history and the reminder only earns its place
 			 * once there is enough of it to drift from.
 			 */
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p.params('prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER }),
 			)
 			.build(),

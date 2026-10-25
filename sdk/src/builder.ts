@@ -44,6 +44,8 @@ import {
 	type NormalizedAction,
 } from './actions.js'
 import { boundaryTriggerFindings, type BoundaryTriggerDecl } from './sceneSettings.js'
+import { eventIdOf, isEventDef, type EventDef } from './events.js'
+import { actionHandlesOf, type ActionHandle } from './registrations.js'
 
 /** @experimental */
 export interface SpecMeta {
@@ -230,7 +232,16 @@ export interface BuiltNode {
 	 * sets neither hashes as it always did.
 	 * @ruling PLAN-turn-order §4.11, R12, R28, lair pass B3/B18 (2026-09-27), D6/D5, W2, R-20
 	 */
-	expose?: { session?: boolean; swaps?: string[]; stream?: true; status?: I18n; label?: I18n; purpose?: I18n }
+	expose?: {
+		session?: boolean
+		swaps?: string[]
+		stream?: true
+		status?: I18n
+		label?: I18n
+		purpose?: I18n
+		/** 🚧 R54: the owner chooses this step's prompt (among those not hidden) — see `NodeOpts.expose.promptReach`. */
+		promptReach?: 'owner'
+	}
 	/** The placement's `prefers`, when stated — see `NodeOpts.prefers`. */
 	prefers?: Prefers
 	/**
@@ -418,10 +429,48 @@ export interface BuiltSpec {
 	 * @ruling 24 §4, PLAN-turn-order §4.1 (2026-09-21)
 	 */
 	input?: { genre?: string; event?: string; events?: string[] }
+	/**
+	 * 🚧 The events this pipeline **suits** — hints for pickers only, never a
+	 * subscription (PLAN-layering D3, §2): what runs a pipeline is a
+	 * registration. Set by `.inlet(key, node, { suits })`, and by the ⏳ lock
+	 * form (`{ genre, event(s) }`, an alias to 0.7), which records its events
+	 * here too. A document carries `suits` only for the new form — a locked
+	 * spec's are its lock's (`suitsOf`), so its hash does not move.
+	 * @ruling R6, §2
+	 */
+	suits?: string[]
+	/**
+	 * 🚧 The events this pipeline **emits** (R6) — recorded by the host, so a
+	 * registration may listen to them and the door can refuse a cycle (A12).
+	 * Set by `.emits(…)`; carried in the document when stated.
+	 * @ruling R6, A12
+	 */
+	emits?: string[]
+	/** 🚧 `false`: the events its ruleset functions raise are never emitted (`.functionEvents(false)`, D3). */
+	functionEvents?: false
 }
 
-/** What a node method accepts: the value, or a function of the scope that returns it. @experimental */
-export type NodeArg<N, Nodes extends Record<string, PortDecl>> = N | (($: Scope<Nodes>) => N)
+/**
+ * A built spec with its **action handles**: `spec.actions.<key>` for every
+ * action it contributes, typed from the declarations — what `register()`
+ * takes to make an action pipeline (derive, don't spell). Not part of the
+ * document: the handles are read off `contributes`.
+ * @experimental
+ * @ruling A18, D3
+ */
+export type BuiltSpecWithActions<A extends string = string> = BuiltSpec & {
+	readonly actions: Readonly<Record<A, ActionHandle>>
+}
+
+/**
+ * What a node method accepts: the value, or a function of the scope that returns it.
+ * `Prefix` is the chain's qualifier: inside a clause chain its own nodes are named by
+ * their short keys too (A18).
+ * @experimental
+ */
+export type NodeArg<N, Nodes extends Record<string, PortDecl>, Prefix extends string = ''> =
+	| N
+	| (($: Scope<Nodes, Prefix>) => N)
 
 /**
  * The optional third argument of a node method:
@@ -454,6 +503,15 @@ export interface NodeOpts {
 		label?: I18n
 		/** The step purpose: what this model call is for, under its settings heading — see `BuiltNode.expose`. */
 		purpose?: I18n
+		/**
+		 * 🚧 **The prompt choice's reach** (R54, 2026-10-21): `'owner'` offers
+		 * the session's owner a choice of this step's prompt — among the
+		 * prompts of its slot's pool an administrator has not hidden — as a
+		 * setting of the pipeline. Never the prompt's text: members never edit
+		 * a prompt. Only on a step whose definition declares a `prompts` slot.
+		 * Absent: an administrator's choice alone.
+		 */
+		promptReach?: 'owner'
 	}
 	/**
 	 * What this step runs best on — overrides the definition's own
@@ -528,6 +586,15 @@ function exposeOf(
 	}
 	if (expose.purpose !== undefined && !isModelCall(pinned))
 		throw new Error(stepPurposeRefusal(key, pinned.id))
+	if (expose.promptReach !== undefined) {
+		if (expose.promptReach !== 'owner')
+			throw new Error(`node '${key}': expose.promptReach is 'owner' or absent — an administrator's choice is the default`)
+		const hasPrompts = Object.values((pinned.slots ?? {}) as Record<string, { kind?: string }>).some((s) => s.kind === 'prompts')
+		if (!hasPrompts)
+			throw new Error(
+				`node '${key}': expose.promptReach offers a choice of prompt, but ${pinned.id} declares no prompts slot`,
+			)
+	}
 	// What the node shows while it runs (B3/B18), and what the settings call
 	// it, ride beside the session mark; the streaming step's laws are
 	// `validate()`'s, which sees the whole document (one per execution path,
@@ -537,6 +604,7 @@ function exposeOf(
 		...(expose.status !== undefined ? { status: expose.status } : {}),
 		...(expose.label !== undefined ? { label: expose.label } : {}),
 		...(expose.purpose !== undefined ? { purpose: expose.purpose } : {}),
+		...(expose.promptReach === 'owner' ? { promptReach: 'owner' as const } : {}),
 	}
 	if (swaps.length) return { session: true, swaps, ...shown }
 	if (expose.session === true) return { session: true, ...shown }
@@ -606,8 +674,10 @@ export type NodeOf<K extends Kind> = NodeSpec<Descriptor<any, any> & { kind: K }
  * type — the exact thing this whole change exists to prevent.
  * @experimental
  */
-export type EachOver<Nodes extends Record<string, PortDecl>> =
-	(($: Scope<Nodes>) => DataRef) | DataRef | readonly unknown[]
+export type EachOver<Nodes extends Record<string, PortDecl>, Prefix extends string = ''> =
+	| (($: Scope<Nodes, Prefix>) => DataRef)
+	| DataRef
+	| readonly unknown[]
 
 /**
  * Node keys accumulate **fully qualified**, exactly as they land in the rows — so
@@ -628,9 +698,86 @@ type AddPorts<
 	[X in K]: P
 }
 
-/** Pull the accumulated node map back out of a builder the author handed us. @experimental */
+/**
+ * Pull the accumulated node map back out of a builder the author handed us — a
+ * chain's, a gather's, or a junction's branches (A18: a junction's result keeps
+ * the nodes its branches declared, so what follows it is typed).
+ * @experimental
+ */
 export type NodesOf<B> =
-	B extends ChainBuilder<infer M, any> ? M : B extends GatherBuilder<infer M, any> ? M : never
+	B extends ChainBuilder<infer M, any>
+		? M
+		: B extends GatherBuilder<infer M, any>
+			? M
+			: B extends JunctionBuilder<any, any, infer M>
+				? M
+				: never
+
+/**
+ * 🚧 The node map after a junction (A18): the nodes before it, every node its
+ * branches declared — **optional**, because a branch that did not fire publishes
+ * `halt('not selected')` and a read of its node is absent at run time — and the
+ * junction's own result ports under its id.
+ * @experimental
+ * @ruling A18, M4
+ */
+export type JunctionNodes<
+	Nodes extends Record<string, PortDecl>,
+	R,
+	Id extends string,
+> = Nodes & Partial<NodesOf<R>> & { [X in Id]: JunctionPorts }
+
+/**
+ * 🚧 A **typed path** into a junction's value (A18): `(v: Reckoned) => v.scripts`
+ * — the property chain read off a value whose TypeScript type the author names, so
+ * a typo is a compile error. The string (`'scripts'`) is still the STORED form:
+ * the builder records the chain once, at declaration, and stores the dotted
+ * path. The parameter is `never` until annotated, so an unannotated
+ * `(v) => v.x` does not compile — a typed path states the type it reads.
+ * @experimental
+ * @ruling A18
+ */
+export type TypedPath = (value: never) => unknown
+
+/**
+ * 🚧 A branch's condition as `.when()` takes it: the stored `JunctionPredicate`
+ * (less `default`, which is `.otherwise()`), with `path` and `equalsPath` given
+ * as the stored dotted string or as a `TypedPath`.
+ * @experimental
+ * @ruling A18
+ */
+export type JunctionWhen = Omit<JunctionPredicate, 'default' | 'path' | 'equalsPath'> & {
+	path?: string | TypedPath
+	equalsPath?: string | TypedPath
+}
+
+/**
+ * The dotted path a `TypedPath` reads — `(v: T) => v.call.tool` → `'call.tool'` —
+ * recorded by walking it once over a proxy. A function that does anything but
+ * read one chain of properties is refused, naming the form.
+ * @internal
+ */
+export function typedPathOf(read: TypedPath, where: string): string {
+	const segments: string[] = []
+	const recorder: any = new Proxy(Object.create(null), {
+		get(_t, k) {
+			if (typeof k !== 'string') return undefined
+			segments.push(k)
+			return recorder
+		},
+	})
+	let out: unknown
+	try {
+		out = (read as (v: unknown) => unknown)(recorder)
+	} catch {
+		out = undefined
+	}
+	if (out !== recorder || !segments.length)
+		throw new Error(
+			`${where}: a typed path reads one chain of properties off the value — (v: Reckoned) => v.call.tool`,
+		)
+	return segments.join('.')
+}
 
 /**
  * What a clause publishes. Addressable like a node, because it is the only well-defined
@@ -644,7 +791,9 @@ export type BranchPorts = { main: string; values: string; branches: string; ok: 
  * What a junction publishes: the clause ports,
  * and the fired branch's own ports beside them — `$.decide.order`. Open at
  * the type level (any port name reads); `validate()` holds the document to
- * ports every branch's last node actually publishes, with one shape.
+ * ports every branch's last node actually publishes, with one shape — or
+ * shapes that agree on one of them (🚧 `agreedShape`, RF fix 3: a
+ * text-stream and a text hand on a text).
  * @experimental
  * @ruling M4, PLAN-turn-order §4.14
  */
@@ -674,7 +823,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	) {}
 
 	/** Resolve the callback form against the nodes declared so far. */
-	protected resolve<N>(arg: NodeArg<N, Nodes>): N {
+	protected resolve<N>(arg: NodeArg<N, Nodes, Prefix>): N {
 		if (typeof arg !== 'function') return arg
 		const known = new Set(this.spec.nodes.map((n) => n.key))
 		// Clauses publish under their own id, so they are addressable exactly like nodes —
@@ -686,10 +835,10 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 			? `${this.clauseCtx.clauseId}.${this.clauseCtx.chain}`
 			: undefined
 		const scope = makeScope(known, localPrefix, this.clauseCtx?.clauseId)
-		return (arg as ($: Scope<Nodes>) => N)(scope)
+		return (arg as ($: Scope<Nodes, Prefix>) => N)(scope)
 	}
 
-	protected add(kind: Kind, key: string, arg: NodeArg<NodeSpec<any>, Nodes>, opts?: NodeOpts) {
+	protected add(kind: Kind, key: string, arg: NodeArg<NodeSpec<any>, Nodes, Prefix>, opts?: NodeOpts): this {
 		const node = this.resolve(arg)
 		if (node?.descriptor?.kind !== kind) {
 			throw new Error(
@@ -756,7 +905,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 				return renders ? { renders } : {}
 			})(),
 		})
-		return this as any
+		return this
 	}
 
 	protected qualify(key: string) {
@@ -801,7 +950,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 			chains: [],
 		})
 		fn(new GatherBuilder<Nodes, Qualify<Prefix, Id>>(this.spec, qualified))
-		return this as any
+		return this as unknown as ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>
 	}
 
 	/**
@@ -810,7 +959,7 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	 */
 	each<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
-		opts: { over: EachOver<Nodes>; max: number; mode?: 'sequential' | 'parallel' },
+		opts: { over: EachOver<Nodes, Prefix>; max: number; mode?: 'sequential' | 'parallel' },
 		fn: (c: ChainBuilder<Nodes & { [ITEM]: PortDecl }, `${Qualify<Prefix, Id>}.item`>) => R,
 	): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix> {
 		const qualified = this.qualify(id)
@@ -818,12 +967,12 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 			id: qualified,
 			kind: 'each',
 			mode: opts.mode ?? 'parallel',
-			over: typeof opts.over === 'function' ? this.resolve(opts.over as any) : opts.over,
+			over: typeof opts.over === 'function' ? this.resolve(opts.over) : opts.over,
 			max: opts.max,
 			chains: ['item'],
 		})
-		fn(new ChainBuilder<any, any>(this.spec, { clauseId: qualified, chain: 'item' }))
-		return this as any
+		fn(new ChainBuilder<Nodes & { [ITEM]: PortDecl }, `${Qualify<Prefix, Id>}.item`>(this.spec, { clauseId: qualified, chain: 'item' }))
+		return this as unknown as ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>
 	}
 
 	/**
@@ -837,12 +986,23 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	 * instead of a list length.
 	 *
 	 * Always sequential — each iteration depends on the last, so `mode` would be a lie.
-	 * @ruling 01 §4a
+	 *
+	 * The predicate is stated in one of two places (A18): in `opts.repeatWhile`, where
+	 * `$` is typed against the nodes declared BEFORE the loop (by their full keys — a
+	 * body node is reachable there only untyped, the way it always was); or at the end
+	 * of the body, `.repeatWhile(($) => $.parse.call)`, where `$` is typed against the
+	 * body's own nodes. Either way it is resolved after the body and stored on the
+	 * clause the same way, so the document does not change. Not both.
+	 *
+	 * The body reads the loop's own carry — `$.tools.values`, what the passes so
+	 * far published — so its `$` holds the clause's ports under its id as well
+	 * (A18, lane 4: the runtime always resolved it; the type now says so).
+	 * @ruling 01 §4a, A18
 	 */
 	loop<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
-		opts: { repeatWhile: (($: Scope<any>) => DataRef) | DataRef; max: number },
-		fn: (c: ChainBuilder<Nodes, `${Qualify<Prefix, Id>}.item`>) => R,
+		opts: { repeatWhile?: (($: Scope<Nodes>) => DataRef) | DataRef; max: number },
+		fn: (c: ChainBuilder<AddPorts<Nodes, Qualify<Prefix, Id>, BranchPorts>, `${Qualify<Prefix, Id>}.item`>) => R,
 	): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix> {
 		const qualified = this.qualify(id)
 		const clause = this.declareClause({
@@ -852,22 +1012,55 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 			max: opts.max,
 			chains: ['item'],
 		})
-		fn(new ChainBuilder<any, any>(this.spec, { clauseId: qualified, chain: 'item' }))
+		fn(
+			new ChainBuilder<AddPorts<Nodes, Qualify<Prefix, Id>, BranchPorts>, `${Qualify<Prefix, Id>}.item`>(this.spec, {
+				clauseId: qualified,
+				chain: 'item',
+			}),
+		)
 		// Resolved *after* the body, so the predicate may name a node inside it — which
 		// is the only place a predicate that ever changes can come from.
-		clause.repeatWhile =
-			typeof opts.repeatWhile === 'function'
-				? new ChainBuilder<any, any>(this.spec, {
-						clauseId: qualified,
-						chain: 'item',
-					}).resolvePublic(opts.repeatWhile as any)
-				: opts.repeatWhile
-		return this as any
+		if (opts.repeatWhile !== undefined && clause.repeatWhile !== undefined)
+			throw new Error(
+				`loop '${qualified}' states repeatWhile twice — once in its options or once at the end of its body, not both`,
+			)
+		if (clause.repeatWhile === undefined)
+			clause.repeatWhile =
+				typeof opts.repeatWhile === 'function'
+					? new ChainBuilder<Nodes, `${Qualify<Prefix, Id>}.item`>(this.spec, {
+							clauseId: qualified,
+							chain: 'item',
+						}).resolvePublic(opts.repeatWhile as NodeArg<DataRef, Nodes, `${Qualify<Prefix, Id>}.item`>)
+					: opts.repeatWhile
+		return this as unknown as ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, BranchPorts>, Prefix>
+	}
+
+	/**
+	 * 🚧 A loop's predicate, stated at the END of its body (A18) — `$` typed against
+	 * the body's own nodes, by their short keys too:
+	 * `.loop('tools', { max: 4 }, (l) => l.task('parse', …).repeatWhile(($) => $.parse.call))`.
+	 * Stored exactly as `opts.repeatWhile` is (the clause's `repeatWhile`), so the
+	 * document is the one the options form writes. Refused anywhere but a loop's body,
+	 * and when the loop's options state one too.
+	 * @ruling 01 §4a, A18
+	 */
+	repeatWhile(predicate: (($: Scope<Nodes, Prefix>) => DataRef) | DataRef): this {
+		const ctx = this.clauseCtx
+		const clause = ctx ? this.spec.clauses.find((c) => c.id === ctx.clauseId) : undefined
+		if (!ctx || !clause || clause.kind !== 'loop' || ctx.chain !== 'item')
+			throw new Error(
+				`.repeatWhile() states a loop's predicate — call it at the end of the loop's body, ` +
+					`.loop(id, { max }, (l) => l.task(…).repeatWhile(($) => …))`,
+			)
+		if (clause.repeatWhile !== undefined)
+			throw new Error(`loop '${clause.id}' states repeatWhile twice — once at the end of its body is enough`)
+		clause.repeatWhile = typeof predicate === 'function' ? this.resolve(predicate) : predicate
+		return this
 	}
 
 	/** Internal: the callback resolver, reachable from `loop` after the body is built. */
-	resolvePublic<N>(arg: NodeArg<N, any>): N {
-		return this.resolve(arg as any)
+	resolvePublic<N>(arg: NodeArg<N, Nodes, Prefix>): N {
+		return this.resolve(arg)
 	}
 
 	/**
@@ -886,54 +1079,54 @@ class ChainBuilder<Nodes extends Record<string, PortDecl> = {}, Prefix extends s
 	 * downstream folds see what ran, in declaration order.
 	 * @ruling 20 §10, 01 §4 amended, 13 §1
 	 */
-	junction<Id extends string, R extends JunctionBuilder<any, any>>(
+	junction<Id extends string, R extends JunctionBuilder<any, any, any>>(
 		id: Id,
 		opts: {
-			on: (($: Scope<any>) => DataRef) | DataRef
+			on: (($: Scope<Nodes, Prefix>) => DataRef) | DataRef
 			mode?: 'sequential' | 'parallel'
 		},
 		fn: (r: JunctionBuilder<Nodes, Qualify<Prefix, Id>>) => R,
-	): ChainBuilder<AddPorts<NodesOf<R>, Qualify<Prefix, Id>, JunctionPorts>, Prefix> {
+	): ChainBuilder<JunctionNodes<Nodes, R, Qualify<Prefix, Id>>, Prefix> {
 		const qualified = this.qualify(id)
 		const clause = this.declareClause({
 			id: qualified,
 			kind: 'junction',
 			mode: opts.mode ?? 'parallel',
-			on: typeof opts.on === 'function' ? this.resolve(opts.on as any) : opts.on,
+			on: typeof opts.on === 'function' ? this.resolve(opts.on) : opts.on,
 			branches: {},
 			chains: [],
 		})
 		fn(new JunctionBuilder<Nodes, Qualify<Prefix, Id>>(this.spec, qualified, clause))
-		return this as any
+		return this as unknown as ChainBuilder<JunctionNodes<Nodes, R, Qualify<Prefix, Id>>, Prefix>
 	}
 
 	query<K extends string, N extends NodeOf<'query'>>(
 		key: K,
-		node: NodeArg<N, Nodes>,
+		node: NodeArg<N, Nodes, Prefix>,
 		opts?: NodeOpts,
 	): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix> {
-		return this.add('query', key, node, opts)
+		return this.add('query', key, node, opts) as unknown as ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>
 	}
 	task<K extends string, N extends NodeOf<'task'>>(
 		key: K,
-		node: NodeArg<N, Nodes>,
+		node: NodeArg<N, Nodes, Prefix>,
 		opts?: NodeOpts,
 	): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix> {
-		return this.add('task', key, node, opts)
+		return this.add('task', key, node, opts) as unknown as ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>
 	}
 	oracle<K extends string, N extends NodeOf<'oracle'>>(
 		key: K,
-		node: NodeArg<N, Nodes>,
+		node: NodeArg<N, Nodes, Prefix>,
 		opts?: NodeOpts,
 	): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix> {
-		return this.add('oracle', key, node, opts)
+		return this.add('oracle', key, node, opts) as unknown as ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>
 	}
 	outlet<K extends string, N extends NodeOf<'outlet'>>(
 		key: K,
-		node: NodeArg<N, Nodes>,
+		node: NodeArg<N, Nodes, Prefix>,
 		opts?: NodeOpts,
 	): ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix> {
-		return this.add('outlet', key, node, opts)
+		return this.add('outlet', key, node, opts) as unknown as ChainBuilder<Add<Nodes, Qualify<Prefix, K>, N>, Prefix>
 	}
 }
 
@@ -960,7 +1153,7 @@ class GatherBuilder<Nodes extends Record<string, PortDecl> = {}, Id extends stri
 				chain: name,
 			}),
 		)
-		return this as any
+		return this as unknown as GatherBuilder<NodesOf<R>, Id>
 	}
 }
 
@@ -973,6 +1166,8 @@ class GatherBuilder<Nodes extends Record<string, PortDecl> = {}, Id extends stri
 export class JunctionBuilder<
 	Nodes extends Record<string, PortDecl> = {},
 	Id extends string = string,
+	/** 🚧 The nodes the branches declared so far (A18) — what the junction's result carries, optional. */
+	Branches extends Record<string, PortDecl> = {},
 > {
 	constructor(
 		private spec: BuiltSpec,
@@ -980,28 +1175,34 @@ export class JunctionBuilder<
 		private clause: BuiltClause,
 	) {}
 
-	/** A branch that fires when its predicate matches the junction's value. */
+	/**
+	 * A branch that fires when its predicate matches the junction's value. `path`
+	 * and `equalsPath` are the stored dotted strings, or `TypedPath`s —
+	 * `{ path: (v: Reckoned) => v.scripts, truthy: true }` — recorded to the same
+	 * string (A18). Each branch's `$` sees the nodes before the junction (and its
+	 * own, by short key); a sibling branch's nodes are not its to read.
+	 */
 	when<Name extends string, R extends ChainBuilder<any, any>>(
 		name: Name,
-		predicate: Omit<JunctionPredicate, 'default'>,
+		predicate: JunctionWhen,
 		fn: (c: ChainBuilder<Nodes, Qualify<Id, Name>>) => R,
-	): JunctionBuilder<NodesOf<R>, Id> {
+	): JunctionBuilder<Nodes, Id, Branches & NodesOf<R>> {
 		this.clause.chains.push(name)
-		this.clause.branches![name] = { ...predicate }
+		this.clause.branches![name] = storedPredicate(predicate, `junction '${this.clauseId}' branch '${name}'`)
 		fn(
 			new ChainBuilder<Nodes, Qualify<Id, Name>>(this.spec, {
 				clauseId: this.clauseId,
 				chain: name,
 			}),
 		)
-		return this as any
+		return this as unknown as JunctionBuilder<Nodes, Id, Branches & NodesOf<R>>
 	}
 
 	/** The branch that fires exactly when nothing else did. At most one. */
 	otherwise<Name extends string, R extends ChainBuilder<any, any>>(
 		name: Name,
 		fn: (c: ChainBuilder<Nodes, Qualify<Id, Name>>) => R,
-	): JunctionBuilder<NodesOf<R>, Id> {
+	): JunctionBuilder<Nodes, Id, Branches & NodesOf<R>> {
 		this.clause.chains.push(name)
 		this.clause.branches![name] = { default: true }
 		fn(
@@ -1010,8 +1211,21 @@ export class JunctionBuilder<
 				chain: name,
 			}),
 		)
-		return this as any
+		return this as unknown as JunctionBuilder<Nodes, Id, Branches & NodesOf<R>>
 	}
+}
+
+/**
+ * A `.when()` predicate as stored: a typed path recorded to its dotted string,
+ * every other key copied as given — so a string-path branch stores exactly what
+ * it always did (`{ ...predicate }`), key order included.
+ */
+function storedPredicate(predicate: JunctionWhen, where: string): JunctionPredicate {
+	const out: Record<string, unknown> = { ...predicate }
+	if (typeof predicate.path === 'function') out.path = typedPathOf(predicate.path, `${where}: path`)
+	if (typeof predicate.equalsPath === 'function')
+		out.equalsPath = typedPathOf(predicate.equalsPath, `${where}: equalsPath`)
+	return out as JunctionPredicate
 }
 
 /**
@@ -1102,7 +1316,7 @@ export interface ScriptChainRef {
 }
 
 /** @experimental */
-export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends ChainBuilder<Nodes> {
+export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}, A extends string = string> extends ChainBuilder<Nodes> {
 	private inletDone = false
 
 	constructor(rawId: string, meta: SpecMeta) {
@@ -1173,29 +1387,29 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 		key: K,
 		node: NodeArg<N, Nodes>,
 		opts?: NodeOpts,
-	): SpecBuilder<Add<Nodes, K, N>> {
-		return this.add('query', key, node, opts)
+	): SpecBuilder<Add<Nodes, K, N>, A> {
+		return this.add('query', key, node, opts) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
 	}
 	override task<K extends string, N extends NodeOf<'task'>>(
 		key: K,
 		node: NodeArg<N, Nodes>,
 		opts?: NodeOpts,
-	): SpecBuilder<Add<Nodes, K, N>> {
-		return this.add('task', key, node, opts)
+	): SpecBuilder<Add<Nodes, K, N>, A> {
+		return this.add('task', key, node, opts) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
 	}
 	override oracle<K extends string, N extends NodeOf<'oracle'>>(
 		key: K,
 		node: NodeArg<N, Nodes>,
 		opts?: NodeOpts,
-	): SpecBuilder<Add<Nodes, K, N>> {
-		return this.add('oracle', key, node, opts)
+	): SpecBuilder<Add<Nodes, K, N>, A> {
+		return this.add('oracle', key, node, opts) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
 	}
 	override outlet<K extends string, N extends NodeOf<'outlet'>>(
 		key: K,
 		node: NodeArg<N, Nodes>,
 		opts?: NodeOpts,
-	): SpecBuilder<Add<Nodes, K, N>> {
-		return this.add('outlet', key, node, opts)
+	): SpecBuilder<Add<Nodes, K, N>, A> {
+		return this.add('outlet', key, node, opts) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
 	}
 
 	/**
@@ -1209,6 +1423,11 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	 *   .prompts ('generate', { system: LORE_SYSTEM })
 	 *   .template('prompt',   jinja(LORE_ASSEMBLY)))
 	 * ```
+	 * @deprecated ⏳ Retiring with pipeline configurations (R38, PLAN-layering
+	 * D5): only a `default: true` preset is read — as the pipeline's declared
+	 * defaults; declare those with `.defaults(d => …)`. Every other author
+	 * preset is ignored (`pipelineDefaultsFindings` names it); a preset's
+	 * registration `values` change a pipeline's defaults instead. Kept to 0.7.
 	 * @ruling 12 §3a
 	 */
 	preset(
@@ -1257,27 +1476,146 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	}
 
 	/**
+	 * 🚧 The pipeline's **declared defaults** (R38, PLAN-layering D5) — the
+	 * bottom of the value cascade (`author`): which prompt, template,
+	 * sampling and loadout each step uses, and its parameters, settings and
+	 * script chains. Declared after the nodes, so the step keys it names are
+	 * the ones that exist. A registration's `values` change them per preset
+	 * or genre; nothing else does (configurations retire).
+	 *
+	 * ```ts
+	 * .defaults((d) => d
+	 *   .prompts('generate', { system: STORY_SYSTEM })
+	 *   .sampling('generate', slot.sampling('core:sampling/story')))
+	 * ```
+	 * Stored where the shipped default author preset always was
+	 * (`presets[slug: 'default', default: true]`), so a host reading that
+	 * keeps reading it.
+	 * @experimental
+	 * @ruling R38
+	 */
+	defaults(fn: (d: PresetBuilder<Nodes>) => unknown): this {
+		if (this.spec.presets.some((p) => p.default))
+			throw new Error(
+				`spec '${this.spec.id}' declares its defaults twice — one .defaults() per pipeline ` +
+					`(a default author preset already stands)`,
+			)
+		// The label the catalogue's default presets already carry, so moving a
+		// `.preset('default', { label: 'Default', default: true })` here keeps
+		// its document byte for byte.
+		return this.preset(DEFAULTS_SLUG, { label: 'Default', default: true }, fn)
+	}
+
+	/**
+	 * 🚧 The events this pipeline **emits** (R6) — recorded by the host so a
+	 * registration in any preset of the genre may listen, and so the
+	 * registration door can refuse a cycle among emitted events (A12). Pass
+	 * the event objects (`coreEvents.…`, a package's `defineSessionEvent`).
+	 * Replaces `defineExtension({ events, recordedBy })` for the events a
+	 * pipeline emits; host moments stay host-published.
+	 * @experimental
+	 * @ruling R6, A12
+	 */
+	emits(...events: ReadonlyArray<EventDef | SessionEventDecl | string>): this {
+		const ids = events.map((e) => (typeof e === 'string' || isEventDef(e) || isSessionEventDecl(e) ? eventIdOf(e) : e))
+		for (const id of ids) {
+			if (typeof id !== 'string') throw new Error(`spec '${this.spec.id}' .emits(): pass event objects — coreEvents.…, or a package's defineSessionEvent(…)`)
+			if (!eventById(id)) throw new Error(`spec '${this.spec.id}' .emits(): ${notADeclaredEvent(id)}`)
+			if (id === sessionEvents.turnOrderChanged) throw new Error(TURN_ORDER_CHANGED_IS_INTERNAL)
+		}
+		this.spec.emits = [...new Set([...(this.spec.emits ?? []), ...(ids as string[])])]
+		return this
+	}
+
+	/**
+	 * 🚧 Whether the events a ruleset's functions raise in this pipeline's
+	 * resolve steps are emitted after its receipt (D3, 2026-10-23). On by
+	 * default; `.functionEvents(false)` reports them on the steps' facts and
+	 * emits none, whatever a step's own `emits` parameter says.
+	 * @experimental
+	 */
+	functionEvents(on: boolean): this {
+		if (on) delete this.spec.functionEvents
+		else this.spec.functionEvents = false
+		return this
+	}
+
+	/**
 	 * Exactly one **inlet**, positionally first. Enforced here rather than
 	 * by the validator, so it is a throw at authoring time.
 	 *
-	 * The optional third argument is the **usage lock**: the session
-	 * event this inlet answers and the genre it serves. A session-event spec
-	 * without it does not compile — required for now, and relaxing later
-	 * (`genre: string[]`, `"*"`) is additive, never breaking. **The lock is the
-	 * only subscription**: `.on()` and `subscribes` were deleted
-	 * 2026-09-16 — nothing read them at dispatch.
+	 * 🚧 The optional third argument names the events the pipeline
+	 * **suits** — hints for pickers only (PLAN-layering D3, §2). A pipeline is
+	 * mounted, it does not lock: what runs it is a **registration**
+	 * (`register(trigger, pipeline)`) in the genre's defaults, a preset or a
+	 * session, and whether it may is **fit**, derived from what its steps read.
+	 * @experimental
+	 * @ruling §2, D3
+	 */
+	inlet<K extends string, N extends NodeOf<'inlet'>>(
+		key: K,
+		node: N,
+		opts?: { suits?: ReadonlyArray<EventDef | SessionEventDecl | string> },
+	): SpecBuilder<Add<Nodes, K, N>, A>
+	/**
+	 * The **usage lock** — the session event this inlet answers and the genre it serves.
+	 * @deprecated ⏳ An alias to 0.7 (PLAN-layering D3): inlet locks retire.
+	 * Pass `{ suits: [events] }` and register the pipeline on its events
+	 * (`register(coreEvents.…, spec)`). The lock still writes `input` exactly
+	 * as it did — a locked spec's hash does not move — and its events are
+	 * read as `suits`; a host derives default registrations from it for a
+	 * package that declares none (D7).
 	 * @ruling 01 §2, 24 §4, R-4, 09-B B5
 	 */
 	inlet<K extends string, N extends NodeOf<'inlet'>>(
 		key: K,
 		node: N,
-		binding?:
-			| { genre: GenreDecl | ExternalRef; event: string | SessionEventDecl }
-			| { genre: GenreDecl | ExternalRef; events: Array<string | SessionEventDecl> },
-	): SpecBuilder<Add<Nodes, K, N>> {
+		binding:
+			| { genre: GenreDecl | ExternalRef; event: string | SessionEventDecl | EventDef }
+			| { genre: GenreDecl | ExternalRef; events: Array<string | SessionEventDecl | EventDef> },
+	): SpecBuilder<Add<Nodes, K, N>, A>
+	inlet<K extends string, N extends NodeOf<'inlet'>>(
+		key: K,
+		node: N,
+		bindingOrOpts?:
+			| { genre: GenreDecl | ExternalRef; event: string | SessionEventDecl | EventDef }
+			| { genre: GenreDecl | ExternalRef; events: Array<string | SessionEventDecl | EventDef> }
+			| { suits?: ReadonlyArray<EventDef | SessionEventDecl | string> },
+	): SpecBuilder<Add<Nodes, K, N>, A> {
+		// 🚧 The suits form (PLAN-layering D3): no genre, no event — hints only.
+		if (bindingOrOpts && !('event' in bindingOrOpts) && !('events' in bindingOrOpts)) {
+			if (this.inletDone)
+				throw new Error('a spec has exactly one inlet (01 §2) — .inlet() may be called once')
+			if (this.spec.nodes.length > 0) throw new Error('the inlet must be the first node (01 §2)')
+			for (const k of Object.keys(bindingOrOpts))
+				if (k !== 'suits')
+					throw new Error(
+						k === 'genre'
+							? `spec '${this.spec.id}' .inlet(): a pipeline names no genre — it is mounted by registrations ` +
+									`(register(trigger, spec) in the genre's defaults or a preset). The ⏳ lock form is { genre, event }`
+							: `spec '${this.spec.id}' .inlet(): '${k}' is not an inlet option — { suits: [events] }`,
+					)
+			const raw = (bindingOrOpts as { suits?: ReadonlyArray<unknown> }).suits ?? []
+			if (!Array.isArray(raw)) throw new Error(`spec '${this.spec.id}' .inlet(): suits is a list of events`)
+			const suits = raw.map((e) => (typeof e === 'string' || isEventDef(e) || isSessionEventDecl(e) ? eventIdOf(e as never) : e))
+			for (const e of suits) {
+				if (typeof e !== 'string') throw new Error(`spec '${this.spec.id}' .inlet(): suits lists events — coreEvents.…`)
+				if (!eventById(e)) throw new Error(notADeclaredEvent(e))
+				if (e === sessionEvents.turnOrderChanged) throw new Error(TURN_ORDER_CHANGED_IS_INTERNAL)
+			}
+			if (new Set(suits).size !== suits.length)
+				throw new Error(`spec '${this.spec.id}' .inlet(): suits lists an event twice`)
+			this.spec.suits = suits as string[]
+			this.inletDone = true
+			return this.add('inlet', key, node) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
+		}
+		let binding = bindingOrOpts as
+			| { genre: GenreDecl | ExternalRef; event: string | SessionEventDecl | EventDef }
+			| { genre: GenreDecl | ExternalRef; events: Array<string | SessionEventDecl | EventDef> }
+			| undefined
 		// An event is named by value where a package declared it: its id.
 		if (binding) {
-			const idOf = (e: unknown) => (isSessionEventDecl(e) ? e.id : e)
+			const idOf = (e: unknown) => (isSessionEventDecl(e) || isEventDef(e) ? eventIdOf(e) : e)
 			binding =
 				'events' in binding
 					? { ...binding, events: (binding.events as unknown[])?.map(idOf) as string[] }
@@ -1342,6 +1680,10 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 			const genre = genreIdOf(binding.genre)
 			this.spec.input =
 				many !== undefined ? { genre, events: [...many] } : { genre, event: one }
+			// ⏳ The lock's events, read as what the pipeline suits (D3). Not
+			// written to the document — `input` already says them, so the
+			// hash stays where it was.
+			this.spec.suits = many !== undefined ? [...many] : [one!]
 			// The genre's other two homes, filled from the lock (R48).
 			const actions = this.spec.meta.contributes?.actions
 			if (actions?.length) {
@@ -1369,7 +1711,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 			}
 		}
 		this.inletDone = true
-		return this.add('inlet', key, node)
+		return this.add('inlet', key, node) as unknown as SpecBuilder<Add<Nodes, K, N>, A>
 	}
 
 	// Clauses are inherited from ChainBuilder so they nest; re-declared here only so the
@@ -1378,32 +1720,36 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 		id: Id,
 		opts: { mode?: 'sequential' | 'parallel' },
 		fn: (b: GatherBuilder<Nodes, Id>) => R,
-	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>> {
-		return super.gather(id as any, opts, fn as any) as any
+	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A> {
+		super.gather(id, opts, fn)
+		return this as unknown as SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A>
 	}
 	override each<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
 		opts: { over: EachOver<Nodes>; max: number; mode?: 'sequential' | 'parallel' },
 		fn: (c: ChainBuilder<Nodes & { [ITEM]: PortDecl }, `${Id}.item`>) => R,
-	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>> {
-		return super.each(id as any, opts, fn as any) as any
+	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A> {
+		super.each(id, opts, fn)
+		return this as unknown as SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A>
 	}
 	override loop<Id extends string, R extends ChainBuilder<any, any>>(
 		id: Id,
-		opts: { repeatWhile: (($: Scope<any>) => DataRef) | DataRef; max: number },
-		fn: (c: ChainBuilder<Nodes, `${Id}.item`>) => R,
-	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>> {
-		return super.loop(id as any, opts, fn as any) as any
+		opts: { repeatWhile?: (($: Scope<Nodes>) => DataRef) | DataRef; max: number },
+		fn: (c: ChainBuilder<AddPorts<Nodes, Id, BranchPorts>, `${Id}.item`>) => R,
+	): SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A> {
+		super.loop(id, opts, fn)
+		return this as unknown as SpecBuilder<AddPorts<NodesOf<R>, Id, BranchPorts>, A>
 	}
-	override junction<Id extends string, R extends JunctionBuilder<any, any>>(
+	override junction<Id extends string, R extends JunctionBuilder<any, any, any>>(
 		id: Id,
 		opts: {
-			on: (($: Scope<any>) => DataRef) | DataRef
+			on: (($: Scope<Nodes>) => DataRef) | DataRef
 			mode?: 'sequential' | 'parallel'
 		},
 		fn: (r: JunctionBuilder<Nodes, Id>) => R,
-	): SpecBuilder<AddPorts<NodesOf<R>, Id, JunctionPorts>> {
-		return super.junction(id as any, opts, fn as any) as any
+	): SpecBuilder<JunctionNodes<Nodes, R, Id>, A> {
+		super.junction(id, opts, fn)
+		return this as unknown as SpecBuilder<JunctionNodes<Nodes, R, Id>, A>
 	}
 
 	/**
@@ -1413,7 +1759,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 	include<K extends string, F extends Fragment<any>>(
 		key: K,
 		fragment: F,
-	): SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>> {
+	): SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>, A> {
 		this.spec.includes.push({ key, fragmentId: fragment.id })
 		// The fragment's internal wiring moves with it: a reference that names one of
 		// its own nodes or clauses (or a clause's current item) is re-addressed under
@@ -1446,26 +1792,65 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}> extends Ch
 				position: this.spec.nodes.length,
 			})
 		}
-		return this as any
+		return this as unknown as SpecBuilder<Nodes & Prefixed<K, F extends Fragment<infer M> ? M : {}>, A>
 	}
 
-	build(): BuiltSpec {
+	build(): BuiltSpecWithActions<A> {
+		// 🚧 A pipeline mounted by registrations (the suits form) offers its
+		// actions where a registration includes them, so they carry no genre
+		// (D3). A spec that said nothing at its inlet still needs the lock.
+		const unlocked = this.spec.suits !== undefined && !this.spec.input
 		const orphan = this.spec.meta.contributes?.actions?.find((a) => !a.genre)
-		if (orphan)
+		if (orphan && !unlocked)
 			throw new Error(
 				`spec '${this.spec.id}' contributes action '${orphan.key}' but has no inlet lock — ` +
-					`an action is offered to the genre of the lock: .inlet(key, node, { genre, event })`,
+					`register the action (register(spec.actions.${orphan.key}, spec)) and declare the inlet with ` +
+					`{ suits: [ … ] }, or ⏳ lock it: .inlet(key, node, { genre, event })`,
 			)
-		return this.spec
+		// The handles, beside the document and never in it: non-enumerable,
+		// so nothing that serializes, hashes or compares a spec sees them.
+		Object.defineProperty(this.spec, 'actions', {
+			value: Object.freeze(actionHandlesOf(this.spec)),
+			enumerable: false,
+			configurable: true,
+			writable: false,
+		})
+		return this.spec as BuiltSpecWithActions<A>
 	}
+}
+
+/** The slug the declared defaults are stored under (`.defaults()`). @internal */
+export const DEFAULTS_SLUG = 'default'
+
+/**
+ * 🚧 The events a pipeline suits — its document's `suits`, else its ⏳
+ * lock's events (D3). Hints for pickers only.
+ * @experimental
+ */
+export function suitsOf(s: { suits?: readonly string[]; input?: { event?: string; events?: string[] } }): string[] {
+	if (s.suits) return [...s.suits]
+	if (s.input?.events?.length) return [...s.input.events]
+	return s.input?.event ? [s.input.event] : []
 }
 
 /** Stands in for an action's genre until `.inlet()` supplies the lock's. */
 const PENDING_GENRE = 'pending:genre/lock'
 
-/** @public */
-export function spec(id: string, meta: SpecMeta): SpecBuilder<{}> {
-	return new SpecBuilder(id, meta)
+/**
+ * `meta` is `SpecMeta` with each contributed action's `key` captured as `A`
+ * — what types `spec.actions.<key>` from the declarations (derive, don't
+ * spell). Spelled inline so the frozen signature names no new type.
+ * @public
+ */
+export function spec<const A extends string = string>(
+	id: string,
+	meta: Omit<SpecMeta, 'contributes'> & {
+		contributes?: Omit<NonNullable<SpecMeta['contributes']>, 'actions'> & {
+			actions?: Array<NonNullable<NonNullable<SpecMeta['contributes']>['actions']>[number] & { key: A }>
+		}
+	},
+): SpecBuilder<{}, A> {
+	return new SpecBuilder<{}, A>(id, meta as SpecMeta)
 }
 
 // ── Fragments ───────────────────────────────────────────────────────────────

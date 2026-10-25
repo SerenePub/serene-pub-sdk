@@ -167,6 +167,24 @@ export const SP_HOST_ELEMENTS = {
 		[...ARIA, 'href', 'target', 'download'],
 		['click'],
 	),
+	/** 🚧 O11 (2026-10-21): a player and its caption. */
+	figure: plain('A self-contained figure — a player and its caption (1.3).', ARIA),
+	figcaption: plain("A figure's caption (1.3).", ARIA),
+	audio: plain(
+		'🚧 A sound player (1.3, O11). `src` is an app media URL (`/media/…`) — never another host, as `img`; `controls` draws the ' +
+			'browser\'s own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load.',
+		[...ARIA, 'src', 'controls', 'preload'],
+		['error'],
+	),
+	video: plain(
+		'🚧 A moving-picture player (1.3, O11) — `audio`\'s rules, and a `track` of captions inside it.',
+		[...ARIA, 'src', 'controls', 'preload', 'width', 'height'],
+		['error'],
+	),
+	track: plain(
+		"🚧 A video's timed text (1.3, O11): `kind` is `captions` · `subtitles` · `descriptions` · `chapters`; `src`, when given, the app's media.",
+		['kind', 'src', 'srclang', 'label', 'default'],
+	),
 
 	// ── host sp elements ────────────────────────────────────────────────────────
 	'sp-avatar': {
@@ -608,6 +626,12 @@ export function hostAttributeValueFinding(tag: string, attribute: string, value:
 		return v === 'lazy' || v === 'eager' ? undefined : `img loading '${value}' — lazy or eager`
 	if (t === 'img' && attribute === 'decoding')
 		return v === 'async' || v === 'sync' || v === 'auto' ? undefined : `img decoding '${value}' — async, sync or auto`
+	if ((t === 'audio' || t === 'video') && attribute === 'preload')
+		return v === 'none' || v === 'metadata' || v === 'auto' ? undefined : `${t} preload '${value}' — none, metadata or auto`
+	if (t === 'track' && attribute === 'kind')
+		return ['captions', 'subtitles', 'descriptions', 'chapters'].includes(v)
+			? undefined
+			: `track kind '${value}' — captions, subtitles, descriptions or chapters`
 	if (t === 'sp-scroll' && attribute === 'stick')
 		return v === 'top' || v === 'bottom' ? undefined : `sp-scroll stick '${value}' — top or bottom`
 	if (attribute === 'src') {
@@ -815,4 +839,4 @@ export function hostElementsDts(): string {
  * the suite says which to bump. `doc` strings are not the shape.
  * @ruling F1, R22
  */
-export const HOST_ELEMENTS_VERSION = '1.4' as const
+export const HOST_ELEMENTS_VERSION = '1.5' as const

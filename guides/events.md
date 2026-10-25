@@ -90,18 +90,19 @@ uninstalled.
 
 Everything in the session hears a recorded event.
 
-- **A pipeline**: lock its inlet on the event, and bind it like any other event pipeline.
+- **A pipeline**: give it the session-event inlet, say it suits the event, and register it on
+  the event in your genre's defaults or a preset, like any other event pipeline
+  (`register(guessed, onGuessed)`; see [Genres, presets and routines](genres-presets-and-routines.md)).
 
   <!-- prelude:
-  import { type GenreDecl, type SessionEventDecl, type SpecBuilder } from '@serene-pub/sdk'
+  import { type SessionEventDecl, type SpecBuilder } from '@serene-pub/sdk'
   import * as C from '@serene-pub/contracts'
   declare const guessed: SessionEventDecl<{ guessText: string; isCorrect: boolean }>
-  declare const twentyQuestionsGenre: GenreDecl
   declare const chain: SpecBuilder<{}>
   chain
   -->
   ```ts
-  .inlet('event', C.sessionEvent.v1(), { genre: twentyQuestionsGenre, events: [guessed] })
+  .inlet('event', C.sessionEvent.v1(), { suits: [guessed] })
   ```
 
   The inlet's `payload` is the envelope `core:shape/recorded-event@1`: `event`, `sessionId`, `at`,

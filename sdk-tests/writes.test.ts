@@ -222,12 +222,16 @@ describe('the addition is additive', () => {
 		// the Story genre — `core:spec/story-create`, its declaration Story's
 		// (name, family, description, the fields Adventure brought, the
 		// background tasks). (was '1cd1222a275dec')
-		assert.equal(canonicalHash(createStorySpec() as any), '1244f17da8e07b')
+		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '1244f17da8e07b')
+		// Moved 2026-10-21 (lane F1, R55): Story's declaration lost `applyActionChanges` — Rest follows the reckoning's mode. (was 'ae777ed4f3b4e')
+		// Moved 2026-10-23 (genres GM): Story's `about` and its difficulty words corrected (lane G0, S7). (was '1b30b1e4ad7357')
+		assert.equal(canonicalHash(createStorySpec() as any), '37a22c038f516')
 		// Adventure's create spec retired 2026-10-19 (folded into Story; its
 		// last pin was '2b63bc55e3597'). 🚧 Chat, the assistant, is new: a
 		// fresh id that declares `writes`, so it is no witness to the claim
 		// above; pinned here so a change to it is seen.
-		assert.equal(canonicalHash(createAssistantSpec() as any), '63c78ba748cb9')
+		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '63c78ba748cb9')
+		assert.equal(canonicalHash(createAssistantSpec() as any), '1180def0f20ddf')
 	})
 
 	test('Guide’s moved, once, because Guide now declares something', () => {
@@ -245,6 +249,8 @@ describe('the addition is additive', () => {
 		// the document with only its id set back hashes to it)
 		// "1cb7b0cfc1ae44" until 2026-10-19, when the Guide declared
 		// `members: 'solo'` and its `tools` field (web search, on by default).
-		assert.equal(canonicalHash(createGuideSpec() as any), '16fb2ead93ba5')
+		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '16fb2ead93ba5')
+		// Moved 2026-10-23 (genres GM): the Guide's `tools` field dropped and its `about` written (lane G0, S8). (was '16e203934af640')
+		assert.equal(canonicalHash(createGuideSpec() as any), 'c06cc623f9142')
 	})
 })

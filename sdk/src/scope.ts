@@ -48,18 +48,70 @@ type ChildrenOf<N, H extends string> = {
 
 type Nested<N> = {
 	readonly [H in Head<keyof N & string>]: (H extends keyof N
-		? NodeAccessor<N[H] extends PortDecl ? N[H] : PortDecl>
+		? NodeAccessor<NonNullable<N[H]> extends PortDecl ? NonNullable<N[H]> : PortDecl>
 		: unknown) &
 		Nested<ChildrenOf<N, H>>
 }
 
 /**
+ * The chain's own nodes under their **short** keys (A18): inside a clause chain
+ * whose qualifier is `Prefix` (`reckon.on`), a sibling is named `$.crib` as well
+ * as `$.reckon.on.crib` — exactly what `makeScope`'s `localPrefix` resolves at
+ * run time, now in the type. Only the innermost chain's: a loop inside a branch
+ * names the branch's nodes by their full path, as the runtime does.
+ */
+type Local<N, Prefix extends string> = Prefix extends ''
+	? {}
+	: { [K in keyof N & string as K extends `${Prefix}.${infer R}` ? R : never]: N[K] }
+
+/** The flat node map a scope was built from — local short keys included. @experimental */
+export type ScopeNodes<Nodes extends Record<string, PortDecl>, Prefix extends string = ''> = Nodes &
+	Local<Nodes, Prefix>
+
+/** Phantom brand: the flat node map behind a scope, so `nodeAt` can type a dotted key. */
+declare const SCOPE_NODES: unique symbol
+
+/**
  * What the callback receives. `Nodes` is accumulated by the builder, one entry per
  * declared node, so autocomplete lists exactly the nodes that exist at this point in
- * the chain — and nothing later.
+ * the chain — and nothing later. Inside a clause chain (`Prefix`), the chain's own
+ * nodes are reachable by their short keys too (A18).
  * @experimental
  */
-export type Scope<Nodes extends Record<string, PortDecl>> = Nested<Nodes>
+export type Scope<Nodes extends Record<string, PortDecl>, Prefix extends string = ''> = Nested<
+	ScopeNodes<Nodes, Prefix>
+> & { readonly [SCOPE_NODES]?: ScopeNodes<Nodes, Prefix> }
+
+/** The flat, dotted node keys a scope can name — `'reckon.on.crib'`, and `'crib'` inside that chain. @experimental */
+export type ScopeKey<S> = S extends { readonly [SCOPE_NODES]?: infer N } ? keyof N & string : string
+
+/** The accessor a scope hands out for one flat key — what `nodeAt($, key)` returns. @experimental */
+export type ScopeAccessor<S, K extends string> = S extends { readonly [SCOPE_NODES]?: infer N }
+	? K extends keyof N
+		? NodeAccessor<NonNullable<N[K]> extends PortDecl ? NonNullable<N[K]> : PortDecl>
+		: never
+	: NodeAccessor<PortDecl>
+
+/**
+ * 🚧 A node read by its **flat, dotted key** — `nodeAt($, 'reckon.on.crib')` —
+ * typed against the nodes declared above this point (A18): a key no node has is
+ * a compile error, and the accessor's ports are the node's own. The same
+ * `DataRef` the property chain `$.reckon.on.crib` produces, walked through the
+ * same scope proxy, so the stored document is byte-identical.
+ *
+ * Prefer the property chain where it reads well; this form is for a helper that
+ * holds the key as a typed constant (`const R = 'reckon.on.' as const`,
+ * `` nodeAt($, `${R}crib`) ``). It replaces core-catalog's untyped `at($, path)`.
+ * @experimental
+ * @ruling A18
+ */
+export function nodeAt<S extends { readonly [SCOPE_NODES]?: unknown }, K extends ScopeKey<S>>(
+	$: S,
+	key: K,
+): ScopeAccessor<S, K> {
+	if (typeof key !== 'string' || !key) throw new Error(`nodeAt: a node key, such as 'reckon.on.crib'`)
+	return key.split('.').reduce((o: any, k) => o[k], $ as any)
+}
 
 const REF_KEYS = new Set(['__ref', 'node', 'port'])
 

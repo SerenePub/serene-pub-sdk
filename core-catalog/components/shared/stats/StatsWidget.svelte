@@ -54,6 +54,19 @@
 	 * nothing to draw, in the genre's words, and its `timeFormat` spells a
 	 * story-time stat.
 	 *
+	 * 🚧 **The rules' attributes, every kind** (RF fix 8, owner 2026-10-23):
+	 * the sheet draws only the session's rules' attributes, each by its kind
+	 * and shown-as hint (`drawnAs`: a number as a bar, a count or a badge; a
+	 * pool as pips or a bar; a tally as a count; a word as a badge or words; a
+	 * list; free text over several lines), what the owner holds zone by zone
+	 * (`stats.zones`, a list or a fan), its ties, and its worked-out values.
+	 * The host's place and time are a **Where and when** row of their own
+	 * (`stats.where`, the story clock on the world's), never among the
+	 * attributes; a genre's tool state is a block of its own under them
+	 * (`stats.tools`), unless a copy's `toolState` is `hidden`. A holder switches the rules'
+	 * optional attributes on and off here too (`stats.carries`,
+	 * `set-attribute-carry`). Rules that declare no attributes say so.
+	 *
 	 * The markup carries no look: each element names what it is in
 	 * `data-widget-part` (`stats.card card`, `stats.faces`, …), the
 	 * arrangement rides on `data-arrangement`, whose on `data-owners`, a lone
@@ -75,7 +88,13 @@
 		statsView,
 		statTrailByText,
 		statTrailRows,
+		tieBarPercent,
+		tieRowsOf,
+		carryRowsOf,
+		type CarryRow,
+		type ZoneRow,
 		type GiveTarget,
+		type TieRow,
 		type SlotWriteValue,
 		type StatsOwnerGroup,
 		type StatsShownOwner,
@@ -178,6 +197,39 @@
 		}
 	}
 	const offerCount = (n: number) => (n > 1 ? ` ×${n}` : "")
+
+	/* ── 🚧 Ties (ties on the graph, screen 2; 2026-10-23) ───────────────── */
+
+	/** A tie side's show-or-hide refused, by `<owner key>|<towards>`: said on its row. */
+	let tieError = $state<Record<string, string>>({})
+	const tieKey = (owner: SessionStateOwnerV1, tie: TieRow) => `${owner.key}|${tie.entryType}|${tie.towards}`
+	async function showTie(owner: SessionStateOwnerV1, tie: TieRow, shown: boolean) {
+		const key = tieKey(owner, tie)
+		tieError = { ...tieError, [key]: "" }
+		try {
+			await widget?.current.request("set-tie-shown", { owner: { kind: owner.kind, id: owner.id }, entryType: tie.entryType, towards: tie.towards, shown })
+		} catch (e) {
+			tieError = { ...tieError, [key]: plainRefusal(e instanceof Error ? e.message : String(e ?? ""), t).text }
+		}
+	}
+	/* ── 🚧 Attribute carries (RF fix 8): a holder's own switch, from the sheet too ── */
+
+	/** A carry refused, by `<owner key>|<slot id>`: said on its row. */
+	let carryError = $state<Record<string, string>>({})
+	async function setCarry(owner: SessionStateOwnerV1, row: CarryRow, carries: boolean) {
+		const key = `${owner.key}|${row.slotId}`
+		carryError = { ...carryError, [key]: "" }
+		try {
+			await widget?.current.request("set-attribute-carry", { owner: { kind: owner.kind, id: owner.id }, slotId: row.slotId, carries })
+		} catch (e) {
+			carryError = { ...carryError, [key]: plainRefusal(e instanceof Error ? e.message : String(e ?? ""), t).text }
+		}
+	}
+	/** The session's story clock, in words — the world's _when_. */
+	let storyTime = $derived(section?.loaded && typeof section.storyTime === "string" && section.storyTime.trim() ? section.storyTime.trim() : null)
+
+	/** A number's words: _7 of 10_. */
+	const tieNumber = (n: { value: string | number; max?: number }) => (n.max !== undefined ? t("{n} of {max}").replace("{n}", String(n.value)).replace("{max}", String(n.max)) : String(n.value))
 
 	/* ── the stat trail (F2) ───────────────────────────────────────────── */
 
@@ -595,6 +647,198 @@
 	{/if}
 {/snippet}
 
+<!-- 🚧 The owner's ties (ties on the graph, screen 2): each towards someone —
+     its name and words as chips, this side's numbers as bars where the viewer
+     may see them, the other person's side as words (its numbers once shown),
+     and the holder's switch that shows this side's numbers to others. -->
+{#snippet tiesBlock(owner: SessionStateOwnerV1)}
+	{@const ties = tieRowsOf(owner)}
+	{#if ties.length}
+		<ul data-widget-part="stats.ties list" aria-label={t("Ties")}>
+			{#each ties as tie (`${tie.entryType}|${tie.towards}`)}
+				{@const key = tieKey(owner, tie)}
+				<li data-widget-part="stats.tie row" data-tie-towards={tie.towards} data-tie-type={tie.entryType}>
+					<div data-widget-part="stats.tie-head">
+						<span data-widget-part="stats.tie-name">{tie.towardsLabel}</span>
+						{#if tie.name}<span data-widget-part="stats.tie-chip chip" data-tie-chip="name">{tie.name}</span>{/if}
+						{#each tie.words as w (w.field)}
+							<span data-widget-part="stats.tie-chip chip" data-tie-chip={w.field} title={w.label}>{w.value}</span>
+						{/each}
+					</div>
+					{#each tie.numbers as n (n.field)}
+						<div data-widget-part="stats.tie-number" data-tie-number={n.field}>
+							<span data-widget-part="stats.tie-number-label">
+								{owner.mine ? t("Your {label}").replace("{label}", n.label.toLowerCase()) : n.label}
+							</span>
+							<span data-widget-part="stats.tie-number-value">{tieNumber(n)}</span>
+							<span
+								data-widget-part="stats.tie-bar meter"
+								role="img"
+								aria-label={`${n.label} ${tieNumber(n)}`}
+								style:--sp-tie-fill={`${tieBarPercent(n)}%`}
+							></span>
+						</div>
+					{/each}
+					{#if tie.other}
+						<div data-widget-part="stats.tie-other" data-tie-other>
+							<span data-widget-part="stats.tie-other-label">{t("How {name} feels").replace("{name}", tie.towardsLabel)}</span>
+							<span data-widget-part="stats.tie-other-words">
+								{tie.other.words.map((w) => w.value).join(", ") || t("—")}{#each tie.other.numbers as n (n.field)}{` · ${n.label.toLowerCase()} ${tieNumber(n)}`}{/each}
+							</span>
+							{#if tie.other.numbers.length && tie.other.shown}
+								<span data-widget-part="stats.tie-other-note">{t("{name} showed their side.").replace("{name}", tie.towardsLabel)}</span>
+							{/if}
+						</div>
+					{/if}
+					{#if tie.mayShow && tie.numbers.length}
+						<label data-widget-part="stats.tie-show">
+							<input type="checkbox" checked={tie.shown} onchange={(e) => void showTie(owner, tie, e.currentTarget.checked)} />
+							<span>{t("Show my number to {name}").replace("{name}", tie.towardsLabel)}</span>
+						</label>
+					{/if}
+					{#if tieError[key]}<p data-widget-part="stats.tie-error" role="alert">{tieError[key]}</p>{/if}
+				</li>
+			{/each}
+		</ul>
+	{/if}
+{/snippet}
+
+<!-- 🚧 Where and when (RF fix 8): the host's place and time for this owner —
+     on the world, where the scene is and the story clock — in a row of their
+     own, never among the rules' attributes. -->
+{#snippet whereBlock(shown: StatsShownOwner, density: "compact" | "full")}
+	{@const clock = shown.group === "world" ? storyTime : null}
+	{#if shown.where.length || clock}
+		<section data-widget-part="stats.where" aria-label={t("Where and when")}>
+			<p data-widget-part="stats.where-head label">{t("Where and when")}</p>
+			{#each shown.where as one (one.slot.slotId)}
+				<SlotControl
+					slot={one.slot}
+					{density}
+					config={one.config}
+					value={one.value}
+					{t}
+					{findEntries}
+					timeFormat={read.timeFormat}
+					readonly={shown.owner.editable === false}
+					onset={write(shown.owner, one.slot.slotId)}
+				/>
+			{/each}
+			{#if clock}
+				<div data-widget-part="stats.where-clock stat-slot.root row" data-density={density} data-slot-shape="time">
+					<span data-widget-part="stat-slot.label label">{t("When")}</span>
+					<div data-widget-part="stat-slot.control"><span data-widget-part="stat-slot.line value">{clock}</span></div>
+				</div>
+			{/if}
+		</section>
+	{/if}
+{/snippet}
+
+<!-- 🚧 A genre's tool state (RF fix 8): the crawl's fate and standing orders, the
+     Lair's whisper — a block of its own, apart from the rules' attributes (a copy may hide it). -->
+{#snippet toolsBlock(shown: StatsShownOwner, density: "compact" | "full")}
+	{#if shown.tools.length}
+		<section data-widget-part="stats.tools list" data-density={density}>
+			{#each shown.tools as one (one.slot.slotId)}
+				<SlotControl
+					slot={one.slot}
+					{density}
+					config={one.config}
+					value={one.value}
+					{t}
+					{findEntries}
+					timeFormat={read.timeFormat}
+					readonly={shown.owner.editable === false}
+					repertoires={repertoiresFor(section, shown.owner)}
+					targets={targetsFor(shown.owner, one.slot.slotId)}
+					ongive={give(shown.owner, one.slot)}
+					onset={write(shown.owner, one.slot.slotId)}
+				>
+					{#snippet trail()}
+						{#if offersTrail && one.slot.type !== "derived"}
+							{@render trailOf(shown.owner, one.slot)}
+						{/if}
+					{/snippet}
+				</SlotControl>
+			{/each}
+		</section>
+	{/if}
+{/snippet}
+
+<!-- 🚧 ⏳ What the owner carries, kept by the host as a list (RF fix 8): the
+     lorebook's items handed out in a Story or Lair session — never among the
+     rules' attributes, always drawn (a copy's toolState does not hide it). -->
+{#snippet carriedBlock(shown: StatsShownOwner, density: "compact" | "full")}
+	{#if shown.carried.length}
+		<section data-widget-part="stats.carried list" data-density={density}>
+			{#each shown.carried as one (one.slot.slotId)}
+				<SlotControl
+					slot={one.slot}
+					{density}
+					config={one.config}
+					value={one.value}
+					{t}
+					{findEntries}
+					timeFormat={read.timeFormat}
+					readonly={shown.owner.editable === false}
+					repertoires={repertoiresFor(section, shown.owner)}
+					targets={targetsFor(shown.owner, one.slot.slotId)}
+					ongive={give(shown.owner, one.slot)}
+					onset={write(shown.owner, one.slot.slotId)}
+				>
+					{#snippet trail()}
+						{#if offersTrail}
+							{@render trailOf(shown.owner, one.slot)}
+						{/if}
+					{/snippet}
+				</SlotControl>
+			{/each}
+		</section>
+	{/if}
+{/snippet}
+
+<!-- 🚧 What the owner holds, zone by zone (RF fix 8): each zone's entries as a
+     list, or a fan by its shown-as hint — the name, ×N when more than one. -->
+{#snippet zonesBlock(zones: ZoneRow[])}
+	{#each zones as zone (zone.zoneType)}
+		<section data-widget-part="stats.zone" data-zone-type={zone.zoneType} data-shown-as={zone.shownAs} aria-label={zone.label}>
+			<p data-widget-part="stats.zone-head label">{zone.label}</p>
+			<ul data-widget-part="stats.zone-entries list">
+				{#each zone.entries as e (e.key)}
+					<li data-widget-part="stats.zone-entry row chip" data-entry-type={e.entryType} data-exposed={e.exposed ? "" : undefined}>
+						<span data-widget-part="stats.zone-name">{e.name}{e.count > 1 ? ` ×${e.count}` : ""}</span>
+						{#if e.typeLabel}<span data-widget-part="stats.zone-type label">{e.typeLabel}</span>{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/each}
+{/snippet}
+
+<!-- 🚧 The rules' optional attributes this owner carries or not (RF fix 8): the
+     holder's own switch — off, not shown, read or changed for them. Offered
+     only where the viewer may switch one. -->
+{#snippet carriesBlock(owner: SessionStateOwnerV1)}
+	{@const rows = carryRowsOf(owner).filter((r) => r.mayChange)}
+	{#if rows.length}
+		<section data-widget-part="stats.carries" aria-label={t("What {name} carries").replace("{name}", owner.label)}>
+			<p data-widget-part="stats.carries-head label">{t("What {name} carries").replace("{name}", owner.label)}</p>
+			<ul data-widget-part="stats.carries-list list">
+				{#each rows as row (row.slotId)}
+					{@const key = `${owner.key}|${row.slotId}`}
+					<li data-widget-part="stats.carry row" data-carry={row.slotId}>
+						<label data-widget-part="stats.carry-switch">
+							<input type="checkbox" checked={row.carries} onchange={(e) => void setCarry(owner, row, e.currentTarget.checked)} />
+							<span>{t("Carries {label}").replace("{label}", row.label)}</span>
+						</label>
+						{#if carryError[key]}<p data-widget-part="stats.carry-error" role="alert">{carryError[key]}</p>{/if}
+					</li>
+				{/each}
+			</ul>
+		</section>
+	{/if}
+{/snippet}
+
 {#snippet cardOf(shown: StatsShownOwner)}
 	<section
 		data-widget-part="stats.card card"
@@ -607,15 +851,24 @@
 			<span data-widget-part="stats.card-name">{shown.owner.label}</span>
 		</header>
 		{@render offersBlock(shown.owner)}
-		{#if !shown.slots.length}
-			<p data-widget-part="stats.card-note">
-				{shown.group === "cast" ? t("No stats to show for this member.") : t("No stats to show here.")}
-			</p>
-		{:else}
+		{@render whereBlock(shown, view.density)}
+		{#if shown.slots.length}
 			<div data-widget-part="stats.card-body list" data-density={view.density}>
 				{@render slotsOf(shown, view.density)}
 			</div>
+		{:else if !view.declaresAttributes && shown.group !== "places"}
+			<!-- 🚧 RF fix 8: words only — the session's rules keep no attributes (Freeform, From scratch). -->
+			<p data-widget-part="stats.card-note" data-declares-none>{t("This session's rules declare no attributes.")}</p>
+		{:else if !tieRowsOf(shown.owner).length && !shown.zones.length && !shown.where.length && !shown.tools.length && !shown.carried.length}
+			<p data-widget-part="stats.card-note">
+				{shown.group === "cast" ? t("No stats to show for this member.") : t("No stats to show here.")}
+			</p>
 		{/if}
+		{@render toolsBlock(shown, view.density)}
+		{@render carriedBlock(shown, view.density)}
+		{@render zonesBlock(shown.zones)}
+		{@render tiesBlock(shown.owner)}
+		{@render carriesBlock(shown.owner)}
 	</section>
 {/snippet}
 
@@ -624,7 +877,10 @@
 		{@render cardOf(shown)}
 	{:else if shown.group === "world"}
 		<!-- The world is the scene: its own slots need no name over them. -->
+		{@render whereBlock(shown, slotDensity)}
 		{@render slotsOf(shown, slotDensity)}
+		{@render toolsBlock(shown, slotDensity)}
+		{@render carriedBlock(shown, slotDensity)}
 	{:else}
 		<section
 			data-widget-part="stats.strip"
@@ -636,7 +892,10 @@
 				<sp-icon name={OWNER_ICON[shown.group]} size="13"></sp-icon>
 				<span data-widget-part="stats.strip-name">{shown.owner.label}</span>
 			</header>
+			{@render whereBlock(shown, slotDensity)}
 			{@render slotsOf(shown, slotDensity)}
+			{@render toolsBlock(shown, slotDensity)}
+			{@render carriedBlock(shown, slotDensity)}
 		</section>
 	{/if}
 {/snippet}
@@ -679,11 +938,7 @@
 			<span>
 				{read.emptyState
 					? t(read.emptyState)
-					: worldOnly
-						? t("Nothing in this session declares world stats. A genre or an extension adds them.")
-						: t(
-								"Nothing in this session declares stats. A genre, an extension or an administrator adds them, and they show up here."
-							)}
+					: t("This session's rules declare no attributes.")}
 			</span>
 		</div>
 	{:else if view.status === "nothing-shown"}

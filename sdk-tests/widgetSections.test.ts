@@ -313,7 +313,8 @@ describe('who may ask what (F9)', () => {
 		assert.deepEqual(WIDGET_REQUEST_ASKERS.send, { scope: 'channel', write: true })
 		assert.deepEqual(WIDGET_REQUEST_ASKERS.draft, { scope: 'channel', write: true })
 		// What acts on the session's structure stays core's.
-		for (const kind of ['switch-persona', 'add-persona', 'fire-turn', 'decide-proposal', 'actions-seen', 'summarize'] as const)
+		// 🚧 `take-seat` (Lair rewrite D5): a guest's seat, opened by name.
+		for (const kind of ['switch-persona', 'add-persona', 'take-seat', 'fire-turn', 'decide-proposal', 'actions-seen', 'summarize'] as const)
 			assert.equal(WIDGET_REQUEST_ASKERS[kind], 'core', kind)
 		// 🚧 Live scenes (§14 C): every scene boundary writes the session's lorebook — core's only.
 		for (const kind of ['scene-open', 'scene-close', 'scene-move', 'scene-rename', 'scene-remove'] as const) {

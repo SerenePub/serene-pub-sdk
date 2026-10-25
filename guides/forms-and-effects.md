@@ -59,6 +59,59 @@ the next run waits for the session owner, who sees the chain and chooses **Conti
 four more levels and sixteen more runs) or **Stop here**. Nothing runs past a limit unasked.
 [Events](events.md#loops) share the same limits.
 
+### A roll, and its dice
+
+A **roll** block is a question about a check: which check, against which difficulty, or no
+check at all. It is answered once, like any other form, and its options come from the session's
+ruleset: `rollBlockBands(ruleset)` reads the difficulty bands the ruleset declares
+(`difficultyBands`; Vis Itineris offers six, from *Very easy* to *Nearly impossible*).
+
+<!-- prelude:
+import { rollBlockBands, type MessageBlock, type RulesetDecl } from '@serene-pub/sdk'
+declare const ruleset: RulesetDecl
+-->
+```ts
+const ask: MessageBlock = {
+	kind: 'roll',
+	fn: 'roll', // the action the answer fires
+	addressee: 'owner',
+	question: 'Varek tries to pick the lock. Roll for it?',
+	stat: 'skill.thievery',
+	stats: [
+		{ key: 'skill.thievery', label: 'Thievery' },
+		{ key: 'dex', label: 'Dexterity' },
+	],
+	bands: rollBlockBands(ruleset),
+	band: 'hard',
+	by: 'character:12', // who attempts it
+}
+
+const result: MessageBlock = {
+	kind: 'dice',
+	stat: 'Thievery',
+	rolled: 17,
+	against: 20,
+	outcome: 'Failure',
+	five: 'fail',
+	explain: 'd20 14 + dex 3 = 17 vs 20',
+	by: 'character:12',
+}
+```
+
+The answer is `{ check, stat, band }`. The press fires the action with `{ check, stat, band,
+target }`, where `target` comes from the band as the block stored it, never from the answer.
+`check: false` is **No check**: the attempt is told without a roll, and no target is sent. A
+**dice** block asks nothing. It reports a roll: what was rolled, the total, what it was rolled
+against and how it came out, in the ruleset's own words.
+
+On screen, core's messages widget draws a roll for the person it is put to as a **Check** and a
+**Difficulty** (each a list when there is more than one, the number beside each difficulty),
+then **Roll** and **No check**; everyone else sees the question and *Awaiting an answer*, and
+once answered, *Answered* with the call in words (*Thievery — Hard*, *No check*). A dice block is
+one framed line, its outcome tinted by `five`, with `explain` under it. A line that carries
+either, or answers a roll, is drawn as the rules speaking (`data-msg-dice-line`), still under
+its speaker's name.
+
 ## Collecting text or people first
 
 An action can ask for something before it fires, with `collects`. Every press of it (a button,
@@ -121,11 +174,47 @@ reviewDefault: 'on',                      // optional: start with review switche
 Never list a field that names a row (a message id, a target): the person's right to act on that
 row was checked before the run started.
 
-Your spec's shipped config can start a node with review on:
-`.preset('default', { label: 'Default', default: true }, (p) => p.settings('write', { review: 'on' }))`,
-where `write` is the node's key. Writing Room's *Add to bible* does this, so the owner sees the
-new lore entry and can edit it before it is written. An admin can switch review on or off for
-any such step.
+Your spec's declared defaults can start a node with review on:
+`.defaults((p) => p.settings('write', { review: 'on' }))`, where `write` is the node's key.
+Writing Room's *Add to bible* does this, so the owner sees the new lore entry and can edit it
+before it is written. An admin can switch review on or off for any such step.
+
+### Typed fields, asked for and checked
+
+A lore entry's type may declare fields of its own: a place's category, or a weapon's damage
+when a ruleset makes its weapons into entries. `jsonSchemaOf(entryType)` turns those fields into
+the JSON Schema `generate-json@1` takes, and `create-lore-entry@1` saves the answer through its
+`fields` input. `update-lore-entry@1` changes an entry the session already has, and its `fields`
+change only the keys they name. Both outlets check the fields against the entry's type, at the
+review gate and again when the entry is written. A field the type does not declare, or a value of
+the wrong kind, is refused with the field named. Nothing is trimmed to make it fit.
+
+<!-- prelude:
+import { jsonSchemaOf, slot, type EntryDescriptor, type SpecBuilder } from '@serene-pub/sdk'
+import * as C from '@serene-pub/contracts'
+declare const place: EntryDescriptor
+declare const chain: SpecBuilder<{}>
+chain
+-->
+```ts
+.oracle('draft', ($: any) => C.generateJson.v1({
+	context: $.prompt.context,
+	// leave out what the model should not invent, read off the declaration
+	schema: jsonSchemaOf(place, { omit: [place.entryShape.roles.priority!] }),
+	connection: slot.connection(),
+}))
+.outlet('save', ($: any) => C.createLoreEntry.v1({
+	name: $.input.text,
+	content: $.input.text,
+	fields: $.draft.json,
+}))
+```
+
+The same works for an attribute sheet or a ruleset's stats (keyed by each stat's slug), for one
+piece of a repertoire, and for a form's answer. `validateAgainst(declaration, answer)` checks an
+answer against the declaration it was asked from. The schema is **strict** by default: every
+property is required and nothing extra is allowed, which is what a grammar-constrained model
+server can hold. Pass `strict: false` to keep optional fields optional.
 
 ## Every action says what it does
 

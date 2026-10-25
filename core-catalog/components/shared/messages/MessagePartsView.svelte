@@ -105,6 +105,10 @@
 	body: string,
 	items?: string[]
 )}
+	<!-- A fold is drawn only when there is something in it (polish parity L2,
+	     STYLE-GUIDE §6.13): an empty reasoning part, or a section with no
+	     text and no items, costs no row. -->
+	{#if body.trim() || items?.length}
 	<div data-widget-part="messages.part-disclosure">
 		<button
 			type="button"
@@ -151,6 +155,7 @@
 			</div>
 		</div>
 	</div>
+	{/if}
 {/snippet}
 
 {#each steps as step, i (step)}
@@ -193,8 +198,9 @@
 				part.content ?? "",
 				sectionItems(part)
 			)}
-		{:else if part.type === "core:image" || part.type === "core:file"}
-			<!-- Attachments and generated images are the media strip's
+		{:else if part.type === "core:image" || part.type === "core:audio" || part.type === "core:video" || part.type === "core:file"}
+			<!-- Attachments, generated images and spoken replies (core:audio,
+			     core:video since O5) are the media strip's
 			     (MessageMediaStrip, under the body in every state of the row),
 			     never drawn inline here — and never the unknown-type fold. -->
 		{:else if Array.isArray((part.data as any)?.blocks)}

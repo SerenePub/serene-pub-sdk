@@ -87,8 +87,16 @@ describe('A1 · the four events (§4.1)', () => {
 		// 2026-10-12) makes 29, and the Sprite set fill's `sprites-attached`
 		// (DESIGN-image-generation §6.3, 2026-10-12) makes 30, and Portrait's
 		// `media-offered` (DESIGN-image-generation §6.2, 2026-10-12) makes 31,
-		// and a person's Send, `message-offered` (owner ruling 2026-10-15), makes 32.
-		assert.equal(allEvents().length, 32)
+		// and a person's Send, `message-offered` (owner ruling 2026-10-15), makes 32,
+		// and the five session moments of the layering restructure (turn ended,
+		// round ended, scene opened, scene closed, story clock moved —
+		// PLAN-layering D7, 2026-10-20) make 37, and the five events a ruleset's
+		// functions raise — `rest-taken` (lane G3), `level-reached`,
+		// `obligation-came-due`, `deadline-passed`, `scheduled-moment-reached`
+		// (PLAN-genres-seams, merge GM, 2026-10-23) — make 42, and a person's
+		// Delete, `message-deletion-asked` (RF fix 5, owner ruling 2026-10-23:
+		// deletion requires a pipeline), makes 43.
+		assert.equal(allEvents().length, 43)
 	})
 
 	test('sessionEvents names every event a genre may bind the turn-order spec to, by registered id', () => {

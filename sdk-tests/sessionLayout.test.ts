@@ -432,6 +432,11 @@ describe("core's genres declare the layouts they have always shipped", () => {
 	 * proves they convert to these. Regenerated from the genres:
 	 * `JSON.stringify({ [g.id]: g.layouts[0].preset }, null, '\t')` for
 	 * Adventure and Lair.
+	 *
+	 * 🚧 Moved on purpose 2026-10-22 (lair fix 2, owner): the Lair's Sanctum
+	 * is a tab of the story — its `messages#sanctum` panel and claim gone,
+	 * the story's copy `otherTabsComposer: minimal`, Places and the
+	 * scratchpad re-shared 3/2. Regenerated from the genre, the Lair's key only.
 	 */
 	const before = JSON.parse(readFileSync(join(import.meta.dirname, 'goldens/core-session-layouts.json'), 'utf8')) as Record<
 		string,
@@ -452,7 +457,9 @@ describe("core's genres declare the layouts they have always shipped", () => {
 	] as const)
 		test(g.id, () => {
 			const layouts = g.layouts ?? []
-			assert.equal(layouts.length, g === storyGenre ? 2 : 1)
+			// 🚧 Story's World beside its default; the Lair's party (guest) layout
+			// beside the GM's since its rewrite (2026-10-21, D6).
+			assert.equal(layouts.length, 2)
 			const shipped = layouts.find((l) => l.slug === slug)
 			assert.equal(shipped?.slug, slug)
 			assert.ok(before[g.id], 'a golden for the genre')

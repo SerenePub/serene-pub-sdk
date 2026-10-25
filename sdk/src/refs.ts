@@ -19,7 +19,7 @@ export interface DataRef {
 /** @public */
 export interface SlotRef {
 	readonly __ref: 'slot'
-	slot: 'connection' | 'sampling' | 'prompts' | 'template' | 'params' | 'variables' | 'workflow'
+	slot: 'connection' | 'sampling' | 'speechSampling' | 'prompts' | 'template' | 'params' | 'variables' | 'workflow'
 	/** Whose config. Undefined = this node's own. */
 	ofNode?: string
 	/**
@@ -96,6 +96,18 @@ export const slot = {
 	sampling: (ofNode?: NodeAddress): SlotRef => ({
 		__ref: 'slot',
 		slot: 'sampling',
+		ofNode: addr(ofNode),
+	}),
+	/**
+	 * 🚧 The node's **speech sampling** — the TTS-vocabulary sampling a call
+	 * that writes audio takes beside its text one (O7, `generate-text@1`'s
+	 * `speechSampling`). Resolved like `sampling`: the pick, else the
+	 * `text->audio` default's.
+	 * @ruling O7
+	 */
+	speechSampling: (ofNode?: NodeAddress): SlotRef => ({
+		__ref: 'slot',
+		slot: 'speechSampling',
 		ofNode: addr(ofNode),
 	}),
 	/**

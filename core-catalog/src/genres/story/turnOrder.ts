@@ -7,7 +7,7 @@ import * as C from '@serene-pub/contracts'
 import { storyGenre } from '../../registry/genres.js'
 import { type TurnOrderHandle, TURN_ORDER_EVENTS, turnOrderSpec, turnStrategyNode } from '../../factories/turnOrder.js'
 import { once } from '../../factories/once.js'
-import { STORY_NARRATE_SPEC_ID } from './narrate.js'
+import { narrateSpec } from './narrate.js'
 
 /** @experimental */
 export const STORY_TURN_ORDER_SPEC_ID = 'core:spec/story-turn-order'
@@ -31,7 +31,7 @@ export const storyTurnOrder: TurnOrderHandle = {
 			advise: C.turnAdvise,
 			// 🚧 The voices group (lane 2): *Let others speak up* and
 			// *Narrator asides*, after the round; the narrator's line is Narrate.
-			unprompted: { narrate: `${STORY_NARRATE_SPEC_ID}#narrate` },
+			unprompted: { narrate: narrateSpec().actions.narrate.identity },
 		})),
 	strategyNode: turnStrategyNode({ advise: C.turnAdvise }),
 }

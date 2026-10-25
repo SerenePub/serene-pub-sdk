@@ -2,8 +2,9 @@
  * The modder's vocabulary (R36, R51, F2) and the first-plugin guide's promise
  * to keep to it.
  *
- * `guides/vocabulary.md` is the list a modder learns first: at most 25 words
- * (R36; more needs the owner), each an H3 with one sentence, one example (a
+ * `guides/vocabulary.md` is the list a modder learns first: at most 28 words
+ * (R36 capped it at 25; R59, 2026-10-21, raised it to 28 for registration,
+ * routine and cadence — more needs the owner), each an H3 with one sentence, one example (a
  * code span) and a link to its entry in the canon, the app's `NOMENCLATURE.md`.
  *
  * `guides/your-first-plugin.md` uses only those words. Any other canon term is
@@ -30,8 +31,8 @@ const CANON_PATH = join(APP_ROOT, 'NOMENCLATURE.md')
 const CANON_PRESENT = existsSync(CANON_PATH)
 const NO_CANON = CANON_PRESENT ? false : `the app's NOMENCLATURE.md is not at ${CANON_PATH}`
 
-/** R36: the cap. Growing it is the owner's call, not this file's. */
-const VOCABULARY_CAP = 25
+/** R36: the cap (25), raised to 28 by R59 (2026-10-21). Growing it is the owner's call, not this file's. */
+const VOCABULARY_CAP = 28
 
 /** The mark the canon puts on a modder word's entry (§27). */
 const MODDER_MARK = '📘'
@@ -132,11 +133,11 @@ const vocabulary = readVocabulary()
 const vocabWords = vocabulary.map((v) => v.word)
 
 describe('the modder vocabulary (guides/vocabulary.md)', () => {
-	test(`has at most ${VOCABULARY_CAP} words (R36)`, () => {
+	test(`has at most ${VOCABULARY_CAP} words (R36, R59)`, () => {
 		assert.ok(vocabulary.length > 0, 'no `### word` sections were read — did the format change?')
 		assert.ok(
 			vocabulary.length <= VOCABULARY_CAP,
-			`${vocabulary.length} words: R36 caps the vocabulary at ${VOCABULARY_CAP}; more needs the owner`,
+			`${vocabulary.length} words: R36/R59 cap the vocabulary at ${VOCABULARY_CAP}; more needs the owner`,
 		)
 		assert.equal(new Set(vocabWords).size, vocabWords.length, 'a word is listed twice')
 	})

@@ -6,7 +6,9 @@
  * A **media strip** is the square image tiles and file tiles below a
  * message's card (next-pass note 40, 2026-10-03) — `core:image` /
  * `core:file` parts, whoever wrote them (a person's attachment, a
- * pipeline's generated image). Not the character gallery, not
+ * pipeline's generated image) — and, since O11 (2026-10-21), a player for
+ * each `core:audio` / `core:video` part (a voice note, a spoken reply).
+ * Not the character gallery, not
  * an image a block tree places (`messages.block-image` stays where its plugin
  * put it).
  */
@@ -16,7 +18,8 @@ import type { MessagePartV1 } from '@serene-pub/sdk/component'
 export interface MediaStripItem {
 	/** The part's id — the key, and what a removal names. */
 	partId: number
-	kind: 'image' | 'file'
+	/** 🚧 `audio` / `video` since O11 (2026-10-21): drawn as players. */
+	kind: 'image' | 'audio' | 'video' | 'file'
 	/** `files.id` — the part's `data.assetId`. */
 	assetId: number
 	/** What a reader is told: the part's alt, then its file's name. */
@@ -27,6 +30,25 @@ export interface MediaStripItem {
 	height: number | null
 	mime: string | null
 	bytes: number | null
+}
+
+/**
+ * The part types the strip shows — the SDK's `MEDIA_PART_TYPES`, spelled
+ * here because a component imports no runtime from the SDK. Every one
+ * carries `data.assetId`.
+ */
+const STRIP_PART_TYPES: ReadonlySet<string> = new Set(['core:image', 'core:audio', 'core:video', 'core:file'])
+const KIND_OF_PART: Record<string, MediaStripItem['kind']> = {
+	'core:image': 'image',
+	'core:audio': 'audio',
+	'core:video': 'video',
+	'core:file': 'file',
+}
+const KIND_LABEL: Record<MediaStripItem['kind'], string> = {
+	image: 'Image',
+	audio: 'Audio',
+	video: 'Video',
+	file: 'File',
 }
 
 /** How many image tiles show before the rest fold into a count tile. */
@@ -50,20 +72,20 @@ export function mediaStripItems(
 	return parts
 		.filter(
 			(p) =>
-				(p.type === 'core:image' || p.type === 'core:file') &&
+				STRIP_PART_TYPES.has(p.type) &&
 				p.revision === (active[String(p.step)] ?? 0) &&
 				count((p.data as Record<string, unknown> | null)?.assetId) !== null,
 		)
 		.sort((a, b) => a.step - b.step || a.ordinal - b.ordinal)
 		.map((p) => {
 			const d = (p.data ?? {}) as Record<string, unknown>
-			const kind = p.type === 'core:image' ? 'image' : 'file'
+			const kind = KIND_OF_PART[p.type] ?? 'file'
 			const name = text(d.filename) ?? text(d.name)
 			return {
 				partId: p.id,
 				kind,
 				assetId: d.assetId as number,
-				label: text(d.alt) ?? name ?? (kind === 'image' ? 'Image' : 'File'),
+				label: text(d.alt) ?? name ?? KIND_LABEL[kind],
 				name,
 				width: count(d.width),
 				height: count(d.height),
@@ -94,6 +116,8 @@ export function formatBytes(bytes: number): string {
 export function fileIcon(mime: string | null): string {
 	if (!mime) return 'file'
 	if (mime.startsWith('text/') || mime === 'application/pdf') return 'file-text'
+	if (mime.startsWith('audio/')) return 'file-audio'
+	if (mime.startsWith('video/')) return 'file-video'
 	return 'file'
 }
 

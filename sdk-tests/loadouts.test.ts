@@ -69,7 +69,8 @@ describe('a shipped declaration', () => {
 
 describe('where a loadout may be named', () => {
 	test('config only — a session never picks one', () => {
-		assert.deepEqual(WRITE_MATRIX.loadout, ['config'])
+		// PLAN-layering D5: an administrator's preset or a genre's defaults name it; ⏳ `config` reads as `preset`.
+		assert.deepEqual(WRITE_MATRIX.loadout, ['preset', 'genre'])
 		assert.equal(mayWrite('loadout', 'session'), false)
 		assert.equal(mayWrite('loadout', 'config'), true)
 	})
@@ -94,12 +95,14 @@ describe('where a loadout may be named', () => {
 })
 
 describe("core's set", () => {
-	test('eleven declarations, every one clean, five defaults', () => {
-		assert.equal(CORE_LOADOUTS.length, 11)
+	// O12 (2026-10-21): + Transcription (`audio->text`) and Spoken reply
+	// (`text->text+audio`), both defaults of their transforms, both unfilled.
+	test('thirteen declarations, every one clean, seven defaults', () => {
+		assert.equal(CORE_LOADOUTS.length, 13)
 		for (const d of CORE_LOADOUTS) assert.deepEqual(loadoutDeclProblems(d, 'core'), [], d.id)
 		assert.deepEqual(
 			CORE_LOADOUTS.filter((d) => d.defaultFor).map((d) => d.transform).sort(),
-			['text->audio', 'text->embedding', 'text->entities', 'text->image', 'text->text'],
+			['audio->text', 'text->audio', 'text->embedding', 'text->entities', 'text->image', 'text->text', 'text->text+audio'],
 		)
 	})
 
@@ -110,7 +113,8 @@ describe("core's set", () => {
 		const def = doc.presets?.find((p) => p.default)
 		assert.deepEqual(
 			def?.values.find((v) => v.slot === 'loadout'),
-			{ nodeKey: 'generate', slot: 'loadout', value: { id: CORE_LOADOUT.reply } },
+			// 🚧 D7 (2026-10-23, A2): the reply's prose branch; its `changes` branch runs on the same loadout.
+			{ nodeKey: 'reply.prose.generate', slot: 'loadout', value: { id: CORE_LOADOUT.reply } },
 		)
 	})
 })

@@ -55,6 +55,7 @@ import {
 	slashCollisions,
 	normalizeContributes,
 	enabledWhenFindings,
+	actionDocumentFindings,
 	actionFindings,
 	TEXT_NEEDS,
 	collectsFindings,
@@ -500,7 +501,9 @@ describe('R3 · an action collects text and recipients by declaration', () => {
 			min: 1,
 			overwrites: 'core:slot/whisper@1',
 		})
-		assert.deepEqual(actionFindings(a as any, 'core:spec/lair-whisper'), [])
+		// 🚧 No lock (PLAN-layering D3, 2026-10-20): the Lair's defaults register it, so it names no genre.
+		assert.deepEqual(actionDocumentFindings(lairWhisperSpec() as any), [])
+		assert.equal(a!.genre, undefined)
 	})
 
 	test('collecting nothing is refused', () => {

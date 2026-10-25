@@ -25,8 +25,6 @@ import {
 	defineStoredAttributeSlot,
 	derivations,
 	genre,
-	genreAllowsCustomAttributes,
-	genreSlots,
 	getAttributeSheet,
 	getAttributeSlot,
 	isAnchorOpen,
@@ -39,7 +37,6 @@ import {
 	retireAttributeSheet,
 	retireAttributeSlot,
 	reviveAttributeSlot,
-	genreSheets,
 	slotAppliesTo,
 	slotDerivation,
 	slotPickable,
@@ -784,62 +781,25 @@ describe('a sheet is an ordered bundle of slots', () => {
 /* ── A genre's vocabulary (R6) ──────────────────────────────────────────── */
 
 describe("the slots a session of a genre carries", () => {
-	test('sheets and the loose list are one vocabulary, deduped by id', () => {
+	// 🚧 RF fix 8 (owner ruling 2026-10-23): a genre brings no attributes — the
+	// session's rules do. `slots`, `sheets` and `customAttributes` are refused
+	// at the authoring door, by name, with where to say it instead.
+	test('a genre that names slots, sheets or custom attributes is refused, and told to say what it plays best with', () => {
 		fresh()
 		hp()
 		mood()
 		const sheet = adventurers()
-		const g = genre('acme.rp:genre/crawl', {
-			name: { en: 'Crawl' },
-			family: 'adventure',
-			slots: [hp(), inventory()],
-			sheets: [sheet],
-		})
-		// Sheet order first (mood, hp), then what the loose list adds and no more.
-		assert.deepEqual(genreSlots(g.id).map((d) => d.id), [
-			'core:slot/mood@1',
-			'core:slot/hp@1',
-			'core:slot/inventory@1',
-		])
-		assert.deepEqual(genreSheets(g).map((s) => s.id), ['core:sheet/adventurer@1'])
-		assert.deepEqual(genreSheets(g.id), genreSheets(g))
+		for (const [key, value] of [['slots', [hp()]], ['sheets', [sheet]], ['customAttributes', 'allow']] as const)
+			assert.throws(
+				() => genre(`acme.rp:genre/retired-${key.toLowerCase()}`, { name: { en: 'Crawl' }, family: 'adventure', [key]: value } as never),
+				new RegExp(`${key}: a genre brings no attributes any more.*plays best with in .uses.`),
+			)
 	})
 
-	test('a genre with only a loose list is unchanged', () => {
-		fresh()
-		const g = genre('acme.rp:genre/crawl', {
-			name: { en: 'Crawl' },
-			family: 'adventure',
-			slots: [hp()],
-		})
-		assert.deepEqual(genreSlots(g.id).map((d) => d.id), ['core:slot/hp@1'])
-		assert.deepEqual(genreSheets(g), [])
-	})
-
-	test('a genre that declares neither carries nothing — the one-call rule at the surface', () => {
+	test('a genre that names none declares as it did, and carries nothing of its own', () => {
 		fresh()
 		const g = genre('acme.rp:genre/plain', { name: { en: 'Plain' }, family: 'chat' })
-		assert.deepEqual(genreSlots(g.id), [])
-		assert.deepEqual(genreSheets(g), [])
-		assert.deepEqual(genreSlots('acme.rp:genre/never-declared'), [])
-		assert.deepEqual(genreSheets('acme.rp:genre/never-declared'), [])
-	})
-
-	test('a genre denies custom attributes unless it says otherwise, and says so in its hash only when it allows', () => {
-		fresh()
-		const plain = genre('acme.rp:genre/plain-deny', { name: { en: 'Plain' }, family: 'chat' })
-		assert.equal(genreAllowsCustomAttributes(plain), false)
-		assert.equal('customAttributes' in plain, false, 'unstated is absent, so an existing genre hashes as it did')
-		const denied = genre('acme.rp:genre/said-deny', { name: { en: 'Denied' }, family: 'chat', customAttributes: 'deny' })
-		assert.equal('customAttributes' in denied, false, "'deny' is the default, and stored as the default is")
-		const open = genre('acme.rp:genre/open', { name: { en: 'Open' }, family: 'rp', customAttributes: 'allow' })
-		assert.equal(genreAllowsCustomAttributes(open), true)
-		assert.equal(genreAllowsCustomAttributes('acme.rp:genre/open'), true)
-		assert.equal(genreAllowsCustomAttributes('acme.rp:genre/never-declared'), false)
-		assert.throws(
-			() => genre('acme.rp:genre/bad', { name: { en: 'Bad' }, family: 'rp', customAttributes: 'yes' as never }),
-			/customAttributes: 'allow' or 'deny'/,
-		)
+		for (const key of ['slots', 'sheets', 'customAttributes']) assert.equal(key in g, false, `no ${key}`)
 	})
 
 	test('a slot is pickable unless it says `pickable: false`, and says nothing else', () => {
@@ -911,19 +871,6 @@ describe("the slots a session of a genre carries", () => {
 		)
 	})
 
-	test('a sheet entry whose slot this build no longer declares is skipped, not guessed at', () => {
-		fresh()
-		hp()
-		mood()
-		const g = genre('acme.rp:genre/crawl', {
-			name: { en: 'Crawl' },
-			family: 'adventure',
-			sheets: [adventurers()],
-		})
-		_clearAttributeSlots()
-		mood()
-		assert.deepEqual(genreSlots(g.id).map((d) => d.id), ['core:slot/mood@1'])
-	})
 })
 
 /* ── The turn lock (R9) ─────────────────────────────────────────────────── */

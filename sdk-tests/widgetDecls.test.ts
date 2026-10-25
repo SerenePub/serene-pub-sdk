@@ -308,6 +308,39 @@ describe('review fixes', () => {
 		)
 	})
 
+	test("🚧 the guests' layout (forGuests): at most one, and never the default — the default is the owner's", () => {
+		const two = () =>
+			genre('r71g.pkg:genre/g', {
+				name: 'G',
+				family: 'test',
+				layouts: [
+					layout({ slug: 'default', name: 'D', preset: middle('messages') }),
+					layout({ slug: 'party', name: 'P', preset: middle('messages'), forGuests: true }),
+					layout({ slug: 'crowd', name: 'C', preset: middle('messages'), forGuests: true }),
+				],
+			})
+		assert.throws(two, /'party' and 'crowd' are both forGuests/)
+		assert.throws(
+			() =>
+				genre('r71g.pkg:genre/h', {
+					name: 'H',
+					family: 'test',
+					layouts: [layout({ slug: 'default', name: 'D', preset: middle('messages'), forGuests: true })],
+				}),
+			/the default is the owner's/,
+		)
+		assert.throws(() => layout({ slug: 'x', name: 'X', preset: middle('messages'), forGuests: 'yes' as never }), /forGuests: true or false/)
+		const ok = genre('r71g.pkg:genre/i', {
+			name: 'I',
+			family: 'test',
+			layouts: [
+				layout({ slug: 'default', name: 'D', preset: middle('messages') }),
+				layout({ slug: 'party', name: 'P', preset: middle('messages'), forGuests: true }),
+			],
+		})
+		assert.equal(ok.layouts?.find((l) => l.forGuests)?.slug, 'party')
+	})
+
 	test("the package pass: a genre withholding the conversation draws its package's role: 'primary' widget", () => {
 		const omitting = (id: string, preset: SessionLayoutV1) =>
 			genre(`r71n.pkg:genre/${id}`, {

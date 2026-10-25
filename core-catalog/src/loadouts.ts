@@ -21,6 +21,8 @@ export const CORE_LOADOUT = {
 	sprites: 'core:loadout/sprites@1',
 	scene: 'core:loadout/scene@1',
 	tts: 'core:loadout/tts@1',
+	transcription: 'core:loadout/transcription@1',
+	spokenReply: 'core:loadout/spoken-reply@1',
 	embeddings: 'core:loadout/embeddings@1',
 	entities: 'core:loadout/entities@1',
 } as const
@@ -29,7 +31,7 @@ export const CORE_LOADOUT = {
 export type CoreLoadoutId = (typeof CORE_LOADOUT)[keyof typeof CORE_LOADOUT]
 
 /**
- * The core set. `defaultFor` marks the five that become their transform's
+ * The core set. `defaultFor` marks the ones that become their transform's
  * default the first time that default is set (a fresh install has none set).
  * @experimental
  */
@@ -103,6 +105,29 @@ export const CORE_LOADOUTS: ReadonlyArray<LoadoutDecl & { id: CoreLoadoutId; def
 		name: 'Narration',
 		description: 'Reads text aloud.',
 		transform: 'text->audio',
+		defaultFor: true,
+	},
+	/**
+	 * 🚧 O12 (2026-10-21): the model that HEARS — the transcribe step's, for
+	 * audio a reply cannot hear itself. Arrives unfilled, like every loadout.
+	 */
+	{
+		id: CORE_LOADOUT.transcription,
+		name: 'Transcription',
+		description: 'Hears audio a reply cannot, and writes down what it says — voice notes, spoken replies.',
+		transform: 'audio->text',
+		defaultFor: true,
+	},
+	/**
+	 * 🚧 O12 (2026-10-21): one model writing a reply AND speaking it — the
+	 * reply step when its outputs ask for audio. Arrives unfilled.
+	 */
+	{
+		id: CORE_LOADOUT.spokenReply,
+		name: 'Spoken reply',
+		description: 'Writes a reply and speaks it in the same call. Needs a model that writes audio.',
+		transform: 'text->text+audio',
+		sampling: 'sampling-default',
 		defaultFor: true,
 	},
 	{

@@ -19,28 +19,29 @@
  * A fresh spec id: the roleplay Chat's reply (`core:spec/chat-respond`) is
  * Story's (`story-respond`), and config rows follow a spec id (§2-7 a).
  *
- * 🚧 Chat's background tasks (`CHAT_TASKS`, lane 2, 2026-10-19), resolved
- * at the head (`tasks`, `core:task/resolve-tasks@1`): *Read the lorebook*
- * gates the lorebook's excerpts (the `retrieval` junction before `rank`),
- * and *Remember things* (★K) runs one JSON call every few turns, after the
- * answer is saved, filing what the person told the Assistant as notes —
- * into the lorebook the person attached when they may write it (their
- * living memory bank), else the session's own notes, made on first use
- * (the host's lore-write routing, `lorebooks/phantom.ts`). Full files them;
- * Review holds each at the review gate.
+ * 🚧 *Read the lorebook* (2026-10-20, PLAN-layering §4, A6) is a reply
+ * setting: the lorebook's lane (`gather.worldLore.read`, an optional query)
+ * is switched on or off in session settings, and off it asks for nothing —
+ * no excerpt reaches the prompt and the call count holds. *Remember things*
+ * (★K) left the reply: it is a routine of its own
+ * (`core:spec/assistant-memory`, `memory.ts`), registered Off in Chat's
+ * defaults. Was Chat's background tasks (`CHAT_TASKS`, retired).
  * @experimental
  */
 
-import { compile, handlebars, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import { compile, handlebars, slot, spec, sessionEvents, coreEvents, type SessionOf } from '@serene-pub/sdk'
 import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from '@serene-pub/contracts'
 import { ASSISTANT_ENVOY_KEY, chatGenre, POST_HISTORY_TOKEN_TRIGGER } from '../../registry/genres.js'
-import { applyWiring, at, jsonPart, modelCall, textPart, wiring, type Wiring } from '../../shared/calls.js'
-import { ASSISTANT_PROMPT_KEYS } from '../../seed/prompts.js'
+import { applyWiring, jsonPart, wiring } from '../../shared/calls.js'
 
 /** @experimental */
 export const ASSISTANT_RESPOND_SPEC_ID = 'core:spec/assistant-respond'
 /** @internal */
+// ⚠ Edited in place (2026-10-21, omni O5/O7/O9) — content-addressed;
+// `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
+// before placement; Basic's `generate` names its speech sampling and its
+// `save` writes the reply's media parts in order.
 export const ASSISTANT_RESPOND_VERSION = '1.0.0'
 
 /** The most tool passes one turn may take (★D, ruled 2026-10-19). @experimental */
@@ -145,407 +146,315 @@ What your tools have returned so far:
 /** @experimental */
 export const assistantRespondSpec = () => {
 	const w = wiring()
-	const A = 'mode.agentic.'
-	const L = `${A}tools.item.`
-	const graph = spec(ASSISTANT_RESPOND_SPEC_ID, {
-		version: ASSISTANT_RESPOND_VERSION,
-		taxonomy: { role: 'primary' },
-	})
-		/** The usage lock (24 §4): this spec answers Chat's primary turn. */
-		.inlet('input', C.userMessage.v1(), {
-			genre: chatGenre,
-			event: sessionEvents.messageRespond,
-		})
-		/** The reply row, made first (PLAN-turn-order §4.4) — the Assistant's, from the inlet's speaker. */
-		.outlet('placeholder', ($) =>
-			C.createMessage.v1({
-				generating: true,
-				characterId: $.input.characterId,
-				speaker: $.input.speaker,
-				row: $.input.messageId,
-			}),
-		)
-		.task('contextBudget', ($) =>
-			C.contextBudget.v1({
-				sampling: slot.samplingOf('mode.basic.generate'),
-				connection: slot.connectionOf('mode.basic.generate'),
-				params: slot.params(),
-			}),
-		)
-		/** 🚧 Chat's background tasks, resolved once at the head — no model call. */
-		.task(
-			'tasks',
-			($) =>
-				C.resolveTasks.v1({
-					session: $.input.session,
-					fields: $.input.fields,
-					genre: chatGenre.id,
-				}),
-			{ expose: { label: 'What happens around a reply' } },
-		)
-		.gather('gather', { mode: 'parallel' }, (b) =>
-			b
-				.chain('history', (c) =>
-					c
-						.query('read', ($) =>
-							C.sessionHistory.v1({
-								scope: $.input.sessionScope,
-								budget: $.contextBudget.available,
-								params: slot.params(),
-							}),
-						)
-						.query('attachments', ($) =>
-							C.historyAttachments.v1({
-								messages: $.gather.history.read.messages,
-								params: slot.params(),
-							}),
-						),
-				)
-				.chain('cast', (c) => c.query('read', ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
-				/** The lorebook, when the session has one: by keyword, its own band — no model call. */
-				.chain('worldLore', (c) =>
-					c.query('read', ($) =>
-						C.worldLore.v1({
-							scope: $.input.sessionScope,
-							params: slot.params(),
-						}),
-					),
-				),
-		)
-		.task('lore', ($) =>
-			C.concatCandidates.v1({
-				sources: [$.gather.history.read.band, $.gather.worldLore.read.main] as any,
-			}),
-		)
-		/**
-		 * 🚧 *Read the lorebook* (`lore-retrieval`, lane 2): Off, and the
-		 * ranker is handed the conversation's band alone — no excerpt
-		 * reaches the prompt. One step either way: the call count holds.
-		 */
-		.junction('retrieval', { on: ($: any) => $.tasks.modes }, (j) =>
-			j
-				.when('off', { path: 'lore-retrieval', equals: 'off' }, (b: any) =>
-					b.task('eligible', ($: any) => C.eligibility.v1({ candidates: $.gather.history.read.band })),
-				)
-				.otherwise('on', (b: any) =>
-					b.task('eligible', ($: any) =>
-						C.eligibility.v1({
-							candidates: $.lore.candidates,
-							exclusions: $.gather.worldLore.read.exclusions,
-						}),
-					),
-				),
-		)
-		.task('rank', ($: any) =>
-			C.rankHybrid.v1({
-				candidates: $.retrieval.candidates,
-				budget: $.contextBudget.available,
-				params: slot.params(),
-			}),
-		)
-		/** The Assistant's card and instructions — the envoy's, by address (`envoy:assistant`). */
-		.task('context', ($: any) =>
-			C.buildTemplateContext.v1({
-				cast: $.gather.cast.read.cast,
-				currentCharacterId: $.input.characterId,
-				speaker: $.input.speaker,
-				prompts: slot.prompts({ envoy: ASSISTANT_ENVOY_KEY }),
-				variables: slot.variables(),
-			}),
-		)
-		.task('lines', ($: any) =>
-			C.processMessages.v1({
-				messages: $.gather.history.read.messages,
-				cast: $.gather.cast.read.cast,
-				templateContext: $.context.templateContext,
-				seedName: $.context.seedName,
-				continuationPrefill: $.input.continuationPrefill,
-			}),
-		)
-		.task('attached', ($: any) =>
-			C.placeAttachments.v1({
-				messages: $.lines.messages,
-				attachments: $.gather.history.attachments.attachments,
-				connection: slot.connectionOf('mode.basic.generate'),
-				params: slot.params(),
-			}),
-		)
-		/**
-		 * Basic or Agentic — the session's **tools** field, never a node
-		 * parameter: no tool on is Basic, one call; any on is the loop.
-		 */
-		.junction('mode', { on: ($: any) => $.input.fields }, (j) =>
-			j
-				.when('agentic', { path: 'tools', truthy: true }, (a: any) =>
-					jsonPart(a, w, A, 'kinds', ($: any) => $.input.fields, 'tools', 'The tools this session switched on')
-						/** The tools the session switched on, as this install serves them. */
-						.query('available', ($: any) =>
-							C.availableTools.v1({
-								scope: $.input.sessionScope,
-								kinds: at($, `${A}kinds`).main,
-								params: slot.params(),
-							}),
-						)
-						.task('advertise', ($: any) =>
-							C.advertiseTools.v1({
-								tools: at($, `${A}available`).tools,
-								params: slot.params(),
-							}),
-						)
-						.loop(
-							'tools',
-							{ repeatWhile: ($: any) => at($, `${L}parse`).call, max: ASSISTANT_TOOL_PASSES },
-							(l: any) =>
-								l
-									/** The carry — the results so far; empty on the first pass. */
-									.task(
-										'results',
-										($: any) =>
-											C.joinText.v1({
-												items: at($, `${A}tools`).values,
-												params: slot.params(),
-											}),
-										{ expose: { label: 'Carry the tool results' } },
-									)
-									.task('prompt', ($: any) =>
-										C.assemble.v2({
-											candidates: $.rank.candidates,
-											decisions: $.rank.decisions,
-											groups: $.rank.groups,
-											budget: $.contextBudget.available,
-											messages: $.attached.messages,
-											templateContext: {
-												advertisement: at($, `${A}advertise`).prompt,
-												results: at($, `${L}results`).text,
-											} as any,
-											template: slot.template(),
-											prompts: slot.prompts(),
-											variables: slot.variables(),
-											params: slot.params(),
-											connection: slot.connectionOf(`${L}generate`),
-										}),
-									)
-									.oracle(
-										'generate',
-										($: any) =>
-											C.generateText.v1({
-												context: at($, `${L}prompt`).context,
-												connection: slot.connection(),
-												sampling: slot.sampling(),
-												params: slot.params(),
-											}),
-										{
-											expose: {
-												status: '{speaker} is thinking',
-												label: 'Reply with tools',
-												purpose: 'Answers, calling a tool when it needs one, up to four times a turn (Agentic).',
-											},
-										},
-									)
-									.task('parse', ($: any) =>
-										C.parseToolCall.v1({
-											text: at($, `${L}generate`).text,
-											tools: at($, `${A}available`).tools,
-										}),
-									)
-									/** The one impure step: a failed tool answers the model, never ends the turn. */
-									.oracle(
-										'tool',
-										($: any) =>
-											C.runTool.v1({
-												call: at($, `${L}parse`).call,
-												tools: at($, `${A}available`).tools,
-												text: at($, `${L}parse`).text,
-											}),
-										{ expose: { status: 'Using a tool' } },
-									),
-						)
-						.task(
-							'answer',
-							($: any) =>
-								C.joinText.v1({
-									items: at($, `${A}tools`).values,
-									params: slot.params(),
-								}),
-							{ expose: { label: 'Take the answer' } },
-						)
-						.outlet(
-							'save',
-							($: any) =>
-								C.updateMessage.v1({
-									target: $.placeholder.messageId,
-									text: at($, `${A}answer`).text,
-								}),
-							{ expose: { label: 'Save the answer' } },
-						),
-				)
-				.otherwise('basic', (b: any) =>
-					b
-						.task('prompt', ($: any) =>
-							C.assemble.v2({
-								candidates: $.rank.candidates,
-								decisions: $.rank.decisions,
-								groups: $.rank.groups,
-								budget: $.contextBudget.available,
-								messages: $.attached.messages,
-								templateContext: $.context.templateContext,
-								template: slot.template(),
-								prompts: slot.prompts({ node: 'context' }),
-								variables: slot.variables(),
-								params: slot.params(),
-								connection: slot.connectionOf('mode.basic.generate'),
-							}),
-						)
-						.oracle(
-							'generate',
-							($: any) =>
-								C.generateText.v1({
-									context: $.mode.basic.prompt.context,
-									currentCharacterId: $.input.characterId,
-									connection: slot.connection(),
-									sampling: slot.sampling(),
-									params: slot.params(),
-								}),
-							{
-								expose: {
-									stream: true,
-									status: '{speaker} is typing',
-									label: 'Reply',
-									purpose: 'Answers in one call, with no tools (Basic).',
-								},
-							},
-						)
-						.outlet(
-							'save',
-							($: any) =>
-								C.updateMessage.v1({
-									target: $.placeholder.messageId,
-									text: $.mode.basic.generate.text,
-									reasoning: $.mode.basic.generate.reasoning,
-								}),
-							{ expose: { label: 'Save the reply' } },
-						),
-				),
-		)
-	/** The writes the preset holds at the review gate — *Remember things* on Review. */
-	const review: string[] = []
-	const remembered = (graph as any).junction('memory', { on: ($: any) => $.tasks.sweep }, (j: any) =>
-		j.when('due', { truthy: true }, (m: any) => memoryBranch(m, w, review)),
-	)
 	return compile(
-		remembered
+		spec(ASSISTANT_RESPOND_SPEC_ID, {
+			version: ASSISTANT_RESPOND_VERSION,
+			taxonomy: { role: 'primary' },
+		})
+			/** The usage lock (24 §4): this spec answers Chat's primary turn. */
+			.inlet('input', C.userMessage.v1(), { suits: [coreEvents.messageRespond] })
+			/** The reply row, made first (PLAN-turn-order §4.4) — the Assistant's, from the inlet's speaker. */
+			.outlet('placeholder', ($) =>
+				C.createMessage.v1({
+					generating: true,
+					characterId: $.input.characterId,
+					speaker: $.input.speaker,
+					row: $.input.messageId,
+				}),
+			)
+			.task('contextBudget', ($) =>
+				C.contextBudget.v1({
+					sampling: slot.samplingOf('mode.basic.generate'),
+					connection: slot.connectionOf('mode.basic.generate'),
+					params: slot.params(),
+				}),
+			)
+			.gather('gather', { mode: 'parallel' }, (b) =>
+				b
+					.chain('history', (c) =>
+						c
+							.query('read', ($) =>
+								C.sessionHistory.v1({
+									scope: $.input.sessionScope,
+									budget: $.contextBudget.available,
+									params: slot.params(),
+								}),
+							)
+							.query('attachments', ($) =>
+								C.historyAttachments.v1({
+									messages: $.gather.history.read.messages,
+									params: slot.params(),
+								}),
+							),
+					)
+					.chain('cast', (c) => c.query('read', ($) => C.sessionCast.v1({ scope: $.input.sessionScope })))
+					/**
+					 * The lorebook, when the session has one: by keyword, its own
+					 * band — no model call. 🚧 *Read the lorebook* (2026-10-20): an
+					 * optional query, so a session switches it off in its settings
+					 * and it asks for nothing (`settings.enabled`).
+					 */
+					.chain('worldLore', (c) =>
+						c.query(
+							'read',
+							($) =>
+								C.worldLore.v1({
+									scope: $.input.sessionScope,
+									params: slot.params(),
+								}),
+							{ expose: { session: true, label: 'Read the lorebook' } },
+						),
+					),
+			)
+			.task('lore', ($) =>
+				C.concatCandidates.v1({
+					sources: [$.gather.history.read.band, $.gather.worldLore.read.main] as any,
+				}),
+			)
+			/** The hard gates; with the lorebook's lane off, the conversation's band alone. */
+			.task('eligible', ($) =>
+				C.eligibility.v1({
+					candidates: $.lore.candidates,
+					exclusions: $.gather.worldLore.read.exclusions,
+				}),
+			)
+			.task('rank', ($) =>
+				C.rankHybrid.v1({
+					candidates: $.eligible.candidates,
+					budget: $.contextBudget.available,
+					params: slot.params(),
+				}),
+			)
+			/** The Assistant's card and instructions — the envoy's, by address (`envoy:assistant`). */
+			.task('context', ($) =>
+				C.buildTemplateContext.v1({
+					cast: $.gather.cast.read.cast,
+					currentCharacterId: $.input.characterId,
+					speaker: $.input.speaker,
+					prompts: slot.prompts({ envoy: ASSISTANT_ENVOY_KEY }),
+					variables: slot.variables(),
+				}),
+			)
+			.task('lines', ($) =>
+				C.processMessages.v1({
+					messages: $.gather.history.read.messages,
+					cast: $.gather.cast.read.cast,
+					templateContext: $.context.templateContext,
+					seedName: $.context.seedName,
+					continuationPrefill: $.input.continuationPrefill,
+				}),
+			)
+			/**
+			 * 🚧 Audio the reply cannot hear, heard first (O9): the
+			 * Transcription loadout's model writes down what it says, cached on
+			 * the file; placement then names it with its words. Nothing to hear
+			 * — no audio, a reply that hears it itself — sends nothing. No
+			 * declared status: a declared one shows whenever the step runs,
+			 * and the step's own *listening* is said only when it hears.
+			 */
+			.oracle(
+				'heard',
+				($) =>
+					C.transcribeAudio.v1({
+						messages: $.lines.messages,
+						attachments: $.gather.history.attachments.attachments,
+						hears: $.contextBudget.reads,
+						connection: slot.connection(),
+						params: slot.params(),
+					}),
+				{ expose: { label: 'Transcribe audio' } },
+			)
+			.task('attached', ($) =>
+				C.placeAttachments.v1({
+					messages: $.lines.messages,
+					attachments: $.heard.attachments,
+					connection: slot.connectionOf('mode.basic.generate'),
+					params: slot.params(),
+				}),
+			)
+			/**
+			 * Basic or Agentic — the session's **tools** field, never a node
+			 * parameter: no tool on is Basic, one call; any on is the loop.
+			 */
+			.junction('mode', { on: ($) => $.input.fields }, (j) =>
+				j
+					.when('agentic', { path: (v: SessionOf<typeof chatGenre>['fields']) => v.tools, truthy: true }, (a) =>
+						jsonPart(a, w, 'kinds', ($) => $.input.fields, 'tools', 'The tools this session switched on')
+							/** The tools the session switched on, as this install serves them. */
+							.query('available', ($) =>
+								C.availableTools.v1({
+									scope: $.input.sessionScope,
+									kinds: $.kinds.main,
+									params: slot.params(),
+								}),
+							)
+							.task('advertise', ($) =>
+								C.advertiseTools.v1({
+									tools: $.available.tools,
+									params: slot.params(),
+								}),
+							)
+							.loop(
+								'tools',
+								{ max: ASSISTANT_TOOL_PASSES },
+								(l) =>
+									l
+										/** The carry — the results so far; empty on the first pass. */
+										.task(
+											'results',
+											($) =>
+												C.joinText.v1({
+													items: $.mode.agentic.tools.values,
+													params: slot.params(),
+												}),
+											{ expose: { label: 'Carry the tool results' } },
+										)
+										.task('prompt', ($) =>
+											C.assemble.v2({
+												candidates: $.rank.candidates,
+												decisions: $.rank.decisions,
+												groups: $.rank.groups,
+												budget: $.contextBudget.available,
+												messages: $.attached.messages,
+												templateContext: {
+													advertisement: $.mode.agentic.advertise.prompt,
+													results: $.results.text,
+												} as any,
+												template: slot.template(),
+												prompts: slot.prompts(),
+												variables: slot.variables(),
+												params: slot.params(),
+												connection: slot.connectionOf('mode.agentic.tools.item.generate'),
+											}),
+										)
+										.oracle(
+											'generate',
+											($) =>
+												C.generateText.v1({
+													context: $.prompt.context,
+													connection: slot.connection(),
+													sampling: slot.sampling(),
+													params: slot.params(),
+													// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+													speechSampling: slot.speechSampling(),
+												}),
+											{
+												expose: {
+													status: '{speaker} is thinking',
+													label: 'Reply with tools',
+													purpose: 'Answers, calling a tool when it needs one, up to four times a turn (Agentic).',
+												},
+											},
+										)
+										.task('parse', ($) =>
+											C.parseToolCall.v1({
+												text: $.generate.text,
+												tools: $.mode.agentic.available.tools,
+											}),
+										)
+										/** The one impure step: a failed tool answers the model, never ends the turn. */
+										.oracle(
+											'tool',
+											($) =>
+												C.runTool.v1({
+													call: $.parse.call,
+													tools: $.mode.agentic.available.tools,
+													text: $.parse.text,
+												}),
+											{ expose: { status: 'Using a tool' } },
+										)
+										/** Another pass while the model called a tool. */
+										.repeatWhile(($) => $.parse.call),
+							)
+							.task(
+								'answer',
+								($) =>
+									C.joinText.v1({
+										items: $.tools.values,
+										params: slot.params(),
+									}),
+								{ expose: { label: 'Take the answer' } },
+							)
+							.outlet(
+								'save',
+								($) =>
+									C.updateMessage.v1({
+										target: $.placeholder.messageId,
+										text: $.answer.text,
+									}),
+								{ expose: { label: 'Save the answer' } },
+							),
+					)
+					.otherwise('basic', (b) =>
+						b
+							.task('prompt', ($) =>
+								C.assemble.v2({
+									candidates: $.rank.candidates,
+									decisions: $.rank.decisions,
+									groups: $.rank.groups,
+									budget: $.contextBudget.available,
+									messages: $.attached.messages,
+									templateContext: $.context.templateContext,
+									template: slot.template(),
+									prompts: slot.prompts($.context),
+									variables: slot.variables(),
+									params: slot.params(),
+									connection: slot.connectionOf('mode.basic.generate'),
+								}),
+							)
+							.oracle(
+								'generate',
+								($) =>
+									C.generateText.v1({
+										context: $.prompt.context,
+										currentCharacterId: $.input.characterId,
+										connection: slot.connection(),
+										sampling: slot.sampling(),
+										speechSampling: slot.speechSampling(),
+										params: slot.params(),
+									}),
+								{
+									expose: {
+										stream: true,
+										status: '{speaker} is typing',
+										label: 'Reply',
+										purpose: 'Answers in one call, with no tools (Basic).',
+									},
+								},
+							)
+							.outlet(
+								'save',
+								($) =>
+									C.updateMessage.v1({
+										target: $.placeholder.messageId,
+										text: $.generate.text,
+										reasoning: $.generate.reasoning,
+										parts: $.generate.parts,
+									}),
+								{ expose: { label: 'Save the reply' } },
+							),
+					),
+			)
 			/**
 			 * What Chat ships with: the two layouts inline (a reference you
 			 * can read), the reminder's trigger, the answer's path, and the
-			 * loadouts — Reply for Basic, Tool calling for the loop (I12),
-			 * Extraction for the memory call — and every Review note behind
-			 * the review gate.
+			 * loadouts — Reply for Basic, Tool calling for the loop (I12).
 			 */
-			.preset('assistant', { label: 'Assistant', default: true }, (p: any) => {
-				let out = applyWiring(
+			.defaults((p) =>
+				applyWiring(
 					p
 						.template('mode.basic.prompt', { source: ASSISTANT_RESPOND_TEMPLATE, engine: handlebars.id })
-						.template(`${L}prompt`, { source: ASSISTANT_AGENTIC_TEMPLATE, engine: handlebars.id })
+						.template('mode.agentic.tools.item.prompt', { source: ASSISTANT_AGENTIC_TEMPLATE, engine: handlebars.id })
 						.params('mode.basic.prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
 						// Agentic answers the same person as Basic: the same post-history trigger (lane 3 finding).
-						.params(`${L}prompt`, { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
-						.params(`${A}answer`, { path: 'answer' })
+						.params('mode.agentic.tools.item.prompt', { postHistoryTokenTrigger: POST_HISTORY_TOKEN_TRIGGER })
+						.params('mode.agentic.answer', { path: 'answer' })
 						.loadout('mode.basic.generate', slot.loadout(CORE_LOADOUT.reply))
-						.loadout(`${L}generate`, slot.loadout(CORE_LOADOUT.toolCalling))
-						.loadout('memory.due.memoryWrite', slot.loadout(CORE_LOADOUT.extraction)),
+						.loadout('heard', slot.loadout(CORE_LOADOUT.transcription))
+						.loadout('mode.agentic.tools.item.generate', slot.loadout(CORE_LOADOUT.toolCalling)),
 					w,
-				)
-				for (const node of review) out = out.settings(node, { review: 'on' })
-				return out
-			})
+				),
+			)
 			.build(),
 	)
-}
-
-/**
- * 🚧 What *Remember things* asks every few turns (★K, lane 2): what the
- * person told the Assistant that is worth keeping.
- * @experimental
- */
-export const ASSISTANT_MEMORY_SCHEMA = {
-	type: 'object',
-	properties: {
-		notes: {
-			type: 'array',
-			maxItems: 4,
-			items: {
-				type: 'object',
-				properties: { name: { type: 'string' }, content: { type: 'string' } },
-				required: ['name', 'content'],
-				additionalProperties: false,
-			},
-		},
-	},
-	required: ['notes'],
-	additionalProperties: false,
-} as const
-
-/** The memory brief: the question the call answers, last. */
-const MEMORY_BRIEF =
-	'Look back over this conversation and note what the person told you that is worth remembering next time: facts about them, what they prefer, what they are working on, what they asked you to remember. Each note { name: a short title, content: a sentence or two in plain words }. Only what the person said or decided — never what you said, never a guess. An empty list when there is nothing new.'
-
-/**
- * *Remember things* — `memory.due.*`: one JSON call over the conversation,
- * then each note filed (`create-lore-entry@1`, world lore) — on Full as it
- * is, on Review held at the review gate. The host routes the write: the
- * attached lorebook when the session may write it, else the session's own
- * notes, made on first use.
- */
-const memoryBranch = (m: any, w: Wiring, review: string[]) => {
-	const M = 'memory.due.'
-	const asked = modelCall(m, w, M, 'memory', {
-		prompt: ASSISTANT_PROMPT_KEYS.memory,
-		brief: () => MEMORY_BRIEF,
-		cast: ($: any) => $.gather.cast.read.cast,
-		history: ($: any) => $.gather.history.read.messages,
-		schema: ASSISTANT_MEMORY_SCHEMA,
-		briefTurn: true,
-		expose: {
-			status: 'Taking notes',
-			label: 'Remember things',
-			purpose: 'Every few turns, notes what you told the Assistant, so it remembers next time.',
-		},
-	})
-	return asked.junction('notes', { on: ($: any) => $.tasks.modes }, (j: any) => {
-		const arm = (b: any, mode: 'full' | 'review') => {
-			const X = `${M}notes.${mode}.`
-			const N = `${X}note.item.`
-			w.params.push([`${N}write`, { entryType: 'core:entry/world-lore' }])
-			if (mode === 'review') review.push(`${N}write`)
-			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-			return jsonPart(b, w, X, 'list', ($: any) => at($, `${M}memoryWrite`).json, 'notes', rv('The notes')).each(
-				'note',
-				{ over: ($: any) => at($, `${X}list`).main, max: 4 },
-				(e: any) => {
-					const item = ($: any) => at($, N.slice(0, -1))
-					return textPart(
-						textPart(e, w, N, 'name', item, 'name', rv("The note's title")),
-						w,
-						N,
-						'content',
-						item,
-						'content',
-						rv('What the note says'),
-					).outlet(
-						'write',
-						($: any) =>
-							C.createLoreEntry.v1({
-								name: at($, `${N}name`).text,
-								content: at($, `${N}content`).text,
-								params: slot.params(),
-							}),
-						{ expose: { label: mode === 'full' ? 'File the note' : 'Hold the note for review' } },
-					)
-				},
-			)
-		}
-		return j
-			.when('full', { path: 'memory', equals: 'full' }, (b: any) => arm(b, 'full'))
-			.when('review', { path: 'memory', equals: 'review' }, (b: any) => arm(b, 'review'))
-	})
 }

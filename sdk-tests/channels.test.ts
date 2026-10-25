@@ -18,6 +18,8 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import {
+	CHANNEL_AUDIENCES,
+	channelAudience,
 	channelDecls,
 	DEFAULT_CHANNEL,
 	DEFAULT_LANE,
@@ -306,6 +308,59 @@ describe('a channel declaration that cannot mean what it says is refused', () =>
 		assert.throws(
 			() => declare('test.channels:genre/notarray', 'manuscript'),
 			/declares a 'channels' that is not an array/,
+		)
+	})
+})
+
+/**
+ * 🚧 Who reads a channel (Lair rewrite D6, 2026-10-21): `all` by default,
+ * `owner` for the session's owner alone — the Lair's Sanctum. The host holds
+ * it (rows, pushes, the send gate, the composer switch); the SDK says what a
+ * declaration means and refuses one that cannot mean it.
+ */
+describe('a channel’s audience', () => {
+	const declare = (id: string, channels: any, extra: Record<string, unknown> = {}) =>
+		genre(id, { name: { en: 'X' }, family: 'test', shape: { channels, ...extra } })
+
+	test('owner or all, all by default — and a lane reads its channel’s', () => {
+		assert.deepEqual([...CHANNEL_AUDIENCES], ['all', 'owner'])
+		const shape = { channels: ['notes', { slug: 'sanctum', audience: 'owner' }] }
+		assert.equal(channelAudience(shape, 'sanctum'), 'owner')
+		assert.equal(channelAudience(shape, 'sanctum:2'), 'owner')
+		assert.equal(channelAudience(shape, 'notes'), 'all')
+		assert.equal(channelAudience(shape, 'main'), 'all')
+		assert.equal(channelAudience(shape, 'undeclared'), 'all')
+		assert.equal(channelAudience(undefined, 'sanctum'), 'all')
+	})
+
+	test('channelDecls carries it only when declared, so nothing else re-hashes', () => {
+		const decls = channelDecls({ channels: ['notes', { slug: 'sanctum', audience: 'owner' }] })
+		assert.equal(decls.find((d) => d.slug === 'sanctum')?.audience, 'owner')
+		assert.equal('audience' in decls.find((d) => d.slug === 'notes')!, false)
+		assert.doesNotThrow(() => declare('test.channels:genre/sanctum', [{ slug: 'sanctum', audience: 'owner', label: { en: 'Sanctum' } }]))
+	})
+
+	test('refused where it cannot mean what it says', () => {
+		assert.throws(() => declare('test.channels:genre/aud-bad', [{ slug: 'sanctum', audience: 'gm' }]), /audience 'gm'[\s\S]*'all' or 'owner'/)
+		assert.throws(() => declare('test.channels:genre/aud-main', [{ slug: 'main', audience: 'owner' }]), /'main' is the channel every member reads/)
+		assert.throws(
+			() => declare('test.channels:genre/aud-lanes', [{ slug: 'planner', audience: 'owner', lanes: 'personal' }]),
+			/audience 'owner' and personal lanes/,
+		)
+	})
+
+	test("a genre whose guests sit at seats asks no persona of the owner: personas { min: 0 } with a player label", () => {
+		const g = declare('test.channels:genre/table', [{ slug: 'sanctum', audience: 'owner' }], {
+			personas: { min: 0 },
+		})
+		assert.deepEqual(g.shape?.personas, { min: 0 })
+		assert.doesNotThrow(() =>
+			genre('test.channels:genre/table-gm', {
+				name: { en: 'X' },
+				family: 'test',
+				playerLabel: { en: 'Dungeon Master' },
+				shape: { personas: { min: 0 } },
+			}),
 		)
 	})
 })

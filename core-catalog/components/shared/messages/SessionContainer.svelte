@@ -209,6 +209,20 @@
 		return untrack(buildEntryMarks)
 	})
 
+	/**
+	 * The scenes whose divider's ⋯ menu offers *Start a new entry*: the last
+	 * scene of a completed history entry with no entry after it. It was a
+	 * row of its own after that scene's last line (polish parity L1,
+	 * 2026-10-24: the log's chrome waits in a menu until asked).
+	 */
+	let startsEntry = $derived.by((): Set<number> => {
+		const out = new Set<number>()
+		for (const m of entryMarks.values())
+			if (m.isLastOfEntry && m.historyEntry?.isCompleted && !m.historyEntry.nextEntry)
+				out.add(m.scene.id)
+		return out
+	})
+
 	/** The messages in the sequence this log draws them, `order` applied. */
 	let drawnMessages = $derived(
 		orderedMessages(messages, order)
@@ -405,8 +419,8 @@
 		onreach-start={loadOlder}
 	>
 	<!-- The region spans the panel; the rows (the stage, `messages.stage`)
-	     take its full width, or a centred measure under Line width:
-	     Comfortable. -->
+	     take a centred measure under Line width: Column (the default) or
+	     Comfortable, or its full width under Full. -->
 	<!-- Folio (PLAN-core-widgets §3.7) adds `messages.folio` to the stage: the
 	     lines read as one block of prose, and every rule keyed on it (the
 	     default sheet's, a pack's guard) knows so. Two spellings of one
@@ -456,6 +470,7 @@
 			{order}
 			color={SCENE_COLORS[divider.swatch].text}
 			hidden={!onThisChannel}
+			startsEntry={startsEntry.has(divider.scene.id)}
 		/>
 	{/if}
 	{#if order === "newest-first" && dayMark}
@@ -496,6 +511,7 @@
 			{order}
 			color={SCENE_COLORS[divider.swatch].text}
 			hidden={!onThisChannel}
+			startsEntry={startsEntry.has(divider.scene.id)}
 		/>
 	{/if}
 	<!-- 🚧 A scene cue's chip sits in the divider's slot: where the next
@@ -558,7 +574,9 @@
 					<sp-icon name="message-square-text" size="28" data-widget-part="messages.log-floor-icon"></sp-icon>
 					<span data-widget-part="messages.log-floor-text">{conv.t("Your conversation shows here once you join one.")}</span>
 				</div>
-			{:else if messages.length === 0}
+			{:else if messages.length === 0 || (lanePlaces.size === 0 && !conv.hasOlder)}
+				<!-- 🚧 Nothing on the lane shown (lair fix 2: a story tab whose
+				     rows are all the Sanctum's) is an empty log too. -->
 				<div data-widget-part="messages.log-empty messages.log-floor empty">
 					<sp-icon name="message-square-text" size="28" data-widget-part="messages.log-floor-icon"></sp-icon>
 					<span data-widget-part="messages.log-floor-text">{emptyState ? conv.t(emptyState) : "Send a message to start"}</span>
@@ -687,11 +705,14 @@
 									</div>
 								</div>
 							{:else}
+								<!-- The scene's name rides each of its lines but the
+								     first: that one sits right under (newest-first,
+								     over) the divider that names it (polish parity L1). -->
 								<SessionMessage
 									{msg}
 									{index}
 									{isLastMessage}
-									sceneName={at ? at.name : null}
+									sceneName={at && !marks.dividers.has(msg.id) ? at.name : null}
 									{folio}
 									place={lanePlaces.get(msg.id)}
 								/>
@@ -719,39 +740,25 @@
 						{/if}
 
 						<!-- Completed-entry marker: where this entry's story
-						     stops, and the way on to the next one. -->
-						{#if entry?.isLastOfEntry && entry.historyEntry?.isCompleted}
-							<li data-widget-part="messages.log-item" role="presentation">
-								{#if entry.historyEntry.nextEntry}
-									{@const next = entry.historyEntry.nextEntry}
-									<button
-										data-widget-part="messages.history-marker"
-										onclick={() =>
-											openLore({
-												scope: "history",
-												entryId: next.id,
-												lorebookId: entry.scene.lorebookId
-											})}
-										title="Open next history entry in lorebook"
-									>
-										<sp-icon name="calendar" size="12"></sp-icon>
-										Next: {formatEntryDate(next)}
-									</button>
-								{:else}
-									<button
-										data-widget-part="messages.history-marker messages.history-start"
-										onclick={() =>
-											openLore({
-												scope: "history",
-												create: true,
-												lorebookId: entry.scene.lorebookId
-											})}
-										title="Start a new history entry"
-									>
-										<sp-icon name="calendar-plus" size="12"></sp-icon>
-										Start a new entry
-									</button>
-								{/if}
+						     stops, and the way on to the next one. With no
+						     next entry, *Start a new entry* is the ⋯ menu's of
+						     the entry's last scene (`startsEntry`), not a row. -->
+						{#if entry?.isLastOfEntry && entry.historyEntry?.isCompleted && entry.historyEntry.nextEntry}
+							{@const next = entry.historyEntry.nextEntry}
+							<li data-widget-part="messages.log-item" role="presentation" hidden={!onThisChannel}>
+								<button
+									data-widget-part="messages.history-marker"
+									onclick={() =>
+										openLore({
+											scope: "history",
+											entryId: next.id,
+											lorebookId: entry.scene.lorebookId
+										})}
+									title="Open next history entry in lorebook"
+								>
+									<sp-icon name="calendar" size="12"></sp-icon>
+									Next: {formatEntryDate(next)}
+								</button>
 							</li>
 						{/if}
 					{/each}

@@ -588,6 +588,92 @@ export interface SpHostElements {
 		slot?: string
 	}
 	/**
+	 * A self-contained figure — a player and its caption (1.3).
+	 */
+	'figure': {
+		'id'?: SpAttr
+		'role'?: SpAttr
+		'aria-label'?: SpAttr
+		'aria-labelledby'?: SpAttr
+		'aria-describedby'?: SpAttr
+		'aria-hidden'?: SpAttr
+		'aria-current'?: SpAttr
+		'aria-live'?: SpAttr
+		'title'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
+	 * A figure's caption (1.3).
+	 */
+	'figcaption': {
+		'id'?: SpAttr
+		'role'?: SpAttr
+		'aria-label'?: SpAttr
+		'aria-labelledby'?: SpAttr
+		'aria-describedby'?: SpAttr
+		'aria-hidden'?: SpAttr
+		'aria-current'?: SpAttr
+		'aria-live'?: SpAttr
+		'title'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
+	 * 🚧 A sound player (1.3, O11). `src` is an app media URL (`/media/…`) — never another host, as `img`; `controls` draws the browser's own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load.
+	 * Events: `error`.
+	 */
+	'audio': {
+		'id'?: SpAttr
+		'role'?: SpAttr
+		'aria-label'?: SpAttr
+		'aria-labelledby'?: SpAttr
+		'aria-describedby'?: SpAttr
+		'aria-hidden'?: SpAttr
+		'aria-current'?: SpAttr
+		'aria-live'?: SpAttr
+		'title'?: SpAttr
+		'src'?: SpAttr
+		'controls'?: SpAttr
+		'preload'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
+	 * 🚧 A moving-picture player (1.3, O11) — `audio`'s rules, and a `track` of captions inside it.
+	 * Events: `error`.
+	 */
+	'video': {
+		'id'?: SpAttr
+		'role'?: SpAttr
+		'aria-label'?: SpAttr
+		'aria-labelledby'?: SpAttr
+		'aria-describedby'?: SpAttr
+		'aria-hidden'?: SpAttr
+		'aria-current'?: SpAttr
+		'aria-live'?: SpAttr
+		'title'?: SpAttr
+		'src'?: SpAttr
+		'controls'?: SpAttr
+		'preload'?: SpAttr
+		'width'?: SpAttr
+		'height'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
+	 * 🚧 A video's timed text (1.3, O11): `kind` is `captions` · `subtitles` · `descriptions` · `chapters`; `src`, when given, the app's media.
+	 */
+	'track': {
+		'kind'?: SpAttr
+		'src'?: SpAttr
+		'srclang'?: SpAttr
+		'label'?: SpAttr
+		'default'?: SpAttr
+		'class'?: SpAttr
+		slot?: string
+	}
+	/**
 	 * A participant's avatar, by participant reference (`character:3`, `user:1`). `size` is `sm` · `md` · `lg`.
 	 * Parts: `.sp-avatar`, `.sp-avatar-image`, `.sp-avatar-fallback`.
 	 */
@@ -909,6 +995,8 @@ export interface SpHostEvents {
 	'textarea': 'input' | 'change'
 	'img': 'error'
 	'a': 'click'
+	'audio': 'error'
+	'video': 'error'
 	'sp-popover': 'open-change'
 	'sp-menu': 'select' | 'open-change'
 	'sp-dialog': 'open-change'

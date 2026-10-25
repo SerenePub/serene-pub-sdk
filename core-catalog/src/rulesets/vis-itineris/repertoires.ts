@@ -11,7 +11,9 @@
  * wielded, the universal `equipped`.
  * Prices are in copper pieces (1 gp = 100 cp); weights in pounds.
  */
-import { defineRepertoire, type FieldDecl } from "@serene-pub/sdk"
+import { defineRepertoire, type CompendiumRow, type FieldDecl } from "@serene-pub/sdk"
+import { VIS_ITINERIS_SKILLS } from "./slots.js"
+import { VIS_ITINERIS_COMPENDIUM } from "./compendium/index.js"
 
 const choice = (label: string, options: ReadonlyArray<readonly [string, string]>, extra: Partial<FieldDecl> = {}): FieldDecl => ({
 	type: "enum",
@@ -99,6 +101,8 @@ const cost = int("Price", { min: 0, description: { en: "In copper pieces; 100 ma
 
 /** 🚧 @experimental */
 export const visItinerisWeapons = defineRepertoire("weapons", {
+	// 🚧 What its pieces are (2026-10-22, M3): read by fit and the handler, never guessed from the id.
+	tags: ["weapon"],
 	label: { en: "Weapons" },
 	description: { en: "Blades, bows and clubs: what a character fights with." },
 	piece: obj("Weapon", {
@@ -120,7 +124,7 @@ export const visItinerisWeapons = defineRepertoire("weapons", {
 	// (and showed on the table's line as if it had happened) is gone.
 	mechanics: [
 		{ verb: "rollWith", on: "hit", target: "attack", from: ["strength-mod", "dexterity-mod"], predicate: FINESSE_OR_RANGED },
-		{ verb: "harm", on: "hit", dice: "piece.damage", plus: "check", stat: "hp" },
+		{ verb: "harm", on: "hit", amount: { selector: "piece.damage" }, plus: "check", stat: "hp" },
 		{ verb: "rider", on: "hit", text: "Wielded in two hands, a versatile weapon rolls its two-handed die instead.", predicate: { path: "piece.versatileDie", truthy: true } }
 	],
 	entryable: true,
@@ -129,6 +133,7 @@ export const visItinerisWeapons = defineRepertoire("weapons", {
 
 /** 🚧 @experimental */
 export const visItinerisArmour = defineRepertoire("armour", {
+	tags: ["armour"],
 	label: { en: "Armour" },
 	description: { en: "What a character wears or carries to turn blows aside." },
 	piece: obj("Armour", {
@@ -151,6 +156,7 @@ export const visItinerisArmour = defineRepertoire("armour", {
 
 /** 🚧 @experimental */
 export const visItinerisGear = defineRepertoire("gear", {
+	tags: ["gear"],
 	label: { en: "Gear" },
 	description: { en: "Tools, kits and everything else an adventurer packs." },
 	piece: obj("Gear", {
@@ -171,6 +177,7 @@ export const visItinerisGear = defineRepertoire("gear", {
 
 /** 🚧 @experimental */
 export const visItinerisConsumables = defineRepertoire("consumables", {
+	tags: ["consumable"],
 	label: { en: "Consumables" },
 	description: { en: "Potions, food and other things used up." },
 	piece: obj("Consumable", {
@@ -191,9 +198,9 @@ export const visItinerisConsumables = defineRepertoire("consumables", {
 	mechanics: [
 		{ verb: "consume", on: "use" },
 		{ verb: "consume", on: "hit" },
-		{ verb: "heal", on: "use", dice: "piece.heals", stat: "hp", predicate: has("heals") },
-		{ verb: "harm", on: "use", dice: "piece.damage", stat: "hp", predicate: has("damage") },
-		{ verb: "harm", on: "hit", dice: "piece.damage", stat: "hp", predicate: has("damage") },
+		{ verb: "heal", on: "use", amount: { selector: "piece.heals" }, stat: "hp", predicate: has("heals") },
+		{ verb: "harm", on: "use", amount: { selector: "piece.damage" }, stat: "hp", predicate: has("damage") },
+		{ verb: "harm", on: "hit", amount: { selector: "piece.damage" }, stat: "hp", predicate: has("damage") },
 		{ verb: "cure", on: "use", traits: ["condition-poisoned", "condition-envenomed"], predicate: { traits: { all: ["poison-ward"] } } }
 	],
 	entryable: true,
@@ -202,6 +209,7 @@ export const visItinerisConsumables = defineRepertoire("consumables", {
 
 /** 🚧 @experimental */
 export const visItinerisSpells = defineRepertoire("spells", {
+	tags: ["casting"],
 	label: { en: "Spells" },
 	description: { en: "Magic a character knows or has prepared." },
 	piece: obj("Spell", {
@@ -255,9 +263,9 @@ export const visItinerisSpells = defineRepertoire("spells", {
 	// if it had happened, and is gone.
 	mechanics: [
 		{ verb: "rider", on: "use", text: "A focus spell ends any other focus spell the caster holds.", predicate: { path: "piece.focus", truthy: true } },
-		{ verb: "heal", on: "use", dice: "piece.heals", plus: ["casting-mod"], stat: "hp", predicate: has("heals") },
-		{ verb: "harm", on: "hit", dice: "piece.damage", stat: "hp", predicate: has("damage") },
-		{ verb: "harm", on: "use", dice: "piece.damage", stat: "hp", predicate: { all: [has("damage"), { not: SPELL_RESISTED }] } }
+		{ verb: "heal", on: "use", amount: { selector: "piece.heals" }, plus: ["casting-mod"], stat: "hp", predicate: has("heals") },
+		{ verb: "harm", on: "hit", amount: { selector: "piece.damage" }, stat: "hp", predicate: has("damage") },
+		{ verb: "harm", on: "use", amount: { selector: "piece.damage" }, stat: "hp", predicate: { all: [has("damage"), { not: SPELL_RESISTED }] } }
 	],
 	entryable: true,
 	renderDepth: "summary",
@@ -268,6 +276,7 @@ export const visItinerisSpells = defineRepertoire("spells", {
 
 /** 🚧 @experimental */
 export const visItinerisSpellSlots = defineRepertoire("spell-slots", {
+	tags: ["resource"],
 	label: { en: "Spell slots" },
 	description: { en: "How many spells of each level a caster can still cast before resting." },
 	piece: obj("Spell slots", {
@@ -284,6 +293,7 @@ export const visItinerisSpellSlots = defineRepertoire("spell-slots", {
 
 /** 🚧 @experimental */
 export const visItinerisFeatures = defineRepertoire("features", {
+	tags: ["feature"],
 	label: { en: "Features" },
 	description: { en: "What a character's training and nature let them do." },
 	piece: obj("Feature", {
@@ -302,6 +312,7 @@ export const visItinerisFeatures = defineRepertoire("features", {
 
 /** 🚧 @experimental */
 export const visItinerisFeats = defineRepertoire("feats", {
+	tags: ["feat"],
 	label: { en: "Feats" },
 	description: { en: "Talents a character chose to learn." },
 	piece: obj("Feat", {
@@ -321,6 +332,7 @@ export const visItinerisFeats = defineRepertoire("feats", {
 
 /** 🚧 @experimental */
 export const visItinerisConditions = defineRepertoire("conditions", {
+	tags: ["condition"],
 	label: { en: "Conditions" },
 	description: { en: "What ails or hinders someone, and for how long." },
 	// No fields of its own: how long a condition lasts is the universal
@@ -349,6 +361,7 @@ export const visItinerisConditions = defineRepertoire("conditions", {
 
 /** 🚧 The ways out of a place, held by the place they lead from. @experimental */
 export const visItinerisExits = defineRepertoire("exits", {
+	tags: ["exit"],
 	label: { en: "Exits" },
 	description: { en: "Doors, passages and roads out of a place, and what crossing each takes." },
 	piece: obj("Exit", {
@@ -379,6 +392,7 @@ export const visItinerisExits = defineRepertoire("exits", {
 
 /** 🚧 A creature's stat block, as one piece. @experimental */
 export const visItinerisCreatures = defineRepertoire("creatures", {
+	tags: ["creature"],
 	label: { en: "Creatures" },
 	description: { en: "Beasts, monsters and foes, each with a short stat block." },
 	piece: obj("Creature", {
@@ -408,7 +422,94 @@ export const visItinerisCreatures = defineRepertoire("creatures", {
 	gmOnly: true
 })
 
-/** Every Vis Itineris repertoire, in sheet order. @internal */
+/**
+ * The repertoires a class's starting kit names rows of, in the order a kit
+ * lists them. @internal
+ */
+export const VIS_ITINERIS_KIT_REPERTOIRES = Object.freeze(["weapons", "armour", "gear", "consumables", "spells"] as const)
+
+/** A skill's key as a person reads it: `sleight-of-hand` → "Sleight of hand". */
+const spelledOut = (key: string): string => key.charAt(0).toUpperCase() + key.slice(1).replace(/-/g, " ")
+
+/**
+ * One of a repertoire's compendium rows, by id — the enum a starting kit's
+ * list is checked against, so a kit can name only a row the compendium holds.
+ */
+const rowOf = (repertoire: string): FieldDecl => {
+	const rows = (VIS_ITINERIS_COMPENDIUM.rows[repertoire] ?? []) as readonly CompendiumRow[]
+	return choice(
+		"Row",
+		rows.map((r) => [r.id, String(r.piece.name)] as const)
+	)
+}
+
+/**
+ * 🚧 What a character trained as — and what one sets out with (Lair rewrite
+ * D9, 2026-10-21): the die their health grows by, the six ability scores
+ * laid out for the class (the standard array, its best raised by one), the
+ * skills they are trained in, the **starting kit** (rows of this ruleset's
+ * compendium, by repertoire), the spell slots and the features they begin
+ * with, and the other names the class answers to (`alsoCalled`). Rows of
+ * the compendium; a genre that makes characters reads them (the Dungeon
+ * Crawler's kits) and never keeps a list of its own.
+ *
+ * Not entryable: a class is a character option, not a thing a lorebook
+ * holds. ⚠ Not the `character-class` slot (the class a character has, in
+ * words), which a genre maps onto a row by its name and `alsoCalled`; not
+ * the SDK's component kit.
+ * @experimental
+ */
+export const visItinerisClasses = defineRepertoire("classes", {
+	tags: ["class"],
+	label: { en: "Classes" },
+	description: { en: "What a character trained as, and what one sets out with." },
+	piece: obj("Class", {
+		hitDie: choice("Hit die", DIE, { required: true, description: { en: "The die health grows by; at level 1, its highest face plus the Constitution modifier." } }),
+		abilities: obj(
+			"Ability scores",
+			Object.fromEntries(ABILITY.map(([k, l]) => [k, int(l, { min: 1, max: 30, required: true })])),
+			{ required: true, description: { en: "The six scores laid out for the class: the standard array, its best score raised by one." } }
+		),
+		skills: {
+			type: "list",
+			label: { en: "Trained skills" },
+			item: choice("Skill", Object.keys(VIS_ITINERIS_SKILLS).map((k) => [k, spelledOut(k)] as const)),
+			default: []
+		},
+		startingKit: obj(
+			"Starting kit",
+			Object.fromEntries(VIS_ITINERIS_KIT_REPERTOIRES.map((rep) => [rep, { type: "list", label: { en: spelledOut(rep) }, item: rowOf(rep), default: [] } as FieldDecl])),
+			{ description: { en: "What a new character of the class carries: rows of the compendium, by repertoire." } }
+		),
+		spellSlots: {
+			type: "list",
+			label: { en: "Spell slots at level 1" },
+			item: obj("Spell slots", { level: int("Level", { min: 1, max: 9, required: true }), max: int("Slots", { min: 1, required: true }) })
+		},
+		features: {
+			type: "list",
+			label: { en: "Features at level 1" },
+			item: obj("Feature", {
+				name: str("Name", { required: true }),
+				description: str("Description", { required: true }),
+				activation: activation("passive"),
+				usesMax: int("Uses", { min: 1 }),
+				recharge: choice("Comes back on", [["short", "A short rest"], ["long", "A long rest"], ["none", "Never"]])
+			})
+		},
+		alsoCalled: {
+			type: "list",
+			label: { en: "Also called" },
+			description: { en: "Other names the class answers to, in lower case — a warrior is a fighter." },
+			item: str("Name"),
+			default: []
+		}
+	}),
+	prose: "Classes: what a character trained as. It sets how their health grows, the skills they are trained in and what they set out with.",
+	renderDepth: "index"
+})
+
+/** Every Vis Itineris repertoire, in sheet order — then the classes, which no sheet holds. @internal */
 export const VIS_ITINERIS_REPERTOIRES = Object.freeze([
 	visItinerisWeapons,
 	visItinerisArmour,
@@ -420,5 +521,6 @@ export const VIS_ITINERIS_REPERTOIRES = Object.freeze([
 	visItinerisFeats,
 	visItinerisConditions,
 	visItinerisExits,
-	visItinerisCreatures
+	visItinerisCreatures,
+	visItinerisClasses
 ])

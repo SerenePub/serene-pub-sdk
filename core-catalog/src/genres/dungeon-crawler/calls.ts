@@ -8,13 +8,26 @@
 
 export {
 	applyWiring,
-	at,
+	chainIf,
+	chainOf,
 	jsonPart,
+	keyOf,
+	later,
 	modelCall,
+	on,
+	readOn,
 	scriptStep,
+	sibling,
 	textPart,
 	wiring,
+	type BranchOf,
 	type CallTerms,
+	type Chain,
+	type ChainNodes,
+	type NodeLater,
+	type NodeOn,
+	type Plus,
+	type ReadOn,
 	type Wiring,
 } from '../../shared/calls.js'
 

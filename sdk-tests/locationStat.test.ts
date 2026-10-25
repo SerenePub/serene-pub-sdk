@@ -17,17 +17,16 @@ import {
 	defineAttributeSheet,
 	defineAttributeSlot,
 	getGenre,
-	genreSheets,
+	hostStateFor,
 	sheetSlotAppliesTo,
 	slotListItemText,
 	slotValueForStorage,
 } from '@serene-pub/sdk'
 import {
-	STORY_SHEET,
-	LAIR_SHEET,
 	locationSlot,
 	storyGenre,
 	lairGenre,
+	dungeonCrawlerGenre,
 } from '@serene-pub/core-catalog'
 import { formatSlotValue } from '@serene-pub/core-catalog/session-state'
 
@@ -78,19 +77,16 @@ describe('location is a premade stat, not a built-in', () => {
 })
 
 describe('a sheet says which owner carries a slot', () => {
-	test('Adventure and Lair keep location on the world, explicitly', () => {
-		for (const sheet of [STORY_SHEET, LAIR_SHEET]) {
-			const entry = sheet.slots.find((s) => s.id === locationSlot.id)
-			assert.ok(entry, sheet.id)
-			assert.deepEqual(entry?.appliesTo, ['world'], sheet.id)
-			assert.deepEqual(sheetSlotAppliesTo(entry!, locationSlot), ['world'])
-		}
-		// …and the genres carry those sheets, so nothing they had moved.
+	// 🚧 RF fix 8 (2026-10-23): the place is the host's, not a genre sheet's —
+	// on the world wherever a genre's scenes are placed by it, on each hero
+	// where the crawl's party may split.
+	test('Story and the Lair keep the place on the world, the crawl on each hero — the host keeps it', () => {
 		for (const g of [storyGenre, lairGenre]) {
-			const held = genreSheets(g.id).flatMap((s) => s.slots).find((s) => s.id === locationSlot.id)
-			assert.deepEqual(held?.appliesTo, ['world'], g.id)
+			const kept = hostStateFor(g).filter((d) => d.slot === locationSlot.id)
+			assert.deepEqual(kept.map((d) => [d.role, d.owners]), [['place', ['world']]], g.id)
 			assert.ok(getGenre(g.id))
 		}
+		assert.deepEqual(hostStateFor(dungeonCrawlerGenre).filter((d) => d.slot === locationSlot.id).map((d) => [d.role, d.owners]), [['place', ['cast']]])
 	})
 
 	test('no narrowing means the declaration’s own owners', () => {

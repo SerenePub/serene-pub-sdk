@@ -4,13 +4,23 @@
  * A package's announcement already contains everything reference
  * documentation says: identity, genres with their event surfaces and shapes,
  * every pipeline's nodes and options with types, defaults and descriptions,
- * shipped prompts, presets with their bindings. So the docs are *rendered*,
+ * shipped prompts, presets as changes on their genre's defaults. So the docs are *rendered*,
  * never written — the same bytes that ship become the pages, and the pages
  * cannot drift from the product. The docs site (`docsSite.ts`) consumes this
  * markdown and adds live controls once @serene-pub/controls exists.
  */
-import { i18nText, type AnnouncementDocument, type I18n, type SpecDocument } from '@serene-pub/sdk'
+import {
+	entitiesRead,
+	entityWord,
+	getCadence,
+	i18nText,
+	type AnnouncementDocument,
+	type I18n,
+	type RegistrationDecl,
+	type SpecDocument,
+} from '@serene-pub/sdk'
 import type { TypeSurface } from './scaffold.js'
+import { renderEventsDocs } from './docsEvents.js'
 
 /** Display text in the docs' one language — the SDK's resolver, `en`. */
 const en = (v: unknown): string => i18nText(v as I18n | undefined) ?? ''
@@ -45,10 +55,19 @@ function specPage(
 	lines.push(`# ${doc.id}`)
 	lines.push('')
 	lines.push(`Version ${code(doc.version)}.`)
-	if (doc.input?.event)
+	// A pipeline is mounted, it does not lock (PLAN-layering §2): `suits` is a
+	// picker's hint, and what it reads decides where it fits.
+	const suits = (doc as { suits?: readonly string[] }).suits
+	if (suits?.length) lines.push(`Made for ${suits.map(code).join(', ')} — a hint for pickers; a genre or a preset registers it.`)
+	else if (doc.input?.event)
+		lines.push(`Made for ${code(doc.input.event)} — declared the older way, as an inlet lock.`)
+	const reads = entitiesRead(doc)
+	if (reads.length)
 		lines.push(
-			`Answers ${code(doc.input.event)} for ${code(doc.input.genre ?? '?')} — the usage lock (24 §4).`,
+			`Reads ${reads.map((k) => entityWord(k)).join(', ')}: it fits a trigger that carries ${reads.length === 1 ? 'it' : 'them'} ([Events and what they carry](../events.md)).`,
 		)
+	const emits = (doc as { emits?: readonly string[] }).emits
+	if (emits?.length) lines.push(`Emits ${emits.map(code).join(', ')}.`)
 	const tax = doc.taxonomy as any
 	if (tax?.zone || tax?.role)
 		lines.push(
@@ -140,9 +159,11 @@ function genrePage(
 		lines.push(desc)
 	}
 	lines.push('')
+	const registrations = ((genre as { defaults?: { registrations?: readonly RegistrationDecl[] } }).defaults
+		?.registrations ?? []) as readonly RegistrationDecl[]
 	lines.push(`## Event surface`)
 	lines.push('')
-	lines.push('| event | standing | announced pipelines |')
+	lines.push('| event | standing | registered by the genre’s defaults |')
 	lines.push('|---|---|---|')
 	for (const [event, decl] of Object.entries(genre.events)) {
 		const standing = (decl as any)?.required
@@ -150,12 +171,15 @@ function genrePage(
 			: (decl as any)?.open
 				? 'open'
 				: 'optional'
-		const serves = announcement.pipelines
-			.filter((p) => p.input?.genre === genre.id && p.input?.event === event)
-			.map((p) => code(p.id))
-			.join(', ')
-		lines.push(`| ${code(event)} | ${standing} | ${serves || '—'} |`)
+		const serves = registrations
+			.filter((r) => r.trigger.family === 'event' && r.trigger.event === event)
+			.map((r) => code(r.pipeline))
+		// ⏳ A pipeline still locked to this genre and event (an older document).
+		for (const p of announcement.pipelines)
+			if (p.input?.genre === genre.id && p.input?.event === event && !serves.includes(code(p.id))) serves.push(code(p.id))
+		lines.push(`| ${code(event)} | ${standing} | ${serves.join(', ') || '—'} |`)
 	}
+	lines.push(...genreDefaultsLines(genre, registrations))
 	if (genre.shape) {
 		lines.push('')
 		lines.push(`## Shape`)
@@ -165,6 +189,110 @@ function genrePage(
 		lines.push('```')
 	}
 	return { path: `genres/${fileSafe(genre.id)}.md`, markdown: lines.join('\n') }
+}
+
+/** A cadence as words: its declared name, and the options a registration states. */
+function cadenceText(ref: { id: string; options?: Readonly<Record<string, unknown>> }): string {
+	const name = en(getCadence(ref.id)?.i18n.name) || ref.id
+	const options = Object.entries(ref.options ?? {})
+		.map(([k, v]) => `${k} ${JSON.stringify(v)}`)
+		.join(', ')
+	return options ? `${name} (${options})` : name
+}
+
+/** What a registration's trigger is, as a table cell. */
+function triggerText(r: RegistrationDecl): string {
+	const t = r.trigger as { family: string; event?: string; action?: string; cadence?: { id: string; options?: Record<string, unknown> } }
+	if (t.family === 'event') return code(t.event ?? '?')
+	if (t.family === 'action') return code(t.action ?? '?')
+	if (t.family === 'routine' && t.cadence) return cadenceText(t.cadence)
+	return t.family
+}
+
+/**
+ * 🚧 The genre's defaults (R22): what every preset of the genre starts from —
+ * its registrations by trigger family, and the settings it sets.
+ */
+function genreDefaultsLines(
+	genre: AnnouncementDocument['genres'][number],
+	registrations: readonly RegistrationDecl[],
+): string[] {
+	if (!registrations.length) return []
+	const out: string[] = ['', `## The genre’s defaults`, '']
+	out.push(
+		'What every preset of this genre starts from. A preset is one set of changes on these: it registers more, drops some, or changes their values.',
+	)
+	const section = (title: string, rows: string[], head: string) => {
+		if (!rows.length) return
+		out.push('', `### ${title}`, '', head, head.replace(/[^|]+/g, '---'), ...rows)
+	}
+	const of = (family: string) => registrations.filter((r) => r.trigger.family === family)
+	section(
+		'Event pipelines',
+		of('event').map((r) => `| ${triggerText(r)} | ${code(r.pipeline)} |`),
+		'| event | pipeline |',
+	)
+	section(
+		'Action pipelines',
+		of('action').map((r) => `| ${triggerText(r)} | ${code(r.pipeline)} |`),
+		'| action | pipeline |',
+	)
+	section(
+		'Routines',
+		of('routine').map(
+			(r) => `| ${triggerText(r)} | ${code(r.pipeline)} | ${r.mode ?? 'full'} | ${r.allowStacking ? 'on' : 'off'} |`,
+		),
+		'| cadence | pipeline | mode | allow stacking |',
+	)
+	const settings = (genre as { defaults?: { settings?: Readonly<Record<string, unknown>> } }).defaults?.settings
+	if (settings && Object.keys(settings).length) {
+		out.push('', '### Settings', '')
+		for (const [k, v] of Object.entries(settings)) out.push(`- ${code(k)}: ${code(JSON.stringify(v))}`)
+	}
+	return out
+}
+
+/** A preset as the announcement stores it — its changes, and ⏳ the older bindings form. */
+type PresetLike = AnnouncementDocument['presets'][number] & {
+	default?: boolean
+	registrations?: {
+		register?: readonly RegistrationDecl[]
+		drop?: readonly string[]
+		change?: ReadonlyArray<{ key: string; values?: unknown; mode?: string; allowStacking?: boolean }>
+	}
+	settings?: Readonly<Record<string, unknown>>
+	requires?: readonly string[]
+}
+
+/** 🚧 A preset as changes on its genre's defaults (R2). */
+function presetLines(p: PresetLike): string[] {
+	const out: string[] = []
+	out.push(`Genre ${code(String(p.genre))}${p.default ? ' — the genre’s default preset' : ''}.`)
+	const changes = p.registrations
+	const rows: string[] = []
+	for (const r of changes?.register ?? []) rows.push(`| registers | ${triggerText(r)} → ${code(r.pipeline)} |`)
+	for (const key of changes?.drop ?? []) rows.push(`| drops | ${code(key)} |`)
+	for (const c of changes?.change ?? []) {
+		const what = [
+			c.mode ? `mode ${c.mode}` : '',
+			c.allowStacking !== undefined ? `allow stacking ${c.allowStacking ? 'on' : 'off'}` : '',
+			c.values ? `values ${code(JSON.stringify(c.values))}` : '',
+		]
+			.filter(Boolean)
+			.join(', ')
+		rows.push(`| changes | ${code(c.key)}${what ? ': ' + what : ''} |`)
+	}
+	// ⏳ The bindings alias (an older preset): event → pipeline.
+	for (const [event, b] of Object.entries(p.bindings ?? {}))
+		if (b?.spec) rows.push(`| registers | ${code(event)} → ${code(b.spec)} |`)
+	if (rows.length) out.push('', '| change | on the genre’s defaults |', '|---|---|', ...rows)
+	else out.push('', 'No changes: it runs the genre’s defaults as they stand.')
+	if (p.settings && Object.keys(p.settings).length) {
+		out.push('', 'Settings:')
+		for (const [k, v] of Object.entries(p.settings)) out.push(`- ${code(k)}: ${code(JSON.stringify(v))}`)
+	}
+	if (p.requires?.length) out.push('', `Requires ${p.requires.map(code).join(', ')}.`)
+	return out
 }
 
 /** @internal */
@@ -202,17 +330,14 @@ export function renderAnnouncementDocs(
 				index.push(en(p.description))
 				index.push('')
 			}
-			index.push('| event | pipeline | config |')
-			index.push('|---|---|---|')
-			for (const [event, b] of Object.entries(p.bindings))
-				index.push(
-					`| ${code(event)} | ${code(b.spec)} | ${b.config ? code(b.config) : 'shipped default'} |`,
-				)
-			if (p.actions?.include.length)
-				index.push(`\nActions: ${p.actions.include.map(code).join(', ')}`)
+			index.push(...presetLines(p as PresetLike))
 			index.push('')
 		}
 	}
+	index.push(`## Events`)
+	index.push('')
+	index.push('- [Events and what they carry](events.md) — what each event, action and cadence hands the pipelines registered on it.')
+	index.push('')
 	if (announcement.requires.length) {
 		index.push(`## Requires`)
 		index.push('')
@@ -224,5 +349,9 @@ export function renderAnnouncementDocs(
 	for (const g of announcement.genres) pages.push(genrePage(g, announcement))
 	for (const p of announcement.pipelines)
 		pages.push(specPage(p, announcement, typeOf))
+	// What a registration is judged against (A1): every event, action and
+	// cadence with what it carries. Rendered with every announcement so a
+	// spec page's "fits a trigger that carries…" always has its page.
+	pages.push(...renderEventsDocs())
 	return pages
 }

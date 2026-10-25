@@ -28,15 +28,16 @@
  * the book. New places (with their ways out), people and cairns only.
  */
 
-import { slot } from '@serene-pub/sdk'
+import { slot, ITEM, type DataRef } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { at, jsonPart, textPart, type Wiring } from './calls.js'
+import { chainIf, chainOf, jsonPart, later, textPart, type Chain, type ReadOn, type Wiring } from './calls.js'
+import { bareEntryTypeId, characterLoreEntryType, historyEntryType, locationEntryType } from '../../registry/entries.js'
 
 /** The entry types the world writes, bare (the type's version is its own column). @internal */
 export const DUNGEON_CRAWLER_ENTRY_TYPES = Object.freeze({
-	place: 'core:entry/location',
-	person: 'core:entry/character-lore',
-	fallen: 'core:entry/history',
+	place: bareEntryTypeId(locationEntryType),
+	person: bareEntryTypeId(characterLoreEntryType),
+	fallen: bareEntryTypeId(historyEntryType),
 } as const)
 
 /** The wording a way out says, read from either end. @internal */
@@ -48,84 +49,52 @@ const MOST = Object.freeze({ places: 8, people: 6, fallen: 8 })
 /**
  * 🚧 **One exit model** (AUDIT A12, 2026-10-17): a way out is written INSIDE
  * the place it leaves — `rooms[].exits[]`, each `{ to, way, state, lockDc,
- * trap, trapDc, minutes }` — by genesis and by the story turn's Planner
- * alike, never as a delta of its own. Exits were once modelled twice (room
- * exit names became links, and `exits` deltas became pieces), and a new
- * room's exit landed on the room the party stood in.
+ * trap, trapDc, trapDamage, trapCondition, minutes }` — by genesis and by the
+ * story turn's Planner alike, never as a delta of its own. Exits were once
+ * modelled twice (room exit names became links, and `exits` deltas became
+ * pieces), and a new room's exit landed on the room the party stood in.
  *
  *  - a room that is NEW becomes a place, its exits links (`leads to`) whose
  *    description says the way and how it stands (`worldWrites`);
- *  - a room the book already holds keeps its entry; its exits become Vis
- *    Itineris `exits` pieces on that place's owner (`location:<id>`), a way
- *    of the same name replaced — a door that locks is the same door
- *    (`exitDeltas`, the turn script and the Planner's talk).
+ *  - a room the book already holds keeps its entry; its exits become pieces
+ *    of the rules' way-out entry type on that place's owner
+ *    (`location:<id>`), a way of the same name replaced — a door that locks
+ *    is the same door (`exitDeltas`, the turn script and the Planner's talk).
  *
  * Every member required (the grammar-compiling families); empty text and
- * `0` say "none".
- * @experimental
+ * `0` say "none". 🚧 What the rules' way out declares — the kinds of way, how
+ * one stands, what a trap may leave — is laid in at run time from the
+ * **session's** ruleset (lane G3, 2026-10-23, S4: `shape.ts`, the entry type
+ * tagged `exit`, `RulesetGist.exits`), never from a ruleset the build holds;
+ * free words where it has none. The draft's own parts (where it leads by
+ * name, "none" as `0` or empty, a trap flattened) stay the draft's. ⏳ The
+ * schemas spelled from Vis Itineris's exit piece at build
+ * (`DUNGEON_CRAWLER_EXIT_SCHEMA`, `DUNGEON_CRAWLER_ROOM_SCHEMA` and their
+ * words variants) are retired. Placeholders here: `way`, `state` and the
+ * trap condition's sentence.
+ * @internal
  */
-export const DUNGEON_CRAWLER_EXIT_SCHEMA = Object.freeze({
+export const DUNGEON_CRAWLER_EXIT_FRAME = Object.freeze({
 	type: 'object',
 	properties: {
 		to: { type: 'string', description: 'The place it leads to, by name; empty when nobody knows yet.' },
-		way: { type: 'string', enum: ['door', 'passage', 'road', 'stair', 'bridge', 'gate', 'portal'] },
-		state: { type: 'string', enum: ['open', 'closed', 'locked', 'hidden', 'broken'] },
+		way: { type: 'string', description: 'What kind of way it is, in a word.' },
+		state: { type: 'string', description: 'How it stands, in a word: open, shut, barred.' },
 		lockDc: { type: 'integer', description: 'How hard the lock is to pick; 0 when none.' },
 		trap: { type: 'string', description: 'A trap on it, in a few words; empty when none.' },
 		trapDc: { type: 'integer', description: "How hard the trap is to spot or dodge; 0 when none." },
 		// 🚧 What the trap does to whoever springs it (PLAN-dc-after-walk3
 		// R2-1, owner ruling ★2): the table rolls it, never the Planner.
 		trapDamage: { type: 'string', description: 'The harm the trap deals when it springs, like 1d6; empty when it deals none.' },
-		trapCondition: { type: 'string', description: 'The condition it leaves on whoever springs it (poisoned, prone, restrained or frightened); empty when none.' },
+		trapCondition: { type: 'string', description: 'The condition the trap leaves on whoever springs it. Empty when none.' },
 		minutes: { type: 'integer', description: 'How long crossing it takes; 0 when no time to speak of.' },
 	},
 	required: ['to', 'way', 'state', 'lockDc', 'trap', 'trapDc', 'trapDamage', 'trapCondition', 'minutes'],
 	additionalProperties: false,
 })
 
-/** 🚧 What a way out at a table of words does not carry: its numbers, and a trap's rolled effect. */
-const COUNTED_EXIT_KEYS: readonly string[] = ['lockDc', 'trapDc', 'trapDamage', 'trapCondition']
-
-/**
- * 🚧 A way out at a table that keeps no numbers (PLAN-dc-after-walk2 Q2-3,
- * owner ruling ★3): the same way with no lock difficulty and no trap
- * difficulty — a table of words picks no lock by a number. Its trap stays in
- * words; 🚧 nothing rolls its effect (R2-1), so it carries none. @experimental
- */
-export const DUNGEON_CRAWLER_WORDS_EXIT_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: Object.fromEntries(
-		Object.entries(DUNGEON_CRAWLER_EXIT_SCHEMA.properties).filter(([k]) => !COUNTED_EXIT_KEYS.includes(k)),
-	),
-	required: DUNGEON_CRAWLER_EXIT_SCHEMA.required.filter((k) => !COUNTED_EXIT_KEYS.includes(k)),
-	additionalProperties: false,
-})
-
-/** 🚧 A place at a table of words: its ways out in words alone (Q2-3). @experimental */
-export const DUNGEON_CRAWLER_WORDS_ROOM_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: {
-		id: { type: 'string' },
-		name: { type: 'string' },
-		description: { type: 'string' },
-		exits: { type: 'array', maxItems: 6, items: DUNGEON_CRAWLER_WORDS_EXIT_SCHEMA },
-	},
-	required: ['id', 'name', 'description', 'exits'],
-	additionalProperties: false,
-})
-
-/** 🚧 A place, as genesis and the story turn write it: its exits inside it. @experimental */
-export const DUNGEON_CRAWLER_ROOM_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: {
-		id: { type: 'string' },
-		name: { type: 'string' },
-		description: { type: 'string' },
-		exits: { type: 'array', maxItems: 6, items: DUNGEON_CRAWLER_EXIT_SCHEMA },
-	},
-	required: ['id', 'name', 'description', 'exits'],
-	additionalProperties: false,
-})
+/** 🚧 What a way out at a table of words does not carry: its numbers, and a trap's rolled effect. @internal */
+export const DUNGEON_CRAWLER_COUNTED_EXIT_KEYS: readonly string[] = Object.freeze(['lockDc', 'trapDc', 'trapDamage', 'trapCondition'])
 
 /**
  * 🚧 The exit model in ES5, inside the preamble's scope:
@@ -313,66 +282,67 @@ function worldWrites(placesNow, peopleNow, rooms, npcs, numbers) {
 }
 `
 
+/** What the world writes branch on: a document whose lists are each null for none. */
+interface WorldWrites {
+	readonly places: unknown
+	readonly people: unknown
+	readonly fallen: unknown
+}
+
 /**
- * The world writes, in the branch whose node prefix is `prefix` (absolute,
- * `channel.story.`), from a step whose output (`from`) carries `places`,
- * `people` and `fallen` (each null for none) — three junctions in turn:
- * places first (each with its links, one commit), then people, then cairns.
- * Node keys: `<prefix>lorePlaces.new.*`, `<prefix>lorePeople.new.*`,
- * `<prefix>loreFallen.new.*`. @internal
+ * The world writes, on chain `c`, from a step whose output (`from`, read by
+ * its FULL path, since the branches read it too) carries `places`, `people`
+ * and `fallen` (each null for none) — three junctions in turn: places first
+ * (each with its links, one commit), then people, then cairns. Node keys:
+ * `<chain>.lorePlaces.new.*`, `<chain>.lorePeople.new.*`,
+ * `<chain>.loreFallen.new.*`. Hands the chain back as it came: nothing after
+ * reads them. Mounted on the story turn and on genesis, so its own steps are
+ * typed as any chain's. @internal
  */
-export const loreWrites = (c: any, w: Wiring, prefix: string, from: ($: any) => unknown) => {
-	const P = `${prefix}lorePlaces.new.`
-	const H = `${prefix}lorePeople.new.`
-	const F = `${prefix}loreFallen.new.`
-	w.params.push([`${P}place.item.write`, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.place }])
-	w.params.push([`${H}person.item.write`, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.person }])
-	w.params.push([`${F}cairn.item.write`, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.fallen }])
+export const loreWrites = <B extends Chain>(c: B, w: Wiring, from: ReadOn<B>): B => {
+	const read = ($: unknown) => from($ as never) as DataRef
+	const writes = { place: later('write'), person: later('write'), cairn: later('write') }
+	w.params.push([writes.place, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.place }])
+	w.params.push([writes.person, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.person }])
+	w.params.push([writes.cairn, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.fallen }])
 	/** One entry, written from an `each` item: `name`, `content` and (a place) `links`. */
-	const entry = (m: any, M: string, withLinks: boolean, label: string, noun: string) => {
-		const item = ($: any) => at($, M.slice(0, -1))
-		const named = textPart(
-			textPart(m, w, M, 'name', item, 'name', `The ${noun}'s name`),
-			w,
-			M,
-			'content',
-			item,
-			'content',
-			`What the ${noun} says`,
-		)
-		const linked = withLinks ? jsonPart(named, w, M, 'links', item, 'links', 'Its ways out') : named
-		return linked.outlet(
+	const entry = (m: Chain, withLinks: boolean, label: string, noun: string) =>
+		chainIf(
+			withLinks,
+			textPart(textPart(chainOf(m), w, 'name', ($) => $[ITEM], 'name', `The ${noun}'s name`), w, 'content', ($) => $[ITEM], 'content', `What the ${noun} says`),
+			(named) => jsonPart(named, w, 'links', ($) => $[ITEM], 'links', 'Its ways out'),
+		).outlet(
 			'write',
-			($: any) =>
+			($) =>
 				C.createLoreEntry.v1({
-					name: at($, `${M}name`).text,
-					content: at($, `${M}content`).text,
-					...(withLinks ? { links: at($, `${M}links`).main } : {}),
+					name: $.name.text,
+					content: $.content.text,
+					...(withLinks ? { links: $.links.main } : {}),
 					params: slot.params(),
 				}),
 			{ expose: { label } },
 		)
-	}
-	const list = (k: any, X: string, path: string, label: string) => jsonPart(k, w, X, 'list', from, path, label)
-	const placed = c.junction('lorePlaces', { on: from }, (j: any) =>
-		j.when('new', { path: 'places', truthy: true }, (k: any) =>
-			list(k, P, 'places', 'The new places').each('place', { over: ($: any) => at($, `${P}list`).main, max: MOST.places }, (m: any) =>
-				entry(m, `${P}place.item.`, true, 'Write a place', 'place'),
+	chainOf(c)
+		.junction('lorePlaces', { on: read }, (j) =>
+			j.when('new', { path: (v: WorldWrites) => v.places, truthy: true }, (k) =>
+				jsonPart(k, w, 'list', read, 'places', 'The new places').each('place', { over: ($) => $.list.main, max: MOST.places }, (m) =>
+					entry(writes.place.on(m), true, 'Write a place', 'place'),
+				),
 			),
-		),
-	)
-	const peopled = placed.junction('lorePeople', { on: from }, (j: any) =>
-		j.when('new', { path: 'people', truthy: true }, (k: any) =>
-			list(k, H, 'people', 'The new people').each('person', { over: ($: any) => at($, `${H}list`).main, max: MOST.people }, (m: any) =>
-				entry(m, `${H}person.item.`, false, 'Write a person', 'person'),
+		)
+		.junction('lorePeople', { on: read }, (j) =>
+			j.when('new', { path: (v: WorldWrites) => v.people, truthy: true }, (k) =>
+				jsonPart(k, w, 'list', read, 'people', 'The new people').each('person', { over: ($) => $.list.main, max: MOST.people }, (m) =>
+					entry(writes.person.on(m), false, 'Write a person', 'person'),
+				),
 			),
-		),
-	)
-	return peopled.junction('loreFallen', { on: from }, (j: any) =>
-		j.when('new', { path: 'fallen', truthy: true }, (k: any) =>
-			list(k, F, 'fallen', 'The newly fallen').each('cairn', { over: ($: any) => at($, `${F}list`).main, max: MOST.fallen }, (m: any) =>
-				entry(m, `${F}cairn.item.`, false, 'Raise a cairn', 'cairn'),
+		)
+		.junction('loreFallen', { on: read }, (j) =>
+			j.when('new', { path: (v: WorldWrites) => v.fallen, truthy: true }, (k) =>
+				jsonPart(k, w, 'list', read, 'fallen', 'The newly fallen').each('cairn', { over: ($) => $.list.main, max: MOST.fallen }, (m) =>
+					entry(writes.cairn.on(m), false, 'Raise a cairn', 'cairn'),
+				),
 			),
-		),
-	)
+		)
+	return c
 }

@@ -366,6 +366,15 @@ export const updateMessage = pin(
 				 * only when given. Like `reasoning`, never re-sent to the model.
 				 */
 				sections: S.foldedSections,
+				/**
+				 * 🚧 The reply's PARTS, in order (O5, 2026-10-21; additive) —
+				 * `generate-text@1`'s `parts`. Every media part (a spoken
+				 * reply's audio, a drawn image) lands on the row as a message
+				 * part in the order the model gave it, after the text. Text and
+				 * reasoning parts are not written from here: `text` and
+				 * `reasoning` carry them.
+				 */
+				parts: S.partStream,
 			},
 			out: { main: S.writeResult, messageId: S.writeResult },
 		},
@@ -399,6 +408,18 @@ export const updateMessage = pin(
  * Delete a message. Publishes `lost` — the content, role, speaker, channel
  * and metadata the row held — beside the write result, so a listener (a
  * plugin cleaning its rows, the next reply's inlet) knows what went.
+ *
+ * 🚧 **The deletion outlet** (RF fix 5, owner ruling 2026-10-23: deletion
+ * requires a pipeline, so the genre manages it). Placed by the built-in's
+ * own spec (⏳ retired as a person's verb), which names its row on `target`,
+ * and by a **deletion pipeline** — a document entered through
+ * `core:inlet/message-deletion-asked@1`, the only other place it may stand
+ * (`deletionPipelinePlaces`) — which hands it the deletion the event carried
+ * on `asked`, wired from the inlet's `main`
+ * (`C.deleteMessage.v1({ asked: $.input.main })`), and deletes that message
+ * and no other. One transaction: the row goes and everything the message
+ * changed goes with it by the one retraction rule (RF fix 4) — and `taken`
+ * says what that was.
  * @experimental
  */
 export const deleteMessage = pin(
@@ -414,8 +435,30 @@ export const deleteMessage = pin(
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-deleted@1',
 		ports: {
-			in: { target: S.rowIds },
-			out: { main: S.writeResult, messageId: S.writeResult, lost: S.json },
+			in: {
+				/** The row to delete — the built-in's own spec's port. */
+				target: S.rowIds,
+				/**
+				 * 🚧 The deletion a person asked for, whole (RF fix 5): a
+				 * deletion pipeline's port, wired from
+				 * `core:inlet/message-deletion-asked@1.main` and nothing else
+				 * (`validate()`). The message deleted is the one it names.
+				 */
+				asked: S.deletionAsked,
+			},
+			out: {
+				main: S.writeResult,
+				messageId: S.writeResult,
+				lost: S.json,
+				/**
+				 * 🚧 What went with it (RF fix 5): the one retraction rule's
+				 * count of what the message changed and was taken back —
+				 * values, configurations, proposals, zone snapshots, lore
+				 * writes by what became of each, the notes' entries, and
+				 * whether the clock moved back.
+				 */
+				taken: S.json,
+			},
 		},
 	}),
 )
@@ -1337,6 +1380,20 @@ export const attachAudio = pin(
  * says more (2026-09-29). Absent on nearly every write, and an
  * empty list is the same as none. A link the list states twice, or one the
  * session already reads, is written once: see `linkLoreEntries` on idempotence.
+ *
+ * ## `fields` — the entry type's own half (🚧 2026-10-21, Lair rewrite D2)
+ *
+ * The typed fields the entry type declares (`EntryShape.fields` — a place's
+ * category; a derived entry type's piece fields, a weapon's damage), as one
+ * object keyed by field. Its title-role field is not among them: that is the
+ * `name` port. Checked against the type named by `entryType` with the SDK's
+ * one checker (`fieldsFindings`) at the review gate and again at the commit:
+ * a misfit — an undeclared key, a value of the wrong kind, a required field
+ * missing — is refused with the field named, never trimmed to fit. A pipeline
+ * asks a model for them with `jsonSchemaOf(entryType)` into
+ * `generate-json@1`'s `schema`, so what is asked and what is checked are one
+ * declaration. Absent: the type's declared defaults, as before. `@1` evolves
+ * in place (pre-release).
  * @internal
  */
 export const createLoreEntry = pin(
@@ -1345,13 +1402,15 @@ export const createLoreEntry = pin(
 		i18n: { name: { en: 'Save the lore entry' } },
 		effects: 'write',
 		/**
-		 * Both the name and the content may be edited before the entry lands
-		 *. `links` is deliberately not among them: the
+		 * The name, the content and (🚧 D2) the typed fields may be edited
+		 * before the entry lands — the fields are values a reader can retype
+		 * (a room's terrain), and an edit that no longer fits the type is
+		 * refused at the gate. `links` is deliberately not among them: the
 		 * gate's form edits values a reader can retype, and a list of
 		 * references is not one — a reviewer who disagrees with a room's exits
 		 * refuses the write.
 		 */
-		review: { fields: ['name', 'content'] },
+		review: { fields: ['name', 'content', 'fields'] },
 		timeoutMs: 10000,
 		causesEvent: 'core:event/lore-entry-created@1',
 		slots: {
@@ -1378,6 +1437,63 @@ export const createLoreEntry = pin(
 				 * note above on the live row. Names, entry ids, or `LoreLinkInput`s.
 				 */
 				links: S.json,
+				/**
+				 * 🚧 The entry type's typed fields, one object keyed by field
+				 * (the title's field excepted) — checked whole against the
+				 * type (`fieldsFindings`); see the note above.
+				 */
+				fields: S.json,
+			},
+			out: { main: S.writeResult, entryId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * 🚧 Change an entry of the session's lorebook — its name, its content, its
+ * typed fields (2026-10-21, Lair rewrite D2: *File as a room* on a room that
+ * already exists, a draft's fields laid onto an entry a person wrote).
+ *
+ * `entry` names it as `link-lore-entries@1`'s `to` does: an entry id, the
+ * write result of the write that made it, or a **name** resolved within the
+ * session's own lorebook (case and surrounding space ignored; a name nothing
+ * answers to, or two entries answer to, is refused with a sentence).
+ *
+ * Every in-port but `entry` is optional, and an absent one leaves that part
+ * as it is. `fields` is a **patch**: the keys it names are laid over the
+ * entry's stored fields and the rest kept, `null` clears one; it is checked
+ * against the entry's own type as a patch (`fieldsFindings(type, fields,
+ * { partial: true })`) at the review gate and at the commit, and a misfit is
+ * refused with the field named. The type itself never changes — a room stays
+ * a place.
+ *
+ * How the change lands is the host's: on the session's line, the way the
+ * lorebook's own editor writes an edit there (an amendment where the line
+ * amends). ⚠ It causes no event yet (🚧): `lore-entry-created` means a new
+ * row, and a subscriber that needs edits waits for one of its own.
+ * @internal
+ */
+export const updateLoreEntry = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/update-lore-entry@1',
+		i18n: { name: { en: 'Change the lore entry' } },
+		effects: 'write',
+		/**
+		 * What the change says may be retyped; which entry it changes may not
+		 * — that is the run's identity, the rule `delete-message@1` states.
+		 */
+		review: { fields: ['name', 'content', 'fields'] },
+		timeoutMs: 10000,
+		ports: {
+			in: {
+				/** The entry to change: an id, a write result, or a name in the session's lorebook. */
+				entry: S.json,
+				/** Its new name. Absent: kept. */
+				name: S.text,
+				/** Its new content. Absent: kept. */
+				content: S.text,
+				/** Typed fields laid over the stored ones, key by key; `null` clears one. Absent: kept. */
+				fields: S.json,
 			},
 			out: { main: S.writeResult, entryId: S.writeResult },
 		},

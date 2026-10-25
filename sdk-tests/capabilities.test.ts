@@ -60,7 +60,7 @@ import {
 	validate,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
-import { publish, errorsFor } from './helpers.js'
+import { publish, errorsFor, findings } from './helpers.js'
 
 describe('transform ids are canonical', () => {
 	test('order follows IO_KINDS, not the caller and not the alphabet', () => {
@@ -659,15 +659,35 @@ describe('the publish-time check — what is knowable without a connection', () 
 		assert.match(f[0]!.fix, /'image\+audio->video'/)
 	})
 
-	test('a misspelled kind and an empty side are both errors', () => {
-		// The ids the old structural check let through: each is a typo that
-		// survived validation and failed on the installing user's machine, as a
-		// requirement no connection can ever report.
-		for (const bad of ['text->tex', 'txet->text', '->']) {
+	test('an empty side and a malformed kind are errors', () => {
+		// Neither has a canonical form: there is nothing to reorder.
+		for (const bad of ['->', 'text->', 'te xt->text', 'text->Text']) {
 			const f = errorsFor(declaring({ requires: [bad] }), 'capabilities')
 			assert.equal(f.length, 1, `expected '${bad}' to be rejected`)
 			assert.match(f[0]!.message, /unknown capability/)
 		}
+	})
+
+	test('O1 · an unknown kind is allowed, with a warning naming it', () => {
+		// Kinds are open (O1, LS4): a plugin or a later release may bring one,
+		// so a well-formed unknown kind is never refused (R30) — but a typo
+		// still shows, as a warning that names the kind.
+		for (const [id, kind] of [
+			['text->tex', 'tex'],
+			['txet->text', 'txet'],
+		] as const) {
+			const b = declaring({ requires: [id] })
+			assert.deepEqual(errorsFor(b, 'capabilities'), [], `'${id}' is well-formed`)
+			const w = findings(b).filter((x) => x.law === 'capabilities' && x.severity === 'warning')
+			assert.equal(w.length, 1)
+			assert.match(w[0]!.message, new RegExp(`'${kind}'`))
+		}
+	})
+
+	test('O1 · an unknown kind sorts after the known ones, alphabetically', () => {
+		const ok = errorsFor(declaring({ requires: ['text+image+hologram+aroma->text'] }), 'capabilities')
+		assert.match(ok[0]?.fix ?? '', /'text\+image\+aroma\+hologram->text'/)
+		assert.deepEqual(errorsFor(declaring({ requires: ['text+image+aroma+hologram->text'] }), 'capabilities'), [])
 	})
 
 	test('required AND optional is a contradiction, not a stronger requirement', () => {

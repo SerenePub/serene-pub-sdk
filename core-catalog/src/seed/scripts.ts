@@ -11,11 +11,8 @@
  * install as an ordinary row.
  */
 import { DUNGEON_CRAWLER_ROUND_SCRIPT } from '../genres/dungeon-crawler/roundScript.js'
-import {
-	DUNGEON_CRAWLER_SCRIPTS,
-	READ_PATH_SCRIPT,
-	type CoreScriptSeed,
-} from '../genres/dungeon-crawler/scripts.js'
+import { DUNGEON_CRAWLER_SCRIPTS } from '../genres/dungeon-crawler/scripts.js'
+import { READ_PATH_SCRIPT, type CoreScriptSeed } from '../shared/scriptSeed.js'
 import { DUNGEON_CRAWLER_SECRETS_SCRIPT } from '../genres/dungeon-crawler/secrets.js'
 import { DUNGEON_CRAWLER_REVEAL_SCRIPT } from '../genres/dungeon-crawler/reveal.js'
 import {
@@ -28,8 +25,12 @@ import {
 import { DUNGEON_CRAWLER_DOOR_SCRIPT } from '../genres/dungeon-crawler/dice.js'
 import { DUNGEON_CRAWLER_GOAL_SCRIPT } from '../genres/dungeon-crawler/goal.js'
 import { DUNGEON_CRAWLER_REST_SCRIPT } from '../genres/dungeon-crawler/rest.js'
+import { DUNGEON_CRAWLER_SHAPE_SCRIPT } from '../genres/dungeon-crawler/shape.js'
 import { VIS_ITINERIS_SCRIPTS } from './visItinerisScripts.js'
+import { WHEREWITHAL_SCRIPTS } from './wherewithalScripts.js'
 import { STORY_SCRIPTS } from '../genres/story/reckon.js'
+import { UNPROMPTED_MODES_SCRIPT } from '../factories/turnOrder.js'
+import { LAIR_SCRIPTS } from '../genres/lair/scripts.js'
 
 export type { CoreScriptSeed }
 
@@ -45,6 +46,8 @@ export const CORE_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 	// dice script is gone (its seeded row stays on an install, unused).
 	DUNGEON_CRAWLER_BOOKS_SCRIPT,
 	DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT,
+	// 🚧 The Planner's grammar, laid over the session's rules (S1, 2026-10-23).
+	DUNGEON_CRAWLER_SHAPE_SCRIPT,
 	DUNGEON_CRAWLER_PLAN_SCRIPT,
 	DUNGEON_CRAWLER_TURN_SCRIPT,
 	DUNGEON_CRAWLER_DOOR_SCRIPT,
@@ -53,6 +56,13 @@ export const CORE_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 	DUNGEON_CRAWLER_GOAL_SCRIPT,
 	// 🚧 Vis Itineris's (`core:ruleset/vis-itineris@1`, `seed/visItinerisScripts.ts`): derive, heighten, level-up, bulk.
 	...VIS_ITINERIS_SCRIPTS,
-	// 🚧 Story's background tasks (`genres/story/reckon.ts`, 2026-10-19): the reckoning's and the sweep's.
+	// 🚧 Wherewithal's (`core:ruleset/wherewithal@1`, `seed/wherewithalScripts.ts`, 2026-10-22): derive, strain, render.
+	...WHEREWITHAL_SCRIPTS,
+	// 🚧 Story's routines (`genres/story/reckon.ts`; the reply's background tasks until 2026-10-20): the reckoning's and the sweep's.
 	...STORY_SCRIPTS,
+	// 🚧 The voices a turn-order spec reads off the genre's settings (2026-10-20).
+	UNPROMPTED_MODES_SCRIPT,
+	// 🚧 The Lair's (rewrite, 2026-10-21): what a table rolls, the turn, the dice,
+	// the rolls, a room draft's links, a seated guest (the keeper's rules retired 2026-10-23).
+	...LAIR_SCRIPTS,
 ])

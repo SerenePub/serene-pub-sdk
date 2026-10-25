@@ -14,11 +14,11 @@
  * session's owner alone — a secret never reaches another player's screen.
  */
 
-import { slot } from '@serene-pub/sdk'
+import { slot, ITEM, type DataRef } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { DUNGEON_CRAWLER_PLANNER_KEY, PARLEY_CHANNEL } from './names.js'
 import { DATA_TRANSFORM_KIND, DUNGEON_CRAWLER_PREAMBLE, type CoreScriptSeed } from './preamble.js'
-import { at, jsonPart, scriptStep, textPart, type Wiring } from './calls.js'
+import { chainOf, jsonPart, on, readOn, scriptStep, textPart, type Chain, type ReadOn, type Wiring } from './calls.js'
 
 /** The Planner, by reference — whose name a secret's line carries. */
 const PLANNER = `envoy:${DUNGEON_CRAWLER_PLANNER_KEY}`
@@ -96,66 +96,64 @@ return { deliveries: out.length ? out : null };
 	varsOut: Object.freeze(['value']),
 })
 
+/** What the secrets' sort hands its junction (`core:script/dungeon-crawler-secrets`). */
+interface Sorted {
+	readonly deliveries: unknown
+}
+
 /**
  * **Deliver the secrets** — a fragment for the story turn's branch: sort
  * `secrets` by lane (`core:script/dungeon-crawler-secrets`), then one
  * Planner line per secret on that player's lane, never one that lane was
- * already told. Node keys under `prefix` (`channel.story.`): `told` (the
- * Planner channel's rows), `secrets`, then `secret.due.list` and the
- * `secret.due.one` loop. Nothing is written when no secret has a lane.
+ * already told. Node keys on the chain it is handed: `told` (the Planner
+ * channel's rows), `secrets`, then `secret.due.list` and the `secret.due.one`
+ * loop. Nothing is written when no secret has a lane.
  *
  * ```ts
- * deliverSecrets(s, w, 'channel.story.', {
+ * deliverSecrets(k, w, {
  *   session: ($) => $.input.session,
- *   secrets: ($) => $.channel.story.plan.main, // the Planner JSON's `secrets`
+ *   secrets: ($) => $.list.main, // the round's secrets, on this chain
  * })
  * ```
  * @experimental
  */
-export const deliverSecrets = (
-	c: any,
+export const deliverSecrets = <B extends Chain>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	terms: { session: ($: any) => unknown; secrets: ($: any) => unknown },
-) => {
-	w.params.push([`${prefix}told`, { channel: PARLEY_CHANNEL, limit: DUNGEON_CRAWLER_SECRETS_TOLD_WINDOW }])
-	const heard = c.query(
-		'told',
-		($: any) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }),
-		{ expose: { label: 'What the lanes were told' } },
-	)
-	return scriptStep(
-		heard,
+	terms: { session: ReadOn<B>; secrets: ReadOn<B> },
+): B => {
+	w.params.push([on(c, 'told'), { channel: PARLEY_CHANNEL, limit: DUNGEON_CRAWLER_SECRETS_TOLD_WINDOW }])
+	const sorted = scriptStep(
+		chainOf(c).query('told', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+			expose: { label: 'What the lanes were told' },
+		}),
 		w,
-		prefix,
 		'secrets',
 		DUNGEON_CRAWLER_SECRETS_SCRIPT.seedKey,
-		($) => ({ session: terms.session($), secrets: terms.secrets($), told: at($, `${prefix}told`).messages }),
+		($) => ({ session: terms.session($ as never), secrets: terms.secrets($ as never), told: $.told.messages }),
 		'Sort the secrets by player',
-	).junction('secret', { on: ($: any) => at($, `${prefix}secrets`).main }, (j: any) =>
-		j.when('due', { path: 'deliveries', truthy: true }, (d: any) =>
-			jsonPart(d, w, `${prefix}secret.due.`, 'list', ($) => at($, `${prefix}secrets`).main, 'deliveries', 'The secrets, by lane').each(
+	)
+	/** The sorted secrets, for the branch below. */
+	const secrets: DataRef = readOn(sorted, ($) => $.secrets.main)
+	sorted.junction('secret', { on: secrets }, (j) =>
+		j.when('due', { path: (v: Sorted) => v.deliveries, truthy: true }, (d) =>
+			jsonPart(d, w, 'list', () => secrets, 'deliveries', 'The secrets, by lane').each(
 				'one',
-				{ over: ($: any) => at($, `${prefix}secret.due.list`).main, max: DUNGEON_CRAWLER_SECRETS_MAX },
-				(m: any) => deliverOne(m, w, `${prefix}secret.due.one`),
+				{ over: ($) => $.list.main, max: DUNGEON_CRAWLER_SECRETS_MAX },
+				/** One secret: its lane, its line, and the Planner's row there. */
+				(m) =>
+					textPart(textPart(m, w, 'lane', ($) => $[ITEM], 'lane', "The secret's lane"), w, 'line', ($) => $[ITEM], 'text', 'The secret').outlet(
+						'write',
+						($) =>
+							C.createMessage.v1({
+								text: $.line.text,
+								channel: $.lane.text,
+								speaker: PLANNER as any,
+							}),
+						{ expose: { label: 'Tell one player a secret' } },
+					),
 			),
 		),
 	)
-}
-
-/** One secret: its lane, its line, and the Planner's row there. */
-const deliverOne = (m: any, w: Wiring, clause: string) => {
-	const item = ($: any) => at($, `${clause}.item`)
-	const p = `${clause}.item.`
-	const laned = textPart(m, w, p, 'lane', item, 'lane', "The secret's lane")
-	return textPart(laned, w, p, 'line', item, 'text', 'The secret').outlet(
-		'write',
-		($: any) =>
-			C.createMessage.v1({
-				text: at($, `${p}line`).text,
-				channel: at($, `${p}lane`).text,
-				speaker: PLANNER as any,
-			}),
-		{ expose: { label: 'Tell one player a secret' } },
-	)
+	return c
 }

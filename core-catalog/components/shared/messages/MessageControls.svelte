@@ -170,6 +170,19 @@
 	const isReply = $derived(!!msg.characterId || !!msg.isNarratorResponse)
 
 	/**
+	 * What the newest reply's run did, as this view saw it — *Replied ·
+	 * 6.2 s* — said at the head of its menu (polish parity L1, 2026-10-24:
+	 * the turn line's pill said it at rest). Only with a time: a reply that
+	 * finished before the page opened needs no line saying it replied.
+	 */
+	const runLine = $derived.by((): string | null => {
+		if (!isLastMessage || !isReply || msg.isGenerating || msg.error) return null
+		const took = conv.runTook(msg.id)
+		if (took === undefined) return null
+		return `Replied · ${took < 10 ? took.toFixed(1) : Math.round(took)} s`
+	})
+
+	/**
 	 * The mark clears the moment the menu that lists the newcomers opens:
 	 * the person has now met them.
 	 */
@@ -201,6 +214,9 @@
 						<sp-icon name="ellipsis-vertical" size="18"></sp-icon>
 						<p>Message options</p>
 					</header>
+					{#if runLine}
+						<p data-widget-part="messages.message-options-run">{runLine}</p>
+					{/if}
 					<article data-widget-part="messages.message-options-list">
 						<!-- Core's verbs, from the list (R-15, U5c): every one
 						     the session offers on this message, primary set

@@ -69,11 +69,14 @@ import {
 	slot,
 	spec,
 	DEFAULT_CHANNEL,
+	ITEM,
 	type BoundaryTriggerDecl,
 	type GenreDecl,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { chainIf } from '../chains.js'
 import { CORE_LOADOUT } from '../../loadouts.js'
+import { summarizeAction } from './summarizeSpec.js'
 
 /** See `summarizeSpec.ts` — the same ceiling, for the same reason. */
 const MAX_BATCHES = 512
@@ -163,12 +166,15 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 		version,
 		/** Catalogue claims: `maintenance`, as every summarize spec (ruled 2026-10-05). */
 		taxonomy: { role: 'maintenance' },
-		// 🚧 ★9: present only when declared, so a spec that declares none hashes as it did.
-		...(boundaries?.length
-			? { contributes: { boundaryTriggers: boundaries.map((b) => ({ ...b, when: { ...b.when } })) } }
-			: {}),
+		contributes: {
+			// 🚧 R50: the summarize action a genre's defaults register (`summarizeAction`).
+			actions: [summarizeAction('scene')],
+			// 🚧 ★9: present only when declared.
+			...(boundaries?.length ? { boundaryTriggers: boundaries.map((b) => ({ ...b, when: { ...b.when } })) } : {}),
+		},
 	})
-		.inlet('input', C.summarizeRequest.v1())
+		// 🚧 R50: made for no event — the summarize action is its registration.
+		.inlet('input', C.summarizeRequest.v1(), { suits: [] })
 		.query('source', ($) =>
 			C.summarizeSource.v2({
 				scope: $.input.scope,
@@ -221,15 +227,15 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 				sampling: slot.samplingOf(DRAFT_NODE),
 			}),
 		)
-		.each('drafting', { over: ($: any) => $.batches.batches, max: MAX_BATCHES }, (m) =>
+		.each('drafting', { over: ($) => $.batches.batches, max: MAX_BATCHES }, (m) =>
 			m.oracle(
 				'draft',
-				($: any) =>
+				($) =>
 					C.summarizeBatch.v1({
 						// One batch, as TEXT: the transcript template already
 						// laid it out, and the drafting prompt places it with
 						// `{{batch}}`.
-						batch: $.drafting.item,
+						batch: $[ITEM],
 						request: $.input.request,
 						loreType: 'scene',
 						connection: slot.connection(),
@@ -246,7 +252,7 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 		)
 		.oracle(
 			'synth',
-			($: any) =>
+			($) =>
 				C.summarizeSynth.v1({
 					drafts: $.drafting.main,
 					request: $.input.request,
@@ -264,7 +270,7 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 		)
 		.oracle(
 			'naming',
-			($: any) =>
+			($) =>
 				C.nameEntry.v1({
 					content: $.synth.content,
 					loreType: 'scene',
@@ -280,8 +286,8 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 			},
 		)
 
-	const withCast = extractsCast
-		? base.oracle('cast', ($: any) =>
+	const withCast = chainIf(!!extractsCast, base, (b) =>
+		b.oracle('cast', ($) =>
 				C.extractCast.v1({
 					content: $.synth.content,
 					request: $.input.request,
@@ -289,19 +295,19 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 					sampling: slot.sampling(),
 					prompts: slot.prompts(),
 				}),
-			)
-		: base
+			),
+	)
 
 	return compile(
 		withCast
-			.outlet('save', ($: any) =>
+			.outlet('save', ($) =>
 				C.createLoreEntry.v1({
 					name: $.naming.name,
 					content: $.synth.content,
 					params: slot.params(),
 				}),
 			)
-			.preset('default', { label: 'Default', default: true }, (p: any) => {
+			.defaults((p) => {
 				const named = p
 					.params('source', { channel: story, asides })
 					.template('render', { engine: handlebars.id, source: transcript ?? DEFAULT_TRANSCRIPT_TEMPLATE })

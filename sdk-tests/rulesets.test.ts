@@ -713,18 +713,19 @@ describe('genre rigour and rulesets', () => {
 // ── Core's Story, and the handler stub ──────────────────────────────────────
 
 describe("core's Story ruleset", () => {
-	test('is registered with its repertoires, stat and voice', () => {
+	test('is registered with its repertoires and voice — and no stat (RF fix 8)', () => {
 		assert.equal(freeformRuleset.id, 'core:ruleset/freeform@1')
 		assert.equal(getRuleset('core:ruleset/freeform@1'), freeformRuleset)
 		assert.deepEqual(freeformRuleset.repertoires.map((r) => r.id), ['things', 'conditions', 'exits', 'notes'])
-		assert.deepEqual(freeformRuleset.stats.map((s) => s.id), ['core:slot/mood@1'])
+		// 🚧 RF fix 8: Freeform declares no attributes — its borrowed mood is retired.
+		assert.deepEqual(freeformRuleset.stats.map((s) => s.id), [])
 		assert.deepEqual(rulesetEntryable(freeformRuleset), ['things', 'conditions'])
 		const exits = getRepertoire('core:ruleset/freeform@1#exits')!
 		assert.equal(exits.relational, true)
 		assert.deepEqual(exits.appliesTo, ['location'])
 		assert.equal(freeformRuleset.compendium, undefined)
-		assert.equal(freeformRuleset.conventions.dice, undefined)
-		for (const r of ['prose', 'mechanics', 'scripts'] as const) assert.ok(freeformRuleset.voice[r]!.length <= 240, r)
+		assert.equal(freeformRuleset.conventions!.dice, undefined)
+		for (const r of ['prose', 'mechanics', 'scripts'] as const) assert.ok(freeformRuleset.voice![r]!.length <= 240, r)
 		assert.deepEqual(rulesetFindings(freeformRuleset.id, freeformRuleset), [])
 		assert.equal(rulesetEntryTypeId(freeformRuleset.id, 'things'), 'core:entry/freeform.things@1')
 	})
@@ -742,8 +743,10 @@ describe('core:task/ruleset-resolve@1 (contract stub)', () => {
 		// 2026-10-17: bound by the app — no longer provisional (test name kept).
 		assert.equal(d.provisional, undefined)
 		// 2026-10-16 (W3-S): + `scope`, so a call not handed owners still knows its session.
-		assert.deepEqual(Object.keys(d.ports.in), ['scope', 'owners', 'rigour', 'mode', 'actions', 'deltas', 'elapsed', 'viewer'])
-		assert.deepEqual(Object.keys(d.ports.out), ['blocks', 'facts', 'outcomes', 'explain', 'rejected'])
+		// 🚧 `event` (D3, 2026-10-23): what a function's handler reads as `ctx.event`.
+		assert.deepEqual(Object.keys(d.ports.in), ['scope', 'owners', 'rigour', 'mode', 'actions', 'deltas', 'elapsed', 'viewer', 'event'])
+		// 2026-10-23 (D7, lane A2): + `replySchema`, what a reply that carries changes answers against.
+		assert.deepEqual(Object.keys(d.ports.out), ['blocks', 'facts', 'outcomes', 'explain', 'rejected', 'replySchema'])
 	})
 })
 
@@ -752,7 +755,7 @@ describe('core:task/context-budget@1 takes blocks (W3-S)', () => {
 		const { contextBudget } = await import('@serene-pub/contracts')
 		const d = getDefinition(contextBudget.id) as unknown as { ports: { in?: object; out: object } }
 		assert.deepEqual(Object.keys(d.ports.in ?? {}), ['blocks'])
-		assert.deepEqual(Object.keys(d.ports.out), ['main', 'available', 'fittedBlocks'])
+		assert.deepEqual(Object.keys(d.ports.out), ['main', 'available', 'fittedBlocks', 'reads'])
 	})
 })
 
@@ -800,5 +803,272 @@ describe('ruleset-owned slots (W3-S; derived 2026-10-17)', () => {
 			() => defineAttributeSlot('test:slot/owned-badly@1', { type: 'integer', label: { en: 'X' }, descriptor: 'A number.', appliesTo: ['cast'], rulesetOwned: 'vis-itineris' }),
 			/rulesetOwned/,
 		)
+	})
+})
+
+// ── 🚧 Check methods, tags, amounts, optional degrees (PLAN-rulesets-authoring D1, 2026-10-22) ──
+
+import {
+	CHECK_METHOD_KINDS,
+	CORE_CHECK_METHOD_KINDS,
+	DEFAULT_DEGREES,
+	LEGACY_DIE_METHOD,
+	NONE_CHECK_METHOD,
+	RIGOUR_LABELS,
+	REPERTOIRE_TAGS,
+	guessRepertoireTags,
+	jsonSchemaOf,
+	mechanicAmount,
+	normaliseRuleset,
+	rulesetCheckMethod,
+	rulesetDifficultyBands,
+	rulesetDocumentOf,
+	rulesetProvides,
+	rulesetRollsDice,
+	rulesetWarnings,
+	validateAgainst,
+} from '@serene-pub/sdk'
+
+describe('🚧 check methods (D1, 2026-10-22): chance is pluggable, never assumed', () => {
+	const nerve = definePluginAttributeSlot('acme.rs', 'acme.rs:slot/nerve@1', {
+		type: 'integer',
+		label: 'Nerve',
+		descriptor: 'What a character can still spend.',
+		appliesTo: ['cast'],
+		config: { min: 0, max: 10 },
+	})
+	const bands = [
+		{ id: 'easy', label: 'Easy', target: 10 },
+		{ id: 'hard', label: 'Hard', target: 15, default: true as const },
+	]
+	const degrees = {
+		bands: [
+			{ id: 'miss', label: 'Miss', five: 'fail' as const },
+			{ id: 'mixed', label: 'Mixed', five: 'partial' as const, from: 0 },
+			{ id: 'clean', label: 'Clean', five: 'success' as const, from: 2 },
+		],
+	}
+	const methodsProps = (over: Partial<RulesetProps['conventions']> = {}, props: Partial<RulesetProps> = {}): RulesetProps =>
+		baseProps({
+			conventions: {
+				degrees,
+				time: { unit: 'scene' },
+				methods: {
+					d20: { kind: 'die-target', sides: 20, modifierOf: 'might', bands },
+					pool: { kind: 'dice-pool', sides: 6, poolOf: 'might', successOn: 5, countToDegree: [{ from: 0, band: 'miss' }, { from: 1, band: 'mixed' }, { from: 3, band: 'clean' }] },
+					risk: { kind: 'bid', resource: 'nerve', costs: [{ spend: 0, band: 'miss' }, { spend: 1, band: 'mixed' }, { spend: 2, band: 'clean' }] },
+					judged: { kind: 'none', label: 'The game master decides' },
+				},
+				defaultMethod: 'd20',
+				...over,
+			},
+			stats: [{ id: might.id }, { id: nerve.id }],
+			selectors: { attack: { kind: 'check', base: 'might' }, brawl: { kind: 'check', base: 'might', method: 'pool' }, gamble: { kind: 'check', method: 'risk' } },
+			repertoires: [],
+			compendium: undefined,
+			scripts: undefined,
+			...props,
+		})
+	const f = (over: Partial<RulesetProps['conventions']> = {}, props: Partial<RulesetProps> = {}) =>
+		rulesetFindings('acme.rs:ruleset/methods@1', methodsProps(over, props))
+
+	test('a ruleset with four methods is clean; a check is decided by the one its selector names, else the default', () => {
+		assert.deepEqual(f(), [])
+		const rs = definePluginRuleset('acme.rs', 'acme.rs:ruleset/methods@1', methodsProps())
+		assert.equal(rulesetCheckMethod(rs, 'brawl').key, 'pool')
+		assert.equal(rulesetCheckMethod(rs, 'gamble').method.kind, 'bid')
+		assert.equal(rulesetCheckMethod(rs, 'attack').key, 'd20', 'no method named: the default')
+		assert.equal(rulesetCheckMethod(rs, 'might').key, 'd20', 'a check on a stat: the default')
+		assert.equal(rulesetCheckMethod(rs).key, 'd20')
+		assert.equal(rulesetRollsDice(rs), true)
+		assert.deepEqual(rulesetDifficultyBands(rs).map((b) => b.id), ['easy', 'hard'])
+		assert.deepEqual(rulesetDifficultyBands(rs, 'risk'), [], 'a bid is made against no target')
+		// A ruleset that names no method decides nothing by chance: the game master judges.
+		assert.deepEqual(rulesetCheckMethod(freeformRuleset, 'anything'), { key: null, method: NONE_CHECK_METHOD })
+		assert.equal(rulesetRollsDice(freeformRuleset), false)
+	})
+
+	test('the kinds core resolves, each with its options in the one field language', () => {
+		assert.deepEqual([...CORE_CHECK_METHOD_KINDS], ['die-target', 'dice-pool', 'card-draw', 'compare', 'bid', 'none'])
+		assert.deepEqual(
+			CORE_CHECK_METHOD_KINDS.filter((k) => CHECK_METHOD_KINDS[k].chance),
+			['die-target', 'dice-pool', 'card-draw'],
+		)
+		assert.deepEqual(CORE_CHECK_METHOD_KINDS.filter((k) => CHECK_METHOD_KINDS[k].rollsDice), ['die-target', 'dice-pool'])
+		assert.deepEqual(CORE_CHECK_METHOD_KINDS.filter((k) => CHECK_METHOD_KINDS[k].takesBands), ['die-target', 'card-draw', 'compare'])
+		// The archetype editor's form: jsonSchemaOf a kind's options.
+		const pool = jsonSchemaOf(CHECK_METHOD_KINDS['dice-pool'], { strict: false }) as { properties: Record<string, unknown>; required: string[] }
+		assert.deepEqual(Object.keys(pool.properties), ['sides', 'poolOf', 'successOn', 'countToDegree'])
+		assert.deepEqual(pool.required, ['sides', 'successOn'])
+		assert.deepEqual(validateAgainst(CHECK_METHOD_KINDS['dice-pool'], { kind: 'dice-pool', sides: 6, successOn: 5 }), [])
+		assert.ok(validateAgainst(CHECK_METHOD_KINDS['dice-pool'], { sides: 6 }).some((x) => x.field === 'successOn'))
+		assert.deepEqual(Object.keys((jsonSchemaOf(CHECK_METHOD_KINDS.none) as { properties: object }).properties), [])
+	})
+
+	test('every new law is a named finding', () => {
+		has(f({ methods: { d20: { kind: 'die-target', sides: 20, sharp: true } as never } }), 'bad-method')
+		has(f({ methods: { d20: { kind: 'die-target' } as never } }), 'bad-method')
+		has(f({ methods: { d20: { kind: 'die-target', sides: 1 } } }), 'bad-method')
+		has(f({ methods: { D20: { kind: 'none' } }, defaultMethod: 'D20' }), 'bad-method')
+		has(f({ methods: { d20: { kind: 'die-traget', sides: 20 } as never } }), 'unknown-method-kind')
+		has(f({ methods: { d20: { kind: 'die-target', sides: 20, modifierOf: 'grace' } } }), 'unknown-selector')
+		has(f({ methods: { pool: { kind: 'dice-pool', sides: 6, successOn: 5, countToDegree: [{ from: 1, band: 'splendid' }] } }, defaultMethod: 'pool' }, { selectors: undefined }), 'unknown-degree')
+		has(f({ methods: { pool: { kind: 'dice-pool', sides: 6, successOn: 5, countToDegree: [{ from: 2, band: 'miss' }, { from: 1, band: 'clean' }] } }, defaultMethod: 'pool' }, { selectors: undefined }), 'bad-method')
+		has(f({ methods: { pool: { kind: 'dice-pool', sides: 6, successOn: 7 } }, defaultMethod: 'pool' }, { selectors: undefined }), 'bad-method')
+		has(f({ methods: { pool: { kind: 'dice-pool', sides: 6, successOn: 5, bands } as never }, defaultMethod: 'pool' }, { selectors: undefined }), 'bands-without-target')
+		has(f({ methods: { d20: { kind: 'die-target', sides: 20, bands: [{ id: 'a', label: 'A', target: 5 }] } } }, { selectors: undefined }), 'difficulty-default')
+		has(f({ methods: { risk: { kind: 'bid', resource: 'attack', costs: [{ spend: 1, band: 'clean' }] } }, defaultMethod: 'risk' }, { selectors: { attack: { kind: 'check' } } }), 'bad-method')
+		has(f({ defaultMethod: 'cards' }), 'unknown-method')
+		has(f({ defaultMethod: undefined }), 'no-default-method')
+		has(f({}, { selectors: { brawl: { kind: 'check', method: 'cards' } } }), 'unknown-method')
+		has(f({ dice: { sides: 20 } }), 'dice-beside-methods')
+		has(f({}, { difficultyBands: bands }), 'difficulty-beside-methods')
+		// One method needs no default; none at all is a ruleset that decides nothing by chance.
+		assert.deepEqual(f({ methods: { only: { kind: 'compare', modifierOf: 'might', opposedBy: 'might' } }, defaultMethod: undefined }, { selectors: undefined }), [])
+		assert.deepEqual(f({ methods: undefined, defaultMethod: undefined }, { selectors: { attack: { kind: 'check', base: 'might' } } }), [])
+	})
+
+	test("a package's own kind is open: accepted, with a warning that a host may only judge it", () => {
+		const props = methodsProps({ methods: { tarot: { kind: 'acme:tarot', spread: 3 } }, defaultMethod: 'tarot' }, { selectors: undefined })
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/tarot@1', props), [])
+		has(rulesetWarnings({ ...props, id: 'acme.rs:ruleset/tarot@1' } as never), 'package-method-kind')
+		assert.equal(rulesetProvides({ ...props, id: 'acme.rs:ruleset/tarot@1' } as never).chance, false, 'unknown to core: no chance claimed')
+	})
+
+	test('⏳ conventions.dice and the top-level bands read as one die-target method — the declaration stays as written', () => {
+		const legacy = baseProps({ difficultyBands: bands })
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/legacy@1', legacy), [])
+		const rs = definePluginRuleset('acme.rs', 'acme.rs:ruleset/legacy@1', legacy)
+		// Stored as written: same document, same hash, until it is rewritten.
+		assert.deepEqual(rs.conventions!.dice, { sides: 20, modifierOf: 'might' })
+		assert.equal(rs.conventions!.methods, undefined)
+		assert.deepEqual(rulesetDocumentOf(rs).difficultyBands, bands)
+		const n = normaliseRuleset(rs)
+		assert.deepEqual(Object.keys(n.conventions.methods), [LEGACY_DIE_METHOD])
+		assert.deepEqual(n.conventions.methods.die, { kind: 'die-target', sides: 20, modifierOf: 'might', bands })
+		assert.equal(n.conventions.defaultMethod, 'die')
+		assert.equal('dice' in n.conventions, false)
+		assert.equal('difficultyBands' in n, false)
+		assert.equal(n.id, rs.id)
+		// Idempotent, and what a data upgrade persists is itself a clean declaration.
+		assert.deepEqual(normaliseRuleset(n), n)
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/upgraded@1', n as unknown as RulesetProps), [])
+		assert.equal(rulesetCheckMethod(rs, 'attack').key, 'die')
+		assert.deepEqual(rulesetDifficultyBands(rs).map((b) => b.id), ['easy', 'hard'])
+		const warned = reasons(rulesetWarnings(rs))
+		assert.ok(warned.includes('legacy-dice') && warned.includes('legacy-difficulty-bands'), warned.join())
+		// A setting's choice is laid over first when the session's values are given.
+		const withSetting = baseProps({
+			settings: {
+				die: {
+					label: 'Die',
+					default: 'twenty',
+					choices: [
+						{ id: 'twenty', label: 'd20' },
+						{ id: 'twelve', label: 'd12', conventions: { dice: { sides: 12 } } },
+					],
+				},
+			},
+		})
+		assert.equal((normaliseRuleset(withSetting, { die: 'twelve' }).conventions.methods.die as { sides: number }).sides, 12)
+		assert.equal((normaliseRuleset(withSetting).conventions.methods.die as { sides: number }).sides, 20)
+	})
+
+	test('degrees are optional: absent reads as failure or success', () => {
+		const props = methodsProps({ methods: { d20: { kind: 'die-target', sides: 20 } }, defaultMethod: 'd20' }, { selectors: undefined })
+		delete (props.conventions as { degrees?: unknown }).degrees
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/plain@1', props), [])
+		assert.equal(normaliseRuleset(props).conventions.degrees, DEFAULT_DEGREES)
+		assert.deepEqual(DEFAULT_DEGREES.bands.map((b) => [b.id, b.five]), [['failure', 'fail'], ['success', 'success']])
+		// A step names the default's ids when the ruleset declares none.
+		const pooled = { ...props, conventions: { ...props.conventions!, methods: { p: { kind: 'dice-pool' as const, sides: 6, successOn: 6, countToDegree: [{ from: 1, band: 'success' }] } }, defaultMethod: 'p' } }
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/plain@1', pooled), [])
+		// Declared, they must still say something.
+		has(rulesetFindings('acme.rs:ruleset/plain@1', { ...props, conventions: { ...props.conventions!, degrees: { bands: [] } } }), 'no-bands')
+	})
+
+	test('How strict: the ids stay, no level is named for dice', () => {
+		assert.deepEqual(RIGOUR_LABELS, { prose: 'Words only', mechanics: 'Rules', scripts: 'The rules decide' })
+	})
+
+	test('repertoire tags: open words, read by rulesetProvides; untagged is guessed, and warned', () => {
+		assert.deepEqual([...REPERTOIRE_TAGS], ['condition', 'casting', 'weapon', 'armour', 'relationship', 'resource', 'exit', 'note', 'creature', 'class'])
+		const troubles = defineRepertoire('troubles', { label: 'Troubles', prose: 'What weighs on someone.', tags: ['condition', 'grudge'] })
+		const knacks = defineRepertoire('knacks', { label: 'Knacks', prose: 'Tricks someone knows.', tags: [] })
+		assert.deepEqual(troubles.tags, ['condition', 'grudge'])
+		assert.equal('tags' in gear, false, 'a repertoire that says nothing hashes as it did')
+		throwsReason(() => defineRepertoire('bad', { label: 'B', prose: 'p', tags: ['Condition'] }), 'bad-tags')
+		throwsReason(() => defineRepertoire('bad', { label: 'B', prose: 'p', tags: ['condition', 'condition'] }), 'bad-tags')
+		const tagged = rulesetProvides({ ...methodsProps({}, { repertoires: [troubles, knacks] }), id: 'acme.rs:ruleset/t@1' } as never)
+		assert.equal(tagged.tagged, true)
+		assert.equal(tagged.conditions, true)
+		assert.equal(tagged.casting, false)
+		assert.deepEqual([...tagged.tags].sort(), ['condition', 'grudge'])
+		assert.deepEqual(tagged.methods, ['die-target', 'dice-pool', 'bid', 'none'])
+		// Once tags are declared, a name is never read: 'conditions' untagged among tagged ones is no condition.
+		const conditions = defineRepertoire('conditions', { label: 'C', prose: 'p' })
+		assert.equal(rulesetProvides({ id: 'x:ruleset/y@1', repertoires: [knacks, conditions], conventions: {} } as never).conditions, false)
+		// ⏳ Untagged: the old guess, and a warning.
+		const guessed = rulesetProvides({ id: 'x:ruleset/y@1', repertoires: [conditions], conventions: {} } as never)
+		assert.equal(guessed.tagged, false)
+		assert.equal(guessed.conditions, true)
+		has(rulesetWarnings({ ...baseProps(), id: 'acme.rs:ruleset/test@1' } as never), 'untagged-repertoires')
+		assert.ok(!reasons(rulesetWarnings({ ...methodsProps({}, { repertoires: [troubles] }), id: 'a:ruleset/b@1' } as never)).includes('untagged-repertoires'))
+		assert.deepEqual(guessRepertoireTags({ id: 'known-spells' }), ['casting'])
+		assert.deepEqual(guessRepertoireTags({ id: 'weapons' }), ['weapon'])
+		assert.deepEqual(guessRepertoireTags({ id: 'classes' }), ['class'])
+		assert.deepEqual(guessRepertoireTags({ id: 'classic-moves' }), [])
+	})
+
+	test('harm and heal take an amount: a number, dice under a dice method, or a selector', () => {
+		const potions = (mechanics: unknown[]) =>
+			defineRepertoire('draughts', {
+				label: 'Draughts',
+				prose: 'Things drunk.',
+				piece: { type: 'object', fields: { heals: { type: 'string', label: 'Heals' } } },
+				mechanics: mechanics as never,
+			})
+		const fine = potions([
+			{ verb: 'heal', on: 'use', amount: 3, stat: 'might' },
+			{ verb: 'heal', on: 'use', amount: '2d4+2', stat: 'might' },
+			{ verb: 'heal', on: 'use', amount: { selector: 'piece.heals' }, stat: 'might' },
+			{ verb: 'harm', on: 'use', amount: { selector: 'nerve' }, stat: 'might' },
+		])
+		assert.deepEqual(f({}, { repertoires: [fine] }), [])
+		// Dice need a method that throws them: a diceless ruleset says a number or a selector.
+		const diceless = { methods: { risk: { kind: 'bid' as const, resource: 'nerve', costs: [{ spend: 1, band: 'clean' }] } }, defaultMethod: 'risk' }
+		has(f(diceless, { repertoires: [fine], selectors: undefined }), 'amount-needs-dice')
+		assert.deepEqual(f(diceless, { repertoires: [potions([{ verb: 'heal', on: 'use', amount: 2, stat: 'might' }])], selectors: undefined }), [])
+		const one = (m: unknown) => {
+			try {
+				potions([m])
+				return []
+			} catch (e) {
+				return reasons((e as { findings: string[] }).findings)
+			}
+		}
+		assert.ok(one({ verb: 'heal', on: 'use', amount: -1, stat: 'might' }).includes('bad-amount'))
+		assert.ok(one({ verb: 'heal', on: 'use', amount: 'a handful', stat: 'might' }).includes('bad-amount'))
+		assert.ok(one({ verb: 'heal', on: 'use', amount: { selector: 'x', also: 1 }, stat: 'might' }).includes('bad-amount'))
+		assert.ok(one({ verb: 'heal', on: 'use', amount: 2, dice: 'piece.heals', stat: 'might' }).includes('bad-amount'))
+		assert.ok(one({ verb: 'heal', on: 'use', amount: { selector: 'piece.cures' }, stat: 'might' }).includes('unknown-selector'))
+		has(f({}, { repertoires: [potions([{ verb: 'heal', on: 'use', amount: { selector: 'grace' }, stat: 'might' }])] }), 'unknown-selector')
+		// ⏳ `dice: 'piece.<field>'` still reads, as the amount it always meant; normalised, it says so.
+		const old = potions([{ verb: 'heal', on: 'use', dice: 'piece.heals', stat: 'might' }])
+		assert.deepEqual(mechanicAmount(old.mechanics![0]!), { selector: 'piece.heals' })
+		assert.deepEqual(mechanicAmount(fine.mechanics![1]!), '2d4+2')
+		const n = normaliseRuleset({ ...baseProps({ repertoires: [old] }), id: 'acme.rs:ruleset/x@1' })
+		assert.deepEqual(n.repertoires![0]!.mechanics![0], { verb: 'heal', on: 'use', amount: { selector: 'piece.heals' }, stat: 'might' })
+		assert.equal(old.mechanics![0]!.verb === 'heal' && old.mechanics![0]!.dice, 'piece.heals', 'the declaration itself is untouched')
+		has(rulesetWarnings({ ...baseProps({ repertoires: [old] }), id: 'acme.rs:ruleset/x@1' } as never), 'legacy-amount')
+	})
+
+	test('natural die faces with no die to throw are warned, never refused', () => {
+		const props = methodsProps(
+			{ methods: { c: { kind: 'compare', modifierOf: 'might' } }, defaultMethod: 'c', degrees: { ...degrees, naturalShift: { high: 20 } } },
+			{ selectors: undefined },
+		)
+		assert.deepEqual(rulesetFindings('acme.rs:ruleset/n@1', props), [])
+		has(rulesetWarnings({ ...props, id: 'acme.rs:ruleset/n@1' } as never), 'natural-without-die')
 	})
 })

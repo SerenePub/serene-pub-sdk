@@ -26,7 +26,7 @@ export const VIS_ITINERIS_PRIMER: PrimerProps = Object.freeze({
 	compendiumMode: "derived",
 	name: { en: "Brackenvale" },
 	description: {
-		en: "A river vale, a market town ringed by failing lanterns, a mire full of fog and a mine gone quiet. Ten places, seven people, five leads — and every Vis Itineris compendium row as an entry."
+		en: "A river vale, a market town ringed by failing lanterns, a mire full of fog and a mine gone quiet. Ten places, seven people and five leads to start from, with the Vis Itineris library's gear, spells and conditions ready under the book."
 	},
 	content: Object.freeze({
 		entries,

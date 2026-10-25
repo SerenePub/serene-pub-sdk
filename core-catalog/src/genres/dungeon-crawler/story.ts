@@ -30,9 +30,13 @@
  *     and actions, at the session's rigour; `plan.fresh.fields` names them
  *     for the Planner's prompt row (`{{rulesetVoice}}`, `{{rulesetSheet}}`,
  *     `{{rulesetPieces}}`, `{{rulesetTies}}`, `{{rigourLine}}`);
- *  3. `plan.fresh.*` — the Planner (`DUNGEON_CRAWLER_TURN_SCHEMA`: its
- *     **deltas**, the world moving with each place's ways out inside it, the
- *     brief), checked ONCE by `core:script/dungeon-crawler-plan`; unusable →
+ *  3. `plan.fresh.*` — the Planner, its grammar laid over the session's
+ *     rules (🚧 S1, 2026-10-23: `plan.fresh.shape` reads `ruleset-resolve`'s
+ *     `replySchema`, `plan.fresh.schema` — `core:script/dungeon-crawler-shape`
+ *     — adds the genre's fields, the rules' checks and the world's places;
+ *     `shape.ts`): its **deltas**, the world moving with each place's ways out
+ *     inside it, the brief; checked ONCE by `core:script/dungeon-crawler-plan`
+ *     (the deltas read back in the handler's shape, `asDelta`); unusable →
  *     `plan.fresh.again.retry.*`;
  *  4. `turn` — `core:script/dungeon-crawler-turn`: the plan the turn runs on
  *     (the first answer, else the retry, else none), with the ways out of
@@ -69,7 +73,7 @@
  *     next round starts with the Narrator's reply itself (`roundScript.ts`).
  */
 
-import { slot } from '@serene-pub/sdk'
+import { slot, ITEM, type ChainBuilder, type DataRef, type OutPortsOf, type PortDecl } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { DUNGEON_CRAWLER_PROMPT_KEYS } from '../../seed/prompts.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, DUNGEON_CRAWLER_SECRETS_SCHEMA, TRAVELOGUE_CHANNEL } from './names.js'
@@ -79,182 +83,32 @@ import { DUNGEON_CRAWLER_DOOR_SCRIPT } from './dice.js'
 import { DUNGEON_CRAWLER_DEATH_JS } from './death.js'
 import { DUNGEON_CRAWLER_GOAL_JS } from './goal.js'
 import { DUNGEON_CRAWLER_JOURNAL_JS, journalWrites } from './journal.js'
-import { DUNGEON_CRAWLER_ENTRY_TYPES, DUNGEON_CRAWLER_ROOM_SCHEMA, DUNGEON_CRAWLER_WORDS_ROOM_SCHEMA, DUNGEON_CRAWLER_WORLD_WRITES_JS, loreWrites } from './lore.js'
+import { DUNGEON_CRAWLER_ENTRY_TYPES, DUNGEON_CRAWLER_WORLD_WRITES_JS, loreWrites } from './lore.js'
 import { deliverSecrets } from './secrets.js'
+import { DUNGEON_CRAWLER_CRIB_ROUNDS, DUNGEON_CRAWLER_STORY_PREAMBLE, storySeed } from './storyScripts.js'
+import { DUNGEON_CRAWLER_SHAPE_SCRIPT } from './shape.js'
 import {
-	DUNGEON_CRAWLER_CRIB_ROUNDS,
-	DUNGEON_CRAWLER_DELTA_OPS,
-	DUNGEON_CRAWLER_NOT_FOR_DELTAS,
-	DUNGEON_CRAWLER_STORY_PREAMBLE,
-	storySeed,
-} from './storyScripts.js'
-import { at, DUNGEON_CRAWLER_NARRATE_TEMPLATE, jsonPart, modelCall, scriptStep, textPart, type Wiring } from './calls.js'
-import { characterClassSlot, hpSlot, levelSlot, locationSlot } from '../../registry/slots.js'
+	DUNGEON_CRAWLER_NARRATE_TEMPLATE,
+	jsonPart,
+	later,
+	modelCall,
+	on,
+	scriptStep,
+	sibling,
+	textPart,
+	type BranchOf,
+	type Wiring,
+} from './calls.js'
+import type { StoryOn } from './respond.js'
 import { TABLE_CHANNEL } from '../../shared/ui/conversation/tableChannel.js'
-import { VIS_ITINERIS_OWN_SLOTS, VIS_ITINERIS_REPERTOIRES, VIS_ITINERIS_SELECTORS } from '../../rulesets/vis-itineris/index.js'
-import { DUNGEON_CRAWLER_CONDITION_NAMES, DUNGEON_CRAWLER_CONDITION_ROWS, DUNGEON_CRAWLER_REPERTOIRE_SLOTS } from './sheet.js'
 
-/** A slot id's bare key — what a delta names it by (`core:slot/hp@1` → `hp`). */
-const keyOf = (id: string) => id.replace(/^[^/]*\//, '').replace(/@\d+$/, '')
-
-/**
- * 🚧 One **delta** a story turn's Planner may propose — generated from
- * Vis Itineris's declaration (the genre's recommended ruleset, PLAN-rulesets §13)
- * and the genre's own fields, so the model's grammar knows every name the
- * handler accepts:
- *
- *  - `slot` — a field changed by an amount (`add`, `spend`) or set (`set`):
- *    Vis Itineris's stats and the genre's `location`; never the standing order,
- *    the fate, the clock or the table's rules
- *    (`DUNGEON_CRAWLER_NOT_FOR_DELTAS`);
- *  - `repertoire` — a piece gained, lost or used (`add`, `remove`, `spend`)
- *    in one of the repertoires the genre's sheet holds on a character
- *    (`sheet.ts`), `piece` naming it (a compendium id, or a name; a spell
- *    slot by its level). Never `exits`: a way out is written inside its
- *    place (`world.rooms[].exits`, AUDIT A12 — one exit model, `lore.ts`);
- *  - `check` — the model **asks for a check** (`hit`, `use`, `traverse`;
- *    `against` its difficulty): the handler rolls it, and a piece's effects
- *    land only on a success. A failed check applies nothing;
- *  - 🚧 `aimedAt` — who a `hit` or a `use` is aimed at (2026-10-18, owner
- *    ruling ★4): the handler rolls the weapon's damage, a draught's healing,
- *    an antitoxin's cure on them — a reference from the round's list, else a
- *    foe by name (told, kept on no sheet). Empty: a heal lands on the user, a
- *    blow on nobody.
- *
- * Every member is required (the grammar-compiling families); empty text and
- * `0` say "none".
- * @experimental
+/*
+ * ⏳ The story turn's grammar was spelled here from Vis Itineris at build
+ * (`DUNGEON_CRAWLER_DELTA_SCHEMA`, `DUNGEON_CRAWLER_TURN_SCHEMA` and their
+ * words variants, retired 2026-10-23, lane G3): it is laid at run time over
+ * the session's ruleset now — `ruleset-resolve`'s `replySchema` and the
+ * rules' checks (`shape.ts`, `core:script/dungeon-crawler-shape`; S1).
  */
-export const DUNGEON_CRAWLER_DELTA_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: {
-		owner: { type: 'string', description: "Whose: a reference from this round's list, a place's, or world." },
-		op: { type: 'string', enum: [...DUNGEON_CRAWLER_DELTA_OPS] },
-		slot: {
-			type: 'string',
-			enum: [
-				'',
-				...new Set(
-					[hpSlot.id, levelSlot.id, characterClassSlot.id, locationSlot.id, ...VIS_ITINERIS_OWN_SLOTS.map((s) => s.id)]
-						.map(keyOf)
-						.filter((k) => !(DUNGEON_CRAWLER_NOT_FOR_DELTAS as readonly string[]).includes(k)),
-				),
-			],
-		},
-		repertoire: {
-			type: 'string',
-			enum: [
-				'',
-				...VIS_ITINERIS_REPERTOIRES.map((r) => r.id).filter((id) => id in DUNGEON_CRAWLER_REPERTOIRE_SLOTS && id !== 'exits'),
-			],
-		},
-		piece: { type: 'string', description: 'A piece: its compendium id or its name; a spell slot by its level. Empty when none.' },
-		value: { type: 'string', description: 'An amount (add, spend), or the new value (set). Empty when none.' },
-		check: {
-			type: 'string',
-			enum: ['', ...Object.entries(VIS_ITINERIS_SELECTORS).filter(([, d]) => d.kind === 'check').map(([k]) => k)],
-		},
-		against: { type: 'integer', description: 'The difficulty a check is against; 0 when none.' },
-		aimedAt: {
-			type: 'string',
-			description: "hit or use: who it is aimed at — a reference from this round's list, or a foe by name. Empty when none.",
-		},
-		reason: { type: 'string' },
-	},
-	required: ['owner', 'op', 'slot', 'repertoire', 'piece', 'value', 'check', 'against', 'aimedAt', 'reason'],
-	additionalProperties: false,
-})
-
-/**
- * What the Planner answers a story turn with (≤600 tokens, the prompt says):
- * its **deltas** for the handler (`DUNGEON_CRAWLER_DELTA_SCHEMA`), the world
- * moving (places found or changed with their ways out inside them, new
- * people, the open leads, the goal's progress, its notes), the turn's
- * minutes, the Narrator's brief, the round's summary and the secrets. Who
- * stands at death's door is not the Planner's to say (AUDIT A7): every seat
- * the turn leaves at 0 health rolls, and no other.
- * @experimental
- */
-export const DUNGEON_CRAWLER_TURN_SCHEMA = {
-	type: 'object',
-	properties: {
-		deltas: { type: 'array', maxItems: 16, items: DUNGEON_CRAWLER_DELTA_SCHEMA },
-		world: {
-			type: 'object',
-			properties: {
-				rooms: { type: 'array', maxItems: 6, items: DUNGEON_CRAWLER_ROOM_SCHEMA },
-				npcs: {
-					type: 'array',
-					maxItems: 6,
-					items: {
-						type: 'object',
-						properties: { name: { type: 'string' }, description: { type: 'string' }, mood: { type: 'string' } },
-						required: ['name', 'description', 'mood'],
-						additionalProperties: false,
-					},
-				},
-				leads: {
-					type: 'array',
-					maxItems: 6,
-					description: 'Open leads: short hooks the party could follow, never what happened.',
-					items: { type: 'string' },
-				},
-				goalProgress: { type: 'string', enum: ['none', 'closer', 'reached'] },
-				notes: { type: 'string' },
-			},
-			required: ['rooms', 'npcs', 'leads', 'goalProgress', 'notes'],
-			additionalProperties: false,
-		},
-		clock: {
-			type: 'object',
-			properties: { minutes: { type: 'integer' } },
-			required: ['minutes'],
-			additionalProperties: false,
-		},
-		narratorBrief: { type: 'string' },
-		roundSummary: { type: 'string' },
-		secrets: DUNGEON_CRAWLER_SECRETS_SCHEMA,
-	},
-	required: ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets'],
-	additionalProperties: false,
-} as const
-
-/**
- * 🚧 A delta at a table that keeps no numbers (PLAN-dc-after-walk2 Q2-3,
- * owner ruling ★3): nothing is rolled, so no `check`, no difficulty to beat
- * (`against`) and no aim (`aimedAt`), and no op that asks for a roll (`hit`,
- * `traverse`) — a fight or a lock is told in the brief, its cost a change.
- * Fields a table of words does not keep (level, Vis Itineris's own stats)
- * are not offered either. @experimental
- */
-export const DUNGEON_CRAWLER_WORDS_DELTA_SCHEMA = Object.freeze({
-	type: 'object',
-	properties: {
-		...Object.fromEntries(
-			Object.entries(DUNGEON_CRAWLER_DELTA_SCHEMA.properties).filter(([k]) => k !== 'check' && k !== 'against' && k !== 'aimedAt'),
-		),
-		op: { type: 'string', enum: DUNGEON_CRAWLER_DELTA_OPS.filter((o) => o !== 'hit' && o !== 'traverse') },
-		slot: { type: 'string', enum: ['', ...[hpSlot.id, characterClassSlot.id, locationSlot.id].map(keyOf)] },
-	},
-	required: DUNGEON_CRAWLER_DELTA_SCHEMA.required.filter((k) => k !== 'check' && k !== 'against' && k !== 'aimedAt'),
-	additionalProperties: false,
-})
-
-/** 🚧 What the Planner answers at a table that keeps no numbers (Q2-3): the same books, in words. @experimental */
-export const DUNGEON_CRAWLER_WORDS_TURN_SCHEMA = {
-	...DUNGEON_CRAWLER_TURN_SCHEMA,
-	properties: {
-		...DUNGEON_CRAWLER_TURN_SCHEMA.properties,
-		deltas: { type: 'array', maxItems: 16, items: DUNGEON_CRAWLER_WORDS_DELTA_SCHEMA },
-		world: {
-			...DUNGEON_CRAWLER_TURN_SCHEMA.properties.world,
-			properties: {
-				...DUNGEON_CRAWLER_TURN_SCHEMA.properties.world.properties,
-				rooms: { type: 'array', maxItems: 6, items: DUNGEON_CRAWLER_WORDS_ROOM_SCHEMA },
-			},
-		},
-	},
-} as const
 
 /**
  * 🚧 `core:script/dungeon-crawler-books`: what a story turn starts from.
@@ -276,12 +130,17 @@ export const DUNGEON_CRAWLER_WORDS_TURN_SCHEMA = {
  *    crib builder), `brief`;
  *  - `rigour` — the session's, as its document carries it (empty when it
  *    carries none: the ruleset handler then reads the stored one);
- *  - 🚧 `ruleset` — the turn's ruleset (`{ id, rigour, settings }`, the
- *    inlet's), and from it `kit` (the session plays the ruleset the kits'
- *    pieces come from, Vis Itineris), `casting` (`slots` · `points`, P2-4),
- *    `deathSaves` (Vis Itineris's _At zero health: Death saves_, ★7) and
- *    `rulesetRigour` — whether numbers count on a round that applied no
- *    change (the handler's facts say so only when it ran).
+ *  - 🚧 `ruleset` — the turn's ruleset as the inlet carries it (its id,
+ *    rigour and settings, and its gist — `rulesetGistOf`; lane G3,
+ *    2026-10-23, S4), and from it `decides` (counted play: the rules decide
+ *    anything — never "the ruleset is Vis Itineris"), `casting` (`slots` ·
+ *    `points`, P2-4) and the pool's slot (`pointsSlot`), `fall` (its fall
+ *    rule, or null — told in words, ★I) and `deathSaves` (its saves play,
+ *    ★7), `conditions` (its condition rows, or null), each seat's
+ *    `levelHp` (what a level brings to full health, its class's — 0 where
+ *    the rules keep no levels), and `rulesetRigour` — whether numbers count
+ *    on a round that applied no change (the handler's facts say so only
+ *    when it ran).
  * @experimental
  */
 export const DUNGEON_CRAWLER_BOOKS_SCRIPT = storySeed(
@@ -303,6 +162,22 @@ var rules = { difficulty: text(w0.difficulty) || "fair" };
 var rs = rulesetOf(v.ruleset);
 var clockBase = text(w0["crawl-time"]) || ${JSON.stringify(DUNGEON_CRAWLER_EPOCH)};
 var seats = seatsOf(doc, state);
+// 🚧 What a level brings to each seat's full health (S4, D9: the genre's
+// HP_PER_LEVEL retired): its class's kit's level gain, read off the
+// session's ruleset — none where the rules keep no levels or no kits.
+var KITS0 = own(own(v.ruleset).kits);
+function levelHpOf(cls) {
+	var order = Array.isArray(KITS0.order) ? KITS0.order : [], by = own(KITS0.byId);
+	if (!rs.levels || !order.length) return 0;
+	var words = String(cls || "").toLowerCase().split(/[^a-z]+/), pick = own(by[order[0]]);
+	for (var k0 = 0; k0 < order.length; k0++) {
+		var kw = Array.isArray(own(by[order[k0]]).words) ? own(by[order[k0]]).words : [], hit = false;
+		for (var w0 = 0; w0 < kw.length && !hit; w0++) for (var w1 = 0; w1 < words.length; w1++) if (words[w1] && words[w1] === kw[w0]) hit = true;
+		if (hit) { pick = own(by[order[k0]]); break; }
+	}
+	return num(pick.levelHp, 0);
+}
+for (var lh = 0; lh < seats.length; lh++) seats[lh].levelHp = levelHpOf(seats[lh]["class"]);
 var heroes = own(progress.heroes);
 var places = placesOf(v.places);
 var people = peopleOf(v.people);
@@ -382,9 +257,9 @@ for (var oi = 0; oi < owed.length; oi++) {
 }
 return {
 	fresh: !redo && !progress.ended, redo: redo, ended: !!progress.ended,
-	// 🚧 Which shape the Planner plans in (Q2-3, ★3): a table on the kits'
-	// ruleset counts; any other keeps words.
-	planCounted: !redo && !progress.ended && rs.kit, planWords: !redo && !progress.ended && !rs.kit,
+	// 🚧 Which shape the Planner plans in (Q2-3, ★3): a table whose rules
+	// decide anything counts (S4: \`rulesetDecides\`); any other keeps words.
+	planCounted: !redo && !progress.ended && rs.decides, planWords: !redo && !progress.ended && !rs.decides,
 	told: redo ? {
 		brief: text(last.brief), outcomes: text(last.outcomes),
 		changes: Array.isArray(last.changes) && last.changes.length ? last.changes : null,
@@ -393,7 +268,8 @@ return {
 	} : null,
 	base: { progress: progress, journal: journal },
 	owners: owners, actions: actions, rigour: text(doc.rigour),
-	kit: rs.kit, casting: rs.casting, deathSaves: rs.deathSaves, rulesetRigour: rs.rigour,
+	decides: rs.decides, casting: rs.casting, pointsSlot: rs.pointsSlot, fall: rs.fall, deathSaves: rs.deathSaves, rulesetRigour: rs.rigour,
+	conditions: own(v.ruleset).conditions || null,
 	clockBase: clockBase, rules: rules, seats: seats, places: places, people: people, log: log,
 	crib: crib.join("\\n"), brief: brief.join("\\n")
 };
@@ -409,14 +285,17 @@ return {
  * `facts` the handler's. Returns
  * `{ rulesetVoice, rulesetSheet, rulesetPieces, rulesetTies, rigourLine }`,
  * empty text for a block the ruleset did not render — and 🚧 the books
- * prompt's ruleset-dependent sentences (2026-10-18, P2-1, P2-4, P2-6):
- * `piecesLine` (what a delta's repertoire and piece say), `conditionsLine`,
- * `castingLine` (what a spell costs: a slot, spell points, or — off the kit's
- * ruleset — nothing said) and `effectsLine` (weapons, draughts and spells do
- * what they say: never a hand-written health change). Under the Story
- * ruleset none of them names Vis Itineris's vocabulary (★10). 🚧 And
- * `wordsOnly` ("yes" under the Freeform ruleset, R2-3): the prompt's words
- * variant of the deltas and the ways out.
+ * prompt's ruleset-dependent sentences (2026-10-18, P2-1, P2-4, P2-6; read
+ * off the session's ruleset since 2026-10-23, S4 — its gist on the inlet's
+ * `ruleset`, handed in as `ruleset`): `piecesLine` (what a change's `name`
+ * says), `conditionsLine` (the rules' own conditions by name, else words),
+ * `castingLine` (what a spell costs: a slot, spell points, or — where the
+ * rules keep neither — nothing said), `effectsLine` (weapons, draughts and
+ * spells do what they say: never a hand-written health change) and
+ * `againstLine` (a difficulty, by the rules' own bands). None names Vis
+ * Itineris's vocabulary (★10). 🚧 And `wordsOnly` ("yes" where the rules
+ * decide nothing, R2-3) and `exitsInWords` (a way out with no numbers): the
+ * prompt's words variants.
  * @experimental
  */
 export const DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT = storySeed(
@@ -446,40 +325,66 @@ for (var sf = 0; sf < seatsF.length; sf++) {
 }
 var sheetText = blockText(blocks.sheet);
 var bk = own(v.books);
-var kitRules = bk.kit !== false;
-var byPoints = kitRules && bk.casting === "points";
+// 🚧 The session's ruleset, as the inlet carries it (S4): whether it decides
+// anything, its kits (a level's spell slots), its conditions, its way out,
+// whether chance decides, and its difficulty bands — never Vis Itineris's.
+var gist = own(v.ruleset);
+var decides = bk.decides === true;
+var slotType = text(own(gist.kits).slotType);
+var byPoints = decides && bk.casting === "points";
+var slotted = decides && !byPoints && !!slotType;
 // Under spell points no seat holds slots: the sheet's pool says what is left.
 if (byPoints) slotLines = [];
-var CONDITION_NAMES = ${JSON.stringify(DUNGEON_CRAWLER_CONDITION_NAMES.join(', '))};
-var piecesLine = kitRules
-	? "repertoire: weapons, armour, gear, consumables, spells, " + (byPoints ? "" : "spell-slots, ") + "features or conditions when a piece is gained, lost or used, else empty; piece: the piece by its id or name" + (byPoints ? "" : " — a spell slot by its level (1) —") + " or empty"
-	: "repertoire: the list it is kept on — weapons, armour, gear, consumables, spells, features or conditions — when a thing is gained, lost or used up, else empty; piece: its name in plain words, or empty";
-var conditionsLine = kitRules
-	? "When something poisons, knocks down, frightens or binds someone, add that condition (repertoire conditions; piece one of: " + CONDITION_NAMES + "); remove it when it passes."
-	: "When something poisons, knocks down, frightens or binds someone, add it as a condition in a word or two (repertoire conditions); remove it when it passes.";
-var castingLine = !kitRules ? "" : byPoints
-	? "When someone casts a spell of level 1 or higher, spend the spell (repertoire spells, op spend, piece the spell's name): it costs its level in spell points, and with too few points left it cannot be cast."
-	: "When someone casts a spell of level 1 or higher, spend a slot of that level (repertoire spell-slots, op spend, piece the level); with none left at that level, the spell cannot be cast.";
+var conds = own(bk.conditions);
+var condNames = Array.isArray(conds.names) ? conds.names : [];
+var piecesLine = slotted
+	? "name: the entry by its library id or its name — a spell slot by its level (1) — or empty"
+	: decides ? "name: the entry by its library id or its name, or empty" : "name: the entry in plain words, or empty";
+var conditionsLine = condNames.length
+	? "When something poisons, knocks down, frightens or binds someone, add that condition (entryType " + text(conds.entryType) + "; name one of: " + condNames.join(", ") + "); remove it when it passes."
+	: "When something poisons, knocks down, frightens or binds someone, add it as a condition in a word or two (entryType " + (text(conds.entryType) || "conditions") + "); remove it when it passes.";
+var castingLine = byPoints
+	? "When someone casts a spell of level 1 or higher, spend the spell (entryType spells, op spend, name the spell's name): it costs its level in spell points, and with too few points left it cannot be cast."
+	: slotted
+		? "When someone casts a spell of level 1 or higher, spend a slot of that level (entryType " + slotType + ", op spend, name the level); with none left at that level, the spell cannot be cast."
+		: "";
 // 🚧 Owner ruling ★4 (P2-1): the table executes what a piece does.
-var effectsLine = !kitRules ? "" : counted
-	? "Weapons, draughts and spells do what they say when used, so never add a health change for them yourself: a blow with a weapon is op hit (piece the weapon, check attack.melee or attack.ranged, against the foe's armour, aimedAt who is struck), and the table rolls its damage on a hit; a draught drunk, a flask thrown or a spell's effect is op use (piece it, aimedAt who it is for — empty for oneself), which heals, harms or cures by itself, and a draught or flask is used up."
-	: "A draught drunk or a flask thrown is used up (op spend, repertoire consumables); what it does to someone's health is a change by an amount.";
+var effectsLine = !decides ? "" : counted
+	? "Weapons, draughts and spells do what they say when used, so never add a health change for them yourself: a blow with a weapon is op hit (name the weapon, check the attack it calls for, against the foe's defence, aimedAt who is struck), and the table works out its harm on a hit; a draught drunk, a flask thrown or a spell's effect is op use (name it, aimedAt who it is for — empty for oneself), which heals, harms or cures by itself, and a draught or flask is used up."
+	: "A draught drunk or a flask thrown is used up (op spend, entryType consumables); what it does to someone's health is a change by an amount.";
+// 🚧 What a difficulty is, by the rules' own bands (D9: never the genre's numbers).
+var bands = Array.isArray(gist.bands) ? gist.bands : [];
+var lowBand = null, highBand = null;
+for (var bd = 0; bd < bands.length; bd++) {
+	var bnd = own(bands[bd]);
+	if (typeof bnd.target !== "number") continue;
+	if (!lowBand || bnd.target < lowBand.target) lowBand = bnd;
+	if (!highBand || bnd.target > highBand.target) highBand = bnd;
+}
+var againstLine = lowBand && highBand && lowBand !== highBand
+	? "against: its difficulty, " + lowBand.target + " " + text(lowBand.label).toLowerCase() + " to " + highBand.target + " " + text(highBand.label).toLowerCase() + ", else 0"
+	: "against: its difficulty, else 0";
+// 🚧 Who decides a check: dice where chance decides, else the rules' own way.
+var decider = gist.chance === true ? "The table rolls the dice, never you." : "The table decides every check by its rules, never you.";
 return {
 	rulesetVoice: blockText(blocks.voice),
 	rulesetSheet: slotLines.length ? (sheetText ? sheetText + "\\n" : "") + slotLines.join("\\n") : sheetText,
-	piecesLine: piecesLine, conditionsLine: conditionsLine, castingLine: castingLine, effectsLine: effectsLine,
+	piecesLine: piecesLine, conditionsLine: conditionsLine, castingLine: castingLine, effectsLine: effectsLine, againstLine: againstLine,
 	rulesetPieces: blockText(blocks.pieces),
 	rulesetTies: blockText(blocks.ties),
-	rigourLine: counted
-		? "The table rolls the dice, never you. Propose deltas, never totals: a check for anything risky (op hit, use or traverse, with the check and the difficulty it is against), a change by an amount (add, spend), a piece gained, lost or used (add, remove, spend). A failed check changes nothing by itself: say what it costs in the brief."
-		: "Nothing is rolled at this table, and no number is ever told. Propose no checks: what happens follows from what the scene makes likely. A change by an amount is still kept for you (add, spend), never a total; a piece gained, lost or used is add, remove or spend; anything else changes in words (op set, the new value in words).",
+	rigourLine: counted && decides
+		? decider + " Propose deltas, never totals: a check for anything risky (op hit, use or traverse, with the check and the difficulty it is against), a change by an amount (add, spend), an entry gained, lost or used (add, remove, spend). A failed check changes nothing by itself: say what it costs in the brief."
+		: "Nothing is rolled at this table, and no number is ever told. Propose no checks: what happens follows from what the scene makes likely. A change by an amount is still kept for you (add, spend), never a total; an entry gained, lost or used is add, remove or spend; anything else changes in words (op set, the new value in words).",
 	// The prompts' \`{{#if diceRolled}}\`: at \`prose\` no word of dice (walk 6, 2026-10-17).
-	diceRolled: counted ? "yes" : "",
-	// 🚧 \`{{#if wordsOnly}}\`: a table that keeps no numbers (the Story ruleset,
-	// PLAN-dc-after-walk3 R2-3, the walk's NEW-6) — its shape carries no check,
-	// no difficulty and no aim, a way out no lock or trap difficulty, and
-	// nobody "falls to 0 health": the books prompt says none of them.
-	wordsOnly: kitRules ? "" : "yes"
+	diceRolled: counted && decides ? "yes" : "",
+	// 🚧 \`{{#if wordsOnly}}\`: a table whose rules decide nothing (Freeform,
+	// PLAN-dc-after-walk3 R2-3, the walk's NEW-6; S4: never "the ruleset is not
+	// Vis Itineris") — its shape carries no check, no difficulty and no aim,
+	// and nobody "falls to 0 health": the books prompt says none of them.
+	wordsOnly: decides ? "" : "yes",
+	// 🚧 \`{{#if exitsInWords}}\`: a way out keeps no lock or trap difficulty —
+	// the rules decide nothing, or keep no way out of their own (S4).
+	exitsInWords: decides && gist.exits ? "" : "yes"
 };
 `,
 )
@@ -530,7 +435,8 @@ export const DUNGEON_CRAWLER_TURN_SCRIPT = storySeed(
 	`${DUNGEON_CRAWLER_STORY_PREAMBLE}
 var b = own(v.books);
 var state = own(v.state);
-var CONDITION_ROWS = ${JSON.stringify(DUNGEON_CRAWLER_CONDITION_ROWS)};
+// 🚧 The session's rules' conditions as the table says them (S4), off the books.
+var CONDITION_ROWS = own(own(b.conditions).rows);
 var plan = null;
 if (b.fresh) {
 	// 🚧 A table of words planned in its own shape (Q2-3): that branch's answer.
@@ -637,15 +543,17 @@ function normalise(dl0) {
 			dl.value = dl.op === "spend" ? now0 : -now0;
 		}
 	}
-	// 🚧 A condition at a table of words (Story, Q2-3): written as its words
-	// alone — "Poisoned: sick and shaky" — never the kits' rule for it.
-	if (b.kit === false && dl.repertoire === "conditions" && dl.op === "add" && typeof dl.piece === "string") {
+	// 🚧 A condition at a table of words (Q2-3): written as its words alone —
+	// "<the condition>: <its gloss>" — never the rules' rule for it; 🚧 and
+	// where the session's rules keep no such condition (S4: Freeform), its
+	// name alone, so nothing else's rule is ever looked up for it.
+	if (b.decides === false && dl.repertoire === "conditions" && dl.op === "add" && typeof dl.piece === "string") {
 		var crow = CONDITION_ROWS[dl.piece] || CONDITION_ROWS[text(dl.piece).toLowerCase()];
-		if (crow && crow.gloss) dl.piece = { kind: "inline", name: crow.name, description: crow.gloss };
+		dl.piece = crow && crow.gloss ? { kind: "inline", name: crow.name, description: crow.gloss } : { kind: "inline", name: text(dl.piece) };
 	}
-	// An unchecked use off the kit's ruleset (Story): the piece used up, in
-	// words. On the kit's ruleset the handler executes the use itself.
-	if (dl.op === "use" && !text(dl.check) && b.kit === false) {
+	// An unchecked use where the rules decide nothing: the piece used up, in
+	// words. Where they decide, the handler executes the use itself.
+	if (dl.op === "use" && !text(dl.check) && b.decides === false) {
 		var where = text(dl.repertoire) ? { repertoire: text(dl.repertoire) } : heldIn(dl.owner, dl.piece);
 		if (where) return { owner: dl.owner, op: "spend", repertoire: where.repertoire, piece: dl.piece, reason: text(dl.reason) || "Used" };
 	}
@@ -810,21 +718,24 @@ var facts = own(applied.facts);
 var rig0 = text(facts.rigour) || text(b.rulesetRigour);
 var counted = rig0 === "mechanics" || rig0 === "scripts";
 
-// A level the handler applied raises the seat's full health by HP_PER_LEVEL a
-// level: its hp max, a stat configuration (\`raises\`, written before the
-// changes, at this row) — and its health by as much.
+// A level the handler applied raises the seat's full health by what a level
+// brings under the session's rules (\`levelHp\`, the books' — its class's
+// level gain; S4, D9: the genre keeps no number of its own): its hp max, a
+// stat configuration (\`raises\`, written before the changes, at this row)
+// — and its health by as much. Rules that keep no levels raise nothing.
 var raises = [];
 for (var lu = 0; lu < seats.length; lu++) {
 	var was = seats[lu], is = nowOf(seats[lu].ref);
-	if (!is || was.fate === "dead" || was.maxHp === null) continue;
+	var perLevel = num(was.levelHp, 0);
+	if (!is || was.fate === "dead" || was.maxHp === null || perLevel <= 0) continue;
 	var gained = Math.max(1, Math.round(num(is.level, was.level))) - was.level;
 	if (gained <= 0) continue;
-	var top = was.maxHp + gained * HP_PER_LEVEL;
+	var top = was.maxHp + gained * perLevel;
 	raises.push({ owner: was.ref, slot: SL.hp, config: { max: top } });
-	// 🚧 …and at a spell-points table the pool's most with it (Q1-6): Vis
-	// Itineris's one pool rule, the seat's own ceiling on its sheet.
-	if (b.casting === "points") raises.push({ owner: was.ref, slot: POINTS_SLOT, config: { max: spellPointsFor(was["class"], Math.round(num(is.level, was.level))) } });
-	changes.push({ owner: was.ref, slot: SL.hp, value: Math.min(top, (is.hp === null ? was.maxHp : is.hp) + gained * HP_PER_LEVEL) });
+	// 🚧 …and at a spell-points table the pool's most with it (Q1-6): the
+	// pool rule, the seat's own ceiling on its sheet.
+	if (b.casting === "points" && text(b.pointsSlot)) raises.push({ owner: was.ref, slot: b.pointsSlot, config: { max: spellPointsFor(was["class"], Math.round(num(is.level, was.level))) } });
+	changes.push({ owner: was.ref, slot: SL.hp, value: Math.min(top, (is.hp === null ? was.maxHp : is.hp) + gained * perLevel) });
 }
 
 // The clock: the turn's minutes, from where the turn started.
@@ -973,116 +884,152 @@ const STORY_STATUS = Object.freeze({
 	telling: 'The Narrator tells it',
 } as const)
 
-/**
- * What a story turn reads, handed down by the respond spec. The fallen and
- * the Journal folio are the story turn's own reads (`channel.story.fallen`,
- * `channel.story.log`): the Planner's talk never needed them (AUDIT C7).
- * @internal
- */
-export interface StoryTerms {
-	cast: ($: any) => unknown
-	history: ($: any) => unknown
-	/** `core:query/lorebook-entries@1` — the places, with their links. */
-	places: ($: any) => unknown
-	/** `core:query/lorebook-entries@1` — the people. */
-	people: ($: any) => unknown
+/** What the books hand the plan junction (`DUNGEON_CRAWLER_BOOKS_SCRIPT`). */
+interface Books {
+	readonly fresh: unknown
+	readonly redo: unknown
+	readonly ended: unknown
+	readonly planCounted: unknown
+	readonly planWords: unknown
+}
+
+/** The plan, checked (`DUNGEON_CRAWLER_PLAN_SCRIPT`): `retry` when there is no usable brief. */
+interface Checked {
+	readonly ok: unknown
+	readonly retry: unknown
+	readonly plan: unknown
+}
+
+/** The plan the turn runs on (`DUNGEON_CRAWLER_TURN_SCRIPT`). */
+interface TurnPlan {
+	readonly plan: unknown
+	readonly deltas: unknown
+	readonly owners: unknown
+	readonly refused: unknown
+	readonly traversals: unknown
+}
+
+/** Death's door, and the table's line (`DUNGEON_CRAWLER_DOOR_SCRIPT`). */
+interface Door {
+	readonly deaths: unknown
+	readonly line: unknown
+	readonly refused: unknown
+}
+
+/** The turn's books, kept (`DUNGEON_CRAWLER_LEDGER_SCRIPT`): each member `null` when there is nothing to write. @internal */
+export interface Ledger {
+	readonly changes: unknown
+	readonly progress: unknown
+	readonly journal: unknown
+	readonly notes: unknown
+	readonly notesRevealed: unknown
+	readonly brief: unknown
+	readonly narrator: unknown
+	readonly travelogue: unknown
+	readonly journalLines: unknown
+	readonly secrets: unknown
+	readonly laneLines: unknown
+	readonly raises: unknown
+	readonly places: unknown
+	readonly people: unknown
+	readonly fallen: unknown
+	readonly replay: unknown
+	readonly advance: unknown
 }
 
 /**
- * The `channel.story` branch (see the header). `terms` hands it the spec's
- * reads: the cast, the Story's newest rows, the session's lorebook and the
- * Journal folio.
+ * What the story turn's writers read off its chain (`lore.ts`, `journal.ts`,
+ * `secrets.ts`): the inlet, the kept books, the Narrator's row. A chain that
+ * has them passes for one. @internal
+ */
+export type StoryKept<P extends string = 'channel.story', Own extends Record<string, PortDecl> = {}> = ChainBuilder<
+	{
+		input: OutPortsOf<ReturnType<typeof C.userMessage.v1>>
+		'channel.story.ledger': OutPortsOf<ReturnType<typeof C.runScript.v1>>
+		'channel.story.placeholder': OutPortsOf<ReturnType<typeof C.createMessage.v1>>
+	} & Own,
+	P
+>
+
+/** What the rules' apply hands the door and the ledger. */
+type Applied = { readonly [K in 'blocks' | 'facts' | 'outcomes' | 'explain' | 'rejected']: DataRef }
+
+/** The handler's apply, as the door and the ledger read it. */
+const applied = (a: Applied) => ({
+	blocks: a.blocks,
+	facts: a.facts,
+	outcomes: a.outcomes,
+	explain: a.explain,
+	rejected: a.rejected,
+})
+
+/**
+ * The `channel.story` branch (see the header): the spec's reads — the cast,
+ * the Story's newest rows, the session's lorebook — are the respond spec's
+ * head (`respond.ts`); the fallen and the Journal folio are its own.
  * @internal
  */
-export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
-	const P = 'channel.story.'
-	const F = `${P}plan.fresh.`
-	const R = `${P}rolled.planned.`
-	const books = ($: any) => at($, `${P}books`).main
-	const ledger = ($: any) => at($, `${P}ledger`).main
-	const turn = ($: any) => at($, `${P}turn`).main
-	const door = ($: any) => at($, `${P}door`).main
-	/** 🚧 The words branch's prefix (Q2-3): a table that keeps no numbers plans in a shape with none. */
-	const W = `${P}plan.words.`
-	const planner = (label: string, purpose: string, at0: string = F, schema: object = DUNGEON_CRAWLER_TURN_SCHEMA) => ({
-		speaker: PLANNER,
-		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.turn,
-		brief: ($: any) => at($, `${P}brief`).text,
-		crib: ($: any) => at($, `${P}crib`).text,
-		fields: ($: any) => at($, `${at0}fields`).main,
-		cast: terms.cast,
-		history: terms.history,
-		schema,
-		// 🚧 The round is the call's last user turn (owner ruling 2026-10-18):
-		// on a round nobody spoke in, the shipped layout ended the prompt on
-		// the Narrator's last line, and a strict chat model answered nothing.
-		briefTurn: true,
-		expose: { status: STORY_STATUS.planning, label, purpose },
-	})
-	const fallen = ($: any) => at($, `${P}fallen`).entries
-	const log = ($: any) => at($, `${P}log`).messages
+export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 	// 🚧 An empty plan is an unreadable one (the 100-turn walk, B7): asked once
 	// more, then the Narrator goes on alone — never a turn failed on it.
-	w.params.push([`${F}planWrite`, { emptyIsUnreadable: true }])
-	w.params.push([`${F}again.retry.replanWrite`, { emptyIsUnreadable: true }])
-	w.params.push([`${W}planWrite`, { emptyIsUnreadable: true }])
-	w.params.push([`${W}again.retry.replanWrite`, { emptyIsUnreadable: true }])
-	w.params.push([`${P}fallen`, { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.fallen] }])
-	w.params.push([`${P}log`, { channel: TRAVELOGUE_CHANNEL, limit: DUNGEON_CRAWLER_CRIB_ROUNDS }])
+	const planWrite = { fresh: later('planWrite'), words: later('planWrite') }
+	const replanWrite = { fresh: later('replanWrite'), words: later('replanWrite') }
+	w.params.push([planWrite.fresh, { emptyIsUnreadable: true }])
+	w.params.push([replanWrite.fresh, { emptyIsUnreadable: true }])
+	w.params.push([planWrite.words, { emptyIsUnreadable: true }])
+	w.params.push([replanWrite.words, { emptyIsUnreadable: true }])
+	w.params.push([on(s, 'fallen'), { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.fallen] }])
+	w.params.push([on(s, 'log'), { channel: TRAVELOGUE_CHANNEL, limit: DUNGEON_CRAWLER_CRIB_ROUNDS }])
 	const reads = s
-		.query('fallen', ($: any) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+		.query('fallen', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
 			expose: { label: 'The fallen', status: STORY_STATUS.planning },
 		})
-		.query('log', ($: any) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
+		.query('log', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
 			expose: { label: 'The journal so far', status: STORY_STATUS.planning },
 		})
 	const readActions = jsonPart(
 		jsonPart(
 			textPart(
 				textPart(
-					scriptStep(reads, w, P, 'books', DUNGEON_CRAWLER_BOOKS_SCRIPT.seedKey, ($) => ({
+					scriptStep(reads, w, 'books', DUNGEON_CRAWLER_BOOKS_SCRIPT.seedKey, ($) => ({
 						session: $.input.session,
 						state: $.state.state,
-						story: terms.history($),
+						story: $.story.messages,
 						messageId: $.input.messageId,
-						places: terms.places($),
-						people: terms.people($),
-						fallen: fallen($),
-						log: log($),
+						places: $.places.entries,
+						people: $.people.entries,
+						fallen: $.fallen.entries,
+						log: $.log.messages,
 						// 🚧 The ruleset the session plays and its settings (P2-4, P2-6).
 						ruleset: $.input.ruleset,
 					}), "Open the Planner's books", STORY_STATUS.planning),
 					w,
-					P,
 					'crib',
-					books,
+					($) => $.books.main,
 					'crib',
 					"The Planner's crib, as text",
 				),
 				w,
-				P,
 				'brief',
-				books,
+				($) => $.books.main,
 				'brief',
 				'This round, as text',
 			),
 			w,
-			P,
 			'owners',
-			books,
+			($) => $.books.main,
 			'owners',
 			'Whose rules are read',
 		),
 		w,
-		P,
 		'actions',
-		books,
+		($) => $.books.main,
 		'actions',
 		'What each one does',
 	)
 	// The session's rigour, handed to the handler as the session holds it
 	// (empty: the handler reads the stored rigour itself).
-	const read = textPart(readActions, w, P, 'rigour', books, 'rigour', 'How strictly the table plays')
+	const read = textPart(readActions, w, 'rigour', ($) => $.books.main, 'rigour', 'How strictly the table plays')
 	/**
 	 * The Narrator's row, opened FIRST (AUDIT A11) — before the Planner is
 	 * asked, so a line somebody sends while the turn runs comes after a
@@ -1093,7 +1040,7 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 */
 	const opened = read.outlet(
 		'placeholder',
-		($: any) =>
+		($) =>
 			C.createMessage.v1({
 				generating: true,
 				channel: 'main',
@@ -1109,138 +1056,181 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 * difficulty, no trap difficulty, no check, no difficulty to beat and no
 	 * aim — none of which a table of words can use).
 	 */
-	// `tag` tells the two placements apart in the panel: a reading lists each
-	// group and step heading once per spec (groups.int: no two alike).
-	const planIn = (f: any, at0: string, schema: object, tag: string) => {
-		/**
-		 * The ruleset's **resolve** (PLAN-rulesets §25): the labelled blocks
-		 * for this round's owners and actions, at the session's rigour — no
-		 * dice, no writes.
-		 */
-		const resolved = f.task(
-			'resolve',
-			($: any) =>
-				C.rulesetResolve.v1({
-					scope: $.input.sessionScope,
-					owners: at($, `${P}owners`).main,
-					actions: at($, `${P}actions`).main,
-					rigour: at($, `${P}rigour`).text,
-					mode: 'resolve',
-				}),
-			{ expose: { label: "Read the table's rules", status: STORY_STATUS.planning } },
-		)
+	const planned = opened.junction('plan', { on: ($) => $.books.main }, (j) => {
+		// `tag` tells the two placements apart in the panel: a reading lists each
+		// group and step heading once per spec (groups.int: no two alike).
+		const planIn = (f: BranchOf<typeof j, 'fresh' | 'words'>, mode: 'fresh' | 'words', tag: string) => {
 			/**
-			 * The blocks fitted to the Planner's window (W3-S): under
-			 * pressure a block steps down a depth before any is dropped.
-			 * Sized against the Planner's own model and sampling.
+			 * The Planner's call, the same terms on the first ask and the second
+			 * — 🚧 its grammar the one this branch laid over the session's rules
+			 * (S1: `schema`, below), read by the whole path the retry sees.
 			 */
-			.task(
-				'budget',
-				($: any) =>
-					C.contextBudget.v1({
-						blocks: at($, `${at0}resolve`).blocks,
-						sampling: slot.samplingOf(`${at0}planWrite`),
-						connection: slot.connectionOf(`${at0}planWrite`),
-						params: slot.params(),
-					}),
-				{ expose: { label: `Fit the rules to the Planner's window${tag}`, status: STORY_STATUS.planning } },
-			)
-		const named = scriptStep(resolved, w, at0, 'fields', DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT.seedKey, ($) => ({
-			blocks: at($, `${at0}budget`).fittedBlocks,
-			facts: at($, `${at0}resolve`).facts,
-			// 🚧 The seats and the state: each seat's spell slots left (P1-8).
-			books: books($),
-			state: $.state.state,
-		}), `The rules, for the Planner${tag}`, STORY_STATUS.planning)
-		const asked = modelCall(
-			named,
-			w,
-			at0,
-			'plan',
-			planner(
-				`Planner${tag}`,
-				'Decides, out of sight, what your actions cost and what the world does: the checks to roll, the changes to your sheet, the world moving.',
-				at0,
-				schema,
-			),
-		)
-		return scriptStep(asked, w, at0, 'checked', DUNGEON_CRAWLER_PLAN_SCRIPT.seedKey, ($) => ({
-			json: at($, `${at0}planWrite`).json,
-		}), `Check the Planner's plan${tag}`).junction('again', { on: ($: any) => at($, `${at0}checked`).main }, (k: any) =>
-			k.when('retry', { path: 'retry', truthy: true }, (r: any) =>
-				modelCall(
-					r,
-					w,
-					`${at0}again.retry.`,
-					'replan',
-					planner(
-						`Planner, asked again${tag}`,
-						'When the plan comes back unreadable, the Planner is asked once more before the Narrator goes on alone.',
-						at0,
-						schema,
-					),
+			const planner = (label: string, purpose: string) => ({
+				speaker: PLANNER,
+				prompt: DUNGEON_CRAWLER_PROMPT_KEYS.turn,
+				schema: ($: any) => $.channel.story.plan[mode].schema.main, // derive-don't-spell: a branch chosen at build time (`fresh` | `words`) is a key the scope's type cannot index
+				// 🚧 The round is the call's last user turn (owner ruling 2026-10-18):
+				// on a round nobody spoke in, the shipped layout ended the prompt on
+				// the Narrator's last line, and a strict chat model answered nothing.
+				briefTurn: true,
+				expose: { status: STORY_STATUS.planning, label, purpose },
+			})
+			/**
+			 * The ruleset's **resolve** (PLAN-rulesets §25): the labelled blocks
+			 * for this round's owners and actions, at the session's rigour — no
+			 * dice, no writes.
+			 */
+			const resolved = planWrite[mode]
+				.on(f)
+				.task(
+					'resolve',
+					($) =>
+						C.rulesetResolve.v1({
+							params: slot.params(),
+							scope: $.input.sessionScope,
+							owners: $.channel.story.owners.main,
+							actions: $.channel.story.actions.main,
+							rigour: $.channel.story.rigour.text,
+							mode: 'resolve',
+						}),
+					// Tagged by its branch, as the Planner's grammar is: two steps one heading apart (GM 2026-10-23).
+					{ expose: { label: `Read the table's rules${tag}`, status: STORY_STATUS.planning } },
+				)
+				/**
+				 * The blocks fitted to the Planner's window (W3-S): under
+				 * pressure a block steps down a depth before any is dropped.
+				 * Sized against the Planner's own model and sampling.
+				 */
+				.task(
+					'budget',
+					($) =>
+						C.contextBudget.v1({
+							blocks: $.resolve.blocks,
+							sampling: slot.samplingOf(sibling($.resolve, 'planWrite')),
+							connection: slot.connectionOf(sibling($.resolve, 'planWrite')),
+							params: slot.params(),
+						}),
+					{ expose: { label: `Fit the rules to the Planner's window${tag}`, status: STORY_STATUS.planning } },
+				)
+			const fielded = scriptStep(resolved, w, 'fields', DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT.seedKey, ($) => ({
+				blocks: $.budget.fittedBlocks,
+				facts: $.resolve.facts,
+				// 🚧 The seats and the state: each seat's spell slots left (P1-8).
+				books: $.channel.story.books.main,
+				state: $.state.state,
+				// 🚧 The session's ruleset and its gist (S4): its kits, conditions, bands.
+				ruleset: $.input.ruleset,
+			}), `The rules, for the Planner${tag}`, STORY_STATUS.planning)
+				/**
+				 * 🚧 What a change may name under the session's rules (S1): the
+				 * reply schema `ruleset-resolve` builds from its attributes and
+				 * entry types — no dice, no writes.
+				 */
+				.task(
+					'shape',
+					($) =>
+						C.rulesetResolve.v1({
+							params: slot.params(),
+							scope: $.input.sessionScope,
+							owners: $.channel.story.owners.main,
+							mode: 'resolve',
+							actions: { replyShape: true } as any,
+						}),
+					{ expose: { label: `What the Planner may change${tag}`, status: STORY_STATUS.planning } },
+				)
+			/** 🚧 The Planner's grammar, laid over the rules' reply schema and checks (`shape.ts`). */
+			const named = scriptStep(fielded, w, 'schema', DUNGEON_CRAWLER_SHAPE_SCRIPT.seedKey, ($) => ({
+				shape: $.shape.replySchema,
+				ruleset: $.input.ruleset,
+				want: 'turn',
+			}), `The Planner's grammar${tag}`, STORY_STATUS.planning)
+			const asked = modelCall(named, w, 'plan', {
+				...planner(
+					`Planner${tag}`,
+					'Decides, out of sight, what your actions cost and what the world does: the checks to roll, the changes to your sheet, the world moving.',
 				),
-			),
-		)
-	}
-	const planned = opened.junction('plan', { on: books }, (j: any) =>
-		j
-			.when('fresh', { path: 'planCounted', truthy: true }, (f: any) => planIn(f, F, DUNGEON_CRAWLER_TURN_SCHEMA, ' (dice)'))
-			.when('words', { path: 'planWords', truthy: true }, (f: any) => planIn(f, W, DUNGEON_CRAWLER_WORDS_TURN_SCHEMA, ' (words)')),
-	)
-	const chosen = scriptStep(planned, w, P, 'turn', DUNGEON_CRAWLER_TURN_SCRIPT.seedKey, ($) => ({
+				brief: ($) => $.channel.story.brief.text,
+				crib: ($) => $.channel.story.crib.text,
+				fields: ($) => $.fields.main,
+				cast: ($) => $.cast.cast,
+				history: ($) => $.story.messages,
+			})
+			return scriptStep(asked, w, 'checked', DUNGEON_CRAWLER_PLAN_SCRIPT.seedKey, ($) => ({
+				json: $.planWrite.json,
+			}), `Check the Planner's plan${tag}`).junction('again', { on: ($) => $.checked.main }, (k) =>
+				k.when('retry', { path: (v: Checked) => v.retry, truthy: true }, (r) =>
+					modelCall(replanWrite[mode].on(r), w, 'replan', {
+						...planner(
+							`Planner, asked again${tag}`,
+							'When the plan comes back unreadable, the Planner is asked once more before the Narrator goes on alone.',
+						),
+						brief: ($) => $.channel.story.brief.text,
+						crib: ($) => $.channel.story.crib.text,
+						fields: ($) => $.channel.story.plan[mode].fields.main,
+						cast: ($) => $.cast.cast,
+						history: ($) => $.story.messages,
+					}),
+				),
+			)
+		}
+		return j
+			.when('fresh', { path: (v: Books) => v.planCounted, truthy: true }, (f) => planIn(f, 'fresh', ' (dice)'))
+			.when('words', { path: (v: Books) => v.planWords, truthy: true }, (f) => planIn(f, 'words', ' (words)'))
+	})
+	const chosen = scriptStep(planned, w, 'turn', DUNGEON_CRAWLER_TURN_SCRIPT.seedKey, ($) => ({
 		// 🚧 The session: the companions an owner may name (P1-1, P3-9).
 		session: $.input.session,
-		books: books($),
-		first: at($, `${F}checked`).main,
-		again: at($, `${F}again.retry.replanWrite`).json,
+		books: $.books.main,
+		first: $.plan.fresh.checked.main,
+		again: $.plan.fresh.again.retry.replanWrite.json,
 		// 🚧 The words branch's answers (Q2-3): whichever branch ran.
-		firstWords: at($, `${W}checked`).main,
-		againWords: at($, `${W}again.retry.replanWrite`).json,
+		firstWords: $.plan.words.checked.main,
+		againWords: $.plan.words.again.retry.replanWrite.json,
 		state: $.state.state,
 	}), 'The plan the turn runs on', STORY_STATUS.settling)
 	/** 🚧 Whose rules the turn touches — the books' and every place a way out or a traverse lands on (P1-4). */
-	const chosenOwners = jsonPart(chosen, w, P, 'turnOwners', turn, 'owners', 'Whose rules the turn touches')
+	const chosenOwners = jsonPart(chosen, w, 'turnOwners', ($) => $.turn.main, 'owners', 'Whose rules the turn touches')
 	/**
 	 * The ruleset's **apply** (PLAN-rulesets §25), the Narrator's row already
 	 * open, so every write is anchored to it: the Planner's deltas validated,
 	 * the checks it asked for rolled, the changes written through the state
 	 * gate; then the state as the deltas left it.
 	 */
-	const rolled = chosenOwners.junction('rolled', { on: turn }, (j: any) =>
-		j.when('planned', { path: 'deltas', truthy: true }, (k: any) =>
-			jsonPart(jsonPart(k, w, R, 'deltas', turn, 'deltas', "The Planner's deltas"), w, R, 'owners', turn, 'owners', 'Whose rules the deltas touch')
+	const rolled = chosenOwners.junction('rolled', { on: ($) => $.turn.main }, (j) =>
+		j.when('planned', { path: (v: TurnPlan) => v.deltas, truthy: true }, (k) =>
+			jsonPart(
+				jsonPart(k, w, 'deltas', ($) => $.channel.story.turn.main, 'deltas', "The Planner's deltas"),
+				w,
+				'owners',
+				($) => $.channel.story.turn.main,
+				'owners',
+				'Whose rules the deltas touch',
+			)
 				.task(
 					'apply',
-					($: any) =>
+					($) =>
 						C.rulesetResolve.v1({
-							owners: at($, `${R}owners`).main,
-							actions: at($, `${P}actions`).main,
-							deltas: at($, `${R}deltas`).main,
+							params: slot.params(),
+							owners: $.owners.main,
+							actions: $.channel.story.actions.main,
+							deltas: $.deltas.main,
 							scope: $.input.sessionScope,
-							rigour: at($, `${P}rigour`).text,
+							rigour: $.channel.story.rigour.text,
 							mode: 'apply',
 						}),
 					{ expose: { label: 'Apply the rules', status: STORY_STATUS.settling } },
 				)
-				.query('after', ($: any) => C.sessionState.v1({ scope: $.input.sessionScope }), {
+				.query('after', ($) => C.sessionState.v1({ scope: $.input.sessionScope }), {
 					expose: { label: 'The sheet after the rules' },
 				}),
 		),
 	)
-	const applied = ($: any) => ({
-		blocks: at($, `${R}apply`).blocks,
-		facts: at($, `${R}apply`).facts,
-		outcomes: at($, `${R}apply`).outcomes,
-		explain: at($, `${R}apply`).explain,
-		rejected: at($, `${R}apply`).rejected,
-	})
-	const doored = scriptStep(rolled, w, P, 'door', DUNGEON_CRAWLER_DOOR_SCRIPT.seedKey, ($) => ({
+	const doored = scriptStep(rolled, w, 'door', DUNGEON_CRAWLER_DOOR_SCRIPT.seedKey, ($) => ({
 		session: $.input.session,
-		books: books($),
-		turn: turn($),
-		applied: applied($),
-		after: at($, `${R}after`).state,
+		books: $.books.main,
+		turn: $.turn.main,
+		applied: applied($.rolled.planned.apply),
+		after: $.rolled.planned.after.state,
 		state: $.state.state,
 	}), "Death's door, and the table's line", STORY_STATUS.settling)
 	/**
@@ -1249,16 +1239,16 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 * Planner read. No speaker: the table speaks in no voice. A check's line
 	 * ends with the handler's explain (how its number was reached).
 	 */
-	const shown = doored.junction('stakes', { on: door }, (j: any) =>
-		j.when('shown', { path: 'line', truthy: true }, (k: any) =>
-			textPart(k, w, `${P}stakes.shown.`, 'line', door, 'line', 'The table line').outlet(
+	const shown = doored.junction('stakes', { on: ($) => $.door.main }, (j) =>
+		j.when('shown', { path: (v: Door) => v.line, truthy: true }, (k) =>
+			textPart(k, w, 'line', ($) => $.channel.story.door.main, 'line', 'The table line').outlet(
 				'write',
-				($: any) =>
+				($) =>
 					C.createMessage.v1({
-						text: at($, `${P}stakes.shown.line`).text,
+						text: $.line.text,
 						channel: TABLE_CHANNEL,
 						// The row it belongs to: the Narrator's.
-						tableLine: at($, `${P}placeholder`).messageId as any,
+						tableLine: $.channel.story.placeholder.messageId as any,
 					}),
 				{ expose: { label: 'Show the rolls' } },
 			),
@@ -1267,18 +1257,17 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	const kept = scriptStep(
 		shown,
 		w,
-		P,
 		'ledger',
 		DUNGEON_CRAWLER_LEDGER_SCRIPT.seedKey,
 		($) => ({
 			session: $.input.session,
-			books: books($),
-			turn: turn($),
-			door: door($),
-			applied: applied($),
-			after: at($, `${R}after`).state,
+			books: $.books.main,
+			turn: $.turn.main,
+			door: $.door.main,
+			applied: applied($.rolled.planned.apply),
+			after: $.rolled.planned.after.state,
 			state: $.state.state,
-			row: at($, `${P}placeholder`).messageId,
+			row: $.placeholder.messageId,
 		}),
 		'Keep the books',
 		STORY_STATUS.books,
@@ -1288,43 +1277,38 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 * configuration a seat) before the round's changes, which may lift its
 	 * health past the old one. Filed at the Narrator's row, as the changes are.
 	 */
-	const raised = kept.junction('raise', { on: ledger }, (j: any) =>
-		j.when('levels', { path: 'raises', truthy: true }, (k: any) =>
-			jsonPart(k, w, `${P}raise.levels.`, 'list', ledger, 'raises', 'What the levels raise').each(
+	const raised = kept.junction('raise', { on: ($) => $.ledger.main }, (j) =>
+		j.when('levels', { path: (v: Ledger) => v.raises, truthy: true }, (k) =>
+			jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'raises', 'What the levels raise').each(
 				'seat',
-				{ over: ($: any) => at($, `${P}raise.levels.list`).main, max: 8 },
-				(m: any) => {
-					const M = `${P}raise.levels.seat.item.`
-					const item = ($: any) => at($, `${P}raise.levels.seat.item`)
-					return textPart(
-						jsonPart(jsonPart(m, w, M, 'owner', item, 'owner', 'Whose'), w, M, 'config', item, 'config', 'Their new most'),
+				{ over: ($) => $.list.main, max: 8 },
+				(m) =>
+					textPart(
+						jsonPart(jsonPart(m, w, 'owner', ($) => $[ITEM], 'owner', 'Whose'), w, 'config', ($) => $[ITEM], 'config', 'Their new most'),
 						w,
-						M,
 						'slot',
-						item,
+						($) => $[ITEM],
 						'slot',
 						'Which stat',
 					).outlet(
 						'write',
-						($: any) =>
+						($) =>
 							C.setStatConfig.v1({
-								owner: at($, `${M}owner`).main,
+								owner: $.owner.main,
 								// 🚧 The raise names its stat (Q1-6): full health, or a spell-point pool.
-								slot: at($, `${M}slot`).text,
-								config: at($, `${M}config`).main,
-								worldRow: at($, `${P}placeholder`).messageId,
+								slot: $.slot.text,
+								config: $.config.main,
+								worldRow: $.channel.story.placeholder.messageId,
 							}),
 						{ expose: { label: 'Raise a most' } },
-					)
-				},
+					),
 			),
 		),
 	)
-	w.params.push([`${P}sheet.changed.apply`, { mode: 'apply' }])
-	const written = raised.junction('sheet', { on: ledger }, (j: any) =>
+	const written = raised.junction('sheet', { on: ($) => $.ledger.main }, (j) =>
 		j
-			.when('changed', { path: 'changes', truthy: true }, (k: any) => {
-				const Q = `${P}sheet.changed.`
+			.when('changed', { path: (v: Ledger) => v.changes, truthy: true }, (k) => {
+				w.params.push([on(k, 'apply'), { mode: 'apply' }])
 				/**
 				 * The state's version NOW, after the rules' apply: the books
 				 * computed these changes from the state the deltas left, so they
@@ -1333,48 +1317,48 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 				 * blow's 0, a level's new health) was refused as stale and
 				 * never landed.
 				 */
-				return jsonPart(k, w, Q, 'changes', ledger, 'changes', "The round's changes")
-					.query('now', ($: any) => C.sessionState.v1({ scope: $.input.sessionScope }), {
+				return jsonPart(k, w, 'changes', ($) => $.channel.story.ledger.main, 'changes', "The round's changes")
+					.query('now', ($) => C.sessionState.v1({ scope: $.input.sessionScope }), {
 						expose: { label: 'The sheet as the rules left it' },
 					})
-					.query('resolve', ($: any) =>
+					.query('resolve', ($) =>
 						C.resolveStateChanges.v1({
-							changes: at($, `${Q}changes`).main,
+							changes: $.changes.main,
 							scope: $.input.sessionScope,
-							base: at($, `${Q}now`).version,
+							base: $.now.version,
 						}),
 					)
 					.task(
 						'apply',
-						($: any) =>
+						($) =>
 							C.setState.v1({
-								changes: at($, `${Q}resolve`).changes,
+								changes: $.resolve.changes,
 								scope: $.input.sessionScope,
-								base: at($, `${Q}now`).version,
-								worldRow: at($, `${P}placeholder`).messageId,
+								base: $.now.version,
+								worldRow: $.channel.story.placeholder.messageId,
 								params: slot.params(),
 							}),
 						{ expose: { label: "Write the round's changes" } },
 					)
 			})
-			.when('noted', { path: 'notes', truthy: true }, (k: any) =>
-				textPart(k, w, `${P}sheet.noted.`, 'notes', ledger, 'notes', "The Planner's notes").outlet(
+			.when('noted', { path: (v: Ledger) => v.notes, truthy: true }, (k) =>
+				textPart(k, w, 'notes', ($) => $.channel.story.ledger.main, 'notes', "The Planner's notes").outlet(
 					'write',
-					($: any) =>
+					($) =>
 						C.setSessionAnnex.v1({
-							value: { [K.planningNotes]: at($, `${P}sheet.noted.notes`).text } as any,
+							value: { [K.planningNotes]: $.notes.text } as any,
 							params: slot.params(),
 						}),
 					{ expose: { label: "Keep the Planner's notes" } },
 				),
 			)
 			/** 🚧 The notes once out: the revealed copy follows the rewrite (AUDIT A24). */
-			.when('revealed', { path: 'notesRevealed', truthy: true }, (k: any) =>
-				textPart(k, w, `${P}sheet.revealed.`, 'notes', ledger, 'notesRevealed', 'The notes, as revealed — the round').outlet(
+			.when('revealed', { path: (v: Ledger) => v.notesRevealed, truthy: true }, (k) =>
+				textPart(k, w, 'notes', ($) => $.channel.story.ledger.main, 'notesRevealed', 'The notes, as revealed — the round').outlet(
 					'write',
-					($: any) =>
+					($) =>
 						C.setSessionAnnex.v1({
-							value: { [K.planningNotesRevealed]: at($, `${P}sheet.revealed.notes`).text } as any,
+							value: { [K.planningNotesRevealed]: $.notes.text } as any,
 							params: slot.params(),
 						}),
 					{ expose: { label: 'Keep the revealed notes in step — the round' } },
@@ -1387,17 +1371,18 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 * wears off (a condition's duration), what recharges — for the owners the
 	 * turn resolved. Rest was once the only thing that ticked a duration.
 	 */
-	const advanced = written.junction('time', { on: ledger }, (j: any) =>
-		j.when('passed', { path: 'advance', truthy: true }, (k: any) =>
-			jsonPart(k, w, `${P}time.passed.`, 'elapsed', ledger, 'advance', "The turn's minutes").task(
+	const advanced = written.junction('time', { on: ($) => $.ledger.main }, (j) =>
+		j.when('passed', { path: (v: Ledger) => v.advance, truthy: true }, (k) =>
+			jsonPart(k, w, 'elapsed', ($) => $.channel.story.ledger.main, 'advance', "The turn's minutes").task(
 				'advance',
-				($: any) =>
+				($) =>
 					C.rulesetResolve.v1({
+						params: slot.params(),
 						scope: $.input.sessionScope,
-						owners: at($, `${P}owners`).main,
-						rigour: at($, `${P}rigour`).text,
+						owners: $.channel.story.owners.main,
+						rigour: $.channel.story.rigour.text,
 						mode: 'advance',
-						elapsed: at($, `${P}time.passed.elapsed`).main,
+						elapsed: $.elapsed.main,
 					}),
 				{ expose: { label: "Pass the turn's time under the rules", status: STORY_STATUS.books } },
 			),
@@ -1407,17 +1392,18 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	 * A swipe's re-filing (the host took back what the turn wrote at its row):
 	 * the deltas that need no roll, applied again by the handler.
 	 */
-	const replayed = advanced.junction('replay', { on: ledger }, (j: any) =>
-		j.when('deltas', { path: 'replay', truthy: true }, (k: any) =>
-			jsonPart(k, w, `${P}replay.deltas.`, 'list', ledger, 'replay', 'The deltas filed again').task(
+	const replayed = advanced.junction('replay', { on: ($) => $.ledger.main }, (j) =>
+		j.when('deltas', { path: (v: Ledger) => v.replay, truthy: true }, (k) =>
+			jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'replay', 'The deltas filed again').task(
 				'apply',
-				($: any) =>
+				($) =>
 					C.rulesetResolve.v1({
+						params: slot.params(),
 						// The turn's owners: a way crossed may be a place nobody stands in (P1-4).
-						owners: at($, `${P}turnOwners`).main,
-						deltas: at($, `${P}replay.deltas.list`).main,
+						owners: $.channel.story.turnOwners.main,
+						deltas: $.list.main,
 						scope: $.input.sessionScope,
-						rigour: at($, `${P}rigour`).text,
+						rigour: $.channel.story.rigour.text,
 						mode: 'apply',
 					}),
 				{ expose: { label: 'File the rules again' } },
@@ -1426,24 +1412,23 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 	)
 	// The world the turn moved: new places, ways out, people and cairns, in
 	// the session's own lorebook, each anchored to the turn's row (`lore.ts`).
-	const worlded = loreWrites(replayed, w, P, ledger)
-	const filed = worlded.junction('filed', { on: ledger }, (j: any) =>
-		j.when('kept', { path: 'progress', truthy: true }, (k: any) =>
+	const worlded = loreWrites(replayed, w, ($) => $.channel.story.ledger.main)
+	const filed = worlded.junction('filed', { on: ($) => $.ledger.main }, (j) =>
+		j.when('kept', { path: (v: Ledger) => v.progress, truthy: true }, (k) =>
 			jsonPart(
-				jsonPart(k, w, `${P}filed.kept.`, 'progress', ledger, 'progress', 'The crawl, after the round'),
+				jsonPart(k, w, 'progress', ($) => $.channel.story.ledger.main, 'progress', 'The crawl, after the round'),
 				w,
-				`${P}filed.kept.`,
 				'journal',
-				ledger,
+				($) => $.channel.story.ledger.main,
 				'journal',
 				'The journal, after the round',
 			).outlet(
 				'write',
-				($: any) =>
+				($) =>
 					C.setSessionAnnex.v1({
 						value: {
-							[K.progress]: at($, `${P}filed.kept.progress`).main,
-							[K.journal]: at($, `${P}filed.kept.journal`).main,
+							[K.progress]: $.progress.main,
+							[K.journal]: $.journal.main,
 						} as any,
 						params: slot.params(),
 					}),
@@ -1451,32 +1436,31 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 			),
 		),
 	)
-	w.prompts.push([`${P}context`, DUNGEON_CRAWLER_PROMPT_KEYS.narrate])
+	w.prompts.push([on(filed, 'context'), DUNGEON_CRAWLER_PROMPT_KEYS.narrate])
 	// 🚧 The outcomes and the reminder are the last user turn, the seed after
 	// them (owner ruling 2026-10-18, B1: the shipped layout sent them as a
 	// trailing system message).
-	w.templates.push([`${P}prompt`, DUNGEON_CRAWLER_NARRATE_TEMPLATE])
+	w.templates.push([on(filed, 'prompt'), DUNGEON_CRAWLER_NARRATE_TEMPLATE])
 	// The Narrator's steps all say the Narrator's word (not the handlers'
 	// generic *{speaker} is composing*).
 	const telling = { expose: { status: STORY_STATUS.telling } }
 	const told = jsonPart(
-		textPart(filed, w, P, 'narration', ledger, 'brief', "The Narrator's brief"),
+		textPart(filed, w, 'narration', ($) => $.ledger.main, 'brief', "The Narrator's brief"),
 		w,
-		P,
 		'outcomes',
-		ledger,
+		($) => $.ledger.main,
 		'narrator',
 		'The outcomes, after the history',
 	)
-		.task('context', ($: any) =>
+		.task('context', ($) =>
 			C.buildTemplateContext.v1({
-				cast: terms.cast($) as any,
+				cast: $.cast.cast as any,
 				speaker: NARRATOR as any,
-				turnDirection: at($, `${P}narration`).text,
+				turnDirection: $.narration.text,
 				// 🚧 `{{outcomes}}` (PLAN-rulesets §30 amendment): what the rules
 				// decided and what it cost, placed by the prompt row after the
 				// history — never in the system block.
-				fields: at($, `${P}outcomes`).main,
+				fields: $.outcomes.main,
 				prompts: slot.prompts(),
 				variables: slot.variables(),
 			}),
@@ -1484,36 +1468,38 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 		)
 		.task(
 			'lines',
-			($: any) =>
+			($) =>
 				C.processMessages.v1({
-					messages: terms.history($) as any,
-					cast: terms.cast($) as any,
-					templateContext: at($, `${P}context`).templateContext,
-					seedName: at($, `${P}context`).seedName,
+					messages: $.story.messages as any,
+					cast: $.cast.cast as any,
+					templateContext: $.context.templateContext,
+					seedName: $.context.seedName,
 					continuationPrefill: $.input.continuationPrefill,
 				}),
 			telling,
 		)
-		.task('prompt', ($: any) =>
+		.task('prompt', ($) =>
 			C.assemble.v2({
-				messages: at($, `${P}lines`).messages,
-				templateContext: at($, `${P}context`).templateContext,
+				messages: $.lines.messages,
+				templateContext: $.context.templateContext,
 				template: slot.template(),
-				prompts: slot.prompts({ node: `${P}context` }),
+				prompts: slot.prompts($.context),
 				variables: slot.variables(),
 				params: slot.params(),
-				connection: slot.connectionOf(`${P}say`),
+				connection: slot.connectionOf(sibling($.context, 'say')),
 			}),
 			telling,
 		)
 		.oracle(
 			'say',
-			($: any) =>
+			($) =>
 				C.generateText.v1({
-					context: at($, `${P}prompt`).context,
+					context: $.prompt.context,
 					connection: slot.connection(),
 					sampling: slot.sampling(),
 					params: slot.params(),
+					// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+					speechSampling: slot.speechSampling(),
 				}),
 			{
 				expose: {
@@ -1526,58 +1512,49 @@ export const storyBranch = (s: any, w: Wiring, terms: StoryTerms) => {
 		)
 		.outlet(
 			'save',
-			($: any) =>
+			($) =>
 				C.updateMessage.v1({
-					target: at($, `${P}placeholder`).messageId,
-					text: at($, `${P}say`).text,
-					reasoning: at($, `${P}say`).reasoning,
+					target: $.placeholder.messageId,
+					text: $.say.text,
+					reasoning: $.say.reasoning,
 				}),
 			{ expose: { label: "Fill the Narrator's line" } },
 		)
-	return told
-		.junction('after', { on: ledger }, (j: any) =>
-			j
-				// The round's journal lines, each with its kind (§16), on the folio.
-				.when('journal', { path: 'journalLines', truthy: true }, (k: any) =>
-					journalWrites(k, w, `${P}after.journal.`, ledger, ($: any) => at($, `${P}placeholder`).messageId),
-				)
-				// Secrets for one player go to that player's lane (feature 18, `secrets.ts`).
-				.when('secrets', { path: 'secrets', truthy: true }, (k: any) =>
-					deliverSecrets(
-						jsonPart(k, w, `${P}after.secrets.`, 'list', ledger, 'secrets', "The round's secrets"),
-						w,
-						`${P}after.secrets.`,
-						{ session: ($) => $.input.session, secrets: ($) => at($, `${P}after.secrets.list`).main },
-					),
-				)
-				.when('lanes', { path: 'laneLines', truthy: true }, (k: any) =>
-					jsonPart(k, w, `${P}after.lanes.`, 'list', ledger, 'laneLines', "The Planner's lines in the lanes").each(
-						'line',
-						{ over: ($: any) => at($, `${P}after.lanes.list`).main, max: 16 },
-						(m: any) => {
-							const M = `${P}after.lanes.line.item.`
-							const item = ($: any) => at($, `${P}after.lanes.line.item`)
-							return jsonPart(
-								textPart(textPart(m, w, M, 'lane', item, 'lane', 'Which lane'), w, M, 'text', item, 'text', "The Planner's line"),
-								w,
-								M,
-								'blocks',
-								item,
-								'blocks',
-								"The line's form",
-							).outlet(
-								'write',
-								($: any) =>
-									C.createMessage.v1({
-										text: at($, `${M}text`).text,
-										channel: at($, `${M}lane`).text,
-										speaker: PLANNER as any,
-										blocks: at($, `${M}blocks`).main,
-									}),
-								{ expose: { label: "Say the Planner's line in a lane" } },
-							)
-						},
-					),
+	return told.junction('after', { on: ($) => $.ledger.main }, (j) =>
+		j
+			// The round's journal lines, each with its kind (§16), on the folio.
+			.when('journal', { path: (v: Ledger) => v.journalLines, truthy: true }, (k) => journalWrites(k, w))
+			// Secrets for one player go to that player's lane (feature 18, `secrets.ts`).
+			.when('secrets', { path: (v: Ledger) => v.secrets, truthy: true }, (k) =>
+				deliverSecrets(jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'secrets', "The round's secrets"), w, {
+					session: ($) => $.input.session,
+					secrets: ($) => $.list.main,
+				}),
+			)
+			.when('lanes', { path: (v: Ledger) => v.laneLines, truthy: true }, (k) =>
+				jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'laneLines', "The Planner's lines in the lanes").each(
+					'line',
+					{ over: ($) => $.list.main, max: 16 },
+					(m) =>
+						jsonPart(
+							textPart(textPart(m, w, 'lane', ($) => $[ITEM], 'lane', 'Which lane'), w, 'text', ($) => $[ITEM], 'text', "The Planner's line"),
+							w,
+							'blocks',
+							($) => $[ITEM],
+							'blocks',
+							"The line's form",
+						).outlet(
+							'write',
+							($) =>
+								C.createMessage.v1({
+									text: $.text.text,
+									channel: $.lane.text,
+									speaker: PLANNER as any,
+									blocks: $.blocks.main,
+								}),
+							{ expose: { label: "Say the Planner's line in a lane" } },
+						),
 				),
-		)
+			),
+	)
 }

@@ -304,6 +304,18 @@ export const S = {
 	 */
 	messageOffered: defineShape({ id: 'core:shape/message-offered@1' }),
 	/**
+	 * 🚧 A **deletion asked**: the payload of
+	 * `core:event/message-deletion-asked@1` — a person asked for a message to
+	 * be deleted (`DeletionAskedPayload`, events.ts) — and what
+	 * `core:inlet/message-deletion-asked@1` publishes, whole on `main` and
+	 * port by port beside it. Its own id for the reason `session-change@1`
+	 * has, and a wire as well: `core:outlet/delete-message@1.asked` takes it
+	 * whole, so the message a deletion pipeline deletes is the one the event
+	 * carried.
+	 * @ruling owner 2026-10-23 (deletion requires a pipeline, so the genre manages it)
+	 */
+	deletionAsked: defineShape({ id: 'core:shape/deletion-asked@1' }),
+	/**
 	 * A **cast change**: the payload of
 	 * `core:event/cast-changed@1` — `{ event, sessionId, at, cause, ref,
 	 * change, value }` (`CastChangePayload`, events.ts). A seated
@@ -502,5 +514,14 @@ export const S = {
 	 */
 	ner: defineShape({ id: 'core:shape/ner@1' }),
 	tts: defineShape({ id: 'core:shape/tts@1' }),
+	/**
+	 * 🚧 Transcription — the connection kind for a model that HEARS: audio in,
+	 * the words it says out (`audio->text`, O9). Like `embeddings` and `ner`
+	 * it has no entry in `SAMPLING_SCHEMAS`: what a transcription takes (the
+	 * language, a vocabulary hint) is the step's own, not a sampling config's.
+	 * ⚠ Not `tts` — that one SPEAKS.
+	 * @ruling O9
+	 */
+	transcription: defineShape({ id: 'core:shape/transcription@1' }),
 	imageGen: defineShape({ id: 'core:shape/image-gen@1' }),
 } as const

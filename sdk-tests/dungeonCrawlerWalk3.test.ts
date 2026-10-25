@@ -92,9 +92,13 @@ test('R2-2: with the pieces held, the crib names each way out exactly before any
 })
 
 test('R2-1 (★2): the exit grammar asks for the trap\'s dice and condition; a table of words asks for neither, nor any difficulty', () => {
-	const counted = cat.DUNGEON_CRAWLER_EXIT_SCHEMA as any
+	// 🚧 Laid at run time over the session's rules (S4): counted under Vis Itineris, words where the rules decide nothing.
+	const viIn = { id: 'core:ruleset/vis-itineris@1', ...cat.rulesetGistOf(getRuleset('core:ruleset/vis-itineris@1')! as never) }
+	const exitOf = (ruleset: unknown) =>
+		runScript(cat.DUNGEON_CRAWLER_SHAPE_SCRIPT, { shape: null, ruleset, want: 'genesis' }).properties.rooms.items.properties.exits.items
+	const counted = exitOf(viIn)
 	assert.ok(counted.required.includes('trapDamage') && counted.required.includes('trapCondition'))
-	const words = cat.DUNGEON_CRAWLER_WORDS_EXIT_SCHEMA as any
+	const words = exitOf({ ...viIn, decides: false })
 	for (const k of ['lockDc', 'trapDc', 'trapDamage', 'trapCondition']) {
 		assert.equal(words.properties[k], undefined, k)
 		assert.ok(!words.required.includes(k), k)
@@ -110,9 +114,12 @@ test('R2-1 (★2): the exit grammar asks for the trap\'s dice and condition; a t
 })
 
 test("★4: a kit's trained skills — the rogue's Sleight of hand — are written at creation, on a field the sheet tracks and does not draw", () => {
-	assert.deepEqual(cat.kitSkillChanges('rogue'), [{ slot: 'core:slot/itineris-skill-training@1', value: ['sleight-of-hand', 'stealth', 'acrobatics', 'perception'] }])
-	for (const key of Object.keys(cat.DUNGEON_CRAWLER_KITS)) assert.ok(cat.kitSkillChanges(key)[0]?.value.length, key)
-	assert.ok(cat.DUNGEON_CRAWLER_SHEET.slots.some((s: any) => s.id === 'core:slot/itineris-skill-training@1'))
+	// 🚧 The session's ruleset's kits, as the inlet carries them (S4, 2026-10-23).
+	const kits = cat.rulesetGistOf(getRuleset('core:ruleset/vis-itineris@1')! as never).kits!
+	assert.deepEqual(kits.byId.rogue!.skills, [{ slot: 'core:slot/itineris-skill-training@1', value: ['sleight-of-hand', 'stealth', 'acrobatics', 'perception'] }])
+	for (const key of kits.order) assert.ok(kits.byId[key]!.skills[0]?.value.length, key)
+	// 🚧 RF fix 8: Vis Itineris's own attribute, never the genre's sheet.
+	assert.ok((getRuleset('core:ruleset/vis-itineris@1') as any).attributes.some((a: any) => a.slot === 'core:slot/itineris-skill-training@1'))
 	// The sheet script spells them for itself, and pushes them with the scores.
 	const sheet = cat.DUNGEON_CRAWLER_SHEET_SCRIPT.source
 	assert.match(sheet, /function kitSkillChanges\(key\)/)
@@ -125,21 +132,24 @@ test('R2-3: the books prompt at a table of words — no check, no difficulty, no
 	const turn = row(cat.DUNGEON_CRAWLER_PROMPT_KEYS.turn).systemPrompt
 	assert.match(turn, /\{\{#unless wordsOnly\}\}\{\{#if diceRolled\}\}check: the check/)
 	assert.match(turn, /\{\{\/unless\}\}reason: a few words \}/)
-	assert.match(turn, /\{\{#if wordsOnly\}\}trap: in a few words, or empty, minutes\{\{else\}\}lockDc, trap, trapDc, trapDamage/)
+	// 🚧 A way out keeps its numbers where the rules decide and keep a way out of their own (S4).
+	assert.match(turn, /\{\{#if exitsInWords\}\}trap: in a few words, or empty, minutes\{\{else\}\}lockDc, trap, trapDc, trapDamage/)
 	assert.match(turn, /\{\{#if wordsOnly\}\}a character the round brings down stands at death's door, which decides\{\{else\}\}/)
-	const fields = (kit: boolean) =>
-		runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: [], facts: { rigour: kit ? 'scripts' : 'prose' }, books: { kit, seats: [] }, state: {} })
+	const fields = (decides: boolean) =>
+		runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: [], facts: { rigour: decides ? 'scripts' : 'prose' }, books: { decides, seats: [] }, state: {} })
 	assert.equal(fields(false).wordsOnly, 'yes')
 	assert.equal(fields(true).wordsOnly, '')
 })
 
 test('R2-4 (★1): At zero health offers only what the crawl plays — one roll at death\'s door (the default), or death saves', () => {
-	const vi = getRuleset('core:ruleset/vis-itineris@1')!
-	const dying = (vi.settings as any).dying
+	// Vis Itineris's own settings part (it is registered in the sections since 2026-10-23).
+	const dying = (cat.VIS_ITINERIS_SETTINGS as any).dying
 	assert.equal(dying.default, 'dying-1-4')
 	const labels = dying.choices.map((c: any) => c.label.en)
 	assert.deepEqual(labels, ["One roll at death's door", 'Death saves'])
-	assert.doesNotMatch(JSON.stringify(vi.settings) + JSON.stringify(vi.presets), /Dying 1–4|dying 1–4/)
+	assert.doesNotMatch(JSON.stringify(cat.VIS_ITINERIS_SETTINGS) + JSON.stringify(cat.VIS_ITINERIS_PRESETS), /Dying 1–4|dying 1–4/)
+	// 🚧 …and the fall rule's reference plays the saves by that option (★I).
+	assert.deepEqual(cat.VIS_ITINERIS_AT_ZERO_HEALTH_RULE.savesWhen, { option: 'dying', is: 'death-saves' })
 })
 
 test('R1-6 / R3-5 / R3-3: the Dice and Planner copies spell the crawl\'s clock; time lines start off; Scene Portraits bars only the heroes', () => {

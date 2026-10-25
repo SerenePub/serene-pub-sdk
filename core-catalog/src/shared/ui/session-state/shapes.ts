@@ -51,6 +51,65 @@ export function slotKind(slot: Pick<SessionStateSlotV1, 'type' | 'field'>): Slot
 	return statShapeKindOf(slotFieldOf(slot)) ?? 'text'
 }
 
+/**
+ * 🚧 How a stock widget **draws** a value (RF fix 8, 2026-10-23): the rules'
+ * attribute kind (`SessionStateSlotV1.kind`) by its shown-as hint
+ * (`shownAs`) — a number as a `bar`, a `count` or a `badge`; a pool as
+ * `pips` or a `bar`; a tally as a `count`; a word (`label`) as a `badge` or
+ * in `words`; a list as a `list`; free text in `words`, over several lines.
+ * A hint the kind does not take, or one this widget does not know (a
+ * package's own word), is the kind's default — its first. A slot with no
+ * rules' kind (host state, a host that predates it) is drawn by its stat
+ * shape as before: a bounded number a `bar`, a choice a `badge`, a list a
+ * `list`, a story time a `time`, anything else `words`.
+ * @experimental
+ */
+export type DrawnAs = 'bar' | 'count' | 'badge' | 'pips' | 'words' | 'list' | 'time' | 'toggle' | 'derived'
+
+/** 🚧 Each kind's drawings, its default first (RF fix 8). @experimental */
+export const KIND_DRAWINGS: Readonly<Record<string, readonly DrawnAs[]>> = Object.freeze({
+	number: ['bar', 'count', 'badge'],
+	pool: ['pips', 'bar'],
+	tally: ['count'],
+	label: ['badge', 'words'],
+	list: ['list'],
+	text: ['words'],
+})
+
+/** 🚧 More pips than this are no longer counted at a glance: a pool that large is a bar. @experimental */
+export const MOST_PIPS = 10
+
+/** 🚧 What one slot is drawn as, for one owner's bounds (RF fix 8). @experimental */
+export function drawnAs(slot: Pick<SessionStateSlotV1, 'type' | 'field' | 'kind' | 'shownAs'>, config: { min?: unknown; max?: unknown } = {}): DrawnAs {
+	const shape = slotKind(slot)
+	if (shape === 'derived') return 'derived'
+	const bounded = typeof config.max === 'number' && Number.isFinite(config.max) && typeof config.min === 'number' && Number.isFinite(config.min) && config.max > config.min
+	const ways = typeof slot.kind === 'string' ? KIND_DRAWINGS[slot.kind] : undefined
+	if (ways) {
+		const hint = typeof slot.shownAs === 'string' ? (slot.shownAs as DrawnAs) : undefined
+		let way = hint && ways.includes(hint) ? hint : ways[0]!
+		// A bar needs a floor and a most; pips a few to count.
+		if (way === 'pips' && !(bounded && (config.max as number) - (config.min as number) <= MOST_PIPS)) way = bounded ? 'bar' : 'count'
+		if (way === 'bar' && !bounded) way = 'count'
+		return way
+	}
+	if (shape === 'number') return bounded ? 'bar' : 'count'
+	if (shape === 'choice') return 'badge'
+	if (shape === 'boolean') return 'toggle'
+	if (shape === 'list') return 'list'
+	if (shape === 'story-time') return 'time'
+	return 'words'
+}
+
+/** 🚧 A pool's pips: how many there are and how many are filled (RF fix 8). @experimental */
+export function pipsOf(value: unknown, config: { min?: unknown; max?: unknown }): { filled: number; total: number } | null {
+	const min = typeof config.min === 'number' ? config.min : 0
+	const max = typeof config.max === 'number' ? config.max : NaN
+	if (!Number.isFinite(max) || max <= min || max - min > MOST_PIPS) return null
+	const v = typeof value === 'number' && Number.isFinite(value) ? value : min
+	return { filled: Math.max(0, Math.min(max - min, Math.round(v - min))), total: max - min }
+}
+
 /** Is a number slot whole — `integer`, the catalogue's — or does it take fractions? @experimental */
 export const slotIsWhole = (slot: Pick<SessionStateSlotV1, 'type' | 'field'>): boolean =>
 	slotFieldOf(slot)?.type !== 'number'

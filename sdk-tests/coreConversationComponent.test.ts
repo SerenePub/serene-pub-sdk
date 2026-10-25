@@ -965,7 +965,7 @@ const channelDossier = (
 	composer: {
 		...dossier.composer,
 		channels,
-		channelLabels: { sanctum: 'Sanctum' },
+		channelLabels: { main: 'Story', sanctum: 'Sanctum' },
 		tabs: [{ view: 'session-controls', title: 'Turn controls', icon: 'message-square' }],
 	},
 	turn: { ...dossier.turn, ...turn },
@@ -1007,8 +1007,8 @@ test('a copy pinned to the Sanctum draws the Sanctum alone, names it, and writes
 		// Only the Sanctum's rows, and none of the story's — not even hidden.
 		assert.deepEqual(bodies(view), ['I am the Castellan, steward of this dungeon.', 'What waits in the vault?'])
 		assert.equal(view.queryAll('[data-widget-part~="messages.message"]').length, 2)
-		// One channel: no strip to choose from.
-		assert.equal(view.query('[data-widget-part~="messages.composer-channels"]'), null)
+		// One channel: no tabs to choose from.
+		assert.equal(view.query('[data-widget-part~="messages.channel-tabs"]'), null)
 
 		// The ready line's Continue fires ITS log's channel (R5's follow-up).
 		await view.click('[data-widget-part~="messages.next-up-continue"]')
@@ -1028,7 +1028,7 @@ test('a copy pinned to the Sanctum draws the Sanctum alone, names it, and writes
 	}
 })
 
-test('the primary log draws the channels no copy claims; the strip names a channel by its label', { timeout: 120_000 }, async () => {
+test('the primary log draws the channels no copy claims; 🚧 its tabs name each channel by its label (lair fix 2)', { timeout: 120_000 }, async () => {
 	// The Lair's story log: the Sanctum is claimed, so only `main` is left.
 	const story = await mountCopy(
 		{},
@@ -1042,40 +1042,160 @@ test('the primary log draws the channels no copy claims; the strip names a chann
 	try {
 		assert.deepEqual(bodies(story), ['We go north.'])
 		assert.equal(story.query('[data-widget-part~="messages.channel-head"]'), null)
-		assert.equal(story.query('[data-widget-part~="messages.composer-channels"]'), null)
+		assert.equal(story.query('[data-widget-part~="messages.channel-tabs"]'), null)
 		await story.click('[data-widget-part~="messages.next-up-continue"]')
 		assert.deepEqual(story.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
 	} finally {
 		await story.unmount()
 	}
-	// Nothing claimed: one log over both, the strip choosing between them by label.
-	const whole = await mountCopy({}, channelDossier(['main', 'sanctum']))
+	// Nothing claimed: one log over both, a tab each above it, by label (the
+	// Lair's Story · Sanctum) — the composer's old switch is gone.
+	const whole = await mountCopy({ otherTabsComposer: 'minimal' }, channelDossier(['main', 'sanctum']))
 	try {
-		const strip = whole.queryAll('[data-widget-part~="messages.composer-channel"]').map((b) => b.textContent?.trim())
-		assert.deepEqual(strip, ['Main', 'Sanctum'])
+		// The host's tabs (`sp-tabs`): the page draws the tablist, its roving
+		// focus and its arrows; the copy names the tabs and hears `change`.
+		const STRIP = '[data-widget-part~="messages.channel-tabs"]'
+		const strip = () => whole.query(STRIP)
+		assert.equal(strip()?.localName, 'sp-tabs')
+		assert.equal(strip()?.getAttribute('label'), 'Conversations')
+		assert.equal(whole.query('[data-widget-part~="messages.composer-channels"]'), null)
+		const tabs = () => whole.queryAll('[data-widget-part~="messages.channel-tab"]')
+		assert.deepEqual(
+			tabs().map((t) => [t.localName, t.getAttribute('value'), t.getAttribute('label')]),
+			[
+				['sp-tab', 'main', 'Story'],
+				['sp-tab', 'sanctum', 'Sanctum'],
+			],
+		)
+		assert.equal(strip()?.getAttribute('value'), 'main')
 		// The log shows the lane it writes on; the other lane's rows stay hidden, as before.
 		assert.equal(whole.queryAll('[data-widget-part~="messages.message"]').length, 3)
+		const shown = () =>
+			whole
+				.queryAll('[data-widget-part~="messages.message-row"]')
+				.filter((li) => !li.hasAttribute('hidden'))
+				.map((li) => li.querySelector('sp-message-body')?.getAttribute('text'))
+		assert.deepEqual(shown(), ['We go north.'])
 		// 🚧 A line's accessible name counts the lines on its lane, never every
 		// channel's rows (PLAN-dc-after-walk2 Q3-6, the walk's #49).
 		const main = whole.query('#message-1')
 		assert.match(main?.getAttribute('aria-label') ?? '', /^Message 1 of 1 from /)
+		const root = () => whole.query('[data-widget-part~="messages.root"]')
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+
+		// A Castellan line lands on the Sanctum while the story is shown: a dot on
+		// its tab, and its name says so to a screen reader.
+		assert.equal(whole.query('[data-widget-part~="messages.channel-tab-dot"]'), null)
+		await whole.push('messages', [
+			...sanctumRows,
+			row(6, 'assistant', 'The vault holds a sleeping wyrm.', { channel: 'sanctum', characterId: null }),
+		])
+		assert.ok(tabs()[1]!.querySelector('[data-widget-part~="messages.channel-tab-dot"]'), 'the Sanctum tab has news')
+		assert.equal(tabs()[1]!.getAttribute('label'), 'Sanctum (new lines)')
+		assert.equal(tabs()[0]!.querySelector('[data-widget-part~="messages.channel-tab-dot"]'), null)
+
+		// The Sanctum's tab: its rows, its pill composer, its line sent there — and the dot read.
+		await whole.dispatch(STRIP, 'change', { value: 'sanctum' })
+		assert.equal(strip()?.getAttribute('value'), 'sanctum')
+		assert.deepEqual(shown(), [
+			'I am the Castellan, steward of this dungeon.',
+			'What waits in the vault?',
+			'The vault holds a sleeping wyrm.',
+		])
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'minimal')
+		assert.equal(whole.query('[data-widget-part~="messages.channel-tab-dot"]'), null)
+		assert.equal(tabs()[1]!.getAttribute('label'), 'Sanctum')
+		await whole.dispatch('sp-composer-field', 'input', { value: 'Wake it slowly.' })
+		await whole.click('[data-widget-part~="messages.composer-send"]')
+		assert.equal(whole.requested.filter((r) => r.kind === 'send').at(-1)?.params.channel, 'sanctum')
+
+		// Back to the story: its card again.
+		await whole.dispatch(STRIP, 'change', { value: 'main' })
+		assert.equal(strip()?.getAttribute('value'), 'main')
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+		assert.deepEqual(shown(), ['We go north.'])
+		// A story with nothing in it yet reads as an empty log, whatever the Sanctum holds.
+		assert.equal(whole.query('[data-widget-part~="messages.log-empty"]'), null)
+		await whole.push('messages', sanctumRows.filter((r) => r.channel === 'sanctum'))
+		assert.ok(whole.query('[data-widget-part~="messages.log-empty"]'), 'the empty story says so')
+		await whole.dispatch(STRIP, 'change', { value: 'sanctum' })
+		assert.equal(whole.query('[data-widget-part~="messages.log-empty"]'), null)
 	} finally {
 		await whole.unmount()
 	}
 })
 
-test('Line width is a declared setting, Full by default — never a hidden cap', async () => {
+/**
+ * 🚧 Take a seat (Lair rewrite D5, lane L5): a guest who plays, in a genre of
+ * player seats, with no seat yet, is offered one on the story in place of
+ * the field — a name and Take a seat, or one of their personas — never on
+ * another lane, and never over a closed composer's reason.
+ */
+const seatDossier = (channels: string[], closed?: Record<string, { reason?: string }>): ConversationDossierV1 => {
+	const d = channelDossier(channels)
+	return {
+		...d,
+		isOwner: false,
+		composer: { ...d.composer, personas: [], personaId: null, takeSeat: true, ...(closed ? { closed } : {}) },
+	}
+}
+
+test('a seatless guest who plays is offered a seat on the story: a name, Take a seat, or a persona', { timeout: 120_000 }, async () => {
+	const view = await mountCopy({}, seatDossier(['main']))
+	try {
+		assert.deepEqual(view.refused, [])
+		const card = view.query('[data-widget-part~="messages.join"]')
+		assert.equal(card?.getAttribute('data-join'), 'seat')
+		assert.match(card?.textContent ?? '', /Take a seat/)
+		assert.match(card?.textContent ?? '', /Name the character you'll play\. What you write is their turn\./)
+		// No field to write in until there is a seat.
+		assert.equal(view.queryAll('[data-widget-part~="messages.composer-field"]').length, 0)
+		const go = view.query<HTMLButtonElement>('[data-widget-part~="messages.join-button"]')!
+		assert.ok(go.hasAttribute('disabled'), 'no name, no seat')
+		await view.input('[data-widget-part~="messages.join-name"]', '  Maren Holt ')
+		assert.equal(go.hasAttribute('disabled'), false)
+		await view.click(go)
+		await view.settle()
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'take-seat').at(-1)?.params, { name: 'Maren Holt' })
+		await view.click('[data-widget-part~="messages.join-alternative"]')
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'add-persona').at(-1)?.params, {})
+	} finally {
+		await view.unmount()
+	}
+})
+
+test("the seat offer is the story's alone, and a closed composer's reason wins", { timeout: 120_000 }, async () => {
+	// A copy pinned to another lane (a Planner's, a Sanctum) never offers it.
+	const pinned = await mountCopy({ channel: 'sanctum' }, seatDossier(['sanctum']))
+	try {
+		assert.equal(pinned.queryAll('[data-widget-part~="messages.join"]').length, 0)
+	} finally {
+		await pinned.unmount()
+	}
+	// The genre closed the story's composer (Dungeon Crawler's interview first).
+	const closed = await mountCopy({}, seatDossier(['main'], { main: { reason: 'Make your character on the Planner tab first.' } }))
+	try {
+		assert.equal(closed.queryAll('[data-widget-part~="messages.join"]').length, 0)
+	} finally {
+		await closed.unmount()
+	}
+})
+
+test('Line width is a declared setting, Column by default (★R1) — never a hidden cap', async () => {
 	const decl = CORE_WIDGETS.find((w) => w.id === 'messages')?.settings?.lineWidth as
-		| { type: string; label: string; of: string[]; default: string }
+		| { type: string; label: string; of: string[]; default: string; members: Array<{ key: string; label: string; description?: string }> }
 		| undefined
 	assert.ok(decl, 'messages declares lineWidth')
 	assert.equal(decl.type, 'enum')
 	assert.equal(decl.label, 'Line width')
-	assert.deepEqual(decl.of, ['full', 'comfortable'])
-	assert.equal(decl.default, 'full')
+	assert.deepEqual(decl.of, ['column', 'full', 'comfortable'])
+	assert.equal(decl.default, 'column')
+	// Each value says what it does, in one line, under its label.
+	assert.deepEqual(decl.members.map((m) => m.label), ['Column', 'Full', 'Comfortable'])
+	for (const m of decl.members) assert.ok(m.description, `${m.key} says what it does`)
 })
 
-test('the widget root carries its Line width: Full unless the settings say Comfortable', { timeout: 120_000 }, async () => {
+test('the widget root carries its Line width: Column unless the settings say Full or Comfortable', { timeout: 120_000 }, async () => {
 	const lineWidthOf = async (settings: Record<string, unknown>) => {
 		const view = await mountCopy(settings, dossier)
 		try {
@@ -1085,10 +1205,11 @@ test('the widget root carries its Line width: Full unless the settings say Comfo
 			await view.unmount()
 		}
 	}
-	assert.equal(await lineWidthOf({}), 'full')
+	assert.equal(await lineWidthOf({}), 'column')
+	assert.equal(await lineWidthOf({ lineWidth: 'full' }), 'full')
 	assert.equal(await lineWidthOf({ lineWidth: 'comfortable' }), 'comfortable')
 	// An unknown value reads as the default, never as no width at all.
-	assert.equal(await lineWidthOf({ lineWidth: 'narrow' }), 'full')
+	assert.equal(await lineWidthOf({ lineWidth: 'narrow' }), 'column')
 })
 
 /* ── Folio (PLAN-core-widgets §3.7) ─────────────────────────────────────── */
@@ -1279,7 +1400,10 @@ test("a Folio page announces no envoy either: the Dungeon Crawler's Journal open
 					lines: { 30: line('Narrator'), 31: line('Narrator') },
 					composer: {
 						...dossier.composer,
-						channels: ['main', 'travelogue'],
+						// The host tells a copy pinned to a channel that channel alone
+						// (`channelClaims`); 🚧 since lair fix 2 a lane with no row of its
+						// own reads as an empty log, so the fixture says what the host says.
+						channels: ['travelogue'],
 						channelLabels: { travelogue: 'Journal' },
 						channelRoles: { travelogue: 'folio' },
 					},
@@ -1391,12 +1515,14 @@ test('unset, Presentation follows the claimed channel; a stored value wins', { t
 /* ── the turn line (PLAN-core-widgets §3.16) ────────────────────────────── */
 
 /**
- * Between the log and the composer, ONE row: what the last run did on the
- * left (a status pill read off the newest reply, Review N changes when
- * proposals wait, Inspect run for an administrator), who is next on the
- * right (who is typing, then the order's head with Someone else and
- * Continue — or Stop while the reply streams, or Try again after it failed).
- * `nextUp: hidden` drops the right half only.
+ * Between the log and the composer, ONE row: what the last run is doing on
+ * the left (a status pill read off the newest reply while it streams or
+ * after it failed, Review N changes when proposals wait — nothing at rest,
+ * polish parity L1: *Wren replied · 6.2 s* and Inspect run are the newest
+ * reply's ⋮ menu's), who is next on the right (who is typing, then the
+ * order's head with Someone else and Continue — or Stop while the reply
+ * streams, or Try again after it failed). `nextUp: hidden` drops the right
+ * half only.
  */
 const turnRows = (reply: Record<string, unknown> = {}) => [
 	row(1, 'user', 'We go north.'),
@@ -1434,7 +1560,7 @@ const mountTurnLine = (
 type TurnView = Awaited<ReturnType<typeof mountTurnLine>>
 const text = (view: TurnView, name: string) => view.query(part(name))?.textContent?.replace(/\s+/g, ' ').trim()
 
-test('the turn line is one row: what the last run did beside who is next', { timeout: 120_000 }, async () => {
+test('the turn line is one row: at rest, who is next, and nothing about the run that finished', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine()
 	try {
 		assert.deepEqual(view.refused, [])
@@ -1442,8 +1568,9 @@ test('the turn line is one row: what the last run did beside who is next', { tim
 		const line = view.query(part('messages.turn-line'))!
 		const run = line.querySelector(part('messages.turn-line-run'))
 		const next = line.querySelector(part('messages.turn-line-next'))
-		assert.ok(run && next, 'both halves')
-		assert.equal(text(view, 'messages.turn-line-status'), 'Wren replied')
+		assert.ok(next, 'who is next')
+		assert.equal(run, null, 'a finished run says nothing here: its reply\'s menu says it')
+		assert.equal(view.query(part('messages.turn-line-status')), null)
 		// The right half: who is typing (the page's view, placed once), then who is due.
 		assert.ok(next.querySelector(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
 		assert.equal(view.queryAll('sp-host-view[name="session-banners"]').length, 1)
@@ -1498,7 +1625,7 @@ test('Who is due next: Nothing hides the right half only', { timeout: 120_000 },
 	try {
 		assert.equal(view.query(part('messages.turn-line-next')), null)
 		assert.equal(view.query(part('messages.turn-line-continue')), null)
-		assert.equal(text(view, 'messages.turn-line-status'), 'Wren replied')
+		assert.equal(view.query(part('messages.turn-line-status')), null, 'nothing at rest on the left either')
 		// Who is typing still has its place.
 		assert.ok(view.query(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
 	} finally {
@@ -1506,17 +1633,84 @@ test('Who is due next: Nothing hides the right half only', { timeout: 120_000 },
 	}
 })
 
-test('Review N changes appears when proposals wait; an administrator gets Inspect run', { timeout: 120_000 }, async () => {
+/**
+ * 🚧 Continue moves past a waiting player (Lair rewrite D5, lane L5): a
+ * planned turn a person plays at the head waits for them. The owner gets
+ * Continue there with the sentence saying what it does; a guest waits; the
+ * player's own turn is theirs to write.
+ */
+const waitingDossier = (isOwner: boolean, ownerUserId = 2): ConversationDossierV1 =>
+	turnDossier({
+		isOwner,
+		turn: {
+			order: [
+				{ ref: 'player-seat:4', via: 'plan' },
+				{ ref: 'character:3', via: 'plan' },
+			] as ConversationDossierV1['turn']['order'],
+			candidates: [
+				{ ref: 'player-seat:4', kind: 'persona', name: 'Maren', ownerUserId },
+				{ ref: 'character:3', kind: 'character', name: 'Wren' },
+			],
+			show: true,
+			canChoose: false,
+		},
+	})
+
+test("the owner's Continue moves past a waiting player, and says so", { timeout: 120_000 }, async () => {
+	const view = await mountTurnLine({ d: waitingDossier(true) })
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.equal(text(view, 'messages.turn-line-text'), 'Waiting for Maren')
+		assert.equal(text(view, 'messages.turn-line-skip'), 'Continue moves past Maren: their turn is skipped this round.')
+		const go = view.query(part('messages.turn-line-continue'))!
+		assert.ok(go, 'Continue')
+		assert.equal(go.getAttribute('aria-label'), 'Continue without Maren')
+		assert.ok(go.hasAttribute('data-skips'))
+		await view.click(go)
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a guest waits for the player, and the player reads Your turn — neither moves past', { timeout: 120_000 }, async () => {
+	const guest = await mountTurnLine({ d: waitingDossier(false) })
+	try {
+		assert.equal(text(guest, 'messages.turn-line-text'), 'Waiting for Maren')
+		assert.equal(guest.queryAll(part('messages.turn-line-continue')).length, 0)
+		assert.equal(guest.queryAll(part('messages.turn-line-skip')).length, 0)
+	} finally {
+		await guest.unmount()
+	}
+	// The viewer (user 1) plays the seat: their own turn, taken by writing.
+	const player = await mountTurnLine({ d: waitingDossier(false, 1) })
+	try {
+		assert.equal(text(player, 'messages.turn-line-text'), 'Your turn')
+		assert.equal(player.queryAll(part('messages.turn-line-continue')).length, 0)
+	} finally {
+		await player.unmount()
+	}
+})
+
+test('Review N changes is the pill when proposals wait; an administrator inspects the run from its reply\'s menu', { timeout: 120_000 }, async () => {
 	const proposal = (id: number) => ({ id, status: 'pending', messageId: 2, text: `hp 20 → ${id}`, proposedBy: 'Wren', moved: null })
 	const view = await mountTurnLine({
 		admin: true,
 		d: turnDossier({ state: { ledgers: {}, pending: {}, waiting: [proposal(14), proposal(12)] } }),
 	})
 	try {
-		assert.equal(text(view, 'messages.turn-line-review'), 'Review 2 changes')
-		// The pill opens a panel holding the same links (all a narrow box shows).
+		// At rest the pill IS Review, a button opening its panel — one Review, none beside it.
+		assert.equal(text(view, 'messages.turn-line-status'), 'Review 2 changes')
 		assert.equal(view.query(part('messages.turn-line-status'))?.tagName.toLowerCase(), 'button')
-		await view.click(`${part('messages.turn-line-links')} ${part('messages.turn-line-inspect')}`)
+		assert.equal(view.query(part('messages.turn-line-review')), null)
+		// No Inspect run on the turn line; the reply's ⋮ menu has it.
+		assert.equal(view.query(part('messages.turn-line-inspect')), null)
+		const reply = view.queryAll(part('messages.message'))[1]!
+		const inspect = [...reply.querySelectorAll(part('messages.message-option'))].find(
+			(b) => b.textContent?.trim() === 'Inspect run',
+		)!
+		assert.ok(inspect, 'Inspect run in the reply\'s menu')
+		await view.click(inspect)
 		assert.deepEqual(view.requested.filter((r) => r.kind === 'inspect-run').at(-1)?.params, { messageId: 2 })
 	} finally {
 		await view.unmount()
@@ -1534,7 +1728,7 @@ test('one proposal is ONE Review on screen: none under each ledger, none beside 
 		assert.equal(view_count(replied, 'messages.ledger'), 2, 'both ledgers drawn')
 		assert.equal(replied.query(part('messages.ledger-review')), null, 'no Review under a ledger')
 		assert.equal(reviews(replied).length, 1)
-		assert.equal(text(replied, 'messages.turn-line-review'), 'Review 1 change')
+		assert.equal(text(replied, 'messages.turn-line-status'), 'Review 1 change')
 	} finally {
 		await replied.unmount()
 	}
@@ -1560,12 +1754,18 @@ test('a greeting is no run: a log with only one has no left half', { timeout: 12
 	}
 })
 
-test('a run this view saw start and end is timed on the pill', { timeout: 120_000 }, async () => {
+test('a run this view saw start and end is timed in its reply\'s menu, never on the turn line', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine()
 	try {
+		assert.equal(view.query(part('messages.message-options-run')), null, 'no time it did not see')
 		await view.event({ kind: 'generation:start', messageId: 2 })
 		await view.event({ kind: 'generation:end', messageId: 2, aborted: false })
-		assert.match(text(view, 'messages.turn-line-status') ?? '', /^Wren replied · \d+(\.\d)? s$/)
+		const reply = view.queryAll(part('messages.message'))[1]!
+		assert.match(
+			reply.querySelector(part('messages.message-options-run'))?.textContent?.trim() ?? '',
+			/^Replied · \d+(\.\d)? s$/,
+		)
+		assert.equal(view.query(part('messages.turn-line-status')), null)
 	} finally {
 		await view.unmount()
 	}
@@ -1663,8 +1863,8 @@ test('interleave: the table channel’s rows are drawn under the line each belon
 		for (const part of ['messages.message-avatar', 'messages.message-name'])
 			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`), null, part)
 		assert.equal(roll.closest('[data-widget-part~="messages.message-row"]')?.hasAttribute('hidden'), false)
-		// The channel is drawn inline, never a lane to write on: no channel strip.
-		assert.equal(view.queryAll('[data-widget-part~="messages.composer-channels"]').length, 0)
+		// The channel is drawn inline, never a lane to write on: no channel tabs.
+		assert.equal(view.queryAll('[data-widget-part~="messages.channel-tabs"]').length, 0)
 
 		// 🚧 As a fold (the default): one head line under its anchor, and opened, only the lines
 		// after the head, one a line — never the head again (PLAN-dc-after-walk2 Q3-2, N14).

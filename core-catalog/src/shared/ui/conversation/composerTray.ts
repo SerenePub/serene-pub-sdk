@@ -13,12 +13,14 @@
 import type { AttachmentKindV1, AttachmentReadersV1, TrayItemV1 } from './dossier.js'
 
 /** The attachment kinds, in the order the composer lists them. @experimental */
-export const ATTACHMENT_KINDS_V1: readonly AttachmentKindV1[] = ['image', 'text', 'pdf']
+export const ATTACHMENT_KINDS_V1: readonly AttachmentKindV1[] = ['image', 'text', 'pdf', 'audio', 'video']
 
 const KIND_PLURAL: Record<AttachmentKindV1, string> = {
 	image: 'images',
 	text: 'text files',
 	pdf: 'PDFs',
+	audio: 'audio files',
+	video: 'videos',
 }
 
 /** What each kind is called in the Attach menu and the What can be attached dialog. @experimental */
@@ -26,6 +28,8 @@ export const KIND_NAME: Record<AttachmentKindV1, string> = {
 	image: 'Images',
 	text: 'Text files',
 	pdf: 'PDFs',
+	audio: 'Audio',
+	video: 'Video',
 }
 
 /** One file of a kind, as a sentence opens (the server's own wording). */
@@ -33,6 +37,8 @@ const KIND_ONE: Record<AttachmentKindV1, string> = {
 	image: 'An image',
 	text: 'A text file',
 	pdf: 'A PDF',
+	audio: 'An audio file',
+	video: 'A video',
 }
 
 /** The formats each kind takes, as the menu says them. @experimental */
@@ -40,6 +46,8 @@ export const KIND_FORMATS: Record<AttachmentKindV1, string> = {
 	image: 'PNG, JPEG, WebP, GIF',
 	text: '.txt, .md',
 	pdf: '.pdf',
+	audio: 'MP3, WAV, OGG, FLAC, M4A',
+	video: 'MP4, WebM, MOV',
 }
 
 /** "images · text files" — a list of kinds as a person reads it. @experimental */
@@ -80,10 +88,15 @@ export function readerCallLines(readers: AttachmentReadersV1 | null | undefined)
 	return readers.calls.map((c) => {
 		const who = c.model ? `${c.label} (${c.model})` : c.label
 		const reads = ATTACHMENT_KINDS_V1.filter((k) => c.reads.includes(k)).map((k) => KIND_PLURAL[k])
-		const named = ATTACHMENT_KINDS_V1.filter((k) => c.placeholderFor.includes(k)).map((k) => KIND_PLURAL[k])
+		const heard = c.transcribes ?? []
+		const named = ATTACHMENT_KINDS_V1.filter((k) => c.placeholderFor.includes(k) && !heard.includes(k)).map(
+			(k) => KIND_PLURAL[k],
+		)
+		const words = ATTACHMENT_KINDS_V1.filter((k) => heard.includes(k)).map((k) => KIND_PLURAL[k])
 		return (
 			`${who}: ${reads.join(', ') || 'nothing'}` +
-			(named.length ? ` (${named.join(' and ')} appear to it as a name)` : '')
+			(named.length ? ` (${named.join(' and ')} appear to it as a name)` : '') +
+			(words.length ? ` (${words.join(' and ')} reach it as what they say)` : '')
 		)
 	})
 }
@@ -99,10 +112,10 @@ const formatCap = (bytes: number) => `${Math.round(bytes / MiB)} MB`
 
 /** The sentence an SVG's tile shows: SVG is refused by name. @experimental */
 export const SVG_REFUSAL =
-	"An SVG can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md) or a PDF."
+	"An SVG can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md), a PDF or an audio file."
 /** The sentence a tile shows for a file of no offered kind. @experimental */
 export const TYPE_REFUSAL =
-	"That file type can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md) or a PDF."
+	"That file type can't be attached. Attach an image (PNG, JPEG, WebP, GIF), a text file (.txt, .md), a PDF or an audio file (MP3, WAV, OGG, FLAC, M4A)."
 
 const startsWith = (head: Uint8Array, sig: number[], at = 0) => sig.every((b, i) => head[at + i] === b)
 
@@ -123,6 +136,20 @@ export function sniffAttachmentKind(
 	if (startsWith(head, [0x47, 0x49, 0x46, 0x38])) return 'image'
 	if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x45, 0x42, 0x50], 8)) return 'image'
 	if (startsWith(head, [0x25, 0x50, 0x44, 0x46])) return 'pdf'
+	// 🚧 Sounds and moving pictures (O4, 2026-10-21) — the containers the
+	// format table names. WAV is RIFF…WAVE; MP3 opens with an ID3 tag or a
+	// frame sync; Ogg, FLAC; an ISO media file names its brand at byte 4
+	// (`M4A ` is a sound, the rest pictures); WebM / Matroska is a sound
+	// only when its name or type says so.
+	if (startsWith(head, [0x52, 0x49, 0x46, 0x46]) && startsWith(head, [0x57, 0x41, 0x56, 0x45], 8)) return 'audio'
+	if (startsWith(head, [0x49, 0x44, 0x33])) return 'audio'
+	if (head[0] === 0xff && ((head[1] ?? 0) & 0xe0) === 0xe0) return 'audio'
+	if (startsWith(head, [0x4f, 0x67, 0x67, 0x53])) return /\.ogv$/i.test(filename) || type === 'video/ogg' ? 'video' : 'audio'
+	if (startsWith(head, [0x66, 0x4c, 0x61, 0x43])) return 'audio'
+	if (startsWith(head, [0x66, 0x74, 0x79, 0x70], 4))
+		return startsWith(head, [0x4d, 0x34, 0x41], 8) ? 'audio' : 'video'
+	if (startsWith(head, [0x1a, 0x45, 0xdf, 0xa3]))
+		return /\.weba$/i.test(filename) || type.startsWith('audio/') ? 'audio' : 'video'
 	if (/\.svgz?$/i.test(filename) || type === 'image/svg+xml') return 'svg'
 	const textual = /\.(txt|md|markdown)$/i.test(filename) || type === 'text/plain' || type === 'text/markdown'
 	if (!textual) return null

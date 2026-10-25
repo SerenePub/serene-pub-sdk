@@ -4,7 +4,20 @@
  * answered by pressing.
  */
 
-import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
+import {
+	compile,
+	jsonSchemaOf,
+	sheetSchemaKeys,
+	slot,
+	spec,
+	sessionEvents,
+	ITEM,
+	type AttributeSlotDecl,
+	type ChainBuilder,
+	type DataRef,
+	type JsonSchema,
+	type OutPortsOf,
+} from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { dungeonCrawlerGenre } from '../../registry/genres.js'
 import { DUNGEON_CRAWLER_PROMPT_KEYS } from '../../seed/prompts.js'
@@ -18,9 +31,25 @@ import { PLANNER } from './create.js'
 import { genesisChain } from './genesis.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, DUNGEON_CRAWLER_STORY_CHANNEL } from './names.js'
 import { DUNGEON_CRAWLER_STORY_WAITING_FOR_WORLD } from './create.js'
-import { applyWiring, at, jsonPart, modelCall, scriptStep, textPart, wiring, type Wiring } from './calls.js'
-import { hpSlot } from '../../registry/slots.js'
-import { DUNGEON_CRAWLER_SPELL_POINTS_SLOT } from './kits.js'
+import {
+	applyWiring,
+	chainIf,
+	chainOf,
+	jsonPart,
+	modelCall,
+	on,
+	readOn,
+	scriptStep,
+	textPart,
+	wiring,
+	type BranchOf,
+	type Chain,
+	type ChainNodes,
+	type Plus,
+	type ReadOn,
+	type Wiring,
+} from './calls.js'
+import { characterClassSlot, difficultySlot, goalModeSlot, hpSlot } from '../../registry/slots.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_INTERVIEW_SPEC_ID = 'core:spec/dungeon-crawler-interview'
@@ -49,6 +78,26 @@ export const DUNGEON_CRAWLER_CLASSES_SCHEMA = {
 } as const
 
 /**
+ * 🚧 The sheet's slots as a model writes them (`jsonSchemaOf`, Lair rewrite
+ * D1, 2026-10-21): the class, the world's difficulty and its goal mode, each
+ * as its slot declares it — read, never typed twice. @internal
+ */
+const SHEET_SLOTS = { slots: [characterClassSlot, difficultySlot, goalModeSlot].map((d) => ({ id: d.id })) }
+const SHEET_SLOT_SCHEMAS = (jsonSchemaOf(SHEET_SLOTS).properties ?? {}) as Readonly<Record<string, JsonSchema & { enum?: readonly string[] }>>
+const SHEET_SLOT_KEYS = new Map([...sheetSchemaKeys(SHEET_SLOTS)].map(([key, id]) => [id, key]))
+
+/** One slot's answer, as its declaration says. */
+const slotAnswer = (decl: AttributeSlotDecl): JsonSchema & { enum?: readonly string[] } =>
+	SHEET_SLOT_SCHEMAS[SHEET_SLOT_KEYS.get(decl.id) ?? ''] ?? { type: 'string' }
+
+/** A slot's answer that may also be left empty, "not asked": its options with `''` first. */
+const orEmpty = (answer: JsonSchema & { enum?: readonly string[] }): JsonSchema => ({
+	...answer,
+	type: 'string',
+	enum: ['', ...(answer.enum ?? [])],
+})
+
+/**
  * The character sheet the Planner writes (and, on Just play, everything a
  * person may pick). Every member required, empty when not asked — the
  * sheet script reads only what this answer may set. What a character
@@ -56,251 +105,269 @@ export const DUNGEON_CRAWLER_CLASSES_SCHEMA = {
  * of the rules, never a list of words (2026-10-16); nor are its ability
  * scores and full health, which the kit's class sets too (2026-10-17).
  * `name` is always the character's name — the one chosen, or the
- * Planner's own on Just play; an empty one is asked again.
+ * Planner's own on Just play; an empty one is asked again. 🚧 The class,
+ * the difficulty and the goal mode are their slots' own schemas
+ * (`slotAnswer`, 2026-10-21); the name, the backstory and the world's
+ * shape are the interview's.
  * @experimental
  */
 export const DUNGEON_CRAWLER_SHEET_SCHEMA = {
 	type: 'object',
 	properties: {
 		name: { type: 'string' },
-		class: { type: 'string' },
+		class: slotAnswer(characterClassSlot),
 		backstory: { type: 'string' },
 		// The schema says what each may be (AUDIT C7): the sheet script
 		// checks them no second time.
 		shape: { type: 'string', enum: ['', 'dungeon', 'open-world'] },
-		difficulty: { type: 'string', enum: ['', 'gentle', 'fair', 'brutal'] },
-		goalMode: { type: 'string', enum: ['', 'shared', 'secret'] },
+		difficulty: orEmpty(slotAnswer(difficultySlot)),
+		goalMode: orEmpty(slotAnswer(goalModeSlot)),
 	},
 	required: ['name', 'class', 'backstory', 'shape', 'difficulty', 'goalMode'],
 	additionalProperties: false,
 } as const
 
-const step = ($: any) => $.step.main
+type Ports<F extends (...args: never[]) => unknown> = OutPortsOf<ReturnType<F>>
+
+/** What the interview's judge hands its junctions (`DUNGEON_CRAWLER_INTERVIEW_SCRIPT`): each part `null` unless the answer needs it. */
+interface Planned {
+	readonly lane: unknown
+	readonly echo: unknown
+	readonly note: unknown
+	readonly refusal: unknown
+	readonly world: unknown
+	readonly worldChanges: unknown
+	readonly seatName: unknown
+	readonly seatChanges: unknown
+	readonly retireSeat: unknown
+	readonly next: unknown
+	readonly nextText: unknown
+	readonly nextBlocks: unknown
+	readonly classBrief: unknown
+	readonly sheetBrief: unknown
+}
+
+/** What the sheet script hands its junctions (`DUNGEON_CRAWLER_SHEET_SCRIPT`). */
+interface Sheeted {
+	readonly text: unknown
+	readonly blocks: unknown
+	readonly after: unknown
+	readonly seatName: unknown
+	readonly seatChanges: unknown
+	readonly healthConfig: unknown
+	readonly pointsConfig: unknown
+	/** 🚧 The pool the config bounds, the session's rules' (S4). */
+	readonly pointsSlot: unknown
+	readonly kit: unknown
+	readonly worldChanges: unknown
+	readonly next: unknown
+	readonly nextText: unknown
+	readonly nextBlocks: unknown
+	readonly world: unknown
+	readonly genesisBrief: unknown
+	readonly openStory: unknown
+	readonly waiting: unknown
+}
+
+/** A member of either answer document — what the shared writes below read by path. */
+type Part = keyof Planned | keyof Sheeted
 
 /**
- * Write state changes, at `prefix`: `<key>` (the part of `from` at `path`),
- * `<key>Resolved` and `<key>Applied`. With `owners`, a change naming no owner
- * is made on each — the player seat `set-seat-name@1` handed over.
+ * Write state changes on chain `c`: `changes` (the part of `from` at
+ * `path`), `changesResolved` and `changesApplied`. With `owners`, a change
+ * naming no owner is made on each — the player seat `set-seat-name@1`
+ * handed over. Mounted on several branches; `from`, `owners` and `row` read
+ * by full path.
  */
-const writeChanges = (
-	c: any,
+const writeChanges = <B extends Chain>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	key: string,
-	from: ($: any) => unknown,
-	path: string,
+	from: ReadOn<B>,
+	path: Part,
 	what: string,
-	owners?: ($: any) => unknown,
+	owners?: ReadOn<B>,
 	/** 🚧 A row this run wrote: the world's and a card-less seat's changes are filed there (P0-4). */
-	row?: ($: any) => unknown,
-) => {
-	w.params.push([`${prefix}${key}Applied`, { mode: 'apply' }])
-	return jsonPart(c, w, prefix, key, from, path, what)
+	row?: ReadOn<B>,
+): B => {
+	w.params.push([on(c, 'changesApplied'), { mode: 'apply' }])
+	jsonPart(chainOf(c), w, 'changes', ($) => from($ as never), path, what)
 		.query(
-			`${key}Resolved`,
-			($: any) =>
+			'changesResolved',
+			($) =>
 				C.resolveStateChanges.v1({
-					changes: at($, `${prefix}${key}`).main,
-					...(owners ? { owners: owners($) as any } : {}),
+					changes: $.changes.main,
+					...(owners ? { owners: owners($ as never) as any } : {}),
 					scope: $.input.sessionScope,
 					base: $.state.version,
 				}),
 			{ expose: { label: `${what}, checked` } },
 		)
 		.task(
-			`${key}Applied`,
-			($: any) =>
+			'changesApplied',
+			($) =>
 				C.setState.v1({
-					changes: at($, `${prefix}${key}Resolved`).changes,
+					changes: $.changesResolved.changes,
 					scope: $.input.sessionScope,
 					base: $.state.version,
-					...(row ? { worldRow: row($) as any } : {}),
+					...(row ? { worldRow: row($ as never) as any } : {}),
 					params: slot.params(),
 				}),
 			{ expose: { label: `${what}, written` } },
 		)
+	return c
 }
 
 /** A Planner line on the person's lane, its text the part of `from` at `path`; `what` heads both steps. */
-const say = (
-	c: any,
+const say = <B extends Chain>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	from: ($: any) => unknown,
-	path: string,
+	from: ReadOn<B>,
+	path: Part,
 	what: string,
-	blocks?: ($: any) => unknown,
-) =>
-	textPart(c, w, prefix, 'line', from, path, what).outlet(
+	blocks?: ReadOn<B>,
+): Plus<Plus<B, 'line', Ports<typeof C.joinText.v1>>, 'write', Ports<typeof C.createMessage.v1>> =>
+	textPart(chainOf(c), w, 'line', ($) => from($ as never), path, what).outlet(
 		'write',
-		($: any) =>
+		($) =>
 			C.createMessage.v1({
-				text: at($, `${prefix}line`).text,
+				text: $.line.text,
 				channel: $.lane.text,
 				speaker: PLANNER as any,
-				...(blocks ? { blocks: blocks($) as any } : {}),
+				...(blocks ? { blocks: blocks($ as never) as any } : {}),
 			}),
 		{ expose: { label: `Say: ${what.toLowerCase()}` } },
-	)
+	) as never
 
 /**
- * 🚧 An acknowledgement on the person's lane ("Name: Ann.", "Give me a
- * moment…") as a **table line** (2026-10-16): no model call wrote it, so it
- * is faceless and never rerun — a swipe on it asked the Planner to answer
- * its own line, and the call came back empty.
- */
-const note = (
-	c: any,
-	w: Wiring,
-	prefix: string,
-	from: ($: any) => unknown,
-	path: string,
-	what: string,
-	kind?: ($: any) => unknown,
-) =>
-	textPart(c, w, prefix, 'line', from, path, what).outlet(
-		'write',
-		($: any) =>
-			C.createMessage.v1({
-				text: at($, `${prefix}line`).text,
-				channel: $.lane.text,
-				// 🚧 An answer is said for the person who pressed it (`user:<id>`),
-				// and is of kind `answer`: the Planner's talk reads it as their
-				// line (P3-5). A note is the table's, under the Planner.
-				speaker: (kind ? $.answer.addressee : PLANNER) as any,
-				tableLine: true,
-				...(kind ? { kind: kind($) as any } : {}),
-			}),
-		{ expose: { label: `Note: ${what.toLowerCase()}` } },
-	)
-
-/**
- * Name the seat, then make `path`'s changes on it; `what` says which answer
+ * Name the seat, then make `changes`' changes on it; `what` says which answer
  * this is. With `health`, the part of `from` at that path — the seat's hp
  * `{ max }` — is its full health, configured FIRST (`set-stat-config@1`), so
- * the stats after it may fill it.
+ * the stats after it may fill it. Mounted on two branches; `from` and `row`
+ * read by full path, the seat named here by the reference read beside it.
  */
-const seatWrites = (
-	c: any,
+const seatWrites = <B extends Chain>(
+	c: B,
 	w: Wiring,
-	prefix: string,
-	from: ($: any) => unknown,
-	names: string,
-	changes: string,
+	from: ReadOn<B>,
+	names: Part,
+	changes: Part,
 	what: string,
-	health?: string,
+	health?: Part,
 	o: {
 		/** 🚧 The plan's `retireSeat`: a new character's NEW seat, the fallen's retired (P3-1). */
-		retire?: string
+		retire?: Part
 		/** 🚧 The row this run wrote in the person's lane: their stats are filed there (P0-4). */
-		row?: ($: any) => unknown
+		row?: ReadOn<B>
 		/** 🚧 The kit, its owner the seat named here (P3-7). */
-		kit?: string
+		kit?: Part
 		/** 🚧 At a spell-points table, the path of the pool's `{ max }` (Q1-6). */
-		points?: string
+		points?: Part
 	} = {},
-) => {
-	const withRetire = o.retire ? jsonPart(c, w, prefix, 'retire', from, o.retire, `The seat it replaces (${what})`) : c
-	const named = textPart(withRetire, w, prefix, 'name', from, names, `The seat's name (${what})`).outlet(
+): B => {
+	const read = ($: unknown) => from($ as never) as DataRef
+	const row = ($: unknown) => (o.row ? { worldRow: o.row($ as never) as any } : {})
+	const withRetire = chainIf(!!o.retire, chainOf(c), (r) => jsonPart(r, w, 'retire', read, o.retire!, `The seat it replaces (${what})`))
+	const named = textPart(withRetire, w, 'name', read, names, `The seat's name (${what})`).outlet(
 		'setSeat',
-		($: any) =>
+		($) =>
 			C.setSeatName.v1({
 				user: $.answer.addressee,
-				name: at($, `${prefix}name`).text,
-				...(o.retire ? { retire: at($, `${prefix}retire`).main } : {}),
+				name: $.name.text,
+				...(o.retire ? { retire: $.retire.main } : {}),
 			}),
 		{ expose: { label: `Name the seat (${what})` } },
 	)
-	const bounded = health
-		? named.junction('health', { on: from }, (j: any) =>
-				j.when('set', { path: health, truthy: true }, (k: any) =>
-					jsonPart(k, w, `${prefix}health.set.`, 'config', from, health, `The seat's full health (${what})`).outlet(
-						'write',
-						($: any) =>
-							C.setStatConfig.v1({
-								owner: at($, `${prefix}setSeat`).seat,
-								slot: hpSlot.id,
-								config: at($, `${prefix}health.set.config`).main,
-								// 🚧 Filed at the row the stats are (PLAN-dc-after-walk3
-								// R1-4, the walk's NEW-8): filed at the newest row instead,
-								// the full health came AFTER the health it bounds, and the
-								// creation read "Health 20 → 10", never "Health 10 (full)".
-								...(o.row ? { worldRow: o.row($) as any } : {}),
-							}),
-						{ expose: { label: `Set the seat's full health (${what})` } },
-					),
+	/** The seat named here, for the branches below. */
+	const seat = readOn(named, ($) => $.setSeat)
+	const bounded = chainIf(!!health, named, (n) =>
+		n.junction('health', { on: read }, (j) =>
+			j.when('set', { path: (v: Planned & Sheeted) => v[health!], truthy: true }, (k) =>
+				jsonPart(k, w, 'config', read, health!, `The seat's full health (${what})`).outlet(
+					'write',
+					($) =>
+						C.setStatConfig.v1({
+							owner: seat.seat,
+							slot: hpSlot.id,
+							config: $.config.main,
+							// 🚧 Filed at the row the stats are (PLAN-dc-after-walk3
+							// R1-4, the walk's NEW-8): filed at the newest row instead,
+							// the full health came AFTER the health it bounds, and the
+							// creation read "Health 20 → 10", never "Health 10 (full)".
+							...row($),
+						}),
+					{ expose: { label: `Set the seat's full health (${what})` } },
 				),
-			)
-		: named
-	// 🚧 The spell-point pool's most, the seat's own (Q1-6): configured before
-	// the stats, so the pool the stats fill fits under it.
-	const pooled = o.points
-		? bounded.junction('points', { on: from }, (j: any) =>
-				j.when('set', { path: o.points!, truthy: true }, (k: any) =>
-					jsonPart(k, w, `${prefix}points.set.`, 'config', from, o.points!, `The pool's most (${what})`).outlet(
-						'write',
-						($: any) =>
-							C.setStatConfig.v1({
-								owner: at($, `${prefix}setSeat`).seat,
-								slot: DUNGEON_CRAWLER_SPELL_POINTS_SLOT,
-								config: at($, `${prefix}points.set.config`).main,
-								...(o.row ? { worldRow: o.row($) as any } : {}),
-							}),
-						{ expose: { label: `Set the pool's most (${what})` } },
-					),
-				),
-			)
-		: bounded
-	const statted = pooled.junction('stats', { on: from }, (j: any) =>
-		j.when('changed', { path: changes, truthy: true }, (k: any) =>
-			writeChanges(
-				k,
-				w,
-				`${prefix}stats.changed.`,
-				'changes',
-				from,
-				changes,
-				`The seat's stats (${what})`,
-				($) => at($, `${prefix}setSeat`).seats,
-				o.row,
 			),
 		),
 	)
-	if (!o.kit) return statted
+	// 🚧 The spell-point pool's most, the seat's own (Q1-6): configured before
+	// the stats, so the pool the stats fill fits under it.
+	const pooled = chainIf(!!o.points, bounded, (b) =>
+		b.junction('points', { on: read }, (j) =>
+			j.when('set', { path: (v: Planned & Sheeted) => v[o.points!], truthy: true }, (k) =>
+				textPart(
+					jsonPart(k, w, 'config', read, o.points!, `The pool's most (${what})`),
+					w,
+					'pool',
+					read,
+					'pointsSlot',
+					// 🚧 The session's rules' pool (S4), never a slot the build names.
+					`The pool (${what})`,
+				).outlet(
+					'write',
+					($) =>
+						C.setStatConfig.v1({
+							owner: seat.seat,
+							slot: $.pool.text,
+							config: $.config.main,
+							...row($),
+						}),
+					{ expose: { label: `Set the pool's most (${what})` } },
+				),
+			),
+		),
+	)
+	const statted = pooled.junction('stats', { on: read }, (j) =>
+		j.when('changed', { path: (v: Planned & Sheeted) => v[changes], truthy: true }, (k) =>
+			writeChanges(k, w, read, changes, `The seat's stats (${what})`, () => seat.seats, o.row as ReadOn<typeof k> | undefined),
+		),
+	)
 	/**
 	 * 🚧 The class's starting kit (rulesets W3-B): pieces of the rules, applied
 	 * by the ruleset handler to the seat named above — its owner filled in
 	 * here, so a seat a Just play opened in this same run gets its kit (P3-7,
 	 * the walk's B20: it got none).
 	 */
-	const K0 = `${prefix}kit.given.`
-	return statted.junction('kit', { on: from }, (j: any) =>
-		j.when('given', { path: o.kit!, truthy: true }, (k: any) => {
-			const owned = scriptStep(jsonPart(k, w, K0, 'kit', from, o.kit!, 'The kit, as the sheet drew it'), w, K0, 'owned', DUNGEON_CRAWLER_SHEET_SCRIPT.seedKey, ($) => ({
-				session: $.input.session,
-				kit: at($, `${K0}kit`).main,
-				seat: at($, `${prefix}setSeat`).seat,
-			}), 'The kit, on the seat')
-			return jsonPart(
-				jsonPart(owned, w, K0, 'owners', ($: any) => at($, `${K0}owned`).main, 'owners', 'Whose kit'),
-				w,
-				K0,
-				'deltas',
-				($: any) => at($, `${K0}owned`).main,
-				'deltas',
-				'The kit',
-			).task(
-				'apply',
-				($: any) =>
-					C.rulesetResolve.v1({
-						owners: at($, `${K0}owners`).main,
-						deltas: at($, `${K0}deltas`).main,
-						mode: 'apply',
-					}),
-				{ expose: { label: 'Hand out the kit' } },
-			)
-		}),
+	chainIf(!!o.kit, statted, (s) =>
+		s.junction('kit', { on: read }, (j) =>
+			j.when('given', { path: (v: Planned & Sheeted) => v[o.kit!], truthy: true }, (k) => {
+				const owned = scriptStep(jsonPart(k, w, 'kit', read, o.kit!, 'The kit, as the sheet drew it'), w, 'owned', DUNGEON_CRAWLER_SHEET_SCRIPT.seedKey, ($) => ({
+					session: $.input.session,
+					kit: $.kit.main,
+					seat: seat.seat,
+				}), 'The kit, on the seat')
+				return jsonPart(
+					jsonPart(owned, w, 'owners', ($) => $.owned.main, 'owners', 'Whose kit'),
+					w,
+					'deltas',
+					($) => $.owned.main,
+					'deltas',
+					'The kit',
+				).task(
+					'apply',
+					($) =>
+						C.rulesetResolve.v1({
+							params: slot.params(),
+							owners: $.owners.main,
+							deltas: $.deltas.main,
+							mode: 'apply',
+						}),
+					{ expose: { label: 'Hand out the kit' } },
+				)
+			}),
+		),
 	)
+	return c
 }
 
 /**
@@ -337,9 +404,86 @@ const seatWrites = (
  */
 export const dungeonCrawlerInterviewSpec = () => {
 	const w = wiring()
-	const cast = ($: any) => $.cast.cast
-	const history = ($: any) => $.story.messages
-	let graph: any = spec(DUNGEON_CRAWLER_INTERVIEW_SPEC_ID, {
+	const built = interviewSaid(w).junction('route', { on: ($) => $.step.main }, (j) =>
+		j
+			.when('refused', { path: (v: Planned) => v.refusal, truthy: true }, (c) =>
+				say(c, w, ($) => $.step.main, 'refusal', 'The refusal'),
+			)
+			.when('world', { path: (v: Planned) => v.world, truthy: true }, (c) =>
+				jsonPart(c, w, 'value', ($) => $.step.main, 'world', 'The world, as answered').outlet(
+					'write',
+					($) => C.setSessionAnnex.v1({ value: { [K.progress]: $.value.main } as any, params: slot.params() }),
+					{ expose: { label: 'Keep the answer' } },
+				),
+			)
+			.when('rules', { path: (v: Planned) => v.worldChanges, truthy: true }, (c) =>
+				writeChanges(c, w, ($) => $.step.main, 'worldChanges', "The world's rules", undefined, ($) => $.said.echo.write.messageId),
+			)
+			.when('seat', { path: (v: Planned) => v.seatName, truthy: true }, (c) =>
+				seatWrites(c, w, ($) => $.step.main, 'seatName', 'seatChanges', 'name or class', undefined, {
+					retire: 'retireSeat',
+					row: ($) => $.said.echo.write.messageId,
+				}),
+			)
+			.when('ask', { path: (v: Planned) => v.next, truthy: true }, (c) =>
+				jsonPart(c, w, 'blocks', ($) => $.step.main, 'nextBlocks', "The next question's form").junction(
+					'put',
+					{ on: ($) => $.step.main },
+					(k) =>
+						k.when('question', { path: (v: Planned) => v.nextText, truthy: true }, (q) =>
+							say(q, w, ($) => $.step.main, 'nextText', 'The next question', ($) => $.route.ask.blocks.main),
+						),
+				),
+			)
+			.when('classes', { path: (v: Planned) => v.classBrief, truthy: true }, (c) =>
+				modelCall(textPart(c, w, 'brief', ($) => $.step.main, 'classBrief', 'What the classes are for'), w, 'class', {
+					speaker: PLANNER,
+					prompt: DUNGEON_CRAWLER_PROMPT_KEYS.classes,
+					brief: ($) => $.brief.text,
+					cast: ($) => $.cast.cast,
+					history: ($) => $.story.messages,
+					schema: DUNGEON_CRAWLER_CLASSES_SCHEMA,
+					briefTurn: true,
+					expose: {
+						status: 'The Planner thinks of classes',
+						label: 'Offer classes',
+						purpose: 'The Planner offers classes that fit the world you chose.',
+					},
+				})
+					.task('choices', ($) =>
+						C.makeChoices.v1({
+							json: $.classWrite.json,
+							fn: 'answer',
+							action: DUNGEON_CRAWLER_INTERVIEW_ACTION,
+							addressee: $.answer.addressee,
+							cast: $.cast.cast,
+							referent: DUNGEON_CRAWLER_QUESTIONS.characterClass,
+						}),
+					)
+					.outlet(
+						'write',
+						($) =>
+							C.createMessage.v1({
+								text: $.choices.text,
+								channel: $.lane.text,
+								speaker: PLANNER as any,
+								blocks: $.choices.blocks,
+							}),
+						{ expose: { label: 'Offer the classes' } },
+					),
+			)
+			.when('sheet', { path: (v: Planned) => v.sheetBrief, truthy: true }, (c) => sheetPath(c, w)),
+	)
+	return compile(
+		built
+			.defaults((p) => applyWiring(p, w))
+			.build(),
+	)
+}
+
+/** The interview's spine: the press, who is here, the state, the story, the judge and the person's lane. */
+const interviewHead = (w: Wiring) => {
+	const read = spec(DUNGEON_CRAWLER_INTERVIEW_SPEC_ID, {
 		version: DUNGEON_CRAWLER_INTERVIEW_VERSION,
 		taxonomy: { role: 'action' },
 		contributes: {
@@ -355,130 +499,79 @@ export const dungeonCrawlerInterviewSpec = () => {
 			],
 		},
 	})
-		.inlet('input', C.userMessage.v1(), {
-			genre: dungeonCrawlerGenre,
-			event: sessionEvents.sessionAction,
-		})
+		.inlet('input', C.userMessage.v1(), { suits: [] })
 		.task('answer', ($) => C.readAnswer.v1({ payload: $.input.payload, form: $.input.form }))
 		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
 		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
 		/** The story's newest rows — the conversation the Planner's calls read (empty before genesis). */
 		.query('story', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }))
 	w.params.push(['story', { channel: 'main', limit: 8, tableLines: false }]) // 🚧 no roll lines: the table's, never the story's speech
-	graph = scriptStep(graph, w, '', 'step', DUNGEON_CRAWLER_INTERVIEW_SCRIPT.seedKey, ($) => ({
-		session: $.input.session,
-		referent: $.answer.referent,
-		choice: $.answer.choice,
-		label: $.answer.label,
-		values: $.answer.values,
-		addressee: $.answer.addressee,
-		state: $.state.state,
-	}), 'Judge the answer')
-	graph = textPart(graph, w, '', 'lane', step, 'lane', "The person's lane")
-	/**
-	 * 🚧 The answer, said first on the person's own lane — their words
-	 * (`echo`, P3-5) and the table's acknowledgement (`note`) — so the
-	 * changes the answer makes below are filed there, in their lane, and
-	 * never under another person's row (the 100-turn walk, P0-4).
-	 */
-	const said = graph.junction('said', { on: step }, (j: any) =>
-		j
-			.when('echo', { path: 'echo', truthy: true }, (c: any) =>
-				note(c, w, 'said.echo.', step, 'echo', "The player's answer", () => 'answer'),
-			)
-			.when('noted', { path: 'note', truthy: true }, (c: any) =>
-				note(c, w, 'said.noted.', step, 'note', 'The answer, acknowledged'),
-			),
-	)
-	/** The row the answer was said on: the answer's changes are filed there. */
-	const saidRow = ($: any) => $.said.echo.write.messageId
-	const built = said.junction('route', { on: step }, (j: any) =>
-		j
-			.when('refused', { path: 'refusal', truthy: true }, (c: any) =>
-				say(c, w, 'route.refused.', step, 'refusal', 'The refusal'),
-			)
-			.when('world', { path: 'world', truthy: true }, (c: any) =>
-				jsonPart(c, w, 'route.world.', 'value', step, 'world', 'The world, as answered').outlet(
-					'write',
-					($: any) => C.setSessionAnnex.v1({ value: { [K.progress]: $.route.world.value.main } as any, params: slot.params() }),
-					{ expose: { label: 'Keep the answer' } },
-				),
-			)
-			.when('rules', { path: 'worldChanges', truthy: true }, (c: any) =>
-				writeChanges(c, w, 'route.rules.', 'changes', step, 'worldChanges', "The world's rules", undefined, saidRow),
-			)
-			.when('seat', { path: 'seatName', truthy: true }, (c: any) =>
-				seatWrites(c, w, 'route.seat.', step, 'seatName', 'seatChanges', 'name or class', undefined, {
-					retire: 'retireSeat',
-					row: saidRow,
-				}),
-			)
-			.when('ask', { path: 'next', truthy: true }, (c: any) =>
-				jsonPart(c, w, 'route.ask.', 'blocks', step, 'nextBlocks', "The next question's form").junction(
-					'put',
-					{ on: step },
-					(k: any) =>
-						k.when('question', { path: 'nextText', truthy: true }, (q: any) =>
-							say(q, w, 'route.ask.put.question.', step, 'nextText', 'The next question', ($) => $.route.ask.blocks.main),
-						),
-				),
-			)
-			.when('classes', { path: 'classBrief', truthy: true }, (c: any) =>
-				modelCall(textPart(c, w, 'route.classes.', 'brief', step, 'classBrief', 'What the classes are for'), w, 'route.classes.', 'class', {
-					speaker: PLANNER,
-					prompt: DUNGEON_CRAWLER_PROMPT_KEYS.classes,
-					brief: ($) => $.route.classes.brief.text,
-					cast,
-					history,
-					schema: DUNGEON_CRAWLER_CLASSES_SCHEMA,
-					briefTurn: true,
-					expose: {
-						status: 'The Planner thinks of classes',
-						label: 'Offer classes',
-						purpose: 'The Planner offers classes that fit the world you chose.',
-					},
-				})
-					.task('choices', ($: any) =>
-						C.makeChoices.v1({
-							json: $.route.classes.classWrite.json,
-							fn: 'answer',
-							action: DUNGEON_CRAWLER_INTERVIEW_ACTION,
-							addressee: $.answer.addressee,
-							cast: $.cast.cast,
-							referent: DUNGEON_CRAWLER_QUESTIONS.characterClass,
-						}),
-					)
-					.outlet(
-						'write',
-						($: any) =>
-							C.createMessage.v1({
-								text: $.route.classes.choices.text,
-								channel: $.lane.text,
-								speaker: PLANNER as any,
-								blocks: $.route.classes.choices.blocks,
-							}),
-						{ expose: { label: 'Offer the classes' } },
-					),
-			)
-			.when('sheet', { path: 'sheetBrief', truthy: true }, (c: any) => sheetPath(c, w, cast, history)),
-	)
-	return compile(
-		built
-			.preset('dungeon-crawler', { label: 'Dungeon Crawler', default: true }, (p: any) => applyWiring(p, w))
-			.build(),
+	return textPart(
+		scriptStep(read, w, 'step', DUNGEON_CRAWLER_INTERVIEW_SCRIPT.seedKey, ($) => ({
+			session: $.input.session,
+			referent: $.answer.referent,
+			choice: $.answer.choice,
+			label: $.answer.label,
+			values: $.answer.values,
+			addressee: $.answer.addressee,
+			state: $.state.state,
+			// 🚧 The session's ruleset (S4): the classes its kits name.
+			ruleset: $.input.ruleset,
+		}), 'Judge the answer'),
+		w,
+		'lane',
+		($) => $.step.main,
+		'lane',
+		"The person's lane",
 	)
 }
 
-/** The `sheet` branch: the Planner's sheet, applied, then genesis when it is due. */
-const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: any) => unknown) => {
-	const P = 'route.sheet.'
-	const applied = ($: any) => $.route.sheet.apply.main
-	const wrote = modelCall(textPart(c, w, P, 'brief', step, 'sheetBrief', 'What the sheet is for'), w, P, 'sheet', {
+/**
+ * 🚧 The answer, said first on the person's own lane — their words
+ * (`echo`, P3-5) and the table's acknowledgement (`note`) — so the
+ * changes the answer makes below are filed there, in their lane, and
+ * never under another person's row (the 100-turn walk, P0-4).
+ */
+const interviewSaid = (w: Wiring) =>
+	interviewHead(w).junction('said', { on: ($) => $.step.main }, (j) => {
+		/**
+		 * 🚧 An acknowledgement on the person's lane ("Name: Ann.", "Give me a
+		 * moment…") as a **table line** (2026-10-16): no model call wrote it, so it
+		 * is faceless and never rerun — a swipe on it asked the Planner to answer
+		 * its own line, and the call came back empty.
+		 */
+		const note = (c: BranchOf<typeof j, 'echo' | 'noted'>, path: Part, what: string, kind?: string) =>
+			textPart(c, w, 'line', ($) => $.step.main, path, what).outlet(
+				'write',
+				($) =>
+					C.createMessage.v1({
+						text: $.line.text,
+						channel: $.lane.text,
+						// 🚧 An answer is said for the person who pressed it (`user:<id>`),
+						// and is of kind `answer`: the Planner's talk reads it as their
+						// line (P3-5). A note is the table's, under the Planner.
+						speaker: (kind ? $.answer.addressee : PLANNER) as any,
+						tableLine: true,
+						...(kind ? { kind: kind as any } : {}),
+					}),
+				{ expose: { label: `Note: ${what.toLowerCase()}` } },
+			)
+		return j
+			.when('echo', { path: (v: Planned) => v.echo, truthy: true }, (c) => note(c, 'echo', "The player's answer", 'answer'))
+			.when('noted', { path: (v: Planned) => v.note, truthy: true }, (c) => note(c, 'note', 'The answer, acknowledged'))
+	})
+
+/** The route's sheet branch — `route.sheet`, after the answer is said. @internal */
+type SheetOn = ChainBuilder<ChainNodes<ReturnType<typeof interviewSaid>>, 'route.sheet'>
+
+/** The `sheet` branch, to the point it branches on what happens next: the Planner's sheet, applied and told. */
+const sheetTold = (c: SheetOn, w: Wiring) => {
+	const wrote = modelCall(textPart(c, w, 'brief', ($) => $.step.main, 'sheetBrief', 'What the sheet is for'), w, 'sheet', {
 		speaker: PLANNER,
 		prompt: DUNGEON_CRAWLER_PROMPT_KEYS.sheet,
-		brief: ($) => $.route.sheet.brief.text,
-		cast,
-		history,
+		brief: ($) => $.brief.text,
+		cast: ($) => $.cast.cast,
+		history: ($) => $.story.messages,
 		schema: DUNGEON_CRAWLER_SHEET_SCHEMA,
 		briefTurn: true,
 		expose: {
@@ -487,10 +580,10 @@ const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: an
 			purpose: "The Planner writes your character's backstory, and the table hands them their class's scores, health and kit — and on Just play, everything else too.",
 		},
 	})
-	const applying = scriptStep(wrote, w, P, 'apply', DUNGEON_CRAWLER_SHEET_SCRIPT.seedKey, ($) => ({
+	const applying = scriptStep(wrote, w, 'apply', DUNGEON_CRAWLER_SHEET_SCRIPT.seedKey, ($) => ({
 		session: $.input.session,
 		plan: $.step.main,
-		json: $.route.sheet.sheetWrite.json,
+		json: $.sheetWrite.json,
 		state: $.state.state,
 		// 🚧 How the session's ruleset casts and keeps things (P2-4, P2-6).
 		ruleset: $.input.ruleset,
@@ -504,32 +597,31 @@ const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: an
 	 * next ("Give me a moment to build the world.") is its own line AFTER
 	 * it — read with the summary's row, so it is written once that row is.
 	 */
-	const told = applying.junction('told', { on: applied }, (j: any) =>
-		j.when('said', { path: 'text', truthy: true }, (k: any) => {
-			w.params.push([`${P}told.said.next`, { path: 'after', separator: '' }])
+	return applying.junction('told', { on: ($) => $.apply.main }, (j) =>
+		j.when('said', { path: (v: Sheeted) => v.text, truthy: true }, (k) => {
+			w.params.push([on(k, 'next'), { path: 'after', separator: '' }])
 			return say(
-				jsonPart(k, w, `${P}told.said.`, 'blocks', applied, 'blocks', 'The standing order, asked'),
+				jsonPart(k, w, 'blocks', ($) => $.route.sheet.apply.main, 'blocks', 'The standing order, asked'),
 				w,
-				`${P}told.said.`,
-				applied,
+				($) => $.route.sheet.apply.main,
 				'text',
 				'The sheet, told',
 				($) => $.route.sheet.told.said.blocks.main,
 			)
 				.task(
 					'next',
-					($: any) =>
+					($) =>
 						C.joinText.v1({
-							items: [applied($), { row: $.route.sheet.told.said.write.messageId }] as any,
+							items: [$.route.sheet.apply.main, { row: $.write.messageId }] as any,
 							params: slot.params(),
 						}),
 					{ expose: { label: 'What happens next' } },
 				)
 				.outlet(
 					'nextWrite',
-					($: any) =>
+					($) =>
 						C.createMessage.v1({
-							text: $.route.sheet.told.said.next.text,
+							text: $.next.text,
 							channel: $.lane.text,
 							speaker: PLANNER as any,
 							// What happens next is the table's, not the Planner's reply.
@@ -539,53 +631,56 @@ const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: an
 				)
 		}),
 	)
-	/** The summary's row: the sheet's changes are filed there (P0-4). */
-	const summaryRow = ($: any) => $.route.sheet.told.said.write.messageId
-	return told.junction('after', { on: applied }, (j: any) =>
+}
+
+/** Where genesis is mounted — `route.sheet.after.begin` (`genesis.ts`). @internal */
+export type BeginOn = ChainBuilder<ChainNodes<ReturnType<typeof sheetTold>>, 'route.sheet.after.begin'>
+
+/** The `sheet` branch: the Planner's sheet, applied, then genesis when it is due. */
+const sheetPath = (c: SheetOn, w: Wiring) =>
+	sheetTold(c, w).junction('after', { on: ($) => $.route.sheet.apply.main }, (j) =>
 		j
-			.when('seat', { path: 'seatName', truthy: true }, (k: any) =>
-				seatWrites(k, w, `${P}after.seat.`, applied, 'seatName', 'seatChanges', 'the sheet', 'healthConfig', {
-					row: summaryRow,
+			.when('seat', { path: (v: Sheeted) => v.seatName, truthy: true }, (k) =>
+				seatWrites(k, w, ($) => $.route.sheet.apply.main, 'seatName', 'seatChanges', 'the sheet', 'healthConfig', {
+					/** The summary's row: the sheet's changes are filed there (P0-4). */
+					row: ($) => $.route.sheet.told.said.write.messageId,
 					kit: 'kit',
 					points: 'pointsConfig',
 				}),
 			)
-			.when('rules', { path: 'worldChanges', truthy: true }, (k: any) =>
-				writeChanges(k, w, `${P}after.rules.`, 'changes', applied, 'worldChanges', "The world's rules, chosen for you", undefined, summaryRow),
+			.when('rules', { path: (v: Sheeted) => v.worldChanges, truthy: true }, (k) =>
+				writeChanges(
+					k,
+					w,
+					($) => $.route.sheet.apply.main,
+					'worldChanges',
+					"The world's rules, chosen for you",
+					undefined,
+					($) => $.route.sheet.told.said.write.messageId,
+				),
 			)
 			/**
 			 * 🚧 No name came back (walk 2026-10-17): nothing was filed, and the
 			 * name is asked again — never a seat called "the Stranger".
 			 */
-			.when('ask', { path: 'next', truthy: true }, (k: any) =>
+			.when('ask', { path: (v: Sheeted) => v.next, truthy: true }, (k) =>
 				say(
-					jsonPart(k, w, `${P}after.ask.`, 'blocks', applied, 'nextBlocks', "The name question's form"),
+					jsonPart(k, w, 'blocks', ($) => $.route.sheet.apply.main, 'nextBlocks', "The name question's form"),
 					w,
-					`${P}after.ask.`,
-					applied,
+					($) => $.route.sheet.apply.main,
 					'nextText',
 					'The name, asked again',
 					($) => $.route.sheet.after.ask.blocks.main,
 				),
 			)
-			.when('world', { path: 'world', truthy: true }, (k: any) =>
-				jsonPart(k, w, `${P}after.world.`, 'value', applied, 'world', 'The world, with the hero').outlet(
+			.when('world', { path: (v: Sheeted) => v.world, truthy: true }, (k) =>
+				jsonPart(k, w, 'value', ($) => $.route.sheet.apply.main, 'world', 'The world, with the hero').outlet(
 					'write',
-					($: any) =>
-						C.setSessionAnnex.v1({ value: { [K.progress]: $.route.sheet.after.world.value.main } as any, params: slot.params() }),
+					($) => C.setSessionAnnex.v1({ value: { [K.progress]: $.value.main } as any, params: slot.params() }),
 					{ expose: { label: 'Keep the hero' } },
 				),
 			)
-			.when('begin', { path: 'genesisBrief', truthy: true }, (k: any) =>
-				genesisChain(textPart(k, w, `${P}after.begin.`, 'brief', applied, 'genesisBrief', 'What the world is for'), w, `${P}after.begin.`, {
-					brief: ($) => $.route.sheet.after.begin.brief.text,
-					sheet: applied,
-					session: ($) => $.input.session,
-					state: ($) => $.state.state,
-					cast,
-					history,
-				}),
-			)
+			.when('begin', { path: (v: Sheeted) => v.genesisBrief, truthy: true }, (k) => genesisChain(k, w))
 			/**
 			 * 🚧 Their Story composer, closed while their Planner lane waited for
 			 * their character (`create.ts`), opens once there is a story to
@@ -594,28 +689,28 @@ const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: an
 			 * stands; everyone with a finished sheet when this sheet built it,
 			 * AFTER genesis above.
 			 */
-			.when('story', { path: 'openStory', truthy: true }, (k: any) =>
-				jsonPart(k, w, `${P}after.story.`, 'people', applied, 'openStory', 'Whose Story opens').each(
+			.when('story', { path: (v: Sheeted) => v.openStory, truthy: true }, (k) =>
+				jsonPart(k, w, 'people', ($) => $.route.sheet.apply.main, 'openStory', 'Whose Story opens').each(
 					'person',
-					{ over: ($: any) => $.route.sheet.after.story.people.main, max: 16 },
-					(m: any) =>
+					{ over: ($) => $.people.main, max: 16 },
+					(m) =>
 						m.outlet(
 							'open',
-							($: any) =>
+							($) =>
 								C.setComposerState.v1({
 									channel: DUNGEON_CRAWLER_STORY_CHANNEL,
 									open: true as any,
-									person: at($, `${P}after.story.person.item`),
+									person: $[ITEM],
 								}),
 							{ expose: { label: 'Open their Story' } },
 						),
 				),
 			)
 			/** Made, but no world yet: their Story stays shut, and says why now. */
-			.when('waiting', { path: 'waiting', truthy: true }, (k: any) =>
+			.when('waiting', { path: (v: Sheeted) => v.waiting, truthy: true }, (k) =>
 				k.outlet(
 					'shut',
-					($: any) =>
+					($) =>
 						C.setComposerState.v1({
 							channel: DUNGEON_CRAWLER_STORY_CHANNEL,
 							open: false as any,
@@ -626,4 +721,3 @@ const sheetPath = (c: any, w: Wiring, cast: ($: any) => unknown, history: ($: an
 				),
 			),
 	)
-}

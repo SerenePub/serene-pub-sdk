@@ -18,7 +18,12 @@ import {
 	TOOL_LOOP_SPEC_ID,
 	toolLoopSpec,
 } from '@serene-pub/core-catalog'
-import { sessionEvents } from '@serene-pub/sdk'
+import {
+	effectiveRegistrations,
+	presetChangesOf,
+	sessionEvents,
+	type RegistrationDecl,
+} from '@serene-pub/sdk'
 
 describe('the core catalog', () => {
 	test('the announcement builds — genres, pipelines, hooks validated as one package', () => {
@@ -49,10 +54,14 @@ describe('the core catalog', () => {
 
 	test('exactly one create pipeline serves each genre, and one respond serves its turn', () => {
 		const { document } = coreAnnouncement()
+		// 🚧 By registration (PLAN-layering D4, 2026-10-20): a pipeline names
+		// no genre — the genre's defaults say which pipeline answers what.
+		const registered = (genre: string) =>
+			((document.genres.find((g) => g.id === genre)?.defaults?.registrations ?? []) as unknown as RegistrationDecl[])
 		const serving = (genre: string, event: string) =>
-			document.pipelines
-				.filter((p) => p.input?.genre === genre && p.input?.event === event)
-				.map((p) => p.id)
+			registered(genre)
+				.filter((r) => r.trigger.family === 'event' && r.trigger.event === event)
+				.map((r) => r.pipeline)
 
 		// The genre owns its id; the create pipeline is its required MEMBER, so
 		// "exactly one" is the claim that matters — two would make creation
@@ -64,12 +73,16 @@ describe('the core catalog', () => {
 		// 🚧 Chat, the assistant (2026-10-19): fresh spec ids, never the roleplay's (§2-7 a).
 		assert.deepEqual(serving(chatGenre.id, sessionEvents.sessionCreated), ['core:spec/assistant-create'])
 		assert.deepEqual(serving(chatGenre.id, sessionEvents.messageRespond), ['core:spec/assistant-respond'])
-		// The open slot takes any number. Story's nine (2026-10-19): the
-		// roleplay Chat's narrate, side character, image, Scene and Time
-		// passes, and Adventure's look, rest, ask and answer.
-		assert.equal(serving(storyGenre.id, sessionEvents.sessionAction).length, 9)
+		// Actions take any number. Story's nine (2026-10-19): the roleplay
+		// Chat's narrate, side character, image, Scene and Time passes, and
+		// Adventure's look, rest, ask and answer — each an action registration.
+		// 🚧 R50 (2026-10-21): plus the four summaries, each on its own
+		// unlisted `summarize-*` action — 13 action registrations, 9 a person presses.
+		const storyActions = registered(storyGenre.id).filter((r) => r.trigger.family === 'action')
+		assert.equal(storyActions.length, 13)
+		assert.equal(storyActions.filter((r) => !/#summarize-(world|character|scene|history)$/.test((r.trigger as { action: string }).action)).length, 9)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
-		// optional `form-addressed` event, bound by each shipped preset.
+		// optional `form-addressed` event, in every preset's effective set.
 		for (const [g, spec0] of [
 			[storyGenre, 'core:spec/story-answer-form'],
 			[chatGenre, 'core:spec/assistant-answer-form'],
@@ -78,7 +91,12 @@ describe('the core catalog', () => {
 			assert.equal(rest.length, 0)
 			assert.equal(spec, spec0, g.id)
 			for (const preset of document.presets.filter((p) => p.genre === g.id))
-				assert.equal(preset?.bindings[sessionEvents.formAddressed]?.spec, spec, preset.slug)
+				assert.ok(
+					effectiveRegistrations(registered(g.id), presetChangesOf(preset, registered(g.id))).some(
+						(r) => r.trigger.family === 'event' && r.trigger.event === sessionEvents.formAddressed && r.pipeline === spec,
+					),
+					preset.slug,
+				)
 		}
 	})
 
@@ -93,16 +111,19 @@ describe('the core catalog', () => {
 	 */
 	test('seven reply specs write the sprite step in, after save, with the text passed in', () => {
 		const specs = [...CORE_SPECS, { slug: TOOL_LOOP_SPEC_ID, build: toolLoopSpec }]
-		const LAIR_TURN = 'via.turn.channel.story.door.play.speech.each.character.turn.'
+		// 🚧 The Lair's character turn (rewrite, 2026-10-21): a run whose subject is a delver.
+		const LAIR_TURN = 'via.turn.channel.story.pick.picked.'
 		// Where each spec places it: on the spine, or in the Lair's character
 		// turn — the one branch where a single delver speaks.
 		const placed: Record<string, string> = {
+			// 🚧 RF fix 3 (2026-10-23): on the spine again, once, after the `reply`
+			// junction — never a copy in each of its branches (D7 had one per branch).
 			'core:spec/story-respond': '',
 			'core:spec/tool-loop': '',
 			'core:spec/story-side-character': '',
 			'core:spec/guide-respond': '',
 			'core:spec/story-narrate': '',
-			'core:spec/lair-respond': LAIR_TURN,
+			'core:spec/lair-reply': LAIR_TURN,
 		}
 		const carrying = specs.filter((s) =>
 			(s.build().nodes as any[]).some((n) => n.definitionId === 'core:oracle/pick-sprite'),
@@ -902,6 +923,115 @@ describe("core's announcement (golden)", () => {
 		// the `story-scene-reading` script; Minimal keeps *Read the
 		// lorebook*; *Route whispers* and *Let the storyteller lead* retired.
 		// Measured with the SDK built from this tree. (was '6e205f970be70807')
-		assert.equal(digest.slice(0, 16), '6ce14eecafa63328')
+		// Moved 2026-10-20 (PLAN-layering lane 3): core's catalogue on
+		// registrations — every genre states its defaults (registrations:
+		// create, save, reply, answer form, turn order per event, every action
+		// it offers, Story's and Chat's routines) and every preset is changes
+		// on them (no bindings, no include lists; `default: true` on each
+		// genre's default); every inlet `{ suits }`, no lock; `.defaults()`
+		// for every author default preset and the non-default ones gone;
+		// Story's reckoning, sweep and new-scene picture and Chat's memory as
+		// routine pipelines out of the replies; the replies' `reading` duty
+		// and Chat's optional lore lane; the turn order's voices read Story's
+		// two new fields; Rest's commit on *Apply a press's changes*; the
+		// task machinery retired (genres' `tasks`, the `tasks` field); the
+		// shared vocabulary and both core rulesets playing it, with its five
+		// new slots. Measured with the SDK built from this tree. (was '6ce14eecafa63328')
+		// Moved again 2026-10-21 (lane 8, omni O5/O7/O9/O12): the reply specs'
+		// `heard` transcribe step, `generate`'s speech sampling, `save`'s
+		// parts; every `generate-text` node naming its speech sampling; the
+		// Transcription and Spoken reply loadouts. (was 'a6a23b7d931d5b70')
+		// Moved again 2026-10-21 (layering repair 1): the five reply specs'
+		// `heard` step declares no status — a declared one shows on every
+		// run; the step says *listening* only when it hears.
+		// (was 'db56193c51fdb753')
+		// Moved again 2026-10-21 (lane F1, R50–R59): every summarize pipeline
+		// declares its unlisted `summarize-*` action and every core genre
+		// registers its summaries; Story lost `applyActionChanges` (Rest's
+		// commit reads the reckoning's mode, `routineModes`); Story's reply
+		// offers its prompt choice to the owner (`expose.promptReach`); the
+		// turn-ended / round-ended descriptions say lanes, turns by speaker
+		// and active speakers. (was '043ba095927b65a8')
+		// Moved again 2026-10-21 (Lair rewrite, lane L3): the Lair's genre (the
+		// shared vocabulary, the Oracle, the Sanctum's owner audience, its six
+		// fields, two layouts), its eighteen specs (`lair-reply` for
+		// `lair-respond`, the welcome, three routines, Roll and its answer; Time
+		// passes gone), its three presets, its scripts and prompts; Story's
+		// reckoning graph built through the shared `reckoningRoutineSpec`
+		// (Story's document unchanged). (was '6d1e87b49dceaa32')
+		// Moved again 2026-10-21 (Lair rewrite, lane L4): the scratchpad
+		// routine's `where` adds `liveRow: true` — the Castellan's Sanctum
+		// replies wake it, never a row written whole there (its greeting, a
+		// plan row); and `lair-file-current-room`'s two saves are headed
+		// apart (two steps of one group never share a heading).
+		// (was '70eb71ec58a0ff0c')
+		// Moved again 2026-10-21 (Lair rewrite, lane L5): the Lair's party
+		// layout is the genre's guests' layout (`forGuests`, described) and
+		// carries the Party panel — Turn order and Who's here, titled Party.
+		// (was 'a519fa787f4e91c9')
+		// Moved again 2026-10-21 (L5, after the walk): the Lair scripts find a
+		// check and a difficulty named as the table lists them ("Strength
+		// (ability.strength)", "Hard (20)"), and Auto roll's description says
+		// "the rules'". (was 'a77d63b5a99ac57e')
+		// Moved again 2026-10-22 (lair fix 2): the Castellan's role boundary
+		// first and its post-history reminder, the greeting's Narrate line, the
+		// Sanctum's reminder at no token trigger, the voice's `currentCharacterId`
+		// and reminder, the planner's speakers rule and `lair-turn`'s fallback
+		// (the plan as the turn plays it, `played`), the Lair's `main` labelled
+		// Story, the Sanctum a tab of the story (LAIR_LAYOUT), and the messages
+		// widget's `otherTabsComposer`. Measured with other sessions' in-flight
+		// core-catalog edits in the tree, not proven in isolation.
+		// (was '25a3d2fe192f392b')
+		// Re-pinned 2026-10-22 (rulesets M2): the Lair's *Show dice* field
+		// reads *Show outcomes* (id kept), `lair-dice` posts the handler's
+		// outcome block for any check method, `lair-call-roll` says why a
+		// table with no difficulty to pick has no roll to call. Measured with
+		// the tree as it stands. (was 'f1367dad97ae28b3')
+		// Moved 2026-10-22 (rulesets M3): Story recommends Wherewithal, core's
+		// diceless ruleset; the Lair's *Rules and dice* preset reads *The rules
+		// decide* (its description names the d20; slug and seed key kept); Auto
+		// roll's description says "When the rules decide". No ruleset document
+		// rides the announcement, so Vis Itineris's own move (its check method,
+		// tags, amounts — visItineris.test) is not in it. Proven: the
+		// announcement with exactly those four strings put back hashes to the
+		// old pin. (was '18e1c8f63d93595e')
+		// Moved 2026-10-23 (rulesets as functions, merge M1): Story's reply carries the
+		// *Replies carry changes* branch and its `reply-changes` mode (respond 1.21.0, in
+		// place; lane A2); `reply-duties` gains the `changes` duty and `ruleset-resolve`
+		// the `replySchema` out-port (A2), its `event` in-port and `emits` parameter (M1);
+		// `core:spec/rules-action` (with `core:inlet/rules-action@1`) joins CORE_SPECS.
+		// Measured with the tree as it stands, after every index line. (was '74fdf161d9f4e506')
+		// Moved 2026-10-23 (core genres on the seams, merge GM): the genres' copy, `about`s and duty
+		// titles (G0); Story's reckoning in the one change grammar, its reply's own mode and owners,
+		// Rest beside the rules' own (G1); the Lair's rules row read at run time, *The rules decide*
+		// without its Vis Itineris lock, the keeper's lift retired (G2, GM); the crawl on the session's
+		// rules — its Planner's grammar, Rest and *After a rest* (G3); Story's *After a rest*, Rest at its
+		// own mode, the four events functions raise declared, a check's words (GM). Measured with the
+		// tree as it stands, after every index line. (was '9089ce00c0ef63d2')
+		// Moved 2026-10-23 (rulesets as functions, repair 1): every `ruleset-resolve` step names its
+		// params slot, so its `emits` switch is read (ten specs); Story's changes branch's `message`
+		// names its params; the crawl's *After a rest* hands its cause on as the resolve's `event`.
+		// (was '7476778a4731d764')
+		// Moved 2026-10-23 (RF fix 2): the Lair's voice row says its person outright (speech first,
+		// action third, never a narrator's "you") and its reminder whose turn it is; lair-reply places
+		// that reminder from the first line (the voice's `prompt` trigger 0); the Lair genre — and the
+		// shape lair-create carries — offers the lorebook, never requires it. Proven: with those five
+		// values put back in the announcement, it hashes to the old pin. (was '7d742db13f95371d')
+		// Moved 2026-10-23 (RF fix 3): Story's reply keeps only its calls inside the `reply` junction
+		// and runs ONE tail after it (save, the commit's Apply, the sprite steps) at the top-level keys;
+		// the junction hands its words on as `text` (a text-stream and a text agree on text). Recomputed
+		// after the final build. (was '7eda3ba7ec59d8c4')
+		// Moved 2026-10-23 (RF fix 5): the crawl's Honour mode field reads "Lets players edit their
+		// own sheets by hand, and the host delete the latest turn where deleting is on. Off:
+		// neither." (deletion needs a pipeline; no core genre registers one). The event, the inlet
+		// and the outlet's `taken` port moved nothing here (measured before this one string).
+		// Recomputed after the final build. (was 'fa69ee0fccc67348')
+		// 🚧 Moved 2026-10-23 (RF fix 8: attributes are the rules'): Story, the Lair and the crawl declare
+		// no slots, sheets or `customAttributes`; each genre's `uses` says what it plays best with by tag
+		// (`attributes` / `entryTypes` / `zoneTypes`, each with its label and why); the crawl's Planner
+		// grammar names health, level and class only where the rules keep them (the gist's `keeps`);
+		// Story's sweep reads the world's own values. Measured with the tree as it stands, after the
+		// final build. (was '6a8b9f7591e78af0')
+		assert.equal(digest.slice(0, 16), '89d536b2365cf8a5')
 	})
 })

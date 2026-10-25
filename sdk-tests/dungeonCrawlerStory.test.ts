@@ -11,10 +11,31 @@
  */
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { getRuleset, validate } from '@serene-pub/sdk'
+import { getRuleset, rulesetSections, validate } from '@serene-pub/sdk'
 import * as cat from '../core-catalog/src/index.js'
 
 const specById = (id: string) => cat.CORE_SPECS.find((x) => x.slug === id)!.build() as any
+/**
+ * 🚧 The session's ruleset as the host lays it on the inlet (S4, lane G3,
+ * 2026-10-23): id, rigour, settings, what it rolls (the parts the scripts read:
+ * whether chance decides, its bands) and its gist (`rulesetGistOf`).
+ */
+const rulesetIn = (id = 'core:ruleset/vis-itineris@1', rigour = 'scripts', settings: Record<string, string> = {}) => {
+	const decl = getRuleset(id)!
+	const bands = id.includes('vis-itineris') ? [{ id: 'easy', label: 'Easy', target: 10 }, { id: 'hard', label: 'Hard', target: 20 }] : []
+	return { id, rigour, settings, chance: id.includes('vis-itineris'), bands, ...cat.rulesetGistOf(decl as never, settings) }
+}
+const VI_IN = rulesetIn()
+/** Vis Itineris's reply schema as `ruleset-resolve` builds it (the app's `replySchemaOf`): its own attributes, its entry types — empty text for none, the grammar subset (G1 ★4). */
+const replySchemaOf = (id = 'core:ruleset/vis-itineris@1') => {
+	const s = rulesetSections(getRuleset(id)!)
+	const attributes = (s.attributes ?? []).filter((a) => a.slot === undefined || a.borrowed !== true).map((a) => a.id)
+	const entryTypes = (s.entryTypes ?? []).filter((e) => e.entryable !== false).map((e) => e.id)
+	return { type: 'object', properties: { message: { type: 'string' }, changes: { type: 'array', items: { type: 'object', properties: {
+		attribute: { type: 'string', enum: [...attributes, ''], description: 'The attribute — every one; empty for an entry.' },
+		entryType: { type: 'string', enum: [...entryTypes, ''] },
+	} } } } }
+}
 const presetValues = (doc: any) => doc.presets.find((p: any) => p.default).values as any[]
 const named = (doc: any, slot: string) =>
 	Object.fromEntries(presetValues(doc).filter((v: any) => v.slot === slot).map((v: any) => [v.nodeKey, v.value]))
@@ -145,36 +166,71 @@ test("the story turn: books, resolve, the Planner (retried once), apply, death's
 	assert.doesNotMatch(turnRow.systemPrompt, /- checks:/)
 })
 
-test("the deltas schema: generated from Vis Itineris and the genre's fields, every member required", () => {
-	const delta = cat.DUNGEON_CRAWLER_DELTA_SCHEMA as any
+test("🚧 the Planner's grammar (S1): the session's rules' reply schema, the genre's fields and the rules' checks — laid at run time", () => {
+	const shaped = (want: 'turn' | 'edits', ruleset: unknown = VI_IN, shape: unknown = replySchemaOf()) =>
+		runScript(cat.DUNGEON_CRAWLER_SHAPE_SCRIPT, { shape, ruleset, want }) as any
+	const turn = shaped('turn')
+	const delta = turn.properties.deltas.items
 	assert.deepEqual([...delta.required].sort(), Object.keys(delta.properties).sort())
+	// The reply schema's members: attribute · entryType · name, and the change's kind.
+	for (const k of ['owner', 'changes', 'attribute', 'entryType', 'op', 'value', 'name', 'check', 'against', 'aimedAt', 'reason']) assert.ok(delta.properties[k], k)
+	assert.equal(delta.properties.slot, undefined)
+	assert.equal(delta.properties.repertoire, undefined)
 	assert.deepEqual(delta.properties.op.enum, ['add', 'spend', 'set', 'remove', 'hit', 'use', 'traverse'])
-	const slots: string[] = delta.properties.slot.enum
-	for (const k of ['', 'hp', 'level', 'location', 'itineris-strength']) assert.ok(slots.includes(k), k)
+	const attributes: string[] = delta.properties.attribute.enum
+	// 🚧 RF fix 8: health and level by the rules' own keeping — Vis Itineris borrows them (the gist's `keeps`), never the genre's.
+	for (const k of ['hp', 'level', 'location', 'itineris-strength', '']) assert.ok(attributes.includes(k), JSON.stringify(k))
 	// Never the standing order, the fate, the clock or the table's rules.
-	for (const k of ['standing-order', 'fate', 'crawl-time', 'difficulty']) assert.ok(!slots.includes(k), k)
-	// 🚧 Never `exits`: a way out is written inside its place (`world.rooms[].exits`, AUDIT A12 — one exit model).
-	assert.deepEqual(delta.properties.repertoire.enum, ['', 'weapons', 'armour', 'gear', 'consumables', 'spells', 'spell-slots', 'features', 'conditions'])
-	assert.equal(delta.properties.exit, undefined)
+	for (const k of ['standing-order', 'fate', 'crawl-time', 'difficulty']) assert.ok(!attributes.includes(k), k)
+	// 🚧 Never a way out: it is written inside its place (`world.rooms[].exits`, AUDIT A12 — one exit model).
+	const types: string[] = delta.properties.entryType.enum
+	for (const k of ['weapons', 'armour', 'gear', 'consumables', 'spells', 'spell-slots', 'features', 'conditions']) assert.ok(types.includes(k), k)
+	assert.ok(!types.includes('exits'))
+	// A check is asked by the rules' own keys (S1), never a list of names the genre keeps.
 	const checks: string[] = delta.properties.check.enum
 	for (const k of ['', 'attack.melee', 'skill.athletics', 'save.dexterity']) assert.ok(checks.includes(k), k)
 	assert.ok(!checks.includes('strength-mod'))
-	const turn = cat.DUNGEON_CRAWLER_TURN_SCHEMA as any
 	// Who stands at death's door is not the Planner's to say (AUDIT A7): every seat the turn leaves at 0 rolls.
 	assert.deepEqual(turn.required, ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets'])
 	assert.equal(turn.properties.deathsDoor, undefined)
-	assert.equal(turn.properties.checks, undefined)
-	assert.equal(turn.properties.changes, undefined)
-	// A place carries its ways out (`DUNGEON_CRAWLER_EXIT_SCHEMA`), every member required.
+	// A place carries its ways out, their kinds and standings the rules' exit entry type's, every member required.
 	const room = turn.properties.world.properties.rooms.items
-	assert.equal(room, cat.DUNGEON_CRAWLER_ROOM_SCHEMA)
-	assert.equal(room.properties.exits.items, cat.DUNGEON_CRAWLER_EXIT_SCHEMA)
-	const exit = cat.DUNGEON_CRAWLER_EXIT_SCHEMA as any
+	const exit = room.properties.exits.items
 	assert.deepEqual([...exit.required].sort(), Object.keys(exit.properties).sort())
+	// Its kinds and standings Vis Itineris's own (its exit entry type, read off the gist at run time).
+	assert.deepEqual(exit.properties.way, VI_IN.exits!.fields.way)
+	assert.deepEqual(exit.properties.state, VI_IN.exits!.fields.state)
+	assert.deepEqual(exit.required, ['to', 'way', 'state', 'lockDc', 'trap', 'trapDc', 'trapDamage', 'trapCondition', 'minutes'])
 	// The Planner's talk proposes the same shapes: its deltas, and (the host's) places with their ways out.
-	const edits = cat.DUNGEON_CRAWLER_EDITS_SCHEMA as any
-	assert.equal(edits.properties.deltas.items, cat.DUNGEON_CRAWLER_DELTA_SCHEMA)
-	assert.equal(edits.properties.rooms.items, cat.DUNGEON_CRAWLER_ROOM_SCHEMA)
+	const edits = shaped('edits')
+	assert.deepEqual(edits.properties.deltas.items, delta)
+	assert.deepEqual(edits.properties.rooms.items, room)
+	assert.deepEqual(edits.required, ['standingOrder', 'asks', 'deltas', 'rooms'])
+	// 🚧 Wherewithal: its own checks (its ways), no exit entry type — a way out in words.
+	const ww = shaped('turn', rulesetIn('core:ruleset/wherewithal@1'), replySchemaOf('core:ruleset/wherewithal@1'))
+	assert.deepEqual([...ww.properties.deltas.items.properties.check.enum].sort(), ['', 'contest', 'dare', 'make-do', 'sway'])
+	assert.equal(ww.properties.world.properties.rooms.items.properties.exits.items.properties.lockDc, undefined)
+	// 🚧 Freeform: nothing decided — no check, no aim, no checked op, no level; a way out in words.
+	const ff = shaped('turn', rulesetIn('core:ruleset/freeform@1', 'prose'), null)
+	const wd = ff.properties.deltas.items
+	assert.equal(wd.properties.check, undefined)
+	assert.equal(wd.properties.aimedAt, undefined)
+	assert.deepEqual(wd.properties.op.enum, ['add', 'spend', 'set', 'remove', 'use'])
+	// 🚧 RF fix 8: Freeform keeps no attributes — a hero's health and class are the rules', so only the host's place.
+	assert.deepEqual(wd.properties.attribute.enum, ['location', ''])
+	// The grammar subset every backend compiles (GM 2026-10-23, G1 ★4): no null, no type union, anywhere.
+	const unsafe: string[] = []
+	const walk = (n: unknown, at: string): void => {
+		if (n === null) unsafe.push(at)
+		else if (Array.isArray(n)) n.forEach((x, i) => walk(x, `${at}[${i}]`))
+		else if (n && typeof n === 'object')
+			for (const [k, x] of Object.entries(n)) k === 'type' && Array.isArray(x) ? unsafe.push(`${at}.type`) : walk(x, `${at}.${k}`)
+	}
+	for (const [name, schema] of Object.entries({ turn, edits, ww, ff, genesis: shaped('genesis' as 'turn') })) walk(schema, name)
+	assert.deepEqual(unsafe, [])
+	assert.deepEqual([...wd.required].sort(), Object.keys(wd.properties).sort())
+	const wexit = ff.properties.world.properties.rooms.items.properties.exits.items
+	for (const k of ['lockDc', 'trapDc', 'trapDamage', 'trapCondition']) assert.equal(wexit.properties[k], undefined, k)
 })
 
 test('Rest and the goal: an action each, no model call on Rest, one on a new goal', () => {
@@ -280,7 +336,7 @@ const delta = (d: Record<string, unknown>) => ({
 	owner: '', op: 'add', slot: '', repertoire: '', piece: '', value: '', check: '', against: 0, reason: '',
 	...d,
 })
-/** A way out, inside its place (`DUNGEON_CRAWLER_EXIT_SCHEMA`). */
+/** A way out, inside its place (`DUNGEON_CRAWLER_EXIT_FRAME`, laid over the rules'). */
 const exit = (e: Record<string, unknown>) => ({ to: '', way: 'door', state: 'open', lockDc: 0, trap: '', trapDc: 0, minutes: 0, ...e })
 const PLAN = {
 	deltas: [
@@ -301,9 +357,9 @@ const PLAN = {
 	secrets: [],
 }
 
-const books = (annex: Record<string, unknown> = { [K.progress]: PROGRESS }, messageId?: number, seat?: Record<string, unknown>) =>
+const books = (annex: Record<string, unknown> = { [K.progress]: PROGRESS }, messageId?: number, seat?: Record<string, unknown>, ruleset: unknown = VI_IN) =>
 	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
-		session: session(annex), state: state(seat), story, messageId, places: PLACES, people: PEOPLE, fallen: FALLEN, log: LOG,
+		session: session(annex), state: state(seat), story, messageId, places: PLACES, people: PEOPLE, fallen: FALLEN, log: LOG, ruleset,
 	})
 
 test('books: the world from the lorebook, the story so far from the journal, the owners and actions the handler reads', () => {
@@ -375,7 +431,7 @@ test("the plan check: deltas in the handler's shape; the fate refused; a way out
 	})
 	assert.deepEqual(leads.plan.world.leads, ['Find the second scepter fragment'])
 	assert.ok(cat.DUNGEON_CRAWLER_LEAD_WORDS >= 10)
-	assert.match((cat.DUNGEON_CRAWLER_TURN_SCHEMA as any).properties.world.properties.leads.description, /hooks/)
+	assert.match((cat.DUNGEON_CRAWLER_TURN_FRAME as any).properties.world.properties.leads.description, /hooks/)
 	assert.deepEqual(runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: { nope: 1 } }), { ok: false, retry: true, plan: null })
 })
 
@@ -435,7 +491,7 @@ test("the ruleset fields: the handler's blocks by name, and how this table plays
 		sheet: { text: 'Mira — weapons: Longbow' },
 		pieces: { text: 'Longbow — two hands' },
 	}
-	const scripted = runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks, facts: { rigour: 'scripts' } })
+	const scripted = runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks, facts: { rigour: 'scripts' }, books: { decides: true, conditions: VI_IN.conditions }, ruleset: VI_IN })
 	assert.equal(scripted.rulesetVoice, 'Dice are rolled for you.')
 	assert.equal(scripted.rulesetSheet, 'Mira — weapons: Longbow')
 	assert.equal(scripted.rulesetPieces, 'Longbow — two hands')
@@ -447,6 +503,22 @@ test("the ruleset fields: the handler's blocks by name, and how this table plays
 	assert.match(prose.rigourLine, /^Nothing is rolled at this table/)
 	assert.match(prose.rigourLine, /add, spend/)
 	assert.equal(prose.diceRolled, '')
+	// 🚧 Read off the session's rules (S4): its bands, its spell slots, its conditions, its way out.
+	assert.equal(scripted.againstLine, 'against: its difficulty, 10 easy to 20 hard, else 0')
+	assert.match(scripted.castingLine, /entryType spell-slots, op spend, name the level/)
+	assert.match(scripted.conditionsLine, /entryType conditions; name one of: /)
+	assert.equal(scripted.wordsOnly, '')
+	assert.equal(scripted.exitsInWords, '')
+	// Wherewithal decides, by no chance: no dice said, no way out of its own.
+	const ww = runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: {}, facts: { rigour: 'scripts' }, books: { decides: true }, ruleset: rulesetIn('core:ruleset/wherewithal@1') })
+	assert.match(ww.rigourLine, /^The table decides every check by its rules, never you\./)
+	assert.equal(ww.exitsInWords, 'yes')
+	assert.equal(ww.castingLine, '')
+	assert.equal(ww.againstLine, 'against: its difficulty, else 0')
+	// Freeform decides nothing: words only.
+	const ff = runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: {}, facts: { rigour: 'prose' }, books: { decides: false }, ruleset: rulesetIn('core:ruleset/freeform@1', 'prose') })
+	assert.equal(ff.wordsOnly, 'yes')
+	assert.equal(ff.effectsLine, '')
 })
 
 /** The handler's `apply` out-ports, as the spec hands them on. */
@@ -516,6 +588,27 @@ test("death's door: a seat the rules left at 0 rolls; fair kills, gentle takes o
 	assert.deepEqual(saved.changes.filter((c: any) => c.slot === 'core:slot/hp@1').map((c: any) => c.value), [1])
 	assert.equal(saved.progress.fates, undefined)
 	assert.equal(saved.fallen, null)
+	// 🚧 Its fall rule rides on the books, from the session's ruleset (★I): its die, its door.
+	assert.deepEqual(b.fall.door, cat.VIS_ITINERIS_AT_ZERO_HEALTH_RULE.door)
+	assert.match(dead.line, /: d20 \d+ vs DC 10 — dead/)
+})
+
+test("🚧 death's door under rules with no fall rule (★I): nothing rolled, no die assumed — down and out, told in words", () => {
+	for (const ruleset of [rulesetIn('core:ruleset/wherewithal@1'), rulesetIn('core:ruleset/freeform@1', 'prose')]) {
+		const b = books(undefined, undefined, undefined, ruleset)
+		assert.equal(b.fall, null)
+		const turn = { plan: runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: { ...PLAN, deltas: [] } }).plan }
+		const after = state({ hp: 0 })
+		const door = runScript(cat.DUNGEON_CRAWLER_DOOR_SCRIPT, { session: session(), books: b, turn, applied: applied([], ruleset.rigour), after }, [1])
+		assert.deepEqual(door.deaths, [{ seat: 'player-seat:4', name: 'Mira', user: 1, words: true, outcome: 'taken-out' }])
+		assert.equal(door.line, "☠ Mira at death's door — taken out")
+		const ledger = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, {
+			session: session({ [K.progress]: PROGRESS }), books: b, turn, door, applied: applied([], ruleset.rigour), after, row: 20,
+		})
+		assert.deepEqual(ledger.changes.filter((c: any) => c.owner === 'player-seat:4' && c.slot === 'core:slot/fate@1').map((c: any) => c.value), ['taken-out'])
+		assert.match(ledger.narrator.outcomes, /Mira fell: down and out of the fight, alive/)
+		assert.equal(ledger.fallen, null)
+	}
 })
 
 test('ledger: the clock, the world for the lorebook, the journal, the telling a swipe re-tells — no snapshot', () => {
@@ -615,10 +708,20 @@ test('ledger: a level the handler applied raises the full health — the hp max,
 	const out = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, {
 		session: session({ [K.progress]: PROGRESS }), books: b, turn, door: {}, applied: applied([{ text: 'Mira: Level +1' }]), after: state({ level: 2 }), row: 32,
 	})
-	assert.deepEqual(out.raises, [{ owner: 'player-seat:4', slot: 'core:slot/hp@1', config: { max: 20 + cat.DUNGEON_CRAWLER_HP_PER_LEVEL } }])
+	// 🚧 What a level brings is the session's rules' (S4, D9): the ranger's kit's level gain.
+	const gain = VI_IN.kits!.byId.ranger!.levelHp
+	assert.equal(b.seats[0].levelHp, gain)
+	assert.deepEqual(out.raises, [{ owner: 'player-seat:4', slot: 'core:slot/hp@1', config: { max: 20 + gain } }])
 	assert.deepEqual(out.changes.filter((c: any) => c.owner === 'player-seat:4'), [
-		{ owner: 'player-seat:4', slot: 'core:slot/hp@1', value: 12 + cat.DUNGEON_CRAWLER_HP_PER_LEVEL },
+		{ owner: 'player-seat:4', slot: 'core:slot/hp@1', value: 12 + gain },
 	])
+	// Rules that keep no levels raise nothing (Wherewithal).
+	const ww = books(undefined, undefined, undefined, rulesetIn('core:ruleset/wherewithal@1'))
+	assert.equal(ww.seats[0].levelHp, 0)
+	const flat = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, {
+		session: session({ [K.progress]: PROGRESS }), books: ww, turn, door: {}, applied: applied([{ text: 'Mira: Level +1' }]), after: state({ level: 2 }), row: 32,
+	})
+	assert.deepEqual(flat.raises, null)
 })
 
 test('ledger at prose: the handler recorded words, nothing rolled — the Narrator is told to keep numbers out', () => {
@@ -679,6 +782,7 @@ test("rest: full health (the seat's own max), the taken-out back up, eight hours
 	const out = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
 		session: session({ [K.progress]: { ...PROGRESS, fates: { 'player-seat:4': 'taken-out' } } }),
 		state: state({ hp: 0, fate: 'taken-out' }, { 'crawl-time': '1-01-31 20:00' }),
+		ruleset: VI_IN,
 	})
 	assert.deepEqual(out.changes, [
 		{ owner: 'player-seat:4', slot: 'core:slot/hp@1', value: 20 },
@@ -689,9 +793,34 @@ test("rest: full health (the seat's own max), the taken-out back up, eight hours
 	assert.deepEqual(out.progress.fates, {})
 	assert.match(out.line, /Mira recovers/)
 	assert.equal(out.journal, 'The party rests. Day 31, 20:00 → Day 32, 04:00.')
+	// 🚧 The night's length is the session's rules' (S4): their longest rest, for the handler's advance.
+	assert.deepEqual(out.elapsed, { minutes: VI_IN.rests[0]!.minutes })
+	assert.match(out.line, /^The party rests for eight hours\./)
+	// 🚧 After the rules' Rest (S3): the rest they raised, by its id.
+	const short = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
+		session: session({ [K.progress]: PROGRESS }), state: state({}, { 'crawl-time': '1-01-31 20:00' }), ruleset: VI_IN,
+		cause: { values: { owner: 'player-seat:4', rest: 'short' } },
+	})
+	assert.deepEqual(short.elapsed, { minutes: 60 })
+	// 🚧 Another player's seat resting under the rules: theirs alone — the party's night is the owner's to call.
+	const guestSeat = { seatId: 5, seatUserId: 9, seatName: 'Bo', persona: null, removedAt: null }
+	const theirs = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
+		session: { ...session({ [K.progress]: PROGRESS }), cast: { sessionPersonas: [session().cast.sessionPersonas[0], guestSeat], characters: [] } },
+		state: state(), ruleset: VI_IN, cause: { values: { owner: 'player-seat:5', rest: 'long' } },
+	})
+	assert.deepEqual([theirs.line, theirs.journal, theirs.elapsed, theirs.changes], [null, null, null, []])
+	// 🚧 Rules that keep no rest of a length (Wherewithal's, Freeform): the night told without one, the clock unmoved.
+	for (const rs of [rulesetIn('core:ruleset/wherewithal@1'), rulesetIn('core:ruleset/freeform@1', 'prose')]) {
+		const night = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, { session: session({ [K.progress]: PROGRESS }), state: state(), ruleset: rs })
+		assert.equal(night.elapsed, null)
+		assert.ok(!night.changes.some((c: any) => c.slot === 'core:slot/crawl-time@1'))
+		assert.match(night.line, /^The party rests\./)
+		assert.equal(night.journal, 'The party rests.')
+	}
 	const dead = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
 		session: session({ [K.progress]: { ...PROGRESS, fates: { 'player-seat:4': 'dead' } } }),
 		state: state({ hp: 0, fate: 'dead' }),
+		ruleset: VI_IN,
 	})
 	assert.equal(dead.changes.length, 1)
 	// The dead stay dead, and out of the round: the mirror is unchanged, nothing to keep.
@@ -719,6 +848,7 @@ test("a new character after a death: the interview asks the name again; the shee
 		plan: { addressee: 'user:1', currentName: 'Ash' },
 		json: { backstory: '' },
 		state: state({ hp: 0, fate: 'dead', level: 3, location: '', 'crawl-weapons': [{ kind: 'compendium', compendiumId: 'core:ruleset/vis-itineris@1', pieceId: 'longbow', version: '1.0.0' }] }),
+		ruleset: VI_IN,
 	})
 	// The fallen hero's bow goes before the newcomer's kit comes.
 	assert.deepEqual(sheet.kit.deltas[0], { owner: 'player-seat:4', repertoire: 'weapons', op: 'remove', piece: 'longbow' })
@@ -744,7 +874,7 @@ test("a new character after a death: the interview asks the name again; the shee
 	// Made once the world exists: placed where their arrival was owed — nobody else of the party stands anywhere (AUDIT A9); no second genesis.
 	assert.ok(sheet.seatChanges.some((c: any) => c.slot === 'core:slot/location@1' && c.value === 'The Hall'))
 	assert.deepEqual(sheet.openStory, ['user:1'])
-	assert.deepEqual(cat.kitDeltas('ranger', 'x').map((d: any) => d.piece).slice(0, 2), ['longbow', 'spear'])
+	assert.deepEqual(cat.kitDeltas(VI_IN.kits!, 'ranger', 'x').map((d: any) => d.piece).slice(0, 2), ['longbow', 'spear'])
 	assert.equal(sheet.genesisBrief, null)
 	// The seat's hp max (20 in the fixture) becomes the cleric's.
 	assert.deepEqual(sheet.healthConfig, { max: 10 })
@@ -753,6 +883,7 @@ test("a new character after a death: the interview asks the name again; the shee
 	const hardy = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, {
 		session: session({ [K.progress]: { ...PROGRESS, heroes: { 'user:1': { name: 'Ash', class: 'Priest' } } } }),
 		plan: { addressee: 'user:1', currentName: 'Ash' }, json: { maxHp: 26, backstory: '' }, state: state({ hp: 0, fate: 'dead', level: 3 }, {}, 10),
+		ruleset: VI_IN,
 	})
 	assert.equal(hardy.healthConfig, null)
 	assert.ok(hardy.seatChanges.some((c: any) => c.slot === 'core:slot/hp@1' && c.value === 10))
@@ -800,7 +931,7 @@ test("the journal: a line near-identical to the previous one on the folio is not
 	const turn = (prior: string | null, summary: string) => {
 		const b = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
 			session: session({ [K.progress]: PROGRESS }), state: state(), story,
-			log: prior ? [{ id: 1, role: 'assistant', content: prior }] : [],
+			log: prior ? [{ id: 1, role: 'assistant', content: prior }] : [], ruleset: VI_IN,
 		})
 		const t = runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { books: b, first: runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: { ...PLAN, deltas: [], roundSummary: summary } }) })
 		return runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: session({ [K.progress]: PROGRESS }), books: b, turn: t, door: {}, row: 30, state: state() })
@@ -814,6 +945,7 @@ test("the journal: a line near-identical to the previous one on the folio is not
 	const b = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
 		session: session({ [K.progress]: PROGRESS }), state: state(), story,
 		log: [SEEN, 'Found The Hall.', 'Day 1, 08:00 \u2192 Day 1, 08:30.', 'New lead: The bell.'].map((content, i) => ({ id: i + 1, role: 'assistant', content })),
+		ruleset: VI_IN,
 	})
 	const t = runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { books: b, first: runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: { ...PLAN, deltas: [], roundSummary: AGAIN } }) })
 	const out = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: session({ [K.progress]: PROGRESS }), books: b, turn: t, door: {}, row: 30, state: state() })
@@ -821,21 +953,31 @@ test("the journal: a line near-identical to the previous one on the folio is not
 	assert.ok(!out.journalLines.some((l: any) => l.kind === 'did'))
 })
 
-test("the starting kits: every compendium id is a row of the slice; six kits; a class no kit names takes the fighter's", () => {
+test("the starting kits: the session's ruleset's class rows — every library id a row of it; six kits; a class no kit names takes the first", () => {
 	const rows = getRuleset('core:ruleset/vis-itineris@1')!.compendium!.rows as Record<string, readonly { id: string }[]>
-	assert.equal(Object.keys(cat.DUNGEON_CRAWLER_KITS).length, 6)
-	for (const [key, kit] of Object.entries(cat.DUNGEON_CRAWLER_KITS))
-		for (const rep of ['weapons', 'armour', 'gear', 'consumables', 'spells'] as const)
-			for (const id of kit[rep]) assert.ok(rows[rep]!.some((r) => r.id === id), `${key}: ${rep}/${id}`)
-	assert.equal(cat.kitKeyFor('Hedge Wizard'), 'wizard')
-	assert.equal(cat.kitKeyFor('Tomb robber'), 'fighter')
-	assert.equal(cat.kitKeyFor('Archer of the Vale'), 'ranger')
+	const kits = VI_IN.kits!
+	assert.equal(kits.order.length, 6)
+	for (const [key, kit] of Object.entries(kits.byId))
+		for (const p of kit.pieces) assert.ok(rows[p.entryType]!.some((r) => r.id === p.id), `${key}: ${p.entryType}/${p.id}`)
+	assert.equal(cat.kitKeyFor(kits, 'Hedge Wizard'), 'wizard')
+	assert.equal(cat.kitKeyFor(kits, 'Tomb robber'), 'fighter')
+	assert.equal(cat.kitKeyFor(kits, 'Archer of the Vale'), 'ranger')
 	// Every kit field is one of the genre's ruleset fields.
 	const fields = new Set(cat.DUNGEON_CRAWLER_RULESET_SLOTS.map((s: any) => s.id))
-	for (const key of Object.keys(cat.DUNGEON_CRAWLER_KITS)) for (const c of cat.kitChanges(key)) assert.ok(fields.has(c.slot), c.slot)
+	for (const key of kits.order) for (const c of cat.kitChanges(kits, key)) assert.ok(fields.has(c.slot), c.slot)
 	assert.equal((cat.crawlExitsSlot.config as any)?.repertoire, 'core:ruleset/vis-itineris@1#exits')
 	assert.deepEqual([...cat.crawlExitsSlot.appliesTo!], ['location'])
 	assert.deepEqual([...cat.crawlFusesSlot.appliesTo!], ['world'])
+	// 🚧 No kits where the rules keep no class rows: no pieces, no scores, the sheet's own health.
+	const bare = runScript(cat.DUNGEON_CRAWLER_SHEET_SCRIPT, {
+		session: session({ [K.progress]: { ...PROGRESS, heroes: { 'user:1': { name: 'Ash', class: 'Priest' } } } }),
+		plan: { addressee: 'user:1', currentName: 'Ash' }, json: { backstory: '' }, state: state({ hp: 0, fate: 'dead', level: 3 }),
+		ruleset: rulesetIn('core:ruleset/freeform@1', 'prose'),
+	})
+	assert.deepEqual(bare.kit.deltas, [])
+	assert.equal(bare.healthConfig, null)
+	assert.ok(bare.seatChanges.some((c: any) => c.slot === 'core:slot/hp@1' && c.value === 20))
+	assert.ok(!bare.seatChanges.some((c: any) => /itineris/.test(c.slot)))
 })
 
 test('the prompts: the Narrator never writes a roll line; the Planner summarises only what is new (2026-10-15)', () => {

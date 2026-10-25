@@ -3,10 +3,12 @@
  * D9, D12): what the story turn's books do with each death's-door roll
  * (`dice.ts` rolls it).
  *
- *  - **survives** — back on 1 health, and the Narrator is told they pulled
- *    through;
- *  - **taken out** (Gentle) — the seat's `fate` is `taken-out`: down, alive,
- *    out of the fight until a Rest brings them back;
+ *  - **survives** — back up on the health the session's fall rule says
+ *    (`core:function/at-zero-health@1`, read off the inlet; ★I), and the
+ *    Narrator is told they pulled through;
+ *  - **taken out** (Gentle — 🚧 or any table whose ruleset keeps no fall
+ *    rule, where nothing is rolled) — the seat's `fate` is `taken-out`:
+ *    down, alive, out of the fight until a Rest brings them back;
  *  - **dead** (Fair, Brutal) — the seat's `fate` is `dead`, a **cairn** is
  *    raised in the session's own lorebook (a `core:entry/history` entry: the
  *    epitaph, where they fell — `lore.ts`), and the player's Planner lane
@@ -53,6 +55,10 @@ export const DUNGEON_CRAWLER_DEATH_JS = `
 // ── Death's door, applied (death.ts) ──
 var INTERVIEW_ACTION = ${JSON.stringify(DUNGEON_CRAWLER_INTERVIEW_ACTION)};
 var NEW_CHARACTER = ${JSON.stringify(DUNGEON_CRAWLER_QUESTIONS.newCharacter)};
+// The ruleset's numbers (Lair rewrite D9; its fall rule since 2026-10-23,
+// ★I): what a survivor is back up on rides on the roll (\`dd.upOn\`), and the
+// death saves' rule in words is read off the session's fall rule.
+var SAVES_RULE = b.fall ? deathSavesRule(b.fall, false) : "";
 var deathsList = Array.isArray(d.deaths) ? d.deaths : [];
 // An owed arrival counts down only once the newcomer is made (their hero
 // carries a new name): the Planner brings them in within its rounds. 🚧 One
@@ -113,7 +119,7 @@ for (var di = 0; di < deathsList.length; di++) {
 	for (var oc = 0; oc < changes.length; oc++) if (!(changes[oc].owner === dd.seat && changes[oc].slot === SL.hp)) others.push(changes[oc]);
 	changes = others;
 	if (dd.outcome === "survives") {
-		changes.push({ owner: dd.seat, slot: SL.hp, value: 1 });
+		changes.push({ owner: dd.seat, slot: SL.hp, value: num(dd.upOn, 1) });
 		if (wasDying) changes.push({ owner: dd.seat, slot: SL.fate, value: "alive" });
 		if (dd.saves) tallyOut(dd.seat, "", ds.tally);
 		told.push(ds.name + " was at death's door and pulled through, on their last breath.");
@@ -123,7 +129,7 @@ for (var di = 0; di < deathsList.length; di++) {
 	if (dd.outcome === "dying") {
 		if (!wasDying) changes.push({ owner: dd.seat, slot: SL.fate, value: "dying" });
 		tallyOut(dd.seat, deathSaveWords(num(dd.passed, 0), num(dd.failed, 0)), ds.tally);
-		told.push(ds.name + " lies dying at death's door, " + deathSaveWords(num(dd.passed, 0), num(dd.failed, 0)) + " so far: three failures and they die, three passes and they are stable — and healing now brings them back. They can do nothing until then. Tell it with care.");
+		told.push(ds.name + " lies dying at death's door, " + deathSaveWords(num(dd.passed, 0), num(dd.failed, 0)) + " so far: " + SAVES_RULE + " — and healing now brings them back. They can do nothing until then. Tell it with care.");
 		continue;
 	}
 	if (dd.saves) tallyOut(dd.seat, "", ds.tally);
@@ -134,7 +140,7 @@ for (var di = 0; di < deathsList.length; di++) {
 	}
 	changes.push({ owner: dd.seat, slot: SL.fate, value: dd.outcome });
 	if (dd.outcome === "taken-out") {
-		told.push(ds.name + " is taken out: down and out of the fight, alive, of no use to the party until they rest. Tell it with care.");
+		told.push(ds.name + (dd.words ? " fell" : " is taken out") + ": down and out of the fight, alive, of no use to the party until they rest. Tell it with care.");
 		continue;
 	}
 	var where = text(ds.location);

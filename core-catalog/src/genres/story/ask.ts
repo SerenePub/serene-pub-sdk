@@ -6,7 +6,7 @@
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { storyGenre } from '../../registry/genres.js'
-import { STORY_ANSWER_SPEC_ID } from './answer.js'
+import { storyAnswerSpec } from './answer.js'
 
 /* ── ask / answer: the worked form (plans/29 R-15 *Forms*; 30 §U5d) ──────── */
 
@@ -86,10 +86,7 @@ export const storyAskSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: storyGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
@@ -153,7 +150,7 @@ export const storyAskSpec = () =>
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
@@ -176,7 +173,7 @@ export const storyAskSpec = () =>
 					// Answer is the other spec's declaration, named on purpose:
 					// the host holds the options to THAT action's audience —
 					// the block's addressee — and runs THAT spec on a press.
-					action: `${STORY_ANSWER_SPEC_ID}#answer`,
+					action: storyAnswerSpec().actions.answer.identity,
 					cast: $.gather.cast.read.cast,
 				}),
 			)

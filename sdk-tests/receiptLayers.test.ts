@@ -129,14 +129,17 @@ describe('the host stamps how the run was reached (Receipt.meta)', () => {
 
 describe("the selected config's scope is `config` (R1)", () => {
 	test('the chain and the matrix speak `config`', () => {
-		assert.deepEqual(SCOPE_ORDER, ['session', 'config', 'defaults', 'author'])
+		// PLAN-layering D5 (R38): configurations retire; `config` reads as `preset` (⏳).
+		assert.deepEqual(SCOPE_ORDER, ['session', 'preset', 'genre', 'defaults', 'author'])
 		assert.equal(mayWrite('prompts', 'config'), true)
 		assert.equal(mayWrite('template', 'config'), true)
 	})
 
 	test('scopeKindOf reads only a ScopeKind', () => {
 		for (const k of SCOPE_ORDER) assert.equal(scopeKindOf(k), k)
-		assert.equal(scopeKindOf('preset'), undefined)
+		// `preset` is a layer since PLAN-layering D5; the retired `config` reads as it (⏳).
+		assert.equal(scopeKindOf('preset'), 'preset')
+		assert.equal(scopeKindOf('config'), 'preset')
 		assert.equal(scopeKindOf('instance'), undefined)
 		assert.equal(scopeKindOf('user'), undefined)
 	})

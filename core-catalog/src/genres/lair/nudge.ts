@@ -53,10 +53,7 @@ export const lairNudgeSpec = () =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre: lairGenre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
 			/**
 			 * A literal change with the collected text in it. A nested literal
@@ -83,7 +80,7 @@ export const lairNudgeSpec = () =>
 					params: slot.params(),
 				}),
 			)
-			.preset('lair', { label: 'Lair', default: true }, (p) =>
+			.defaults((p) =>
 				p.params('apply', { mode: 'apply' }),
 			)
 			.build(),

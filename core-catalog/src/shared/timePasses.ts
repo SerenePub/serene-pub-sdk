@@ -10,11 +10,11 @@
  * session in Suggested or Automatic scene mode reads the move as a **time
  * action** at that line.
  *
- * One graph, one spec per genre: an action's inlet is one genre's (the usage
- * lock), so Story's and the Lair's are `core:spec/story-advance-time` and
- * `core:spec/lair-advance-time` — the key `advance-time` and the slash name
+ * One graph, one spec per genre that offers it: Story's is
+ * `core:spec/story-advance-time` — the key `advance-time` and the slash name
  * `/advance-time`. (Adventure's own, a keeper action, retired with the genre
- * on 2026-10-19.)
+ * on 2026-10-19; the Lair's, `core:spec/lair-advance-time`, with its rewrite
+ * on 2026-10-21.)
  *
  * ⚠ Not Chronicle's one-press *Next day* (the clock widget's own step), not
  * the reply tick (Story's *Each reply advances the clock by …*, a fixed tick no
@@ -72,10 +72,7 @@ export const timePassesGraph = ({ id, version, genre }: TimePassesOptions) =>
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })
 			/** The press's step, decided: `{ by, unit }` and whether it moves at all. */
 			.task('step', ($) => C.clockStep.v1({ step: $.input.clockStep, params: slot.params() }))
 			/**
@@ -86,9 +83,9 @@ export const timePassesGraph = ({ id, version, genre }: TimePassesOptions) =>
 			 * the ledger says *not on the clock* and why, as Adventure's does.
 			 * A malformed step still halts — the host's rule, not the story's.
 			 */
-			.junction('clock', { on: ($: any) => $.step.moves }, (j) =>
+			.junction('clock', { on: ($) => $.step.moves }, (j) =>
 				j.when('moves', { truthy: true }, (c) =>
-					c.outlet('advance', ($: any) =>
+					c.outlet('advance', ($) =>
 						C.advanceStoryClock.v1({
 							by: $.step.by,
 							unit: $.step.unit,

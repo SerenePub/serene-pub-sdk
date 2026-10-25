@@ -36,29 +36,31 @@
  *
  * ## Review: off
  *
- * Ruled 2026-10-12: one press, one picture. `review-on` parks the picture
- * step with the cleaned prompt for a person who wants to see it first.
+ * Ruled 2026-10-12: one press, one picture. The *review-on* author preset
+ * retired with configurations (R38, 2026-10-20): a registration's values
+ * park the picture step (`{ draw: { settings: { review: 'on' } } }`).
  *
  * ## Loadouts
  *
  * The quiet call runs on **Scene prompt**, the picture on **Scene**; each
  * falls back to Reply and Images when unfilled.
  *
- * ## One graph, one spec per genre
+ * ## One graph, two ways to fire it
  *
- * An inlet is locked to one genre, so each genre that offers Scene ships its
- * own spec — `core:spec/story-illustrate-scene` and
- * `core:spec/story-illustrate-scene` (2026-10-12) — and both call
- * `illustrateSceneGraph` here with their own id, version and genre. The
- * graph is written once; the two specs differ only in identity and inlet.
+ * The Scene action (`core:spec/story-illustrate-scene`, a press) and, since
+ * 2026-10-20, *Picture each new scene* (`core:spec/story-illustrate-new-scene`,
+ * a routine fired when a scene opens) both call `illustrateSceneGraph` with
+ * their own id and version; the graph is written once, and the two differ
+ * only in identity and inlet. Neither names a genre: the Story genre's
+ * defaults register them.
  * Both use the narrator builder (the scene prompt rows live in its pool and
  * it lays out `{{likenesses}}`), not Adventure Look's scene builder: the
  * picture is drawn from the last lines and the cast's looks, not the lore.
  */
-import { compile, spec, sessionEvents, slot } from '@serene-pub/sdk'
+import { compile, spec, sessionEvents, slot, coreEvents } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { CORE_LOADOUT } from '../loadouts.js'
-import type { GenreDecl } from '@serene-pub/sdk'
+import type { GenreDecl, OutPortsOf, SpecBuilder } from '@serene-pub/sdk'
 
 /** The action's key — `<scene spec>#illustrate-scene`. @experimental */
 export const ILLUSTRATE_SCENE_ACTION_KEY = 'illustrate-scene'
@@ -90,17 +92,36 @@ const DRAW_PARAMS = {
 	references: 'preferred',
 } as const
 
-/** What a genre's Scene spec passes in: its identity and its inlet's genre. @internal */
+/** What a genre's Scene spec passes in: its identity, and how it is fired. @internal */
 export interface IllustrateSceneOptions {
 	id: string
 	version: string
-	genre: GenreDecl
+	/** ⏳ Kept for callers; a pipeline names no genre since 2026-10-20 (`{ suits }`). */
+	genre?: GenreDecl
+	/**
+	 * 🚧 `action` (the default): the Scene action, a person's press. `routine`
+	 * (2026-10-20): the same graph as a routine — *Picture each new scene*,
+	 * fired when a scene opens (`core:inlet/routine@1`), with no action and no
+	 * payload, so the step's own `placement` decides.
+	 */
+	fired?: 'action' | 'routine'
 }
 
+/**
+ * Either inlet's ports, read as one: the routine's and a press's — what the
+ * graph after the inlet reads is on both (`sessionScope`), and the press's
+ * `payload` is read only when it is a press.
+ */
+type SceneInlet = OutPortsOf<ReturnType<typeof C.routine.v1>> & OutPortsOf<ReturnType<typeof C.userMessage.v1>>
+
 /** The Scene action's graph, for one genre's spec. @internal */
-export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOptions) =>
-	compile(
-		spec(id, {
+export const illustrateSceneGraph = ({ id, version, fired = 'action' }: IllustrateSceneOptions) => {
+	const routine = fired === 'routine'
+	const head = (routine
+		? spec(id, { version, taxonomy: { role: 'maintenance' } }).inlet('input', C.routine.v1(), {
+				suits: [coreEvents.sceneOpened],
+			})
+		: spec(id, {
 			version,
 			taxonomy: { role: 'action' },
 			contributes: {
@@ -118,10 +139,9 @@ export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOpti
 				],
 			},
 		})
-			.inlet('input', C.userMessage.v1(), {
-				genre,
-				event: sessionEvents.sessionAction,
-			})
+			.inlet('input', C.userMessage.v1(), { suits: [] })) as SpecBuilder<{ input: SceneInlet }>
+	return compile(
+		head
 			.gather('gather', { mode: 'parallel' }, (b) =>
 				b
 					.chain('history', (c) =>
@@ -167,7 +187,7 @@ export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOpti
 					messages: $.lines.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
-					prompts: slot.prompts({ node: 'context' }),
+					prompts: slot.prompts($.context),
 					variables: slot.variables(),
 					params: slot.params(),
 					connection: slot.connectionOf('write'),
@@ -180,6 +200,8 @@ export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOpti
 					connection: slot.connection(),
 					sampling: slot.sampling(),
 					params: slot.params(),
+					// 🚧 O7: the voice a spoken reply speaks in, when `outputs` ask for audio.
+					speechSampling: slot.speechSampling(),
 				}),
 				{ expose: { status: 'Describing the scene', label: 'Scene prompt', purpose: 'Turns the last few lines into a picture description.' } },
 			)
@@ -197,11 +219,11 @@ export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOpti
 				{ expose: { status: 'Drawing the scene', label: 'Picture', purpose: 'Draws the described scene, with the cast as reference.' } },
 			)
 			.task('placement', ($) =>
-				C.picturePlacement.v1({ payload: $.input.payload, params: slot.params() }),
+				C.picturePlacement.v1({ ...(routine ? {} : { payload: $.input.payload }), params: slot.params() }),
 			)
-			.junction('toMessage', { on: ($: any) => $.placement.message }, (j) =>
+			.junction('toMessage', { on: ($) => $.placement.message }, (j) =>
 				j.when('yes', { truthy: true }, (c) =>
-					c.outlet('post', ($: any) =>
+					c.outlet('post', ($) =>
 						C.createMessage.v1({
 							text: $.draw.caption,
 							media: $.draw.media,
@@ -209,27 +231,19 @@ export const illustrateSceneGraph = ({ id, version, genre }: IllustrateSceneOpti
 					),
 				),
 			)
-			.junction('toBackdrop', { on: ($: any) => $.placement.backdrop }, (j) =>
+			.junction('toBackdrop', { on: ($) => $.placement.backdrop }, (j) =>
 				j.when('yes', { truthy: true }, (c) =>
-					c.outlet('set', ($: any) => C.setBackdrop.v1({ media: $.draw.media })),
+					c.outlet('set', ($) => C.setBackdrop.v1({ media: $.draw.media })),
 				),
 			)
 			/** Review OFF (ruled 2026-10-12): one press, one picture. */
-			.preset('default', { label: 'Default', default: true }, (p) =>
+			.defaults((p) =>
 				p
 					.params('gather.history.read', { limit: LOOKBACK })
 					.params('draw', { ...DRAW_PARAMS })
-					.loadout('write', slot.loadout(CORE_LOADOUT.scenePrompt))
-					.loadout('draw', slot.loadout(CORE_LOADOUT.scene)),
-			)
-			/** Opt-in: park at the picture step with the cleaned prompt. */
-			.preset('review-on', { label: 'Review the prompt before drawing' }, (p) =>
-				p
-					.params('gather.history.read', { limit: LOOKBACK })
-					.params('draw', { ...DRAW_PARAMS })
-					.settings('draw', { review: 'on' })
 					.loadout('write', slot.loadout(CORE_LOADOUT.scenePrompt))
 					.loadout('draw', slot.loadout(CORE_LOADOUT.scene)),
 			)
 			.build(),
 	)
+}

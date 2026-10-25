@@ -164,6 +164,18 @@ export interface GenreLayoutDecl {
 	 * widget ids under its namespace.
 	 */
 	preset: SessionLayoutV1
+	/**
+	 * 🚧 The **guests' layout** (Lair rewrite D6, 2026-10-21): the layout a
+	 * guest's first open of a session copies — a member who is not the
+	 * session's owner — in place of the genre default, which stays the
+	 * owner's. A guest's own new-session layout for the genre still wins. At
+	 * most one per genre, and never the default itself: the Lair's _Party_
+	 * (the story and the sheets, no Sanctum). ⚠ Not a channel's `audience`,
+	 * and not a layout's visibility in the picker — every guest may still
+	 * start from any layout they can see.
+	 * @experimental
+	 */
+	forGuests?: boolean
 }
 
 const LAYOUT_SLUG = /^[a-z][a-z0-9-]*$/
@@ -174,6 +186,8 @@ export function layout(d: GenreLayoutDecl): GenreLayoutDecl {
 	if (!LAYOUT_SLUG.test(d.slug ?? '')) problems.push(`'${d.slug}' is not a layout slug — lowercase letters, digits and '-'`)
 	problems.push(...i18nFindings(d.name, `layout '${d.slug}' name`, { required: true }))
 	problems.push(...i18nFindings(d.description, `layout '${d.slug}' description`))
+	if (d.forGuests !== undefined && typeof d.forGuests !== 'boolean')
+		problems.push(`layout '${d.slug}' forGuests: true or false`)
 	const verdict = validateSessionLayout(d.preset)
 	for (const e of verdict.errors) problems.push(`layout '${d.slug}' preset: ${e}`)
 	if (problems.length) throw new Error(problems.join('\n'))

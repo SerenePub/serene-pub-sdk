@@ -173,6 +173,8 @@ describe('statsView', () => {
 			arrangement: 'cards',
 			owners: 'pick',
 			castScope: 'scene',
+			// 🚧 RF fix 8: whether the session's rules declare any attribute (a card says so when none).
+			declaresAttributes: true,
 		})
 	})
 	test('loading, and nothing declared', () => {
@@ -184,6 +186,7 @@ describe('statsView', () => {
 			arrangement: 'cards',
 			owners: 'cast',
 			castScope: 'scene',
+			declaresAttributes: true,
 		})
 	})
 })
@@ -238,6 +241,8 @@ describe('statsView — slots: bars, arrangements, and the settings before W7', 
 			trail: true,
 			emptyState: null,
 			timeFormat: null,
+			// 🚧 RF fix 8: a genre's tool state is a block of its own, shown unless a copy hides it.
+			toolState: 'shown',
 		})
 		assert.equal(statsSettingsOf({ trail: false }).trail, false)
 	})
@@ -290,6 +295,7 @@ describe('a scope not granted', () => {
 			density: 'compact',
 			arrangement: 'cards',
 			owners: 'cast',
+			declaresAttributes: false,
 		})
 		// Not said yet (`undefined`) is still loading; granted draws as ever.
 		assert.equal(statsView(undefined, {}, undefined).status, 'loading')

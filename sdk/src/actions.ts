@@ -715,6 +715,14 @@ export function actionFindingsByLaw(
 	raw: unknown,
 	specId: string,
 	at = 'contributes.actions',
+	opts: {
+		/**
+		 * 🚧 The spec is mounted by registrations, not locked (PLAN-layering
+		 * D3): its actions carry no genre — a registration that includes one
+		 * offers it to that genre.
+		 */
+		unlocked?: boolean
+	} = {},
 ): ActionFinding[] {
 	const out: ActionFinding[] = []
 	/** A fault in the declaration's shape (R-15). */
@@ -732,7 +740,7 @@ export function actionFindingsByLaw(
 
 	if (typeof a.key !== 'string' || !KEY.test(a.key))
 		shape(`${where}: 'key' is required — a lowercase kebab token (${KEY.source})`)
-	if (typeof a.genre !== 'string' || !a.genre)
+	if (opts.unlocked ? a.genre !== undefined && (typeof a.genre !== 'string' || !a.genre) : typeof a.genre !== 'string' || !a.genre)
 		shape(
 			`${where}: 'genre' is required — the genre id this action is offered to (24 §3), ` +
 				`such as core:genre/chat`,
@@ -1033,7 +1041,7 @@ export function slashCollisions(
 }
 
 /** Every finding on one document's contributed actions, sentences only. @internal */
-export function actionDocumentFindings(doc: { id: string; contributes?: unknown }): string[] {
+export function actionDocumentFindings(doc: { id: string; contributes?: unknown; input?: unknown; suits?: unknown }): string[] {
 	return actionDocumentFindingsByLaw(doc).map((f) => f.message)
 }
 
@@ -1045,13 +1053,18 @@ export function actionDocumentFindings(doc: { id: string; contributes?: unknown 
 export function actionDocumentFindingsByLaw(doc: {
 	id: string
 	contributes?: unknown
+	input?: unknown
+	suits?: unknown
 }): ActionFinding[] {
 	const c = doc.contributes as { actions?: unknown[] } | undefined
 	if (!c) return []
 	const out: ActionFinding[] = []
+	// 🚧 D3: a spec declared with `{ suits }` and no lock offers its actions
+	// where registrations include them — no genre on the declaration.
+	const unlocked = Array.isArray(doc.suits) && !doc.input
 	for (const entry of c.actions ?? []) {
 		const a = normalizeAction(entry as ActionDecl)
-		out.push(...actionFindingsByLaw(a, doc.id))
+		out.push(...actionFindingsByLaw(a, doc.id, 'contributes.actions', { unlocked }))
 	}
 	if (out.length) return out
 	return slashCollisions(actionsOf(doc)).map((message) => ({ law: 'R-15' as const, message }))

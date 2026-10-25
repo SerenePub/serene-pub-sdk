@@ -1095,8 +1095,15 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 
 	const previewAt = opts.preview
 		? previewTarget(
-				doc.nodes,
+				// 🚧 An oracle that only prepares the prompt is run through, not
+				// stopped before (`Descriptor.previewRunsThrough`, O9).
+				doc.nodes.filter(
+					(n) => !getDefinition(`${n.definitionId}@${n.definitionVersion}`)?.previewRunsThrough,
+				),
 				typeof opts.preview === 'object' ? opts.preview.atNode : undefined,
+				// 🚧 A junction's branches are on the route (2026-10-23): Story's
+				// reply writes inside its `reply` junction.
+				doc.clauses ?? [],
 			)
 		: undefined
 
@@ -1354,7 +1361,7 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 					} satisfies ResolvedConnection)
 				: null
 		}
-		if (slotName === 'sampling') {
+		if (slotName === 'sampling' || slotName === 'speechSampling') {
 			/**
 			 * The pick, then the instance default — the same two-step the
 			 * `connection` branch above already takes, and `kind` is derived the
@@ -1375,9 +1382,16 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			 * unaffected, because there is no modality to look a default up by.
 			 */
 			const targetNode = doc.nodes.find((n) => n.key === targetKey) ?? node
+			const targetDef = getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)
+			const ownDef = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
+			// 🚧 A second sampling slot (O7 — `speechSampling`) speaks the
+			// vocabulary its OWN declaration names, never the node's shape:
+			// the speech of a text call is the TTS vocabulary's.
 			const kind =
-				getDefinition(`${targetNode.definitionId}@${targetNode.definitionVersion}`)?.shape ??
-				getDefinition(`${node.definitionId}@${node.definitionVersion}`)?.shape
+				slotName === 'sampling'
+					? (targetDef?.shape ?? ownDef?.shape)
+					: ((targetDef?.slots?.[slotName] as { shape?: string } | undefined)?.shape ??
+						(ownDef?.slots?.[slotName] as { shape?: string } | undefined)?.shape)
 			// Split from the fallback below, because only this half is a PICK.
 			// The reference handed to the host is the pipeline config speaking
 			// (`pipelineConfig`, tier 2); the instance default is a tier the host
@@ -1385,11 +1399,11 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 			// projection comes from. Carrying the fallback down as though the
 			// pipeline had named it would relabel the tier a resolution reports
 			// while changing no value — a lie with no upside.
-			const picked = config[targetKey]?.['sampling']?.[SLOT_VALUE] as
+			const picked = config[targetKey]?.[slotName]?.[SLOT_VALUE] as
 				string | number | undefined
 			const refId = picked ?? (kind ? (world.activeSampling?.[kind] ?? undefined) : undefined)
 			const base = world.samplingConfigs.find((s) => sameId(s.id, refId))
-			const overrides = { ...(config[node.key]?.['sampling'] ?? {}) }
+			const overrides = { ...(config[node.key]?.[slotName] ?? {}) }
 			delete (overrides as any)[SLOT_VALUE]
 			// The config's switchboard applies here exactly as it does on the
 			// direct path: a sampler switched off must not reach the provider
@@ -1835,12 +1849,13 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		// is nothing to review when nothing will be sent. The payload is formed and
 		// counted here, so the panel shows the real figure rather than a parallel
 		// estimate that drifts from what actually goes out.
-		if (previewAt && node.key === previewAt.key) {
+		const stoppedBy = previewAt?.stops.get(node.key)
+		if (stoppedBy) {
 			receipt.preview = buildPreview(
 				node,
 				input,
 				nr.definitionId,
-				previewAt.targetedBy,
+				stoppedBy,
 				wire,
 				wireCtx,
 			)

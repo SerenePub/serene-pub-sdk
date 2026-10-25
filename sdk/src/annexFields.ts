@@ -174,9 +174,12 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
  * them while writing, never at a press.
  * @experimental
  */
-export function annexField(d: AnnexFieldInput): AnnexFieldDecl {
+export function annexField<const D extends AnnexFieldInput>(
+	d: D,
+): AnnexFieldDecl & { readonly key: D['key']; readonly __declared?: D } {
 	const problems = annexFieldFindings(d, 'annexField')
 	if (problems.length) throw new Error(problems.join('\n'))
+	// `__declared` is a phantom (never set): the field as written, for `sessionOf`'s annex typing.
 	return Object.freeze({
 		__decl: 'annex-field' as const,
 		key: d.key,

@@ -80,7 +80,16 @@ export const contextBudget = pin(
 			 * landed on, dropped ones left out; absent `blocks`, it is absent.
 			 */
 			in: { blocks: S.json },
-			out: { main: S.budget, available: S.budget, fittedBlocks: S.json },
+			/**
+			 * 🚧 `reads` (O9, 2026-10-21; additive, `@1` evolves in place):
+			 * what the pair behind `connection` reads, by media kind — the
+			 * same `ConnectionReadsV1` placement reads off its own slot. The
+			 * budget already resolves that pair for its window, so a step that
+			 * must know what the call can hear BEFORE placement (the
+			 * transcribe step) reads it here rather than resolving the call's
+			 * pair a second time. Null for an unwired slot.
+			 */
+			out: { main: S.budget, available: S.budget, fittedBlocks: S.json, reads: S.json },
 		},
 	}),
 )
@@ -2881,9 +2890,12 @@ export const turnNarrator = pin(
  *    genre's narrate action; a plain narrator reply when unset), unless a
  *    narration already landed since the person's line.
  *
- * `modes` is `core:task/resolve-tasks@1`'s `modes`; a key absent or `off` adds
- * nothing, so the order passes through untouched — a Minimal session's turn
- * order is exactly its strategy's. Pure.
+ * `modes` is `{ 'side-cast': …, 'narrator-interjections': … }` — `full` or
+ * `off` each, the genre's voices settings as the turn-order spec reads them
+ * (`core:script/unprompted-modes`, 2026-10-20; was the retired background
+ * tasks' modes); a key absent or `off` adds nothing, so the order passes
+ * through untouched — a session with neither on gets exactly its strategy's
+ * order. Pure.
  * @experimental
  */
 export const turnUnprompted = pin(
@@ -2915,7 +2927,7 @@ export const turnUnprompted = pin(
 				candidates: S.turnCandidates,
 				/** The session's visible history, ascending. */
 				messages: S.messages,
-				/** The background tasks' modes by key (`resolve-tasks@1`'s `modes`). */
+				/** `{ 'side-cast', 'narrator-interjections' }` → `full` | `off`: the genre's voices settings. */
 				modes: S.json,
 			},
 			out: { main: S.turnEntries, order: S.turnEntries },
@@ -4998,6 +5010,29 @@ export const rulesetResolve = pin(
 		},
 		timeoutMs: 5000,
 		declaresRandomness: true,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					/**
+					 * 🚧 D3 (2026-10-23): whether the events this step's
+					 * functions raise are emitted after the run's receipt. Off:
+					 * they are reported on `facts` and never emitted. The
+					 * pipeline's own switch (`SpecDocument.functionEvents`)
+					 * turns off every step's at once.
+					 */
+					emits: {
+						type: 'boolean',
+						default: true,
+						label: { en: 'Emit what its functions raise' },
+						description: {
+							en: "The events the ruleset's functions raise in this step are emitted once the run is saved. Off: they are only reported.",
+						},
+					},
+				},
+			},
+		},
 		ports: {
 			in: {
 				/**
@@ -5032,6 +5067,12 @@ export const rulesetResolve = pin(
 				 * view, which carries nothing marked for the holder or the GM.
 				 */
 				viewer: S.text,
+				/**
+				 * 🚧 D3 (2026-10-23): the event that woke the step — `{ id,
+				 * payload }` — when a registration or routine runs it on one;
+				 * what a function's handler reads as `ctx.event`. Unwired: none.
+				 */
+				event: S.json,
 			},
 			out: {
 				/** Labelled variables: `voice`, `sheet`, `pieces`, `ties`, `outcomes`, `custom`. */
@@ -5044,69 +5085,196 @@ export const rulesetResolve = pin(
 				explain: S.json,
 				/** Proposed changes the mechanics refused, with why — review items, never silent corrections. */
 				rejected: S.json,
+				/**
+				 * 🚧 D7 (2026-10-23): the JSON Schema a reply that carries changes
+				 * answers against — `{ message, changes }`, built from the
+				 * session's ruleset (`facts.replySchema`) — when the step's
+				 * `actions` asked for it (`{ replyShape: true }`); else null.
+				 */
+				replySchema: S.json,
 			},
 		},
 	}),
 )
 
 /**
- * 🚧 **Resolve the background tasks** (PLAN-genre-restructure §4, 2026-10-19):
- * what a session runs around a reply — the genre's declared tasks
- * (`GenreDecl.tasks`), each at the mode the session chose, else the mode its
- * preset pins (`PresetDecl.settings.tasks`), else the declared default; the
- * SDK's `resolveTasks` does the arithmetic (stored > pinned > declared). The
- * host binds it: it reads the session's preset row by the settings document's
- * `presetId` when `preset` is unwired, the genre's declaration by `genre`
- * (else the document's `genreId`), and the turn count for the sweep's
- * frequency (`sweepDue`).
+ * One duty a routine or a reply may be asked to do, as its pipeline's own
+ * setting (PLAN-layering §5, R1, A6): a switch the session's owner sees
+ * (`reach: 'owner'`), on or off. `on`/`off` only — *how* a duty's writes land
+ * (applied, or held for review) is the routine's **mode** (R37), never the
+ * duty's.
+ */
+const duty = (label: string, description: string, on: boolean) => ({
+	type: 'boolean' as const,
+	default: on,
+	reach: 'owner' as const,
+	label: { en: label },
+	description: { en: description },
+})
+
+/**
+ * The out-ports every duties step publishes: `modes` (each duty's key →
+ * `full` · `review` · `off`, what a junction reads by `path` and a script by
+ * key), `any` (true when any duty is on) and `main` (both, as one document).
+ */
+const dutyPorts = {
+	in: {
+		/**
+		 * The routine's firing (`core:inlet/routine@1`'s `routine` port) — its
+		 * `mode` is what an on duty runs at: `full` applies, `review` holds
+		 * each write for the owner. Unwired (a reply's duties): `full`.
+		 */
+		routine: S.json,
+	},
+	out: {
+		main: S.json,
+		/** `{ [duty key]: 'full' | 'review' | 'off' }`, keyed as the steps that read them name them. */
+		modes: S.json,
+		/** True when any duty is on — the routine has something to do. */
+		any: S.json,
+	},
+}
+
+/**
+ * 🚧 **What a reply reads** (PLAN-layering §4, R1, A6; 2026-10-20) — the
+ * reply's own duties, a switch each, read where the reply branches: *Read the
+ * lorebook* gates what retrieval hands the ranker, *Read the scene* gates
+ * what the context builder is told about where the story is. Neither costs a
+ * call. 🚧 *Replies carry changes* (PLAN-rulesets-functions D7, R7;
+ * 2026-10-23; off): the reply is one JSON object — its words and what the
+ * scene changed of the rules' attributes and entries — and the rules apply
+ * the changes (owner ruling 2026-10-23: no review of a reply's changes; how
+ * strict the rules are and the lore write modes decide what lands, and a
+ * replaced reply's changes go with it). Publishes `modes` keyed `lore-retrieval`,
+ * `scene-reading` and `reply-changes` (each `full` or `off`). Pure; no
+ * model call.
  *
- * Pure apart from those reads, and no model call: a genre's spec branches on
- * what it publishes — one pipeline whose junctions read `reckoning`, `sweep`
- * and `modes`, never one pipeline per toggle (owner ruling 2026-10-19). A task
- * whose mode is `off` is skipped at its branch.
+ * Was the reply group of the retired background tasks (`resolve-tasks@1`):
+ * a reply's settings belong to the reply (A6), so a preset that swaps the
+ * reply for another shows that one's settings instead (§5).
  * @experimental
  */
-export const resolveTasks = pin(
+export const replyDuties = pin(
 	describeTaskDefinition({
-		id: 'core:task/resolve-tasks@1',
+		id: 'core:task/reply-duties@1',
 		i18n: {
-			name: { en: 'Resolve background tasks' },
+			name: { en: 'What the reply reads' },
 			description: {
-				en: "Works out what this session runs around a reply: each of the genre's tasks at the session's mode, else its preset's, else the genre's default.",
+				en: 'Switches for what the reply reads besides the conversation: the lorebook, and where the story is. Neither costs a model call.',
 			},
 		},
-		timeoutMs: 1000,
-		ports: {
-			in: {
-				/** The settings document — its `genreId`, `presetId` and `fields`. */
-				session: S.sessionSettings,
-				/** The genre fields; `fields.tasks` is the stored `TaskSettingsV1`. Unwired: the document's. */
-				fields: S.json,
-				/** The preset's pinned settings (`PresetDecl.settings`). Unwired: the host reads the session's preset row. */
-				preset: S.json,
-				/** The genre whose `tasks` are resolved. Unwired: the document's `genreId`. */
-				genre: S.text,
-				/** The inlet's `{ id, rigour, settings }` — what `scripts` is read from. */
-				ruleset: S.json,
-			},
-			out: {
-				/** Everything below, as one document. */
-				main: S.json,
-				/** True when any `reckoning` task is on (`full` or `review`): one call after the reply. */
-				reckoning: S.json,
-				/** True when any `sweep` task is on AND a sweep is due this turn (`sweepDue`, or a scene boundary). */
-				sweep: S.json,
-				/** The sweep's shared frequency — every N turns, or `'scene'`. */
-				sweepEvery: S.json,
-				/** Whether the sweep waits for the round to end (A, B, C reply, then the sweep). */
-				waitForRound: S.json,
-				/** Every task as the session runs it (`ResolvedTask[]`). */
-				tasks: S.json,
-				/** `{ [task key]: 'full' | 'review' | 'off' }` — what a junction reads by `path`. */
-				modes: S.json,
-				/** True when the session's ruleset resolves by script (`rigour: 'scripts'`). */
-				scripts: S.json,
+		timeoutMs: 500,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					lore: duty('Read the lorebook', 'Finds the lorebook entries the scene calls for and puts them in the reply’s context.', true),
+					scene: duty(
+						'Read the scene',
+						'Puts where the story is — the place, what it is like, the ways out — into the reply’s context. Writes nothing.',
+						true,
+					),
+					changes: duty(
+						'Replies carry changes',
+						'The reply comes back with what the scene changed — a value up or down, something gained or lost — beside its words, and the rules apply it. Swiping, regenerating or deleting the reply takes it back.',
+						false,
+					),
+				},
 			},
 		},
+		ports: dutyPorts,
+	}),
+)
+
+/**
+ * 🚧 **Note what changed** (PLAN-layering §4, R5, R37; 2026-10-20; titled by
+ * the routine's name since 2026-10-23, PLAN-genres-seams S7 — was *What the
+ * reckoning keeps*) — the duties of a reckoning routine (Story's
+ * `core:spec/story-reckoning`; the Lair's keeper titles its own card):
+ * one JSON call after a turn or a round that notes what the story made true.
+ * Each duty is a switch; the routine's mode decides whether what an on duty
+ * finds is applied (`full`) or held for review (`review`). Publishes `modes`
+ * keyed `attributes`, `conditions`, `time`, `places-on-move`, `timed-expiry`
+ * — the keys the reckoning's scripts and junctions read — and `any`.
+ *
+ * *End what runs out* (`timed-expiry`) and *Track conditions* are also what
+ * the ruleset handler's expiry reads (the host, lane 6). A duty that writes
+ * a lorebook (*Describe new places*) reads Off in a session with none.
+ * Pure; no model call.
+ * @experimental
+ */
+export const reckoningDuties = pin(
+	describeTaskDefinition({
+		id: 'core:task/reckoning-duties@1',
+		i18n: {
+			name: { en: 'Note what changed' },
+			description: {
+				en: 'Switches for what is noted after the story moves: the sheets, conditions, the clock, new places, what runs out. How the changes land is the routine’s mode.',
+			},
+		},
+		timeoutMs: 500,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					attributes: duty('Keep the sheets', 'Notes what the story changed about health, mood, belongings and the place, and updates the sheets.', true),
+					conditions: duty('Track conditions', 'Puts conditions on and takes them off: hurt, tired, poisoned, inspired.', true),
+					time: duty('Move the clock', 'Moves the story clock by as much time as the story took.', true),
+					placesOnMove: duty('Describe new places', 'When the story moves somewhere new, files the place and its ways out.', true),
+					timedExpiry: duty('End what runs out', 'Ends conditions and effects when their time is up.', true),
+				},
+			},
+		},
+		ports: dutyPorts,
+	}),
+)
+
+/**
+ * 🚧 **Look back over the story** (PLAN-layering §4, R5, R37; 2026-10-20;
+ * titled by the routine's name since 2026-10-23, S7 — was *What the sweep
+ * files*) — the duties of a sweep routine (Story's `core:spec/story-sweep`): ONE batched
+ * JSON call every few turns that looks back over the story and files what is
+ * worth keeping. Each duty is a switch; the routine's mode decides whether
+ * what it files is written (`full`) or held for review (`review`). Publishes
+ * `modes` keyed `summary`, `lore`, `cast`, `relationships`, `world-state`,
+ * `scenes`, `goals`, `goal-reached` — the keys the sweep's scripts and
+ * junctions read — and `any`. Duties that write a lorebook read Off in a
+ * session with none. *Mark goals reached* (`goal-reached`) is read by the
+ * host when the goals note moves (lane 6). Pure; no model call.
+ * @experimental
+ */
+export const sweepDuties = pin(
+	describeTaskDefinition({
+		id: 'core:task/sweep-duties@1',
+		i18n: {
+			name: { en: 'Look back over the story' },
+			description: {
+				en: 'Switches for what is filed every few turns: a summary, lore, people, how they stand, the world, places, goals. How it lands is the routine’s mode.',
+			},
+		},
+		timeoutMs: 500,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					summary: duty('Summarize the story', 'Files a summary of what happened in the lorebook’s history.', true),
+					lore: duty('Add to the lore', 'Files new facts the story established as lorebook entries.', true),
+					cast: duty('Note new people', 'Files the people the story introduced as lorebook entries.', true),
+					relationships: duty('Track relationships', 'Proposes how the characters now stand with each other, for you to look over.', false),
+					worldState: duty('Keep the world', 'Updates the world’s state from what happened: where the story is, the time of day, the weather.', true),
+					scenes: duty('File the places', 'Files each place the story used as a place in the lorebook.', false),
+					goals: duty('Track goals', 'Keeps a running note of what the characters are after and how close they are.', false),
+					goalReached: duty(
+						'Mark goals reached',
+						'When a goal in the goals note is ticked, says so in the story and tells everyone in the session.',
+						false,
+					),
+				},
+			},
+		},
+		ports: dutyPorts,
 	}),
 )
