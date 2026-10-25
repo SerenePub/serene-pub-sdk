@@ -11,18 +11,13 @@
  * *askable*, writes *report*, and everything that can be created can be
  * removed.
  *
- * ## Rows and files are separate on purpose
+ * ## Files, and the session's annex
  *
- * Rows are small, queryable and live in the database with the rest of the
- * instance's state — they back up with it and restore with it. Files are bytes
- * on disk, jailed to the extension's own directory, for the things a row is the
- * wrong home for (a downloaded model index, a cache, a generated artifact).
- * Merging them would mean either putting megabytes in the database or putting
- * queryable state outside the backup.
- *
- * **Both count against one quota.** A single number is what an author can
- * reason about and what a consent screen can state; two budgets that can each
- * be under while the disk fills is the failure this avoids.
+ * An extension's files are bytes on disk, jailed to its own directory, for what a session
+ * row is the wrong home for: a downloaded index, a cache, a generated artifact, hidden state
+ * only its own handlers read. What a session should keep — and take back with a turn — is an
+ * annex field (`annexField`, `set-session-annex@1`), which core can check, show and retract.
+ * There is no row store: what core cannot see inside, it cannot check, show or take back.
  * @ruling 13 §7c
  */
 
@@ -34,14 +29,11 @@ import type { Result } from './executor.js'
 export interface StorageUsage {
 	/** The ceiling, from the manifest's `storage.quotaBytes`. */
 	quotaBytes: number
-	/** Rows plus files, as currently stored. */
+	/** The extension's files, as currently stored. */
 	usedBytes: number
 	/** `quotaBytes - usedBytes`, floored at zero — precomputed because every
 	 *  caller wants it and a subtraction is where an off-by-one lives. */
 	availableBytes: number
-	/** The split, for an extension that wants to know which half to prune. */
-	rowBytes: number
-	fileBytes: number
 }
 
 /**
@@ -56,49 +48,6 @@ export interface WriteReceipt {
 	/** Bytes this write added (negative when it replaced something larger). */
 	deltaBytes: number
 	usage: StorageUsage
-}
-
-// ── Rows ────────────────────────────────────────────────────────────────────
-
-/**
- * A row query, deliberately small.
- *
- * This is key-prefix and time filtering with a cursor, not a query language.
- * An extension needing joins or secondary indexes wants its own tables, which
- * is a different (and much bigger) conversation than "let a plugin keep some
- * state" — and a query language here would become a compatibility surface no
- * one can change.
- * @experimental
- */
-export interface RowQuery {
-	/** Keys starting with this. Absent means every key. */
-	prefix?: string
-	/** Written at or after this ISO timestamp. */
-	since?: string
-	/** Written before this ISO timestamp. */
-	until?: string
-	/** Page size. The host clamps it; ask for what you want. */
-	limit?: number
-	/** From a previous page's `nextCursor`. */
-	cursor?: string
-	/** Newest first by default — the order a log or a cache wants. */
-	order?: 'newest' | 'oldest' | 'key'
-}
-
-/** @experimental */
-export interface RowEntry<T = unknown> {
-	key: string
-	value: T
-	bytes: number
-	/** ISO. */
-	updatedAt: string
-}
-
-/** @experimental */
-export interface RowPage<T = unknown> {
-	rows: RowEntry<T>[]
-	/** Absent when this was the last page. */
-	nextCursor?: string
 }
 
 // ── Files ───────────────────────────────────────────────────────────────────
@@ -137,23 +86,13 @@ export interface ExtensionFiles {
 export interface ExtensionStorage {
 	/** Ask, at any time. Cheap enough to call before a large write. */
 	usage(): Promise<StorageUsage>
-
-	get<T = unknown>(key: string): Promise<T | undefined>
-	/** Keys only — for an extension that wants to enumerate before reading. */
-	keys(prefix?: string): Promise<string[]>
-	query<T = unknown>(q?: RowQuery): Promise<RowPage<T>>
-	put(key: string, value: unknown): Promise<Result<WriteReceipt>>
-	delete(key: string): Promise<Result<WriteReceipt>>
-	/** Everything under a prefix — the "get back under quota" and the
-	 *  "clean up after myself on uninstall" operation. */
-	deleteAll(prefix?: string): Promise<Result<{ removed: number; usage: StorageUsage }>>
-
+	/** The extension's own directory: everything it keeps beyond the session's annex. */
 	files: ExtensionFiles
 }
 
 /** Nothing here reaches outside the extension's own namespace, so there is no
  *  capability to grant and nothing to put on a consent screen: an extension
- *  managing its own rows is not a permission, it is housekeeping. 
+ *  managing its own files is not a permission, it is housekeeping. 
  * @experimental
  */
 export const STORAGE_IS_UNPRIVILEGED = true as const

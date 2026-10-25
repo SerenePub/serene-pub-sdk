@@ -3,7 +3,7 @@
  *
  * The session's ordered list of prepared turns is a **document**, not a
  * decision a run makes on the way to a reply. It lives at
- * `sessions.metadata.turnOrder`, is written by `core:outlet/set-turn-order@1`
+ * the session's stored turn order (the host keeps it under annex owner `core`), is written by `core:outlet/set-turn-order@1`
  * and nothing else, and survives refresh and reboot. A page renders it;
  * a socket fires an entry from it; the recompute is a pipeline
  * (`core:spec/<genre>-turn-order`, one per genre) that answers a session event and reads only.

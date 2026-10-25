@@ -30,6 +30,17 @@ import { compile, spec, slot, ITEM, type ActionDecl } from "@serene-pub/sdk"
 import { chainIf } from '../chains.js'
 import { CORE_LOADOUT } from '../../loadouts.js'
 import * as C from "@serene-pub/contracts"
+import { applyWiring, wiring } from '../calls.js'
+import { rememberNote } from '../lore.js'
+import { characterLoreEntryType, historyEntryType, worldLoreEntryType } from '../../registry/entries.js'
+
+/** The entry type each summarize namespace files its entry as. */
+const SUMMARY_ENTRY_TYPES = {
+	world: worldLoreEntryType,
+	character: characterLoreEntryType,
+	scene: historyEntryType,
+	history: historyEntryType,
+} as const
 
 /**
  * 🚧 **The summarize action** (R50, 2026-10-21; lane F1): what every
@@ -57,6 +68,20 @@ export const summarizeAction = <K extends "world" | "character" | "scene" | "his
 		label: { en: `Summarize (${what})` },
 		description: { en: `Summarize part of the session — the ${what} — held for review.` }
 	})
+
+/**
+ * 🚧 **Close out** (pr-6, R-d): summarize what was played since the last scene as a closing scene, held for review —
+ * the host's close-out path fires it (the `summarizeAction` precedent: the `form` venue, an audience that names nobody,
+ * so no listing offers it). Contributed by every summarize-scene spec; a genre's summaries register it with `minAge: 0`.
+ * @experimental
+ */
+export const closeOutAction: Readonly<Omit<ActionDecl, "genre"> & { key: "close-out" }> = Object.freeze({
+	key: "close-out" as const,
+	venue: { kind: "form" as const },
+	audience: { see: [], act: [] },
+	label: { en: "Close out" },
+	description: { en: "Summarize what was played since the last scene as a closing scene, held for review." }
+})
 
 // 1.1.0: the request travels to the drafting, synthesis and cast steps, so a
 // topic focuses every prompt and the known-cast list reaches extraction. A
@@ -112,6 +137,7 @@ interface SummarizeShape {
 export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 	compile(
 		(() => {
+			const w = wiring()
 			const base = spec(id, {
 				version: SUMMARIZE_VERSION,
 				/**
@@ -122,7 +148,7 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 				taxonomy: { role: "maintenance" },
 				// 🚧 R50: the action a genre's defaults register it on, so its
 				// values resolve through that registration (see `summarizeAction`).
-				contributes: { actions: [summarizeAction(loreType)] }
+				contributes: { actions: loreType === "scene" ? [summarizeAction(loreType), closeOutAction] : [summarizeAction(loreType)] }
 			})
 				// Manually triggered: a person asks for a summary. ACTION events
 				// carry no write targets, so this drops out of the cycle check by
@@ -241,25 +267,23 @@ export const summarizeSpec = ({ id, loreType, extractsCast }: SummarizeShape) =>
 					),
 			)
 
-			return withCast
-				.outlet("save", ($) =>
-					C.createLoreEntry.v1({
-						name: $.naming.name,
-						content: $.synth.content,
-						// Which KIND of entry this summarizer files (L3): the
-						// four namespaces exist so the press decides, and the
-						// slot is how that decision reaches the row instead of
-						// rendering a control nothing reads.
-						params: slot.params()
-					})
-				)
+			return rememberNote(withCast, w, {
+				key: "save",
+				name: ($) => $.naming.name,
+				content: ($) => $.synth.content,
+				// Which KIND of entry this summarizer files (L3): the four
+				// namespaces exist so the press decides.
+				entryType: SUMMARY_ENTRY_TYPES[loreType],
+				// 🚧 Pass 6: a summary is a generated write — the messages it was written from.
+				sources: ($) => $.transcript.messages,
+			})
 				/**
 				 * Every model call of a summary runs on the Extraction
 				 * loadout (I12): it reads a passage and answers in a fixed
 				 * shape. Unfilled, it falls back to Reply.
 				 */
 				.defaults((p) => {
-					const named = p
+					const named = applyWiring(p, w)
 						.loadout("drafting.item.draft", slot.loadout(CORE_LOADOUT.extraction))
 						.loadout("synth", slot.loadout(CORE_LOADOUT.extraction))
 						.loadout("naming", slot.loadout(CORE_LOADOUT.extraction))

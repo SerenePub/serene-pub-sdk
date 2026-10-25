@@ -1047,6 +1047,7 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 				label: { en: "Sanctum" },
 				role: "conversation",
 				audience: "owner",
+				lore: "aside",
 				turnControls: { pick: false, retake: false }
 			}
 		],

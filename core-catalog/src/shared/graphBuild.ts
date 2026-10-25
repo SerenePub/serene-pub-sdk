@@ -139,7 +139,7 @@ export const graphBuildSpec = () =>
 						)
 			)
 			.outlet("propose", ($) =>
-				C.graphProposal.v1({ proposal: $.building.main })
+				C.graphProposal.v1({ proposal: $.building.main, sources: $.scenes.scenes })
 			)
 			.build()
 	)

@@ -191,6 +191,38 @@ test('a divider where each scene begins and a day mark where the story day turns
 	}
 })
 
+test('🚧 the settle line: rows at or below it are marked, and one mark follows the newest (sprint 2)', { timeout: 120_000 }, async () => {
+	const settled = (over: Record<string, unknown>) => dossier(over as never)
+	const MARK = '[data-widget-part~="messages.settled-mark"]'
+	/** Document-order position of the mark among the log's items, by the ids of the rows around it. */
+	const order = (view: Awaited<ReturnType<typeof mount>>) =>
+		view.queryAll('[data-widget-part~="messages.message-list"] > li').map((li) =>
+			li.querySelector(MARK) ? 'mark' : li.getAttribute('data-widget-part')?.includes('messages.message-row') ? (li.hasAttribute('data-history-settled') ? 's' : 'u') : '',
+		).filter(Boolean).join(',')
+	for (const [dir, expected] of [
+		['oldest-first', 's,s,s,mark,u,u'],
+		['newest-first', 'u,u,mark,s,s,s'],
+	] as const) {
+		const view = await mount(settled({ settledThrough: 3 }), undefined, { order: dir, showScenes: false })
+		try {
+			assert.equal(view.queryAll(MARK).length, 1)
+			assert.equal(view.query(MARK)?.textContent?.trim(), 'In the lorebook up to here')
+			assert.equal(order(view), expected, dir)
+		} finally {
+			await view.unmount()
+		}
+	}
+	for (const over of [{}, { settledThrough: null }]) {
+		const view = await mount(settled(over), undefined, {})
+		try {
+			assert.equal(view.queryAll(MARK).length, 0)
+			assert.equal(view.queryAll('[data-widget-part~="messages.message-row"][data-history-settled]').length, 0)
+		} finally {
+			await view.unmount()
+		}
+	}
+})
+
 test('newest-first draws what opens at a line below it, in reverse', { timeout: 120_000 }, async () => {
 	const view = await mount(dossier(), undefined, { order: 'newest-first' })
 	try {

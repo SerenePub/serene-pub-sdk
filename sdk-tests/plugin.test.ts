@@ -102,11 +102,11 @@ const dicePlugin = defineExtension({
 		// lifecycle included. Core sends no envelope for a moment you already
 		// registered against, so argument 0 goes unread.
 		lifecycleCallback('startup', async (_input, ctx) => {
-			// The storage surface: queryable, and it reports what it cost.
-			const page = await ctx.storage.query({ prefix: 'stats/', limit: 20 })
+			// The storage surface: listable, and it reports what it cost.
+			const listed = await ctx.storage.files.list('stats/')
 			const { availableBytes } = await ctx.storage.usage()
 			ctx.log('debug', 'loaded stats', {
-				rows: page.rows.length,
+				files: listed.length,
 				availableBytes,
 			})
 			return ok(null)
@@ -114,11 +114,11 @@ const dicePlugin = defineExtension({
 		// (input, ctx) — the occurrence arrives as argument 0, and `input.event`
 		// says which one, so one hook can answer several subscriptions.
 		eventListener('core:event/session-created@1', async (input, ctx) => {
-			const wrote = await ctx.storage.put(`seen/${input.event}`, true)
+			const wrote = await ctx.storage.files.write(`seen/${input.event}`, new Uint8Array([1]))
 			// A write that would exceed quota comes back `err` with the usage
 			// figures, rather than throwing or silently dropping.
 			if (wrote.kind !== 'ok') {
-				await ctx.storage.deleteAll('stats/')
+				await ctx.storage.files.deleteAll('stats/')
 				ctx.log('warn', 'pruned stats to stay under quota')
 			}
 			return ok(null)
@@ -249,9 +249,9 @@ describe('98 · compilePlugin', () => {
 			text: `
 				export default defineExtension({ slug: 'chariot.dice-tray' })
 				handler(rollDice, async (i, ctx) => ok({}))
-				lifecycleCallback('startup', async (s) => { await s.storage.query({ prefix: 'stats/' }); return ok(null) })
+				lifecycleCallback('startup', async (s) => { await s.storage.files.list('stats/'); return ok(null) })
 				lifecycleCallback('uninstall', async (s) => { s.log('info', 'removed'); return ok(null) })
-				eventListener('core:event/session-created@1', async (s) => { await s.storage.put('seen', true); return ok(null) })
+				eventListener('core:event/session-created@1', async (s) => { await s.storage.files.write('seen/x', new Uint8Array([1])); return ok(null) })
 				component({ slug: 'dice-result' })
 			`,
 		},
@@ -1400,7 +1400,7 @@ describe('105 · what a plugin’s sandbox cannot endow', () => {
 		assert.deepEqual(scan.endowments, ['call', 'commit'])
 	})
 
-	test('a plugin Query is a kind, not a mistake — it is how a plugin reads its own rows', async () => {
+	test('a plugin Query is a kind, not a mistake — it is how a plugin reads its own files', async () => {
 		// The rule was kind-based for an afternoon: every plugin Query refused.
 		// `hookCtxGrants` hands a query `storage`, and the two Battleship nodes
 		// that read a board became emit-class outlets that write nothing. The
@@ -1418,7 +1418,7 @@ describe('105 · what a plugin’s sandbox cannot endow', () => {
 		assert.ok(f)
 		assert.match(f.message, /demo\.write-outlet:outlet\/save-record@1 is a write-class outlet/)
 		assert.match(f.fix, /effects: 'emit'/)
-		// It may still hold its own rows: an author reading "you cannot write"
+		// It may still hold its own files: an author reading "you cannot write"
 		// otherwise concludes a plugin cannot keep state at all, which is false.
 		assert.match(f.fix, /its own storage/)
 	})
@@ -1449,7 +1449,7 @@ describe('105 · what a plugin’s sandbox cannot endow', () => {
 				path: 'src/definitions.ts',
 				text: [
 					"export const keep = describeQueryDefinition({ id: 'demo.x:query/keep@1' })",
-					'export const keepHandler = async (i, ctx) => ok({ main: await ctx.storage.get(`b`) })',
+					'export const keepHandler = async (i, ctx) => ok({ main: await ctx.storage.files.read(`b`) })',
 					"export const pure = describeTaskDefinition({ id: 'demo.x:task/pure@1' })",
 					'export const pureHandler = async (i) => ok({ main: i.cast })',
 				].join('\n'),

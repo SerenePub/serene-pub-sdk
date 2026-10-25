@@ -537,7 +537,7 @@ function isWrittenOut(raw: string, blanked: string): boolean {
  * the **executor's**, and no sandbox has ever handed one over, for any kind.
  *
  * That is the line, and it is not the kind line. A plugin Query is a perfectly
- * good node — it is the kind a plugin uses to read *its own* rows, which is why
+ * good node — it is the kind a plugin uses to read *its own* files, which is why
  * Battleship declares two of them. Refusing the kind turned those into
  * emit-class outlets that write nothing. What is refused here is a handler
  * reaching for an endowment nobody makes.
@@ -558,15 +558,15 @@ const SANDBOX_ENDOWMENT =
 const EXECUTOR_ONLY: Record<string, string> = {
 	read:
 		`Read Serene Pub's data on an input port wired from a core query ` +
-		`(\`core:query/…\`); a plugin reads its own rows with \`ctx.storage\`.`,
+		`(\`core:query/…\`); a plugin reads its own files with \`ctx.storage\`.`,
 	readCore:
 		`Read Serene Pub's data on an input port wired from a core query ` +
-		`(\`core:query/…\`); a plugin reads its own rows with \`ctx.storage\`.`,
+		`(\`core:query/…\`); a plugin reads its own files with \`ctx.storage\`.`,
 	call:
 		`Cross the network from an Oracle: \`call\` is the executor's, and what a plugin's ` +
 		`own oracle handler gets is \`ctx.fetch\`, with a host declared in its manifest.`,
 	commit:
-		`Let a core outlet do the write, on a port this run publishes; a plugin's own rows ` +
+		`Let a core outlet do the write, on a port this run publishes; a plugin's own files ` +
 		`are \`ctx.storage\`, granted to a query or an emit-class outlet.`,
 }
 

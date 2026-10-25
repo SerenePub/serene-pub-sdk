@@ -18,7 +18,7 @@ Each section links to the guide with the details.
 | Show a whole HTML document: a page, a charting library | a **frame** | `surfaces`, or an `sp-frame` inside a widget's component | [Frames](frames.md) |
 | Tell the rest of the session that something happened | a **session event** | `events` | [Events](events.md) |
 | Run code when an event happens, or when your plugin is installed or switched on | an **event listener**, a **lifecycle callback** | `handlers` | [Listeners](#event-listeners-and-lifecycle-callbacks) |
-| Keep data between runs | **storage**: your own rows and files | `permissions.storage` | [Storage](storage.md) |
+| Keep data between runs | **storage**: your own files | `permissions.storage` | [Storage](storage.md) |
 | Let a widget save a small value in the session | an **annex field** | `annexFields` | [Storage](storage.md#a-value-a-widget-saves-annex-fields) |
 | Let an admin, or each person, configure your plugin | **settings** | `settings` | [Your first plugin](your-first-plugin.md#declaring-the-plugin) |
 | Offer a different rule for who speaks next | a **turn strategy**, offered as a **swap** | `handlers`, `swaps` | [Your first plugin](your-first-plugin.md#a-turn-strategy-of-your-own) |
@@ -77,7 +77,7 @@ what the step is allowed to do. Your own node definitions can be any kind but th
 | Kind | Its job | What your handler is handed, beyond `random`, `now`, `log` and `signal` | A core example |
 | --- | --- | --- | --- |
 | **inlet** | Where a run starts. Exactly one per pipeline, first. It ties the pipeline to one genre and one event. | Only core ships inlets. You place one of core's. | `user-message`, `session-event` |
-| **query** | Reads. | `storage`: your plugin's own rows and files. | `session-history` |
+| **query** | Reads. | `storage`: your plugin's own files. | `session-history` |
 | **task** | Computes. Data in, data out, nothing else. | Nothing more. A task gets no storage and no network. | `assemble` |
 | **oracle** | Calls out to something outside the run. | `storage`, and `fetch` for the hosts your plugin declares. | `generate-text` |
 | **outlet** | Writes. | `storage`. A plugin's outlet declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets do the writing to the session. | `create-message`, `set-session-annex`, `set-stat-config`, `record-event` |
@@ -87,7 +87,7 @@ thrown error or a bare value is not a result. Declaring the wrong kind is the mi
 makes once: a task that reads `ctx.storage` finds nothing there. `serene-pub check` catches it
 before you install.
 
-A small query of your own, reading a row your plugin wrote earlier:
+A small query of your own, reading a file your plugin wrote earlier:
 
 <!-- prelude:
 import type { PluginHandlerContext } from '@serene-pub/sdk/testing'
@@ -105,8 +105,8 @@ const lastRoll = pin(
 )
 
 export const lastRollHandler = handler(lastRoll, async (input: { sessionId: unknown }, ctx: PluginHandlerContext) => {
-	const text = await ctx.storage?.get<string>(`s:${input.sessionId}:last-roll`)
-	return ok({ main: text ?? 'No roll yet.' })
+	const file = await ctx.storage?.files.read(`sessions/${input.sessionId}/last-roll.txt`)
+	return ok({ main: file?.kind === 'ok' ? new TextDecoder().decode(file.value) : 'No roll yet.' })
 })
 ```
 
@@ -239,11 +239,12 @@ import { eventListener, lifecycleCallback, ok } from '@serene-pub/sdk'
 
 export const handlers = [
 	eventListener(rolled, async (e, ctx) => {
-		await ctx.storage.put('last-total', (e.payload as { total: number }).total)
+		const total = (e.payload as { total: number }).total
+		await ctx.storage.files.write('last-total.txt', new TextEncoder().encode(String(total)))
 		return ok({})
 	}),
 	lifecycleCallback('uninstall', async (_input, ctx) => {
-		await ctx.storage.deleteAll()
+		await ctx.storage.files.deleteAll()
 		return ok({})
 	}),
 ]
@@ -263,15 +264,16 @@ import { eventListener, ok, SCHEDULED_WORK_PATH } from '@serene-pub/sdk'
 const nightly = eventListener(SCHEDULED_WORK_PATH.instead, async (e, ctx) => {
 	const { scheduledFor } = e.payload as { scheduledFor: string }
 	const day = scheduledFor.slice(0, 10)
-	if ((await ctx.storage.get<string>('last-day')) === day) return ok({})
-	await ctx.storage.put('last-day', day)
+	const last = await ctx.storage.files.read('last-day.txt')
+	if (last.kind === 'ok' && new TextDecoder().decode(last.value) === day) return ok({})
+	await ctx.storage.files.write('last-day.txt', new TextEncoder().encode(day))
 	return ok({})
 })
 ```
 
 ## Storage, settings and permissions
 
-- **Storage.** Your plugin's own rows and files, under a quota it asks for. Only your own
+- **Storage.** Your plugin's own files, under a quota it asks for. Only your own
   queries, oracles, outlets, listeners and lifecycle callbacks reach them. Nothing else does, so
   storage is where hidden state lives: an opponent's fleet, an answer the player must guess. See
   [Storage](storage.md).

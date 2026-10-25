@@ -14,7 +14,7 @@
  * On the rules path it calls no model, writes no message and costs no token
  * — five reads and a `jsonb_set`. A genre may add the optional model path
  * (R41, `advise`), which asks a model once per recompute when the session's
- * `turnMode` is `model`. What it produces is the session's `metadata.turnOrder`:
+ * `turnMode` is `model`. What it produces is the session's stored turn order:
  * the prepared turns, the candidates they were drawn from, and what the
  * order answers. Every surface that used to ask "who is next" by running a
  * decider now renders that state, and the reply run fires an entry out of

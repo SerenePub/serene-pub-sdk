@@ -29,8 +29,9 @@ import {
 	type BranchOf,
 	type NodeOn,
 } from '../../shared/calls.js'
+import { fileLore } from '../../shared/lore.js'
 import { ASSISTANT_PROMPT_KEYS } from '../../seed/prompts.js'
-import { bareEntryTypeId, worldLoreEntryType } from '../../registry/entries.js'
+import { worldLoreEntryType } from '../../registry/entries.js'
 
 /** @experimental */
 export const ASSISTANT_MEMORY_SPEC_ID = 'core:spec/assistant-memory'
@@ -80,32 +81,18 @@ export const assistantMemorySpec = () => {
 						},
 					}).junction('notes', { on: ($) => $.input.routine }, (n) => {
 						const arm = (b: BranchOf<typeof n, 'full' | 'review'>, mode: 'full' | 'review') => {
-							const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-							return jsonPart(b, w, 'list', ($) => $.memory.due.memoryWrite.json, 'notes', rv('The notes')).each(
-								'note',
-								{ over: ($) => $.list.main, max: 4 },
-								(e) => {
-									w.params.push([on(e, 'write'), { entryType: bareEntryTypeId(worldLoreEntryType) }])
-									if (mode === 'review') review.push(on(e, 'write'))
-									return textPart(
-										textPart(e, w, 'name', ($) => $[ITEM], 'name', rv("The note's title")),
-										w,
-										'content',
-										($) => $[ITEM],
-										'content',
-										rv('What the note says'),
-									).outlet(
-										'write',
-										($) =>
-											C.createLoreEntry.v1({
-												name: $.name.text,
-												content: $.content.text,
-												params: slot.params(),
-											}),
-										{ expose: { label: mode === 'full' ? 'File the note' : 'Hold the note for review' } },
-									)
-								},
-							)
+							return fileLore(b, w, {
+								from: ($) => $.memory.due.memoryWrite.json,
+								member: 'notes',
+								listLabel: 'The notes',
+								each: 'note',
+								noun: 'note',
+								nameLabel: "The note's title",
+								max: 4,
+								entryType: worldLoreEntryType,
+								writeLabel: mode === 'full' ? 'File the note' : 'Hold the note for review',
+								review: mode === 'review' ? review : undefined,
+							})
 						}
 						return (
 							n

@@ -143,7 +143,7 @@ export const sessionEvents = Object.freeze({
 	 */
 	backdropSet: 'core:event/backdrop-set@1',
 	/**
-	 * `metadata.turnOrder` was written. **For typing only**: core-internal,
+	 * the stored turn order was written. **For typing only**: core-internal,
 	 * read by the auto-advance listener and the `sessions:turnOrder` push;
 	 * `genre()` refuses it in `events`, so no preset can bind it.
 	 */
@@ -159,6 +159,12 @@ export const sessionEvents = Object.freeze({
 	sceneClosed: 'core:event/scene-closed@1',
 	/** 🚧 The session's story clock moved. */
 	storyClockMoved: 'core:event/story-clock-moved@1',
+	/** 🚧 The session's owner archived it (pr-6, R-k). */
+	sessionArchived: 'core:event/session-archived@1',
+	/** 🚧 A scene's summary was saved into the lorebook (pr-6, R-l). */
+	sceneSummaryApplied: 'core:event/scene-summary-applied@1',
+	/** 🚧 The session's settle line moved (pr-6, pass 4). */
+	historySettled: 'core:event/history-settled@1',
 } as const)
 
 /** @experimental */
@@ -197,6 +203,11 @@ export interface GenreEventDecl {
 	 */
 	open?: boolean
 }
+
+/** 🚧 When a genre's history settles (G2, R-m). @experimental */
+export const HISTORY_SETTLES = ['on-write', 'on-commit'] as const
+/** @experimental */
+export type HistorySettle = (typeof HISTORY_SETTLES)[number]
 
 /** @public */
 export interface GenreDecl {
@@ -317,6 +328,14 @@ export interface GenreDecl {
 	 */
 	readonly playerLabel?: LocaleMap
 	/**
+	 * 🚧 How far Back reaches (G2, ruled 2026-10-24). `on-commit` (default): the settle line moves only when
+	 * a summary is saved or a person touches a row. `on-write`: every anchored write settles as it lands —
+	 * an honour-mode game; Back is refused, Hide and Branch still work. The genre's alone: no preset or
+	 * session changes it. Absent when unstated, so a genre that says nothing hashes as it did.
+	 * Spelled out rather than `HistorySettle`, as `uses` is: this interface is frozen and the settle vocabulary is still 🚧.
+	 */
+	readonly history?: { readonly settle: 'on-write' | 'on-commit' }
+	/**
 	 * The genre's **enabled-when defaults** (built
 	 * 2026-09-17), keyed by action **identity** — `<spec>#<key>`, and
 	 * `core#<verb>` for one of core's message verbs (it was the function key
@@ -425,6 +444,8 @@ export interface GenreProps {
 	envoys?: readonly EnvoyDecl[]
 	/** What a person's persona-less line is called — see `GenreDecl.playerLabel`. */
 	playerLabel?: I18n
+	/** When the genre's history settles — see `GenreDecl.history`. */
+	history?: { readonly settle: HistorySettle }
 	/** Enabled-when defaults per action identity — see `GenreDecl.enabledWhen`. */
 	enabledWhen?: Readonly<Record<string, EnabledWhenDecl>>
 	/** Pinned setting values — the genre layer of the cascade; see `GenreDecl.settings`. */
@@ -1077,6 +1098,11 @@ export function genre<const P extends GenreProps>(
 	// 🚧 RF fix 8: a genre brings no attributes — refused by name, with where to say it instead.
 	for (const key of RETIRED_GENRE_ATTRIBUTE_KEYS)
 		if ((props as unknown as Record<string, unknown>)[key] !== undefined) throw new Error(retiredGenreKeyFinding(id, key))
+	if (props.history !== undefined) {
+		const settle = (props.history as { settle?: unknown } | null)?.settle
+		if (!(HISTORY_SETTLES as readonly unknown[]).includes(settle))
+			throw new Error(`genre '${id}' declares history.settle '${String(settle)}' — 'on-write' or 'on-commit'.`)
+	}
 	const playerLabel = assertPlayerLabel(props, id)
 	const summarizeFindings = genreSummarizeFindings(props.summarize, `${id}.summarize`)
 	if (summarizeFindings.length) throw new Error(summarizeFindings.join('\n'))
@@ -1112,6 +1138,8 @@ export function genre<const P extends GenreProps>(
 		...(envoys.length ? { envoys: Object.freeze(envoys) } : {}),
 		// R4: absent when unstated, so a genre that says nothing hashes as it did.
 		...(playerLabel ? { playerLabel } : {}),
+		// G2: absent when unstated, so a genre that says nothing hashes as it did.
+		...(props.history ? { history: Object.freeze({ settle: props.history.settle }) } : {}),
 		...(enabledWhen && Object.keys(enabledWhen).length ? { enabledWhen } : {}),
 		// The pinned settings (§4.13): copied when stated, frozen like the
 		// rest, absent otherwise — so an unpinned genre hashes as it did.
@@ -1382,6 +1410,12 @@ export const genreEnvoy = (
  */
 export const genreEnabledWhen = (g: GenreDecl | string, fn: string): readonly EnabledWhen[] =>
 	(typeof g === 'string' ? registry.get(g)?.enabledWhen : g.enabledWhen)?.[fn] ?? []
+
+/** 🚧 The genre's settle mode, default resolved. @experimental */
+export function historySettleOf(genre: unknown): HistorySettle {
+	const settle = (genre as { history?: { settle?: unknown } } | null | undefined)?.history?.settle
+	return (HISTORY_SETTLES as readonly unknown[]).includes(settle) ? (settle as HistorySettle) : 'on-commit'
+}
 
 /** A genre reference as it lands in documents: always the id. Takes a `GenreDecl`, a `use()` ref or an id. @experimental */
 export const genreIdOf = (g: GenreDecl | { readonly id: string } | string): string => {

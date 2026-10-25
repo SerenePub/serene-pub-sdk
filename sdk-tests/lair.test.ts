@@ -749,7 +749,8 @@ const PUBLISHED: Record<string, string> = {
 	// M3 (2026-10-22): Auto roll's description says "When the rules decide", never "Under Rules and dice". (was '799554471956d')
 	// Genres GM (2026-10-23): the Lair's relabels and its recommended rulesets in the genre shape it carries (G0, S7). (was 'c46bd3f8d3a77')
 	// RF fix 2 (2026-10-23): the genre shape it carries offers the lorebook, never requires it ('required' retired). (was '1cb73ccca537ee')
-	'core:spec/lair-create': '1a7932ed813f14',
+	// Moved 2026-10-25 (pr-6 C3): the Sanctum declares `lore: 'aside'` (pass 9 S1). (was '1a7932ed813f14')
+	'core:spec/lair-create': 'd927ed6661005',
 	// Genres GM (2026-10-23): *Deciding the checks* as the status (G0, S7). (was '18ab1e1e72aac4')
 	// Repair 1 (2026-10-23): its `ruleset-resolve` step(s) name the params slot — the `emits` switch is read. (was '5cbe8f5325b1b')
 	// RF fix 2 (2026-10-23): the voice's reminder lands from the first line — its `prompt` step's trigger is 0. (was 'ee12352ed2052')
@@ -774,7 +775,9 @@ const PUBLISHED: Record<string, string> = {
 	'core:spec/lair-roll-answer': '132974277207e4',
 	'core:spec/lair-answer-form': 'e03c023079828',
 	'core:spec/lair-turn-order': 'f6801bd2a7aac',
-	'core:spec/lair-summarize-scene': '249eb28ab0204',
+	// Moved 2026-10-25 (pr-6 C3): `save` is `rememberNote` with `sources` and `entryType` history. (was '249eb28ab0204')
+	// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0. (was 'eadef3540cfdf')
+	'core:spec/lair-summarize-scene': '8217737712bc2',
 }
 
 describe('the Lair pipelines', () => {
@@ -879,8 +882,9 @@ const effectiveOf = (slug: string) => {
 	const p = corePresets().find((x) => x.slug === slug)!
 	return effectiveRegistrations(defaultsOf(), presetChangesOf(p, defaultsOf()))
 }
+// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
 const actionsOf = (rs: readonly any[]) =>
-	rs.flatMap((r) => (r.trigger.family === 'action' && !/#summarize-/.test(r.trigger.action) ? [r.trigger.action] : [])).sort()
+	rs.flatMap((r) => (r.trigger.family === 'action' && !/#(summarize-|close-out$)/.test(r.trigger.action) ? [r.trigger.action] : [])).sort()
 const routinesOf = (rs: readonly any[]) =>
 	Object.fromEntries(rs.flatMap((r) => (r.trigger.family === 'routine' ? [[r.key, r.mode ?? 'full']] : [])))
 

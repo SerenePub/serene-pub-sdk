@@ -52,6 +52,13 @@ const ALLOWED: ReadonlyArray<{ file: string; pattern: PatternName; count: number
 	// with them — the commit runs after the `reply` junction now, where the
 	// scope types the branches' nodes (`$.reply.changes.owners.main`).
 	// 2026-10-23 (genres GM): the Dungeon Crawler's Rest, one body for two ways in (lane G3, S3).
+	// 2026-10-25 (pr-6 C3): the shared lore builders' own outlet reads.
+	{
+		file: 'shared/lore.ts',
+		pattern: '($: any)',
+		count: 2,
+		why: "`fileLore` / `rememberNote` are generic over the caller's chain and read only the nodes they add themselves (`name`, `content`, `links`) — `ScopeOf<B>` cannot name a node a generic builder adds inside its own `each` body",
+	},
 	{
 		file: 'genres/dungeon-crawler/rest.ts',
 		pattern: '($: any)',
@@ -117,7 +124,13 @@ const RULED: ReadonlyArray<{
 		// 2026-10-23: 173 → 176 — the genres seams: the one change grammar's
 		// schema the reckoning's crib writes (`reckon.on.schema`, G1), and the
 		// Dungeon Crawler's Planner grammar and Rest read off their scripts (G3).
-		count: 176,
+		// 2026-10-25: 176 → 168 — pr-6 C3: the sweep's, Remember things' and the
+		// Dungeon Crawler's lore writes read their lists through `fileLore`, one
+		// set of `jsonPart` / `textPart` calls in shared/lore.ts for all of them.
+		// 2026-10-25: 168 → 172 — sprint 2 lane I2: the sweep's *Notice when the
+		// scene moves on* reads the new scene's `sceneCueFull` / `sceneCueReview`,
+		// its `at`, its lane and its reason off the sort's document.
+		count: 172,
 		why: "each call picks one field of a model's JSON answer, or of a script step's document, or one text it carries ('notes', 'name'): a path into data a model or a script writes, which no declaration names",
 	},
 	{

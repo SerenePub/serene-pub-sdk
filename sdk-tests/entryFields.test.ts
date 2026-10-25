@@ -30,7 +30,8 @@ const weapons = () => cat.RULESET_ENTRY_TYPES.find((t) => t.id === 'core:entry/v
 describe('the outlets', () => {
 	test('create-lore-entry takes the typed fields as json, and a reviewer may retype them', () => {
 		const d = getDefinition('core:outlet/create-lore-entry@1')!
-		assert.deepEqual(Object.keys(d.ports.in!).sort(), ['content', 'fields', 'links', 'name'])
+		// pr-6 (2026-10-25, §C-1): `sources`, `match`, `bind` — the placement ports.
+		assert.deepEqual(Object.keys(d.ports.in!).sort(), ['bind', 'content', 'fields', 'links', 'match', 'name', 'sources'])
 		assert.equal((d.ports.in as any).fields, S.json)
 		assert.deepEqual(d.review?.fields, ['name', 'content', 'fields'])
 		assert.equal(d.causesEvent, 'core:event/lore-entry-created@1')
@@ -40,7 +41,8 @@ describe('the outlets', () => {
 		const d = getDefinition('core:outlet/update-lore-entry@1')!
 		assert.equal(d.kind, 'outlet')
 		assert.equal(d.effects, 'write')
-		assert.deepEqual(Object.keys(d.ports.in!).sort(), ['content', 'entry', 'fields', 'name'])
+		// pr-6 (2026-10-25, §C-1): `sources`.
+		assert.deepEqual(Object.keys(d.ports.in!).sort(), ['content', 'entry', 'fields', 'name', 'sources'])
 		assert.equal((d.ports.in as any).entry, S.json)
 		assert.equal((d.ports.in as any).fields, S.json)
 		assert.deepEqual(Object.keys(d.ports.out!).sort(), ['entryId', 'main'])
@@ -136,6 +138,8 @@ describe('a pipeline asks for them and saves them', () => {
 
 // Moved 2026-10-21 (Lair L1, D2): the `fields` in-port and `fields` in review
 // (the app's registryHashes pinned '15401f006df68c').
-const CREATE_PIN = '57d4f78aa9d7c'
+// Moved 2026-10-25 (pr-6 §C-1): `sources`, `match`, `bind`.
+const CREATE_PIN = '4906326bc8f09'
 // New 2026-10-21 (Lair L1, D2).
-const UPDATE_PIN = '1a064e69b9ff51'
+// Moved 2026-10-25 (pr-6 §C-1): `sources`.
+const UPDATE_PIN = '1b8f899b227ba2'

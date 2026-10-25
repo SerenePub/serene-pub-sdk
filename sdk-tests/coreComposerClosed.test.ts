@@ -136,3 +136,19 @@ test('every channel closed (*) with no reason: the plain sentence; another lane 
 		await other.unmount()
 	}
 })
+
+test('🚧 an archived session: the composer reads its sentence alone, no Waiting: (sprint 2)', { timeout: 120_000 }, async () => {
+	const sentence = 'This session is archived. Its owner can unarchive it to play on.'
+	const view = await mount(dossierWith({ closed: { '*': { reason: sentence, waits: false } } }))
+	try {
+		const field = parts(view, FIELD)[0]
+		assert.equal(field?.getAttribute('placeholder'), sentence)
+		assert.equal(field?.hasAttribute('disabled'), true)
+		const send = parts(view, SEND)[0]
+		assert.equal(send?.hasAttribute('disabled'), true)
+		assert.equal(send?.getAttribute('title'), sentence)
+		assert.deepEqual(asked(view, 'send'), [])
+	} finally {
+		await view.unmount()
+	}
+})

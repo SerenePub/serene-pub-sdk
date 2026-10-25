@@ -165,9 +165,12 @@ const eventsOf = (rs: readonly RegistrationDecl[]) =>
 	Object.fromEntries(rs.flatMap((r) => (r.trigger.family === 'event' ? [[r.trigger.event, r.pipeline]] : [])))
 /** A summary's action (R50): `#summarize-world`, `#summarize-scene`, … — no listing offers it (`form` venue). */
 const SUMMARIZE = /#summarize-(world|character|scene|history)$/
-/** The actions a session SEES — not the summaries'. */
+/** The close-out (pr-6 R-d): the genre's summarize-scene on its Close out action — unlisted too (`form` venue). */
+const CLOSE_OUT = /#close-out$/
+/** The actions a session SEES — not the summaries' (nor the close-out). */
+// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
 const actionsOf = (rs: readonly RegistrationDecl[]) =>
-	rs.flatMap((r) => (r.trigger.family === 'action' && !SUMMARIZE.test(r.trigger.action) ? [r.trigger.action] : [])).sort()
+	rs.flatMap((r) => (r.trigger.family === 'action' && !SUMMARIZE.test(r.trigger.action) && !CLOSE_OUT.test(r.trigger.action) ? [r.trigger.action] : [])).sort()
 /** The summaries a genre registers (R50), by pipeline. */
 const summariesOf = (rs: readonly RegistrationDecl[]) =>
 	rs.flatMap((r) => (r.trigger.family === 'action' && SUMMARIZE.test(r.trigger.action) ? [r.pipeline] : [])).sort()
@@ -241,6 +244,12 @@ describe("core's genres on registrations (lane 3)", () => {
 		}
 		for (const p of corePresets())
 			assert.deepEqual(summariesOf(effective(p)), [...shared, scene[p.genre]!].sort(), `${p.slug}: summaries`)
+		// 🚧 pr-6 R-d: the same summariser, registered once more on the Close out action with `minAge: 0`.
+		for (const p of corePresets()) {
+			const closing = effective(p).filter((r) => r.trigger.family === 'action' && CLOSE_OUT.test(r.trigger.action))
+			assert.deepEqual(closing.map((r) => r.pipeline), [scene[p.genre]!], `${p.slug}: close-out`)
+			assert.equal(closing[0]!.minAge, 0, `${p.slug}: close-out minAge`)
+		}
 	})
 
 	test('the routines each preset runs, at the mode it runs them', () => {

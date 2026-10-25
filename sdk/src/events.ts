@@ -586,7 +586,7 @@ export const CORE_EVENTS = {
 			"The session's settings changed — name, scenario, lorebook, genre fields, preset, channels or tags — or a pipeline moved its story clock. The payload lists which.",
 	}),
 	/**
-	 * `metadata.turnOrder` was written by `core:outlet/set-turn-order@1`.
+	 * the stored turn order was written by `core:outlet/set-turn-order@1`.
 	 * **Core-internal**: the auto-advance listener and the
 	 * `sessions:turnOrder` push read it; `genre()` refuses it in a genre's
 	 * `events`, so no preset can bind a spec to it and the recompute cannot
@@ -901,6 +901,45 @@ export const CORE_EVENTS = {
 		payload: S.sessionChange,
 		description:
 			"The session's story clock moved. The payload carries where it stood and where it stands now.",
+	}),
+	/** 🚧 Raised by the session archive handler (sockets/sessions.ts); unarchive raises no event. */
+	sessionArchived: defineEvent({
+		slug: 'session-archived',
+		name: { en: 'Session archived' },
+		version: 1,
+		family: 'data',
+		declaredRoot: true,
+		carries: ['session'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description:
+			"The session's owner archived it: it is read-only until reopened. Its close-out, when the genre registers one, runs once, held for review.",
+	}),
+	/** 🚧 Raised by the scene handler (sockets/scenes.ts) at the apply; not `scene-closed`, not `lore-entry-created`. */
+	sceneSummaryApplied: defineEvent({
+		slug: 'scene-summary-applied',
+		name: { en: 'Scene summary applied' },
+		version: 1,
+		family: 'data',
+		declaredRoot: true,
+		carries: ['session', 'scene'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description:
+			"A scene's summary was saved into the lorebook — the stretch it was written from is part of the record now. The payload names the scene, its entry and the messages it was written from.",
+	}),
+	/** 🚧 Raised by `settleThrough` when the session's settle line moves. */
+	historySettled: defineEvent({
+		slug: 'history-settled',
+		name: { en: 'History settled' },
+		version: 1,
+		family: 'data',
+		declaredRoot: true,
+		carries: ['session', 'message'],
+		affectsUser: false,
+		payload: S.sessionChange,
+		description:
+			"The session's settle line moved: Back no longer reaches the message the payload names or anything before it.",
 	}),
 	/**
 	 * 🚧 A **rest was taken** under the session's rules (lane G3, 2026-10-23;
@@ -1333,6 +1372,12 @@ export interface SessionChangePayload {
 	sceneId?: number
 	/** 🚧 `story-clock-moved`: where the story clock stood and where it stands now (`StoryTime`). */
 	clock?: { from: unknown; to: unknown }
+	/** 🚧 `scene-summary-applied`: the entry the summary was saved as. */
+	entryId?: number
+	/** 🚧 `scene-summary-applied`: the messages it was written from — min and max of its `sources`. */
+	loreSources?: { fromMessageId: number; throughMessageId: number }
+	/** 🚧 `history-settled`: where the line stood before (`messageId` is where it stands now); null when unset. */
+	previousSettledMessageId?: number | null
 }
 
 /**

@@ -487,6 +487,9 @@
 											{t("Ready to review")}
 										</button>
 									{/if}
+									{#if s.writtenFrom}
+										<p data-widget-part="chronicle.scene-written-from">{s.writtenFrom}</p>
+									{/if}
 								</li>
 							{/each}
 						</ul>

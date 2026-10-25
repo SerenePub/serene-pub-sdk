@@ -162,7 +162,8 @@ describe('🚧 the builder carries the genre\'s boundary triggers (★9, live sc
 			boundaries: [floor],
 		})
 		assert.deepEqual(doc.contributes.boundaryTriggers, [floor])
-		assert.equal(doc.contributes.actions?.length, 1, 'the summarize action (R50) rides beside the triggers')
+		// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
+		assert.equal(doc.contributes.actions?.length, 2, 'the summarize action (R50) and the close-out action (pr-6 R-d) ride beside the triggers')
 		assert.deepEqual(validate(doc).filter((f: any) => f.severity === 'error'), [])
 		const bare: any = summarizeScene('test.sum:spec/b2', { version: '1.0.0', genre: lairGenre, channels: { story: 'main' } })
 		assert.equal(bare.contributes?.boundaryTriggers, undefined, 'no triggers when none are declared')

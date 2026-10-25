@@ -16,7 +16,7 @@
  * and is granted neither storage nor fetch; a Query is granted storage and is
  * the one kind a plugin may not declare at all, because nothing endows its
  * `ctx.read`. That leaves an **emit-class outlet** — `effects: 'emit'` — which
- * is granted storage, writes rows in this plugin's own namespace and none of
+ * is granted storage, writes files in this plugin's own directory and none of
  * core's, and so is not the terminal write law F7 counts. It may sit mid-spine
  * like any other node. `serene-pub check` refuses the other spellings by name.
  *
@@ -28,9 +28,9 @@
  * handler says so out loud rather than reaching through an `any`. A fixture host
  * that wants to run these has to supply one.
  *
- * ✎ CHANGE: the key shape, the row shape, and what the two handlers do. The
- *   pair is a pattern, not a feature: one node writes a keyed row, another reads
- *   it back, and nothing between them holds state in memory.
+ * ✎ CHANGE: the path shape, the file's shape, and what the two handlers do. The
+ *   pair is a pattern, not a feature: one node writes a file, another reads it
+ *   back, and nothing between them holds state in memory.
  */
 
 import {
@@ -49,17 +49,17 @@ export interface PluginCtx {
 }
 
 /**
- * One row per session, under a key this plugin owns.
+ * One file per session, under a path this plugin owns.
  *
- * ✎ CHANGE: the prefix and what goes under it. Keys are the store's only index,
- *   so put what you will want to enumerate at the front of one.
+ * ✎ CHANGE: the folder and what goes under it. `files.list(prefix)` is the
+ *   store's only index, so put what you will want to enumerate at the front.
  */
-export const noteKey = (sessionId: number | string) => `session/${sessionId}/note`
+export const notePath = (sessionId: number | string) => `session/${sessionId}/note.json`
 
 /**
  * The sentence a handler halts with when storage is absent.
  *
- * A halt rather than a guess. A handler that invented an empty row because it
+ * A halt rather than a guess. A handler that invented an empty note because it
  * could not find the real one would answer about a state that is not there —
  * silently. "This could not run" is a far better answer.
  */
@@ -79,17 +79,17 @@ export const saveNoteDefinition = pin(
 		id: '{{saveNoteDefinitionId}}',
 		i18n: {
 			name: { en: 'Save note' },
-			description: { en: "Writes one row in this plugin's own store." },
+			description: { en: "Writes one file in this plugin's own store." },
 		},
 		timeoutMs: 2000,
-		ports: { in: { sessionId: S.rowIds, note: S.text }, out: { main: S.json, key: S.text } },
-		/** Emit-class: this plugin's own rows, never core's. See the module note. */
+		ports: { in: { sessionId: S.rowIds, note: S.text }, out: { main: S.json, path: S.text } },
+		/** Emit-class: this plugin's own files, never core's. See the module note. */
 		effects: 'emit',
 	}),
 )
 
 /**
- * `storage.put` returns a `Result` rather than throwing, so exceeding the quota
+ * `files.write` returns a `Result` rather than throwing, so exceeding the quota
  * is a sentence this node can publish on its own output — which is where "why
  * did it stop saving" gets an answer.
  */
@@ -99,11 +99,12 @@ export const saveNoteHandler = async (
 ): Promise<Result> => {
 	const store = ctx?.storage
 	if (!store) return haltNoStorage()
-	const key = noteKey(input.sessionId ?? 'unknown')
-	const written = await store.put(key, { note: input.note ?? '' })
+	const path = notePath(input.sessionId ?? 'unknown')
+	const bytes = new TextEncoder().encode(JSON.stringify({ note: input.note ?? '' }))
+	const written = await store.files.write(path, bytes)
 	if (written.kind !== 'ok')
-		return halt((written as { reason?: string }).reason ?? `the write to '${key}' was refused`)
-	return ok({ main: { key }, key })
+		return halt((written as { reason?: string }).reason ?? `the write to '${path}' was refused`)
+	return ok({ main: { path }, path })
 }
 
 /* ── Read ───────────────────────────────────────────────────────────────── */
@@ -113,7 +114,7 @@ export const readNoteDefinition = pin(
 		id: '{{readNoteDefinitionId}}',
 		i18n: {
 			name: { en: 'Read note' },
-			description: { en: "Reads back the row this plugin's own store holds." },
+			description: { en: "Reads back the file this plugin's own store holds." },
 		},
 		timeoutMs: 2000,
 		ports: { in: { sessionId: S.rowIds }, out: { main: S.json, note: S.text } },
@@ -122,8 +123,8 @@ export const readNoteDefinition = pin(
 )
 
 /**
- * `undefined` is a real answer: a session nobody has written for has no row, so
- * a missing key is never an error and this handler decides what an absence
+ * No file is a real answer: a session nobody has written for has none, so a
+ * missing path is never an error and this handler decides what an absence
  * means.
  */
 export const readNoteHandler = async (
@@ -132,6 +133,8 @@ export const readNoteHandler = async (
 ): Promise<Result> => {
 	const store = ctx?.storage
 	if (!store) return haltNoStorage()
-	const row = await store.get<{ note?: string }>(noteKey(input.sessionId ?? 'unknown'))
-	return ok({ main: row ?? null, note: row?.note ?? '' })
+	const file = await store.files.read(notePath(input.sessionId ?? 'unknown'))
+	const saved =
+		file.kind === 'ok' ? (JSON.parse(new TextDecoder().decode(file.value)) as { note?: string }) : null
+	return ok({ main: saved, note: saved?.note ?? '' })
 }

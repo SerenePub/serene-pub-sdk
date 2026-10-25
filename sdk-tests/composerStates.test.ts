@@ -16,7 +16,10 @@ import {
 	composerClosedRefusal,
 	composerClosureFor,
 	composerClosuresFor,
+	readComposerStates,
 	getDefinition,
+	RUN_KINDS,
+	type RunKind,
 	i18nText,
 	type ConversationComposerV1,
 	type ConversationLineV1,
@@ -111,6 +114,21 @@ describe('the envelope and the sentences', () => {
 		assert.equal(composerClosedPlaceholder({ reason: 'Make your character on the Planner tab first.' }), 'Waiting: Make your character on the Planner tab first.')
 		assert.equal(composerClosedPlaceholder({}), "You can't send here yet.")
 		assert.equal(composerClosedRefusal({ reason: 'Make your character first.' }), "You can't send here yet. Make your character first.")
+	})
+
+	test('🚧 a closure that waits on nothing (an archived session) says its reason alone (sprint 2)', () => {
+		const sentence = 'This session is archived. Its owner can unarchive it to play on.'
+		assert.equal(composerClosedPlaceholder({ reason: sentence, waits: false }), sentence)
+		assert.equal(composerClosedRefusal({ reason: sentence, waits: false }), sentence)
+		assert.equal(composerClosedPlaceholder({ waits: false }), "You can't send here yet.")
+		const kept = { '*': { '*': { open: false as const, reason: 'R.', waits: false as const } } }
+		assert.deepEqual(readComposerStates(kept), kept)
+		assert.deepEqual(readComposerStates({ main: { '*': { open: false, waits: true } } }), { main: { '*': { open: false } } })
+		assert.deepEqual(composerClosuresFor(kept, null), { '*': { reason: 'R.', waits: false } })
+		assert.equal('waits' in (applyComposerState({}, { channel: 'main', open: false, reason: 'R.' }).main?.['*'] ?? {}), false)
+		assert.deepEqual(RUN_KINDS, ['reply', 'action', 'routine', 'maintenance'])
+		const k: RunKind = 'routine'
+		assert.equal(k, 'routine')
 	})
 })
 

@@ -27,7 +27,7 @@ A node that computes: data in, data out.
 A node that reads. Yours reads your plugin's own storage; Serene Pub's data reaches it on its input ports, from core's queries.
 
 - Handed: `random`, `now`, `log`, `storage`, `signal`.
-- Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`).
+- Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - No network.
 
 ## Kind: oracle
@@ -35,7 +35,7 @@ A node that reads. Yours reads your plugin's own storage; Serene Pub's data reac
 The one node kind that calls out: the network, through the hosts your plugin declares. Never a model: model calls are core's nodes.
 
 - Handed: `random`, `now`, `log`, `storage`, `fetch`, `signal`.
-- Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`).
+- Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.
 
 ## Kind: outlet
@@ -43,7 +43,7 @@ The one node kind that calls out: the network, through the hosts your plugin dec
 A node that writes. Yours declares `effects: 'emit'`: it writes your own storage and passes values on, and core's outlets write to the session.
 
 - Handed: `random`, `now`, `log`, `storage`, `signal`.
-- Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`).
+- Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - No network.
 
 ## Kind: chain-link
@@ -59,7 +59,7 @@ A link in a script chain: text in, text out.
 An event listener: runs when a session event happens.
 
 - Handed: `random`, `now`, `log`, `storage`, `signal`.
-- Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`).
+- Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - No network.
 
 ## Kind: lifecycle
@@ -67,7 +67,7 @@ An event listener: runs when a session event happens.
 A lifecycle callback: runs at startup, enable, disable, update, uninstall or shutdown.
 
 - Handed: `random`, `now`, `log`, `storage`, `signal`.
-- Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`).
+- Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - No network.
 
 ## Rules for every kind

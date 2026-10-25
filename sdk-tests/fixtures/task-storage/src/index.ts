@@ -25,8 +25,8 @@ export default defineExtension({
 	description: 'Remembers a board it is granted no room for.',
 	handlers: [
 		handler(keepBoard, async (input: { sessionId?: string }, ctx: any) => {
-			const board = await ctx.storage.get(`s:${input.sessionId}:board`)
-			return ok({ main: board ?? {} })
+			const board = await ctx.storage.files.read(`sessions/${input.sessionId}/board.json`)
+			return ok({ main: board.kind === 'ok' ? JSON.parse(new TextDecoder().decode(board.value)) : {} })
 		}),
 	],
 	permissions: { storage: { quotaBytes: 1024 * 1024 } },

@@ -10,6 +10,9 @@ import {
 	register,
 	registrationKeyOf,
 	registrationFindings,
+	effectiveRegistrations,
+	minAgeOf,
+	DEFAULT_ROUTINE_MIN_AGE,
 	pipelineDefaultsFindings,
 	coreEvents,
 	sessionEvents,
@@ -213,6 +216,30 @@ describe('§11-2 · the door', () => {
 		})
 		const fs = errors(registrationFindings([r], ctx)).filter((f) => f.law === 'routine fields')
 		assert.equal(fs.length, 2)
+	})
+
+	test('minAge: kept as stated, defaulted by family, changed by a preset, a whole number at the door', () => {
+		const r = register(everyNTurns({ n: 5 }), sweep, { minAge: 5 })
+		assert.equal(r.minAge, 5)
+		assert.deepEqual(errors(registrationFindings([r], ctx)), [])
+		assert.equal(DEFAULT_ROUTINE_MIN_AGE, 20)
+		assert.equal(minAgeOf(register(everyNTurns({ n: 5 }), sweep)), 20)
+		assert.equal(minAgeOf(r), 5)
+		const event = register(coreEvents.messageRespond, reply)
+		assert.equal(minAgeOf(event), 0)
+		assert.equal(minAgeOf({ trigger: { family: 'action' } } as never), 0)
+		// Any family may state it, and the door does not call it a routine field.
+		const stated = register(coreEvents.messageRespond, reply, { minAge: 3 })
+		assert.equal(errors(registrationFindings([stated], ctx)).filter((f) => f.law === 'routine fields').length, 0)
+		const eff = effectiveRegistrations([r], { change: [{ key: r.key, minAge: 7 }] })
+		assert.equal(eff[0]!.minAge, 7)
+		for (const bad of [-1, 2.5]) {
+			const fs = errors(registrationFindings([register(everyNTurns({ n: 5 }), sweep, { minAge: bad })], ctx)).filter(
+				(f) => f.law === 'summary depth',
+			)
+			assert.equal(fs.length, 1, `minAge ${bad}`)
+			assert.match(fs[0]!.message, /minAge is a whole number of lines, 0 or more/)
+		}
 	})
 
 	test('caps: on system-clock routines, whole numbers, within the system', () => {

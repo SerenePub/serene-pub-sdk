@@ -40,6 +40,13 @@ export interface ComposerClosureV1 {
 	open: false
 	/** What the composer is waiting on, as a sentence the person reads ("Make your character first."). */
 	reason?: string
+	/**
+	 * 🚧 The closure waits on nothing in play — the session itself is shut (the host's archived
+	 * session overlay, sprint 2). Its placeholder and its refusal are the reason alone, never
+	 * `Waiting: `. Absent: it waits on something (every closure a genre sets —
+	 * `set-composer-state@1` cannot set this).
+	 */
+	waits?: false
 }
 
 /** The session row's `composer_states`: channel → who → closure. @experimental */
@@ -85,6 +92,7 @@ export function readComposerStates(raw: unknown): ComposerStatesV1 {
 			kept[who] = {
 				open: false,
 				...(typeof reason === 'string' && reason.trim() ? { reason: reason.trim() } : {}),
+				...((c as { waits?: unknown }).waits === false ? { waits: false as const } : {}),
 			}
 		}
 		if (Object.keys(kept).length) out[channel] = kept
@@ -158,12 +166,16 @@ export function composerClosureFor(
 export function composerClosuresFor(
 	states: unknown,
 	userId: number | null,
-): Record<string, { reason?: string }> {
+): Record<string, { reason?: string; waits?: false }> {
 	const doc = readComposerStates(states)
-	const out: Record<string, { reason?: string }> = {}
+	const out: Record<string, { reason?: string; waits?: false }> = {}
 	for (const ch of Object.keys(doc)) {
 		const c = composerClosureFor({ [ch]: doc[ch] }, ch, userId)
-		if (c) out[ch] = c.reason ? { reason: c.reason } : {}
+		if (c)
+			out[ch] = {
+				...(c.reason ? { reason: c.reason } : {}),
+				...(c.waits === false ? { waits: false as const } : {}),
+			}
 	}
 	return out
 }
@@ -174,20 +186,24 @@ export function composerClosuresFor(
  * @experimental
  */
 export function composerClosedOn(
-	closed: Record<string, { reason?: string }> | undefined | null,
+	closed: Record<string, { reason?: string; waits?: false }> | undefined | null,
 	lane: unknown,
-): { reason?: string } | undefined {
+): { reason?: string; waits?: false } | undefined {
 	if (!closed) return undefined
 	return closed[composerStateChannel(lane)] ?? closed[COMPOSER_STATE_ANY]
 }
 
 /**
  * The sentence a send on a closed composer is refused with — the reason
- * repeated when there is one.
+ * repeated when there is one — or, when the closure waits on nothing
+ * (`waits: false`), the reason alone.
  * @experimental
  */
-export function composerClosedRefusal(closure: { reason?: string } | null | undefined): string {
+export function composerClosedRefusal(
+	closure: { reason?: string; waits?: false } | null | undefined,
+): string {
 	const reason = closure?.reason?.trim()
+	if (reason && closure?.waits === false) return reason
 	return reason ? `You can't send here yet. ${reason}` : COMPOSER_CLOSED_NO_REASON
 }
 
@@ -196,10 +212,14 @@ export const COMPOSER_CLOSED_NO_REASON = "You can't send here yet."
 
 /**
  * What a closed composer shows in place of its placeholder: `Waiting: ` and
- * the reason, else `COMPOSER_CLOSED_NO_REASON`.
+ * the reason — the reason alone when the closure waits on nothing
+ * (`waits: false`, an archived session) — else `COMPOSER_CLOSED_NO_REASON`.
  * @experimental
  */
-export function composerClosedPlaceholder(closure: { reason?: string } | null | undefined): string {
+export function composerClosedPlaceholder(
+	closure: { reason?: string; waits?: false } | null | undefined,
+): string {
 	const reason = closure?.reason?.trim()
+	if (reason && closure?.waits === false) return reason
 	return reason ? `Waiting: ${reason}` : COMPOSER_CLOSED_NO_REASON
 }

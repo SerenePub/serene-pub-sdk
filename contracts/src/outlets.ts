@@ -700,6 +700,81 @@ export const setComposerState = pin(
 )
 
 /**
+ * 🚧 What `propose-scene-cue@1` did — its `cue` out-port, the host's commit's answer
+ * (`proposeJudgedSceneCue`, sprint 2, pass 7). @experimental
+ */
+export interface ProposedSceneCue {
+	/** `suggested` — waiting as the *New scene?* chip; `placed` — Automatic opened the scene; `refused` — refused, or Automatic could not place it and the cue waits; `skipped` — nothing recorded. */
+	outcome: 'suggested' | 'placed' | 'refused' | 'skipped'
+	/** The receipt's note for `refused` / `skipped`, a sentence. */
+	note?: string
+	/** The `scene_cues` row, when one was written. */
+	cueId?: number
+	openedSceneId?: number
+	closedSceneId?: number
+}
+
+/**
+ * 🚧 **Suggest a new scene** (pass 7, R-i, sprint 2, 2026-10-25): the judged scene check's
+ * answer — "the story moved on; the next scene begins at this line, because …" — recorded as a
+ * **scene cue** with trigger `judged` (`JUDGED_SCENE_TRIGGER`) and the model's words as its
+ * reason. From there the session's scene mode decides, as for any boundary trigger: Suggested —
+ * the *New scene?* chip; Automatic — the boundary is placed (unless `ask`); Manual — nothing.
+ * The host re-checks the judged check's conditions at commit and skips, with a note, when they
+ * no longer hold or `at` is not one of its lines. Never held at the review gate: a cue's review
+ * is the chip.
+ *
+ * ⚠ Not a scene write (a person's *Start scene here*) and not a state proposal.
+ * @experimental
+ * @ruling R-i (2026-10-24)
+ */
+export const proposeSceneCue = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/propose-scene-cue@1',
+		i18n: { name: { en: 'Suggest a new scene' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		review: { fields: ['reason'] },
+		timeoutMs: 2000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					ask: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'Always ask' },
+						description: {
+							en: 'Offer the new scene as a suggestion even when this session starts scenes on its own (Automatic). Off: the scene setting decides.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/**
+				 * The line the next scene would open at — a message id, as the
+				 * sweep's sort gives it. `json`, as `set-composer-state@1`'s
+				 * `person` is: wired from a script's output.
+				 */
+				at: S.json,
+				/** The channel lane `at` is on, any spelling (canonicalised); absent or blank: `main`. */
+				channel: S.text,
+				/** Why, in the model's few words — the chip's reason ("the party left the inn"). */
+				reason: S.text,
+			},
+			out: {
+				main: S.writeResult,
+				/** A `ProposedSceneCue`. */
+				cue: S.json,
+			},
+		},
+	}),
+)
+
+/**
  * 🚧 **Configure a stat** for one owner in this session (owner ruling
  * 2026-10-15): the pipeline door to an owner's **stat configuration** — the
  * deviations from an attribute slot's own config that one owner carries,
@@ -1443,6 +1518,19 @@ export const createLoreEntry = pin(
 				 * type (`fieldsFindings`); see the note above.
 				 */
 				fields: S.json,
+				/**
+				 * 🚧 The messages this write was written from. Pass it when the write is a
+				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
+				 * session's settle line moves to the newest of them.
+				 */
+				sources: S.loreSources,
+				/** 🚧 A `LoreMatch` — how to find the entry this would otherwise create. */
+				match: S.json,
+				/**
+				 * 🚧 The cast member this entry is filed under — a `character:<id>` reference, resolved to that
+				 * character's cast member in the book the entry lands in (the entry type's `anchor` role).
+				 */
+				bind: S.participantRef,
 			},
 			out: { main: S.writeResult, entryId: S.writeResult },
 		},
@@ -1494,6 +1582,12 @@ export const updateLoreEntry = pin(
 				content: S.text,
 				/** Typed fields laid over the stored ones, key by key; `null` clears one. Absent: kept. */
 				fields: S.json,
+				/**
+				 * 🚧 The messages this write was written from. Pass it when the write is a
+				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
+				 * session's settle line moves to the newest of them.
+				 */
+				sources: S.loreSources,
 			},
 			out: { main: S.writeResult, entryId: S.writeResult },
 		},
@@ -1636,11 +1730,29 @@ export const linkLoreEntries = pin(
 				name: S.text,
 				/** Its description. Optional. */
 				description: S.text,
+				/**
+				 * 🚧 The messages this write was written from. Pass it when the write is a
+				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
+				 * session's settle line moves to the newest of them.
+				 */
+				sources: S.loreSources,
 			},
 			out: { main: S.writeResult, linkId: S.writeResult },
 		},
 	}),
 )
+
+/**
+ * 🚧 How `create-lore-entry@1` finds the entry it would otherwise create (pass 8, R-h).
+ * The host looks in the book it writes to, on the session's line, under the book's lock:
+ * none → create; one → update it (as `update-lore-entry@1` would, fields as a patch); two or
+ * more → REFUSED, the refusal naming every candidate (`'<name>' (entry <id>)`), retry with `entryId`.
+ * `name` and `key` match within this write's own `entryType` (R-h's `{ type, name }` is that pair);
+ * case and surrounding space ignored. `key` matches an entry whose trigger keys include it.
+ * ⚠ Not an entry's `matchMode` (how its keys are matched in retrieval).
+ * @experimental
+ */
+export type LoreMatch = { readonly entryId: number } | { readonly name: string } | { readonly key: string }
 
 /**
  * One lore link a spec asks for — an element of
@@ -1719,7 +1831,15 @@ export const graphProposal = pin(
 		timeoutMs: 10000,
 		causesEvent: 'core:event/graph-proposal-created@1',
 		ports: {
-			in: { proposal: S.json },
+			in: {
+				proposal: S.json,
+				/**
+				 * 🚧 The messages this write was written from. Pass it when the write is a
+				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
+				 * session's settle line moves to the newest of them.
+				 */
+				sources: S.loreSources,
+			},
 			out: { main: S.writeResult, proposalId: S.writeResult },
 		},
 	}),

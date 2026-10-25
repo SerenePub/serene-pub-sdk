@@ -702,6 +702,10 @@ export function preset(input: PresetInput): PresetDecl {
 	// defaults, never on another preset. Cloning copies the changes.
 	for (const k of PRESET_PARENT_KEYS)
 		if ((input as unknown as Record<string, unknown>)[k] !== undefined) throw new Error(presetParentSentence(where, k))
+	if ((input as unknown as Record<string, unknown>).history !== undefined)
+		throw new Error(
+			`${where} sets history — when a session's history settles is its genre's to say (history.settle), never a preset's.`,
+		)
 	const registrations = presetRegistrationsOf(input, where)
 	if (input.default !== undefined && input.default !== true)
 		throw new Error(`${where}.default: true, or leave it out`)

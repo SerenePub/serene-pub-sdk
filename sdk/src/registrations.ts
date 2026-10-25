@@ -146,6 +146,12 @@ export interface RegistrationDecl {
 	readonly allowStacking?: boolean
 	/** Routines on the system clock only (R11), an administrator's. */
 	readonly caps?: RoutineCaps
+	/**
+	 * 🚧 How old a line must be before this registration's run may name it in `sources` — a message
+	 * count on the line's lane (pass 9 S3, ruled 2026-10-24). Absent: `minAgeOf`'s family default —
+	 * 20 for a routine, 0 for an action or an event (a person vouches; the scene closed).
+	 */
+	readonly minAge?: number
 	/** What the settings call it, when not the pipeline's name. */
 	readonly label?: I18n
 }
@@ -153,7 +159,15 @@ export interface RegistrationDecl {
 /** What `register()` takes beside the trigger and the pipeline. @experimental */
 export type RegistrationOptions = Omit<RegistrationDecl, 'key' | 'trigger' | 'pipeline'>
 
-const OPTION_KEYS = ['when', 'values', 'order', 'mode', 'allowStacking', 'caps', 'label'] as const
+const OPTION_KEYS = ['when', 'values', 'order', 'mode', 'allowStacking', 'caps', 'label', 'minAge'] as const
+
+/** 🚧 The routine default (ruled 2026-10-24). @experimental */
+export const DEFAULT_ROUTINE_MIN_AGE = 20
+
+/** 🚧 A registration's effective minAge. @experimental */
+export function minAgeOf(r: Pick<RegistrationDecl, 'trigger' | 'minAge'>): number {
+	return r.minAge ?? (r.trigger.family === 'routine' ? DEFAULT_ROUTINE_MIN_AGE : 0)
+}
 
 /**
  * An action, as an object a registration names: `narrate.actions.narrate`
@@ -667,6 +681,14 @@ export function registrationFindings(
 					'leave it out for the default (off)',
 				),
 			)
+		if (d.minAge !== undefined && (typeof d.minAge !== 'number' || !Number.isInteger(d.minAge) || d.minAge < 0))
+			out.push(
+				err(
+					'summary depth',
+					`${at}: minAge is a whole number of lines, 0 or more`,
+					'leave it out for the default — 20 on a routine, 0 on an action or an event',
+				),
+			)
 		if (d.caps !== undefined) {
 			if (routine && cadenceClock(d.trigger.cadence as CadenceRef) !== 'system')
 				out.push(
@@ -865,6 +887,12 @@ export interface RegistrationChange {
 	readonly when?: ConditionDecl
 	readonly allowStacking?: boolean
 	readonly caps?: RoutineCaps
+	/**
+	 * 🚧 How old a line must be before this registration's run may name it in `sources` — a message
+	 * count on the line's lane (pass 9 S3, ruled 2026-10-24). Absent: `minAgeOf`'s family default —
+	 * 20 for a routine, 0 for an action or an event (a person vouches; the scene closed).
+	 */
+	readonly minAge?: number
 	readonly order?: number
 	readonly label?: I18n
 }
@@ -899,6 +927,12 @@ export interface SessionRegistrationRow {
 	readonly when?: ConditionDecl
 	readonly allowStacking?: boolean
 	readonly caps?: RoutineCaps
+	/**
+	 * 🚧 How old a line must be before this registration's run may name it in `sources` — a message
+	 * count on the line's lane (pass 9 S3, ruled 2026-10-24). Absent: `minAgeOf`'s family default —
+	 * 20 for a routine, 0 for an action or an event (a person vouches; the scene closed).
+	 */
+	readonly minAge?: number
 	readonly order?: number
 }
 
@@ -910,7 +944,7 @@ export type EffectiveRegistration = RegistrationDecl & {
 	readonly changedBy?: readonly string[]
 }
 
-const CHANGE_KEYS = ['values', 'mode', 'when', 'allowStacking', 'caps', 'order', 'label'] as const
+const CHANGE_KEYS = ['values', 'mode', 'when', 'allowStacking', 'caps', 'order', 'label', 'minAge'] as const
 
 /** A copy of a registration that keeps what `register()` noted about it (a string reference, a range). */
 function carried<T extends object>(from: RegistrationDecl, to: T): T {

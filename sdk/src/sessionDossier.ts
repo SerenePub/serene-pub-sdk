@@ -309,6 +309,15 @@ export interface SessionDossierV1 {
 	 */
 	rewind?: ConversationRewindV1
 	/**
+	 * 🚧 The session's **settle line** (pr-6, R-a/R-b): the newest message whose history is
+	 * settled — at or below it the story is in the lorebook now, and Back no longer reaches it.
+	 * The page's answer (the session payload's `settledLine`, which already counts every applied
+	 * scene summary). Null: nothing is settled yet. Absent: a host that predates it (the same).
+	 * The conversation draws one quiet mark after the newest settled line it shows.
+	 * @ruling pr-6 R-a, R-b; pass 13
+	 */
+	settledThrough?: number | null
+	/**
 	 * The session's mode is not installed: the log is read-only.
 	 * @ruling 19 §6
 	 */
@@ -444,8 +453,10 @@ export interface ConversationComposerV1 {
 	 * of the placeholder (`composerClosedPlaceholder`); a send on it is
 	 * refused by the host with the reason in its sentence. Absent or empty:
 	 * open everywhere. Turn controls are not the composer's and stay.
+	 * 🚧 `waits: false` (sprint 2): the session itself is shut (an archived
+	 * session) — the placeholder is the reason alone, never `Waiting: `.
 	 */
-	closed?: Record<string, { reason?: string }>
+	closed?: Record<string, { reason?: string; waits?: false }>
 	/**
 	 * The lanes a line may be written on, `main` first — THIS copy's: the
 	 * host narrows them per mount, so a Messages widget

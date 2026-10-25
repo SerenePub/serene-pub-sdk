@@ -37,7 +37,7 @@ export const HOOK_CTX_KINDS: readonly HookCtxKind[] = [
 
 /** Which of the two permission-gated members a kind's context carries. @experimental */
 export interface HookCtxGrants {
-	/** The extension's own namespaced rows and files (`ctx.storage`). */
+	/** The extension's own namespaced files (`ctx.storage`). */
 	storage: boolean
 	/** Host-scoped network access (`ctx.fetch`). */
 	fetch: boolean
@@ -50,7 +50,7 @@ export interface HookCtxGrants {
  *    is a script: the in-app script host hands one `{ random, log }` and a
  *    plugin's link gets the same.
  *  - **query**, **outlet**, **event**, **lifecycle** — storage: an
- *    extension's own rows, no network.
+ *    extension's own files, no network.
  *  - **oracle** — storage and fetch. The one kind that calls out, which is what
  *    `effects: 'external'` names.
  * @ruling F11, F32

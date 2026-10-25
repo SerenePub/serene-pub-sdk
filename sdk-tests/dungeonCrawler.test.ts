@@ -219,6 +219,8 @@ test('the genre is published: its pipelines, its preset, both envoys seated', ()
 			`${cat.SUMMARIZE_CHARACTER_SPEC_ID}#summarize-character`,
 			`${cat.SUMMARIZE_HISTORY_SPEC_ID}#summarize-history`,
 			`${cat.SUMMARIZE_SCENE_SPEC_ID}#summarize-scene`,
+			// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
+			`${cat.SUMMARIZE_SCENE_SPEC_ID}#close-out`,
 		],
 	)
 	assert.deepEqual(preset.defaults?.envoys, ['planner', 'narrator'])

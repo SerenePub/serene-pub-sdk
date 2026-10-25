@@ -68,6 +68,7 @@ import {
 	handlebars,
 	slot,
 	spec,
+	channelLoreRole,
 	DEFAULT_CHANNEL,
 	ITEM,
 	type BoundaryTriggerDecl,
@@ -76,7 +77,10 @@ import {
 import * as C from '@serene-pub/contracts'
 import { chainIf } from '../chains.js'
 import { CORE_LOADOUT } from '../../loadouts.js'
-import { summarizeAction } from './summarizeSpec.js'
+import { closeOutAction, summarizeAction } from './summarizeSpec.js'
+import { applyWiring, wiring } from '../calls.js'
+import { rememberNote } from '../lore.js'
+import { historyEntryType } from '../../registry/entries.js'
 
 /** See `summarizeSpec.ts` — the same ceiling, for the same reason. */
 const MAX_BATCHES = 512
@@ -157,6 +161,15 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 	if (asides.some((a) => baseChannel(a) === baseChannel(story)))
 		throw new Error(`${id}: '${story}' is the story's channel and cannot also be an aside`)
 	if (new Set(asides).size !== asides.length) throw new Error(`${id}: channels.asides names a channel twice`)
+	const wantRole = (slug: string, want: 'story' | 'aside') => {
+		const role = channelLoreRole(genre?.shape, slug)
+		if (role !== want)
+			throw new Error(
+				`${id}: '${slug}' is a '${role}' channel of ${genre?.id ?? 'the genre'} — a summary reads its story channel as 'story' and its asides as 'aside' (ChannelDecl.lore).`,
+			)
+	}
+	wantRole(story, 'story')
+	for (const slug of asides) wantRole(slug, 'aside')
 	const triggerFaults = boundaryTriggerFindings(boundaries === undefined ? undefined : [...boundaries], 'boundaries', {
 		channels: [...declared],
 	})
@@ -168,7 +181,7 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 		taxonomy: { role: 'maintenance' },
 		contributes: {
 			// 🚧 R50: the summarize action a genre's defaults register (`summarizeAction`).
-			actions: [summarizeAction('scene')],
+			actions: [summarizeAction('scene'), closeOutAction],
 			// 🚧 ★9: present only when declared.
 			...(boundaries?.length ? { boundaryTriggers: boundaries.map((b) => ({ ...b, when: { ...b.when } })) } : {}),
 		},
@@ -286,6 +299,7 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 			},
 		)
 
+	const w = wiring()
 	const withCast = chainIf(!!extractsCast, base, (b) =>
 		b.oracle('cast', ($) =>
 				C.extractCast.v1({
@@ -299,16 +313,16 @@ export function summarizeScene(id: string, options: SummarizeSceneOptions) {
 	)
 
 	return compile(
-		withCast
-			.outlet('save', ($) =>
-				C.createLoreEntry.v1({
-					name: $.naming.name,
-					content: $.synth.content,
-					params: slot.params(),
-				}),
-			)
+		rememberNote(withCast, w, {
+			key: 'save',
+			name: ($) => $.naming.name,
+			content: ($) => $.synth.content,
+			entryType: historyEntryType,
+			// The story rows only — never the asides.
+			sources: ($) => $.source.messages,
+		})
 			.defaults((p) => {
-				const named = p
+				const named = applyWiring(p, w)
 					.params('source', { channel: story, asides })
 					.template('render', { engine: handlebars.id, source: transcript ?? DEFAULT_TRANSCRIPT_TEMPLATE })
 					.loadout(DRAFT_NODE, slot.loadout(CORE_LOADOUT.extraction))

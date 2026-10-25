@@ -2176,6 +2176,24 @@ export interface HistorySceneV1 {
 	 * status existed reads `done`). Absent reads as `summarized`'s answer.
 	 */
 	summaryStatus?: 'none' | 'running' | 'review' | 'done' | 'failed'
+	/**
+	 * 🚧 The messages its applied summary was written from (pr-6 **lore sources**: the min and max
+	 * of the scene's `sources`, `lore_sources.from_message_id` / `through_message_id`), and the newest
+	 * of them as the page spells it — Chronicle's *Written from the story up to ‹throughLabel›*.
+	 * Absent: no applied summary recorded its sources (summarized before pr-6, or not applied yet).
+	 * ⚠ The same pair `SessionChangePayload.loreSources` carries on `scene-summary-applied`.
+	 * @ruling pass 13 (2026-10-24)
+	 */
+	loreSources?: {
+		fromMessageId: number
+		throughMessageId: number
+		/**
+		 * When the newest line it was written from was written, spelled by the page — a day and a
+		 * time in the viewer's zone ("3 Oct, 14:20"). Empty when the page does not know: Chronicle
+		 * then draws no line.
+		 */
+		throughLabel: string
+	}
 }
 
 /**

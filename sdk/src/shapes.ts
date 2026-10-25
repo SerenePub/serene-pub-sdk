@@ -113,7 +113,10 @@ export const S = {
 	 * list is not a transcript, and a port that reads rows is handed rows.
 	 * @ruling U5d review W9, U5d review R-a
 	 */
-	messages: defineShape({ id: 'core:shape/messages@1' }),
+	messages: defineShape({
+		id: 'core:shape/messages@1',
+		assignableTo: ['core:shape/lore-sources@1'],
+	}),
 	candidates: defineShape({ id: 'core:shape/context-candidates@1' }),
 	renderedBlocks: defineShape({ id: 'core:shape/rendered-blocks@1' }),
 	assembled: defineShape({ id: 'core:shape/assembled-context@1' }),
@@ -161,6 +164,14 @@ export const S = {
 	vector: defineShape({ id: 'core:shape/vector@1' }),
 	budget: defineShape({ id: 'core:shape/context-budget@1' }),
 	rowIds: defineShape({ id: 'core:shape/row-ids@1' }),
+	/**
+	 * 🚧 The story messages a generated lore write was written from (pass 6, RULED strict in core).
+	 * A port, not a parameter: the value is the rows the run READ. Assignable from `messages@1`
+	 * (rows with `id`), `transcript-units@1` (units with `messageId`) and `graph-scenes@1` (scenes
+	 * with `messages`) — declared on THOSE shapes' `assignableTo`. Not from `row-ids@1`: a write
+	 * result is assignable to row ids, and an entry id is not a message.
+	 */
+	loreSources: defineShape({ id: 'core:shape/lore-sources@1' }),
 
 	/**
 	 * The output of an async block or a map. An ordered list in
@@ -223,9 +234,15 @@ export const S = {
 	 * Not a transcript *line* of the prompt (Assemble's `sessionMessages`):
 	 * a unit is what a summarizer drafts from, never what a reply is sent.
 	 */
-	transcriptUnits: defineShape({ id: 'core:shape/transcript-units@1' }),
+	transcriptUnits: defineShape({
+		id: 'core:shape/transcript-units@1',
+		assignableTo: ['core:shape/lore-sources@1'],
+	}),
 	/** Scenes with their messages, as the graph builder walks them. */
-	graphScenes: defineShape({ id: 'core:shape/graph-scenes@1' }),
+	graphScenes: defineShape({
+		id: 'core:shape/graph-scenes@1',
+		assignableTo: ['core:shape/lore-sources@1'],
+	}),
 	/**
 	 * A proposed set of graph nodes and relationships, before a person approves it.
 	 *
@@ -348,7 +365,7 @@ export const S = {
 	/**
 	 * The session's **turn order** as state: `TurnOrderV1` —
 	 * `{ v, order, candidates, basedOnAt, computedAt, runId, event,
-	 * strategy }`, stored at `sessions.metadata.turnOrder` and written by
+	 * strategy }`, stored by the host under annex owner `core` and written by
 	 * `core:outlet/set-turn-order@1` alone. Not the entries alone and not
 	 * the candidates alone: the whole answer, with what it answered.
 	 * @ruling §4.2

@@ -1681,6 +1681,56 @@ test('C38 · the ruleset laws: core’s rulesets and templates pass; a catalogue
 	assert.match(none.skipped!.join(' '), /shipped\(\)\.rulesets/)
 })
 
+test('C39 · a catalogue whose span-reading pipeline writes lore without sources, or files without an entry type, fails naming both', async () => {
+	const result = async (host: HostUnderTest) => (await conform(host, fixtures, { only: ['C39'] }))[0]!
+	const node = (key: string, definitionId: string, config: Record<string, unknown> = {}) => ({
+		key,
+		kind: 'outlet',
+		definitionId,
+		definitionVersion: 1,
+		config,
+		position: 0,
+	})
+	const doc = (id: string, nodes: any[], edges: any[] = [], defaults: Array<{ nodeKey: string; slot: string; value: unknown }> = []) =>
+		({
+			schemaVersion: 1,
+			id,
+			version: '1.0.0',
+			includes: [],
+			presets: defaults.length ? [{ slug: 'default', default: true, label: { en: 'Default' }, values: defaults }] : [],
+			nodes,
+			edges,
+			clauses: [],
+		}) as any
+	const shipped = (await sdk.shipped!()) as any
+	const read = node('source', 'core:query/summarize-source')
+	const withSources = doc(
+		'test:spec/good',
+		[read, node('save', 'core:outlet/create-lore-entry')],
+		[{ from: 'source', fromPort: 'messages', to: 'save', toPort: 'sources' }],
+		[{ nodeKey: 'save', slot: 'params', value: { entryType: 'world' } }],
+	)
+	const good = await result({ ...sdk, shipped: () => ({ ...shipped, pipelines: [withSources] }) })
+	assert.equal(good.pass, true, good.error)
+	const noSources = doc('test:spec/no-sources', [read, node('save', 'core:outlet/create-lore-entry')], [], [
+		{ nodeKey: 'save', slot: 'params', value: { entryType: 'world' } },
+	])
+	const noType = doc('test:spec/no-type', [node('file', 'core:outlet/create-lore-entry')])
+	const bad = await result({ ...sdk, shipped: () => ({ ...shipped, pipelines: [noSources, noType] }) })
+	assert.equal(bad.pass, false)
+	assert.match(bad.error!, /test:spec\/no-sources save: writes lore from a span of the story without sources\./)
+	assert.match(bad.error!, /test:spec\/no-type file: files lore without naming its entry type\./)
+	const none = await result({ ...sdk, shipped: () => ({ genres: shipped.genres, presets: [] }) })
+	assert.equal(none.pass, true)
+	assert.match(none.skipped!.join(' '), /shipped\(\)\.pipelines/)
+})
+
+test('C39 · core’s catalogue', async () => {
+	const r = (await conform(sdk, fixtures, { only: ['C39'] }))[0]!
+	assert.equal(r.pass, true, r.error)
+	assert.equal(r.skipped, undefined, `C39 skipped on core's catalogue: ${r.skipped?.join('; ')}`)
+})
+
 test('C35–C37 · the layering laws: core’s catalogue passes, and a catalogue that breaks each fails in words', async () => {
 	const result = async (host: HostUnderTest, id: string) => (await conform(host, fixtures, { only: [id] }))[0]!
 	const failing = async (host: HostUnderTest, id: string) => {

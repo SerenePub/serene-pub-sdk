@@ -220,7 +220,7 @@ export const STORY_GOALS_KEY = 'story-goals'
  *   Lair's sessions alone carry it (`genre`).
  *
  * Every other core pipeline keeps its state in core's own columns
- * (`sessions.metadata.turnOrder`, written by `set-turn-order`; each member's
+ * (the stored turn order — annex owner `core` — written by `set-turn-order`; each member's
  * composer text in `sessions.drafts`, written by the socket door).
  * `coreCatalog.test.ts` walks every core spec for a `set-session-annex` step
  * and holds each to this list, so a core writer added without its

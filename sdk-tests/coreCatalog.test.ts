@@ -79,8 +79,9 @@ describe('the core catalog', () => {
 		// 🚧 R50 (2026-10-21): plus the four summaries, each on its own
 		// unlisted `summarize-*` action — 13 action registrations, 9 a person presses.
 		const storyActions = registered(storyGenre.id).filter((r) => r.trigger.family === 'action')
-		assert.equal(storyActions.length, 13)
-		assert.equal(storyActions.filter((r) => !/#summarize-(world|character|scene|history)$/.test((r.trigger as { action: string }).action)).length, 9)
+		// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
+		assert.equal(storyActions.length, 14)
+		assert.equal(storyActions.filter((r) => !/#(summarize-(world|character|scene|history)|close-out)$/.test((r.trigger as { action: string }).action)).length, 9)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
 		// optional `form-addressed` event, in every preset's effective set.
 		for (const [g, spec0] of [
@@ -1032,6 +1033,11 @@ describe("core's announcement (golden)", () => {
 		// grammar names health, level and class only where the rules keep them (the gist's `keeps`);
 		// Story's sweep reads the world's own values. Measured with the tree as it stands, after the
 		// final build. (was '6a8b9f7591e78af0')
-		assert.equal(digest.slice(0, 16), '89d536b2365cf8a5')
+		// Moved 2026-10-25 (pr-6 C3): the summarisers' and the graph build's lore writes carry `sources`
+		// and declare their entry type; the lore writes run through `fileLore` / `rememberNote`; the
+		// Sanctum is an `aside`. (was '89d536b2365cf8a5')
+		// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0. (was 'efdfcf305d41f1d3')
+		// Moved 2026-10-25 (sprint 2 lane I2): Story's sweep gains *Notice when the scene moves on* — the duty, its `sceneCheck` port, the `sceneCue` junction and `propose-scene-cue@1`. (was '5a372154cc93cc6a')
+		assert.equal(digest.slice(0, 16), '0542b047614b9f33')
 	})
 })

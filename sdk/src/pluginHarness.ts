@@ -8,7 +8,7 @@
  * plugin's node handlers do not go through that path at all: the app's
  * `pipelines/runtime/pluginBindings.ts` calls `RuntimeManager.callHook`, which
  * runs the hook inside the plugin's sandbox against a context the sandbox
- * builds — `{ random, now, log, storage, fetch, signal }` — and commits its rows
+ * builds — `{ random, now, log, storage, fetch, signal }` — and commits its files
  * afterwards.
  *
  * Two packages paid for that gap before it was written down:
@@ -42,9 +42,6 @@ import type {
 	ExtensionFiles,
 	ExtensionStorage,
 	FileEntry,
-	RowEntry,
-	RowPage,
-	RowQuery,
 	StorageUsage,
 	WriteReceipt,
 } from './storage.js'
@@ -172,19 +169,6 @@ export function formatHookLog(args: unknown[]): string {
 
 // ── The in-memory ExtensionStorage ──────────────────────────────────────────
 
-/**
- * The row half of the grant, as a fraction of it — mirrors `rowQuotaFor` in the
- * app's `storageHost.ts`, which is the arithmetic the sandbox actually applies.
- * Rows live in the database and files on disk; one budget is what an author can
- * reason about, and the sub-cap is what stops a plugin putting megabytes in the
- * database.
- * @experimental
- */
-export function rowQuotaFor(quotaBytes: number): number {
-	if (!Number.isFinite(quotaBytes) || quotaBytes <= 0) return 64 * 1024
-	return Math.min(Math.floor(quotaBytes), Math.max(64 * 1024, Math.min(1024 * 1024, Math.floor(quotaBytes / 8))))
-}
-
 /** The grant a sandbox falls back to when the manifest declares none. @experimental */
 export const DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024
 
@@ -200,32 +184,23 @@ export const DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024
  */
 export const HARNESS_CLOCK = 1_700_000_000_000
 
-const utf8 = (s: string): number => new TextEncoder().encode(s).length
-
 /** @experimental */
 export interface MemoryStorageOptions {
 	/** The grant, in bytes. The sandbox's own fallback by default. */
 	quotaBytes?: number
-	/** The sub-cap on the row half. Derived from `quotaBytes` by default. */
-	rowQuotaBytes?: number
-	/** Rows to start with, for a test that wants a game already in progress. */
-	seed?: Record<string, unknown>
 	/**
-	 * The call's pinned clock, which is what stamps a row's `updatedAt`.
+	 * The call's pinned clock, which is what stamps a file's `updatedAt`.
 	 *
 	 * Pinned, not ticking, because that is what install does: the sandbox stamps
-	 * every row a call writes with the run's clock, so rows written in one call
-	 * share a timestamp and `query({ order: 'newest' })` falls back to key order
-	 * among them. A test that wants distinct stamps supplies a clock that moves.
+	 * every file a call writes with the run's clock. A test that wants distinct
+	 * stamps supplies a clock that moves.
 	 */
 	now?: () => number
 }
 
 /** @experimental */
-export interface MemoryStorage extends ExtensionStorage {
-	/** Every key currently held with its value, key-sorted — for asserting on the shape of the store. */
-	snapshot(): Record<string, unknown>
-	/** How many times `put` has been called. A cheap way to pin "this handler wrote once". */
+export type MemoryStorage = ExtensionStorage & {
+	/** How many times `files.write` has been called. A cheap way to pin "this handler wrote once". */
 	readonly writes: number
 }
 
@@ -233,16 +208,14 @@ export interface MemoryStorage extends ExtensionStorage {
  * An in-memory `ExtensionStorage` — the half the SDK's harness cannot otherwise
  * supply, with the refusals install actually makes.
  *
- * Faithful in the ways a handler can depend on: `get` answers `undefined` for a
- * key nobody wrote; a row costs its key as well as its value; a write past the
- * row budget or the whole grant comes back as `err` rather than throwing, and
- * comes back **whole** so a handler that prunes and retries can; a key that is
- * not a key, and a value JSON cannot carry, throw with the sandbox's sentence.
+ * Faithful in the ways a handler can depend on: `read` answers `err('storage: not found')`
+ * for a path nobody wrote; a write past the grant comes back as `err` rather than
+ * throwing, and comes back **whole** so a handler that prunes and retries can.
  *
- * ⚠ Not faithful about: transactions (install commits a call's rows together,
- * this writes as it goes), the database, and the bytes a row costs on disk.
- * What it does reproduce is the one property a package like Battleship exists
- * to demonstrate — a row one handler writes is a row the next handler reads.
+ * ⚠ Not faithful about: transactions (install commits a call's files together,
+ * this writes as it goes), and the bytes a file costs on disk. What it does
+ * reproduce is the one property a package like Battleship exists to
+ * demonstrate — a file one handler writes is a file the next handler reads.
  *
  * **Isolation is structural.** One call is one namespace; two plugins get two
  * calls and neither can name the other's keys, because there is no shared map
@@ -251,40 +224,19 @@ export interface MemoryStorage extends ExtensionStorage {
  */
 export function memoryStorage(opts: MemoryStorageOptions = {}): MemoryStorage {
 	const quotaBytes = opts.quotaBytes ?? DEFAULT_STORAGE_QUOTA_BYTES
-	const rowQuotaBytes = opts.rowQuotaBytes ?? rowQuotaFor(quotaBytes)
 	const now = opts.now ?? (() => HARNESS_CLOCK)
 	const stamp = () => new Date(Math.floor(now())).toISOString()
 
-	const rows = new Map<string, { value: unknown; bytes: number; updatedAt: string }>()
 	const files = new Map<string, { bytes: Uint8Array; updatedAt: string }>()
 	let writes = 0
 
-	const jsonOf = (v: unknown): string => {
-		let s: string | undefined
-		try {
-			s = JSON.stringify(v === undefined ? null : v)
-		} catch {
-			s = undefined
-		}
-		if (typeof s !== 'string') throw new Error('storage: a row value must be JSON-serializable')
-		return s
-	}
-	const rowKey = (key: unknown): string => {
-		if (typeof key !== 'string' || key.length === 0) throw new Error('storage: a row key is required')
-		if (key.length > 512) throw new Error('storage: a row key may not exceed 512 characters')
-		return key
-	}
-	const rowSize = (key: string, json: string): number => utf8(key) + utf8(json)
-	const rowTotal = () => [...rows.values()].reduce((n, r) => n + r.bytes, 0)
 	const fileTotal = () => [...files.values()].reduce((n, f) => n + f.bytes.byteLength, 0)
-	const usageFrom = (rowBytes: number, fileBytes: number): StorageUsage => ({
+	const usageFrom = (fileBytes: number): StorageUsage => ({
 		quotaBytes,
-		usedBytes: rowBytes + fileBytes,
-		availableBytes: Math.max(0, quotaBytes - rowBytes - fileBytes),
-		rowBytes,
-		fileBytes,
+		usedBytes: fileBytes,
+		availableBytes: Math.max(0, quotaBytes - fileBytes),
 	})
-	const usage = (): StorageUsage => usageFrom(rowTotal(), fileTotal())
+	const usage = (): StorageUsage => usageFrom(fileTotal())
 	const receipt = (deltaBytes: number): Result<WriteReceipt> => ok({ deltaBytes, usage: usage() })
 
 	/** A relative path, jailed the way the host jails one: `..` is refused, never normalised. */
@@ -317,10 +269,11 @@ export function memoryStorage(opts: MemoryStorageOptions = {}): MemoryStorage {
 			return f ? ok(new Uint8Array(f.bytes)) : err('storage: not found')
 		},
 		write: async (path: string, bytes: Uint8Array) => {
+			writes++
 			const p = filePath(path)
 			const incoming = bytes?.byteLength ?? 0
 			const existing = files.get(p)?.bytes.byteLength ?? 0
-			if (rowTotal() + fileTotal() - existing + incoming > quotaBytes)
+			if (fileTotal() - existing + incoming > quotaBytes)
 				return err('storage: quota exceeded')
 			files.set(p, { bytes: new Uint8Array(bytes ?? []), updatedAt: stamp() })
 			return ok({ deltaBytes: incoming - existing, usage: usage() })
@@ -342,97 +295,8 @@ export function memoryStorage(opts: MemoryStorageOptions = {}): MemoryStorage {
 		get writes() {
 			return writes
 		},
-		snapshot: () =>
-			Object.fromEntries(
-				[...rows.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([k, r]) => [k, r.value]),
-			),
-
 		usage: async () => usage(),
-
-		get: async <T>(key: string) => rows.get(rowKey(key))?.value as T | undefined,
-
-		keys: async (prefix?: string) => {
-			const p = prefix ?? ''
-			return [...rows.keys()].filter((k) => k.startsWith(p)).sort()
-		},
-
-		query: async <T>(q: RowQuery = {}): Promise<RowPage<T>> => {
-			const p = q.prefix ?? ''
-			const since = q.since == null ? NaN : Date.parse(q.since)
-			const until = q.until == null ? NaN : Date.parse(q.until)
-			const want = Math.floor(Number(q.limit))
-			const limit = Math.max(1, Math.min(200, Number.isFinite(want) && want > 0 ? want : 50))
-			const order = q.order === 'oldest' || q.order === 'key' ? q.order : 'newest'
-			const all: RowEntry<T>[] = []
-			for (const [key, r] of rows) {
-				if (!key.startsWith(p)) continue
-				const t = Date.parse(r.updatedAt)
-				if (!Number.isNaN(since) && !(t >= since)) continue
-				if (!Number.isNaN(until) && !(t < until)) continue
-				all.push({ key, value: r.value as T, bytes: r.bytes, updatedAt: r.updatedAt })
-			}
-			all.sort((a, b) => {
-				if (order !== 'key') {
-					const ta = Date.parse(a.updatedAt)
-					const tb = Date.parse(b.updatedAt)
-					if (ta !== tb) return order === 'oldest' ? ta - tb : tb - ta
-				}
-				return a.key < b.key ? -1 : a.key > b.key ? 1 : 0
-			})
-			// An offset cursor. One it cannot read throws rather than silently
-			// restarting at zero, which is how a pager becomes an infinite loop.
-			let start = 0
-			if (q.cursor != null) {
-				const c = String(q.cursor)
-				if (!/^o:[0-9]+$/.test(c)) throw new Error('storage: unreadable cursor')
-				start = parseInt(c.slice(2), 10)
-			}
-			const page: RowPage<T> = { rows: all.slice(start, start + limit) }
-			if (start + limit < all.length) page.nextCursor = `o:${start + limit}`
-			return page
-		},
-
-		put: async (key: string, value: unknown) => {
-			writes++
-			const k = rowKey(key)
-			const json = jsonOf(value)
-			const size = rowSize(k, json)
-			const prev = rows.get(k)
-			const delta = size - (prev?.bytes ?? 0)
-			const before = rowTotal()
-			// Two ceilings, checked in the order the sandbox checks them, so a
-			// handler that publishes the refusal publishes the same sentence.
-			if (before + delta > rowQuotaBytes) return err('storage: the row budget is full')
-			const fileBytes = fileTotal()
-			if (before + fileBytes + delta > quotaBytes) return err('storage: quota exceeded')
-			// Re-parsed, not stored by reference: at install the value crosses a
-			// JSON boundary, so a handler mutating the object it put must not be
-			// able to change what the store holds.
-			rows.set(k, { value: JSON.parse(json), bytes: size, updatedAt: stamp() })
-			return ok({ deltaBytes: delta, usage: usageFrom(before + delta, fileBytes) })
-		},
-
-		delete: async (key: string) => {
-			const k = rowKey(key)
-			const prev = rows.get(k)
-			if (!prev) return receipt(0)
-			rows.delete(k)
-			return receipt(-prev.bytes)
-		},
-
-		deleteAll: async (prefix?: string) => {
-			const p = prefix ?? ''
-			const doomed = [...rows.keys()].filter((k) => k.startsWith(p))
-			for (const k of doomed) rows.delete(k)
-			return ok({ removed: doomed.length, usage: usage() })
-		},
-
 		files: extensionFiles,
-	}
-
-	for (const [key, value] of Object.entries(opts.seed ?? {})) {
-		const json = jsonOf(value)
-		rows.set(rowKey(key), { value: JSON.parse(json), bytes: rowSize(key, json), updatedAt: stamp() })
 	}
 
 	return store

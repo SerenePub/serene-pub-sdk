@@ -47,7 +47,6 @@ import {
 	pluginHandlerContext,
 	pluginNodeBindings,
 	pluginSeededRandom,
-	rowQuotaFor,
 	type PluginHandlerContext,
 } from '@serene-pub/sdk/testing'
 import * as C from '@serene-pub/contracts'
@@ -97,7 +96,7 @@ describe('D-3 · the grant table is the sandbox’s', () => {
 		assert.deepEqual(hookCtxKeysFor('task'), ['random', 'now', 'log', 'signal'])
 	})
 
-	test('a query and an outlet get the extension’s own rows, and no network', () => {
+	test('a query and an outlet get the extension’s own files, and no network', () => {
 		for (const kind of ['query', 'outlet', 'event', 'lifecycle'] as const) {
 			assert.deepEqual(hookCtxGrants(kind), { storage: true, fetch: false })
 			assert.deepEqual(hookCtxKeysFor(kind), ['random', 'now', 'log', 'storage', 'signal'])
@@ -387,59 +386,43 @@ describe('D-3 · ctx.fetch is a grant, not a given', () => {
 // ── memoryStorage ──────────────────────────────────────────────────────────
 
 describe('D-3 · memoryStorage is the half the executor cannot supply', () => {
-	test('a row one handler writes is a row the next handler reads', async () => {
+	test('a file one handler writes is a file the next handler reads', async () => {
 		const storage = memoryStorage()
-		const wrote = await storage.put('s:1:board', { turn: 'user' })
+		const bytes = new TextEncoder().encode(JSON.stringify({ turn: 'user' }))
+		const wrote = await storage.files.write('s/1/board.json', bytes)
 		assert.equal(wrote.kind, 'ok')
-		assert.deepEqual(await storage.get('s:1:board'), { turn: 'user' })
-		assert.equal(await storage.get('s:1:nothing'), undefined)
-		assert.deepEqual(await storage.keys('s:1:'), ['s:1:board'])
-		assert.deepEqual(storage.snapshot(), { 's:1:board': { turn: 'user' } })
-		assert.equal(storage.writes, 1)
+		const read = await storage.files.read('s/1/board.json')
+		assert.deepEqual(JSON.parse(new TextDecoder().decode((read as { value: Uint8Array }).value)), { turn: 'user' })
+		assert.equal((await storage.files.read('s/1/nothing')).kind, 'err')
+		assert.deepEqual((await storage.files.list('s/1/')).map((f) => f.path), ['s/1/board.json'])
 	})
 
-	test('the store holds a copy — a handler mutating what it put changes nothing', async () => {
+	test('writes counts every files.write call', async () => {
 		const storage = memoryStorage()
-		const value = { ships: [1] }
-		await storage.put('k', value)
-		value.ships.push(2)
-		assert.deepEqual(await storage.get('k'), { ships: [1] })
+		assert.equal(storage.writes, 0)
+		await storage.files.write('a', new Uint8Array([1]))
+		await storage.files.write('b', new Uint8Array([2]))
+		assert.equal(storage.writes, 2)
 	})
 
-	test('usage reports the split, and a row costs its key as well as its value', async () => {
+	test('usage reports the three figures, and a write moves them by its bytes', async () => {
 		const storage = memoryStorage({ quotaBytes: 100_000 })
-		const r = await storage.put('ab', 1)
+		const r = await storage.files.write('ab', new Uint8Array(3))
 		assert.equal(r.kind, 'ok')
-		assert.equal((r as { value: { deltaBytes: number } }).value.deltaBytes, 3) // 'ab' + '1'
-		const u = await storage.usage()
-		assert.deepEqual(u, {
-			quotaBytes: 100_000,
-			usedBytes: 3,
-			availableBytes: 99_997,
-			rowBytes: 3,
-			fileBytes: 0,
-		})
+		assert.equal((r as { value: { deltaBytes: number } }).value.deltaBytes, 3)
+		assert.deepEqual(await storage.usage(), { quotaBytes: 100_000, usedBytes: 3, availableBytes: 99_997 })
 	})
 
-	test('a write past the row budget is refused whole, as a Result, so a handler can prune and retry', async () => {
-		const storage = memoryStorage({ quotaBytes: 120 })
-		assert.equal(rowQuotaFor(120), 120)
-		const refused = await storage.put('big', 'x'.repeat(200))
+	test('files fill the grant, and a write past it is refused whole', async () => {
+		const storage = memoryStorage({ quotaBytes: 200 })
+		assert.equal((await storage.files.write('cache/blob', new Uint8Array(190))).kind, 'ok')
+		const refused = await storage.files.write('cache/more', new Uint8Array(20))
 		assert.equal(refused.kind, 'err')
-		assert.match((refused as { reason: string }).reason, /row budget is full/)
+		assert.match((refused as { reason: string }).reason, /storage: quota exceeded/)
 		// Refused WHOLE: nothing landed, and the store is usable afterwards.
-		assert.equal(await storage.get('big'), undefined)
-		assert.equal((await storage.put('small', 1)).kind, 'ok')
-	})
-
-	test('rows and files share one quota, and the whole-grant refusal is the second ceiling', async () => {
-		const storage = memoryStorage({ quotaBytes: 200_000 })
-		assert.equal(rowQuotaFor(200_000), 65_536)
-		const wrote = await storage.files.write('cache/blob', new Uint8Array(190_000))
-		assert.equal(wrote.kind, 'ok')
-		const refused = await storage.put('k', 'x'.repeat(20_000))
-		assert.equal(refused.kind, 'err')
-		assert.match((refused as { reason: string }).reason, /quota exceeded/)
+		assert.equal((await storage.files.read('cache/more')).kind, 'err')
+		assert.deepEqual(await storage.usage(), { quotaBytes: 200, usedBytes: 190, availableBytes: 10 })
+		assert.equal((await storage.files.write('cache/small', new Uint8Array(10))).kind, 'ok')
 	})
 
 	test('files round trip, list, stat and delete — and a path never escapes the extension', async () => {
@@ -457,32 +440,14 @@ describe('D-3 · memoryStorage is the half the executor cannot supply', () => {
 	})
 
 	test('deleteAll clears a prefix and reports how many went', async () => {
-		const storage = memoryStorage({ seed: { 'a:1': 1, 'a:2': 2, 'b:1': 3 } })
-		const r = await storage.deleteAll('a:')
+		const storage = memoryStorage()
+		for (const p of ['a/1', 'a/2', 'b/1']) await storage.files.write(p, new Uint8Array([1]))
+		const r = await storage.files.deleteAll('a/')
 		assert.equal(r.kind, 'ok')
 		assert.equal((r as { value: { removed: number } }).value.removed, 2)
-		assert.deepEqual(await storage.keys(), ['b:1'])
-		// A key that was never there is not a failure.
-		assert.equal((await storage.delete('gone')).kind, 'ok')
-	})
-
-	test('query pages by prefix and refuses a cursor it cannot read', async () => {
-		const storage = memoryStorage({ seed: Object.fromEntries([...Array(5)].map((_, i) => [`r:${i}`, i])) })
-		const page = await storage.query({ prefix: 'r:', limit: 2, order: 'key' })
-		assert.deepEqual(page.rows.map((r) => r.key), ['r:0', 'r:1'])
-		assert.equal(page.nextCursor, 'o:2')
-		const next = await storage.query({ prefix: 'r:', limit: 2, order: 'key', cursor: page.nextCursor! })
-		assert.deepEqual(next.rows.map((r) => r.key), ['r:2', 'r:3'])
-		await assert.rejects(() => storage.query({ cursor: 'nope' }), /unreadable cursor/)
-	})
-
-	test('a key that is not a key, and a value JSON cannot carry, throw the sandbox’s sentence', async () => {
-		const storage = memoryStorage()
-		await assert.rejects(() => storage.put('', 1), /a row key is required/)
-		await assert.rejects(() => storage.put('k'.repeat(513), 1), /may not exceed 512 characters/)
-		const circular: Record<string, unknown> = {}
-		circular.self = circular
-		await assert.rejects(() => storage.put('k', circular), /must be JSON-serializable/)
+		assert.deepEqual((await storage.files.list()).map((f) => f.path), ['b/1'])
+		// A path that was never there is not a failure.
+		assert.equal((await storage.files.delete('gone')).kind, 'ok')
 	})
 
 	test('the default grant is the sandbox’s own fallback', async () => {
@@ -492,9 +457,9 @@ describe('D-3 · memoryStorage is the half the executor cannot supply', () => {
 	test('isolation is structural: two plugins, two namespaces, no shared map to name', async () => {
 		const a = memoryStorage()
 		const b = memoryStorage()
-		await a.put('shared-key', 'from a')
-		assert.equal(await b.get('shared-key'), undefined)
-		assert.deepEqual(b.snapshot(), {})
+		await a.files.write('shared-key', new Uint8Array([1]))
+		assert.equal((await b.files.read('shared-key')).kind, 'err')
+		assert.deepEqual(await b.files.list(), [])
 	})
 })
 
@@ -509,7 +474,8 @@ describe('D-3 · one plugin, one store, many handlers', () => {
 				.outlet('keep', ($: any) => keepState.v1({ value: $.read.seen }))
 				.build(),
 		)
-		const storage = memoryStorage({ seed: { 's:7': { turn: 3 } } })
+		const storage = memoryStorage()
+		await storage.files.write('s/7.json', new TextEncoder().encode(JSON.stringify({ turn: 3 })))
 		const r = await run(doc, {
 			input: {},
 			world,
@@ -521,12 +487,13 @@ describe('D-3 · one plugin, one store, many handlers', () => {
 					storage,
 					handlers: {
 						[readState.id]: async (i: any, ctx) => {
-							const held = await ctx.storage!.get<{ turn: number }>(`s:${i.sessionId}`)
-							if (!held) return err('no state — this handler refuses rather than inventing one')
+							const file = await ctx.storage!.files.read(`s/${i.sessionId}.json`)
+							if (file.kind !== 'ok') return err('no state — this handler refuses rather than inventing one')
+							const held = JSON.parse(new TextDecoder().decode(file.value)) as { turn: number }
 							return ok({ main: held, seen: held.turn })
 						},
 						[keepState.id]: async (i: any, ctx) => {
-							const wrote = await ctx.storage!.put('s:7', { turn: i.value + 1 })
+							const wrote = await ctx.storage!.files.write('s/7.json', new TextEncoder().encode(JSON.stringify({ turn: i.value + 1 })))
 							if (wrote.kind !== 'ok') return err(wrote.reason ?? 'the store refused the write')
 							return ok({ main: { id: 's:7' } })
 						},
@@ -535,7 +502,8 @@ describe('D-3 · one plugin, one store, many handlers', () => {
 			},
 		})
 		assert.equal(r.outcome, 'ok', r.haltReason)
-		assert.deepEqual(storage.snapshot(), { 's:7': { turn: 4 } })
+		const after = await storage.files.read('s/7.json')
+		assert.deepEqual(JSON.parse(new TextDecoder().decode((after as { value: Uint8Array }).value)), { turn: 4 })
 	})
 
 	test('a handler with no store halts rather than inventing one, and says so', async () => {
@@ -544,7 +512,7 @@ describe('D-3 · one plugin, one store, many handlers', () => {
 			// A task is granted no storage, which is the law, not an oversight.
 			handlers: {
 				[decide.id]: async (_i, ctx) =>
-					ctx.storage ? ok({ main: 'read' }) : err('no storage — this node cannot run without its rows'),
+					ctx.storage ? ok({ main: 'read' }) : err('no storage — this node cannot run without its files'),
 			},
 		})[decide.id]!
 		const r = (await hook({}, {} as never)) as Result
@@ -553,12 +521,12 @@ describe('D-3 · one plugin, one store, many handlers', () => {
 
 	test('two plugins bound into one run do not share a namespace', async () => {
 		const a = pluginNodeBindings({ pluginId: 'acme.one', handlers: { [readState.id]: async (_i, ctx) => {
-			await ctx.storage!.put('k', 'a')
+			await ctx.storage!.files.write('k', new Uint8Array([97]))
 			return ok({ main: null })
 		} } })
-		const b = pluginNodeBindings({ pluginId: 'acme.two', handlers: { [readState.id]: async (_i, ctx) => ok({ main: await ctx.storage!.get('k') }) } })
+		const b = pluginNodeBindings({ pluginId: 'acme.two', handlers: { [readState.id]: async (_i, ctx) => ok({ main: (await ctx.storage!.files.read('k')).kind }) } })
 		await a[readState.id]!({}, {} as never)
 		const r = (await b[readState.id]!({}, {} as never)) as Result<{ main: unknown }>
-		assert.deepEqual(r, { kind: 'ok', value: { main: undefined } })
+		assert.deepEqual(r, { kind: 'ok', value: { main: 'err' } })
 	})
 })

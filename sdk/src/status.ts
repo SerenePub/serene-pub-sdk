@@ -37,6 +37,21 @@ export interface StatusText {
 }
 
 /**
+ * 🚧 **Run kind** — what a run is FOR, as the host's run registry knows it and as every
+ * `sessions:runStatus` frame names it (sprint 2, walk defect #1 option (b): the page sees what
+ * the host's busy door sees):
+ *  · `reply` — a turn filling a message row;
+ *  · `action` — a person's press: a render, a summary, a tool, a built-in;
+ *  · `routine` — a routine's run: nobody pressed anything;
+ *  · `maintenance` — nothing a person watches; reserved.
+ * ⚠ Not a node kind, not a stop kind, not a trigger family (a `reply` is the `event` family's run).
+ * @experimental
+ */
+export const RUN_KINDS = ['reply', 'action', 'routine', 'maintenance'] as const
+/** @experimental */
+export type RunKind = (typeof RUN_KINDS)[number]
+
+/**
  * A grey widget action's reason, as the host lists it (`WidgetAction.reason`):
  * a locale map, never a bare string.
  *

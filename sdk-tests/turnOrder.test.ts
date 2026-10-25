@@ -95,8 +95,9 @@ describe('A1 · the four events (§4.1)', () => {
 		// `obligation-came-due`, `deadline-passed`, `scheduled-moment-reached`
 		// (PLAN-genres-seams, merge GM, 2026-10-23) — make 42, and a person's
 		// Delete, `message-deletion-asked` (RF fix 5, owner ruling 2026-10-23:
-		// deletion requires a pipeline), makes 43.
-		assert.equal(allEvents().length, 43)
+		// deletion requires a pipeline), makes 43, and pr-6's three — `session-archived`,
+		// `scene-summary-applied`, `history-settled` (session-data rulings, 2026-10-24) — make 46.
+		assert.equal(allEvents().length, 46)
 	})
 
 	test('sessionEvents names every event a genre may bind the turn-order spec to, by registered id', () => {

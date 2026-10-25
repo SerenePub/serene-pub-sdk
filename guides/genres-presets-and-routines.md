@@ -237,6 +237,45 @@ const run = simulateCadence(everyNTurns({ n: 5 }), turnEvents(1, 12))
 run.fired // [4, 9]: turns 5 and 10
 ```
 
+## Summaries
+
+### Three ways to register a summary
+
+An action is a person's press and may read the newest lines, because the person is vouching; an event is a scene that closed, complete by construction; a routine keeps up in the background and must stay out of the newest lines.
+
+### How old a line must be: minAge
+
+`minAge` is a count of lines: 20, the routine default, keeps the 20 newest lines of a lane out of a routine's `sources`; actions and events default to 0.
+
+The same summariser may be registered twice with different values — `minAge: 20` on a cadence and `minAge: 0` on the Close out action — without being written twice. Core's own scene summarizers already contribute the `close-out` action, and core-catalog's `summaries()` registers it with `minAge: 0`, so a genre built on them gets Close out without writing the second line; the snippet below is for a summarizer of your own.
+
+<!-- prelude:
+import { register, everyNTurns } from '@serene-pub/sdk'
+declare const summarizer: import('@serene-pub/sdk').PipelineInput
+declare const closeOutAction: import('@serene-pub/sdk').TriggerInput
+-->
+```ts
+register(everyNTurns({ n: 10 }), summarizer, { minAge: 20 })
+register(closeOutAction, summarizer, { minAge: 0 })
+```
+
+### When history settles
+
+`history: { settle: 'on-write' }` is a genre saying what kind of game it is: every write settles as it lands, Back is refused, Hide and Branch still work, and no preset may loosen it.
+
+### When the scene moves on
+
+Story's sweep has a duty that asks the model whether the story moved on to a new scene since its last look:
+**Notice when the scene moves on**. The host asks only when the answer could be used — the session places scenes
+and its scene setting is not Manual, the scene has run at least 6 lines, no boundary trigger already fired in the
+lines since the last look, and no suggestion is waiting — so a quiet session costs no call. The model is shown those
+lines numbered and names the one the new scene begins at; core maps the number back onto those lines, so a
+suggestion never reaches further back than the last look.
+
+The answer is a scene cue of its own kind, `judged` (`JUDGED_SCENE_TRIGGER`), its reason the model's few words,
+written through `core:outlet/propose-scene-cue@1`. From there the session's scene setting decides, as for any cue:
+Suggested asks (*New scene?*), Automatic starts the scene. A sweep on Review always asks (`ask: true`).
+
 ## A turn, end to end
 
 Story's **Living** preset, one person and one character:
@@ -250,7 +289,7 @@ Story's **Living** preset, one person and one character:
    reply, waits for anything the reply set off, and runs: it reads the reply and notes what
    changed.
 5. Every fifth turn, the sweep (`register(everyNTurns({ n: 5 }), storySweep)`) queues the same way
-   and files a summary, lore and the cast.
+   files a summary, lore and the cast, and asks whether the scene moved on.
 6. The session's settings are derived from what is registered: the genre's settings, a card for
    each registered pipeline that exposes something, and a **Routines** list with each routine's
    mode. Nothing is declared twice.

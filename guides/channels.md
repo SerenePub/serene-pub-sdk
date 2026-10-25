@@ -105,3 +105,7 @@ A channel's messages are sent to the people in the session like any other messag
 channel is declared `audience: 'owner'`, and then only the owner sees them. So anything a player
 must not see (an opponent's fleet, the answer to a riddle) must never be written to a channel
 they read. Keep it in your plugin's [storage](storage.md).
+
+## What a summary reads: lore
+
+A channel says once what its lines are to a summary: `story` (events), `aside` (context, never events) or `never` (no summary reads it, and the host refuses `sources` naming its lines). `main` is `story`; every other channel is `never` until it says otherwise.

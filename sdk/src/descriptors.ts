@@ -1249,7 +1249,19 @@ export interface ChannelDecl {
 	 * @ruling Lair rewrite R7, D6 (2026-10-21)
 	 */
 	audience?: ChannelAudience
+	/**
+	 * 🚧 What this channel's lines are to a summary (pass 9 S1, ruled 2026-10-24): `story` — events;
+	 * `aside` — read as context, never as events (the Lair's Sanctum); `never` — no summary reads it and
+	 * the host refuses `sources` naming its lines. Default: `main` is `story`, every other channel `never`.
+	 * Read it with `channelLoreRole`. ⚠ Not `role` (how the channel enters a prompt).
+	 */
+	lore?: ChannelLoreRole
 }
+
+/** 🚧 What a channel's lines are to a summary (pass 9 S1). @experimental */
+export const CHANNEL_LORE_ROLES = ['story', 'aside', 'never'] as const
+/** @experimental */
+export type ChannelLoreRole = (typeof CHANNEL_LORE_ROLES)[number]
 
 /** 🚧 Who reads a channel: every member (`all`, the default) or the session's owner alone (`owner`). @experimental */
 export const CHANNEL_AUDIENCES = ['all', 'owner'] as const
@@ -1327,6 +1339,7 @@ export function channelDecls(shape: unknown): ChannelDecl[] {
 			...(controls ? { turnControls: controls as SessionShape['turnControls'] } : {}),
 			...(decl.lanes ? { lanes: decl.lanes } : {}),
 			...(decl.audience ? { audience: decl.audience } : {}),
+			...(decl.lore ? { lore: decl.lore } : {}),
 		}
 	}
 	const declared = (Array.isArray(s.channels) ? s.channels : [])
@@ -1351,6 +1364,17 @@ export function channelAudience(shape: unknown, channel: string): ChannelAudienc
 	return decl?.audience === 'owner' ? 'owner' : 'all'
 }
 
+/** 🚧 The lore role of `channel` (may be `slug:lane`; the slug decides), default resolved. @experimental */
+export function channelLoreRole(shape: unknown, channel: string): ChannelLoreRole {
+	const slug = parseChannel(channel).slug
+	const decl = channelDecls(shape).find((d) => d.slug === slug)
+	return decl?.lore && CHANNEL_LORE_ROLES.includes(decl.lore)
+		? decl.lore
+		: slug === DEFAULT_CHANNEL
+			? 'story'
+			: 'never'
+}
+
 /**
  * A channel declaration that cannot mean what it says is refused — with a
  * sentence, at the declaration, on the same terms as `assertMessageVerbFloors`.
@@ -1366,7 +1390,7 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 	if (!Array.isArray(channels))
 		throw new Error(
 			`${who} declares a 'channels' that is not an array. A genre's channels are a list ` +
-				`of slugs, each a bare string or a { slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience? } (R-C).`,
+				`of slugs, each a bare string or a { slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience?, lore? } (R-C).`,
 		)
 	for (const raw of channels) {
 		const isString = typeof raw === 'string'
@@ -1374,7 +1398,7 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 			throw new Error(
 				`${who} declares a channel that is neither a slug nor a declaration: ` +
 					`${JSON.stringify(raw)}. Each channel is a bare string or a ` +
-					`{ slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience? } (R-C).`,
+					`{ slug, role?, voice?, messageVerbs?, label?, turnControls?, lanes?, audience?, lore? } (R-C).`,
 			)
 		const decl = (isString ? { slug: raw } : raw) as ChannelDecl
 		const slug = typeof decl.slug === 'string' ? decl.slug.trim() : ''
@@ -1430,6 +1454,14 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 				`${at} declares audience 'owner' and personal lanes. A personal lane is sent to its ` +
 					`person, and an owner-only channel to nobody else — say one: personal lanes, or ` +
 					`one channel for the owner.`,
+			)
+		if (decl.lore !== undefined && !CHANNEL_LORE_ROLES.includes(decl.lore))
+			throw new Error(
+				`${at} declares lore '${String(decl.lore)}'. A channel's lore role is 'story', 'aside' or 'never' — events, context, or nothing a summary reads.`,
+			)
+		if (slug === DEFAULT_CHANNEL && decl.lore !== undefined && decl.lore !== 'story')
+			throw new Error(
+				`${at} declares lore '${String(decl.lore)}'. '${DEFAULT_CHANNEL}' is the story's channel; declare another channel for asides.`,
 			)
 		assertMessageVerbFloors({ messageVerbs: decl.messageVerbs }, at)
 		// R6: the display name is display text, and the per-channel turn

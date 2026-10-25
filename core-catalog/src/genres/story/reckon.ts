@@ -41,7 +41,7 @@
  * (the ruleset handler's expiry) and *Mark goals reached* (the annex write).
  */
 
-import { slot, ITEM, type ChainBuilder, type OutPortsOf } from '@serene-pub/sdk'
+import { slot, ITEM, type ChainBuilder, type EntryDescriptor, type OutPortsOf } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { STORY_PROMPT_KEYS } from '../../seed/prompts.js'
 import { seedScript, type CoreScriptSeed } from '../../shared/scriptSeed.js'
@@ -65,7 +65,8 @@ import {
 	type ReckonTerms,
 } from '../../shared/reckoning.js'
 import type { SweepDue } from './sweep.js'
-import { bareEntryTypeId, characterLoreEntryType, historyEntryType, locationEntryType, worldLoreEntryType } from '../../registry/entries.js'
+import { fileLore, rememberNote } from '../../shared/lore.js'
+import { characterLoreEntryType, historyEntryType, locationEntryType, worldLoreEntryType } from '../../registry/entries.js'
 
 // 🚧 The reckoning's grammar, scripts and branch are every reckoning's (`shared/reckoning.ts`,
 // 2026-10-23, PLAN-genres-seams S5: the Lair's keeper is the same graph); re-exported from their old home.
@@ -90,7 +91,8 @@ const NAMED = {
  * 🚧 The sweep's answer — one member per sweep duty, each empty when its
  * duty is off or nothing changed: the story so far (`summary`), new lore,
  * new people (`cast`), the world's state, how the characters stand
- * (`relationships`), the places used (`scenes`) and the running goals.
+ * (`relationships`), the places used (`scenes`), the running goals and whether
+ * the story moved on to a new scene (`sceneMovedOn`: `{ moved, line, reason }`, the line numbered in the crib).
  * @experimental
  */
 export const STORY_SWEEP_SCHEMA = {
@@ -121,8 +123,9 @@ export const STORY_SWEEP_SCHEMA = {
 		},
 		scenes: { type: 'array', maxItems: 4, items: NAMED },
 		goals: { type: 'string' },
+		sceneMovedOn: { type: 'object', properties: { moved: { type: 'boolean' }, line: { type: 'integer' }, reason: { type: 'string' } }, required: ['moved', 'line', 'reason'], additionalProperties: false },
 	},
-	required: ['summary', 'lore', 'cast', 'worldState', 'relationships', 'scenes', 'goals'],
+	required: ['summary', 'lore', 'cast', 'worldState', 'relationships', 'scenes', 'goals', 'sceneMovedOn'],
 	additionalProperties: false,
 } as const
 
@@ -132,7 +135,8 @@ const storySeed = (seedKey: string, name: string, body: string): CoreScriptSeed 
 
 /**
  * 🚧 `core:script/story-sweep-crib`: what the sweep is asked. Handed
- * `{ session, state, modes }`. Returns `{ crib, brief, fields }`: the crib
+ * `{ session, state, modes, check, history }` (`check` the duties step's `sceneCheck`, `history` the
+ * story's rows). Returns `{ crib, brief, fields }`: the crib
  * (the world as it stands and who is seated), the brief (each sweep duty
  * that is on, as its question, and that every other member stays empty) and the
  * prompt's named fields (`difficulty`).
@@ -160,9 +164,23 @@ if (modeOf(modes, "world-state") !== "off" && worldKeys.length) asks.push("world
 if (modeOf(modes, "relationships") !== "off") asks.push("relationships: how two characters now stand with each other, each { from, to, how }");
 if (modeOf(modes, "scenes") !== "off") asks.push("scenes: each place the story used, each { name, content: what it is like }");
 if (modeOf(modes, "goals") !== "off") asks.push("goals: what the characters are after now, as a checklist — one goal a line, '- [ ] the goal' while it is open and '- [x] the goal' once the story has reached it; keep the goals already noted (" + (goalsNow ? "below" : "none yet") + "), tick the ones reached, add new ones");
+// 🚧 Notice when the scene moves on (pass 7, R-i): asked only when the host's judged scene check is due; its lines are numbered for the answer.
+var check = own(v.check), sceneLines = [];
+if (modeOf(modes, "scene-moved-on") !== "off" && check.due === true && Array.isArray(check.lines) && check.lines.length) {
+	var byId = {}, hist = Array.isArray(v.history) ? v.history : [], named = {};
+	for (var h = 0; h < hist.length; h++) { var hr = own(hist[h]); if (hr.id !== undefined) byId[String(hr.id)] = hr; }
+	for (var q = 0; q < people.length; q++) named[people[q].ref] = people[q].name;
+	for (var n = 0; n < check.lines.length; n++) {
+		var row = byId[String(check.lines[n])];
+		var who = row ? (named["character:" + text(row.characterId)] || named["character:" + text(row.personaId)] || (row.role === "user" ? "A player" : "The narrator")) : "";
+		var said = row ? text(row.content).split("\\n").join(" ").slice(0, 160) : "(not in view)";
+		sceneLines.push("[" + (n + 1) + "] " + (who ? who + ": " : "") + said);
+	}
+	asks.push("sceneMovedOn: did the story move on to a new scene in the numbered lines — a new place, a jump in time, a new gathering, one matter ended and another begun? { moved: true or false, line: the number of the line the new scene begins at (0 when it did not move on), reason: why, in a few words — the party left the inn }");
+}
 return {
-	crib: "The world: " + (world || "nothing tracked yet") + "." + (names.length ? "\\nSeated: " + names.join(", ") + "." : "") + (goalsNow && modeOf(modes, "goals") !== "off" ? "\\nThe goals so far:\\n" + goalsNow : ""),
-	brief: "Look back over the story so far and answer only these:\\n- " + asks.join("\\n- ") + "\\n\\nEvery other member stays empty: an empty list, or empty text.",
+	crib: "The world: " + (world || "nothing tracked yet") + "." + (names.length ? "\\nSeated: " + names.join(", ") + "." : "") + (goalsNow && modeOf(modes, "goals") !== "off" ? "\\nThe goals so far:\\n" + goalsNow : "") + (sceneLines.length ? "\\n\\nThe lines since the last look, numbered:\\n" + sceneLines.join("\\n") : ""),
+	brief: "Look back over the story so far and answer only these:\\n- " + asks.join("\\n- ") + "\\n\\nEvery other member stays empty: an empty list, empty text, or { moved: false, line: 0, reason: \\"\\" }.",
 	fields: { difficulty: text(own(doc.fields).difficulty) || "normal" }
 };
 `,
@@ -170,7 +188,7 @@ return {
 
 /**
  * 🚧 `core:script/story-sweep`: the sweep's answer, sorted by duty and mode.
- * Handed `{ json, modes }`. Each list lands under `<member>Full` or
+ * Handed `{ json, modes, check }`. Each list lands under `<member>Full` or
  * `<member>Review` by its duty's mode — absent when the duty is off or the
  * answer empty — so a junction reads which write runs: `summaryFull`,
  * `summaryReview` (one `{ name, content }`), `loreFull` · `loreReview`,
@@ -179,7 +197,8 @@ return {
  * slot, value }`), `goals` (text — a note, so Review writes it too) and
  * `relationships` (`{ from, to, how }` — a proposal either way: the graph
  * never applies itself, so Full and Review both file it on the Graph's
- * review screen, lane 2).
+ * review screen, lane 2), `sceneCueFull` · `sceneCueReview` (one `{ at, channel, reason }`: the
+ * new scene's first line, its lane and why — the model's numbered line mapped onto the check's own lines).
  * @experimental
  */
 export const STORY_SWEEP_SCRIPT = storySeed(
@@ -215,6 +234,11 @@ if (modeOf(modes, "relationships") !== "off" && Array.isArray(j.relationships)) 
 	}
 	if (ties.length) out.relationships = ties;
 }
+// 🚧 Notice when the scene moves on: the model's numbered line, mapped onto the check's own lines (never further back).
+var check = own(v.check), moved = own(j.sceneMovedOn), cueMode = modeOf(modes, "scene-moved-on");
+var at = Math.floor(num(moved.line, 0));
+if (cueMode !== "off" && check.due === true && moved.moved === true && Array.isArray(check.lines) && at >= 1 && at <= check.lines.length && text(moved.reason))
+	out["sceneCue" + (cueMode === "full" ? "Full" : "Review")] = { at: check.lines[at - 1], channel: text(check.channel) || "main", reason: text(moved.reason).slice(0, 120) };
 return out;
 `,
 )
@@ -330,7 +354,7 @@ export const STORY_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 /**
  * 🚧 What the sweep's sort hands its junctions (`core:script/story-sweep`):
  * `<member>Full` or `<member>Review` by its duty's mode, absent when off or
- * empty; `goals` and `relationships` either way. @internal
+ * empty; `goals` and `relationships` either way; `sceneCueFull` / `sceneCueReview` by the duty's mode. @internal
  */
 interface Swept {
 	readonly summaryFull: unknown
@@ -345,6 +369,8 @@ interface Swept {
 	readonly worldReview: unknown
 	readonly goals: unknown
 	readonly relationships: unknown
+	readonly sceneCueFull: unknown
+	readonly sceneCueReview: unknown
 }
 
 /** Story's reckoning terms. @internal */
@@ -372,39 +398,24 @@ const entryWrites = <B extends SweepSorted>(
 	w: Wiring,
 	review: NodeOn[],
 	key: 'lore' | 'cast' | 'scenes',
-	entryType: string,
+	entryType: EntryDescriptor<string>,
 	noun: string,
 	max: number,
 ): B => {
 	const sweep: SweepSorted = c
 	sweep.junction(key, { on: ($) => $.swept.main }, (j) => {
 		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
-			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-			return jsonPart(b, w, 'list', ($) => $.sweep.due.swept.main, `${key}${mode === 'full' ? 'Full' : 'Review'}`, rv(`The ${noun}s`)).each(
-				'entry',
-				{ over: ($) => $.list.main, max },
-				(m) => {
-					w.params.push([on(m, 'write'), { entryType }])
-					if (mode === 'review') review.push(on(m, 'write'))
-					return textPart(
-						textPart(m, w, 'name', ($) => $[ITEM], 'name', rv(`The ${noun}'s name`)),
-						w,
-						'content',
-						($) => $[ITEM],
-						'content',
-						rv(`What the ${noun} says`),
-					).outlet(
-						'write',
-						($) =>
-							C.createLoreEntry.v1({
-								name: $.name.text,
-								content: $.content.text,
-								params: slot.params(),
-							}),
-						{ expose: { label: mode === 'full' ? `File the ${noun}` : `Hold the ${noun} for review` } },
-					)
-				},
-			)
+			return fileLore(b, w, {
+				from: ($) => $.sweep.due.swept.main,
+				member: `${key}${mode === 'full' ? 'Full' : 'Review'}`,
+				listLabel: `The ${noun}s`,
+				each: 'entry',
+				noun,
+				max,
+				entryType,
+				writeLabel: mode === 'full' ? `File the ${noun}` : `Hold the ${noun} for review`,
+				review: mode === 'review' ? review : undefined,
+			})
 		}
 		return j
 			.when('full', { path: (v: Swept) => v[`${key}Full`], truthy: true }, (b) => arm(b, 'full'))
@@ -425,6 +436,8 @@ export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<Swee
 					session: $.input.session,
 					state: $.state.state,
 					modes: $.duties.modes,
+					check: $.duties.sceneCheck,
+					history: $.history.messages,
 				}), 'What the sweep is asked', 'Looking back over the story'),
 				w,
 				'cribText',
@@ -464,46 +477,47 @@ export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<Swee
 	const sorted = scriptStep(asked, w, 'swept', STORY_SWEEP_SCRIPT.seedKey, ($) => ({
 		json: $.sweepWrite.json,
 		modes: $.duties.modes,
+		check: $.duties.sceneCheck,
 	}), 'What the sweep found, sorted', 'Looking back over the story')
 	/** The summary — one history entry. */
 	const summarized = sorted.junction('summary', { on: ($) => $.swept.main }, (j) => {
 		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
 			const member = mode === 'full' ? 'summaryFull' : 'summaryReview'
-			w.params.push([on(b, 'write'), { entryType: bareEntryTypeId(historyEntryType) }])
-			if (mode === 'review') review.push(on(b, 'write'))
 			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-			return textPart(
+			return rememberNote(
 				textPart(
-					jsonPart(b, w, 'doc', ($) => $.sweep.due.swept.main, member, rv('The summary, as written')),
+					textPart(
+						jsonPart(b, w, 'doc', ($) => $.sweep.due.swept.main, member, rv('The summary, as written')),
+						w,
+						'name',
+						($) => $.doc.main,
+						'name',
+						rv("The summary's title"),
+					),
 					w,
-					'name',
+					'content',
 					($) => $.doc.main,
-					'name',
-					rv("The summary's title"),
+					'content',
+					rv('The summary'),
 				),
 				w,
-				'content',
-				($) => $.doc.main,
-				'content',
-				rv('The summary'),
-			).outlet(
-				'write',
-				($) =>
-					C.createLoreEntry.v1({
-						name: $.name.text,
-						content: $.content.text,
-						params: slot.params(),
-					}),
-				{ expose: { label: mode === 'full' ? 'File the summary' : 'Hold the summary for review' } },
+				{
+					key: 'write',
+					name: ($) => $.name.text,
+					content: ($) => $.content.text,
+					entryType: historyEntryType,
+					review: mode === 'review' ? review : undefined,
+					expose: { label: mode === 'full' ? 'File the summary' : 'Hold the summary for review' },
+				},
 			)
 		}
 		return j
 			.when('full', { path: (v: Swept) => v.summaryFull, truthy: true }, (b) => arm(b, 'full'))
 			.when('review', { path: (v: Swept) => v.summaryReview, truthy: true }, (b) => arm(b, 'review'))
 	})
-	const lored = entryWrites(summarized, w, review, 'lore', bareEntryTypeId(worldLoreEntryType), 'lore entry', 6)
-	const peopled = entryWrites(lored, w, review, 'cast', bareEntryTypeId(characterLoreEntryType), 'person', 4)
-	const placed = entryWrites(peopled, w, review, 'scenes', bareEntryTypeId(locationEntryType), 'location', 4)
+	const lored = entryWrites(summarized, w, review, 'lore', worldLoreEntryType, 'lore entry', 6)
+	const peopled = entryWrites(lored, w, review, 'cast', characterLoreEntryType, 'person', 4)
+	const placed = entryWrites(peopled, w, review, 'scenes', locationEntryType, 'location', 4)
 	/** The world's state — changes on the world, applied on Full, proposed on Review. */
 	const worlded = placed.junction('world', { on: ($) => $.swept.main }, (j) => {
 		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
@@ -554,8 +568,30 @@ export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<Swee
 			),
 		),
 	)
+	/**
+	 * 🚧 Notice when the scene moves on (pass 7, R-i): the new scene the sweep found, as a scene cue
+	 * (`propose-scene-cue@1`) — the session's scene mode decides from there; a Review sweep always
+	 * asks (`ask`). Never behind the review gate: a cue's review is its chip.
+	 */
+	const cued = tied.junction('sceneCue', { on: ($) => $.swept.main }, (j) => {
+		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
+			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
+			if (mode === 'review') w.params.push([on(b, 'offer'), { ask: true }])
+			const cue = jsonPart(b, w, 'cue', ($) => $.sweep.due.swept.main, mode === 'full' ? 'sceneCueFull' : 'sceneCueReview', rv('The new scene'))
+			const at = jsonPart(cue, w, 'at', ($) => $.cue.main, 'at', rv('Where it begins'))
+			const lane = textPart(at, w, 'lane', ($) => $.cue.main, 'channel', rv('Its lane'))
+			return textPart(lane, w, 'reason', ($) => $.cue.main, 'reason', rv('Why it moved on')).outlet(
+				'offer',
+				($) => C.proposeSceneCue.v1({ at: $.at.main, channel: $.lane.text, reason: $.reason.text, params: slot.params() }),
+				{ expose: { label: mode === 'full' ? 'Mark the new scene' : 'Suggest the new scene' } },
+			)
+		}
+		return j
+			.when('full', { path: (v: Swept) => v.sceneCueFull, truthy: true }, (b) => arm(b, 'full'))
+			.when('review', { path: (v: Swept) => v.sceneCueReview, truthy: true }, (b) => arm(b, 'review'))
+	})
 	/** The goals — the session's running note (`annex.core['story-goals']`). */
-	return tied.junction('goals', { on: ($) => $.swept.main }, (j) =>
+	return cued.junction('goals', { on: ($) => $.swept.main }, (j) =>
 		j.when('noted', { path: (v: Swept) => v.goals, truthy: true }, (b) =>
 			textPart(b, w, 'text', ($) => $.sweep.due.swept.main, 'goals', 'The goals, as text').outlet(
 				'write',

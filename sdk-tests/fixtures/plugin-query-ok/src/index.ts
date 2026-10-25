@@ -1,5 +1,5 @@
 /**
- * A plugin Query that reads its own rows — which is what the kind is for.
+ * A plugin Query that reads its own files — which is what the kind is for.
  *
  * `hookCtxGrants` hands a query `storage`; a plugin keeps its state there and
  * reads it back through a node of exactly this shape. The packager refused
@@ -24,10 +24,10 @@ export default defineExtension({
 	slug: PLUGIN_SLUG,
 	name: 'Fleet records',
 	version: '1.0.0',
-	description: 'Reads the rows it wrote itself.',
+	description: 'Reads the files it wrote itself.',
 	handlers: [
 		handler(fleetRecords, async (input: { opponent?: string }, ctx: any) =>
-			ok({ main: (await ctx.storage.get(`records:${input.opponent ?? 'admiral'}`)) ?? null }),
+			ok({ main: (await ctx.storage.files.read(`records/${input.opponent ?? 'admiral'}.json`)).kind === 'ok' ? 'found' : null }),
 		),
 	],
 	permissions: { storage: { quotaBytes: 1024 * 1024 } },

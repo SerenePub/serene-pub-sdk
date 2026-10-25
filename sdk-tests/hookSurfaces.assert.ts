@@ -30,7 +30,7 @@ export const lifecycleKeys: Exactly<keyof LifecycleCallbackSurface, Granted> = t
 
 export const listener: EventListener = async (_input, ctx) => {
 	ctx.log('info', 'tick', { at: ctx.now(), roll: ctx.random() })
-	await ctx.storage.query({ limit: 1 })
+	await ctx.storage.usage()
 	// @ts-expect-error — network is an oracle's grant, never a listener's
 	await ctx.fetch('https://example.com')
 	return ok({})

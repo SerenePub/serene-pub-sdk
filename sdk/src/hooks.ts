@@ -160,7 +160,7 @@ export interface EventListenerSurface {
 	 *  same instant. Use it instead of `Date.now()`. */
 	now(): number
 	log(level: LogLevel, message: string, detail?: unknown): void
-	/** The extension's own rows and files — query, write, delete, and ask how
+	/** The extension's own files — list, read, write, delete, and ask how
 	 *  much room is left. See storage.ts for why all four are needed. */
 	storage: ExtensionStorage
 	signal: AbortSignal
@@ -194,7 +194,7 @@ export interface LifecycleCallbackSurface {
 	/** The call's pinned clock — see {@link EventListenerSurface.now}. */
 	now(): number
 	log(level: LogLevel, message: string, detail?: unknown): void
-	/** The extension's own rows and files. */
+	/** The extension's own files. */
 	storage: ExtensionStorage
 	signal: AbortSignal
 	/**
@@ -213,7 +213,9 @@ export interface LifecycleCallbackSurface {
  * - `disable` — before it is switched off. Bounded; a failure never stops the switch.
  * - `update` — once, after a reinstall replaced its bundle, on the new bundle's
  *   first run. Its input is {@link LifecycleUpdateInput}.
- * - `uninstall` — before its rows and files are removed. Bounded.
+ * - `migrate` — per session, after `update`: the owner's annex document as an older version wrote it, and
+ *   the versions. Return `ok({ document })` to store it, `halt(reason)` to leave it as stored.
+ * - `uninstall` — before its files are removed. Bounded.
  * - `shutdown` — during the app's graceful shutdown. Bounded; never holds up exit.
  *
  * Every moment runs with the lifecycle grants and the lifecycle timeout, and a
@@ -232,6 +234,7 @@ export const LIFECYCLE_MOMENTS = [
 	'enable',
 	'disable',
 	'update',
+	'migrate',
 	/**
 	 * The extension is being removed. Its last chance to clean up.
 	 *
@@ -243,7 +246,7 @@ export const LIFECYCLE_MOMENTS = [
 	 * afterwards regardless, so a hook that throws, hangs or was never
 	 * registered costs nothing. It exists for the work core *cannot* do on an
 	 * extension's behalf — retiring a sidecar's external state, revoking a
-	 * token it issued — not for deleting its own rows.
+	 * token it issued — not for deleting its own files.
 	 */
 	'uninstall',
 ] as const
@@ -259,6 +262,21 @@ export type LifecycleMoment = (typeof LIFECYCLE_MOMENTS)[number]
 export interface LifecycleUpdateInput {
 	previousVersion: string
 	version: string
+}
+
+/**
+ * 🚧 What the `migrate` moment's callback is sent (G1).
+ * @experimental
+ */
+export interface LifecycleMigrateInput {
+	/** The session whose owner document this is. */
+	sessionId: number
+	/** The version that last wrote it — the owner's package version; '0.0.0' when none was recorded. */
+	fromVersion: string
+	/** The version now running. */
+	version: string
+	/** The owner document as stored — the callback's own owner only. */
+	document: Readonly<Record<string, unknown>>
 }
 
 /**

@@ -5239,7 +5239,7 @@ export const reckoningDuties = pin(
  * worth keeping. Each duty is a switch; the routine's mode decides whether
  * what it files is written (`full`) or held for review (`review`). Publishes
  * `modes` keyed `summary`, `lore`, `cast`, `relationships`, `world-state`,
- * `scenes`, `goals`, `goal-reached` — the keys the sweep's scripts and
+ * `scenes`, `goals`, `goal-reached`, `scene-moved-on` — the keys the sweep's scripts and
  * junctions read — and `any`. Duties that write a lorebook read Off in a
  * session with none. *Mark goals reached* (`goal-reached`) is read by the
  * host when the goals note moves (lane 6). Pure; no model call.
@@ -5272,9 +5272,29 @@ export const sweepDuties = pin(
 						'When a goal in the goals note is ticked, says so in the story and tells everyone in the session.',
 						false,
 					),
+					sceneMovedOn: duty('Notice when the scene moves on', 'Looks over the lines since the last look for where the story moved on to a new scene, and suggests one there — or starts it, when this session’s scenes are Automatic.', true),
 				},
 			},
 		},
-		ports: dutyPorts,
+		ports: {
+			in: dutyPorts.in,
+			out: {
+				...dutyPorts.out,
+				/** 🚧 A \`JudgedSceneCheck\` (pass 7, R-i): what *Notice when the scene moves on* may judge this run — not due when the duty is Off or the host's conditions do not hold. */
+				sceneCheck: S.json,
+			},
+		},
 	}),
 )
+
+/**
+ * 🚧 What the **judged scene check** may judge this run (pass 7, R-i, sprint 2) — the sweep
+ * duties step's `sceneCheck`, the host's answer: due, with the lane and the lines since the last
+ * look (oldest first, each a message id the new scene may begin at, at most 20); or not due,
+ * with why (a receipt note). Not due → *Notice when the scene moves on* reads Off for the run.
+ * @experimental
+ * @ruling R-i (2026-10-24)
+ */
+export type JudgedSceneCheck =
+	| { readonly due: true; readonly channel: string; readonly lines: readonly number[] }
+	| { readonly due: false; readonly why: string }

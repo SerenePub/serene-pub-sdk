@@ -455,8 +455,17 @@ export interface BoundaryTriggerDecl {
 const TRIGGER_KEY = /^[a-z][A-Za-z0-9]{0,39}$/
 /** An action key, a plugin's namespaced: `trigger-trap`, `acme.roll`. */
 const ACTION_KEY = /^[a-z0-9][a-z0-9._-]{0,79}$/
-/** Core's trigger keys and the cue trigger no setting switches (`endedHere`). */
-const RESERVED_TRIGGER_KEYS: ReadonlySet<string> = new Set([...SCENE_BOUNDARY_TRIGGERS, 'endedHere'])
+/**
+ * 🚧 The scene cue trigger the **judged scene check** leaves (pass 7, R-i, sprint 2) — not a
+ * setting: the sweep's *Notice when the scene moves on* duty is. Its cue's words are the
+ * model's reason ("the party left the inn"). Reserved: no genre declares a trigger by this key.
+ * @experimental
+ * @ruling R-i (2026-10-24)
+ */
+export const JUDGED_SCENE_TRIGGER = 'judged'
+
+/** Core's trigger keys and the cue triggers no setting switches (`endedHere`, `judged`). */
+const RESERVED_TRIGGER_KEYS: ReadonlySet<string> = new Set([...SCENE_BOUNDARY_TRIGGERS, 'endedHere', JUDGED_SCENE_TRIGGER])
 
 const isDisplayText = (v: unknown): boolean =>
 	(typeof v === 'string' && v.trim() !== '') ||

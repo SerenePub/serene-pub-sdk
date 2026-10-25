@@ -614,7 +614,7 @@ data contract's `settings.v1` section — natively on `ctx`, and over the port a
 
 A task is pure (F11) and a chain link is a script — the in-app script host hands one
 `{ random, log }` and a plugin's link gets the same; the four storage kinds get an extension's
-own namespaced rows and nothing that reaches the network (F32); an oracle is the one kind that
+own namespaced files and nothing that reaches the network (F32); an oracle is the one kind that
 calls out. Every `callHook` names its kind (`CallOptions.kind` → `InvokeOptions.kind`), a call
 without one throws, and a member the kind is not granted is *absent* from `ctx` — never a stub
 that refuses — so `Object.keys(ctx)` is the whole answer. The boot runs the SDK's
@@ -994,7 +994,7 @@ who speaks inside a reply**. Each genre has its own turn-order pipeline
 whose turn it is (`message-completed`, edits, deletions, cast and settings changes, …). It
 runs on the session's event queue after the write that caused it, **writes no message**, and
 writes the session's prepared turns with `core:outlet/set-turn-order@1` into
-`sessions.metadata.turnOrder` (`TurnOrderV1`). Its steps are the rules path — **turn pool**
+the session's stored turn order (`TurnOrderV1`, kept by the host under annex owner `core`). Its steps are the rules path — **turn pool**
 (who may be seated) → **turn orderer** (`turn-mentioned`: a mention moves a character up) →
 **turn strategy** (`turn-round-robin` by default; a swappable node) — or, under the genre field
 `turnMode: model`, the **turn advise** oracle.
@@ -1414,7 +1414,7 @@ uses a lowercase `seam` header so the census test does not read it.)
 
 | Seam | Stability | Shipped implementations | Tests that run them |
 | --- | --- | --- | --- |
-| **Node kinds**: `inlet` · `query` · `task` · `oracle` · `outlet`, and `entry` for entry types | `handler()` @public · `Kind` @experimental | Core's catalog ships definitions of every kind. A package's `task`, `query`, `oracle` and `outlet` definitions run through `handler()` in the sandbox. Only core ships inlets and entry types | *task*: `sdk-tests/pluginHarness.test.ts` › `a task is pure: neither storage nor fetch` · *query, outlet*: `sdk-tests/pluginHarness.test.ts` › `a query and an outlet get the extension’s own rows, and no network` · *oracle*: `sdk-tests/pluginHarness.test.ts` › `an oracle is the one kind that calls out` · *inlet*: `sdk-tests/messageVerbs.test.ts` › `each compiles clean, under its declared id, as one inlet straight into one outlet` · *entry*: `sdk-tests/entries.test.ts` › `an entry type is a registry row like any other, with kind entry` |
+| **Node kinds**: `inlet` · `query` · `task` · `oracle` · `outlet`, and `entry` for entry types | `handler()` @public · `Kind` @experimental | Core's catalog ships definitions of every kind. A package's `task`, `query`, `oracle` and `outlet` definitions run through `handler()` in the sandbox. Only core ships inlets and entry types | *task*: `sdk-tests/pluginHarness.test.ts` › `a task is pure: neither storage nor fetch` · *query, outlet*: `sdk-tests/pluginHarness.test.ts` › `a query and an outlet get the extension’s own files, and no network` · *oracle*: `sdk-tests/pluginHarness.test.ts` › `an oracle is the one kind that calls out` · *inlet*: `sdk-tests/messageVerbs.test.ts` › `each compiles clean, under its declared id, as one inlet straight into one outlet` · *entry*: `sdk-tests/entries.test.ts` › `an entry type is a registry row like any other, with kind entry` |
 | **Provisional node definitions**: `core:oracle/speak@1` · `core:oracle/mcp-tool@1` · `core:oracle/mcp-resource@1` (`core:task/ruleset-resolve@1` left the list 2026-10-17 — the app binds it) | `C.speak`, `C.mcpTool`, `C.mcpResource` @experimental, with `provisional: true` | **None.** They are declared and have no handler. `validate()` refuses a document that places one, and none of them can be a swap | `sdk-tests/rulings.test.ts` › `the core definitions their plans own carry the flag, and no other core one does` · `sdk-tests/rulings.test.ts` › `a document that reached the executor anyway halts on the law, not on "no binding registered"` · `sdk-tests/modderPass.test.ts` › `a provisional definition cannot be a swap — it has no handler` |
 | **Specs** (pipelines) | `spec()`, `pin()`, `slot()`, `use()` @public | Core's catalog specs. A package's own, under `pipelines` | *core*: `sdk-tests/coreCatalog.test.ts` › `the announcement builds — genres, pipelines, hooks validated as one package` · *package*: `sdk-tests/plugin.test.ts` › `it produces a manifest and the pipeline documents` |
 | **Genres** | `genre()`, `GenreDecl` @public | Story, Chat, Guide, the Lair and the Dungeon Crawler, each with its defaults (`withGenreDefaults`); Whodunit and Writing Room are showcase plugins (`serene-pub-plugin-whodunit`, `serene-pub-plugin-writing-room`). A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `the GM is never in the scene; guests join as participants; the dungeon is offered, never required` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |

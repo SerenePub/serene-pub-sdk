@@ -26,7 +26,8 @@ const save = () => getDefinition('core:outlet/create-lore-entry@1') as any
 
 test('link-lore-entries takes the ends, the name and the description as ports', () => {
 	const d = link()
-	assert.deepEqual(Object.keys(d.ports.in).sort(), ['description', 'from', 'name', 'to'])
+	// pr-6 (2026-10-25, §C-1): `sources`.
+	assert.deepEqual(Object.keys(d.ports.in).sort(), ['description', 'from', 'name', 'sources', 'to'])
 	assert.equal(d.ports.in.name, S.text)
 	assert.equal(d.ports.in.description, S.text)
 	// `label` wrote the row's description under a second name (R1). Gone, not aliased.

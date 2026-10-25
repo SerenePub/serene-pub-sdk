@@ -228,6 +228,17 @@
 		orderedMessages(messages, order)
 	)
 
+	/** 🚧 The settle line's one mark (pr-6 R-a/R-b, sprint 2): after the newest settled
+	 *  line this copy shows, on its lane. */
+	let settledMarkAfter = $derived.by((): number | null => {
+		const line = conv.settledThrough
+		if (line === null) return null
+		let best: number | null = null
+		for (const m of messages.filter((m) => shownOnLane(m)))
+			if (m.id <= line && (best === null || m.id > best)) best = m.id
+		return best
+	})
+
 	/**
 	 * 🚧 Each line's place among the lines shown on this lane, oldest first
 	 * (PLAN-dc-after-walk2 Q3-6, the walk's #49): its accessible name counts
@@ -521,6 +532,17 @@
 	{/if}
 {/snippet}
 
+<!-- 🚧 The settle line (sprint 2): the story up to here is in the lorebook,
+     and Back no longer reaches it. A history marker, so packs draw it as a day mark. -->
+{#snippet settledMark()}
+	<li data-widget-part="messages.log-item" role="presentation">
+		<span data-widget-part="messages.history-marker messages.settled-mark" role="note">
+			<sp-icon name="book-check" size="12"></sp-icon>
+			{conv.t("In the lorebook up to here")}
+		</span>
+	</li>
+{/snippet}
+
 <!-- 🚧 A day mark: the story day this line was written on, where the day
      changes (its story clock stamp). Opens the line's history entry in the
      lorebook when its scene is filed under one. -->
@@ -627,6 +649,10 @@
 								? conv.scenes.refusal.text
 								: null}
 
+						{#if order === "newest-first" && msg.id === settledMarkAfter}
+							{@render settledMark()}
+						{/if}
+
 						<!-- What opens at this line — a history entry's date, a story
 						     day, a scene — sits on the side of it the older lines
 						     are: above it oldest-first, below it newest-first. -->
@@ -671,6 +697,7 @@
 									? undefined
 									: "")}
 							data-row-kind={conv.rowKind(msg) ?? undefined}
+							data-history-settled={conv.settledThrough !== null && msg.id <= conv.settledThrough ? "" : undefined}
 						>
 							{#if folded(msg)}
 								{@const isOpen = openFolds.has(msg.id)}
@@ -733,6 +760,10 @@
 									<sp-icon name="x" size="14"></sp-icon>
 								</button>
 							</li>
+						{/if}
+
+						{#if order === "oldest-first" && msg.id === settledMarkAfter}
+							{@render settledMark()}
 						{/if}
 
 						{#if order === "newest-first"}

@@ -115,7 +115,7 @@ export function renderPluginPermissionsGuide(): string {
 			KIND_ROLE[k],
 			'',
 			`- Handed: ${code(keys).join(', ')}.`,
-			`- ${keys.includes('storage') ? "Storage: your plugin's own rows and files, when it asks for storage (`permissions.storage`)." : 'No storage.'}`,
+			`- ${keys.includes('storage') ? "Storage: your plugin's own files, when it asks for storage (`permissions.storage`)." : 'No storage.'}`,
 			`- ${keys.includes('fetch') ? 'Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.' : 'No network.'}`,
 			'',
 		)

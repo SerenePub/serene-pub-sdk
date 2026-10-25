@@ -418,6 +418,26 @@ describe('🚧 live scenes (PROPOSAL-live-scenes §7, lane D)', () => {
 		assert.equal(chronicleView(live({ unsummarizedScenes: 0 }), CHRONICLE_DEFAULTS, OWNER, t).summarizeAll, null)
 	})
 
+	test("🚧 a scene's applied summary says what it was written up to (sprint 2)", () => {
+		const base = { name: 'S', lineCount: 3, order: 0, summarized: true, graphed: false }
+		const v = chronicleView(
+			live({
+				scenes: [
+					{ id: 1, ...base, loreSources: { fromMessageId: 1, throughMessageId: 4, throughLabel: '3 Oct, 14:20' } },
+					{ id: 2, ...base },
+					{ id: 3, ...base, loreSources: { fromMessageId: 1, throughMessageId: 4, throughLabel: '  ' } },
+				],
+			}),
+			CHRONICLE_DEFAULTS,
+			OWNER,
+			t,
+		)
+		assert.deepEqual(
+			v.scenes.map((s) => s.writtenFrom),
+			['Written from the story up to 3 Oct, 14:20', null, null],
+		)
+	})
+
 	test('🚧 a finished run waiting for review (§15 G8): its own dot and Ready to review, never Summarize', () => {
 		const reviewing = live({
 			scenes: [

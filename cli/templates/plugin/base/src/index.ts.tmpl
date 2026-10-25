@@ -224,7 +224,7 @@ export const extension = defineExtension({
 	 * plugin runs with the grant refused. Declared rather than compiled because
 	 * a quota is a number and no call site carries one.
 	 *
-	 * ✎ CHANGE: ask for what your rows actually need.
+	 * ✎ CHANGE: ask for what your files actually need.
 	 */
 	permissions: { storage: { quotaBytes: {{quotaBytes}} } },
 {{/storage}}

@@ -9,7 +9,7 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { spec } from '@serene-pub/sdk'
+import { spec, genre, preset } from '@serene-pub/sdk'
 import { compile, canonicalHash, importDocument, exportDocument } from '@serene-pub/sdk'
 import { validate } from '@serene-pub/sdk'
 import { slot } from '@serene-pub/sdk'
@@ -455,5 +455,16 @@ describe('76 · spec identity and ownership', () => {
 		)
 		assert.equal(d.action, 'conflict')
 		assert.match(d.reason, /Ownership is not transferred by importing/)
+	})
+})
+
+describe('a preset never says when history settles', () => {
+	test('a preset input with history is refused with the sentence', () => {
+		const g = genre('test.presets:genre/history', { name: 'History', family: 'test' })
+		assert.throws(
+			() => preset({ slug: 'loose', genre: g, label: 'Loose', history: { settle: 'on-commit' } } as never),
+			/preset 'loose' sets history — when a session's history settles is its genre's to say \(history\.settle\), never a preset's\./,
+		)
+		assert.doesNotThrow(() => preset({ slug: 'plain', genre: g, label: 'Plain' }))
 	})
 })

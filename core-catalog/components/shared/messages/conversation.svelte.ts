@@ -274,6 +274,11 @@ export function createConversation(widget: WidgetContextRef) {
 			}
 		},
 
+		/** 🚧 The session's settle line (`SessionDossierV1.settledThrough`): the newest settled message id; null when none or from a host that sends none. */
+		get settledThrough(): number | null {
+			return typeof dossier?.settledThrough === 'number' ? dossier.settledThrough : null
+		},
+
 		// ── editing: the widget's own state; saving is the `edit` verb ───────
 		edit: {
 			get id() {

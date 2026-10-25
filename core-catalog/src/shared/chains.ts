@@ -32,7 +32,11 @@ export type Chain = ChainBuilder<any, any> | SpecBuilder<any, any>
 export const chainOf = (c: Chain): ChainBuilder<any, any> => c as ChainBuilder<any, any>
 
 /** The `$` a callback on chain `B` receives: the nodes declared so far, its own by short key. @internal */
-export type ScopeOf<B> = B extends ChainBuilder<infer N, infer P> ? Scope<N, P> : never
+export type ScopeOf<B> = B extends SpecBuilder<infer N, any>
+	? Scope<N>
+	: B extends ChainBuilder<infer N, infer P>
+		? Scope<N, P>
+		: never
 
 /** A read off chain `B`'s scope — `($) => $.crib.main` — handed to a helper in place of a dotted path. @internal */
 export type ReadOn<B> = ($: ScopeOf<B>) => unknown

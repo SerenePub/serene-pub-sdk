@@ -210,6 +210,8 @@ export interface ChronicleSceneView {
 	 * for the person — the owner opens that review (`summarize` naming it).
 	 */
 	canReview: boolean
+	/** 🚧 *Written from the story up to ‹when›* (pass 13, sprint 2): its applied summary's newest source line, as the page spells it; null when the page sends none. */
+	writtenFrom: string | null
 }
 
 /** 🚧 The open scene's card, as drawn (live scenes §7). @experimental */
@@ -424,6 +426,7 @@ export function chronicleView(
 						open: isOpen,
 						canSummarize: summarizes && !isOpen && (status === 'none' || status === 'failed'),
 						canReview: canWrite && status === 'review',
+						writtenFrom: s.loreSources?.throughLabel?.trim() ? t('Written from the story up to {label}').replace('{label}', s.loreSources.throughLabel.trim()) : null,
 					}
 				})
 			: [],

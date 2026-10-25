@@ -55,6 +55,7 @@ import { CASTELLAN } from './lair/names.js'
 import { rulesets } from '../registry/rulesets.js'
 import type { TurnOrderHandle } from '../factories/turnOrder.js'
 import { saveMessageSpec } from '../shared/saveMessage.js'
+import { closeOutAction } from '../shared/summarize/summarizeSpec.js'
 import { createStorySpec } from './story/create.js'
 import { storyRespondSpec } from './story/respond.js'
 import { answerFormStorySpec } from './story/answerForm.js'
@@ -159,10 +160,17 @@ export const unlessRulesOffer = (s: SessionHostFacts, fn: { readonly id: string 
  * summarize action (`summarizeAction`: `summarize-world`, …) — so a summary's values are set
  * where every pipeline's are (the genre's defaults, a preset, the session),
  * never by a selected configuration. The host's summarize path still fires
- * them; nothing lists the action.
+ * them; nothing lists the action — and the close-out (R-d), the same summariser
+ * on the Close out action with `minAge: 0`.
  */
 const summaries = (scene: SpecDocument & { readonly actions: Readonly<Record<string, ActionHandle>> }) =>
-	Object.freeze(actionRegistrations(summarizeWorldSpec(), summarizeCharacterSpec(), summarizeHistorySpec(), scene))
+	Object.freeze([
+		...actionRegistrations(summarizeWorldSpec(), summarizeCharacterSpec(), summarizeHistorySpec()),
+		...Object.values(scene.actions)
+			.filter((h) => h.key !== closeOutAction.key)
+			.map((h) => register(h, scene)),
+		register(scene.actions[closeOutAction.key]!, scene, { minAge: 0 }),
+	])
 
 /** What every genre's defaults hold on the session's own events. */
 const spine = (o: { create: SpecDocument; reply: SpecDocument; answerForm: SpecDocument }) => ({

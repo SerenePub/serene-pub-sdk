@@ -21,10 +21,13 @@ import {
 	CHANNEL_AUDIENCES,
 	channelAudience,
 	channelDecls,
+	channelLoreRole,
+	CHANNEL_LORE_ROLES,
 	DEFAULT_CHANNEL,
 	DEFAULT_LANE,
 	formatChannel,
 	genre,
+	historySettleOf,
 	isSameChannel,
 	parseChannel,
 } from '@serene-pub/sdk'
@@ -362,5 +365,51 @@ describe('a channel’s audience', () => {
 				shape: { personas: { min: 0 } },
 			}),
 		)
+	})
+})
+
+describe('a channel’s lore role', () => {
+	const declare = (id: string, channels: any) =>
+		genre(id, { name: { en: 'X' }, family: 'test', shape: { channels } })
+
+	test('story, aside or never — main is the story, the rest never, a lane reads its channel’s', () => {
+		assert.deepEqual([...CHANNEL_LORE_ROLES], ['story', 'aside', 'never'])
+		const shape = { channels: ['notes', { slug: 'sanctum', lore: 'aside' }] }
+		assert.equal(channelLoreRole(shape, 'sanctum'), 'aside')
+		assert.equal(channelLoreRole(shape, 'sanctum:2'), 'aside')
+		assert.equal(channelLoreRole(shape, 'main'), 'story')
+		assert.equal(channelLoreRole(shape, 'notes'), 'never')
+		assert.equal(channelLoreRole(shape, 'undeclared'), 'never')
+		assert.doesNotThrow(() => declare('test.channels:genre/lore-aside', [{ slug: 'sanctum', lore: 'aside', label: { en: 'Sanctum' } }]))
+	})
+
+	test('refused with the sentences', () => {
+		assert.throws(
+			() => declare('test.channels:genre/lore-bad', [{ slug: 'sanctum', lore: 'gossip' }]),
+			/channel 'sanctum' declares lore 'gossip'\. A channel's lore role is 'story', 'aside' or 'never' — events, context, or nothing a summary reads\./,
+		)
+		assert.throws(
+			() => declare('test.channels:genre/lore-main', [{ slug: 'main', lore: 'aside' }]),
+			/channel 'main' declares lore 'aside'\. 'main' is the story's channel; declare another channel for asides\./,
+		)
+	})
+})
+
+describe('a genre’s history settle', () => {
+	const declare = (id: string, history?: unknown) =>
+		genre(id, { name: { en: 'X' }, family: 'test', ...(history !== undefined ? { history: history as never } : {}) })
+
+	test('carried when stated, on-commit when not', () => {
+		assert.equal(historySettleOf(declare('test.channels:genre/settle-write', { settle: 'on-write' })), 'on-write')
+		assert.equal(historySettleOf(declare('test.channels:genre/settle-commit', { settle: 'on-commit' })), 'on-commit')
+		assert.equal(historySettleOf(declare('test.channels:genre/settle-absent')), 'on-commit')
+	})
+
+	test('refused with the sentence', () => {
+		assert.throws(
+			() => declare('test.channels:genre/settle-bad', { settle: 'never' }),
+			/genre 'test\.channels:genre\/settle-bad' declares history\.settle 'never' — 'on-write' or 'on-commit'\./,
+		)
+		assert.throws(() => declare('test.channels:genre/settle-empty', {}), /declares history\.settle 'undefined'/)
 	})
 })

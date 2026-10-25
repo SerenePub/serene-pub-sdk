@@ -2170,7 +2170,70 @@ export const REQUIREMENTS: Requirement[] = [
 			must(!failures.length, failures.join('\n'))
 		},
 	},
+	{
+		id: 'C39',
+		law: 'pass 6 (RULED strict 2026-10-24), pass 8 §3',
+		title:
+			'every lore write a catalogue ships names its entry type, and every lore write in a pipeline that reads a span of the story to summarise names the messages it was written from',
+		consequence:
+			'A summary saved without its sources moves no settle line, so Back keeps reaching under it and takes back rows the lorebook already records; an entry filed without its type lands as world lore whatever it was.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its lore writes to be judged')
+			if (!shipped.pipelines?.length)
+				return report.skip(
+					'the catalogue ships no pipelines — supply `shipped().pipelines` for its lore writes to be judged',
+				)
+			const failures = shipped.pipelines.flatMap((d) => loreWriteFindings(d))
+			must(!failures.length, failures.join('\n'))
+		},
+	},
 ]
+
+// ── C39: lore writes ────────────────────────────────────────────────────────
+
+const LORE_CREATE = 'core:outlet/create-lore-entry'
+const LORE_WRITES = [
+	'core:outlet/create-lore-entry',
+	'core:outlet/update-lore-entry',
+	'core:outlet/link-lore-entries',
+	'core:outlet/graph-proposal',
+]
+const SPAN_READS = ['core:query/summarize-source', 'core:query/graph-scenes']
+
+/** The param values a document declares for `nodeKey` — its default presets' `params` rows, over the node's own. */
+function declaredParams(d: SpecDocument, nodeKey: string): Record<string, unknown> {
+	const out: Record<string, unknown> = {}
+	const own = d.nodes.find((n) => n.key === nodeKey)?.config?.params
+	if (own && typeof own === 'object') Object.assign(out, own)
+	for (const p of d.presets ?? [])
+		if (p.default)
+			for (const v of p.values)
+				if (v.nodeKey === nodeKey && v.slot === 'params' && v.value && typeof v.value === 'object')
+					Object.assign(out, v.value)
+	return out
+}
+
+/** C39's judgement of one shipped document. */
+function loreWriteFindings(d: SpecDocument): string[] {
+	const out: string[] = []
+	const reads = d.nodes.some((n) => SPAN_READS.includes(n.definitionId))
+	for (const n of d.nodes) {
+		if (n.definitionId === LORE_CREATE) {
+			const t = declaredParams(d, n.key).entryType
+			if (t === undefined || t === null || t === '')
+				out.push(`${d.id} ${n.key}: files lore without naming its entry type.`)
+		}
+		if (reads && LORE_WRITES.includes(n.definitionId)) {
+			const wired =
+				(n.config as Record<string, unknown>)?.sources !== undefined ||
+				d.edges.some((e) => e.to === n.key && (e.toPort === 'sources' || e.toPort.startsWith('sources.')))
+			if (!wired) out.push(`${d.id} ${n.key}: writes lore from a span of the story without sources.`)
+		}
+	}
+	return out
+}
 
 // ── C35 · C36: the registrations a catalogue ships, at the one door ─────────
 

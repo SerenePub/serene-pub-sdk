@@ -31,6 +31,7 @@
 import { slot, ITEM, type DataRef } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { chainIf, chainOf, jsonPart, later, textPart, type Chain, type ReadOn, type Wiring } from './calls.js'
+import { fileLore } from '../../shared/lore.js'
 import { bareEntryTypeId, characterLoreEntryType, historyEntryType, locationEntryType } from '../../registry/entries.js'
 
 /** The entry types the world writes, bare (the type's version is its own column). @internal */
@@ -301,47 +302,48 @@ interface WorldWrites {
  */
 export const loreWrites = <B extends Chain>(c: B, w: Wiring, from: ReadOn<B>): B => {
 	const read = ($: unknown) => from($ as never) as DataRef
-	const writes = { place: later('write'), person: later('write'), cairn: later('write') }
-	w.params.push([writes.place, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.place }])
-	w.params.push([writes.person, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.person }])
-	w.params.push([writes.cairn, { entryType: DUNGEON_CRAWLER_ENTRY_TYPES.fallen }])
-	/** One entry, written from an `each` item: `name`, `content` and (a place) `links`. */
-	const entry = (m: Chain, withLinks: boolean, label: string, noun: string) =>
-		chainIf(
-			withLinks,
-			textPart(textPart(chainOf(m), w, 'name', ($) => $[ITEM], 'name', `The ${noun}'s name`), w, 'content', ($) => $[ITEM], 'content', `What the ${noun} says`),
-			(named) => jsonPart(named, w, 'links', ($) => $[ITEM], 'links', 'Its ways out'),
-		).outlet(
-			'write',
-			($) =>
-				C.createLoreEntry.v1({
-					name: $.name.text,
-					content: $.content.text,
-					...(withLinks ? { links: $.links.main } : {}),
-					params: slot.params(),
-				}),
-			{ expose: { label } },
-		)
 	chainOf(c)
 		.junction('lorePlaces', { on: read }, (j) =>
 			j.when('new', { path: (v: WorldWrites) => v.places, truthy: true }, (k) =>
-				jsonPart(k, w, 'list', read, 'places', 'The new places').each('place', { over: ($) => $.list.main, max: MOST.places }, (m) =>
-					entry(writes.place.on(m), true, 'Write a place', 'place'),
-				),
+				fileLore(k, w, {
+					from: read,
+					member: 'places',
+					listLabel: 'The new places',
+					each: 'place',
+					noun: 'place',
+					max: MOST.places,
+					entryType: locationEntryType,
+					writeLabel: 'Write a place',
+					links: true,
+				}),
 			),
 		)
 		.junction('lorePeople', { on: read }, (j) =>
 			j.when('new', { path: (v: WorldWrites) => v.people, truthy: true }, (k) =>
-				jsonPart(k, w, 'list', read, 'people', 'The new people').each('person', { over: ($) => $.list.main, max: MOST.people }, (m) =>
-					entry(writes.person.on(m), false, 'Write a person', 'person'),
-				),
+				fileLore(k, w, {
+					from: read,
+					member: 'people',
+					listLabel: 'The new people',
+					each: 'person',
+					noun: 'person',
+					max: MOST.people,
+					entryType: characterLoreEntryType,
+					writeLabel: 'Write a person',
+				}),
 			),
 		)
 		.junction('loreFallen', { on: read }, (j) =>
 			j.when('new', { path: (v: WorldWrites) => v.fallen, truthy: true }, (k) =>
-				jsonPart(k, w, 'list', read, 'fallen', 'The newly fallen').each('cairn', { over: ($) => $.list.main, max: MOST.fallen }, (m) =>
-					entry(writes.cairn.on(m), false, 'Raise a cairn', 'cairn'),
-				),
+				fileLore(k, w, {
+					from: read,
+					member: 'fallen',
+					listLabel: 'The newly fallen',
+					each: 'cairn',
+					noun: 'cairn',
+					max: MOST.fallen,
+					entryType: historyEntryType,
+					writeLabel: 'Raise a cairn',
+				}),
 			),
 		)
 	return c
