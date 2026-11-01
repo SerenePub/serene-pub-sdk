@@ -39,7 +39,7 @@
  * file. Read `nextCursor` and hand it back; never parse it.
  */
 
-import { FRAME_PROTOCOL, type FrameHostMessage, type FramePoint, type HostFrameMessage } from '@serene-pub/sdk'
+import { FRAME_PROTOCOL, SAVE_STATE_MAX_BYTES, type FrameHostMessage, type FramePoint, type HostFrameMessage } from '@serene-pub/sdk'
 
 /** The rows the host pages over — the fixtures, as the stage holds them. */
 export type FrameRow = Record<string, unknown>
@@ -56,11 +56,12 @@ export const FRAME_PAGE_DEFAULT = 50
 /** The most rows one page may carry, whatever a frame asks for. */
 export const FRAME_PAGE_MAX = 200
 /**
- * The most view state the host will hold for a surface. `save-state` is not
+ * The most view state the host will hold for a surface: 256 KB of JSON, a `SavedStateV1`
+ * `{ v, data }` kept as written. `save-state` is not
  * storage — the declaration says the host may cap or drop it — so it does,
  * loudly, rather than quietly becoming a database a surface comes to rely on.
  */
-export const FRAME_STATE_MAX_BYTES = 16 * 1024
+export const FRAME_STATE_MAX_BYTES = SAVE_STATE_MAX_BYTES
 
 /** `init`, as a protocol-2 host sends it. */
 export const initMessage = (surface: FramePoint): Extract<HostFrameMessage, { t: 'init' }> => ({

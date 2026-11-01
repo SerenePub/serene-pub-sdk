@@ -23,7 +23,7 @@
  * @ruling 03, 09, D-1, F6, 03 §3, 13/§30
  */
 
-import type { WidgetDecl } from './layout.js'
+import type { WidgetDecl, WidgetScope } from './layout.js'
 import { ownWidgets } from './widgetDecls.js'
 import { pluginRuleRef } from './pluginRuleRef.js'
 import type { BuiltSpec } from './builder.js'
@@ -53,6 +53,7 @@ import {
 import type { GenreDecl } from './genres.js'
 import { annexFieldListFindings, type AnnexFieldDecl } from './annexFields.js'
 import type { SurfacesDecl } from './surfaces.js'
+import type { RulesetDocument } from './rulesetDocument.js'
 import { getVariable, pluginVariableFindings, type VariableDecl } from './variables.js'
 import {
 	declarationFindings,
@@ -242,8 +243,9 @@ export const component = (d: Omit<ComponentDecl, '__decl'>): ComponentDecl => ({
 
 /**
  * The sandbox permissions a plugin declares, as against the ones the packager
- * compiles from its calls. Two axes only: **storage**, a private row/file store
- * with a quota, and **network**, an allowlist of hosts its Providers may reach.
+ * compiles from its calls. Three axes only: **storage**, a private row/file store
+ * with a quota, **network**, an allowlist of hosts its Providers may reach, and
+ * 🚧 **media**, what its frames may play unasked (M0).
  *
  * Nothing else belongs here. Resources and events are compiled — an event
  * subscription is a call site the packager reads, so declaring one would let a
@@ -252,9 +254,84 @@ export const component = (d: Omit<ComponentDecl, '__decl'>): ComponentDecl => ({
  * @experimental
  */
 export interface DeclaredPermissions {
-	storage?: { quotaBytes?: number }
+	/**
+	 * 🚧 `serve` (M0, SHAPES L12 Seams): globs over the plugin's own
+	 * storage (`['worlds/**']`) its OWN frames may read, read-only and
+	 * same-origin, at `/plugin-data/<pluginId>/<path>` — never a listing.
+	 * Compiled to one `storage-serve:<glob>` permission key per glob.
+	 */
+	storage?: {
+		quotaBytes?: number
+		serve?: string[]
+		/**
+		 * 🚧 Per-user plugin storage (M2b): a private folder for each person, reached
+		 * through the same API as `ctx.storage` at `ctx.storage.user`, resolved by
+		 * core to the person acting (the presser, the viewer; a routine's session
+		 * owner) — never a user id the plugin names. `quotaBytes` is each person's
+		 * own quota, in the same band as the plugin's. Compiled to the permission
+		 * key `storage-per-user` (`storage-per-user:<bytes>` with a quota), in the
+		 * **applet** permission group.
+		 */
+		perUser?: { quotaBytes?: number }
+	}
 	network?: { hosts?: string[] }
+	/**
+	 * 🚧 Media the plugin's frames play (M0, SHAPES L8): `autoplay` —
+	 * the frame is allowed to start sound after the person's first gesture
+	 * (`allow="autoplay"`). A third axis beside storage and network, because a
+	 * frame's audio cannot be read off a call site either. Declared only until
+	 * Compiled to the permission key `media:autoplay`; the server answers the
+	 * frame document `Permissions-Policy: autoplay=()` without it.
+	 */
+	media?: { autoplay?: boolean }
+	/**
+	 * 🚧 The **session** permission group (M2b): what the package's frames may do
+	 * inside the session they are mounted in — the same grants a widget's
+	 * `scopes` names (`'session:state'`, `'lore'`, `'session:state:write'`,
+	 * `'channel:<slug>:write'`, …), declared here for a frame that is not a
+	 * widget declaration (a session view, an applet while mounted in a session).
+	 * Compiled to the same `widget:<grant>` keys a widget's scopes compile to:
+	 * one grant, one key. Shown to the admin as its own group.
+	 */
+	session?: SessionPermissions
+	/**
+	 * 🚧 The **applet** permission group (M2b): what the package's applet may do with
+	 * the person's library and the pub, outside any one session. Shown to the admin
+	 * as its own group and granted apart from the session group; a widget
+	 * declaration may never ask for it. Every grant is still bounded by the person
+	 * acting. The server half of these requests lands in M2c.
+	 */
+	applet?: AppletPermissions
 }
+
+/** 🚧 The session permission group (M2b). See {@link DeclaredPermissions.session}. @experimental */
+export interface SessionPermissions {
+	scopes?: readonly WidgetScope[]
+}
+
+/**
+ * 🚧 The applet permission group (M2b). See {@link DeclaredPermissions.applet}.
+ * Compiled keys: `applet:characters:<read|write>` · `applet:lorebooks:<read|write>` ·
+ * `applet:sessions:<genre id>` (one per genre) · `applet:annex:user`.
+ * @experimental
+ */
+export interface AppletPermissions {
+	/** The person's characters: `read` lists and reads them; `write` also creates and changes them, as that person. */
+	characters?: 'read' | 'write'
+	/** The person's lorebooks: `read`, or `write` (create, import, attach), as that person. */
+	lorebooks?: 'read' | 'write'
+	/**
+	 * Sessions of the package's OWN genres that the person owns: list, open, start
+	 * (through the app's start form), update and delete (through the app's confirm).
+	 * Each id must be a genre this package declares; there is no "all genres".
+	 */
+	sessions?: { genres: readonly string[] }
+	/** The user annex: a small document per person, under the plugin's own name. */
+	annex?: { user?: boolean }
+}
+
+/** 🚧 The levels an applet's library grant takes (M2b). @experimental */
+export const APPLET_LIBRARY_LEVELS = ['read', 'write'] as const
 
 /** The quota band an author may ask for. An instance clamps into its own. @experimental */
 export const MIN_STORAGE_QUOTA = 1024
@@ -288,6 +365,55 @@ export function permissionFindings(p: DeclaredPermissions | undefined): string[]
 					`A pub clamps whatever it is handed, so a number outside the band is not a ` +
 					`bigger grant — it is a declaration that says something other than what you get.`,
 			)
+	}
+	const perUser = p.storage?.perUser
+	if (perUser !== undefined) {
+		const q = perUser?.quotaBytes
+		if (
+			typeof perUser !== 'object' ||
+			perUser === null ||
+			(q !== undefined &&
+				(typeof q !== 'number' || !Number.isFinite(q) || q < MIN_STORAGE_QUOTA || q > MAX_STORAGE_QUOTA))
+		)
+			out.push(
+				`permissions.storage.perUser.quotaBytes must be ${MIN_STORAGE_QUOTA}…${MAX_STORAGE_QUOTA} — ` +
+					`each person's own quota, in the same band as the plugin's.`,
+			)
+	}
+	if (p.applet !== undefined) {
+		const a = p.applet as Record<string, unknown> | null
+		if (!a || typeof a !== 'object' || Array.isArray(a))
+			out.push('permissions.applet is an object: { characters?, lorebooks?, sessions?, annex? }.')
+		else {
+			for (const k of Object.keys(a))
+				if (!['characters', 'lorebooks', 'sessions', 'annex'].includes(k))
+					out.push(`permissions.applet.${k} is not an applet permission (characters · lorebooks · sessions · annex).`)
+			for (const k of ['characters', 'lorebooks'] as const)
+				if (a[k] !== undefined && !(APPLET_LIBRARY_LEVELS as readonly unknown[]).includes(a[k]))
+					out.push(`permissions.applet.${k} is 'read' or 'write'.`)
+			const sessions = a.sessions as { genres?: unknown } | undefined
+			if (
+				sessions !== undefined &&
+				(!sessions ||
+					!Array.isArray(sessions.genres) ||
+					sessions.genres.length === 0 ||
+					sessions.genres.some((g) => typeof g !== 'string' || !g))
+			)
+				out.push(
+					`permissions.applet.sessions needs { genres: [...] }: the ids of genres this package declares. ` +
+						`There is no "all genres" — a plugin reaches only sessions of its own genres.`,
+				)
+			const annex = a.annex as { user?: unknown } | undefined
+			if (annex !== undefined && (!annex || typeof annex !== 'object' || (annex.user !== undefined && typeof annex.user !== 'boolean')))
+				out.push('permissions.applet.annex is { user?: boolean }.')
+		}
+	}
+	if (p.session !== undefined) {
+		const sc = (p.session as { scopes?: unknown } | null)?.scopes
+		if (!p.session || typeof p.session !== 'object' || (sc !== undefined && (!Array.isArray(sc) || sc.some((x) => typeof x !== 'string'))))
+			out.push("permissions.session is { scopes?: [...] } — the same grants a widget's `scopes` names.")
+		else if (Array.isArray(sc) && sc.some((x: string) => x.startsWith('applet')))
+			out.push('permissions.session.scopes names an applet permission: declare it under permissions.applet.')
 	}
 	if (p.network) {
 		const hosts = p.network.hosts ?? []
@@ -551,6 +677,43 @@ export interface ExtensionDecl {
 	 * @ruling F10, 01 §9b
 	 */
 	peerTypes?: string[]
+	/**
+	 * 🚧 Content shipped beside `ui/`: images, audio, fonts, data. Served from
+	 * disk, versioned, immutable at `/plugin-assets/<id>/<path>` (M0,
+	 * SHAPES L2; `dir` conventionally `'assets'`); the packager carries the
+	 * folder into the zip.
+	 */
+	assets?: { dir: string }
+	/**
+	 * 🚧 Content the app imports FOR the package (M2c): `lorebooks` — package-relative
+	 * paths of lorebook files (the format Lorebooks › Import reads), each under the
+	 * declared `assets.dir`, so it also ships as an asset. Once an admin has granted
+	 * `permissions.applet.lorebooks: 'write'` and the plugin is enabled, core's own
+	 * importer imports each file as the admin who enabled it — once per version, a
+	 * newer version arrives as a diff under the book's write mode, and uninstall
+	 * keeps or deletes the books as the admin chooses. Nothing runs in the sandbox.
+	 * `serene-pub check` refuses a path outside `assets.dir` (`E_PROVIDES_OUTSIDE_ASSETS`),
+	 * a missing file (`E_PROVIDES_MISSING`), no `applet.lorebooks: 'write'`
+	 * (`E_PROVIDES_UNGRANTED`) and a file the importer would refuse (`E_PROVIDES_INVALID`).
+	 * @experimental (M2c)
+	 */
+	provides?: { lorebooks?: readonly string[] }
+	/**
+	 * 🚧 Rulesets shipped in the package, as ruleset documents (M0,
+	 * SHAPES L4 Declaration): install and upgrade publish each as a `rulesets`
+	 * row — `origin: 'plugin'`, the plugin's slug its owner, the document's
+	 * `version` its published version; uninstall retires the rows.
+	 */
+	rulesets?: readonly RulesetDocument[]
+	/**
+	 * 🚧 Handler-mediated actions OUTSIDE a session (M0, SHAPES L12
+	 * Seams), by action name: `ctx.invoke('world.save', draft)` from a plugin
+	 * page (`/x/<id>`) or a frame reaches `handler` with `params` checked
+	 * against the schema. ⚠ Not a session **action** (a press in a session's
+	 * actions list). `handler` is the id of a `query` or `outlet` definition
+	 * this package implements.
+	 */
+	pluginActions?: Record<string, { params: SettingsSchema; handler: string }>
 }
 
 /**

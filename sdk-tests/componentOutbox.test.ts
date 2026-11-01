@@ -113,7 +113,8 @@ test('a handler that closes a menu and then invokes: the page sees the menu go f
 		const invoked = page.log.findIndex((m) => m.k === 'wire' && (m.msg as { t?: string }).t === 'invoke')
 		assert.ok(removed >= 0, 'the menu was removed')
 		assert.ok(removed < invoked, `the removal (#${removed}) reaches the page before the invoke (#${invoked})`)
-		assert.deepEqual((page.log[invoked] as { msg: unknown }).msg, { t: 'invoke', key: 'branch', messageId: 7 })
+		// 🚧 M2b (2026-10-31): a component's invoke now carries a `requestId` (the host answers it, as a frame's).
+		assert.deepEqual((page.log[invoked] as { msg: unknown }).msg, { t: 'invoke', key: 'branch', messageId: 7, requestId: 'i1' })
 		assert.deepEqual(page.onPort, [])
 	} finally {
 		page.unmount()
@@ -172,7 +173,8 @@ test('what is sent is what it was at the call; unmounting drops what the turn ha
 		await until('the invoke', () => page.wires().some((m) => m.t === 'invoke'))
 		assert.deepEqual(
 			page.wires().filter((m) => m.t === 'invoke'),
-			[{ t: 'invoke', key: 'send', payload: { text: 'a' } }],
+			// 🚧 M2b (2026-10-31): with its `requestId` — `i2`: the payload that could not cross took `i1` and was never sent.
+			[{ t: 'invoke', key: 'send', payload: { text: 'a' }, requestId: 'i2' }],
 		)
 		// Clicked, then unmounted in the same turn: the invoke never leaves.
 		page.fire(click)

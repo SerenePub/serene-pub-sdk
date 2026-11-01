@@ -88,6 +88,52 @@ export interface ExtensionStorage {
 	usage(): Promise<StorageUsage>
 	/** The extension's own directory: everything it keeps beyond the session's annex. */
 	files: ExtensionFiles
+	/**
+	 * 🚧 (M2b) Each person's own files — the same storage API, scoped to the
+	 * person acting for this call. Needs `permissions.storage.perUser` (its own
+	 * quota, per person) in the manifest.
+	 *
+	 * "The person" is the host-side user of the call: the signed-in person whose
+	 * action fired the handler, or the presser / sender a run carries. It is
+	 * never read from the hook's input or chosen by the plugin, so one person
+	 * cannot reach another's folder. When per-user storage is not granted, or no
+	 * person is acting for the call (a routine with no user), every method
+	 * refuses with a sentence: `storage.user: per-user storage is not granted`
+	 * or `storage.user: no person is acting for this call`.
+	 *
+	 * The files are removed with the account; an uninstall keeps them unless the
+	 * administrator chooses to delete them. A same-origin page reads them at
+	 * `/plugin-data/<id>/me/<path>` (never a frame — see the storage guide).
+	 */
+	user?: PerUserStorage
+}
+
+/**
+ * 🚧 Per-user plugin storage (M2b): the person's own folder, with exactly the
+ * methods {@link ExtensionStorage} declares (`usage` and `files`) and nothing
+ * else. Named so it reads as itself wherever it is declared.
+ * @experimental
+ */
+export interface PerUserStorage {
+	/** Ask, at any time. The person's own quota, not the plugin's. */
+	usage(): Promise<StorageUsage>
+	/** The person's own folder. */
+	files: ExtensionFiles
+}
+
+/**
+ * The package's own shipped files, read-only (`ctx.package`). 🚧 (M2a)
+ *
+ * What a plugin ships under its manifest's `assets: { dir }` folder, read from
+ * a handler. `path` is the path **inside the package** that a frame appends to
+ * `assetsBase` — so it starts with the folder name (`'assets/worlds/a.json'`).
+ * There is no listing, no `exists` and no write: a package knows what it
+ * shipped, and a missing file answers `err`. `lang/` and `ui/` are not assets
+ * and are refused.
+ * @experimental
+ */
+export interface PackageFiles {
+	read(path: string): Promise<Result<Uint8Array>>
 }
 
 /** Nothing here reaches outside the extension's own namespace, so there is no

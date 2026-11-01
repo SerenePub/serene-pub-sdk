@@ -373,15 +373,17 @@ describe("core's declarations did not move (hash proof)", () => {
 		// (was '24d96910fad17661' · '2f11c97063087b30' · '143df93a06b9da00')
 		// 🚧 Moved 2026-10-23 (lane T3): Romance's standing worked out by rungs and a confession moving
 		// the other side (was 'd701b6c316489773'); Workplace's footing on the grapevine (was '9166924478cc1d19').
+		// E M0 2026-10-28: all seven templates moved with lane T3's `scope` + `owner` on attributes (SHAPES F1) and, for slice-of-life, lane T5's household/schedule declarations; Freeform, Vis Itineris and Wherewithal did not.
+		// (was '1c63068aa2387f61' · 'bf014182155e3a75' · 'cf3c56b86ba25141' · 'a6a5a79e11da8c4d' · 'e5b6857ee61ade11' · '62eef38c0250b520' · 'b6cb7c31299be352')
 		const t = Object.fromEntries(rulesetTemplates().map((x) => [x.id, digest(x.ruleset)]))
 		assert.deepEqual(t, {
-			'core:ruleset/template-romance@1': '1c63068aa2387f61',
-			'core:ruleset/template-slice-of-life@1': 'bf014182155e3a75',
-			'core:ruleset/template-workplace@1': 'cf3c56b86ba25141',
-			'core:ruleset/template-card-game@1': 'a6a5a79e11da8c4d',
-			'core:ruleset/template-d20-style@1': 'e5b6857ee61ade11',
-			'core:ruleset/template-dice-pool@1': '62eef38c0250b520',
-			'core:ruleset/template-diceless-pools@1': 'b6cb7c31299be352',
+			'core:ruleset/template-romance@1': '82f166b32e9583ec',
+			'core:ruleset/template-slice-of-life@1': '572f06bc1b32337f',
+			'core:ruleset/template-workplace@1': 'fe72f830f4edb041',
+			'core:ruleset/template-card-game@1': 'f8b23054d5ff3f46',
+			'core:ruleset/template-d20-style@1': '3db0cee69532df7c',
+			'core:ruleset/template-dice-pool@1': '6605a728d0bdfb89',
+			'core:ruleset/template-diceless-pools@1': 'b3607a97e82db6d3',
 		})
 	})
 })

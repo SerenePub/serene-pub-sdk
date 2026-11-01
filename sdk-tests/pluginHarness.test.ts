@@ -92,20 +92,20 @@ const record = (into: Seen[]) => async (_i: unknown, ctx: PluginHandlerContext) 
 
 describe('D-3 · the grant table is the sandbox’s', () => {
 	test('a task is pure: neither storage nor fetch', () => {
-		assert.deepEqual(hookCtxGrants('task'), { storage: false, fetch: false })
+		assert.deepEqual(hookCtxGrants('task'), { storage: false, package: false, annex: false, fetch: false })
 		assert.deepEqual(hookCtxKeysFor('task'), ['random', 'now', 'log', 'signal'])
 	})
 
 	test('a query and an outlet get the extension’s own files, and no network', () => {
 		for (const kind of ['query', 'outlet', 'event', 'lifecycle'] as const) {
-			assert.deepEqual(hookCtxGrants(kind), { storage: true, fetch: false })
-			assert.deepEqual(hookCtxKeysFor(kind), ['random', 'now', 'log', 'storage', 'signal'])
+			assert.deepEqual(hookCtxGrants(kind), { storage: true, package: true, annex: true, fetch: false })
+			assert.deepEqual(hookCtxKeysFor(kind), ['random', 'now', 'log', 'storage', 'package', 'annex', 'signal'])
 		}
 	})
 
 	test('an oracle is the one kind that calls out', () => {
-		assert.deepEqual(hookCtxGrants('oracle'), { storage: true, fetch: true })
-		assert.deepEqual(hookCtxKeysFor('oracle'), ['random', 'now', 'log', 'storage', 'fetch', 'signal'])
+		assert.deepEqual(hookCtxGrants('oracle'), { storage: true, package: true, annex: true, fetch: true })
+		assert.deepEqual(hookCtxKeysFor('oracle'), ['random', 'now', 'log', 'storage', 'package', 'annex', 'fetch', 'signal'])
 	})
 
 	test('a kind nobody named throws rather than defaulting — a default is a grant nobody decided', () => {
@@ -120,7 +120,26 @@ describe('D-3 · the grant table is the sandbox’s', () => {
 		assert.deepEqual(Object.keys(task), hookCtxKeysFor('task'))
 		// A member the kind is not granted is ABSENT, never a stub that refuses.
 		assert.equal('storage' in task, false)
+		assert.equal('package' in task, false)
 		assert.equal('fetch' in task, false)
+	})
+
+	test('ctx.package reads a shipped file, and refuses a path the package does not ship (M2a)', async () => {
+		const ctx = pluginHandlerContext({
+			pluginId: PLUGIN,
+			kind: 'query',
+			package: { 'assets/worlds/a.json': '{"a":1}' },
+		})
+		const hit = await ctx.package!.read('assets/worlds/a.json')
+		assert.equal(hit.kind, 'ok')
+		if (hit.kind === 'ok') assert.equal(new TextDecoder().decode(hit.value), '{"a":1}')
+		const miss = await ctx.package!.read('assets/nope.json')
+		assert.equal(miss.kind, 'err')
+		// No `package` given: an err that says how to fix it, never a throw.
+		const bare = pluginHandlerContext({ pluginId: PLUGIN, kind: 'query' })
+		const r = await bare.package!.read('assets/a.json')
+		assert.equal(r.kind, 'err')
+		if (r.kind === 'err') assert.match(r.reason, /no package files in this harness: pass `package`/)
 	})
 })
 
@@ -384,6 +403,30 @@ describe('D-3 · ctx.fetch is a grant, not a given', () => {
 })
 
 // ── memoryStorage ──────────────────────────────────────────────────────────
+
+describe('M2b · ctx.storage.user in the harness', () => {
+	test('absent: every method refuses with the no-person sentence', async () => {
+		const ctx = pluginHandlerContext({ pluginId: PLUGIN, kind: 'outlet' })
+		const user = ctx.storage!.user!
+		await assert.rejects(() => user.usage(), /storage\.user: no person is acting for this call/)
+		await assert.rejects(() => user.files.write('a', new Uint8Array(1)), /no person is acting/)
+		await assert.rejects(() => user.files.read('a'), /no person is acting/)
+	})
+
+	test('given a person store: reads back its own writes, apart from the pub store', async () => {
+		const ctx = pluginHandlerContext({ pluginId: PLUGIN, kind: 'outlet', user: memoryStorage({ quotaBytes: 10 }) })
+		const user = ctx.storage!.user!
+		assert.equal((await user.files.write('n.txt', new Uint8Array([1, 2]))).kind, 'ok')
+		assert.deepEqual((await user.files.list()).map((f) => f.path), ['n.txt'])
+		assert.deepEqual(await ctx.storage!.files.list(), [])
+		assert.equal((await user.files.write('big', new Uint8Array(20))).kind, 'err')
+		assert.equal((await user.usage()).quotaBytes, 10)
+	})
+
+	test('a task still has no storage, so no storage.user', () => {
+		assert.equal(pluginHandlerContext({ pluginId: PLUGIN, kind: 'task' }).storage, undefined)
+	})
+})
 
 describe('D-3 · memoryStorage is the half the executor cannot supply', () => {
 	test('a file one handler writes is a file the next handler reads', async () => {

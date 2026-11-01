@@ -19,7 +19,7 @@ so a plugin can depend on the parts it needs and nothing else.
 
 New here? Read the [vocabulary](guides/vocabulary.md) first, then [Your first
 plugin](guides/your-first-plugin.md). In the API reference, 🚧 marks a shape that may
-still change before 1.0, and ⏳ marks one that is going away, with the version named.
+still change before 1.0, and ⏳ marks one that is going away, with the version named. [What the SDK promises before 1.0](guides/stability.md) says more.
 
 `controls` and `ui-preview` carry a Svelte (and, for the harness, a SvelteKit
 and Vite) dependency; everything else is pure TypeScript. That split is the

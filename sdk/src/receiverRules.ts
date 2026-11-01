@@ -15,6 +15,11 @@
  *   views (it could lay the page's controls under its own).
  * - `autofocus` is core's to place: a plugin's field never takes the caret
  *   from core's on landing.
+ * - 🚧 `autoplay` is core's too (speech build, 2026-10-28): only core's
+ *   conversation starts a sound by itself (the newest spoken line); a
+ *   plugin's player waits to be pressed.
+ * - 🚧 `playing` is core's too (heading audio control, 2026-10-29): the page
+ *   plays the `audio` carrying it; a plugin's player starts on a press.
  * - `hidden` / `inert` written as the string `"false"` are absent: a boolean
  *   reaching an sp element as its string would otherwise hide what the
  *   component meant to show.
@@ -77,6 +82,8 @@ export type ReceiverAttribute = { readonly value: string | null } | { readonly r
 export function receiverAttribute(tag: string, attribute: string, value: unknown, owner: string): ReceiverAttribute {
 	if (!hostAttributeAllowed(tag, attribute)) return { refused: `<${tag}> takes no '${attribute}'` }
 	if (attribute === 'autofocus' && owner !== CORE_OWNER) return { refused: `<${tag}> autofocus is core's to place` }
+	if (attribute === 'autoplay' && owner !== CORE_OWNER) return { refused: `<${tag}> autoplay is core's alone` }
+	if (attribute === 'playing' && owner !== CORE_OWNER) return { refused: `<${tag}> playing is core's alone` }
 	if (value === null || value === undefined) return { value: null }
 	let text = String(value)
 	if (URL_ATTRIBUTES.has(attribute)) text = text.replace(URL_EDGES, '')

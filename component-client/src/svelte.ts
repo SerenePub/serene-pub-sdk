@@ -131,9 +131,9 @@ export function reactive(raw: ComponentContext): ComponentContext {
 		saveState: (state) => raw.saveState(state),
 		error: (message, fatal) => raw.error(message, fatal),
 		request: (kind, params) => raw.request(kind, params),
-		t(source) {
+		t(source, ...args) {
 			read('strings')
-			return raw.t(source)
+			return raw.t(source, ...args)
 		},
 		granted(scope) {
 			read('grants')

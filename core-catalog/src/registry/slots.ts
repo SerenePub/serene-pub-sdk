@@ -60,6 +60,7 @@ const labelledChoice = (options: ReadonlyArray<readonly [key: string, label: str
  * @experimental
  */
 export const spriteSetSlot = defineAttributeSlot("core:slot/sprite-set@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Sprite set" },
 	description: { en: "The sprite set this character is shown in, in this session." },
@@ -72,6 +73,7 @@ export const spriteSetSlot = defineAttributeSlot("core:slot/sprite-set@1", {
 
 /** @experimental */
 export const hpSlot = defineAttributeSlot("core:slot/hp@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Health" },
 	description: { en: "How much harm this character can still take before they are in real trouble." },
@@ -92,6 +94,7 @@ export const hpSlot = defineAttributeSlot("core:slot/hp@1", {
 
 /** @experimental */
 export const staminaSlot = defineAttributeSlot("core:slot/stamina@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Stamina" },
 	description: { en: "How much effort is left in them before they have to stop and rest." },
@@ -104,6 +107,7 @@ export const staminaSlot = defineAttributeSlot("core:slot/stamina@1", {
 
 /** @experimental */
 export const moodSlot = defineAttributeSlot("core:slot/mood@1", {
+	scope: "session",
 	shape: choiceStatShape.id,
 	label: { en: "Mood" },
 	description: { en: "How this character is feeling right now." },
@@ -116,6 +120,7 @@ export const moodSlot = defineAttributeSlot("core:slot/mood@1", {
 
 /** @experimental */
 export const trustSlot = defineAttributeSlot("core:slot/trust@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Trust" },
 	description: { en: "How far this character trusts the player, from hostile to loyal." },
@@ -147,6 +152,7 @@ export const trustSlot = defineAttributeSlot("core:slot/trust@1", {
  * @experimental
  */
 export const locationSlot = defineAttributeSlot("core:slot/location@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Location" },
 	description: { en: "Where this is: on a character, where they are; on the world, where the scene is." },
@@ -160,18 +166,20 @@ export const locationSlot = defineAttributeSlot("core:slot/location@1", {
 
 /** @experimental */
 export const timeOfDaySlot = defineAttributeSlot("core:slot/time-of-day@1", {
+	scope: "session",
 	shape: choiceStatShape.id,
 	label: { en: "Time of day" },
 	description: { en: "Where the story clock has got to." },
 	descriptor:
 		"Where the story clock has got to. It governs light, who is awake and what is open, and it moves forward with travel, rest and long work.",
 	appliesTo: ["world"],
-	config: { of: ["morning", "day", "dusk", "night"] },
+	config: { of: ["morning", "day", "dusk", "night"], derivation: "core:derive/time-of-day@1" },
 	default: "morning",
 })
 
 /** @experimental */
 export const weatherSlot = defineAttributeSlot("core:slot/weather@1", {
+	scope: "world",
 	shape: choiceStatShape.id,
 	label: { en: "Weather" },
 	description: { en: "What the sky is doing." },
@@ -180,6 +188,51 @@ export const weatherSlot = defineAttributeSlot("core:slot/weather@1", {
 	appliesTo: ["world"],
 	config: { of: ["clear", "fog", "rain", "storm", "snow"] },
 	default: "clear",
+})
+
+/**
+ * 🚧 **Part of the day** (M0, SHAPES F2): derived from the story clock's
+ * hour and the calendar's `periods` of the book the session reads — read-only,
+ * never stored.
+ * @experimental
+ */
+export const dayPeriodSlot = defineAttributeSlot("core:slot/day-period@1", {
+	scope: "session",
+	type: "derived",
+	label: { en: "Part of the day" },
+	description: { en: "The part of the day the story clock is in." },
+	descriptor: "The part of the day the story clock is in, by this world's own calendar.",
+	appliesTo: ["world"],
+	config: { derivation: "core:derive/day-period@1" },
+})
+
+/**
+ * 🚧 **Season** (M0, SHAPES F2): derived from the story clock's date and
+ * the calendar's `seasons` of the book the session reads — read-only.
+ * @experimental
+ */
+export const seasonSlot = defineAttributeSlot("core:slot/season@1", {
+	scope: "session",
+	type: "derived",
+	label: { en: "Season" },
+	description: { en: "The season the story clock is in." },
+	descriptor: "The season the story clock is in, by this world's own calendar.",
+	appliesTo: ["world"],
+	config: { derivation: "core:derive/season@1" },
+})
+
+/**
+ * 🚧 **Asleep** (M0, SHAPES F4): whether somebody is asleep right now.
+ * @experimental
+ */
+export const asleepSlot = defineAttributeSlot("core:slot/asleep@1", {
+	scope: "session",
+	type: "boolean",
+	label: { en: "Asleep" },
+	description: { en: "Whether this person is asleep right now." },
+	descriptor: "Whether this person is asleep right now.",
+	appliesTo: ["cast"],
+	default: false,
 })
 
 /* ── Seeded, attached to no genre ───────────────────────────────────────── */
@@ -202,6 +255,7 @@ export const weatherSlot = defineAttributeSlot("core:slot/weather@1", {
  * @experimental
  */
 export const inventorySlot = defineAttributeSlot("core:slot/inventory@1", {
+	scope: "session",
 	shape: listStatShape.id,
 	label: { en: "Inventory" },
 	description: { en: "What this character is carrying, or what is lying about in the world or in a place." },
@@ -221,6 +275,7 @@ export const inventorySlot = defineAttributeSlot("core:slot/inventory@1", {
  * @experimental
  */
 export const currencySlot = defineAttributeSlot("core:slot/currency@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Currency" },
 	description: { en: "What this character has to spend, in whatever coin the world uses." },
@@ -240,6 +295,7 @@ export const currencySlot = defineAttributeSlot("core:slot/currency@1", {
  * @experimental
  */
 export const conditionsSlot = defineAttributeSlot("core:slot/conditions@1", {
+	scope: "session",
 	shape: listStatShape.id,
 	label: { en: "Conditions" },
 	description: { en: "What ails or marks this character right now — hurt, tired, inspired." },
@@ -256,6 +312,7 @@ export const conditionsSlot = defineAttributeSlot("core:slot/conditions@1", {
  * @experimental
  */
 export const relationshipsSlot = defineAttributeSlot("core:slot/relationships@1", {
+	scope: "session",
 	shape: listStatShape.id,
 	label: { en: "Relationships" },
 	description: { en: "How this character stands with the others, one line each." },
@@ -271,6 +328,7 @@ export const relationshipsSlot = defineAttributeSlot("core:slot/relationships@1"
  * @experimental
  */
 export const waysOutSlot = defineAttributeSlot("core:slot/ways-out@1", {
+	scope: "session",
 	shape: listStatShape.id,
 	label: { en: "Ways out" },
 	description: { en: "The ways out of this place — a door, a path, a stair — and how each stands." },
@@ -285,6 +343,7 @@ export const waysOutSlot = defineAttributeSlot("core:slot/ways-out@1", {
  * @experimental
  */
 export const notesSlot = defineAttributeSlot("core:slot/notes@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Notes" },
 	description: { en: "Anything worth remembering about this place." },
@@ -314,6 +373,7 @@ export const notesSlot = defineAttributeSlot("core:slot/notes@1", {
 
 /** @internal */
 export const floorSlot = defineAttributeSlot("core:slot/floor@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Floor" },
 	description: { en: "How deep into the dungeon the party has got." },
@@ -326,6 +386,7 @@ export const floorSlot = defineAttributeSlot("core:slot/floor@1", {
 
 /** @experimental */
 export const goldSlot = defineAttributeSlot("core:slot/gold@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Gold" },
 	description: { en: "What the party is carrying out with them." },
@@ -353,6 +414,7 @@ export const goldSlot = defineAttributeSlot("core:slot/gold@1", {
  * @internal
  */
 export const directionSlot = defineAttributeSlot("core:slot/direction@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Direction" },
 	description: { en: "What the dungeon's master wants to happen next." },
@@ -377,6 +439,7 @@ export const directionSlot = defineAttributeSlot("core:slot/direction@1", {
  * @internal
  */
 export const whisperSlot = defineAttributeSlot("core:slot/whisper@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Whisper" },
 	description: { en: "A private instruction from the dungeon's master to this character." },
@@ -407,6 +470,7 @@ export const whisperSlot = defineAttributeSlot("core:slot/whisper@1", {
 
 /** 🚧 How experienced a character is. @experimental */
 export const levelSlot = defineAttributeSlot("core:slot/level@1", {
+	scope: "session",
 	shape: numberStatShape.id,
 	label: { en: "Level" },
 	description: { en: "How experienced this character is. It rises as they survive and achieve things." },
@@ -423,6 +487,7 @@ export const levelSlot = defineAttributeSlot("core:slot/level@1", {
  * @experimental
  */
 export const characterClassSlot = defineAttributeSlot("core:slot/character-class@1", {
+	scope: "session",
 	type: "text",
 	label: { en: "Class" },
 	description: { en: "What kind of adventurer this character is." },
@@ -434,6 +499,7 @@ export const characterClassSlot = defineAttributeSlot("core:slot/character-class
 
 /** 🚧 What a character can do that others cannot. @experimental */
 export const abilitiesSlot = defineAttributeSlot("core:slot/abilities@1", {
+	scope: "session",
 	shape: listStatShape.id,
 	label: { en: "Abilities" },
 	description: { en: "The special things this character can do." },
@@ -448,6 +514,7 @@ export const abilitiesSlot = defineAttributeSlot("core:slot/abilities@1", {
  * @experimental
  */
 export const standingOrderSlot = defineAttributeSlot("core:slot/standing-order@1", {
+	scope: "session",
 	// Solo play never asks it (owner ruling 2026-10-17): one seat has no one to be away from.
 	minSeats: 2,
 	shape: labelledChoice([["hold", "Hold"], ["follow", "Follow"], ["fight", "Fight"], ["flee", "Flee"]]),
@@ -471,6 +538,7 @@ export const standingOrderSlot = defineAttributeSlot("core:slot/standing-order@1
  * @experimental
  */
 export const fateSlot = defineAttributeSlot("core:slot/fate@1", {
+	scope: "session",
 	// 🚧 `dying` (PLAN-dc-after-walk2 Q3-8, the walk's N15: the sheet said
 	// Alive while death saves ran): at death's door, rolling death saves.
 	shape: labelledChoice([["alive", "Alive"], ["dying", "Dying"], ["taken-out", "Taken out"], ["dead", "Dead"]]),
@@ -490,6 +558,7 @@ export const fateSlot = defineAttributeSlot("core:slot/fate@1", {
  * @experimental
  */
 export const crawlTimeSlot = defineAttributeSlot("core:slot/crawl-time@1", {
+	scope: "session",
 	shape: storyTimeStatShape.id,
 	label: { en: "Time" },
 	description: { en: "How much time has passed in the adventure." },
@@ -500,6 +569,7 @@ export const crawlTimeSlot = defineAttributeSlot("core:slot/crawl-time@1", {
 
 /** 🚧 How hard the world pushes back (feature 1). @experimental */
 export const difficultySlot = defineAttributeSlot("core:slot/difficulty@1", {
+	scope: "session",
 	shape: labelledChoice([["gentle", "Gentle"], ["fair", "Fair"], ["brutal", "Brutal"]]),
 	label: { en: "Difficulty" },
 	description: { en: "How hard the world pushes back." },
@@ -512,6 +582,7 @@ export const difficultySlot = defineAttributeSlot("core:slot/difficulty@1", {
 
 /** 🚧 Story only, or numbers and dice (feature 1). @experimental */
 export const statModeSlot = defineAttributeSlot("core:slot/stat-mode@1", {
+	scope: "session",
 	shape: labelledChoice([["story", "Story only"], ["dice", "Numbers and dice"]]),
 	// ⏳ Superseded 2026-10-17 by the session's strictness (How strict);
 	// kept so older sessions still read. Never offered in a picker.
@@ -527,6 +598,7 @@ export const statModeSlot = defineAttributeSlot("core:slot/stat-mode@1", {
 
 /** 🚧 Whether the players know what they are after (feature 1). @experimental */
 export const goalModeSlot = defineAttributeSlot("core:slot/goal-mode@1", {
+	scope: "session",
 	shape: labelledChoice([["shared", "Shared"], ["secret", "Secret"]]),
 	label: { en: "Goal" },
 	description: { en: "Whether the goal was shaped together or is kept secret." },

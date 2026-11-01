@@ -8,6 +8,7 @@
 	import { actionIdentity } from "@serene-pub/sdk/component"
 	import { useConversation } from "./conversation.svelte"
 	import type { MessageV1, WidgetAction } from "@serene-pub/sdk/component"
+	import { playbackOf } from "./spokenLine"
 
 	/**
 	 * A message's ⋮ menu: every verb the session offers on it, named in words.
@@ -18,9 +19,25 @@
 	interface Props {
 		msg: MessageV1
 		isLastMessage?: boolean
+		/**
+		 * 🚧 What ⋮ › Speech needs about this line's audio, worked out once by
+		 * the message (heading audio control, 2026-10-29): the file's address,
+		 * whether it can play, a live speak run, and the viewer's playback.
+		 */
+		speech?: {
+			src: string | null
+			hasAudio: boolean
+			/** A take is on file (even under playback `never`): Read aloud reads Say it again. */
+			sayItAgain?: boolean
+			speaking: boolean
+			runId: string | null
+			playback: "auto" | "click" | "never"
+			onStop?: (runId: string) => void
+			onGone?: (partId: number) => void
+		}
 	}
 
-	let { msg, isLastMessage = false }: Props = $props()
+	let { msg, isLastMessage = false, speech }: Props = $props()
 
 	const conv = useConversation()
 	const open = $derived(conv.menu.open === msg.id)
@@ -41,8 +58,26 @@
 	)
 	const isAdmin = $derived(conv.ctx.viewer.v1.isAdmin)
 
+	/**
+	 * ⋮ › Speech is a nested popover: it closes with the menu (a row pressed,
+	 * the menu dismissed) rather than floating on beside a closed menu.
+	 */
+	let speechOpen = $state(false)
+	/** Close the menu; with ⋮ › Speech open, in order (`closeFromSpeech`). */
 	function closeMenu() {
+		if (speechOpen) return closeFromSpeech()
 		onOpenChange(false)
+	}
+	/**
+	 * A row pressed inside ⋮ › Speech: the popout closes first and the menu a
+	 * turn later. Closing both nested popovers in one pass trips the page's
+	 * popover (a Svelte effect self-invalidating with no batch: "reading
+	 * 'schedule'"), seen in the heading-audio walk 2026-10-29; Escape, which
+	 * closes them one after the other, never did.
+	 */
+	function closeFromSpeech() {
+		speechOpen = false
+		setTimeout(() => onOpenChange(false), 0)
 	}
 
 	/**
@@ -97,7 +132,8 @@
 		canControl,
 		canRerun,
 		canDelete,
-		extendRefusal
+		extendRefusal,
+		speechReason: conv.dossier?.speech?.canSpeak === false ? conv.dossier.speech.reason : undefined
 	})
 	// `itemGated` rides with `canAct` (W6): a contributed action whose
 	// audience is `item` was answered `true` ahead of any message, and this
@@ -114,9 +150,24 @@
 			.filter((r) => r.state.shown)
 	)
 	const coreRows = $derived(rows.filter((r) => r.action.specSlug === "core"))
+	// The speak rows (*Read aloud* / *Say it again*, *Say it as…*) leave the
+	// contributed list for the menu's own speech group, same handlers and
+	// reasons (owner 2026-10-29: generate and regenerate at the top level).
+	const isSpeakRow = (a: WidgetAction) =>
+		a.specSlug !== "core" &&
+		a.specSlug.includes("speak-message") &&
+		(a.key === "read-aloud" || a.key === "say-it-as")
+	const speakRows = $derived(rows.filter((r) => isSpeakRow(r.action)))
 	const contributedRows = $derived(
-		rows.filter((r) => r.action.specSlug !== "core")
+		rows.filter((r) => r.action.specSlug !== "core" && !isSpeakRow(r.action))
 	)
+	/** ⋮ › Speech holds the full player alone: drawn only where there is one. */
+	const speechPlayer = $derived(!!speech?.hasAudio && !!speech.src && speech.playback !== "never")
+	const reportAt = (e: Event) => conv.speech.reportMenuAt(msg.id, playbackOf((e as CustomEvent).detail))
+	const speechTake = $derived(conv.speech.take(msg.id, "menu"))
+	const menuPlayAttr = $derived(conv.speech.isPlaying(msg.id, "menu") ? { playing: "" } : {})
+	const speakName = (a: WidgetAction) =>
+		a.key === "read-aloud" && (speech?.sayItAgain ?? speech?.hasAudio) ? conv.t("Say it again") : a.name
 	const hasNew = $derived(contributedRows.some((r) => r.action.isNew))
 
 	/** Fire a core verb by its key: the conversation's verb, or its own edit. */
@@ -204,7 +255,10 @@
 		placement="bottom-end"
 		label="Message options"
 		{open}
-		onopen-change={(e: CustomEvent<{ open: boolean }>) => onOpenChange(e.detail.open)}
+		onopen-change={(e: CustomEvent<{ open: boolean }>) => {
+			if (!e.detail.open) speechOpen = false
+			onOpenChange(e.detail.open)
+		}}
 	>
 		<button slot="trigger" type="button" data-widget-part="messages.message-options-button messages.message-icon-button" aria-label="Message options">
 			<sp-icon name="ellipsis-vertical" size="16"></sp-icon>
@@ -342,6 +396,99 @@
 								<sp-icon name="info" size="16"></sp-icon>
 								<span>Prompt details</span>
 							</button>
+						{/if}
+						<!-- The speech group: the speak verbs at the menu's top level
+						     (*Read aloud*, *Say it again* once the line has audio,
+						     *Say it as…*), Stop while the line is spoken, then
+						     ⋮ › Speech for the full player. -->
+						{#each speakRows as { action, state } (actionIdentity(action))}
+							<button
+								data-widget-part="messages.message-option"
+								title={titleOf(action, state.reason)}
+								aria-disabled={state.disabled}
+								aria-describedby={state.reason ? noteIdOf(action) : undefined}
+								onclick={(e) => {
+									if (state.disabled) {
+										e.preventDefault()
+										return
+									}
+									closeMenu()
+									conv.invoke(actionIdentity(action), msg)
+								}}
+							>
+								<sp-icon
+									name={action.key === "read-aloud" && (speech?.sayItAgain ?? speech?.hasAudio) ? "rotate-ccw" : action.icon || "play"}
+									size="16"
+								></sp-icon>
+								<span>{speakName(action)}</span>
+							</button>
+							{#if state.reason}
+								<span id={noteIdOf(action)} data-widget-part="messages.message-option-note">
+									{state.reason}
+								</span>
+							{/if}
+						{/each}
+						{#if speech?.speaking && speech.runId}
+							<button
+								data-widget-part="messages.message-option"
+								data-verb="stop"
+								title="Stop speaking this line"
+								onclick={() => {
+									closeMenu()
+									speech.onStop?.(speech.runId!)
+								}}
+							>
+								<sp-icon name="square" size="16"></sp-icon>
+								<span>Stop speaking this line</span>
+							</button>
+						{/if}
+						{#if speechPlayer && speech}
+							<!-- ⋮ › Speech: a sub-popout holding the full player. The
+							     player stays in the markup (not only while open), so
+							     closing the menu never stops it. -->
+							<sp-popover
+								placement="right-start"
+								label="Speech"
+								open={speechOpen}
+								onopen-change={(e: CustomEvent<{ open: boolean }>) => (speechOpen = e.detail.open)}
+							>
+								<button
+									slot="trigger"
+									type="button"
+									data-widget-part="messages.message-option messages.message-speech-open"
+									title="Speech"
+								>
+									<sp-icon name="volume-2" size="16"></sp-icon>
+									<span>Speech</span>
+									<sp-icon name="chevron-right" size="14"></sp-icon>
+								</button>
+								<div data-widget-part="messages.message-speech-panel">
+									{#key speechTake}
+										<audio
+											data-widget-part="messages.message-speech-player"
+											aria-label="Spoken line player"
+											controls
+											preload="none"
+											src={speech.src}
+											{...menuPlayAttr}
+											onplay={(e) => {
+												reportAt(e)
+												conv.speech.heard(msg.id, "menu", false)
+											}}
+											onpause={(e) => {
+												reportAt(e)
+												conv.speech.heard(msg.id, "menu", true)
+											}}
+											onended={(e) => {
+												reportAt(e)
+												conv.speech.heard(msg.id, "menu", true)
+											}}
+											ontimeupdate={reportAt}
+											onloadedmetadata={reportAt}
+										></audio>
+									{/key}
+								</div>
+							</sp-popover>
 						{/if}
 						{#if contributedRows.length}
 							<!-- The contributed entries (19 §4): after core's

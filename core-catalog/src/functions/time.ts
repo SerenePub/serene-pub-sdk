@@ -39,35 +39,52 @@ const PERIOD_EVENTS: Readonly<Record<string, string>> = Object.freeze({
 	turn: TURN_ENDED_EVENT,
 	round: ROUND_ENDED_EVENT,
 	scene: SCENE_CLOSED_EVENT,
-	day: STORY_CLOCK_MOVED_EVENT
+	day: STORY_CLOCK_MOVED_EVENT,
+	hour: STORY_CLOCK_MOVED_EVENT
 })
 
 /**
- * 🚧 **Each turn, round, scene or day** — a value moves by an amount each
- * time the period comes round (hunger grows each day, a fire burns down each
- * round). A day is a story-clock move onto another date.
+ * 🚧 **Each turn, round, scene, day or hour** — a value moves by an amount each
+ * time the period comes round (hunger grows each hour, a fire burns down each
+ * round). A day is a story-clock move onto another date; an hour is a
+ * story-clock move that crosses whole hour marks — ONE delta, `by` × the marks
+ * crossed (`event.payload.clock.hours`, set by core's ruleset resolve for
+ * `core:event/story-clock-moved@1` from the session's calendar; absent when the
+ * move cannot be placed, then no step). `awakeOnly` skips every period while
+ * `input.session.asleep` is true (core reads `core:slot/asleep@1` on the
+ * session's player seats: at least one seat, and every one asleep).
  * @experimental
  */
 export const recurringFunction = defineFunction("core:function/recurring@1", {
-	name: { en: "Each turn, round, scene or day" },
-	meaning: { en: "A value moves by an amount each time a period comes round — hunger each day, a fire each round." },
+	name: { en: "Each turn, round, scene, day or hour" },
+	meaning: { en: "A value moves by an amount each time a period comes round — hunger each hour, a fire each round." },
 	kind: "time",
 	bindings: { what: { to: "attribute", kinds: NUMBER_ATTRIBUTE_KINDS, label: { en: "Moves" } } },
 	prose: "{{what}} moves on its own as time passes.",
 	form: {
 		every: {
 			type: "enum",
-			of: ["turn", "round", "scene", "day"],
+			// 🚧 `hour` (M0, SHAPES L3): on every clock move, one step per
+			// whole hour passed, in ONE anchored write.
+			of: ["turn", "round", "scene", "day", "hour"],
 			members: [
 				{ key: "turn", label: { en: "Each turn" } },
 				{ key: "round", label: { en: "Each round" } },
 				{ key: "scene", label: { en: "Each scene" } },
-				{ key: "day", label: { en: "Each day" } }
+				{ key: "day", label: { en: "Each day" } },
+				{ key: "hour", label: { en: "Each hour" } }
 			],
 			default: "scene",
 			label: { en: "Every" }
 		},
-		by: { type: "integer", default: 1, label: { en: "By" }, description: { en: "How much it moves each time — negative to bring it down." } }
+		by: { type: "integer", default: 1, label: { en: "By" }, description: { en: "How much it moves each time — negative to bring it down." } },
+		// 🚧 M0, SHAPES L3: skips while `core:slot/asleep@1` is true.
+		awakeOnly: {
+			type: "boolean",
+			default: false,
+			label: { en: "Only while awake" },
+			description: { en: "Skip the times that pass while the player is asleep." }
+		}
 	},
 	phases: ["effects"],
 	body: body(
@@ -83,10 +100,16 @@ export function effects(input) {
 	var o = input.options || {}, ev = input.event, what = attrOf((input.bindings || {}).what);
 	var every = o.every || "scene";
 	if (!ev || !what || ev.id !== PERIOD_EVENTS[every]) return {};
+	if (o.awakeOnly && input.session && input.session.asleep === true) return {};
 	if (every === "day" && !daysPassed(payloadOf(ev).clock)) return {};
 	var by = num(o.by, 1);
 	if (!by) return {};
-	return { deltas: [{ owner: ownerKey(input), attribute: what.id, op: "add", value: by, reason: "each " + every }] };
+	var steps = 1;
+	if (every === "hour") {
+		steps = Math.floor(num((payloadOf(ev).clock || {}).hours, 0));
+		if (steps <= 0) return {};
+	}
+	return { deltas: [{ owner: ownerKey(input), attribute: what.id, op: "add", value: by * steps, reason: "each " + every }] };
 }
 `
 	)

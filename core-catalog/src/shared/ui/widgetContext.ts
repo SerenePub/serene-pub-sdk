@@ -24,6 +24,7 @@ import type {
 	WidgetSectionScope,
 	WidgetVerbs,
 	WidgetWriteGrant,
+	AppletGrant,
 } from '@serene-pub/sdk'
 
 export {
@@ -64,7 +65,7 @@ export interface WidgetContext extends WidgetData, WidgetVerbs {
 	 * missing from a PRESENT list was not granted, and its section will never
 	 * come: say so ({@link scopeNotGranted}) rather than draw loading.
 	 */
-	grants?: readonly (WidgetSectionScope | WidgetWriteGrant)[]
+	grants?: readonly (WidgetSectionScope | WidgetWriteGrant | AppletGrant)[]
 	/**
 	 * 🚧 The section a granted scope delivers, its `v1` — by the scope
 	 * string (`scope('session:state')`), as a remote component's

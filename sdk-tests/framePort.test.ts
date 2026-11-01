@@ -191,7 +191,8 @@ describe('G11 · save-state survives the remount, which is the whole point', () 
 	test('it is not storage: the host caps it, and says so rather than dropping it quietly', () => {
 		const ctx = ctxFor()
 		const big = answerFrameMessage({ t: 'save-state', state: { blob: 'x'.repeat(FRAME_STATE_MAX_BYTES) } }, ctx)!
-		assert.match(big.log.detail, /DROPPED — state is \d+ bytes, over the host's 16384/)
+		// E M0 2026-10-28: the host's cap on a surface's saved state is 256 KB now (SAVE_STATE_MAX_BYTES, SHAPES L8; was 16384).
+		assert.match(big.log.detail, /DROPPED — state is \d+ bytes, over the host's 262144/)
 		assert.deepEqual(answerFrameMessage({ t: 'ready' }, ctx)!.post, [])
 	})
 

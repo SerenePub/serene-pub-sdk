@@ -214,6 +214,10 @@ test('the genre is published: its pipelines, its preset, both envoys seated', ()
 			`${cat.DUNGEON_CRAWLER_REVEAL_SPEC_ID}#reveal`,
 			`${cat.DUNGEON_CRAWLER_REST_SPEC_ID}#rest`,
 			cat.DUNGEON_CRAWLER_GOAL_ACTION,
+			// 🚧 2026-10-28 (speech build, lane D follow-up ★1; pinned by lane V): every core
+			// genre registers the per-line speech verbs, Read aloud and Say it as….
+			'core:spec/speak-message#read-aloud',
+			'core:spec/speak-message#say-it-as',
 			// R50: every core genre registers the four summaries as (unlisted) actions.
 			`${cat.SUMMARIZE_WORLD_SPEC_ID}#summarize-world`,
 			`${cat.SUMMARIZE_CHARACTER_SPEC_ID}#summarize-character`,

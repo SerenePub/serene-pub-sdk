@@ -35,6 +35,7 @@
 
 import type { SlotAppliesTo } from './attributes.js'
 import { finding } from './repertoires.js'
+import { rulesetAttributeOwners } from './rulesetSections.js'
 import type { FieldDecl, SettingsSchema } from './settings.js'
 
 // ── The far end and the sides ───────────────────────────────────────────────
@@ -217,6 +218,7 @@ interface AttributeShape {
 	slot?: string
 	of?: readonly string[]
 	carriedBy?: readonly SlotAppliesTo[]
+	owner?: 'player' | 'cast' | 'world' | 'location'
 	readsOnto?: unknown
 }
 
@@ -233,7 +235,7 @@ export function attributeReadsOntoFindings(a: AttributeShape, at: string): strin
 	if (v === undefined) return []
 	const where = `${at}.readsOnto`
 	if (!isReadsOnto(v)) return [finding('bad-reads-onto', `${where} is '${String(v)}'. Say one of ${READS_ONTO.join(', ')}.`)]
-	const owners = a.carriedBy ?? (['cast'] as const)
+	const owners = rulesetAttributeOwners(a)
 	if (owners.length !== 1) return [finding('bad-reads-onto', `${where}: an attribute carried by ${owners.join(' and ')} reads onto no one column. Say one owner in carriedBy.`)]
 	const owner = owners[0] as ReadsOntoOwner
 	const may = READS_ONTO_BY_OWNER[owner] ?? []

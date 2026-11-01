@@ -505,6 +505,20 @@ describe('the quick row', () => {
 		)
 	})
 
+	it("keeps a speak verb drawn, greyed with the pub's reason, when the caller opts it in — and only it", () => {
+		const speak = row({ key: 'read-aloud', specSlug: 'core:spec/speak-message', itemGated: false })
+		const look = row({ key: 'look', specSlug: 'acme:spec/look', itemGated: false, enabled: false })
+		const ctx = rowCtx({ speechReason: 'no voice is set up on this pub yet' })
+		const keep = (a: { key: string }) => a.key === 'read-aloud'
+		const kept = quickRowActions([speak, look], ctx, keep)
+		assert.deepEqual(kept.map((q) => q.action.key), ['read-aloud'])
+		assert.equal(kept[0].state.disabled, true)
+		assert.equal(kept[0].state.reason, 'no voice is set up on this pub yet')
+		// the law is unchanged without the option, and with no reason the verb is plain
+		assert.deepEqual(quickRowActions([speak, look], ctx), [])
+		assert.equal(quickRowActions([speak], rowCtx(), keep)[0].state.disabled, false)
+	})
+
 	it("keys the verb table by core key or a contributed prefix — never a plugin's key as core's", () => {
 		assert.equal(verbKeyOf({ key: 'edit', specSlug: 'core' }), 'edit')
 		assert.equal(verbKeyOf({ key: 'edit', specSlug: 'acme:spec/x' }), 'contributed:edit')

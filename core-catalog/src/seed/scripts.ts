@@ -31,6 +31,7 @@ import { WHEREWITHAL_SCRIPTS } from './wherewithalScripts.js'
 import { STORY_SCRIPTS } from '../genres/story/reckon.js'
 import { UNPROMPTED_MODES_SCRIPT } from '../factories/turnOrder.js'
 import { LAIR_SCRIPTS } from '../genres/lair/scripts.js'
+import { WEATHER_PICK_SCRIPT } from '../shared/weather.js'
 
 export type { CoreScriptSeed }
 
@@ -65,4 +66,6 @@ export const CORE_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
 	// 🚧 The Lair's (rewrite, 2026-10-21): what a table rolls, the turn, the dice,
 	// the rolls, a room draft's links, a seated guest (the keeper's rules retired 2026-10-23).
 	...LAIR_SCRIPTS,
+	// 🚧 The weather's daily pick (shared/weather.ts, M0 T5): core:spec/weather.
+	WEATHER_PICK_SCRIPT,
 ])

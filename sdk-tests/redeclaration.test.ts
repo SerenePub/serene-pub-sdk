@@ -22,6 +22,7 @@ import {
 	describeTaskDefinition,
 	describeOracleDefinition,
 	describeEntryType,
+	_withdrawDefinition,
 	getDefinition,
 	allDefinitions,
 	defineFacet,
@@ -469,5 +470,24 @@ describe('re-declaration is idempotent when the declaration is identical', () =>
 				/duplicate wire format id: test:wire\/none@1/.test(e.message) &&
 				namesBothHashes(e.message),
 		)
+	})
+})
+
+describe('a host withdraws one node definition and declares it again', () => {
+	test('a withdrawn task may be re-declared with a different contract', () => {
+		const id = 'test-withdraw:task/roll@1'
+		describeTaskDefinition({ id, ports: { out: { text: TEXT } } })
+		assert.equal(_withdrawDefinition(id), true)
+		assert.equal(getDefinition(id), undefined)
+		const next = describeTaskDefinition({ id, ports: { out: { text: JSON_SHAPE } } })
+		assert.equal(getDefinition(id), next)
+	})
+
+	test('core ids throw', () => {
+		assert.throws(() => _withdrawDefinition('core:task/anything@1'), /core's; it is never withdrawn/)
+	})
+
+	test('an id not held returns false', () => {
+		assert.equal(_withdrawDefinition('test-withdraw:task/never-held@1'), false)
 	})
 })

@@ -5,13 +5,17 @@
 	import {
 		enabledWhenState,
 		quickRowActions,
+		SPEAK_VERB_KEYS,
+		verbKeyOf,
 		verdictOf
 	} from "@serene-pub/core-catalog/conversation"
 	import { actionIdentity, foldedSectionsOf } from "@serene-pub/sdk/component"
 	import MessagePartsView from "./MessagePartsView.svelte"
 	import MessageMediaStrip from "./MessageMediaStrip.svelte"
-	import { mediaStripItems, viewImageParams } from "./mediaStrip"
+	import { mediaSrc, mediaStripItems, viewImageParams } from "./mediaStrip"
 	import MessageStateLedger from "./MessageStateLedger.svelte"
+	import SpokenLine from "./SpokenLine.svelte"
+	import { isSpeaking, readAloudOf, spokenAudioItem, spokenOf, spokenPendingOf, spokenPlaybackOf } from "./spokenLine"
 	import { useWidgetContext } from "../context"
 	import { isDiceLine, staleOf } from "@serene-pub/core-catalog/conversation"
 	import { untrack } from "svelte"
@@ -351,6 +355,10 @@
 			| { primary: WidgetAction[]; overflow: WidgetAction[] }
 			| undefined
 	)
+	// Why this pub cannot speak (dossier `speech`), shared by the quick row and the ⋮ menu.
+	const speechReason = $derived(
+		conv.dossier?.speech?.canSpeak === false ? conv.dossier.speech.reason : undefined
+	)
 	const quickActions = $derived(
 		quickRowActions(venueActions?.primary ?? [], {
 			msg,
@@ -361,12 +369,15 @@
 			canRerun,
 			// 🚧 A kept turn's row the host would refuse to delete (★9).
 			canDelete: line.deletable ?? true,
-			extendRefusal
-		})
+			extendRefusal,
+			speechReason: speechReason
+		}, (a) => SPEAK_VERB_KEYS.includes(verbKeyOf(a)))
 	)
-	const showQuickActions = $derived(
-		!isSummarizationMode && !isEditing && quickActions.length > 0
-	)
+	// The speak verbs are not icons of their own: the heading's ONE speech
+	// icon is the line's audio (heading audio control, 2026-10-29) or, with
+	// none, the contributed *Read aloud*. *Say it as…* lives in the ⋮ menu.
+	const readAloudQuick = $derived(quickActions.find((q) => q.action.key === "read-aloud") ?? null)
+	const otherQuickActions = $derived(quickActions.filter((q) => !isSpeakVerb(q.action)))
 
 	/**
 	 * A quick icon fires the same handler the menu's row does: core's verbs
@@ -408,8 +419,103 @@
 	 * so an attachment never disappears while its line is edited or a reply
 	 * streams beside it. The parts view no longer draws them inline.
 	 */
-	const mediaItems = $derived(
+	const allMediaItems = $derived(
 		mediaStripItems(msg.parts, msg.activeRevisions ?? { "0": 0 })
+	)
+
+	// 🚧 The spoken line (speech build, E3): a line with `metadata.spoken`
+	// plays its audio in the spoken line under the strip, so the strip
+	// leaves that one file out (a gone file reads "Not spoken yet" there,
+	// never a broken player).
+	const spoken = $derived(spokenOf(msg.metadata))
+	const spokenAudio = $derived(spoken ? spokenAudioItem(allMediaItems) : null)
+	// A speak run in flight (`metadata.spoken.pending`) mounts the spoken line
+	// even before the line has audio: it reads *Speaking…* with a Stop.
+	const spokenPending = $derived(spokenPendingOf(msg.metadata))
+	const mediaItems = $derived(
+		spokenAudio ? allMediaItems.filter((i) => i.partId !== spokenAudio.partId) : allMediaItems
+	)
+	/**
+	 * The speak verbs the message venue lists — `core:spec/speak-message`'s
+	 * *Read aloud* and *Say it as…* (contributed actions, not core verbs) —
+	 * by key; none listed, none drawn. Fired through `fireOfferedAction`
+	 * like the menu's own rows, so the server checks that declaration.
+	 */
+	const SPOKEN_VERB_KEYS = ["read-aloud", "say-it-as"]
+	const spokenVerbActions = $derived(
+		SPOKEN_VERB_KEYS.flatMap((key) => {
+			const a = [...(venueActions?.primary ?? []), ...(venueActions?.overflow ?? [])].find(
+				(x) => x.specSlug !== "core" && x.key === key && x.specSlug.includes("speak-message")
+			)
+			return a ? [a] : []
+		})
+	)
+	// Under a line that has audio, *Read aloud* reads as what it does there:
+	// **Say it again** (design §6.4); once its file is gone it is *Read
+	// aloud* again. The ⋮ menu keeps the declared name.
+	const spokenVerbs = $derived(
+		spokenVerbActions.map((a) => ({
+			key: a.key,
+			name: a.name,
+			...(a.key === "read-aloud" ? { againName: conv.t("Say it again") } : {}),
+			description: a.description,
+			disabled: !a.canAct
+		}))
+	)
+	// Stop is the line's own `stop` verb carrying the run to cancel; the host
+	// cancels that run through its run-cancel path.
+	const stopSpoken = (runId: string) => void conv.invoke("stop", msg, { runId })
+	function fireSpokenVerb(key: string) {
+		const a = spokenVerbActions.find((x) => x.key === key)
+		if (a) fireOfferedAction(a, msg)
+	}
+
+	// ── the speak verbs in the quick row ─────────────────────────────────
+	// Read aloud and Say it as… sit in the message venue's primary set like
+	// every quick icon; this only decides how each READS on this line. A line
+	// with audio says *Say it again*; a live speak run gives both way to one
+	// Stop. A run seen live and gone since is over (see `isSpeaking`).
+	let seenLiveRun = $state<string | null>(null)
+	$effect(() => {
+		const p = spokenPending
+		if (p && conv.dossier?.liveRunIds?.includes(p.runId)) seenLiveRun = p.runId
+	})
+	const speaking = $derived(isSpeaking(spokenPending, conv.dossier?.liveRunIds, seenLiveRun))
+	/** The line's audio is there to play: present, not found gone, and the viewer's playback is not `never`. */
+	const hasAudio = $derived(
+		!!spokenAudio && spokenAudio.partId !== goneSpokenPart && spokenPlaybackOf(conv.dossier) !== "never"
+	)
+	const linePlaying = $derived(
+		conv.speech.isPlaying(msg.id, "line") || conv.speech.isPlaying(msg.id, "menu")
+	)
+	const speechSlot = $derived(speaking || hasAudio || !!readAloudQuick)
+	const showQuickActions = $derived(
+		!isSummarizationMode && !isEditing && (otherQuickActions.length > 0 || speechSlot)
+	)
+	/** What the ⋮ menu's speech group and ⋮ › Speech need, passed as one object rather than recomputed there. */
+	const speechForMenu = $derived({
+		src: hasAudio && spokenAudio ? mediaSrc(spokenAudio.assetId) : null,
+		hasAudio,
+		// The line has a take on file (whatever the viewer's playback): Read aloud reads Say it again.
+		sayItAgain: !!spokenAudio && spokenAudio.partId !== goneSpokenPart,
+		speaking,
+		runId: speaking && spokenPending ? spokenPending.runId : null,
+		playback: spokenPlaybackOf(conv.dossier),
+		onStop: stopSpoken,
+		onGone: (partId: number) => (goneSpokenPart = partId)
+	})
+	/** The audio part the strip found gone (404): the heading reads Read aloud again, not Say it again. */
+	let goneSpokenPart = $state<number | null>(null)
+	const isSpeakVerb = (a: WidgetAction) => SPEAK_VERB_KEYS.includes(verbKeyOf(a))
+	/** One speak icon's presentation on this line. */
+	function speakLook(action: WidgetAction): { icon: string; name: string } {
+		if (action.key === "read-aloud" && spokenAudio && spokenAudio.partId !== goneSpokenPart)
+			return { icon: "rotate-ccw", name: conv.t("Say it again") }
+		return { icon: action.icon || "volume-2", name: action.iconAlt || action.name }
+	}
+	/** The speak icons give way to ONE Stop while the line's run is live. */
+	const stopSpeakingFirst = $derived(
+		speaking && !!spokenPending ? spokenPending.runId : null
 	)
 
 	// An image inside the rendered text is the host's markup; `sp-message-body`
@@ -664,12 +770,56 @@
 					data-widget-part="messages.message-actions"
 					role="group"
 					aria-label="Message actions"
+					data-speaking={stopSpeakingFirst ? "" : undefined}
+					data-playing={linePlaying ? "" : undefined}
 				>
-					{#each quickActions as { action } (actionIdentity(action))}
+					<!-- ONE speech icon, first: Stop while the run is live, the
+					     line's audio (play / stop) when it has one, the
+					     contributed Read aloud otherwise. -->
+					{#if stopSpeakingFirst}
+						<button
+							data-widget-part="messages.message-action messages.message-icon-button messages.message-speech messages.message-speak-stop"
+							data-state="speaking"
+							aria-label="Stop speaking this line"
+							title="Speaking… — press to stop"
+							onclick={() => stopSpoken(stopSpeakingFirst)}
+						>
+							<sp-icon name="volume-2" size="14"></sp-icon>
+						</button>
+					{:else if hasAudio}
+						{@const nm = linePlaying ? conv.t("Stop") : conv.t("Play the spoken line")}
+						<button
+							data-widget-part="messages.message-action messages.message-icon-button messages.message-speech"
+							data-state={linePlaying ? "playing" : "ready"}
+							aria-label={nm}
+							title={nm}
+							onclick={() =>
+								linePlaying ? conv.speech.stop(msg.id) : void conv.speech.play(msg.id, "line")}
+						>
+							<sp-icon name="volume-2" size="14"></sp-icon>
+						</button>
+					{:else if readAloudQuick}
+						{@const action = readAloudQuick.action}
+						{@const state = readAloudQuick.state}
+						{@const look = speakLook(action)}
+						<button
+							data-widget-part="messages.message-action messages.message-icon-button messages.message-speak"
+							aria-label={look.name}
+							aria-disabled={state.disabled ? "true" : undefined}
+							title={state.disabled && state.reason
+								? `${look.name} — ${state.reason}`
+								: action.description
+									? `${look.name} — ${action.description}`
+									: look.name}
+							onclick={(e) => {
+								if (!state.disabled) fireQuick(e, action)
+							}}
+						>
+							<sp-icon name={look.icon} size="14"></sp-icon>
+						</button>
+					{/if}
+					{#each otherQuickActions as { action } (actionIdentity(action))}
 						{@const iconName = action.icon || "play"}
-						<!-- Icon-only: the accessible name is the declaration's
-						     `iconAlt`, else its name; the tooltip adds what it
-						     does (the legend, 2026-09-28). -->
 						<button
 							data-widget-part="messages.message-action messages.message-icon-button"
 							aria-label={action.iconAlt || action.name}
@@ -733,7 +883,7 @@
 						{/if}
 					</div>
 				{:else}
-					<MessageControls {msg} {isLastMessage} />
+					<MessageControls {msg} {isLastMessage} speech={speechForMenu} />
 				{/if}
 			</div>
 	{/snippet}
@@ -1037,4 +1187,27 @@
 					void conv.request("remove-attachment", { messageId: msg.id, partId: item.partId })
 			: undefined}
 	/>
+	<!-- 🚧 The spoken line (speech build, E3): its own cell after the strip,
+	     in content's columns (messageLayouts.css), under the card. -->
+	{#if (spoken || spokenPending) && !isEditing && !msg.isGenerating && spokenPlaybackOf(conv.dossier) !== 'never'}
+		<SpokenLine
+			{spoken}
+			pending={spokenPending}
+			liveRunIds={conv.dossier?.liveRunIds}
+			onStop={stopSpoken}
+			item={spokenAudio}
+			onGone={(partId) => (goneSpokenPart = partId)}
+			playing={conv.speech.isPlaying(msg.id, "line")}
+			take={conv.speech.take(msg.id, "line")}
+			menuAt={conv.speech.menuAt(msg.id)}
+			onPlayback={(paused) => conv.speech.heard(msg.id, "line", paused)}
+			{isLastMessage}
+			readAloud={readAloudOf(conv.dossier)}
+			spokenPlayback={spokenPlaybackOf(conv.dossier)}
+			speakerFace={line.speaker.face}
+			onSayItAs={canControl && spokenVerbActions.some((x) => x.key === "say-it-as")
+				? () => fireSpokenVerb("say-it-as")
+				: undefined}
+		/>
+	{/if}
 </div>

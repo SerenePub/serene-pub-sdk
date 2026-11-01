@@ -9,7 +9,7 @@ import { compareFunction, judgeFunction, spendFunction } from "../../functions/i
 /** @experimental */ export const DICELESS_POOLS_TEMPLATE_ID = "core:ruleset/template-diceless-pools@1"
 const en = (en: string) => ({ en })
 const pool = (id: string, name: string, means: string) =>
-	({ id, name: en(name), kind: "pool", bounds: { min: 0, max: 5 }, start: 3, tags: ["resource"], prose: `${name}: a pool from 0 to 5, spent to carry a risk. ${means} Spent is gone until rest.` }) as const
+	({ id, name: en(name), kind: "pool", bounds: { min: 0, max: 5 }, start: 3, scope: "session", tags: ["resource"], prose: `${name}: a pool from 0 to 5, spent to carry a risk. ${means} Spent is gone until rest.` }) as const
 const COSTS = [{ spend: 0, band: "short" }, { spend: 1, band: "cost" }, { spend: 2, band: "done" }]
 const row = (id: string, piece: Record<string, unknown>) => ({ id, version: "1.0.0", piece: piece as never })
 /** 🚧 @experimental */

@@ -241,6 +241,33 @@ export const derivations = Object.freeze({
 		description:
 			'A LiquidJS expression on the declaration, evaluated over the state pinned at run start.',
 	}),
+	/**
+	 * The clock's part of the day, by the book's own calendar `periods` (default
+	 * morning 5 · day 12 · dusk 18 · night 22). Absent when the clock has no hour.
+	 */
+	dayPeriod: Object.freeze({
+		id: 'core:derive/day-period@1',
+		requiresFrom: false,
+		description: "The part of the day the story clock is in, by the calendar's periods.",
+	}),
+	/**
+	 * The clock's season, by the book's own calendar `seasons`. Absent without
+	 * seasons, months, or a clock with a month and day.
+	 */
+	season: Object.freeze({
+		id: 'core:derive/season@1',
+		requiresFrom: false,
+		description: "The season the story clock is in, by the calendar's seasons.",
+	}),
+	/**
+	 * The clock's part of the day over the default periods always (morning, day,
+	 * dusk, night), whatever the calendar declares.
+	 */
+	timeOfDay: Object.freeze({
+		id: 'core:derive/time-of-day@1',
+		requiresFrom: false,
+		description: "The default part of the day (morning, day, dusk, night) the story clock is in.",
+	}),
 } as const) satisfies Readonly<Record<string, DerivationDecl>>
 
 /** @experimental */
@@ -302,7 +329,14 @@ export interface SlotConfig {
 	 * holds words and lore references only.
 	 */
 	repertoire?: string
-	/** `derived`: which computation, and the slot it reads. */
+	/**
+	 * `derived`: which computation, and the slot it reads.
+	 *
+	 * 🚧 On a slot that is NOT `derived` it names the slot's **derived default**:
+	 * the reading a read uses when no layer holds a value, before the
+	 * declaration's `default`. A hand write wins. Read order: layers, derived
+	 * default, declaration default.
+	 */
 	derivation?: string
 	from?: SlotId
 	[key: string]: unknown
@@ -676,6 +710,21 @@ export interface AttributeSlotProps {
 	descriptor: string
 	/** Which owner kinds may carry it. */
 	appliesTo: readonly SlotAppliesTo[]
+	/**
+	 * 🚧 **What its values survive** (M0, SHAPES F1): `session` — they
+	 * die with the session (its session layer: `session`, `session_cast`,
+	 * `player_seat`, `session_location`); `world` — they live on the book,
+	 * dated on its timeline (`lorebook`, `cast_member`, `location`). Absent:
+	 * `session`. A ruleset attribute's `scope` lands here. The player's own
+	 * (`owner: 'player'` on a ruleset attribute) is a `cast` slot read on the
+	 * player's seat. Declared only until lane T3.
+	 */
+	scope?: 'session' | 'world'
+	/**
+	 * 🚧 This follows the player into the next chapter: a `next-chapter`
+	 * session seeds its value from the session it follows (M0, F5).
+	 */
+	nextChapter?: true
 	/** The base configuration every attachment starts from. */
 	config?: SlotConfig
 	/** The value a read falls back to when no layer has one. */
@@ -1517,6 +1566,14 @@ function checkSlotDeclaration(id: SlotId, props: AttributeSlotProps & { type: Sl
 		throw new Error(
 			`${id} declares no appliesTo. Say whether it attaches to 'cast', to 'world', to ` +
 				`'location', or to several — a slot nothing may carry can never hold a value.`,
+		)
+	if (props.scope !== undefined && props.scope !== 'session' && props.scope !== 'world')
+		throw new Error(
+			`${id} declares scope '${String(props.scope)}'. Say 'session' — its values end with the session — or 'world' — they live on the book.`,
+		)
+	if (props.nextChapter !== undefined && (props.nextChapter as unknown) !== true)
+		throw new Error(
+			`${id}: \`nextChapter\` is true or absent — the value follows the player into the next chapter.`,
 		)
 	if (props.type === 'enum' && !(props.config?.of ?? fieldSlotConfig(slotField(props)).of)?.length)
 		throw new Error(

@@ -620,8 +620,8 @@ export interface SpHostElements {
 		slot?: string
 	}
 	/**
-	 * 🚧 A sound player (1.3, O11). `src` is an app media URL (`/media/…`) — never another host, as `img`; `controls` draws the browser's own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load.
-	 * Events: `error`.
+	 * 🚧 A sound player (1.3, O11). `src` is an app media URL (`/media/…`) — never another host, as `img`; `controls` draws the browser's own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load. 🚧 `autoplay` (core's alone; speech build 2026-10-28) plays it once it loads, as far as the browser allows — the newest spoken line under Read aloud: Make and play. 🚧 `loadedmetadata`, `play`, `pause`, `ended` and `timeupdate` (1.7; speech polish 2026-10-29) carry `{ currentTime, duration, paused }` — seconds, seconds (0 until known), and whether it is paused; `timeupdate` arrives about four times a second. 🚧 `playing` (1.8; heading audio control 2026-10-29; core's alone) — present, the page plays it; absent after present, the page pauses it. An element that lands without it is left alone, so `autoplay` still plays. A play the browser refuses is answered with a `pause` event. The page plays one sound at a time: another player starting pauses this one, and its `pause` arrives. The element's own `play` / `pause` / `ended` events stay the truth; to start over, draw a fresh element.
+	 * Events: `error`, `play`, `pause`, `ended`, `timeupdate`, `loadedmetadata`.
 	 */
 	'audio': {
 		'id'?: SpAttr
@@ -636,6 +636,8 @@ export interface SpHostElements {
 		'src'?: SpAttr
 		'controls'?: SpAttr
 		'preload'?: SpAttr
+		'autoplay'?: SpAttr
+		'playing'?: SpAttr
 		'class'?: SpAttr
 		slot?: string
 	}
@@ -995,7 +997,7 @@ export interface SpHostEvents {
 	'textarea': 'input' | 'change'
 	'img': 'error'
 	'a': 'click'
-	'audio': 'error'
+	'audio': 'error' | 'play' | 'pause' | 'ended' | 'timeupdate' | 'loadedmetadata'
 	'video': 'error'
 	'sp-popover': 'open-change'
 	'sp-menu': 'select' | 'open-change'

@@ -16,10 +16,10 @@ export const workplaceTemplate = defineRulesetTemplate(WORKPLACE_ID, {
 		name: { en: "Workplace" },
 		description: { en: "Job, pay, reputation and focus; tasks with deadlines." },
 		attributes: [
-			{ id: "job", name: { en: "Job" }, kind: "label", of: ["intern", "associate", "lead", "director"], start: "associate", carriedBy: ["cast"], shownAs: "badge", prose: "Job: the role someone holds, from intern to director. It decides what is theirs to ask for and whose orders they take." },
-			{ id: "pay", name: { en: "Pay" }, kind: "tally", bounds: { min: 0 }, start: 100, carriedBy: ["cast"], shownAs: "count", changedBy: ["rules", "gm"], prose: "Pay: what someone earned this week. A missed deadline docks it; a landed pitch raises it." },
-			{ id: "reputation", name: { en: "Reputation" }, kind: "number", bounds: { min: -5, max: 5 }, start: 0, tags: ["towards"], shownAs: "pips", prose: "Reputation: how a colleague is thought of by one particular person, -5 to 5. High, they are trusted with more; low, they are left off the list." },
-			{ id: "focus", name: { en: "Focus" }, kind: "pool", bounds: { max: 5 }, start: 4, carriedBy: ["cast"], tags: ["resource"], shownAs: "bar", prose: "Focus: attention left for the day, 0 to 5. Hard work and long meetings spend it; a night away from the desk restores it." }
+			{ id: "job", name: { en: "Job" }, kind: "label", of: ["intern", "associate", "lead", "director"], start: "associate", owner: "cast", scope: "session", shownAs: "badge", prose: "Job: the role someone holds, from intern to director. It decides what is theirs to ask for and whose orders they take." },
+			{ id: "pay", name: { en: "Pay" }, kind: "tally", bounds: { min: 0 }, start: 100, owner: "cast", scope: "session", shownAs: "count", changedBy: ["rules", "gm"], prose: "Pay: what someone earned this week. A missed deadline docks it; a landed pitch raises it." },
+			{ id: "reputation", name: { en: "Reputation" }, kind: "number", bounds: { min: -5, max: 5 }, start: 0, scope: "session", tags: ["towards"], shownAs: "pips", prose: "Reputation: how a colleague is thought of by one particular person, -5 to 5. High, they are trusted with more; low, they are left off the list." },
+			{ id: "focus", name: { en: "Focus" }, kind: "pool", bounds: { max: 5 }, start: 4, owner: "cast", scope: "session", tags: ["resource"], shownAs: "bar", prose: "Focus: attention left for the day, 0 to 5. Hard work and long meetings spend it; a night away from the desk restores it." }
 		],
 		entryTypes: [
 			{ id: "task", name: { en: "Task" }, holders: ["cast", "location"], tags: ["task"], prose: "Tasks: work someone has been given, with a day it is due. One that passes its due day unfinished counts against its owner.", fields: { due: dueField("The story date it is due by."), done: { type: "boolean", default: false, label: { en: "Done" }, description: { en: "Finished and handed in." } } } },

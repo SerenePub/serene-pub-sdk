@@ -1888,3 +1888,258 @@ test('interleave: the table channel’s rows are drawn under the line each belon
 		await view.unmount()
 	}
 })
+
+/** A reply carrying `metadata` (and parts), under a dossier that may name live runs (speech follow-ups A4). */
+async function mountSpoken(metadata: unknown, opts: { liveRunIds?: string[]; parts?: unknown[] } = {}) {
+	const reply = row(2, 'assistant', 'Hello there.', { activeRevisions: { '0': 0 }, parts: opts.parts ?? [], metadata })
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: [row(1, 'user', 'Hello'), reply],
+			settings: {},
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: { session_full: { ...dossier, readAloud: 'play', ...(opts.liveRunIds ? { liveRunIds: opts.liveRunIds } : {}) } },
+		},
+	})
+}
+
+test('a line whose speak run is live reads Speaking… with a Stop that names the run', { timeout: 120_000 }, async () => {
+	const view = await mountSpoken(
+		{ spoken: { pending: { runId: 'run-7', at: '2026-10-29T10:00:00Z' } } },
+		{ liveRunIds: ['run-7'] },
+	)
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.deepEqual(parts(view, 'messages.spoken-pending').map((n) => n.textContent?.trim()), ['Speaking…'])
+		const [stop] = parts(view, 'messages.spoken-stop')
+		assert.equal(stop?.textContent?.trim(), '', 'an icon-only Stop')
+		assert.equal(stop?.getAttribute('aria-label'), 'Stop speaking this line')
+		assert.equal(stop?.getAttribute('title'), 'Stop speaking this line')
+		assert.equal(parts(view, 'messages.spoken-pending')[0]?.getAttribute('role'), 'status', 'a live region')
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'speaking')
+		assert.equal(parts(view, 'messages.spoken-audio').length, 0)
+		assert.equal(parts(view, 'messages.spoken-missing').length, 0)
+		stop!.setAttribute('data-proof', 'stop-spoken')
+		await view.click('[data-proof="stop-spoken"]')
+		assert.deepEqual(view.invoked.at(-1), { key: 'stop', messageId: 2, payload: { runId: 'run-7' } })
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a pending marker whose run the dossier never named is still believed; with no marker there is no spoken line', { timeout: 120_000 }, async () => {
+	const queued = await mountSpoken({ spoken: { pending: { runId: 'run-8', at: '2026-10-29T10:00:00Z' } } }, { liveRunIds: [] })
+	try {
+		assert.equal(parts(queued, 'messages.spoken-pending').length, 1)
+	} finally {
+		await queued.unmount()
+	}
+	const plain = await mountSpoken({})
+	try {
+		assert.equal(parts(plain, 'messages.spoken-line').length, 0)
+		assert.equal(parts(plain, 'messages.spoken-pending').length, 0)
+	} finally {
+		await plain.unmount()
+	}
+})
+
+test('a spoken line with its audio shows the player, not Speaking…', { timeout: 120_000 }, async () => {
+	const spoken = {
+		spokenAs: { voice: 'bruno', model: 'Qwen3-TTS' },
+		cueMap: { source: 'none', spans: [] },
+		inflection: null,
+		template: null,
+		at: '2020-01-01T00:00:00Z',
+	}
+	const view = await mountSpoken({ spoken }, { parts: [assetPart(31, 1, 'core:audio', null, { assetId: 77, name: 'line.wav', mime: 'audio/wav' })] })
+	try {
+		assert.equal(parts(view, 'messages.spoken-audio').length, 1)
+		assert.equal(parts(view, 'messages.spoken-pending').length, 0)
+		assert.equal(parts(view, 'messages.spoken-stop').length, 0)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('the strip: voice chip, mood, clock, the playing cue caption and the Say it as… menu', { timeout: 120_000 }, async () => {
+	const spoken = {
+		spokenAs: { voice: 'v-bruno', voiceName: 'Bruno', voiceFrom: 'voicebank-default', model: 'Qwen3-TTS', applied: [], ignored: [] },
+		cueMap: {
+			source: 'concatenated',
+			spans: [
+				{ cue: 0, startMs: 0, endMs: 1000, text: 'Hello there.' },
+				{ cue: 1, startMs: 1000, endMs: 3000, text: 'Come in.' },
+			],
+		},
+		inflection: { label: 'sadness' },
+		template: null,
+		at: '2020-01-01T00:00:00Z',
+	}
+	const view = await mountSpoken({ spoken }, { parts: [assetPart(31, 1, 'core:audio', null, { assetId: 77, name: 'line.wav', mime: 'audio/wav' })] })
+	try {
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'ready')
+		assert.equal(parts(view, 'messages.spoken-voice')[0]?.textContent?.includes('Bruno'), true)
+		assert.equal(parts(view, 'messages.spoken-voice')[0]?.getAttribute('title'), 'Spoken as Bruno · Qwen3-TTS · said with sadness')
+		assert.equal(parts(view, 'messages.spoken-face').length, 0, 'a default voice is a glyph, not a face')
+		assert.deepEqual(parts(view, 'messages.spoken-mood').map((n) => n.textContent?.trim()), ['sadness'])
+		assert.equal(parts(view, 'messages.spoken-time').length, 0, 'no clock before the player has said anything')
+		assert.equal(parts(view, 'messages.spoken-caption').length, 0)
+		assert.equal(parts(view, 'messages.spoken-menu').length, 0, 'no ⋯ unless the viewer may Say it as…')
+		const [audio] = parts(view, 'messages.spoken-audio')
+		audio!.setAttribute('data-proof', 'spoken-audio')
+		await view.dispatch('[data-proof="spoken-audio"]', 'loadedmetadata', { currentTime: 0, duration: 3, paused: true })
+		assert.equal(parts(view, 'messages.spoken-time')[0]?.textContent?.trim(), '0:00 / 0:03', 'the length shows at rest')
+		assert.equal(parts(view, 'messages.spoken-caption').length, 0, 'no caption at rest')
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'ready')
+		await view.dispatch('[data-proof="spoken-audio"]', 'play', { currentTime: 1.2, duration: 3, paused: false })
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'playing')
+		assert.equal(parts(view, 'messages.spoken-time')[0]?.textContent?.trim(), '0:01 / 0:03')
+		assert.equal(parts(view, 'messages.spoken-caption')[0]?.textContent?.trim(), 'Come in.')
+		await view.dispatch('[data-proof="spoken-audio"]', 'pause', { currentTime: 1.2, duration: 3, paused: true })
+		assert.equal(parts(view, 'messages.spoken-caption').length, 0, 'no caption on a paused line')
+		await view.dispatch('[data-proof="spoken-audio"]', 'play', { currentTime: 1.2, duration: 3, paused: false })
+		await view.dispatch('[data-proof="spoken-audio"]', 'timeupdate', { currentTime: 0.4, duration: 3, paused: false })
+		assert.equal(parts(view, 'messages.spoken-caption')[0]?.textContent?.trim(), 'Hello there.')
+		await view.dispatch('[data-proof="spoken-audio"]', 'ended', { currentTime: 3, duration: 3, paused: true })
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'ready')
+		assert.equal(parts(view, 'messages.spoken-caption').length, 0)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('a file that fails to load reads Not spoken yet, quietly', { timeout: 120_000 }, async () => {
+	const spoken = {
+		spokenAs: { voice: 'bruno', model: 'Qwen3-TTS', applied: [], ignored: [] },
+		cueMap: { source: 'none', spans: [] },
+		inflection: null,
+		template: null,
+		at: '2020-01-01T00:00:00Z',
+	}
+	const view = await mountSpoken({ spoken }, { parts: [assetPart(31, 1, 'core:audio', null, { assetId: 77, name: 'line.wav', mime: 'audio/wav' })] })
+	try {
+		const [audio] = parts(view, 'messages.spoken-audio')
+		audio!.setAttribute('data-proof', 'spoken-gone')
+		await view.dispatch('[data-proof="spoken-gone"]', 'error')
+		assert.equal(parts(view, 'messages.spoken-line')[0]?.getAttribute('data-state'), 'missing')
+		assert.deepEqual(parts(view, 'messages.spoken-missing').map((n) => n.textContent?.trim()), ['Not spoken yet'])
+		assert.equal(parts(view, 'messages.spoken-audio').length, 0)
+	} finally {
+		await view.unmount()
+	}
+})
+
+// ── heading audio control (owner 2026-10-29): one speech icon, ⋮ › Speech, one playing line ──
+
+const SPOKEN_REC = {
+	spokenAs: { voice: 'bruno', model: 'Qwen3-TTS', applied: [], ignored: [] },
+	cueMap: { source: 'concatenated', spans: [{ cue: 0, startMs: 0, endMs: 1000, text: 'Hello there.' }] },
+	inflection: null,
+	template: null,
+	at: '2020-01-01T00:00:00Z',
+}
+const audioPart = (id: number, assetId: number) =>
+	assetPart(id, 1, 'core:audio', null, { assetId, name: 'line.wav', mime: 'audio/wav' })
+
+/** Two spoken replies (ids 2 and 4), each with its audio, under a dossier. */
+async function mountTwoSpoken(playback?: 'auto' | 'click' | 'never') {
+	const reply = (id: number, part: number, asset: number) =>
+		row(id, 'assistant', `Line ${id}.`, { activeRevisions: { '0': 0 }, parts: [audioPart(part, asset)], metadata: { spoken: SPOKEN_REC } })
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: [row(1, 'user', 'Hello'), reply(2, 31, 77), row(3, 'user', 'Again'), reply(4, 32, 78)],
+			settings: {},
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: {
+				session_full: {
+					...dossier,
+					lines: { ...dossier.lines, 4: line('Mira') },
+					readAloud: 'make',
+					...(playback ? { spokenPlayback: playback } : {}),
+				},
+			},
+		},
+	})
+}
+
+test('the heading carries ONE speech icon for a line with audio; its name flips, it is not pressed', { timeout: 120_000 }, async () => {
+	const view = await mountTwoSpoken()
+	try {
+		assert.deepEqual(view.refused.filter((r) => !/playing/.test(String(r))), [])
+		const icons = parts(view, 'messages.message-speech')
+		assert.equal(icons.length, 2, 'one per spoken line')
+		const [first] = icons
+		assert.equal(first?.getAttribute('data-state'), 'ready')
+		assert.equal(first?.getAttribute('aria-label'), 'Play the spoken line')
+		assert.equal(first?.hasAttribute('aria-pressed'), false)
+		assert.equal(parts(view, 'messages.message-speak').length, 0, 'no second speaker glyph')
+		first!.setAttribute('data-proof', 'speech-a')
+		await view.click('[data-proof="speech-a"]')
+		const now = parts(view, 'messages.message-speech')[0]
+		assert.equal(now?.getAttribute('data-state'), 'playing')
+		assert.equal(now?.getAttribute('aria-label'), 'Stop')
+		assert.equal(parts(view, 'messages.message-actions')[0]?.hasAttribute('data-playing'), true)
+		now!.setAttribute('data-proof', 'speech-a2')
+		await view.click('[data-proof="speech-a2"]')
+		assert.equal(parts(view, 'messages.message-speech')[0]?.getAttribute('data-state'), 'ready')
+		assert.equal(parts(view, 'messages.message-actions')[0]?.hasAttribute('data-playing'), false)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('playback never: the heading falls back to Read aloud, no menu player', { timeout: 120_000 }, async () => {
+	const view = await mountTwoSpoken('never')
+	try {
+		assert.equal(parts(view, 'messages.message-speech').length, 0)
+		assert.equal(parts(view, 'messages.message-speech-player').length, 0)
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('one playing line: starting another stops the first (its player is re-keyed), from heading or ⋮ player', { timeout: 120_000 }, async () => {
+	const view = await mountTwoSpoken()
+	try {
+		const strips = () => parts(view, 'messages.spoken-audio')
+		const playingOf = (i: number) => strips()[i]?.hasAttribute('playing')
+		const [a0] = strips()
+		const [headA, headB] = parts(view, 'messages.message-speech')
+		headA!.setAttribute('data-proof', 'head-a')
+		headB!.setAttribute('data-proof', 'head-b')
+		await view.click('[data-proof="head-a"]')
+		assert.equal(playingOf(0), true, 'A carries playing')
+		await view.click('[data-proof="head-b"]')
+		assert.equal(playingOf(0), false, 'A no longer carries playing')
+		assert.equal(playingOf(1), true, 'B does')
+		assert.equal(strips()[0] === a0, false, 'A was re-keyed: pause + rewind')
+		// A native play on A's menu player hands off from B the same way.
+		const b1 = strips()[1]
+		const menus = parts(view, 'messages.message-speech-player')
+		assert.equal(menus.length, 2, 'the menu player stays in the markup while closed')
+		assert.equal(menus[0]?.getAttribute('preload'), 'none')
+		assert.equal(menus[0]?.hasAttribute('data-widget-part') && (menus[0]?.getAttribute('data-widget-part') ?? '').includes('spoken-audio'), false)
+		menus[0]!.setAttribute('data-proof', 'menu-a')
+		await view.dispatch('[data-proof="menu-a"]', 'play', { currentTime: 0, duration: 3, paused: false })
+		assert.equal(playingOf(1), false, 'B stopped')
+		assert.equal(strips()[1] === b1, false, 'B re-keyed')
+		assert.equal(parts(view, 'messages.message-speech-player')[0]?.hasAttribute('playing'), true, 'A menu player carries playing')
+		assert.equal(parts(view, 'messages.message-speech')[0]?.getAttribute('data-state'), 'playing')
+		// The caption follows the ⋮ player too.
+		await view.dispatch('[data-proof="menu-a"]', 'timeupdate', { currentTime: 0.5, duration: 3, paused: false })
+		assert.equal(parts(view, 'messages.spoken-caption')[0]?.textContent?.trim(), 'Hello there.')
+	} finally {
+		await view.unmount()
+	}
+})

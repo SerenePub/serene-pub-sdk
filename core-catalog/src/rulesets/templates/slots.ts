@@ -17,6 +17,7 @@ const slot = (id: string, owner: string, label: string, description: string, des
 		description: { en: description },
 		descriptor,
 		appliesTo: ["cast"],
+		scope: "session",
 		config: { min, max },
 		default: start,
 		rulesetOwned: owner

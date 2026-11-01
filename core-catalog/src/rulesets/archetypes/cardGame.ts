@@ -28,7 +28,7 @@ export const cardGameTemplate = defineRulesetTemplate(CARD_GAME_ID, {
 		template: true,
 		name: { en: "Card game" },
 		description: { en: "A shared deck, a hand each, a discard and a score." },
-		attributes: [{ id: "score", name: { en: "Score" }, kind: "tally", bounds: { min: 0 }, start: 0, carriedBy: ["cast"], shownAs: "count", changedBy: ["rules"], prose: "Score: points a player has taken this game. It only goes up, and the highest at the end wins." }],
+		attributes: [{ id: "score", name: { en: "Score" }, kind: "tally", bounds: { min: 0 }, start: 0, owner: "cast", scope: "session", shownAs: "count", changedBy: ["rules"], prose: "Score: points a player has taken this game. It only goes up, and the highest at the end wins." }],
 		entryTypes: [{ id: "card", name: { en: "Card" }, holders: ["cast", "world"], tags: ["card"], prose: "Cards: what the game is played with. Each has a suit and a rank, and is worth its rank in points when taken.", fields: { suit: { type: "enum", of: ["hearts", "spades", "clubs", "diamonds"], default: "hearts", label: { en: "Suit" }, description: { en: "Which of the four suits it belongs to." } }, rank: { type: "integer", default: 1, label: { en: "Rank" }, description: { en: "1 to 13; also its points." } } } }],
 		functions: [
 			{ ref: F.deck, key: "draw-up", bindings: { deck: "deck", hand: "hand" }, options: { draws: 1 } },

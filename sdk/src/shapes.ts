@@ -92,6 +92,15 @@ export const S = {
 	}),
 	sessionScope: defineShape({ id: 'core:shape/session-scope@1' }),
 	/**
+	 * 🚧 **A clock target** (M0, SHAPES L3): an hour, and optionally a
+	 * minute, within a story day — `{ hour, minute?, day?: 'today' | 'tomorrow'
+	 * | 'next' }` (`ClockTargetV1`, contracts) — what `advance-story-clock@1`
+	 * moves `to` (and, once ruled, the hour `cast-presences@1` reads). `next` (the default) is
+	 * tomorrow when the moment is not still ahead today. ⚠ Not a story time (`StoryTime`, a date
+	 * on the calendar): it names a moment of a day, never which day of a year.
+	 */
+	clockTarget: defineShape({ id: 'core:shape/clock-target@1' }),
+	/**
 	 * Transcript rows — what `session-history@1` publishes on `main` and
 	 * `messages` and what `process-messages@1` / `prose-transcript@1` read
 	 * (declared so since 2026-09-17; the port had said
@@ -321,6 +330,11 @@ export const S = {
 	 */
 	messageOffered: defineShape({ id: 'core:shape/message-offered@1' }),
 	/**
+	 * 🚧 **Message settled** (speech follow-ups A1): the payload of
+	 * `core:event/message-settled@1` (`MessageSettledPayload`, events.ts).
+	 */
+	messageSettled: defineShape({ id: 'core:shape/message-settled@1' }),
+	/**
 	 * 🚧 A **deletion asked**: the payload of
 	 * `core:event/message-deletion-asked@1` — a person asked for a message to
 	 * be deleted (`DeletionAskedPayload`, events.ts) — and what
@@ -350,6 +364,19 @@ export const S = {
 	 * @ruling PLAN-turn-order §4.14, R30
 	 */
 	annexChange: defineShape({ id: 'core:shape/annex-change@1' }),
+	/**
+	 * 🚧 **Lorebook annex changed** (M0, SHAPES L9): the payload of
+	 * `core:event/lorebook-annex-changed@1` — `{ event, lorebookId, at,
+	 * cause, owner, keys }` (`LorebookAnnexChangePayload`, events.ts). Names
+	 * whose document moved and which keys, never the value.
+	 */
+	lorebookAnnexChange: defineShape({ id: 'core:shape/lorebook-annex-change@1' }),
+	/**
+	 * 🚧 **Ruleset converted** (M0, SHAPES L4): the payload of
+	 * `core:event/ruleset-converted@1` — `{ event, sessionId, at, cause,
+	 * rulesetId, from, to, slots }` (`RulesetConversionPayload`, events.ts).
+	 */
+	rulesetConversion: defineShape({ id: 'core:shape/ruleset-conversion@1' }),
 	/** What a listener receives for an event a pipeline recorded: the envelope, the author's payload inside. */
 	recordedEvent: defineShape({ id: 'core:shape/recorded-event@1' }),
 	/**
@@ -404,7 +431,13 @@ export const S = {
 	 * sprite a picker chose for a line, or null for none. What the sprite
 	 * picker publishes on `main` and `core:outlet/show-sprite@1` records.
 	 */
-	spritePick: defineShape({ id: 'core:shape/sprite-pick@1' }),
+	spritePick: defineShape({
+		id: 'core:shape/sprite-pick@1',
+		// 🚧 Speech (S3, 2026-10-28): a pick carries `label`, which is all an
+		// inflection port reads — so the sprite a line was given wires straight
+		// into `cue-lines@1` as the line's inflection. Null (no pick) is no inflection.
+		assignableTo: ['core:shape/inflection@1'],
+	}),
 	/**
 	 * The **settings document**: `SessionSettingsV1` — every
 	 * setting a person can see in session settings, resolved once per run
@@ -541,4 +574,18 @@ export const S = {
 	 */
 	transcription: defineShape({ id: 'core:shape/transcription@1' }),
 	imageGen: defineShape({ id: 'core:shape/image-gen@1' }),
+	// ── 🚧 Speech (PLAN-speech-build S3, 2026-10-28; types in speech.ts) ──
+	/** 🚧 **An inflection**: `Inflection` — `{ label, intensity?, events? }`, how a line is spoken. */
+	inflection: defineShape({ id: 'core:shape/inflection@1' }),
+	/** 🚧 **A spoken line's script**: `Cue[]` — what `core:task/cue-lines@1` publishes and `core:oracle/speak@1` reads. */
+	cues: defineShape({ id: 'core:shape/cues@1' }),
+	/** 🚧 **A cue map**: `CueMap` — where each cue sits in the spoken audio. */
+	cueMap: defineShape({ id: 'core:shape/cue-map@1' }),
+	/** 🚧 **What spoke**: `SpokenAs` — voice, model, applied, ignored. */
+	spokenAs: defineShape({ id: 'core:shape/spoken-as@1' }),
+	/**
+	 * 🚧 **Spoken metadata**: `SpokenMeta` — the record a spoken line keeps per
+	 * swipe (seam S6). What `speak@1` publishes on `meta` and `attach-audio@1` records.
+	 */
+	spokenMeta: defineShape({ id: 'core:shape/spoken-meta@1' }),
 } as const

@@ -19,8 +19,9 @@
  */
 
 import { slotOwner, type SlotId } from './attributes.js'
+import type { I18n } from './i18n.js'
 import { finding, RULESET_ID_PATTERN } from './repertoires.js'
-import { declaresSections, type RulesetAttributeDecl } from './rulesetSections.js'
+import { declaresSections, rulesetAttributeSlots, type RulesetAttributeDecl } from './rulesetSections.js'
 import { parseFunctionId, type FunctionRef } from './functions.js'
 import {
 	defineStoredRuleset,
@@ -43,6 +44,22 @@ export interface RulesetDocument extends Omit<RulesetDecl, 'origin' | 'authorUse
 	readonly stats?: RulesetDecl['stats']
 	/** ⏳ The repertoires — absent from a document in sections (2026-10-23). */
 	readonly repertoires?: RulesetDecl['repertoires']
+	/**
+	 * 🚧 **How a session moves from an earlier version to this one** (M0,
+	 * SHAPES L4 Upgrades): one step per version, `from` → `to` (semver; the
+	 * chain contiguous up to this document's `version`, checked by
+	 * conformance), saying which slots were `renamed` (old id → new id),
+	 * `removed`, or `added` (id → its default) — what `convert-ruleset@1`
+	 * re-keys, retracts and inserts — and a `note` the session's *Update
+	 * rules* confirm shows. A session pinned to an earlier version keeps
+	 * playing it until converted.
+	 */
+	readonly upgrades?: ReadonlyArray<{
+		from: string
+		to: string
+		slots?: { renamed?: Record<string, string>; removed?: readonly string[]; added?: Record<string, unknown> }
+		note?: I18n
+	}>
 }
 
 /** Where a ruleset id is read from: `owner:ruleset/name@N` → its parts. @experimental */
@@ -97,6 +114,45 @@ export function rulesetDocumentFindings(doc: unknown): string[] {
 	if (typeof d.version !== 'string' || !RULESET_VERSION.test(d.version))
 		out.push(finding('bad-version', `${String(d.id)}.version is '${String(d.version)}'; a version reads major.minor.patch — '1.0.0'.`))
 	out.push(...rulesetFindings(String(d.id), rulesetDocumentProps(d as RulesetDocument)))
+	out.push(...upgradeChainFindings(d))
+	return out
+}
+
+const UPGRADE_SLOT_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*:slot\/[a-z0-9]+(?:-[a-z0-9]+)*@\d+$/
+
+/** 🚧 Why a document's `upgrades` chain is refused (`bad-version`): versions, forward, contiguous, ending at `version`, slot ids. */
+function upgradeChainFindings(d: Partial<RulesetDocument>): string[] {
+	if (d.upgrades === undefined) return []
+	const id = String(d.id)
+	if (!Array.isArray(d.upgrades)) return [finding('bad-version', `${id}.upgrades is a list of steps — { from, to, slots?, note? }.`)]
+	const out: string[] = []
+	let prevTo: string | undefined
+	let last: string | undefined
+	d.upgrades.forEach((u, i) => {
+		const step = (u ?? {}) as Partial<RulesetDocument['upgrades'] extends ReadonlyArray<infer T> | undefined ? T : never>
+		let sound = true
+		for (const part of ['from', 'to'] as const) {
+			const v = (step as Record<string, unknown>)[part]
+			if (typeof v !== 'string' || !RULESET_VERSION.test(v)) {
+				out.push(finding('bad-version', `${id}.upgrades[${i}].${part} is '${String(v)}'; a version reads major.minor.patch — '1.0.0'.`))
+				sound = false
+			}
+		}
+		if (sound) {
+			const { from, to } = step as { from: string; to: string }
+			if (compareRulesetVersions(to, from) <= 0) out.push(finding('bad-version', `${id}.upgrades[${i}] goes from ${from} to ${to}; an upgrade moves forward.`))
+			if (prevTo !== undefined && from !== prevTo) out.push(finding('bad-version', `${id}.upgrades[${i}] starts at ${from}, but the step before ends at ${prevTo}; the chain must not skip.`))
+			prevTo = to
+			last = to
+		}
+		const slots = step.slots
+		if (slots && typeof slots === 'object') {
+			const named = [...Object.entries(slots.renamed ?? {}).flat(), ...(slots.removed ?? []), ...Object.keys(slots.added ?? {})]
+			for (const s of named) if (typeof s !== 'string' || !UPGRADE_SLOT_ID.test(s)) out.push(finding('bad-version', `${id}.upgrades[${i}].slots names '${String(s)}', which is not a slot id.`))
+		}
+	})
+	if (last !== undefined && typeof d.version === 'string' && RULESET_VERSION.test(d.version) && last !== d.version)
+		out.push(finding('bad-version', `${id}.upgrades ends at ${last}, but the document is version ${d.version}; the last step ends at it.`))
 	return out
 }
 
@@ -130,7 +186,22 @@ export function rulesetDocumentUpgradeFindings(prev: RulesetDocument, next: Rule
     if (cmp === 0) out.push(finding('version-not-bumped', `${next.id} is still version ${prev.version}; a publish that changes the rules moves the version.`))
     else if (cmp < 0) out.push(finding('version-backwards', `${next.id} goes from ${prev.version} back to ${next.version}; a version only moves forward.`))
   }
-  out.push(...rulesetUpgradeFindings(prev as unknown as RulesetDecl, next as unknown as RulesetDecl))
+  // A slot `next.upgrades` renames or removes (in the steps from `prev.version` on) is a declared move, not a drop.
+  const moved = new Set<string>()
+  for (const u of next.upgrades ?? [])
+    if (RULESET_VERSION.test(prev.version) && typeof u?.from === 'string' && RULESET_VERSION.test(u.from) && compareRulesetVersions(u.from, prev.version) >= 0) {
+      for (const k of Object.keys(u.slots?.renamed ?? {})) moved.add(k)
+      for (const k of u.slots?.removed ?? []) moved.add(k)
+    }
+  let before = prev as unknown as RulesetDecl
+  if (moved.size) {
+    const copy = clone(prev) as RulesetDocument & { stats?: Array<{ id: string }>; attributes?: RulesetAttributeDecl[] }
+    const slotOf = copy.attributes !== undefined ? rulesetAttributeSlots(copy as unknown as RulesetDecl) : undefined
+    if (copy.stats) copy.stats = copy.stats.filter((s) => !moved.has(s.id)) as never
+    if (copy.attributes && slotOf) copy.attributes = copy.attributes.filter((a) => !moved.has(slotOf.get(a.id) ?? '')) as never
+    before = copy as unknown as RulesetDecl
+  }
+  out.push(...rulesetUpgradeFindings(before, next as unknown as RulesetDecl))
   return out
 }
 

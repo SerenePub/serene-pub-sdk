@@ -15,13 +15,14 @@ export const sliceOfLifeTemplate = defineRulesetTemplate(SLICE_OF_LIFE_ID, {
 		name: { en: "Slice of life" },
 		description: { en: "Energy, money and time of day, with routines and plans." },
 		attributes: [
-			{ id: "energy", name: { en: "Energy" }, kind: "pool", bounds: { max: 10 }, start: 8, carriedBy: ["cast"], tags: ["resource"], shownAs: "bar", prose: "Energy: what someone has left for the day, 0 to 10. Errands and effort spend it; a night's sleep brings it back, less if they stayed up late." },
-			{ id: "money", name: { en: "Money" }, kind: "tally", bounds: { min: 0 }, start: 40, carriedBy: ["cast"], shownAs: "count", prose: "Money: coins in hand. It is spent on meals, rent and treats, earned by work, and never goes below nothing." },
-			{ id: "time-of-day", name: { en: "Time of day" }, kind: "label", of: ["morning", "afternoon", "evening", "late night"], start: "morning", carriedBy: ["world"], shownAs: "words", changedBy: ["rules"], prose: "Time of day: where the day has got to. Scenes should fit it, and a late night leaves everyone tired tomorrow." }
+			{ id: "energy", name: { en: "Energy" }, kind: "pool", bounds: { max: 10 }, start: 8, owner: "cast", scope: "session", tags: ["resource"], shownAs: "bar", prose: "Energy: what someone has left for the day, 0 to 10. Errands and effort spend it; a night's sleep brings it back, less if they stayed up late." },
+			{ id: "money", name: { en: "Money" }, kind: "tally", bounds: { min: 0 }, start: 40, owner: "cast", scope: "session", shownAs: "count", prose: "Money: coins in hand. It is spent on meals, rent and treats, earned by work, and never goes below nothing." },
+			{ id: "time-of-day", name: { en: "Time of day" }, kind: "label", of: ["morning", "afternoon", "evening", "late night"], start: "morning", owner: "world", scope: "session", shownAs: "words", changedBy: ["rules"], prose: "Time of day: where the day has got to. Scenes should fit it, and a late night leaves everyone tired tomorrow." }
 		],
 		entryTypes: [
 			{ id: "plan", name: { en: "Plan" }, holders: ["cast"], tags: ["plan"], prose: "Plans: things someone means to do and when, a market on Saturday or a call to a friend. A plan not kept is remembered.", fields: { when: { type: "enum", of: ["morning", "afternoon", "evening"], default: "afternoon", label: { en: "When" }, description: { en: "The part of the day it is planned for." } }, due: dueField("The day it is planned for; once that day has gone by, the plan was missed.") } },
-			{ id: "routine", name: { en: "Routine" }, holders: ["cast"], tags: ["routine"], prose: "Routines: what someone does without thinking each morning, a run, a coffee, feeding the cat. They cost little and keep a person steady." }
+			{ id: "routine", name: { en: "Routine" }, holders: ["cast"], fields: { routine: { type: "schedule", label: { en: "Routine" } } }, tags: ["routine"], prose: "Routines: what someone does without thinking each morning, a run, a coffee, feeding the cat. They cost little and keep a person steady." },
+			{ id: "household", name: { en: "Household" }, relational: true, farEnd: "person", tags: ["relationship"], shownAs: "ties", prose: "Households: who lives under one roof with whom — the head, a member, a guest. It decides who shares meals, rent and the front door.", fields: { role: { type: "enum", of: ["head", "member", "guest"], default: "member", label: { en: "Role" } } } }
 		],
 		zoneTypes: [{ id: "diary", name: { en: "Diary" }, owners: ["cast"], holds: ["plan", "routine"], ordered: true, visibility: "holder", prose: "Diary: the plans and routines someone keeps, in the order they fall." }],
 		functions: [

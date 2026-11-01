@@ -203,6 +203,28 @@ What every routine can count on:
   `maxJump` skips the run when the clock jumps further than you say ("Skip when the clock jumps
   more than …").
 
+### Weather each day
+
+`weatherSpec()` (`core:spec/weather`) is a routine that picks the day's weather without a model. Each time the story day turns it hashes the session and the story day (FNV-1a 32-bit of `sessionId|year-month-day`) and takes one of `weatherSlot`'s declared kinds, so the same day always brings the same weather. It writes `core:slot/weather@1` on the world and nothing else; with no story clock it writes nothing. It is off until a genre registers it:
+
+```ts
+import { afterEachDay, register } from '@serene-pub/sdk'
+import { weatherSpec } from '@serene-pub/core-catalog'
+
+register(afterEachDay(), weatherSpec())
+```
+
+### A routine that writes as a character
+
+`characterReachesOutSpec({ speaker, channel?, brief })` (`core:spec/character-reaches-out`) is an example of a routine whose line is a character's own. When its cadence comes due it opens a generating row spoken by `speaker` (`character:<id>`) on `channel` (default `main`), makes one model call with that character's card in context and the `brief` as the last turn, then fills the row with the text. It is not in any shipped list; a genre builds it with its terms and registers it:
+
+```ts
+import { afterEachDay, register } from '@serene-pub/sdk'
+import { characterReachesOutSpec } from '@serene-pub/core-catalog'
+
+register(afterEachDay(), characterReachesOutSpec({ speaker: 'character:7', brief: 'Write the player a short note about your day.' }))
+```
+
 ### Allow stacking
 
 **Off by default.** With it off, a firing that finds the same routine already **waiting** is

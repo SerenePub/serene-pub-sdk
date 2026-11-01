@@ -54,8 +54,8 @@ import {
 	renderProbes,
 } from '@serene-pub/sdk/testing'
 import * as C from '@serene-pub/contracts'
-import { main, isEntryPoint } from '@serene-pub/cli/bin'
-import { mkdir, writeFile, symlink, rm } from 'node:fs/promises'
+import { main, isEntryPoint, installPackageFindings } from '@serene-pub/cli/bin'
+import { mkdir, mkdtemp, writeFile, symlink, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -228,6 +228,31 @@ describe('97 · the manifest is extracted without running the code', () => {
 		assert.match(e.fix, /from an oracle, through `ctx\.fetch`/)
 		assert.match(e.fix, /A task or a query may not reach the network/)
 		assert.match(e.fix, /plugin-permissions\.md#kind-oracle/)
+	})
+
+	test("a frame script may fetch its own plugin's two doors, and nothing else (M2a a4)", () => {
+		const own = [
+			"fetch(assetsBase + 'assets/worlds/a.json')",
+			'fetch(init.assetsBase + path)',
+			'fetch(`${assetsBase}assets/a.json`)',
+			"fetch('/plugin-data/acme.worlds/worlds/a.json')",
+			'fetch("/plugin-assets/acme.worlds/1.0.0/assets/a.json")',
+		]
+		for (const call of own) {
+			const scan = scanSource([{ path: 'ui/panel.js', text: `async function load() { await ${call} }` }])
+			assert.equal(scan.findings.filter((f) => f.code === 'E_DIRECT_NETWORK').length, 0, call)
+		}
+		for (const call of ["fetch('https://x')", "fetch('/api/sessions')", 'fetch(url)', 'fetch(`${base}x`)']) {
+			const scan = scanSource([{ path: 'ui/panel.js', text: `async function load() { await ${call} }` }])
+			const e = scan.findings.find((f) => f.code === 'E_DIRECT_NETWORK')
+			assert.ok(e, call)
+			assert.match(e.message, /own plugin's two doors/)
+			assert.match(e.fix, /assetsBase \+ 'assets\/…'/)
+			assert.match(e.fix, /\/plugin-data\/<your plugin id>\//)
+		}
+		// Outside `ui/` a door path is still a hook reaching for fetch.
+		const hook = scanSource([{ path: 'src/index.ts', text: "async function h() { await fetch('/plugin-data/acme.worlds/a.json') }" }])
+		assert.equal(hook.findings.find((f) => f.code === 'E_DIRECT_NETWORK')?.message, 'a hook calls fetch() directly')
 	})
 
 	test('strings and comments cannot fool the scanner', () => {
@@ -452,6 +477,33 @@ describe('98 · compilePlugin', () => {
 			() => defineExtension({ ...base, templateEngines: { mustache: () => '' } }),
 			/'mustache'\] is not a template engine id/,
 		)
+	})
+
+	test('a sampling value names a seeded config, { seedKey }, and nothing beside it', () => {
+		const sampled = (defaults: Record<string, unknown>, preset: Record<string, unknown>) =>
+			compilePlugin({
+				sources: [{ path: 'index.ts', text: `export default defineExtension({ slug: 'chariot.dice-tray' })\n.sampling('narrate', …)` }],
+				extension: defineExtension({
+					slug: 'chariot.dice-tray',
+					name: 'Dice',
+					version: '1.0.0',
+					pipelines: [
+						spec('chariot.dice-tray:roll-turn', { version: '1.2.0' })
+							.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.messageRespond })
+							.oracle('narrate', C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }))
+							.outlet('save', ($: any) => C.createMessage.v1({ text: $.narrate.text }))
+							.defaults((d) => d.sampling('narrate', defaults))
+							.preset('dramatic', { label: 'Dramatic' }, (p) => p.sampling('narrate', preset))
+							.build(),
+					],
+				}),
+			}).findings.filter((f) => f.code === 'E_SAMPLING_REFERENCE')
+		assert.deepEqual(sampled({ seedKey: 'sampling-background' }, { seedKey: 'sampling-default' }), [])
+		const refused = sampled({ seedKey: 'sampling-background', temperature: 0.2 }, { temperature: 1.1 })
+		assert.equal(refused.length, 2, renderFindings(refused))
+		assert.match(refused[0]!.message, /'narrate': temperature beside the seedKey would be dropped/)
+		assert.match(refused[1]!.message, /preset 'dramatic' at 'narrate': the sampling value \{"temperature":1\.1\} names no config/)
+		assert.equal(refused[0]!.severity, 'error')
 	})
 })
 
@@ -874,9 +926,11 @@ test('102 · assertEquivalent gives an author the equivalence law in one call', 
 
 // ── 103 · The command line is the packager, not a second implementation ────
 describe('103 · serene-pub CLI', () => {
-	const dir = join(tmpdir(), 'sp-cli-fixture')
-
+	// One folder per test (2026-10-29): `check` evaluates the entry, and a shared
+	// path would hand every later test the first test's module.
+	let dir = ''
 	const write = async (rel: string, text: string) => {
+		dir = await mkdtemp(join(tmpdir(), 'sp-cli-fixture-'))
 		await mkdir(join(dir, 'src'), { recursive: true })
 		await writeFile(join(dir, rel), text)
 	}
@@ -891,11 +945,132 @@ describe('103 · serene-pub CLI', () => {
 	})
 
 	test('`check` on a clean plugin exits zero and lists the permissions it computed', async () => {
+		// A whole, evaluable extension: `check` evaluates it as `build` does.
 		await write(
 			'src/index.ts',
-			`export default defineExtension({ slug: 'demo.thing' })\neventListener('core:event/session-created@1', async (s) => { s.log('info', 'k') })`,
+			`import { defineExtension } from '@serene-pub/sdk'\nexport default defineExtension({ slug: 'demo.thing', name: 'Demo thing', version: '0.1.0' })\n`,
 		)
 		assert.equal(await main(['check', dir]), 0)
+	})
+
+	// Dated 2026-10-29 (M1 gate): `check` runs the validation `build` runs
+	// (`validatePackage`, one function for both). It used to stop at the lexical
+	// scan, so it exited 0 on packages `build` then refused — every lane that
+	// gated on `check` was told yes.
+	test('`check` refuses what `build` refuses: an entry that throws while it evaluates', async () => {
+		await write('src/index.ts', `throw new Error('annexField: owner refused')\nexport default {}\n`)
+		const r = await cli(['check', dir])
+		assert.equal(r.code, 1)
+		assert.match(r.out, /E_ENTRY_THREW/)
+		assert.match(r.out, /annexField: owner refused/)
+	})
+
+	// Dated 2026-10-30 (readiness c33): the component modules and the sandbox
+	// bundle are part of the shared validation, so `check` refuses what `build`
+	// refuses there too and writes nothing. Fixtures sit under `fixtures/` (not the
+	// OS tmpdir) because the entry must resolve `@serene-pub/sdk` to this workspace.
+	const SDK_HEAD = `import { defineExtension, component, handler, describeTaskDefinition, pin, S, ok, spec, use, slot, sessionEvents } from '@serene-pub/sdk'\nimport * as C from '@serene-pub/contracts'\n`
+	const inFixtures = async (index: string, extra: Record<string, string> = {}) => {
+		const d = await mkdtemp(join(FIXTURES, 'c33-'))
+		await mkdir(join(d, 'src'), { recursive: true })
+		await writeFile(join(d, 'src', 'index.ts'), index)
+		for (const [rel, text] of Object.entries(extra)) {
+			await mkdir(dirname(join(d, rel)), { recursive: true })
+			await writeFile(join(d, rel), text)
+		}
+		return d
+	}
+	const bothRefuse = async (d: string, code: string) => {
+		const out = `${d}-out`
+		const b = await cli(['build', d, '--out', out])
+		const c = await cli(['check', d])
+		assert.equal(b.code, 1, b.err)
+		assert.equal(c.code, 1, c.out)
+		await stat(out).then(() => assert.fail('a refused build wrote its output'), () => undefined)
+		assert.match(b.err, new RegExp(code))
+		assert.match(c.out, new RegExp(code))
+		const j = await cli(['check', d, '--json'])
+		assert.ok(JSON.parse(j.out.slice(0, j.out.lastIndexOf('}') + 1)).findings.some((f: { code: string }) => f.code === code))
+	}
+
+	test('`check` and `build` refuse an install-refused package with the same code, and `check` writes nothing', async () => {
+		const d = await inFixtures(
+			SDK_HEAD +
+				`export default defineExtension({ slug: 'demo.c33a', name: 'C33', version: '1.0.0', pipelines: [
+	spec('demo.c33a:roll-turn', { version: '1.2.0' })
+		.inlet('input', C.userMessage.v1(), { genre: use('core:genre/story'), event: sessionEvents.messageRespond })
+		.oracle('narrate', C.generateText.v1({ connection: slot.connection(), sampling: slot.sampling() }))
+		.outlet('save', ($: any) => C.createMessage.v1({ text: $.narrate.text }))
+		.defaults((x) => x.sampling('narrate', { temperature: 0.2 }))
+		.build(),
+] })\n`,
+		)
+		try {
+			await bothRefuse(d, 'E_SAMPLING_REFERENCE')
+			assert.deepEqual((await readdir(d)).sort(), ['src'], '`check` must leave no dist/ or temp file behind')
+		} finally {
+			await rm(d, { recursive: true, force: true })
+		}
+	})
+
+	test('`check` and `build` refuse a component that does not build with E_COMPONENT_BUILD', async () => {
+		const d = await inFixtures(
+			SDK_HEAD +
+				`export default defineExtension({ slug: 'demo.c33b', name: 'C33', version: '1.0.0', components: [component({ slug: 'bad', label: 'Bad', entry: 'components/bad.ts', framework: 'vanilla' })] })\n`,
+			{ 'components/bad.ts': `export default (\n` },
+		)
+		try {
+			await bothRefuse(d, 'E_COMPONENT_BUILD')
+			assert.deepEqual((await readdir(d)).sort(), ['components', 'src'])
+		} finally {
+			await rm(d, { recursive: true, force: true })
+		}
+	})
+
+	test('`check` and `build` refuse a hook bundle that does not build with E_SANDBOX_BUNDLE', async () => {
+		const d = await inFixtures(
+			SDK_HEAD +
+				`export default defineExtension({ slug: 'demo.c33c', name: 'C33', version: '1.0.0', handlers: [
+	handler(
+		pin(describeTaskDefinition({ id: 'demo.c33c:task/t@1', i18n: { name: { en: 'T' } }, ports: { in: { text: S.text }, out: { main: S.json } } })),
+		async () => { const m = await import('./missing.js'); return ok({ main: m }) },
+	),
+] })\n`,
+		)
+		try {
+			await bothRefuse(d, 'E_SANDBOX_BUNDLE')
+			assert.deepEqual((await readdir(d)).sort(), ['src'])
+		} finally {
+			await rm(d, { recursive: true, force: true })
+		}
+	})
+
+	test('`check` says so when it could not evaluate the extension', async () => {
+		// An entry whose own import is missing (an unbuilt sibling) loads as no entry at all.
+		await write('src/index.ts', `import { part } from './not-built-yet.js'\nexport default part\n`)
+		const r = await cli(['check', dir])
+		assert.equal(r.code, 0)
+		assert.match(r.out, /build validation skipped/)
+	})
+
+	// Dated 2026-10-29 (readiness R-a/R-b): the packager runs the install's
+	// instance-free checks, so `check`/`build` never pass what install refuses —
+	// one create spec per genre counted by the inlet lock (`genreCreateSpecFindings`,
+	// the rule the install's package reader calls), and `validate()` over every
+	// document, as the install's save does.
+	test('the packager holds a package to the install\'s create-spec count and validate()', () => {
+		const findings = installPackageFindings({
+			manifest: { genres: [{ id: 'demo.thing:genre/x@1' }] } as never,
+			documents: [],
+			findings: [],
+			ok: true,
+		})
+		assert.ok(findings.some((f) => f.code === 'E_GENRE_CREATE_SPEC'))
+		assert.match(findings[0]!.message, /ships 0 create pipelines/)
+		// Whole in shape, empty in content: no inlet, which the publish door refuses (01 §2).
+		const broken = { schemaVersion: 1, id: 'demo.thing:spec/broken', version: '1.0.0', includes: [], presets: [], nodes: [], edges: [], clauses: [] }
+		const law = installPackageFindings({ manifest: {} as never, documents: [broken as never], findings: [], ok: true })
+		assert.ok(law.length > 0 && law.every((f) => f.code === 'E_SPEC_LAW'), JSON.stringify(law))
 	})
 
 	test('there is no `install` verb, because installing is an admin action inside SP', () => {
@@ -908,9 +1083,9 @@ describe('103 · serene-pub CLI', () => {
 		// node_modules/.bin symlink: argv[1] is the symlink path, import.meta.url
 		// resolves to the real file. Regression for the bug where comparing those
 		// raw meant the guard never fired and `main` silently never ran.
+		await write('real-bin.js', '// fixture entry module\n')
 		const real = join(dir, 'real-bin.js')
 		const link = join(dir, 'linked-bin.js')
-		await write('real-bin.js', '// fixture entry module\n')
 		await rm(link, { force: true })
 		await symlink(real, link)
 		assert.equal(isEntryPoint(link, pathToFileURL(real).href), true)
@@ -1439,6 +1614,21 @@ describe('105 · what a plugin’s sandbox cannot endow', () => {
 		assert.match(f.fix, /to the next one/)
 	})
 
+	test('a Task that reaches for ctx.package is refused like storage, and a query that does is not (M2a)', () => {
+		const text = (kind: string) =>
+			[
+				`export const d = describe${kind}Definition({ id: 'demo.x:${kind.toLowerCase()}/d@1' })`,
+				'export const h = async (i, ctx) => ok({ main: await ctx.package.read(`assets/a.json`) })',
+			].join('\n')
+		const task = scanSource([{ path: 'src/definitions.ts', text: text('Task') }]).findings.find(
+			(x) => x.code === 'E_PLUGIN_TASK_GRANT',
+		)
+		assert.ok(task)
+		assert.match(task.message, /reads `ctx\.package`/)
+		assert.match(task.fix, /granted no package files/)
+		assert.deepEqual(scanSource([{ path: 'src/definitions.ts', text: text('Query') }]).findings, [])
+	})
+
 	test('the region ends at the next definition, so a pure task beside one is not swept up', () => {
 		// The rule was file-grained for an afternoon, and it refused the two pure
 		// tasks in Battleship's `definitions.ts` because a *query* three hundred
@@ -1781,5 +1971,52 @@ describe('105 · --ignore, and what a stand-in host is not', () => {
 	test('nothing is said when nothing was left out', async () => {
 		const r = await cli(['check', join(FIXTURES, 'unified-plugin')])
 		assert.equal(r.out.includes('ignored:'), false)
+	})
+})
+
+// ── M2c: provided books (`provides.lorebooks`) ─────────────────────────────────
+describe('provided books: the packager refuses what the importer would', () => {
+	const BOOK = JSON.stringify({ name: 'W', entries: [{ keys: ['a'], content: 'x' }] })
+	const mk = (extra: Record<string, unknown>, files: Array<{ path: string; text?: string }>) =>
+		compilePlugin({
+			sources: [{ path: 'index.ts', text: '' }],
+			extension: Object.assign(defineExtension({ slug: 'acme.books', name: 'Books', version: '0.1.0' }), extra) as never,
+			providedFiles: files,
+		})
+	const codesOf = (r: { findings: Array<{ code: string }> }) => r.findings.map((f) => f.code)
+	const granted = { applet: { lorebooks: 'write' } }
+
+	test('a granted, present, valid book is clean and rides in the manifest', () => {
+		const r = mk(
+			{ assets: { dir: 'assets' }, provides: { lorebooks: ['assets/w.lorebook.json'] }, permissions: granted },
+			[{ path: 'assets/w.lorebook.json', text: BOOK }],
+		)
+		assert.deepEqual(codesOf(r).filter((c) => c.startsWith('E_PROVIDES')), [])
+		assert.deepEqual((r.manifest as any).provides, { lorebooks: ['assets/w.lorebook.json'] })
+	})
+	test('E_PROVIDES_OUTSIDE_ASSETS', () => {
+		const r = mk({ assets: { dir: 'assets' }, provides: { lorebooks: ['books/w.json'] }, permissions: granted }, [])
+		assert.ok(codesOf(r).includes('E_PROVIDES_OUTSIDE_ASSETS'))
+		const none = mk({ provides: { lorebooks: ['assets/w.json'] }, permissions: granted }, [])
+		assert.ok(codesOf(none).includes('E_PROVIDES_OUTSIDE_ASSETS'))
+	})
+	test('E_PROVIDES_MISSING', () => {
+		const r = mk({ assets: { dir: 'assets' }, provides: { lorebooks: ['assets/w.json'] }, permissions: granted }, [{ path: 'assets/w.json' }])
+		assert.ok(codesOf(r).includes('E_PROVIDES_MISSING'))
+	})
+	test('E_PROVIDES_UNGRANTED', () => {
+		const r = mk({ assets: { dir: 'assets' }, provides: { lorebooks: ['assets/w.json'] } }, [{ path: 'assets/w.json', text: BOOK }])
+		assert.ok(codesOf(r).includes('E_PROVIDES_UNGRANTED'))
+		const readOnly = mk(
+			{ assets: { dir: 'assets' }, provides: { lorebooks: ['assets/w.json'] }, permissions: { applet: { lorebooks: 'read' } } },
+			[{ path: 'assets/w.json', text: BOOK }],
+		)
+		assert.ok(codesOf(readOnly).includes('E_PROVIDES_UNGRANTED'))
+	})
+	test('E_PROVIDES_INVALID carries the importer\'s sentence', () => {
+		const r = mk({ assets: { dir: 'assets' }, provides: { lorebooks: ['assets/w.json'] }, permissions: granted }, [{ path: 'assets/w.json', text: '{nope' }])
+		const f = r.findings.find((x) => x.code === 'E_PROVIDES_INVALID')
+		assert.ok(f)
+		assert.match(f!.message, /isn't valid JSON/)
 	})
 })

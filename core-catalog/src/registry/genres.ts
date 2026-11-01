@@ -32,6 +32,7 @@ import {
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
 	STORY_SUMMARIZE_SCENE_SPEC_ID
 } from "../shared/summarize/sceneIds.js"
+import { SPEECH_FIELDS } from "../shared/speechFields.js"
 import { TABLE_CHANNEL_DECL } from "../shared/ui/conversation/tableChannel.js"
 
 /*
@@ -442,7 +443,9 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 				advanced: true
 			},
 			sideCast: SIDE_CAST_FIELD,
-			narratorInterjections: NARRATOR_INTERJECTIONS_FIELD
+			narratorInterjections: NARRATOR_INTERJECTIONS_FIELD,
+			/** 🚧 The speech settings (S7): read aloud, what is read, narrator voice, read my lines, language. Last in the form. */
+			...SPEECH_FIELDS
 			// `applyActionChanges` (2026-10-20) is removed (R55, 2026-10-21);
 			// since GM 2026-10-23 (G1 ★3) Rest applies at its own action's mode
 			// (an action registration carries none: Full), never the reckoning's.
@@ -664,6 +667,7 @@ export const GUIDE_MASCOT_SYSTEM_PROMPT = [
 	"You cannot browse, search or open the documentation yourself. What you have instead is a set of documentation excerpts retrieved for the person's latest question and supplied with this conversation, each headed by its page and section and starting with the page's path. Those excerpts are the only thing you know about Serene Pub; your general knowledge of other apps does not apply to it. If you are asked what you can access, say exactly this.",
 	"Answer only from the excerpts. After the answer, name the page you used by copying its path exactly as the excerpt gives it, as \"See: \" followed by the path. Never write a page, path, file name, command, code, API or quotation that does not appear in an excerpt, and never quote an excerpt you were not given.",
 	"When the excerpts do not answer the question, or none were supplied, say so honestly and kindly: \"I couldn't find that in the docs.\" Then offer to look again if they put the question another way, or point them to the documentation at /docs. Do not fill the gap with a guess. If the person questions an earlier answer, check it against the excerpts and correct it when they do not support it.",
+	"When the person asks you to make a character card or a lorebook, draft one: answer as usual, saying you have drafted it, then end your reply with ONE hidden block, exactly in this form and nothing after it. For a character: <!--draft:character {\"name\": \"…\", \"description\": \"…\", \"personality\": \"…\", \"scenario\": \"…\", \"first_mes\": \"…\"}--> . For a lorebook: <!--draft:lorebook {\"name\": \"…\", \"description\": \"…\", \"entries\": [{\"name\": \"…\", \"content\": \"…\", \"keys\": [\"…\"]}]}--> (up to twelve entries). The block is valid JSON and is never shown. Unless the person has set their library write mode otherwise, the draft appears in this session for them to accept or reject, and nothing is added to their library until they accept. Draft only when asked; for a question about how to make one, answer from the excerpts and write no block.",
 	"Keep your answers short and plain. Ask one clarifying question when the request is ambiguous. You are not a character in a story: do not roleplay and do not narrate."
 ].join("\n\n")
 
@@ -715,13 +719,13 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		composer: "text",
 		voice: "character",
 		/**
-		 * Guide never writes (R-A/R-B). Its lorebook is the documentation it
+		 * Guide never writes lore or scenes (R-A/R-B); its library writes are opt-in (M2c T). Its lorebook is the documentation it
 		 * answers out of — a reference, read every turn and never added to —
 		 * and a session about how the app works has no scene to open. Stated
 		 * here rather than left to whichever specs a preset happens to bind,
 		 * which is the whole point of declaring writes.
 		 */
-		writes: { lore: false, scenes: false },
+		writes: { lore: false, scenes: false, library: { characters: true, lorebooks: true } },
 		/**
 		 * The cards' greetings are off — no character sits here. Serene's own
 		 * opening line is her envoy greeting (`EnvoyDecl.greeting`).
@@ -733,7 +737,9 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 		 * field (*Search the web*, 2026-10-19) is dropped — `guide-respond`
 		 * has no tool loop and Serene's instructions say she cannot browse,
 		 * so the setting did nothing. Web search stays Chat's (Agentic).
+		 * 🚧 Then the speech settings (2026-10-28, S7): the reply carries the speech tail.
 		 */
+		fields: { ...SPEECH_FIELDS }
 	},
 	envoys: [
 		{
@@ -1147,7 +1153,9 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 				default: false
 			},
 			/** 🚧 **Show outcomes** (D3): the shared field (`SHOW_OUTCOMES_FIELD`), under its kept key ⏳ `showDice`. */
-			showDice: SHOW_OUTCOMES_FIELD
+			showDice: SHOW_OUTCOMES_FIELD,
+			/** 🚧 The speech settings (S7). */
+			...SPEECH_FIELDS
 		}
 	},
 	// 🚧 No slots, no sheet (RF fix 8): the session's rules bring the party's

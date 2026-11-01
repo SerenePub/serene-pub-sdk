@@ -3,6 +3,8 @@
 A plugin is one `defineExtension({ … })` call. Every part it adds is one field of that call.
 This page is the map: what each part is for, what it may and may not do, and a small example.
 Each section links to the guide with the details.
+If you have written a SillyTavern extension, [Coming from SillyTavern extensions](coming-from-sillytavern-extensions.md)
+maps that API onto these parts.
 
 ## At a glance
 
@@ -11,7 +13,7 @@ Each section links to the guide with the details.
 | Add a step a pipeline can run: roll dice, keep score, call a web API | a **node definition** and its **handler** | `handlers` | [Node kinds](#node-kinds-what-each-step-may-do) |
 | Decide what happens when something happens in a session | a **pipeline** (a spec) | `pipelines` | [Pipelines](#pipelines) |
 | Add a new kind of session: a game, a writing room | a **genre** | `genres` | [Genres](#genres) |
-| Write the rules a session is played by: what a sheet tracks, how a risky moment is decided, what people carry | a **ruleset** | `defineRuleset`, published on a pub (a package can't carry one yet) | [Write your own rules](rulesets.md) |
+| Write the rules a session is played by: what a sheet tracks, how a risky moment is decided, what people carry | a **ruleset** | `defineRuleset`, carried in `rulesets` (🚧) or published on a pub | [Write your own rules](rulesets.md), [Shipping a ruleset in a plugin package](rulesets.md#shipping-a-ruleset-in-a-plugin-package) |
 | Add a button, a menu item or a slash command | an **action** | on a spec, `contributes.actions` | [Actions](#actions) |
 | Ask a question inside a message | a **choices** or **form** block | a step in a pipeline | [Forms](forms-and-effects.md) |
 | Show your own interface in the session | a **widget** and its **component** | `widgets`, `components` | [Widgets](widgets.md) |

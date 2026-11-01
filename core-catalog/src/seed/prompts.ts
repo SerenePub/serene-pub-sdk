@@ -63,6 +63,7 @@ export interface CorePromptSeed {
 }
 
 import { DUNGEON_CRAWLER_LEAD_WORDS } from '../genres/dungeon-crawler/names.js'
+import { SPEAK_DIRECTION_SOURCE } from './speechTemplates.js'
 
 // 🚧 The conditions the Planner may name come from the story turn's
 // ruleset-fields script now (`{{conditionsLine}}`, 2026-10-18, P2-6): Vis
@@ -1215,5 +1216,24 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 			postHistory:
 				"Remember: to use a tool, reply with the fenced tool_call block and nothing else. When you have what you need, answer the person plainly, and say where a fact came from."
 		}
+	},
+	/**
+	 * 🚧 The speak node's written direction (2026-10-28). Every spec that carries
+	 * the speech tail starts on it; the text is also the app's code default.
+	 */
+	{
+		nodeType: "core:oracle/speak",
+		slot: "prompts",
+		defaultForSpecs: [
+			"core:spec/story-respond",
+			"core:spec/story-narrate",
+			"core:spec/story-side-character",
+			"core:spec/guide-respond",
+			"core:spec/lair-reply",
+			"core:spec/speak-message"
+		],
+		seedKey: "pipeline-prompt:core:oracle/speak:prompts:speak-direction",
+		name: "Speech direction",
+		fields: { direction: SPEAK_DIRECTION_SOURCE }
 	},
 ]

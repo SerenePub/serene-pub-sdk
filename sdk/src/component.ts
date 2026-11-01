@@ -86,3 +86,8 @@ export type {
 export type { StoryTime, StoryTimeUnit } from './storyTime.js'
 /** The conversation dossier — `session_full.v1`, for a widget granted `session:full`. */
 export type { SessionDossierV1 } from './sessionDossier.js'
+/**
+ * 🚧 What a spoken line carries — the S6 record core's messages widget reads
+ * under a line that was spoken (speech build, lane V 2026-10-28).
+ */
+export type { CueMap, Inflection, SpokenAs, SpokenMeta, SpokenVoiceFrom } from './speech.js'

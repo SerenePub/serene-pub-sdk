@@ -531,14 +531,19 @@ describe('the Lair genre declares the reverse crawl, rewritten (R1–R13)', () =
 	})
 
 	test('the GM’s levers (D7): tone, the rooms layer, Sanctum steering and the three check settings', () => {
-		const f = lairGenre.shape?.fields as Record<string, any>
+		const all = lairGenre.shape?.fields as Record<string, any>
+		// 🚧 2026-10-28 (speech build, lane D; lane V): the Lair also declares the four
+		// speech fields every speaking genre carries — the session's, not the GM's levers.
+		const SPEECH = ['sessionLanguage', 'speechNarratorVoice', 'speechReadAloud', 'speechTemplate']
+		assert.deepEqual(Object.keys(all).filter((k) => SPEECH.includes(k)).sort(), SPEECH)
+		const f = Object.fromEntries(Object.entries(all).filter(([k]) => !SPEECH.includes(k)))
 		assert.deepEqual(Object.keys(f).sort(), ['askBeforeRolling', 'autoRoll', 'roomsLayer', 'sanctumSteers', 'showDice', 'tone'])
 		assert.deepEqual(
 			Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.default])),
 			{ tone: 'grounded', roomsLayer: true, sanctumSteers: true, askBeforeRolling: true, autoRoll: false, showDice: true },
 		)
-		// Every one the owner's (a genre field's default reach), none model plumbing.
-		for (const [k, v] of Object.entries(f)) assert.notEqual(v.reach, 'admin', k)
+		// Every one the owner's (a genre field's default reach), none model plumbing — the speech four too.
+		for (const [k, v] of Object.entries(all)) assert.notEqual(v.reach, 'admin', k)
 		// 🚧 2026-10-23 (PLAN-genres-seams): no setting is named for dice; the ids are kept ⏳.
 		assert.equal(f.askBeforeRolling.label.en, 'Ask me before each check')
 		assert.equal(f.autoRoll.label.en, 'Decide checks at once')
@@ -750,10 +755,13 @@ const PUBLISHED: Record<string, string> = {
 	// Genres GM (2026-10-23): the Lair's relabels and its recommended rulesets in the genre shape it carries (G0, S7). (was 'c46bd3f8d3a77')
 	// RF fix 2 (2026-10-23): the genre shape it carries offers the lorebook, never requires it ('required' retired). (was '1cb73ccca537ee')
 	// Moved 2026-10-25 (pr-6 C3): the Sanctum declares `lore: 'aside'` (pass 9 S1). (was '1a7932ed813f14')
-	'core:spec/lair-create': 'd927ed6661005',
+	// Moved 2026-10-28 (speech build, lane D; pinned by lane V): the genre shape it carries declares the four speech fields. Proven: those four removed hash back to the old pin. (was 'd927ed6661005')
+	'core:spec/lair-create': '3b5ac8f6f9ab1',
 	// Genres GM (2026-10-23): *Deciding the checks* as the status (G0, S7). (was '18ab1e1e72aac4')
 	// Repair 1 (2026-10-23): its `ruleset-resolve` step(s) name the params slot — the `emits` switch is read. (was '5cbe8f5325b1b')
 	// RF fix 2 (2026-10-23): the voice's reminder lands from the first line — its `prompt` step's trigger is 0. (was 'ee12352ed2052')
+	// Moved 2026-10-28 (speech build, lane D; pinned by lane V): the speech tail closes the delver branch — `cue`, then the `readAloud` junction (make/play: speak → attach {replace}). Proven: those five nodes, their edges and the clause removed (later positions shifted back) hash to the old pin. (was 'c4fe814f1e089')
+	// Moved 2026-10-29 (speech follow-ups A3): the speech tail leaves the delver branch — replies are spoken by their own run. Back to the pre-tail pin (the baseline run with the tail pinned '73fa4f3b363fb'; removing it returns exactly this). (was '73fa4f3b363fb')
 	'core:spec/lair-reply': 'c4fe814f1e089',
 	'core:spec/lair-welcome': '1bf873c4b48d0b',
 	// Genres GM (2026-10-23): *Keep the books* (G0), the one change grammar (G1, S1), the lift and its step retired (GM). (was '123fac28db816a')
@@ -817,6 +825,8 @@ describe('the Lair pipelines', () => {
 			`${CT}.placeholder`,
 			`${CT}.save`,
 			`${CT}.spriteShow`,
+			// 🚧 2026-10-28 (speech build): the speech tail's attach, one per Read aloud mode —
+			// it adds a part to the turn's own saved row, never a row of its own.
 			`${DOOR}.knock.placeholder`,
 			`${DOOR}.knock.save`,
 			`${PLAY}.checks.asked.write`,
@@ -904,6 +914,9 @@ describe("the Lair's defaults: registrations, routines, presets (D7)", () => {
 			'core:spec/lair-room-answer#room',
 			'core:spec/lair-trap#trap',
 			'core:spec/lair-whisper#whisper',
+			// 🚧 2026-10-28 (speech build): every core genre registers the per-line speech verbs.
+			'core:spec/speak-message#read-aloud',
+			'core:spec/speak-message#say-it-as',
 		])
 		assert.deepEqual(routinesOf(effectiveOf('lair-rules')), {
 			'after-each-round→lair-keeper': 'review',
@@ -956,6 +969,8 @@ describe("the Lair's defaults: registrations, routines, presets (D7)", () => {
 			'core:spec/lair-reveal#reveal',
 			'core:spec/lair-trap#trap',
 			'core:spec/lair-whisper#whisper',
+			'core:spec/speak-message#read-aloud',
+			'core:spec/speak-message#say-it-as',
 		])
 		assert.deepEqual(routinesOf(eff), { 'after-each-round→lair-keeper': 'off', 'on-event→lair-scratchpad': 'full' })
 	})

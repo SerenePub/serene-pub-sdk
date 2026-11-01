@@ -30,6 +30,8 @@
  * @ruling DESIGN-story-time
  */
 
+import { isI18n, type I18n } from './i18n.js'
+
 /** A position on the story calendar. An absent part is one the author did not give. @experimental */
 export interface StoryTime {
 	year: number
@@ -250,6 +252,20 @@ export interface StoryCalendar {
 	leap?: StoryLeapRule | null
 	/** In order of `start`; absent or empty = the bare year. */
 	eras?: StoryEra[]
+	/**
+	 * 🚧 **The day's periods** (M0, SHAPES F2), by starting hour 0–23, in
+	 * order: what `core:slot/day-period@1` (and the `time-of-day` slot) is
+	 * derived from. Absent: morning 5 · day 12 · dusk 18 · night 22. The
+	 * book's own, so its hours hold in every session and genre that reads
+	 * it.
+	 */
+	periods?: ReadonlyArray<{ id: string; label: I18n; from: number }>
+	/**
+	 * 🚧 **The seasons** (M0, SHAPES F2): a season's length in story
+	 * days and the four seasons' labels, in order — what `core:slot/season@1`
+	 * is derived from. Absent: no seasons.
+	 */
+	seasons?: { days: number; labels: readonly [I18n, I18n, I18n, I18n] }
 }
 
 const isInt = (n: unknown): n is number => typeof n === 'number' && Number.isInteger(n)
@@ -263,11 +279,13 @@ const mod = (a: number, b: number) => ((a % b) + b) % b
  * month would renumber every month after it.
  * @experimental
  */
-export function storyCalendarProblems(calendar: unknown): string[] {
+export function storyCalendarProblems(calendar: unknown, opts?: { declaration?: boolean }): string[] {
 	const out: string[] = []
 	const c = calendar as Partial<StoryCalendar> | null
 	if (!c || typeof c !== 'object') return ['A calendar must be an object.']
-	if (!Array.isArray(c.months) || c.months.length === 0) out.push('A calendar needs at least one month.')
+	if (opts?.declaration && c.months === undefined) {
+		// A declaration may leave the months to the book's own calendar.
+	} else if (!Array.isArray(c.months) || c.months.length === 0) out.push('A calendar needs at least one month.')
 	else
 		c.months.forEach((m, i) => {
 			if (!m || typeof m.name !== 'string' || !m.name.trim()) out.push(`Month ${i + 1} needs a name.`)
@@ -307,6 +325,33 @@ export function storyCalendarProblems(calendar: unknown): string[] {
 					out.push(`Era ${i + 1} counts down, so another era must follow it.`)
 			})
 	}
+	if (c.periods !== undefined) {
+		if (!Array.isArray(c.periods)) out.push('Periods must be a list.')
+		else {
+			const seen = new Set<string>()
+			c.periods.forEach((p, i) => {
+				const n = i + 1
+				if (!p || typeof p.id !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(p.id.trim()))
+					out.push(`Period ${n} needs an id of lowercase words joined by '-'.`)
+				else if (seen.has(p.id.trim())) out.push(`Period ids must differ: '${p.id.trim()}' is used twice.`)
+				else seen.add(p.id.trim())
+				if (!p || !isI18n(p.label)) out.push(`Period ${n} needs a label.`)
+				if (!p || !isInt(p.from) || p.from < 0 || p.from > 23)
+					out.push(`Period ${n} needs a starting hour from 0 to 23.`)
+				else if (i > 0) {
+					const prev = c.periods![i - 1]?.from
+					if (isInt(prev) && p.from <= prev) out.push(`Period ${n} must start after period ${i}.`)
+				}
+			})
+		}
+	}
+	if (c.seasons !== undefined) {
+		const sn = c.seasons
+		if (!sn || typeof sn !== 'object' || !isInt(sn.days) || sn.days < 1 || sn.days > 1000)
+			out.push('Seasons need a length of 1 to 1000 days.')
+		if (!sn || typeof sn !== 'object' || !Array.isArray(sn.labels) || sn.labels.length !== 4 || !sn.labels.every(isI18n))
+			out.push('Seasons need four labels, in order.')
+	}
 	return out
 }
 
@@ -328,6 +373,9 @@ export function parseStoryCalendar(value: unknown): StoryCalendar | null {
 	if (c.leap != null) out.leap = { every: c.leap.every, month: c.leap.month }
 	if (c.eras !== undefined)
 		out.eras = c.eras.map((e) => ({ name: e.name.trim(), start: e.start, ...(e.backwards ? { backwards: true } : {}) }))
+	if (c.periods !== undefined) out.periods = c.periods.map((p) => ({ id: p.id.trim(), label: p.label, from: p.from }))
+	if (c.seasons !== undefined)
+		out.seasons = { days: c.seasons.days, labels: [...c.seasons.labels] as [I18n, I18n, I18n, I18n] }
 	return out
 }
 

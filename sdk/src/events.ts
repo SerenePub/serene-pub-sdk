@@ -542,6 +542,35 @@ export const CORE_EVENTS = {
 			'A message finished landing — a send, a seeded greeting, a finished or stopped reply. Never a placeholder or a row still being written.',
 	}),
 	/**
+	 * 🚧 **Message settled** (speech follow-ups, A1, 2026-10-29): ONE per line
+	 * a run wrote, emitted by core after that run closed its receipt — the
+	 * moment work that must never hold the line (reading it aloud) may start,
+	 * as its own run.
+	 *
+	 * ⚠ Not `message-completed@1`, which fires per WRITE, during the run (a
+	 * send, a seeded greeting, a finished or stopped reply). And not the
+	 * session's **settle line** / `history-settled@1` (history fixed, Back no
+	 * longer reaches it): always the qualified "message settled", never bare
+	 * "settled". The payload is `MessageSettledPayload`.
+	 *
+	 * Off the ledger: it describes no write of its own (the line is already on
+	 * record through `message-completed`), and a ledger row would reach every
+	 * next reply's `sessionChanges` once per line saying nothing new. A
+	 * declared root — no outlet causes it, so no spec bound here can loop on it.
+	 */
+	messageSettled: defineEvent({
+		slug: 'message-settled',
+		declaredRoot: true,
+		name: { en: 'Message settled' },
+		version: 1,
+		family: 'data',
+		carries: ['session', 'message'],
+		affectsUser: false,
+		payload: S.messageSettled,
+		description:
+			'A line a run wrote is settled: the run that wrote it has closed its receipt, so work that must not hold the line (reading it aloud) may start. One per line.',
+	}),
+	/**
 	 * A seated participant's row changed — switched on or off (`active`),
 	 * `position` or portrayal. Not add or remove: those stay
 	 * `member-added` / `member-removed`. No `causedBy`: the cast toggles are
@@ -624,6 +653,47 @@ export const CORE_EVENTS = {
 		payload: S.annexChange,
 		description:
 			"A pipeline's own session state changed — its annex entry. The payload names the owner whose entry moved.",
+	}),
+	/**
+	 * 🚧 The session's rules were moved to another version of their ruleset
+	 * (M0, SHAPES L4 Conversion), by `core:outlet/convert-ruleset@1` or
+	 * the `sessions:convertRuleset` socket. The payload
+	 * (`RulesetConversionPayload`) names the ruleset, both versions and what
+	 * happened to the slots. Declared only until lane T4 emits it.
+	 */
+	rulesetConverted: defineEvent({
+		slug: 'ruleset-converted',
+		name: { en: 'Ruleset converted' },
+		version: 1,
+		family: 'data',
+		carries: ['session'],
+		affectsUser: true,
+		causedBy: ['core:outlet/convert-ruleset'],
+		payload: S.rulesetConversion,
+		description:
+			"The session's rules moved to another version of their ruleset: renamed slots re-keyed, removed ones retracted, added ones given their defaults.",
+	}),
+	/**
+	 * 🚧 A **lorebook annex** document changed (M0, SHAPES L9): the
+	 * lorebook twin of `annex-changed`, caused by
+	 * `core:outlet/set-lorebook-annex@1` and
+	 * `core:outlet/set-lorebook-annex-field@1`. The payload
+	 * (`LorebookAnnexChangePayload`) names the book, the owner and the keys
+	 * that moved, never the values.
+	 * ⚠ Not `annex-changed`, which is the session annex's.
+	 */
+	lorebookAnnexChanged: defineEvent({
+		slug: 'lorebook-annex-changed',
+		name: { en: 'Lorebook annex changed' },
+		version: 1,
+		family: 'data',
+		// A lorebook is not a session entity: the payload names the book, so nothing is carried.
+		carries: [],
+		affectsUser: true,
+		causedBy: ['core:outlet/set-lorebook-annex', 'core:outlet/set-lorebook-annex-field'],
+		payload: S.lorebookAnnexChange,
+		description:
+			"An owner's document in a lorebook's annex changed. The payload names the book, the owner and the keys that moved.",
 	}),
 	/**
 	 * 🚧 The session's **backdrop** changed: a pipeline set it through
@@ -1282,6 +1352,13 @@ export interface EventCause {
 	runId?: string
 	/** On kind 'run': the run was fired by auto-advance. */
 	auto?: boolean
+	/**
+	 * 🚧 (M2c) On a change an **applet** made for the person (`update-session`,
+	 * an applet-opened start form or delete confirm): the package that asked.
+	 * The cause's `kind` stays the person's own (`settings`), so auto-advance
+	 * reads it as it reads their hand.
+	 */
+	pluginId?: string
 }
 
 /** @experimental */
@@ -1422,6 +1499,94 @@ export interface AnnexChangePayload {
 	lineage?: RunLineage
 	/** The annex key that changed: a genre id, a plugin id, or `user:<slug>`. */
 	owner: string
+}
+
+/**
+ * 🚧 The payload of `core:event/lorebook-annex-changed@1`
+ * (`core:shape/lorebook-annex-change@1`, M0, SHAPES L9): which owner's
+ * document in which book's **lorebook annex** changed, and its keys. The
+ * values are not carried — a spec reads them through
+ * `core:query/lorebook-annex@1`.
+ * @experimental
+ */
+export interface LorebookAnnexChangePayload {
+	event: string
+	lorebookId: number
+	/** Present when a session wrote it. */
+	sessionId?: number
+	at: number
+	cause?: EventCause
+	lineage?: RunLineage
+	/** The owner whose document moved: a genre id, a plugin id, or `user:<slug>`. */
+	owner: string
+	/** The keys of that document the write changed. */
+	keys: string[]
+}
+
+/**
+ * 🚧 The payload of `core:event/message-settled@1`
+ * (`core:shape/message-settled@1`, speech follow-ups A1): one line a run
+ * wrote, once that run closed its receipt.
+ *
+ * ⚠ Not `message-completed@1` (per write, during the run), and not the
+ * settle line / `history-settled@1` (history fixed).
+ * @experimental
+ */
+export interface MessageSettledPayload {
+	event: string
+	sessionId: number
+	at: number
+	cause?: EventCause
+	lineage?: RunLineage
+	/** The line. */
+	messageId: number
+	/** The channel the line is on (canonical; `main` when it names none). */
+	channel: string
+	/**
+	 * The key of the node that wrote the line in the run that settled it (its
+	 * `pipeline_run_artifacts.node_key`); null for a line no node wrote (a
+	 * stopped reply whose placeholder the run's finalisation released).
+	 */
+	step: string | null
+	/**
+	 * Which version of the line this is: the index of its active swipe
+	 * (`metadata.swipes.currentIdx`), 0 for a line never swiped. A regenerated
+	 * or swiped line settles again with a new revision.
+	 */
+	revision: number
+	/** The participant reference that spoke it (`character:<id>`, `envoy:<slug>`, `user:<id>`, …); null for the narrator. */
+	speakerRef: string | null
+	/** `reply` a character's or envoy's line, `narration` a narrator row, `user` a person's own saved send. */
+	kind: 'reply' | 'narration' | 'user'
+}
+
+/**
+ * 🚧 The payload of `core:event/ruleset-converted@1`
+ * (`core:shape/ruleset-conversion@1`, M0, SHAPES L4 Conversion): the
+ * session whose rules moved, from which version to which, and what happened
+ * to the slots.
+ * @experimental
+ */
+export interface RulesetConversionPayload {
+	event: string
+	sessionId: number
+	at: number
+	cause?: EventCause
+	lineage?: RunLineage
+	/** The ruleset, `<owner>:ruleset/<name>@<n>`. */
+	rulesetId: string
+	/** The version the session played before (semver). */
+	from: string
+	/** The version it plays now (semver). */
+	to: string
+	slots: {
+		/** Old slot id → new slot id, re-keyed. */
+		renamed: Record<string, string>
+		/** Slot ids retracted. */
+		removed: string[]
+		/** Slot id → the default inserted for it. */
+		added: Record<string, unknown>
+	}
 }
 
 /**

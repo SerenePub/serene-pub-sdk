@@ -343,8 +343,7 @@ A ruleset reaches sessions by being published on a pub.
    something stored (an attribute gone, a field holding another kind of value) lists each change
    and asks first.
 
-A plugin package can't carry a ruleset yet: `defineExtension` has no field for one. Share a
-ruleset as its document for now.
+A plugin package can carry rulesets too: see [Shipping a ruleset in a plugin package](#shipping-a-ruleset-in-a-plugin-package).
 
 ## Old shapes
 
@@ -369,3 +368,141 @@ the sections.
 
 The words the app shows players are `Rules`, `How strict` and the ones in the interface: never
 ruleset, rigour, repertoire or piece.
+
+## Shipping a ruleset in a plugin package
+
+🚧 Provisional.
+`defineExtension` takes `rulesets`, a list of ruleset documents. Install and upgrade publish each
+as a ruleset of the pub, owned by your plugin's slug; uninstall retires them without deleting
+them, so a session already playing one keeps reading it.
+
+Each document's id must sit under your plugin's slug (`acme.tales:ruleset/…@1` for a plugin named
+`acme.tales`), and each must pass `rulesetDocumentFindings` with nothing to say; the packager
+refuses the build otherwise (`E_RULESET_OWNER`, `E_RULESET_DOCUMENT`). A document that fails at
+install is left out with a sentence and the rest still land. The app shows the plugin as the
+ruleset's origin.
+
+## Moving a session to a later version: `upgrades` and conversion
+
+A ruleset changes between versions: an attribute is renamed, another dropped, a new one added. A
+session is **pinned** to the version it started on and keeps playing it. The document says how to
+move it with `upgrades`, one step for each version:
+
+<!-- prelude:
+import { defineExtension, defineRuleset, rulesetDocumentOf } from '@serene-pub/sdk'
+-->
+```ts
+const tales = defineRuleset('acme.tales:ruleset/tides@1', {
+	name: { en: 'Tides' },
+	attributes: [
+		{ id: 'resolve', name: { en: 'Resolve' }, kind: 'pool', bounds: { max: 5 }, start: 3, owner: 'cast',
+			prose: 'Resolve: how much a person has left to keep going, 0 to 5. It is spent to push on and returns with rest.' },
+		{ id: 'bridge-repaired', name: { en: 'Bridge repaired' }, kind: 'flag', owner: 'world', scope: 'world',
+			prose: 'Bridge repaired: true once the river crossing is mended.' },
+	],
+})
+
+export default defineExtension({
+	slug: 'acme.tales',
+	name: 'Tales',
+	version: '1.1.0',
+	rulesets: [
+		{
+			...rulesetDocumentOf(tales, '1.1.0'),
+			upgrades: [
+				{
+					from: '1.0.0',
+					to: '1.1.0',
+					slots: {
+						renamed: { 'acme.tales.tides:slot/grit@1': 'acme.tales.tides:slot/resolve@1' },
+						removed: [],
+						added: { 'acme.tales.tides:slot/bridge-repaired@1': false },
+					},
+					note: { en: 'Grit is now called Resolve, and the bridge is tracked.' },
+				},
+			],
+		},
+	],
+})
+```
+
+A step says which slots were `renamed` (old id to new id), `removed`, or `added` (id to its
+default), and a `note` shown in the confirm. The steps run `from` to `to` in order, with no gap, and the last must end at the
+document's own `version` (a document that skips or ends elsewhere is refused with `bad-version`).
+
+**Conversion** is what applies a step chain to a session. It is built in
+(`core:outlet/convert-ruleset@1`, input `to`, a version) and is the session owner's alone. For
+each slot it re-keys the renamed ones, retracts the removed ones and writes the defaults of the
+added ones, each as an anchored change that **Back** undoes (Back also restores the session's
+ruleset version). It then pins the session to `to` and raises `core:event/ruleset-converted@1`,
+whose payload names the ruleset, both versions and what happened to the slots.
+
+The owner meets it in the session's **Rules** options as an **Update rules** card with the notes
+and a confirm. A genre can ask for it to happen without the press:
+
+<!-- prelude:
+import { genre } from '@serene-pub/sdk'
+-->
+```ts
+export const tidesGenre = genre('acme.tales:genre/tides', {
+	name: { en: 'Tides' },
+	family: 'adventure',
+	rulesets: { recommended: ['acme.tales:ruleset/tides@1'], default: 'acme.tales:ruleset/tides@1', autoConvert: true },
+})
+```
+
+With `autoConvert: true`, a session pinned to an earlier version is converted when it opens, and
+the person sees a notice that it was. Left out (or `false`), converting is the owner's press with
+a confirm. A publish that drops or reshapes a stored attribute is checked against the `upgrades`
+it ships: a slot a step renames or removes is a declared move, not a loss.
+
+## Attributes that are facts: `flag`
+
+An attribute of kind **`flag`** is a fact that is true or false in the story: the bridge is
+repaired, the shop is shut. It is stored as a yes-or-no slot and starts `false`. A flag has no
+`bounds` and no `of` (a build refuses both), and a function reads it with `isTrue(...)`. A fact
+with words in it is an entry, and one only the engine needs belongs in the [annex](storage.md).
+
+## Whose it is and what it survives: `scope` and `owner`
+
+Two words say where an attribute lives:
+
+- **`owner`**: who carries it. `player` (the player's seat), `cast` (each character), `world` (the
+  world itself) or `location` (each place). Left out, it is each character.
+- **`scope`**: what it survives. `session` (the default) lasts as long as the session: a bond, a
+  need, money. `world` lives on the lorebook, across sessions, dated on its timeline: an
+  occupation, a home, a shop that is shut.
+
+So the bridge above is `{ owner: 'world', scope: 'world' }`: every session of the book sees it
+mended. `carriedBy` is the older spelling, which said who and never what it survives: it is still
+read, and one owner at a time maps to `owner` with `scope: 'session'`. New rules say `scope` and
+`owner`, and a declaration that says both `owner` and `carriedBy` is refused (`bad-carried-by`).
+The editor in Admin shows the two as separate choices.
+
+## A weekly routine: the `schedule` field
+
+An entry type's field can be a **`schedule`**: where someone is, by the hour, on weekdays and on
+weekends. Each list is in hour order; an entry `[hour, where]` means "from this hour, at `where`",
+until the next one. `where` is a place id or one of `home`, `work` and `leisure`.
+
+<!-- prelude:
+import type { RulesetEntryTypeDecl } from '@serene-pub/sdk'
+-->
+```ts
+export const routine: RulesetEntryTypeDecl = {
+	id: 'routine',
+	name: { en: 'Routine' },
+	holders: ['cast'],
+	prose: 'Routine: where someone usually is through a day, one list for weekdays and one for weekends.',
+	fields: {
+		week: { type: 'schedule', label: { en: 'Week' } },
+	},
+}
+// A stored value:
+// { weekday: [[7, 'home'], [9, 'work'], [18, 'leisure']], weekend: [[9, 'home'], [14, 'leisure']] }
+```
+
+Hours run 0 to 23 in rising order, and each needs a place; anything else is refused with a
+sentence. The value is the character's, amendable at story dates like any field. The
+`cast-presences@1` query reads it (see [Time and the story clock](time.md)). It is not the
+*Schedule* cadence, which is when a routine runs.

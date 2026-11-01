@@ -66,6 +66,14 @@ const ev = (slug: string) => `core:event/${slug}@1`
  * measured it off the 10-19 catalogue: preset bindings + inlet locks + the
  * default save; actions by the companion rule).
  */
+/**
+ * 🚧 The per-line speech verbs (speech build, lane D + follow-up ★1, 2026-10-28):
+ * `core:spec/speak-message` contributes *Read aloud* and *Say it as…*, and every
+ * core genre registers both — they work whatever the session's Read aloud says.
+ * Added to every genre's list below by lane V.
+ */
+const SPEAK_VERBS = ['core:spec/speak-message#read-aloud', 'core:spec/speak-message#say-it-as']
+
 const TODAY: Record<string, { events: Record<string, string>; actions: string[] }> = {
 	'core:genre/story': {
 		events: {
@@ -76,6 +84,7 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			[ev('message-offered')]: 'core:spec/save-message',
 		},
 		actions: [
+			...SPEAK_VERBS,
 			'core:spec/story-advance-time#advance-time',
 			'core:spec/story-answer#answer',
 			'core:spec/story-ask#ask',
@@ -95,7 +104,7 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			[ev('form-addressed')]: 'core:spec/assistant-answer-form',
 			[ev('message-offered')]: 'core:spec/save-message',
 		},
-		actions: [],
+		actions: [...SPEAK_VERBS],
 	},
 	'core:genre/guide': {
 		events: {
@@ -105,7 +114,7 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			[ev('form-addressed')]: 'core:spec/guide-answer-form',
 			[ev('message-offered')]: 'core:spec/save-message',
 		},
-		actions: [],
+		actions: [...SPEAK_VERBS],
 	},
 	/**
 	 * 🚧 The Lair, rewritten 2026-10-21 (PLAN-lair-build D7): not the 10-19
@@ -133,6 +142,7 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			'core:spec/lair-room-answer#room',
 			'core:spec/lair-trap#trap',
 			'core:spec/lair-whisper#whisper',
+			...SPEAK_VERBS,
 		],
 	},
 	'core:genre/dungeon-crawler': {
@@ -151,6 +161,7 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			'core:spec/dungeon-crawler-interview#answer',
 			'core:spec/dungeon-crawler-rest#rest',
 			'core:spec/dungeon-crawler-reveal#reveal',
+			...SPEAK_VERBS,
 		],
 	},
 }

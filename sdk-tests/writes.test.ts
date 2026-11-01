@@ -33,8 +33,12 @@ import {
 	compile,
 	canonicalHash,
 	resolveWrites,
+	resolveLibraryWrites,
+	assertSessionWrites,
+	LIBRARY_WRITES,
 	SESSION_WRITES,
 	S,
+	readLibraryDraft,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import {
@@ -44,6 +48,7 @@ import {
 	chatGenre,
 	createGuideSpec,
 	guideGenre,
+	guideRespondSpec,
 } from '@serene-pub/core-catalog'
 
 describe('resolving a genre’s writes', () => {
@@ -152,7 +157,11 @@ describe('a non-boolean write is refused at the declaration', () => {
 
 describe('the core genres', () => {
 	test('Guide writes neither lore nor scenes (R-A) — its lorebook is documentation', () => {
-		assert.deepEqual(guideGenre.shape?.writes, { lore: false, scenes: false })
+		assert.deepEqual(guideGenre.shape?.writes, {
+			lore: false,
+			scenes: false,
+			library: { characters: true, lorebooks: true },
+		})
 		assert.deepEqual(resolveWrites(guideGenre.shape), { lore: false, scenes: false })
 	})
 
@@ -225,7 +234,8 @@ describe('the addition is additive', () => {
 		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '1244f17da8e07b')
 		// Moved 2026-10-21 (lane F1, R55): Story's declaration lost `applyActionChanges` — Rest follows the reckoning's mode. (was 'ae777ed4f3b4e')
 		// Moved 2026-10-23 (genres GM): Story's `about` and its difficulty words corrected (lane G0, S7). (was '1b30b1e4ad7357')
-		assert.equal(canonicalHash(createStorySpec() as any), '37a22c038f516')
+		// Moved 2026-10-28 (speech build, lane D; pinned by lane V): Story declares the four speech fields (`speechReadAloud`, `speechTemplate`, `speechNarratorVoice`, `sessionLanguage`). Proven: those four removed hash back to the old pin. (was '37a22c038f516')
+		assert.equal(canonicalHash(createStorySpec() as any), 'fd12c6ff3be21')
 		// Adventure's create spec retired 2026-10-19 (folded into Story; its
 		// last pin was '2b63bc55e3597'). 🚧 Chat, the assistant, is new: a
 		// fresh id that declares `writes`, so it is no witness to the claim
@@ -251,6 +261,72 @@ describe('the addition is additive', () => {
 		// `members: 'solo'` and its `tools` field (web search, on by default).
 		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '16fb2ead93ba5')
 		// Moved 2026-10-23 (genres GM): the Guide's `tools` field dropped and its `about` written (lane G0, S8). (was '16e203934af640')
-		assert.equal(canonicalHash(createGuideSpec() as any), 'c06cc623f9142')
+		// Moved 2026-10-28 (speech build, lane D; pinned by lane V): Guide declares the four speech fields — its first `fields` map. Proven: that map removed hashes back to the old pin. (was 'c06cc623f9142')
+		// Moved 2026-10-31 (M2c path B; re-pinned by E): the Guide genre declares `writes.library { characters, lorebooks }`. (was '135f054ab8ea7f')
+		assert.equal(canonicalHash(createGuideSpec() as any), '950a043b9ff9')
+	})
+})
+
+describe('library writes (M2c T)', () => {
+	test('absent, unknown or unreadable resolves to all off', () => {
+		const off = { characters: false, lorebooks: false, sessions: false }
+		for (const junk of [undefined, null, 'x', 42, [], {}, { writes: {} }, { writes: { library: 'yes' } }])
+			assert.deepEqual(resolveLibraryWrites(junk), off, String(junk))
+		assert.deepEqual([...LIBRARY_WRITES], ['characters', 'lorebooks', 'sessions'])
+	})
+
+	test('only an explicit true allows a library write', () => {
+		assert.deepEqual(resolveLibraryWrites({ writes: { library: { characters: true } } }), {
+			characters: true,
+			lorebooks: false,
+			sessions: false,
+		})
+		assert.deepEqual(resolveLibraryWrites({ writes: { library: { lorebooks: 'true', sessions: 1 } } }), {
+			characters: false,
+			lorebooks: false,
+			sessions: false,
+		})
+	})
+
+	test('a non-boolean member, or a non-object library, is refused at the declaration', () => {
+		assert.throws(
+			() => assertSessionWrites({ writes: { library: { characters: 'yes' } } } as any, 'Genre x'),
+			/writes\.library \{ characters: "yes" \}/,
+		)
+		assert.throws(() => assertSessionWrites({ writes: { library: true } } as any, 'Genre x'), /not an object/)
+		assert.doesNotThrow(() => assertSessionWrites({ writes: { library: { characters: true } } }, 'Genre x'))
+	})
+
+	test('the four outlets are declared with the ids of the design', () => {
+		assert.equal(C.createCharacter.id, 'core:outlet/create-character@1')
+		assert.equal(C.updateCharacter.id, 'core:outlet/update-character@1')
+		assert.equal(C.createLorebook.id, 'core:outlet/create-lorebook@1')
+		assert.equal(C.attachLorebook.id, 'core:outlet/attach-lorebook@1')
+	})
+
+	test('Guide declares characters and lorebooks, and its reply spec compiles with the outlets', () => {
+		assert.deepEqual(resolveLibraryWrites(guideGenre.shape), {
+			characters: true,
+			lorebooks: true,
+			sessions: false,
+		})
+		const doc = JSON.stringify(guideRespondSpec())
+		assert.match(doc, /core:outlet\/create-character"/)
+		assert.match(doc, /core:outlet\/create-lorebook"/)
+	})
+})
+
+describe('readLibraryDraft: the Guide reply\'s hidden draft block (M2c path B, one call per turn)', () => {
+	test('reads the last block, takes every block out of the text, and reads nothing it cannot parse', () => {
+		const r = readLibraryDraft('Here she is!\n\n<!--draft:character {"name": "Mira", "description": "A keeper."}-->')
+		assert.equal(r.make, 'character')
+		assert.deepEqual(r.draft, { name: 'Mira', description: 'A keeper.' })
+		assert.equal(r.text, 'Here she is!')
+		assert.equal(readLibraryDraft('<!--draft:lorebook {"name": "A"}--> then <!--draft:lorebook {"name": "B"}-->').draft?.name, 'B')
+		assert.deepEqual(readLibraryDraft('Just an answer.'), { text: 'Just an answer.', make: '' })
+		assert.deepEqual(readLibraryDraft('x <!--draft:character {not json}-->'), { text: 'x', make: '' })
+		assert.deepEqual(readLibraryDraft('x <!--draft:spell {"a": 1}-->'), { text: 'x', make: '' })
+		// cut off by the response limit before its `-->`: no draft, and never saved into the message
+		assert.deepEqual(readLibraryDraft('Here she is!\n\n<!--draft:character {"name": "Mi'), { text: 'Here she is!', make: '' })
 	})
 })

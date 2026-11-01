@@ -97,7 +97,9 @@ describe('A1 · the four events (§4.1)', () => {
 		// Delete, `message-deletion-asked` (RF fix 5, owner ruling 2026-10-23:
 		// deletion requires a pipeline), makes 43, and pr-6's three — `session-archived`,
 		// `scene-summary-applied`, `history-settled` (session-data rulings, 2026-10-24) — make 46.
-		assert.equal(allEvents().length, 46)
+		// E M0 2026-10-28: and M0's two — `ruleset-converted` (lane T4) and `lorebook-annex-changed` (lane S1) — make 48.
+		// Speech follow-ups A1 2026-10-29: `message-settled` makes 49.
+		assert.equal(allEvents().length, 49)
 	})
 
 	test('sessionEvents names every event a genre may bind the turn-order spec to, by registered id', () => {

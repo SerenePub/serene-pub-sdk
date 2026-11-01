@@ -38,16 +38,11 @@ export interface ComponentBundle {
 	builtAgainst: ComponentBuiltAgainst
 }
 
-/**
- * The disk front door of the one component compiler (`componentCompile.ts`):
- * the package's files are read where they sit, built in `package` mode, and
- * the module written to `outfile`. Throws esbuild's failure as the build did.
- * @experimental
- */
-export async function bundleComponent(opts: {
+/** The options one component's build takes, shared by the compile and the write. */
+export interface ComponentBundleOptions {
 	/** The component's source, absolute. */
 	entry: string
-	/** Where the built module is written. */
+	/** Where the built module is written (`bundleComponent`); only a name for the build otherwise. */
 	outfile: string
 	/** The package the component belongs to; its nearest `package.json` above `entry` when omitted. */
 	root?: string
@@ -57,7 +52,17 @@ export async function bundleComponent(opts: {
 	 * are built this way; a plugin's are relative.
 	 */
 	alias?: Record<string, string>
-}): Promise<ComponentBundle> {
+}
+
+/**
+ * The disk front door of the one component compiler (`componentCompile.ts`),
+ * without the write: the package's files are read where they sit, built in
+ * `package` mode, and the module returned as `code`. `serene-pub check` calls
+ * this so it judges the module `build` would write and writes nothing.
+ * Throws esbuild's failure as the build did.
+ * @internal
+ */
+export async function compileComponentModule(opts: ComponentBundleOptions): Promise<ComponentBundle & { code: string }> {
 	const root = opts.root ?? (await packageRoot(opts.entry))
 	const built = await runComponentBuild({
 		host: { kind: 'disk', root, alias: opts.alias },
@@ -66,10 +71,19 @@ export async function bundleComponent(opts: {
 		mode: 'package',
 		esbuild,
 	})
-	await mkdir(dirname(opts.outfile), { recursive: true })
-	await writeFile(opts.outfile, built.code)
 	const inputs = built.inputs.map((f) => resolve(process.cwd(), f.replace(/^[^:]+:/, '')))
-	return { bundled: built.bundled, warnings: built.warnings, inputs, builtAgainst: componentBuiltAgainst(root) }
+	return { code: built.code, bundled: built.bundled, warnings: built.warnings, inputs, builtAgainst: componentBuiltAgainst(root) }
+}
+
+/**
+ * `compileComponentModule`, and the module written to `outfile`.
+ * @experimental
+ */
+export async function bundleComponent(opts: ComponentBundleOptions): Promise<ComponentBundle> {
+	const { code, ...bundle } = await compileComponentModule(opts)
+	await mkdir(dirname(opts.outfile), { recursive: true })
+	await writeFile(opts.outfile, code)
+	return bundle
 }
 
 /** The directory of the nearest `package.json` above `file`. */

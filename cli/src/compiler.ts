@@ -26,7 +26,7 @@
  * every reader it has reads that.
  */
 
-import type { AnnexFieldDecl, Extension, Descriptor, I18n, PanelV1, SessionLayoutV1, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
+import type { AnnexFieldDecl, Extension, Descriptor, I18n, PanelV1, RulesetDocument, SessionLayoutV1, SettingsSchema, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import {
 	compile,
@@ -63,7 +63,7 @@ import type {
 } from '@serene-pub/sdk'
 import type { ManifestInput } from './sandbox.js'
 import { summarizeDefinition, type DefinitionSummary } from './codegen.js'
-import { pluginRuleRef, LIFECYCLE_MOMENTS } from '@serene-pub/sdk'
+import { pluginRuleRef, permissionGroupsRef, LIFECYCLE_MOMENTS, parseRulesetId, rulesetDocumentFindings, settingsSchemaFindings, lorebookFileFindings } from '@serene-pub/sdk'
 import { hookBindingsFor, type HookDeclLike } from './pluginHooks.js'
 
 // ── Findings ────────────────────────────────────────────────────────────────
@@ -336,6 +336,14 @@ export interface Manifest {
 	 * @experimental
 	 */
 	shapes?: ShapeDef[]
+	/** 🚧 Content shipped beside `ui/` (M0): the folder the zip carries and `/plugin-assets/<id>/` serves. Omitted when none. @experimental */
+	assets?: { dir: string }
+	/** 🚧 Lorebook files the app imports for this package (M2c), package-relative paths under `assets.dir`. Omitted when none. @experimental */
+	provides?: { lorebooks: string[] }
+	/** 🚧 Ruleset documents this package ships, published as rows at install (M0). Omitted when none. @experimental */
+	rulesets?: RulesetDocument[]
+	/** 🚧 Actions outside a session, by name; `handler` is a query/outlet definition id of this package (M0). Omitted when none. @experimental */
+	pluginActions?: Record<string, { params: SettingsSchema; handler: string }>
 	/**
 	 * The hook points this package declares (`ExtensionDecl.hooks`) — places
 	 * where other authored code may run — keyed by the fully-qualified id
@@ -552,7 +560,7 @@ function isWrittenOut(raw: string, blanked: string): boolean {
  */
 const SANDBOX_ENDOWMENT =
 	'which endows `random, now, log, signal` and, for a query or emit-class outlet, ' +
-	'`storage` (and `fetch` with a declared host) — never `read`, `call` or `commit`'
+	'`storage` and `package` (and `fetch` with a declared host) — never `read`, `call` or `commit`'
 
 /** What the executor endows and no sandbox does, with the way back for each. */
 const EXECUTOR_ONLY: Record<string, string> = {
@@ -743,7 +751,7 @@ const pluginWriteOutletFinding = (id: string, at: At): CompileFinding => ({
 const pluginTaskGrantFinding = (
 	id: string,
 	at: At,
-	member: 'storage' | 'fetch',
+	member: 'storage' | 'package' | 'fetch',
 	precise: boolean,
 ): CompileFinding => ({
 	severity: 'error',
@@ -755,8 +763,11 @@ const pluginTaskGrantFinding = (
 		(member === 'fetch'
 			? `a task is pure (F11) and is granted no network — declare it as an oracle, the one kind ` +
 				`granted \`ctx.fetch\``
-			: `a task is pure (F11) and is granted no storage — declare it as a query (read) or an ` +
-				`emit-class outlet (write)`) +
+			: member === 'package'
+				? `a task is pure (F11) and is granted no package files — declare it as a query, which reads ` +
+					`what the package ships with \`ctx.package.read\``
+				: `a task is pure (F11) and is granted no storage — declare it as a query (read) or an ` +
+					`emit-class outlet (write)`) +
 		pluginRuleRef(member === 'fetch' ? 'kind-oracle' : 'kind-task') +
 		'.' +
 		(precise
@@ -891,12 +902,12 @@ export function scanSource(files: readonly SourceFile[]): StaticScan {
 			const at = { file: f.path, line: lineAt(f.text, d.index) }
 			if (d.kind === 'outlet' && d.effects === 'write')
 				findings.push(pluginWriteOutletFinding(d.id, at))
-			else if (d.kind === 'task' && (reaches('storage') || reaches('fetch')))
+			else if (d.kind === 'task' && (reaches('storage') || reaches('package') || reaches('fetch')))
 				findings.push(
 					pluginTaskGrantFinding(
 						d.id,
 						at,
-						reaches('storage') ? 'storage' : 'fetch',
+						reaches('storage') ? 'storage' : reaches('package') ? 'package' : 'fetch',
 						false,
 					),
 				)
@@ -905,18 +916,32 @@ export function scanSource(files: readonly SourceFile[]): StaticScan {
 		// A hook reaching for the network directly walks around the kind boundary: a Query
 		// may not reach the network at all (16 §1), and a Provider reaches it through its
 		// injected `call`, never `fetch`.
+		//
+		// 🚧 (M2a a4) A frame document's own script — served from `ui/`, run in the
+		// browser, never in the sandbox — may fetch its own plugin's two doors: its
+		// package assets (relative to `assetsBase`, or a literal `/plugin-assets/…`
+		// path) and its served storage (a literal `/plugin-data/…` path). The frame's
+		// policy opens those for GET and nothing else, so that is what passes here;
+		// any other target keeps the finding, in a frame as in a hook.
+		const frameScript = /^ui\//.test(f.path.replace(/\\/g, '/'))
 		const fetchAt = new RegExp(`(?<![\\w.$])fetch\\s*\\(`, 'g')
 		let fm: RegExpExecArray | null
 		while ((fm = fetchAt.exec(code))) {
+			if (frameScript && fetchesOwnDoor(f.text.slice(fm.index + fm[0].length))) continue
 			findings.push({
 				severity: 'error',
 				file: f.path,
 				line: lineAt(f.text, fm.index),
 				code: 'E_DIRECT_NETWORK',
-				message: 'a hook calls fetch() directly',
+				message: frameScript
+					? "a frame script calls fetch() on something other than its own plugin's two doors"
+					: 'a hook calls fetch() directly',
 				fix:
 					"reach the network from an oracle, through `ctx.fetch` — the one kind granted it, held to the " +
-					'hosts your manifest declares. A task or a query may not reach the network at all.' +
+					'hosts your manifest declares. A task or a query may not reach the network at all. ' +
+					"A frame document's script under `ui/` may fetch only its own plugin's two doors, GET only: " +
+					"its package assets (`fetch(assetsBase + 'assets/…')`) and its served storage " +
+					"(`fetch('/plugin-data/<your plugin id>/…')`); its policy refuses everything else." +
 					pluginRuleRef('kind-oracle'),
 			})
 		}
@@ -928,6 +953,22 @@ export function scanSource(files: readonly SourceFile[]): StaticScan {
 		endowments: [...endowments].sort(),
 		declared,
 	}
+}
+
+/**
+ * 🚧 (M2a a4) Whether a `fetch(` call's argument — the source text right after
+ * the parenthesis — names one of the frame's own two doors: a value built on
+ * `assetsBase` (`assetsBase + …`, `init.assetsBase + …`, `` `${assetsBase}…` ``),
+ * or a literal path under `/plugin-assets/<id>/` or `/plugin-data/<id>/`.
+ * Lexical, like the rest of this scan: the frame's policy is the guard, and
+ * this only keeps the packager from refusing what that policy allows.
+ */
+function fetchesOwnDoor(arg: string): boolean {
+	return (
+		/^\s*(?:[\w$]+\??\.)*assetsBase\b/.test(arg) ||
+		/^\s*`\$\{\s*(?:[\w$]+\??\.)*assetsBase\s*\}/.test(arg) ||
+		/^\s*(['"`])\/plugin-(?:assets|data)\/[^'"`\s/]+\//.test(arg)
+	)
 }
 
 // ── Frame documents (D-2) ───────────────────────────────────────────────────
@@ -1137,6 +1178,12 @@ export interface CompileInput {
 	 * packager can cross-check against the source.
 	 */
 	manifest?: ManifestInput
+	/**
+	 * 🚧 (M2c) The files `provides.lorebooks` names, already read: `text` is
+	 * absent when the path does not exist. Passed in for the same reason as
+	 * `frameDocuments` — nothing in this file touches a filesystem.
+	 */
+	providedFiles?: Array<{ path: string; text?: string }>
 }
 
 /**
@@ -1283,6 +1330,106 @@ export function compilePlugin(input: CompileInput): CompileResult {
 	}
 
 	const handlers = (e.handlers ?? []).filter((h) => h.__decl === 'handler') as any[]
+	// M0 declarations: assets, rulesets, plugin actions, served globs.
+	{
+		const at = input.sources[0]?.path ?? '(none)'
+		const add = (code: string, message: string, fix: string) =>
+			findings.push({ severity: 'error', file: at, line: 1, code, message, fix })
+		const dir = e.assets?.dir
+		if (e.assets && dir !== undefined) {
+			const segs = typeof dir === 'string' ? dir.split('/') : []
+			const reserved = ['ui', 'dist', 'lang']
+			if (
+				typeof dir !== 'string' ||
+				!dir ||
+				dir.startsWith('/') ||
+				dir.includes('\\') ||
+				segs.some((x) => !x || x === '.' || x === '..') ||
+				reserved.includes(segs[0])
+			)
+				add(
+					'E_ASSETS_DIR',
+					`assets.dir '${String(dir)}' is not a relative folder inside the package, or it is one the package already uses`,
+					`name a relative slash path without '.' or '..', and not 'ui', 'dist' or 'lang' — 'assets' is the convention`,
+				)
+		}
+		// 🚧 (M2c) Provided books: each path under assets.dir, present, granted, and a file the importer takes.
+		const books = e.provides?.lorebooks ?? []
+		if (books.length) {
+			const assetsDir = (e.assets?.dir ?? 'assets').replace(/\/+$/, '')
+			const granted =
+				[e.permissions, input.manifest?.permissions].some(
+					(p) => (p as DeclaredPermissions | undefined)?.applet?.lorebooks === 'write',
+				)
+			if (!granted)
+				add(
+					'E_PROVIDES_UNGRANTED',
+					`provides.lorebooks ships ${books.length} lorebook${books.length === 1 ? '' : 's'}, but permissions.applet.lorebooks is not 'write'`,
+					`declare permissions: { applet: { lorebooks: 'write' } } — the app imports the books as the admin who enables the plugin, and only once that is granted`,
+				)
+			const read = new Map((input.providedFiles ?? []).map((f) => [f.path, f.text]))
+			for (const raw of books) {
+				const path = String(raw)
+				const safe = !path.startsWith('/') && !path.includes('\\') && !path.split('/').some((x) => !x || x === '.' || x === '..')
+				if (!e.assets || !safe || !path.startsWith(`${assetsDir}/`)) {
+					add(
+						'E_PROVIDES_OUTSIDE_ASSETS',
+						`provides.lorebooks names '${path}', which is not a file under the package's assets folder${e.assets ? ` '${assetsDir}'` : ' (the package declares none)'}`,
+						`declare assets: { dir: 'assets' } and put the file under it — 'assets/books/<name>.lorebook.json'`,
+					)
+					continue
+				}
+				const text = read.get(path)
+				if (text === undefined) {
+					add('E_PROVIDES_MISSING', `provides.lorebooks names '${path}', and the package has no such file`, `write the file, or remove the path`)
+					continue
+				}
+				const f = lorebookFileFindings(text)
+				if (f.length)
+					add('E_PROVIDES_INVALID', `provided lorebook '${path}': ${f.slice(0, 3).join(' ')}${f.length > 3 ? ` (and ${f.length - 3} more)` : ''}`, `fix the file so Lorebooks › Import takes it — export it from Serene Pub rather than writing it by hand`)
+			}
+		}
+		for (const doc of e.rulesets ?? []) {
+			const id = String((doc as { id?: unknown })?.id)
+			const owner = parseRulesetId(id)?.owner
+			if (owner !== e.slug)
+				add('E_RULESET_OWNER', `ruleset '${id}' sits under '${owner}', not '${e.slug}'`, `id it '${e.slug}:ruleset/<name>@1'`)
+			const f = rulesetDocumentFindings(doc)
+			if (f.length) add('E_RULESET_DOCUMENT', `ruleset '${id}': ${f.join('; ')}`, `fix the document so rulesetDocumentFindings reports nothing`)
+		}
+		const handlerIds = new Set(
+			handlers.map((h) => String(h.type?.id)).filter((id) => /:(query|outlet)\//.test(id)),
+		)
+		for (const [key, action] of Object.entries(e.pluginActions ?? {})) {
+			if (!/^[a-z0-9]+([._-][a-z0-9]+)*$/.test(key))
+				add('E_PLUGIN_ACTION_NAME', `plugin action '${key}' is not a valid name`, `use lowercase letters and digits joined by '.', '_' or '-' — 'world.save'`)
+			if (!handlerIds.has(String(action?.handler)))
+				add(
+					'E_PLUGIN_ACTION_HANDLER',
+					`plugin action '${key}' names handler '${String(action?.handler)}', which is not a query or outlet this package implements`,
+					`set handler to the id of a query or outlet definition passed to handler() in this package`,
+				)
+			const pf = settingsSchemaFindings(action?.params, `pluginActions.${key}.params`)
+			if (pf.length) add('E_PLUGIN_ACTION_PARAMS', pf.join('; '), `make params a settings schema keyed by field name`)
+		}
+		for (const p of [e.permissions, input.manifest?.permissions] as Array<DeclaredPermissions | undefined>)
+			for (const glob of p?.storage?.serve ?? []) {
+				const parts = typeof glob === 'string' ? glob.split('/') : []
+				if (
+					typeof glob !== 'string' ||
+					!glob ||
+					glob.startsWith('/') ||
+					glob.includes('\\') ||
+					glob.includes('#') ||
+					parts.some((x) => !x || x === '.' || x === '..')
+				)
+					add(
+						'E_SERVE_GLOB',
+						`storage.serve glob '${String(glob)}' is not a relative glob over the plugin's own storage`,
+						`write a relative slash glob such as 'worlds/**' — no leading '/', backslash, '#', or '.', '..' or empty segment`,
+					)
+			}
+	}
 	// A node is as public as its handler (R62): the definition may not say it.
 	const selfPublic = handlers.filter((h) => h.type?.public !== undefined)
 	if (selfPublic.length) {
@@ -1378,7 +1525,13 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		if (t.kind === 'outlet' && t.effects === 'write')
 			endowment.push(pluginWriteOutletFinding(t.id, at))
 		else if (t.kind === 'task') {
-			const member = reaches('storage') ? 'storage' : reaches('fetch') ? 'fetch' : undefined
+			const member = reaches('storage')
+				? 'storage'
+				: reaches('package')
+					? 'package'
+					: reaches('fetch')
+						? 'fetch'
+						: undefined
 			if (member) endowment.push(pluginTaskGrantFinding(t.id, at, member, true))
 		}
 	}
@@ -1512,6 +1665,87 @@ export function compilePlugin(input: CompileInput): CompileResult {
 				`terms, where nobody can see the line that wrote it`,
 		})
 	}
+	// An applet is a genre's (shape.applet), not a widget's: a widget (or a genre
+	// panel) asking for an applet grant, or declaring applet, is refused.
+	for (const w of [...(e.widgets ?? []), ...(e.genres ?? []).flatMap((g) => g.shape?.panels ?? [])]) {
+		const asked = (w.scopes ?? []).filter((x) => String(x).startsWith('applet'))
+		const presents = (w as { applet?: unknown }).applet !== undefined
+		if (!asked.length && !presents) continue
+		const at = locate(input.sources, 'defineExtension')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_APPLET_ON_WIDGET',
+			message:
+				`widget '${(w as { id?: string }).id ?? '?'}' ` +
+				(asked.length ? `asks for ${asked.map((x) => `'${x}'`).join(', ')}` : `declares applet`) +
+				` — an applet is a genre's (shape.applet), and applet grants are not a widget's to hold`,
+			fix:
+				`drop it from the widget; declare the grant under permissions.applet and give a genre ` +
+				`shape: { applet: true }` +
+				permissionGroupsRef(),
+		})
+	}
+	{
+		const own = new Set((e.genres ?? []).map((g) => g.id))
+		for (const p of [e.permissions, input.manifest?.permissions] as Array<DeclaredPermissions | undefined>)
+			for (const g of p?.applet?.sessions?.genres ?? [])
+				if (typeof g === 'string' && !own.has(g)) {
+					const at = locate(input.sources, 'defineExtension')
+					findings.push({
+						severity: 'error',
+						file: at.file,
+						line: at.line,
+						code: 'E_APPLET_FOREIGN_GENRE',
+						message: `permissions.applet.sessions.genres names '${g}', which this package does not declare`,
+						fix:
+							`name only genres in this package's genres[] — a plugin reaches sessions of its own genres, ` +
+							`never another package's` +
+							permissionGroupsRef(),
+					})
+				}
+	}
+	// 🚧 M2c (ruling b1'): a plugin's genre may not reach the library outlets yet — `writes.library` is core genres'
+	// for now (the app refuses the write too, from the running spec's owner, never from the document).
+	for (const g of e.genres ?? []) {
+		const lib = (g.shape as { writes?: { library?: Record<string, unknown> } } | undefined)?.writes?.library
+		if (!lib || typeof lib !== 'object' || !Object.values(lib).some((v) => v === true)) continue
+		const at = locate(input.sources, 'defineExtension')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_PLUGIN_LIBRARY_WRITES',
+			message: `genre '${g.id}' declares writes.library — library writes are core genres' for now`,
+			fix:
+				`drop writes.library from the genre's shape; a plugin's own characters and books come with its ` +
+				`provided books (provides.lorebooks) until a permission for library writes exists`,
+		})
+	}
+	// 🚧 M2c: an applet genre is listed under Apps and opens THIS package's
+	// session-view frame without a session; a view naming another package, or
+	// no session-view surface, would be a row that never appears.
+	for (const g of e.genres ?? []) {
+		const shape = g.shape as { applet?: unknown; view?: unknown } | undefined
+		if (shape?.applet !== true) continue
+		const ownView = shape.view === e.slug
+		const hasFrame = !!e.surfaces?.['session-view']
+		if (ownView && hasFrame) continue
+		const at = locate(input.sources, 'defineExtension')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_APPLET_WITHOUT_FRAME',
+			message: !ownView
+				? `genre '${g.id}' presents as an applet with view '${String(shape.view)}' — an applet opens this package's own frame ('${e.slug}')`
+				: `genre '${g.id}' presents as an applet, and this package declares no surfaces['session-view'] for it to open`,
+			fix:
+				`set the genre's shape.view to '${e.slug}' and declare surfaces: { 'session-view': { entry, title } } — ` +
+				`the title is the row's name under Apps — or drop applet: true`,
+		})
+	}
 	// A shipped layout that draws, but not as written: an id placed and never
 	// drawn, two items on one cell, a widget over its `maxInstances`. Warned
 	// here because nothing refuses it and no one else reads the layout before
@@ -1577,6 +1811,49 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		})
 	}
 
+	// A sampling value is a reference to a named config, `{ seedKey }`, and
+	// nothing else (ruled 2026-10-29): the instance resolves the key, drops
+	// every field beside it, and drops a value with no key whole — silently,
+	// in the run. Every place a package writes one: a spec's defaults and
+	// presets, and the `values` of a genre's or a preset's registrations.
+	const samplingAt = (where: string, value: unknown) => {
+		const v = value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : null
+		const keyed = v !== null && typeof v.seedKey === 'string' && v.seedKey !== ''
+		const beside = v === null ? [] : Object.keys(v).filter((k) => k !== 'seedKey')
+		if (keyed && !beside.length) return
+		const at = locate(input.sources, '.sampling(')
+		findings.push({
+			severity: 'error',
+			file: at.file,
+			line: at.line,
+			code: 'E_SAMPLING_REFERENCE',
+			message: keyed
+				? `${where}: ${beside.join(', ')} beside the seedKey would be dropped — a sampling value names a config, it does not change one`
+				: `${where}: the sampling value ${JSON.stringify(value)} names no config, so the step would run on the default`,
+			fix:
+				`write { seedKey: '<a seeded sampling config>' } and nothing beside it — ` +
+				`for other settings, name the seeded config that has them`,
+		})
+	}
+	const registrationSampling = (where: string, values: unknown) => {
+		if (!values || typeof values !== 'object') return
+		for (const [nodeKey, slots] of Object.entries(values as Record<string, unknown>))
+			if (slots && typeof slots === 'object' && 'sampling' in slots)
+				samplingAt(`${where} at '${nodeKey}'`, (slots as { sampling: unknown }).sampling)
+	}
+	for (const d of documents)
+		for (const p of d.presets ?? [])
+			for (const v of p.values ?? [])
+				if (v.slot === 'sampling') samplingAt(`pipeline '${d.id}' preset '${p.slug}' at '${v.nodeKey}'`, v.value)
+	for (const g of e.genres ?? [])
+		for (const r of g.defaults?.registrations ?? [])
+			registrationSampling(`genre '${g.id}' registration '${r.key}'`, (r as { values?: unknown }).values)
+	for (const p of e.presets ?? []) {
+		const changes = (p as { registrations?: { register?: unknown[]; change?: unknown[] } }).registrations
+		for (const r of [...(changes?.register ?? []), ...(changes?.change ?? [])] as { key?: string; values?: unknown }[])
+			registrationSampling(`preset '${(p as { slug?: string }).slug ?? '?'}' registration '${r.key ?? '?'}'`, r.values)
+	}
+
 	// Subscriptions are a permission surface: a pipeline that runs on every message is a
 	// side effect a user consents to (11 §4), so it belongs in the manifest. Since R-4
 	// the inlet lock is the only subscription a pipeline has.
@@ -1587,17 +1864,37 @@ export function compilePlugin(input: CompileInput): CompileResult {
 	// reviews: `widget:<scope>`, echoed here so the install summary is true.
 	for (const w of [...(e.widgets ?? []), ...(e.genres ?? []).flatMap((g) => g.shape?.panels ?? [])])
 		for (const scope of w.scopes ?? []) permissions.add(`widget:${scope}`)
+	// The session group's own grants (M2b): the same `widget:<grant>` keys.
+	for (const p of [e.permissions, input.manifest?.permissions] as Array<DeclaredPermissions | undefined>)
+		for (const scope of p?.session?.scopes ?? []) permissions.add(`widget:${scope}`)
 	// The declared half — a quota and a host allowlist, which no call site carries.
 	// The extension's own declaration and a separately-supplied sandbox manifest are
 	// a union, so a package part-way through the move loses neither.
 	for (const p of [e.permissions, input.manifest?.permissions] as Array<
 		DeclaredPermissions | undefined
 	>) {
-		if (p?.storage)
+		// `storage: { perUser }` alone asks for per-user files only, not the pub-wide folder.
+		const pubStorage =
+			p?.storage &&
+			(Object.keys(p.storage).length === 0 || Object.keys(p.storage).some((k) => k !== 'perUser'))
+		if (pubStorage)
 			permissions.add(
-				p.storage.quotaBytes === undefined ? 'storage' : `storage:${p.storage.quotaBytes}`,
+				p!.storage!.quotaBytes === undefined ? 'storage' : `storage:${p!.storage!.quotaBytes}`,
 			)
 		for (const host of p?.network?.hosts ?? []) permissions.add(`network:${host}`)
+		for (const glob of p?.storage?.serve ?? []) permissions.add(`storage-serve:${glob}`)
+		if (p?.media?.autoplay === true) permissions.add('media:autoplay')
+		// The applet group (M2b): one key per grant, each reviewed on its own.
+		if (p?.storage?.perUser)
+			permissions.add(
+				p.storage.perUser.quotaBytes === undefined
+					? 'storage-per-user'
+					: `storage-per-user:${p.storage.perUser.quotaBytes}`,
+			)
+		if (p?.applet?.characters) permissions.add(`applet:characters:${p.applet.characters}`)
+		if (p?.applet?.lorebooks) permissions.add(`applet:lorebooks:${p.applet.lorebooks}`)
+		for (const g of p?.applet?.sessions?.genres ?? []) permissions.add(`applet:sessions:${g}`)
+		if (p?.applet?.annex?.user === true) permissions.add('applet:annex:user')
 	}
 	// Resources and events a separate manifest declared; the extension has no such
 	// field, because both are compiled from the code that uses them.
@@ -1676,6 +1973,11 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		...(shapes.size ? { shapes: [...shapes.values()] } : {}),
 		...(Object.keys(declaredHooks).length ? { declaredHooks } : {}),
 		...(declared.requires.length ? { requires: declared.requires } : {}),
+		// M0: each omitted when not declared, so the manifest is byte-for-byte as before.
+		...(e.assets ? { assets: { dir: e.assets.dir ?? 'assets' } } : {}),
+		...(e.provides?.lorebooks?.length ? { provides: { lorebooks: [...e.provides.lorebooks] } } : {}),
+		...(e.rulesets?.length ? { rulesets: [...e.rulesets] } : {}),
+		...(e.pluginActions && Object.keys(e.pluginActions).length ? { pluginActions: e.pluginActions } : {}),
 	}
 
 	const ok = !findings.some((f) => f.severity === 'error')

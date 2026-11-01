@@ -10,7 +10,7 @@ import { checkRef, LASTS_FIELD } from "../sections.js"
 /** @experimental */ export const DICE_POOL_TEMPLATE_ID = "core:ruleset/template-dice-pool@1"
 const en = (en: string) => ({ en })
 const stat = (id: string, name: string, means: string) =>
-	({ id, name: en(name), kind: "number", bounds: { min: 1, max: 5 }, start: 2, prose: `${name}: how many six-sided dice a check with it rolls, from 1 to 5. ${means}` }) as const
+	({ id, name: en(name), kind: "number", bounds: { min: 1, max: 5 }, start: 2, scope: "session", prose: `${name}: how many six-sided dice a check with it rolls, from 1 to 5. ${means}` }) as const
 const row = (id: string, piece: Record<string, unknown>) => ({ id, version: "1.0.0", piece: piece as never })
 /** 🚧 @experimental */
 export const dicePoolTemplate = defineRulesetTemplate(DICE_POOL_TEMPLATE_ID, {

@@ -88,6 +88,7 @@ import { answerFormLairSpec } from './lair/answerForm.js'
 import { lairTurnOrder } from './lair/turnOrder.js'
 import { lairBuildRoomSpec } from './lair/buildRoom.js'
 import { lairFileRoomSpec } from './lair/fileRoom.js'
+import { speakMessageSpec } from '../shared/speakMessage.js'
 import { lairNudgeSpec } from './lair/nudge.js'
 import { lairRevealSpec } from './lair/reveal.js'
 import { lairRoomAnswerSpec } from './lair/roomAnswer.js'
@@ -172,6 +173,13 @@ const summaries = (scene: SpecDocument & { readonly actions: Readonly<Record<str
 		register(scene.actions[closeOutAction.key]!, scene, { minAge: 0 }),
 	])
 
+/**
+ * 🚧 **Read aloud** on a message's ⋮ (speech lane D4): core's one speak-message
+ * pipeline, offered by every genre's defaults — the manual trigger of speech,
+ * whatever the session's own *Read aloud* setting says.
+ */
+const readAloud = lazy(() => Object.freeze(actionRegistrations(speakMessageSpec())))
+
 /** What every genre's defaults hold on the session's own events. */
 const spine = (o: { create: SpecDocument; reply: SpecDocument; answerForm: SpecDocument }) => ({
 	create: register(coreEvents.sessionCreated, o.create),
@@ -231,6 +239,8 @@ export const storyRegistrations = lazy(() => {
 		 * taken, the story clock moves by the rest they raised — no model call.
 		 */
 		afterRest: register(onEvent(coreEvents.restTaken), storyAfterRestSpec()),
+		/** Read aloud on a message's ⋮ (speech lane D4). */
+		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, Story's summarize-scene. */
 		summaries: summaries(storySummarizeSceneSpec()),
 	})
@@ -245,6 +255,8 @@ export const chatRegistrations = lazy(() =>
 		turnOrder: Object.freeze(turnOrderRegistrations(assistantTurnOrder)),
 		/** *Remember things* every five turns — Off (★J: lore writes are never on unasked). */
 		memory: register(everyNTurns({ n: 5 }), assistantMemorySpec(), { mode: 'off' }),
+		/** Read aloud on a message's ⋮ (speech lane D4). */
+		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, core's summarize-scene. */
 		summaries: summaries(summarizeSceneSpec()),
 	}),
@@ -257,6 +269,8 @@ export const guideRegistrations = lazy(() =>
 	Object.freeze({
 		...spine({ create: createGuideSpec(), reply: guideRespondSpec(), answerForm: answerFormGuideSpec() }),
 		turnOrder: Object.freeze(turnOrderRegistrations(guideTurnOrder)),
+		/** Read aloud on a message's ⋮ (speech lane D4). */
+		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, the Guide's summarize-scene. */
 		summaries: summaries(guideSummarizeSceneSpec()),
 	}),
@@ -321,6 +335,8 @@ export const lairRegistrations = lazy(() =>
 		),
 		/** A room described only in prose, filed when the party walk in — Off until the GM turns it on (R3). */
 		fileCurrentRoom: register(onEvent(coreEvents.sceneOpened), lairFileCurrentRoomSpec(), { mode: 'off' }),
+		/** Read aloud on a message's ⋮ (speech lane D4). */
+		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, the Lair's summarize-scene. */
 		summaries: summaries(lairSummarizeSceneSpec()),
 	}),
@@ -363,6 +379,8 @@ export const dungeonCrawlerRegistrations = lazy(() =>
 		 * clock moved, the journal's line — on the event the rules raise.
 		 */
 		afterRest: register(onEvent(coreEvents.restTaken), dungeonCrawlerAfterRestSpec()),
+		/** Read aloud on a message's ⋮ (speech lane D4). */
+		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, core's summarize-scene. */
 		summaries: summaries(summarizeSceneSpec()),
 	}),

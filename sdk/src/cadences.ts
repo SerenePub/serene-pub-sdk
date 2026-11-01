@@ -978,6 +978,13 @@ export const timelineCron = (o: {
 		unit: o?.unit,
 		...(o?.maxJump ? { maxJump: { ...o.maxJump } } : {}),
 	})
+/**
+ * 🚧 Once each story day (M0, SHAPES L3): `timelineCron({ every: 1,
+ * unit: 'days' })` by name — what the weather routine and a nightly diary
+ * run on. A helper over the Timeline Cron, not a cadence of its own.
+ * @experimental
+ */
+export const afterEachDay = (): CadenceRef => timelineCron({ every: 1, unit: 'days' })
 /** At set moments on the system clock or the story calendar (R20). @experimental */
 export const schedule = (o: {
 	clock: 'system' | 'story'

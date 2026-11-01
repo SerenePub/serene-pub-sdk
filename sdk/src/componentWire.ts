@@ -18,9 +18,9 @@
  * @internal
  * @ruling §3.5, C2/C3b
  */
-import type { ComponentContext, ComponentInvokeArgs, ComponentSection, ComponentSections } from './componentClient.js'
+import type { ComponentContext, ComponentInvokeAnswer, ComponentInvokeArgs, ComponentSection, ComponentSections } from './componentClient.js'
 import type { RequestDeclineCode } from './surfaces.js'
-import { WIDGET_SCOPED_SECTIONS, isWidgetScopedSectionName, type WidgetEvent, type WidgetScopedSections, type WidgetScopedSectionValues, type WidgetSectionScope, type WidgetWriteGrant } from './widgets.js'
+import { WIDGET_SCOPED_SECTIONS, isWidgetScopedSectionName, type AppletGrant, type WidgetEvent, type WidgetScopedSections, type WidgetScopedSectionValues, type WidgetSectionScope, type WidgetWriteGrant } from './widgets.js'
 
 /**
  * A grant a component may be told it holds: a scope the table names, or a
@@ -315,8 +315,24 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 			eventSubs.add(fn)
 			return () => eventSubs.delete(fn)
 		},
+		// 🚧 M2b: a component's invoke is answered as a frame's is (a `requestId`, then `response`): it resolves, never
+		// rejects — `{ ok: true, result? }` or `{ ok: false, error }` ({@link ComponentInvokeAnswer}).
 		invoke(key: string, args: ComponentInvokeArgs = {}) {
-			port.postMessage({ t: 'invoke', key, ...args })
+			const requestId = `i${++nextRequest}`
+			let settle!: (answer: ComponentInvokeAnswer) => void
+			const answer = new Promise<ComponentInvokeAnswer>((resolve) => (settle = resolve))
+			pending.set(requestId, {
+				resolve: (result) => settle(result === undefined ? { ok: true } : { ok: true, result }),
+				reject: (e) => settle({ ok: false, error: e.message }),
+			})
+			// A payload that cannot cross still throws to the caller, as a port's would (and nothing waits on it).
+			try {
+				port.postMessage({ t: 'invoke', key, ...args, requestId })
+			} catch (e) {
+				pending.delete(requestId)
+				throw e
+			}
+			return answer
 		},
 		saveState(state: unknown) {
 			port.postMessage({ t: 'save-state', state })
@@ -341,15 +357,19 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 				)
 			}) as never
 		},
-		t(source: string) {
+		t(source: string, ...args: ReadonlyArray<string | number>) {
+			const fill = (text: string) =>
+				text.replace(/\{(\d+)\}/g, (whole, n: string) =>
+					Number(n) < args.length ? String(args[Number(n)]) : whole,
+				)
 			const hit = strings.get(source)
-			if (hit !== undefined) return hit
+			if (hit !== undefined) return fill(hit)
 			if (!asked.has(source)) {
 				asked.add(source)
 				misses.push(source)
 				askLater()
 			}
-			return source
+			return fill(source)
 		},
 		get viewer() {
 			return data.viewer
@@ -363,7 +383,7 @@ export function createComponentContext(port: ComponentPort): ComponentContext & 
 		get grants() {
 			return data.grants
 		},
-		granted(scope: WidgetSectionScope | WidgetWriteGrant) {
+		granted(scope: WidgetSectionScope | WidgetWriteGrant | AppletGrant) {
 			return data.grants === undefined ? undefined : data.grants.includes(scope)
 		},
 		// One spelling for the author: the scope they declared, looked up in

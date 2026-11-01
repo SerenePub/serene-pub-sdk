@@ -10,7 +10,7 @@ import { checkRef, LASTS_FIELD } from "../sections.js"
 /** @experimental */ export const D20_STYLE_TEMPLATE_ID = "core:ruleset/template-d20-style@1"
 const en = (en: string) => ({ en })
 const stat = (id: string, name: string, means: string) =>
-	({ id, name: en(name), kind: "number", bounds: { min: -3, max: 5 }, start: 0, prose: `${name}: a modifier from −3 to +5, added to a d20 when a check calls for it. ${means}` }) as const
+	({ id, name: en(name), kind: "number", bounds: { min: -3, max: 5 }, start: 0, scope: "session", prose: `${name}: a modifier from −3 to +5, added to a d20 when a check calls for it. ${means}` }) as const
 const row = (id: string, piece: Record<string, unknown>) => ({ id, version: "1.0.0", piece: piece as never })
 const band = (id: string, label: string, target: number, def?: true) => ({ id, label: en(label), target, ...(def ? { default: def } : {}) })
 /** 🚧 @experimental */

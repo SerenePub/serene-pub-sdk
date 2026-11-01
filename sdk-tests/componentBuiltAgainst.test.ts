@@ -84,6 +84,18 @@ const SHAPE_AT_VERSION: Record<string, string> = {
 	// 1.5 (omni-models, lane 8, 2026-10-21): `audio`, `video`, `track`, `figure`,
 	// `figcaption` for the media players. Grew only.
 	'1.5': 'ecea4f1740982b0d1d55e17c6361000c83ea2c5680c7de3f4adb452d1055f038',
+	// 1.6 (speech build, lane E; pinned by lane V 2026-10-28): `audio` takes
+	// `autoplay` (core's alone — receiverRules refuses it from a plugin), so
+	// the newest spoken line plays under Read aloud: Make and play. Grew only.
+	'1.6': '6e32a5b3530723f55285e8be0b735e062674bbd44be676eeabb2dee794686f4a',
+	// 1.7 (speech polish, worker 2, 2026-10-29): `audio` raises `play`, `pause`,
+	// `ended`, `timeupdate` and `loadedmetadata` (detail `{ currentTime, duration, paused }`, seconds),
+	// so the spoken line shows play state, the clock and the playing cue. Grew only.
+	'1.7': '281ee9b39e563d5bfc6bf48b2780a81c7e4f8f0b161a03a3735fe9139769bc74',
+	// 1.8 (heading audio control, worker 1, 2026-10-29): `audio` takes `playing`
+	// (core's alone — receiverRules refuses it from a plugin); the page plays
+	// the element carrying it and pauses it when it goes. Grew only.
+	'1.8': '3a07a997250dfdf017f51f30ff3f8e1cc8835fc2e057328d5dd9279321a537d0',
 }
 
 test('the host-element vocabulary version is pinned to its shape — change the table, bump the version', () => {

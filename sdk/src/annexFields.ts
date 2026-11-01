@@ -55,6 +55,7 @@ import { checkSchema, checkValues, type FieldDecl, type SettingsSchema } from '.
 import { i18nFindings, type I18n } from './i18n.js'
 import type { VarField } from './template.js'
 import { isDataRef } from './refs.js'
+import { userAnnexKeyRefusal } from './userAnnex.js'
 
 /** An annex field's key: a lowercase kebab token, the second half of its action identity. @experimental */
 export const ANNEX_FIELD_KEY = /^[a-z][a-z0-9-]*$/
@@ -94,6 +95,22 @@ export interface AnnexFieldDecl {
 	readonly act?: readonly string[]
 	/** The genre id whose sessions offer it; absent is every session the package is on. */
 	readonly genre?: string
+	/**
+	 * 🚧 Which annex holds the value (M0, SHAPES L9): `session` — the
+	 * **session annex**, as every field before; `lorebook` — the **lorebook
+	 * annex**, the book's own document under the same owner. Absent reads as
+	 * `session`.
+	 * 🚧 (M2b) `user` — the **user annex**: the acting person's own documents
+	 * under the same owner. A user-scoped field's `key` is an exact key
+	 * (`profile`) or a family ending in `/` (`saves/` covers `saves/<anything>`);
+	 * its `shape` applies to each document; `act`, `see` and `genre` are refused
+	 * on it (only the person and the package reach those documents).
+	 * ⚠ Not an attribute's `scope` (`session` | `world`, whether a stat
+	 * survives sessions) — the annex's own question, which document.
+	 */
+	readonly scope?: 'session' | 'lorebook' | 'user'
+	/** 🚧 The value follows the player into the next chapter (M0, F5): a `next-chapter` session copies it. */
+	readonly nextChapter?: true
 	/** What a listing calls the action. Default: the key. */
 	readonly label?: I18n
 	readonly description?: I18n
@@ -107,6 +124,10 @@ export type AnnexFieldInput = {
 	act?: readonly string[]
 	/** Only this genre's sessions — the genre value (or its id). */
 	genre?: { readonly id: string } | string
+	/** 🚧 `session` (the default) or `lorebook` — {@link AnnexFieldDecl.scope}. */
+	scope?: 'session' | 'lorebook' | 'user'
+	/** 🚧 The value follows the player into the next chapter — {@link AnnexFieldDecl.nextChapter}. */
+	nextChapter?: true
 	label?: I18n
 	description?: I18n
 }
@@ -130,7 +151,14 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
 	const f = raw as Record<string, unknown>
 	const where = `${at}[${typeof f.key === 'string' ? f.key : '?'}]`
 	const out: string[] = []
-	if (typeof f.key !== 'string' || !ANNEX_FIELD_KEY.test(f.key))
+	if (f.scope === 'user') {
+		const bare = typeof f.key === 'string' && f.key.endsWith('/') ? f.key.slice(0, -1) : f.key
+		const why = userAnnexKeyRefusal(bare)
+		if (why)
+			out.push(
+				`${where}: ${why} A user-scoped field's key is an exact key ('profile') or a family ending in '/' ('saves/').`,
+			)
+	} else if (typeof f.key !== 'string' || !ANNEX_FIELD_KEY.test(f.key))
 		out.push(
 			`${where}: 'key' is a lowercase kebab token (${ANNEX_FIELD_KEY.source}) — the field sits in ` +
 				`your own package's annex document, so it never names an owner`,
@@ -144,11 +172,21 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
 				`(R61); keep a secret in plugin settings`,
 		)
 	else
-		for (const finding of checkSchema({ [String(f.key)]: shape }))
+		for (const finding of checkSchema({ [f.scope === 'user' ? 'value' : String(f.key)]: shape }))
 			if (finding.severity === 'error') out.push(`${where}: ${finding.message} — ${finding.fix}`)
 	const see = dataAudienceFindings(f.see)
 	if (see) out.push(`${where}.see: ${see}`)
-	if (f.act !== undefined) {
+	if (f.scope === 'user') {
+		if (f.act !== undefined)
+			out.push(`${where}.act: a user-scoped field has no 'act' — only the person and the package reach a user annex document, and no widget press sets one`)
+		if (f.see !== undefined && !(Array.isArray(f.see) && f.see.length === 0))
+			out.push(`${where}.see: a user-scoped field has no 'see' — only the person and the package reach a user annex document`)
+		if (f.genre !== undefined)
+			out.push(`${where}.genre: a user-scoped field is not bound to a genre — a person's documents follow them across sessions`)
+		if (f.nextChapter !== undefined)
+			out.push(`${where}.nextChapter: a user-scoped field is not part of a session, so nothing follows into a chapter`)
+	}
+	if (f.act !== undefined && f.scope !== 'user') {
 		if (!Array.isArray(f.act) || !f.act.length)
 			out.push(`${where}.act: a non-empty list of participant references — who may set the value`)
 		else
@@ -164,6 +202,13 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
 		if (typeof g !== 'string' || !/^[a-z0-9.-]+:genre\/[a-z0-9.-]+/.test(g))
 			out.push(`${where}.genre: a genre — the value genre() returned, or its id ('acme.dice:genre/table')`)
 	}
+	if (f.scope !== undefined && f.scope !== 'session' && f.scope !== 'lorebook' && f.scope !== 'user')
+		out.push(
+			`${where}.scope: 'session' (the session annex, the default), 'lorebook' (the lorebook annex) or 'user' (the user annex) — ` +
+				`'${String(f.scope)}' is neither`,
+		)
+	if (f.nextChapter !== undefined && (f.nextChapter as unknown) !== true)
+		out.push(`${where}.nextChapter: true or absent — the value follows the player into the next chapter`)
 	out.push(...i18nFindings(f.label as I18n | undefined, `${where}.label`))
 	out.push(...i18nFindings(f.description as I18n | undefined, `${where}.description`))
 	return out
@@ -187,6 +232,8 @@ export function annexField<const D extends AnnexFieldInput>(
 		see: Object.freeze([...(d.see ?? [])]),
 		...(d.act !== undefined ? { act: Object.freeze([...d.act]) } : {}),
 		...(d.genre !== undefined ? { genre: typeof d.genre === 'string' ? d.genre : d.genre.id } : {}),
+		...(d.scope !== undefined ? { scope: d.scope } : {}),
+		...(d.nextChapter !== undefined ? { nextChapter: d.nextChapter } : {}),
 		...(d.label !== undefined ? { label: d.label } : {}),
 		...(d.description !== undefined ? { description: d.description } : {}),
 	})
@@ -303,7 +350,8 @@ export const annexDeclarationOf = (owner: string): readonly AnnexFieldDecl[] | u
 
 /**
  * The fields of a declaration in force for a session of `genre`: every
- * unscoped field and the ones scoped to that genre. With no genre — a
+ * unscoped field and the ones scoped to that genre (a `user`-scoped field
+ * never — it lives in no session). With no genre — a
  * document judged before it knows its session — every field, whatever genre
  * it is scoped to. Pure. @experimental
  */
@@ -311,7 +359,25 @@ export function annexFieldsInGenre(
 	fields: readonly AnnexFieldDecl[],
 	genre?: string,
 ): AnnexFieldDecl[] {
-	return fields.filter((f) => f.genre === undefined || genre === undefined || f.genre === genre)
+	return fields.filter(
+		(f) => f.scope !== 'user' && (f.genre === undefined || genre === undefined || f.genre === genre),
+	)
+}
+
+/**
+ * 🚧 (M2b) The declared field covering a user annex key: the exact key first,
+ * then the longest family (`saves/`) that prefixes it. Only `scope: 'user'`
+ * fields are considered. Pure. @experimental
+ */
+export function userAnnexFieldFor(fields: readonly AnnexFieldDecl[], key: string): AnnexFieldDecl | undefined {
+	const user = fields.filter((f) => f.scope === 'user')
+	const exact = user.find((f) => f.key === key)
+	if (exact) return exact
+	let best: AnnexFieldDecl | undefined
+	for (const f of user)
+		if (f.key.endsWith('/') && key.startsWith(f.key) && key.length > f.key.length)
+			if (!best || f.key.length > best.key.length) best = f
+	return best
 }
 
 /** Whether a declared field may be set by a person, through its ready-made action. @experimental */

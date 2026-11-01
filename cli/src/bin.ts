@@ -17,6 +17,7 @@ import { readFile, writeFile, mkdir, readdir, stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { dirname, join, resolve, relative } from 'node:path'
 import { pathToFileURL, fileURLToPath } from 'node:url'
+import { langCatalogReport } from './langCatalogs.js'
 import {
 	compilePlugin,
 	scanSource,
@@ -28,10 +29,11 @@ import {
 	matchesGlob,
 	DEFAULT_PERMISSION_IGNORES,
 	type CompileFinding,
+	type CompileResult,
 	type SourceFile,
 } from './compiler.js'
 import { generateContracts } from './codegen.js'
-import { componentModuleFindings } from '@serene-pub/sdk'
+import { componentModuleFindings, genreCreateSpecFindings, validate } from '@serene-pub/sdk'
 import { typeSurfaces } from './typeSurfaces.js'
 
 const USAGE = `serene-pub <command>
@@ -183,6 +185,24 @@ export async function frameDocumentsIn(
 }
 
 /**
+ * 🚧 (M2c) The files `provides.lorebooks` names, read off disk (`text` absent when
+ * the path is not there). Same split as `frameDocumentsIn`: the compiler stays pure.
+ * @internal
+ */
+export async function providedFilesIn(
+	dir: string,
+	paths: readonly unknown[],
+): Promise<Array<{ path: string; text?: string }>> {
+	const out: Array<{ path: string; text?: string }> = []
+	for (const raw of paths) {
+		const path = String(raw)
+		if (path.startsWith('/') || path.includes('\\') || path.split('/').includes('..')) continue
+		out.push({ path, text: await readFile(resolve(dir, path), 'utf8').catch(() => undefined) })
+	}
+	return out
+}
+
+/**
  * The dynamic half. The packager reads source statically *and* evaluates the author's
  * entry module to get the built `Extension` — the two halves are cross-checked against
  * each other, which is what catches a hook registered behind an `if`.
@@ -192,23 +212,194 @@ export async function frameDocumentsIn(
  * authoring JS.
  */
 async function loadExtension(dir: string): Promise<{ extension: unknown; entry: string }> {
+	const found = await findExtension(dir)
+	if ('missing' in found) throw new Error(found.missing)
+	return found
+}
+
+/**
+ * The entry module, evaluated — or why none loads (`missing`). A module that
+ * throws while it evaluates (a `defineExtension` refusal) throws here.
+ */
+async function findExtension(dir: string): Promise<{ extension: unknown; entry: string } | { missing: string }> {
 	const { ENTRY_CANDIDATES } = await import('@serene-pub/sdk')
 	for (const candidate of ENTRY_CANDIDATES) {
 		const p = resolve(dir, candidate)
 		try {
-			const mod = await import(pathToFileURL(p).href)
+			// Keyed by the file's mtime: a process that validates the same path
+			// twice (a test suite, a watcher, `serene-pub ui`) evaluates the entry
+			// as it is now, never the first evaluation from the module cache.
+			const mtime = await stat(p).then((st) => st.mtimeMs, () => 0)
+			const mod = await import(`${pathToFileURL(p).href}?v=${mtime}`)
 			// The path as well as the value: the sandbox bundle is built FROM
 			// this module, and guessing the entry a second time could pick a
 			// different candidate than the one that actually loaded.
 			return { extension: mod.default ?? mod.extension, entry: p }
 		} catch (e) {
-			if ((e as NodeJS.ErrnoException).code !== 'ERR_MODULE_NOT_FOUND') throw e
+			// ESM's code, and CommonJS's (a loader such as tsx resolving through require).
+			const code = (e as NodeJS.ErrnoException).code
+			if (code !== 'ERR_MODULE_NOT_FOUND' && code !== 'MODULE_NOT_FOUND') throw e
 		}
 	}
-	throw new Error(
-		`no entry module found in ${dir}. Export your defineExtension(…) result as the default ` +
+	return {
+		missing:
+			`no entry module found in ${dir}. Export your defineExtension(…) result as the default ` +
 			`export of src/index.ts or dist/index.js.`,
+	}
+}
+
+/** What {@link validatePackage} found. @internal */
+export interface PackageValidation {
+	sources: SourceFile[]
+	ignored: string[]
+	/** Why the extension was not evaluated (no entry module loads): `check` says so; `build` stops. */
+	skipped?: string
+	extension?: unknown
+	entry?: string
+	/** `compilePlugin`'s result, when the extension evaluated (and is not an `announce()` builder). */
+	result?: CompileResult
+	/** Everything `build` stops on or reports — or, when `skipped`, the lexical scan's findings. */
+	findings: CompileFinding[]
+	/** The package's code half, built in memory (components and the hook bundle) — what `build` writes. */
+	code?: PackageCode
+}
+
+/**
+ * What `build` holds a package to before it writes anything — the ONE
+ * definition of it: `build` writes after it, `check` reports it.
+ *
+ * Dated 2026-10-29 (M1 gate): `check` used to stop at the lexical scan,
+ * so it exited 0 on packages `build` refused — a `defineExtension` that throws
+ * while it evaluates, and every `compilePlugin` finding. Now both call this.
+ * When no entry module loads (nothing built yet, a dependency missing), the
+ * extension cannot be evaluated: `skipped` says why and the findings are the
+ * lexical scan's, which is all there is to read.
+ *
+ * Dated 2026-10-30 (readiness c33): the component modules and the sandbox
+ * bundle are part of this validation too. They are built in memory here
+ * (`bundlePackageCode`), so a component that does not build, a module a host
+ * would refuse, a failing hook bundle or a missing esbuild stop `check` as they
+ * stop `build`; `build` writes `code` as validated instead of bundling again.
+ * @internal
+ */
+export async function validatePackage(
+	dir: string,
+	ignore: readonly string[] = [],
+	/** Where `build` writes; the component modules are compiled as if written there (esbuild names outputs by it). */
+	out: string = resolve(dir, 'dist/plugin'),
+): Promise<PackageValidation> {
+	const { sources, ignored } = await sourcesIn(dir, ignore)
+	let found: { extension: unknown; entry: string } | { missing: string }
+	try {
+		found = await findExtension(dir)
+	} catch (e) {
+		const message = e instanceof Error ? e.message : String(e)
+		return {
+			sources,
+			ignored,
+			findings: [
+				{
+					severity: 'error',
+					file: 'src/index.ts',
+					line: 1,
+					code: 'E_ENTRY_THREW',
+					message: `the entry module threw while it was evaluated: ${message}`,
+					fix: 'fix what it names — `serene-pub build` evaluates the same module and stops on the same throw',
+				},
+			],
+		}
+	}
+	if ('missing' in found) {
+		const lexical = await frameDocumentsIn(dir, frameEntriesIn(sources), ignore)
+		return {
+			sources,
+			ignored,
+			skipped: found.missing,
+			findings: [...scanSource(sources).findings, ...lexical.flatMap((d) => scanFrameDocument(d))],
+		}
+	}
+	const { extension, entry } = found
+	// The announce() path (24 §6) builds to an announcement, not a compiled manifest.
+	if (extension && typeof (extension as any).build === 'function' && (extension as any).identity?.ns)
+		return { sources, ignored, extension, entry, findings: [] }
+	// Both halves name the documents: the evaluated `surfaces` is the
+	// statement an instance reads, the lexical pass catches a surface a
+	// package declares somewhere this build did not evaluate.
+	const frameDocuments = await frameDocumentsIn(
+		dir,
+		[...declaredFrameEntries((extension as { surfaces?: never } | undefined)?.surfaces), ...frameEntriesIn(sources)],
+		ignore,
 	)
+	const providedFiles = await providedFilesIn(
+		dir,
+		(extension as { provides?: { lorebooks?: readonly unknown[] } } | undefined)?.provides?.lorebooks ?? [],
+	)
+	const compiled = compilePlugin({ sources, extension: extension as never, frameDocuments, providedFiles })
+	// What the install holds the package to as well (2026-10-29, readiness R-a/R-b): the
+	// one create spec per genre counted by the inlet lock, and the SDK's `validate()` over
+	// every document it saves — so `check`/`build` never pass what install refuses.
+	const installFindings: CompileFinding[] = compiled.manifest ? installPackageFindings(compiled, sources[0]?.path) : []
+	const result: CompileResult = installFindings.length
+		? {
+				...compiled,
+				findings: [...compiled.findings, ...installFindings],
+				ok: compiled.ok && !installFindings.some((f) => f.severity === 'error'),
+			}
+		: compiled
+	// The code half, once the declarations compile (build stops there today too).
+	if (!result.ok) return { sources, ignored, extension, entry, result, findings: result.findings }
+	const built = await bundlePackageCode(dir, entry, extension, result.manifest!.components ?? [], out)
+	const final: CompileResult = built.findings.length
+		? {
+				...result,
+				findings: [...result.findings, ...built.findings],
+				ok: !built.findings.some((f) => f.severity === 'error'),
+			}
+		: result
+	return { sources, ignored, extension, entry, result: final, findings: final.findings, code: built.code }
+}
+
+/**
+ * The install's checks over a compiled package that need no instance: each genre's
+ * one create spec (`genreCreateSpecFindings`, the rule the install's package reader
+ * calls) and every document through `validate()` — the publish door's static laws
+ * (01 §3 port shapes and the rest), errors only, as the install's save refuses them.
+ * What install checks against ITS pub (requirements present, an owner name in-app
+ * work took, swap targets) stays install's: no packager can know that pub.
+ * @internal
+ */
+export function installPackageFindings(compiled: CompileResult, file = '(none)'): CompileFinding[] {
+	const out: CompileFinding[] = []
+	const genres = ((compiled.manifest as { genres?: Array<{ id?: unknown }> } | undefined)?.genres ?? []) as Array<{ id?: unknown }>
+	for (const message of genreCreateSpecFindings(genres, compiled.documents))
+		out.push({
+			severity: 'error',
+			file,
+			line: 1,
+			code: 'E_GENRE_CREATE_SPEC',
+			message,
+			fix: "give each genre exactly one pipeline whose input is { genre: '<its id>', event: 'core:event/session-created@1' } — the install counts only that lock",
+		})
+	for (const doc of compiled.documents) {
+		let laws: ReturnType<typeof validate>
+		try {
+			laws = validate(doc)
+		} catch (e) {
+			// A document `validate()` cannot even read is one the install's save refuses too.
+			laws = [{ law: 'document', severity: 'error', message: `could not be validated: ${e instanceof Error ? e.message : String(e)}`, fix: '' }]
+		}
+		for (const f of laws)
+			if (f.severity === 'error')
+				out.push({
+					severity: 'error',
+					file,
+					line: 1,
+					code: 'E_SPEC_LAW',
+					message: `'${doc.id}' does not validate — [${f.law}] ${f.nodeKey ? `${f.nodeKey}: ` : ''}${f.message}`,
+					fix: f.fix || 'the install refuses to save a document that does not validate; fix the finding the law names',
+				})
+	}
+	return out
 }
 
 const flag = (argv: string[], name: string) => {
@@ -258,16 +449,20 @@ function reportIgnored(ignored: readonly string[], to: NodeJS.WritableStream): v
  * the layout the app's installer reads: the build folder as `dist/plugin/`
  * (whatever `--out` named it), the whole `ui/` tree, and any surface or
  * component entry the manifest names that lies outside both. Returns its path.
+ * @internal
  */
-async function writePackageZip(
+export async function writePackageZip(
 	dir: string,
 	out: string,
 	manifest: {
 		slug: string
 		version: string
+		assets?: { dir?: string }
 		surfaces?: Record<string, { entry?: string } | undefined>
 		components?: Array<{ entry?: string }>
 	},
+	/** The build's `--ignore` globs: a path they name is not shipped either (ui/src beside a built frame). */
+	ignore: readonly string[] = [],
 ): Promise<string> {
 	const { zipStore } = await import('./zip.js')
 	const files = new Map<string, Uint8Array>()
@@ -281,11 +476,17 @@ async function writePackageZip(
 		for (const e of entries.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
 			const full = join(root, e.name)
 			if (e.isDirectory()) await walk(full, `${prefix}${e.name}/`)
-			else if (e.isFile()) files.set(`${prefix}${e.name}`, await readFile(full))
+			else if (e.isFile() && !ignore.some((g) => matchesGlob(g, `${prefix}${e.name}`)))
+				files.set(`${prefix}${e.name}`, await readFile(full))
 		}
 	}
 	await walk(out, 'dist/plugin/')
 	await walk(join(dir, 'ui'), 'ui/')
+	// M0: the declared assets folder travels as itself; `lang/` always (the folder is the declaration).
+	const assetsDir = manifest.assets ? (manifest.assets.dir ?? 'assets') : undefined
+	if (assetsDir && !assetsDir.startsWith('/') && !assetsDir.split('/').includes('..'))
+		await walk(join(dir, assetsDir), `${assetsDir.replace(/\/+$/, '')}/`)
+	await walk(join(dir, 'lang'), 'lang/')
 	const entries = [
 		...Object.values(manifest.surfaces ?? {}).map((s) => s?.entry),
 		...(manifest.components ?? []).map((c) => c.entry),
@@ -343,55 +544,113 @@ async function buildSandboxBundle(
 	}
 }
 
+/** One component, built in memory by {@link bundlePackageCode}. @internal */
+export interface BuiltComponent {
+	slug: string
+	/** The declared source path (kept on the manifest row as `source`). */
+	source: string
+	code: string
+	bundled: string[]
+	builtAgainst: import('@serene-pub/sdk').ComponentBuiltAgainst
+}
+
+/** The code half of a package, built in memory. @internal */
+export interface PackageCode {
+	components: BuiltComponent[]
+	/** The sandbox bundle's source; absent when the package declares no hooks. */
+	bundle?: string
+}
+
 /**
- * Build every declared component into `<out>/components/<slug>.js` and point
- * its manifest entry there (the declared path is kept as `source`, the
- * packages it inlines as `bundled`, and the host contract it was built
- * against as `builtAgainst`). Rewrites the manifest's rows in place.
- * esbuild is imported lazily, as the sandbox bundle's is.
+ * Builds the package's code half WITHOUT writing it: each declared component
+ * into one module (judged by `componentModuleFindings` on the code string, as a
+ * host will judge it) and the hook bundle. Returns the artifacts plus the
+ * findings `build` has always stopped on (`E_COMPONENT_BUILD`, `E_SANDBOX_BUNDLE`)
+ * and the component warnings it printed (`W_COMPONENT_BUILD`). esbuild is
+ * imported lazily, as the sandbox bundle's is.
+ * @internal
  */
-async function buildComponents(
+export async function bundlePackageCode(
 	dir: string,
-	out: string,
-	components: Array<{ slug: string; entry: string; source?: string; bundled?: string[]; builtAgainst?: import('@serene-pub/sdk').ComponentBuiltAgainst }>,
-): Promise<{ problem?: string; warnings: string[] }> {
-	const warnings: string[] = []
-	if (!components.length) return { warnings }
-	let bundleComponent: typeof import('./componentBundle.js').bundleComponent
-	try {
-		;({ bundleComponent } = await import('./componentBundle.js'))
-	} catch {
-		return {
-			warnings,
-			problem:
-				`this package declares ${components.length} component(s) and the bundler is not ` +
-				`installed, so they cannot be built: install esbuild (npm i -D esbuild).`,
-		}
-	}
-	for (const c of components) {
-		const source = c.source ?? c.entry
-		const outfile = join(out, 'components', `${c.slug}.js`)
+	entry: string,
+	extension: unknown,
+	components: Array<{ slug: string; entry: string; source?: string }>,
+	/** Where `build` writes: each module is compiled as `<out>/components/<slug>.js`, as before. */
+	out: string = resolve(dir, 'dist/plugin'),
+): Promise<{ code: PackageCode; findings: CompileFinding[] }> {
+	const findings: CompileFinding[] = []
+	const code: PackageCode = { components: [] }
+	const componentFix =
+		'fix what the message names — `serene-pub build` builds the same component and stops on the same problem'
+	if (components.length) {
+		let compileComponentModule: typeof import('./componentBundle.js').compileComponentModule | undefined
 		try {
-			const b = await bundleComponent({ entry: resolve(dir, source), outfile, root: dir })
-			warnings.push(...b.warnings)
-			// What a host will judge the module on (C30), judged here first.
-			const judged = componentModuleFindings(await readFile(outfile, 'utf8'))
-			if (judged.errors.length)
-				return { warnings, problem: `component '${c.slug}': ${judged.errors.join('; ')}` }
-			warnings.push(...judged.advisories.map((a) => `component '${c.slug}': ${a}`))
-			c.source = source
-			c.entry = relative(dir, outfile).split('\\').join('/')
-			if (b.bundled.length) c.bundled = b.bundled
-			// What it assumes of the host (F1): a host that has moved on refuses it by name.
-			c.builtAgainst = b.builtAgainst
-		} catch (e) {
-			return {
-				warnings,
-				problem: `component '${c.slug}' (${source}) did not build: ${e instanceof Error ? e.message : String(e)}`,
-			}
+			;({ compileComponentModule } = await import('./componentBundle.js'))
+		} catch {
+			findings.push({
+				severity: 'error',
+				file: components[0].source ?? components[0].entry,
+				line: 1,
+				code: 'E_COMPONENT_BUILD',
+				message:
+					`this package declares ${components.length} component(s) and the bundler is not ` +
+					`installed, so they cannot be built: install esbuild (npm i -D esbuild).`,
+				fix: 'install esbuild (`npm i -D esbuild`) — the components are built with it',
+			})
 		}
+		if (compileComponentModule)
+			for (const c of components) {
+				const source = c.source ?? c.entry
+				try {
+					const b = await compileComponentModule({
+						entry: resolve(dir, source),
+						outfile: join(out, 'components', `${c.slug}.js`),
+						root: dir,
+					})
+					for (const w of b.warnings)
+						findings.push({ severity: 'warning', file: source, line: 1, code: 'W_COMPONENT_BUILD', message: w, fix: 'the build went on; change the source if this was not meant' })
+					// What a host will judge the module on (C30), judged here first.
+					const judged = componentModuleFindings(b.code)
+					for (const a of judged.advisories)
+						findings.push({ severity: 'warning', file: source, line: 1, code: 'W_COMPONENT_BUILD', message: `component '${c.slug}': ${a}`, fix: 'the build went on; change the source if this was not meant' })
+					if (judged.errors.length) {
+						findings.push({
+							severity: 'error',
+							file: source,
+							line: 1,
+							code: 'E_COMPONENT_BUILD',
+							message: `component '${c.slug}': ${judged.errors.join('; ')}`,
+							fix: componentFix,
+						})
+						continue
+					}
+					code.components.push({ slug: c.slug, source, code: b.code, bundled: b.bundled, builtAgainst: b.builtAgainst })
+				} catch (e) {
+					findings.push({
+						severity: 'error',
+						file: source,
+						line: 1,
+						code: 'E_COMPONENT_BUILD',
+						message: `component '${c.slug}' (${source}) did not build: ${e instanceof Error ? e.message : String(e)}`,
+						fix: componentFix,
+					})
+				}
+			}
 	}
-	return { warnings }
+	// The code half (D-6b). A package that declares callables and ships no
+	// bundle installs its declarations and none of its code, so it is refused.
+	const bundle = await buildSandboxBundle(dir, entry, extension)
+	if (bundle.problem)
+		findings.push({
+			severity: 'error',
+			file: relative(dir, entry).split('\\').join('/'),
+			line: 1,
+			code: 'E_SANDBOX_BUNDLE',
+			message: bundle.problem,
+			fix: 'fix what the message names — `serene-pub build` bundles the hooks the same way and stops on the same problem',
+		})
+	else if (bundle.source !== undefined) code.bundle = bundle.source
+	return { code, findings }
 }
 
 /**
@@ -473,23 +732,46 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
 	if (cmd === 'check') {
 		const ignore = flags(argv, 'ignore')
-		const { sources, ignored } = await sourcesIn(dir, ignore)
+		// The same validation `build` runs, writing nothing (`validatePackage`):
+		// a package `check` passes is one `build` accepts. Since 2026-10-30 that
+		// includes the component modules and the sandbox bundle, built in memory.
+		const v = await validatePackage(dir, ignore)
+		const { sources, ignored } = v
 		const scan = scanSource(sources)
-		// `check` never evaluates the author's module — that is what makes its
-		// answer the same whichever export a package defaults — so the frame
-		// documents are the ones the source names, read lexically.
-		const documents = await frameDocumentsIn(dir, frameEntriesIn(sources), ignore)
-		const findings: CompileFinding[] = [
-			...scan.findings,
-			...documents.flatMap((d) => scanFrameDocument(d)),
-		]
+		const findings: CompileFinding[] = v.findings
+		const permissions = v.result?.manifest?.permissions ?? scan.permissions
+		// The package's `lang/<locale>.json` catalogs against the `t('…')`
+		// literals in its sources and its `ui/**` files (never fails `check`).
+		const uiTexts: string[] = []
+		const walkUi = async (d: string): Promise<void> => {
+			let names: string[]
+			try {
+				names = await readdir(d)
+			} catch {
+				return
+			}
+			for (const name of names) {
+				const full = join(d, name)
+				if ((await stat(full)).isDirectory()) await walkUi(full)
+				else if (/\.(html|js|svelte)$/.test(name)) uiTexts.push(await readFile(full, 'utf8'))
+			}
+		}
+		await walkUi(join(dir, 'ui'))
+		const catalogs = await langCatalogReport(dir, [...sources.map((f) => f.text), ...uiTexts])
 		if (json) {
-			process.stdout.write(JSON.stringify({ ...scan, findings }, null, 2) + '\n')
+			process.stdout.write(
+				JSON.stringify({ ...scan, permissions, findings, catalogs, ...(v.skipped ? { skipped: v.skipped } : {}) }, null, 2) + '\n',
+			)
 			reportIgnored(ignored, process.stderr)
 		} else {
 			process.stdout.write(renderFindings(findings) + '\n')
+			if (v.skipped) process.stdout.write(`\nbuild validation skipped (the extension was not evaluated): ${v.skipped}\n`)
 			process.stdout.write(`\npermissions this code would request:\n`)
-			for (const p of scan.permissions) process.stdout.write(`  ${p}\n`)
+			for (const p of permissions) process.stdout.write(`  ${p}\n`)
+			if (catalogs.length) {
+				process.stdout.write(`\nstring catalogs:\n`)
+				for (const line of catalogs) process.stdout.write(`  ${line}\n`)
+			}
 			reportIgnored(ignored, process.stdout)
 		}
 		return findings.some((f) => f.severity === 'error') ? 1 : 0
@@ -497,10 +779,22 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 
 	if (cmd === 'build') {
 		const ignore = flags(argv, 'ignore')
-		const { sources, ignored } = await sourcesIn(dir, ignore)
-		const { extension, entry } = await loadExtension(dir)
+		// The validation `check` runs too (`validatePackage`, which also builds the
+		// component modules and the sandbox bundle in memory, 2026-10-30), then the
+		// writes: `build` writes what was validated and bundles nothing twice.
+		const v = await validatePackage(dir, ignore, resolve(dir, flag(argv, 'out') ?? 'dist/plugin'))
+		const { ignored } = v
 		// On stderr on both paths, so `--json` output stays parseable.
 		reportIgnored(ignored, process.stderr)
+		if (v.skipped) {
+			process.stderr.write(`✗ ${v.skipped}\n`)
+			return 1
+		}
+		if (!v.entry) {
+			process.stderr.write(renderFindings(v.findings) + '\n')
+			return 1
+		}
+		const { extension, entry } = v as { extension: unknown; entry: string }
 
 		// The announce() path (24 §6): a package whose entry exports an
 		// AnnouncementBuilder builds to a declaration artifact — the
@@ -544,15 +838,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 		// Both halves name the documents: the evaluated `surfaces` is the
 		// statement an instance reads, the lexical pass catches a surface a
 		// package declares somewhere this build did not evaluate.
-		const frameDocuments = await frameDocumentsIn(
-			dir,
-			[
-				...declaredFrameEntries((extension as { surfaces?: never } | undefined)?.surfaces),
-				...frameEntriesIn(sources),
-			],
-			ignore,
-		)
-		const r = compilePlugin({ sources, extension: extension as never, frameDocuments })
+		const r = v.result!
 		if (!r.ok) {
 			process.stderr.write(renderFindings(r.findings) + '\n')
 			return 1
@@ -562,34 +848,34 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 		if (r.findings.length) process.stderr.write(renderFindings(r.findings) + '\n')
 		const out = resolve(dir, flag(argv, 'out') ?? 'dist/plugin')
 		await mkdir(join(out, 'pipelines'), { recursive: true })
-		// Components (§3.5, C3): each declared source becomes one built module
-		// the page's UI worker imports; the manifest names the BUILT file.
-		const built = await buildComponents(dir, out, r.manifest!.components)
-		if (built.problem) {
-			process.stderr.write(`✗ ${built.problem}\n`)
-			return 1
+		// Components (§3.5, C3): each declared source was built in memory by
+		// the validation; the manifest names the BUILT file, written here.
+		const code = v.code!
+		for (const c of r.manifest!.components) {
+			const b = code.components.find((x) => x.slug === c.slug)
+			if (!b) continue
+			const outfile = join(out, 'components', `${c.slug}.js`)
+			await mkdir(dirname(outfile), { recursive: true })
+			await writeFile(outfile, b.code)
+			c.source = b.source
+			c.entry = relative(dir, outfile).split('\\').join('/')
+			if (b.bundled.length) c.bundled = b.bundled
+			// What it assumes of the host (F1): a host that has moved on refuses it by name.
+			c.builtAgainst = b.builtAgainst
 		}
-		for (const w of built.warnings) process.stderr.write(`warning: ${w}\n`)
 		await writeFile(join(out, 'manifest.json'), JSON.stringify(r.manifest, null, 2))
 		for (const doc of r.documents)
 			await writeFile(
 				join(out, 'pipelines', `${doc.id.replace(/[:/]/g, '_')}.json`),
 				JSON.stringify(doc, null, 2),
 			)
-		// The code half (D-6b). A package that declares callables and ships no
-		// bundle installs its declarations and none of its code — the failure
-		// D-6 spent a day finding — so the build fails rather than writing an
-		// artifact that cannot work.
-		const bundle = await buildSandboxBundle(dir, entry, extension)
-		if (bundle.problem) {
-			process.stderr.write(`✗ ${bundle.problem}\n`)
-			return 1
-		}
+		// The code half (D-6b), built and judged by the validation.
+		const bundle = { source: code.bundle }
 		if (bundle.source !== undefined) await writeFile(join(out, 'bundle.js'), bundle.source)
 		// The installable artifact (F3 docs gate, stall 8): Admin › Plugins ›
 		// Install a package… takes a zip, and the installer reads it at
 		// `dist/plugin/manifest.json` plus the client files under `ui/`.
-		const zipPath = await writePackageZip(dir, out, r.manifest as never)
+		const zipPath = await writePackageZip(dir, out, r.manifest as never, ignore)
 		if (json) process.stdout.write(JSON.stringify(r.manifest, null, 2) + '\n')
 		else {
 			process.stdout.write(

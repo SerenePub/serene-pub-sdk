@@ -29,6 +29,7 @@ const ability = (key: string, label: string, means: string) =>
 		description: { en: `${label}, from 1 to 30; 10 is ordinary.` },
 		descriptor: `${label}, a score from 1 to 30 where 10 is ordinary. ${means}`,
 		appliesTo: ["cast"],
+		scope: "session",
 		config: { min: 1, max: 30 },
 		default: 10
 	})
@@ -53,6 +54,7 @@ export const visItinerisHpMaxSlot = defineAttributeSlot("core:slot/itineris-hp-m
 	description: { en: "The most health this character can have." },
 	descriptor: "The most health this character can have; healing never raises health above it. It rises when they gain a level.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 1 },
 	default: 10
 })
@@ -64,6 +66,7 @@ export const visItinerisTempHpSlot = defineAttributeSlot("core:slot/itineris-tem
 	description: { en: "A cushion that takes harm before health does." },
 	descriptor: "Temporary health: harm comes off it before real health. It does not add up from two sources (the higher stays) and it is gone after a long rest.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0 },
 	default: 0
 })
@@ -75,6 +78,7 @@ export const visItinerisSpeciesSlot = defineAttributeSlot("core:slot/itineris-sp
 	description: { en: "What people this character comes from." },
 	descriptor: "The character's species — what people they were born to. It may give them senses or gifts others lack.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { maxLength: 60 }
 })
 
@@ -85,6 +89,7 @@ export const visItinerisBackgroundSlot = defineAttributeSlot("core:slot/itineris
 	description: { en: "What this character did before adventuring." },
 	descriptor: "What the character did before adventuring. It explains what they know, who they know and the skills they picked up.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { maxLength: 60 }
 })
 
@@ -95,6 +100,7 @@ export const visItinerisSpeedSlot = defineAttributeSlot("core:slot/itineris-spee
 	description: { en: "How far this character moves in one move, in feet." },
 	descriptor: "How far the character moves in one move, in feet. Heavy loads, some armour and some conditions lower it.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 120 },
 	default: 30
 })
@@ -131,6 +137,7 @@ export const visItinerisSaveTrainingSlot = defineAttributeSlot("core:slot/itiner
 	description: { en: "The abilities this character is trained to resist with." },
 	descriptor: "The abilities the character is trained to resist danger with. A trained save adds their proficiency.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { of: [...VIS_ITINERIS_ABILITIES] }
 })
 
@@ -141,6 +148,7 @@ export const visItinerisSkillTrainingSlot = defineAttributeSlot("core:slot/itine
 	description: { en: "The skills this character is trained in." },
 	descriptor: "The skills the character is trained in. A trained skill adds their proficiency to the check.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { of: Object.keys(VIS_ITINERIS_SKILLS) }
 })
 
@@ -151,6 +159,7 @@ export const visItinerisSkillExpertiseSlot = defineAttributeSlot("core:slot/itin
 	description: { en: "The skills this character has mastered." },
 	descriptor: "The skills the character has mastered. An expert skill adds their proficiency twice.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { of: Object.keys(VIS_ITINERIS_SKILLS) }
 })
 
@@ -161,6 +170,7 @@ export const visItinerisHitDiceSlot = defineAttributeSlot("core:slot/itineris-hi
 	description: { en: "Dice left to spend on healing during a short rest." },
 	descriptor: "Hit dice left: on a short rest the character may spend them to heal. They have one per level and get half back on a long rest.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 20 },
 	default: 1
 })
@@ -172,6 +182,7 @@ export const visItinerisDyingSlot = defineAttributeSlot("core:slot/itineris-dyin
 	description: { en: "How close to death a character at zero health is." },
 	descriptor: "How close to death the character is, from 0 (not dying) to 4 (dead). It rises while they lie at zero health and falls when they are helped.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 4 },
 	default: 0
 })
@@ -183,6 +194,7 @@ export const visItinerisWoundedSlot = defineAttributeSlot("core:slot/itineris-wo
 	description: { en: "How many times this character has nearly died since their last long rest." },
 	descriptor: "How many times the character has come back from dying since their last long rest. Each one makes the next fall start closer to death.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 3 },
 	default: 0
 })
@@ -194,6 +206,7 @@ export const visItinerisDeathSuccessesSlot = defineAttributeSlot("core:slot/itin
 	description: { en: "Passed rolls against death; three and they are stable." },
 	descriptor: "Rolls against death the character has passed while at zero health. At three they stop dying.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 3 },
 	default: 0
 })
@@ -205,6 +218,7 @@ export const visItinerisDeathFailuresSlot = defineAttributeSlot("core:slot/itine
 	description: { en: "Failed rolls against death; three and they die." },
 	descriptor: "Rolls against death the character has failed while at zero health. At three they die.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 3 },
 	default: 0
 })
@@ -227,6 +241,7 @@ export const visItinerisSpellPointsSlot = defineAttributeSlot("core:slot/itineri
 	descriptor:
 		"Spell points left: casting a spell spends as many points as the spell's level, and a cantrip spends none. They come back after a long rest.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 99 },
 	default: 0,
 	whenRulesetSetting: { ruleset: "core:ruleset/vis-itineris@1", setting: "casting", is: ["points"] }
@@ -239,6 +254,7 @@ export const visItinerisHeroPointsSlot = defineAttributeSlot("core:slot/itineris
 	description: { en: "Spend one to roll a die again." },
 	descriptor: "Hero points: spend one to roll a die again and keep the new result. The table awards them for bold or selfless play.",
 	appliesTo: ["cast"],
+	scope: "session",
 	config: { min: 0, max: 3 },
 	default: 1
 })

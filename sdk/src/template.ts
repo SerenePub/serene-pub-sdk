@@ -23,7 +23,42 @@ export interface TemplateRef {
 }
 
 const EXPR = /\{\{\s*([^}]+?)\s*\}\}/g
-const FOR = /\{%\s*for\s+(\w+)\s+in\s+([\w.]+)\s*%\}/g
+const FOR = /\{%\s*for\s+(\w+)\s+in\s+([\w.]+(?:\s*\|\s*\w+)*)\s*%\}/g
+
+/**
+ * 🚧 A **Jinja filter** — `{{ value | name }}`, `{% for x in list | name %}`
+ * (PLAN-speech-build S3, 2026-10-28). Pure; handed the render's scope so a
+ * host's filter can read what it needs there (speech's `tag` reads the
+ * resolved model's `controls`). The host owns the bodies and passes them per
+ * render; this engine owns only the syntax. No arguments.
+ * @experimental
+ */
+export type JinjaFilter = (value: unknown, scope: Readonly<Record<string, unknown>>) => unknown
+
+/** 🚧 What a render is handed beside its scope. @experimental */
+export interface RenderOptions {
+	/**
+	 * Filters by name. A filter the render was not handed yields NOTHING
+	 * (an empty output, an empty loop), never its input unchanged — a tag
+	 * filter missing must not speak the label as a word.
+	 */
+	readonly filters?: Readonly<Record<string, JinjaFilter>>
+}
+
+/** `a.b | f | g` → the path before the first pipe. Expressions without a pipe are unchanged. */
+const pathOf = (expr: string): string => expr.split('|')[0]!.trim()
+
+/** Resolve `a.b | f | g` against a scope, applying each filter in turn. */
+function resolveExpr(expr: string, scope: Record<string, unknown>, opts?: RenderOptions): unknown {
+	const [head, ...filters] = expr.split('|')
+	let v = get(scope, head!.trim().split('.'))
+	for (const raw of filters) {
+		const f = opts?.filters?.[raw.trim()]
+		if (!f) return undefined
+		v = f(v, scope)
+	}
+	return v
+}
 const IF = /\{%\s*if\s+([^%]+?)\s*%\}/g
 
 /**
@@ -39,7 +74,7 @@ export function extractRefs(src: string): TemplateRef[] {
 	const loopSources: TemplateRef[] = []
 	for (const m of src.matchAll(FOR)) bound.add(m[1]!)
 	for (const m of src.matchAll(FOR)) {
-		const parts = m[2]!.split('.')
+		const parts = pathOf(m[2]!).split('.')
 		// ⚠ This used to be an unconditional `bound: false`, which made every
 		// nested loop a false error: `{% for l in c.lore %}` reported `'c' is
 		// not available to this template`, because the thing being iterated is
@@ -55,7 +90,7 @@ export function extractRefs(src: string): TemplateRef[] {
 
 	const refs: TemplateRef[] = [...loopSources]
 	for (const m of src.matchAll(EXPR)) {
-		const expr = m[1]!.trim()
+		const expr = pathOf(m[1]!)
 		const dynamic = /[\[\(]/.test(expr)
 		const parts = expr.split('.')
 		refs.push({
@@ -69,7 +104,7 @@ export function extractRefs(src: string): TemplateRef[] {
 }
 
 /** Render. Missing values become empty strings — templates never throw at run time. @experimental */
-export function render(src: string, baseScope: Record<string, unknown>): string {
+export function render(src: string, baseScope: Record<string, unknown>, opts?: RenderOptions): string {
 	let out = src
 	let prev: string
 	const scope: Record<string, unknown> = { ...baseScope }
@@ -98,7 +133,7 @@ export function render(src: string, baseScope: Record<string, unknown>): string 
 	// loops — outermost first, so inner loops render inside their parent's scope.
 	// (An innermost-first pass evaluates the inner loop before `set`/item bindings exist,
 	// which is a real bug this replaced.)
-	out = renderLoops(out, scope)
+	out = renderLoops(out, scope, opts)
 
 	// conditionals
 	do {
@@ -110,7 +145,7 @@ export function render(src: string, baseScope: Record<string, unknown>): string 
 	} while (out !== prev)
 
 	return out.replace(EXPR, (_m, expr: string) => {
-		const v = get(scope, expr.trim().split('.'))
+		const v = resolveExpr(expr, scope, opts)
 		return v === undefined || v === null ? '' : String(v)
 	})
 }
@@ -360,7 +395,7 @@ export function checkTemplate(src: string, scope: TemplateScope): TemplateFindin
 /** `{% for x in a.b %}` — every loop variable, and what it iterates. */
 function loopBindings(src: string): Map<string, string[]> {
 	const out = new Map<string, string[]>()
-	for (const m of src.matchAll(FOR)) out.set(m[1]!, m[2]!.split('.'))
+	for (const m of src.matchAll(FOR)) out.set(m[1]!, pathOf(m[2]!).split('.'))
 	return out
 }
 
@@ -687,23 +722,27 @@ function maskLoops(src: string): { masked: string; blocks: string[] } {
 }
 
 /** Render top-level `{% for %}` blocks; nested ones are handled by the recursive call. */
-function renderLoops(src: string, scope: Record<string, unknown>): string {
+function renderLoops(src: string, scope: Record<string, unknown>, opts?: RenderOptions): string {
 	const { masked, blocks } = maskLoops(src)
 	if (!blocks.length) return src
 	return masked.replace(/\u0000(\d+)\u0000/g, (_m, idx: string) => {
 		const block = blocks[Number(idx)]!
-		const head = /^\{%\s*for\s+(\w+)\s+in\s+([\w.]+)\s*%\}/.exec(block)
+		const head = /^\{%\s*for\s+(\w+)\s+in\s+([\w.]+(?:\s*\|\s*\w+)*)\s*%\}/.exec(block)
 		if (!head) return block
 		const body = block.slice(head[0].length, block.lastIndexOf('{%'))
-		const items = get(scope, head[2]!.split('.'))
+		const items = resolveExpr(head[2]!, scope, opts)
 		if (!Array.isArray(items)) return ''
 		return items
 			.map((item, i) =>
-				render(body, {
-					...scope,
-					[head[1]!]: item,
-					loop: { index: i + 1, index0: i, revindex: items.length - i, length: items.length },
-				}),
+				render(
+					body,
+					{
+						...scope,
+						[head[1]!]: item,
+						loop: { index: i + 1, index0: i, revindex: items.length - i, length: items.length },
+					},
+					opts,
+				),
 			)
 			.join('')
 	})

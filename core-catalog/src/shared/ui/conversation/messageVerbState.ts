@@ -60,6 +60,12 @@ export interface VerbMessage {
 /** @experimental */
 export interface VerbContext {
 	msg: VerbMessage
+	/**
+	 * Why this pub cannot speak a line (the dossier's `speech.reason`), when
+	 * it cannot: the speak verbs grey with it, in the ⋮ menu and the quick
+	 * row alike. Read aloud being Off is never a reason.
+	 */
+	speechReason?: string
 	isLastMessage: boolean
 	/** Some message is in edit mode (this one or another). */
 	editing: boolean
@@ -277,6 +283,9 @@ export function coreVerbState(key: string, ctx: VerbContext): VerbState {
 				off(
 					[notMine, notMine ? notYoursToUse(ctx.action) : undefined],
 					...busy,
+					...(SPEAK_VERB_KEYS.includes(key) && ctx.speechReason
+						? ([[true, ctx.speechReason]] as Array<[boolean, string | undefined]>)
+						: []),
 					// A contributed action declares no busy rule of its own
 					// unless its author wrote one; the composer's guard
 					// (nothing runs while a reply streams, S5) holds here too.
@@ -286,6 +295,9 @@ export function coreVerbState(key: string, ctx: VerbContext): VerbState {
 		}
 	}
 }
+
+/** The speak verbs' table keys (`core:spec/speak-message`'s two actions). @experimental */
+export const SPEAK_VERB_KEYS: readonly string[] = ['contributed:read-aloud', 'contributed:say-it-as']
 
 /** The fields the row reads off an action — the wire's `Actions.Action` has them. @experimental */
 export interface RowAction {
@@ -338,6 +350,8 @@ export function quickRowActions<A extends RowAction>(
 		VerbContext,
 		'canAct' | 'itemGated' | 'action' | 'enabled' | 'reason' | 'itemPredicates'
 	>,
+	/** Actions that stay drawn, greyed with their reason, when disabled (default: none). */
+	showDisabled?: (a: A) => boolean,
 ): Array<{ action: A; state: VerbState }> {
 	return primary
 		.filter((a) => !(a.specSlug === 'core' && a.key === 'stop'))
@@ -345,5 +359,5 @@ export function quickRowActions<A extends RowAction>(
 			action: a,
 			state: coreVerbState(verbKeyOf(a), { ...ctx, ...verdictOf(a) }),
 		}))
-		.filter((q) => q.state.shown && !q.state.disabled)
+		.filter((q) => q.state.shown && (!q.state.disabled || showDisabled?.(q.action) === true))
 }

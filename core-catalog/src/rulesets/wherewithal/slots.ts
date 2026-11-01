@@ -19,6 +19,7 @@ const pool = (key: string, label: string, spentOn: string) =>
 		description: { en: `${label} left to spend, from 0 to 6; 3 is usual.` },
 		descriptor: `${label}: a pool from 0 to 6, spent ${spentOn}. Spent is gone until a rest or a boon restores it; at 0 there is nothing left to spend.`,
 		appliesTo: ["cast"],
+		scope: "session",
 		config: { min: 0, max: 6 },
 		default: 3
 	})

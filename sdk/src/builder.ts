@@ -1258,7 +1258,7 @@ export class PresetBuilder<Nodes extends Record<string, PortDecl> = {}> {
 	template(nodeKey: keyof Nodes & string, value: TemplateValue) {
 		return this.set(nodeKey, 'template', value)
 	}
-	/** Generation parameters: a reference to a named config, or field overrides on top. */
+	/** Generation parameters: a reference to a named config, `{ seedKey }`. */
 	sampling(nodeKey: keyof Nodes & string, value: Record<string, unknown>) {
 		return this.set(nodeKey, 'sampling', value)
 	}
@@ -1486,7 +1486,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}, A extends 
 	 * ```ts
 	 * .defaults((d) => d
 	 *   .prompts('generate', { system: STORY_SYSTEM })
-	 *   .sampling('generate', slot.sampling('core:sampling/story')))
+	 *   .sampling('generate', { seedKey: 'sampling-default' }))
 	 * ```
 	 * Stored where the shipped default author preset always was
 	 * (`presets[slug: 'default', default: true]`), so a host reading that

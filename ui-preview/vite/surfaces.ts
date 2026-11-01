@@ -58,7 +58,14 @@ export const THEME_CSS_PATH = '/@serene-pub/themes.css'
  * (as this one previously did) would let an author build against inline
  * scripts that core will refuse the day they install.
  */
-function frameCsp(): string {
+function frameCsp(host: string, pluginId: string): string {
+	// 🚧 (M2a) Production opens `connect-src` for GET on the frame's own
+	// plugin's two doors and nothing else; so does the harness, in place of
+	// `'self'` (which would open the whole dev server). The harness serves
+	// neither door yet, so a fetch there is a 404 here and a 200 once installed.
+	const doors = /^[A-Za-z0-9.-]+(:\d+)?$|^\[[0-9A-Fa-f:.]+\](:\d+)?$/.test(host)
+		? ` ${host}/plugin-assets/${pluginId}/ ${host}/plugin-data/${pluginId}/`
+		: ''
 	return [
 		"default-src 'none'",
 		"script-src 'self'",
@@ -68,7 +75,7 @@ function frameCsp(): string {
 		"media-src 'self' blob:",
 		// Production is `connect-src <granted hosts>` or `'none'`; dev must
 		// additionally reach the HMR socket or nothing hot-reloads.
-		"connect-src 'self' ws: wss:",
+		`connect-src${doors} ws: wss:`,
 		"form-action 'none'",
 		"base-uri 'none'",
 	].join('; ')
@@ -154,6 +161,7 @@ export function serenePubSurfaces(options: SurfacesPluginOptions): Plugin {
 	let server: ViteDevServer | undefined
 	let declFiles = new Set<string>()
 	let themeCss: string | undefined
+	let previewId = 'unknown'
 
 	return {
 		name: 'serene-pub:surfaces',
@@ -249,7 +257,7 @@ export function serenePubSurfaces(options: SurfacesPluginOptions): Plugin {
 			s.middlewares.use((req, res, next) => {
 				const url = req.url ?? ''
 				if (url.startsWith('/@fs') && /\.html(\?|$)/.test(url))
-					res.setHeader('Content-Security-Policy', frameCsp())
+					res.setHeader('Content-Security-Policy', frameCsp(req.headers.host ?? '', previewId))
 				next()
 			})
 		},
@@ -301,6 +309,7 @@ export function serenePubSurfaces(options: SurfacesPluginOptions): Plugin {
 				}
 			}
 
+			previewId = /^[a-z0-9]+([.-][a-z0-9]+)*$/.test(manifest.id) ? manifest.id : 'unknown'
 			const frames: Record<string, string> = {}
 			const components: string[] = []
 			for (const t of manifest.targets) {

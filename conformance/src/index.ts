@@ -1633,10 +1633,11 @@ export const REQUIREMENTS: Requirement[] = [
 			)
 			for (const [kind, storage, fetch] of table) {
 				const g = hookCtxGrants(kind)
+				// `package` (M2a) is granted exactly where `storage` is.
 				must(
-					g.storage === storage && g.fetch === fetch,
+					g.storage === storage && g.package === storage && g.fetch === fetch,
 					`the grant table hands a '${kind}' hook ${JSON.stringify(g)}; the law is ` +
-						`{ storage: ${storage}, fetch: ${fetch} }`,
+						`{ storage: ${storage}, package: ${storage}, fetch: ${fetch} }`,
 				)
 			}
 			must(
@@ -1760,7 +1761,26 @@ export const REQUIREMENTS: Requirement[] = [
 				// and only the hosts the package declared and an administrator
 				// left granted — the same grant `ctx.fetch` is metered by. The
 				// reporting directives take a URL by definition.
-				if (name === 'connect-src' || name === 'report-uri' || name === 'report-to') continue
+				if (name === 'connect-src') {
+					// 🚧 (M2a) Judged, not skipped: the frame's own GET doors
+					// (`<host>/plugin-assets/<id>/`, `<host>/plugin-data/<id>/`, a
+					// path under the document's own host) and granted network hosts
+					// (`https://h`, `ws://h`, …, with no path) are the only sources.
+					// `'self'`, `*`, a bare scheme and any other path are the app.
+					const door = /^[A-Za-z0-9.\-:[\]]+\/plugin-(assets|data)\/[a-z0-9][a-z0-9._-]*\/$/
+					const granted = /^(https?|wss?):\/\/[^/*\s]+$/
+					const bad = sources.filter(
+						(src) => src !== "'none'" && !door.test(src) && !granted.test(src),
+					)
+					must(
+						bad.length === 0,
+						`\`${shown('connect-src')}\` — ${bad.join(', ')} opens more than the frame's own ` +
+							`/plugin-assets/<id>/ and /plugin-data/<id>/ (GET) and its granted network hosts: ` +
+							`'self', a wildcard, a bare scheme or another path lets a frame call the app's API`,
+					)
+					continue
+				}
+				if (name === 'report-uri' || name === 'report-to') continue
 				const off = sources.filter((src) => !local(src))
 				must(
 					off.length === 0,

@@ -34,6 +34,7 @@
 import { pluginRuleRef } from './pluginRuleRef.js'
 import type { MediaKind } from './media.js'
 import { i18nFindings, i18nText, type I18nText } from './i18n.js'
+import type { JsonSchema } from './jsonSchema.js'
 
 // ── Values ──────────────────────────────────────────────────────────────────
 
@@ -126,11 +127,34 @@ export type FieldType =
 	 *
 	 * Deliberately **fixed-key**: the members are declared, so a form can be
 	 * rendered from them and a stored value can be checked against them. A
-	 * free-form map is `text` with `format: 'json'`, which is what that escape
-	 * hatch is for — and the difference is exactly whether anything can tell a
-	 * mistyped key from a deliberate one.
+	 * free-form map is `json`, which is what that escape hatch is for — and the
+	 * difference is exactly whether anything can tell a mistyped key from a
+	 * deliberate one.
 	 */
 	| 'object'
+	/**
+	 * 🚧 **Any JSON value**, stored **parsed** — an object, array, string, number,
+	 * boolean or null, never the string that spells it. A value whose shape the
+	 * author cannot fix in advance: a free-form map, a layout, a table of
+	 * whatever a plugin keeps. `maxBytes` caps its JSON text and `jsonSchema`
+	 * may hold it to a shape (both 🚧, on `FieldDecl`).
+	 *
+	 * ⚠ Not `text` with `format: 'json'` — that stays a *string* which happens
+	 * to hold JSON, and is what `inferSchema` still writes. ⚠ Not `object`,
+	 * whose keys are declared and checked member by member.
+	 */
+	| 'json'
+	/**
+	 * 🚧 **A weekly routine** (M0, SHAPES F3): where someone is, by the
+	 * hour — `{ weekday: [hour, where][], weekend: [hour, where][] }`, each
+	 * list in hour order, `hour` 0–23 the hour from which they are at `where`
+	 * (a place id, or `home` · `work` · `leisure`) until the next pair. A
+	 * cast-member field declared by a ruleset, amendable at story dates like
+	 * any member field; what `cast-presences@1` is to read at an hour (held on a ruling). ⚠ Not the
+	 * Schedule cadence (`core:cadence/schedule@1`, the moments a routine runs
+	 * at). Declared only until lane T3.
+	 */
+	| 'schedule'
 
 // One display-text type across the SDK, owned by `i18n.ts`: `I18nText` is the
 // settings vocabulary's spelling of `I18n`, and `descriptors.ts` re-exports the
@@ -354,6 +378,24 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 * object reads as `[<id>]` rows (`readLogitBiasValue`).
 	 */
 	format?: 'json' | 'story-time' | 'logit-bias'
+	/**
+	 * 🚧 For a `json` field only: the most its value may weigh, counted as the
+	 * UTF-8 bytes of its JSON text. Absent, `JSON_FIELD_MAX_BYTES` (16384); an
+	 * integer from 1 to `JSON_FIELD_MAX_BYTES_CEILING` (262144) — a declaration
+	 * past the ceiling is refused, and the runtime reads `jsonFieldByteCap`,
+	 * which clamps, never this raw number.
+	 */
+	maxBytes?: number
+	/**
+	 * 🚧 For a `json` field only: a JSON Schema the value must fit — a SUBSET:
+	 * `type` (one or an array of object · array · string · number · integer ·
+	 * boolean · null), `properties`, `required`, `additionalProperties`
+	 * (boolean or a schema), `items` (one schema), `enum`, `const`,
+	 * `minimum`/`maximum`, `minLength`/`maxLength`, `minItems`/`maxItems`, and
+	 * `title`/`description` (ignored). Any other keyword (`$ref`, `pattern`,
+	 * `oneOf` …) is a declaration error naming it.
+	 */
+	jsonSchema?: JsonSchema
 }
 
 /** @public */
@@ -424,9 +466,14 @@ export function fieldAccepts(decl: FieldDecl): readonly MediaKind[] {
 
 // ── Inferred value types ────────────────────────────────────────────────────
 
+/** 🚧 Any JSON value — what a `json` field holds, parsed. @experimental */
+export type JsonValue = null | boolean | number | string | JsonValue[] | { [key: string]: JsonValue }
+
 type ValueOf<F> = F extends { type: 'secret' }
 	? SecretValue
-	: F extends { type: 'list'; item: infer I }
+	: F extends { type: 'json' }
+		? JsonValue
+		: F extends { type: 'list'; item: infer I }
 		? Array<ValueOf<I>>
 		: F extends { type: 'object'; fields: infer M }
 			? M extends SettingsSchema
@@ -480,7 +527,7 @@ export interface SettingsFinding {
  * refusal is at declaration time, which is the only place it is cheap.
  */
 function checkNested(decl: FieldDecl, path: string): SettingsFinding[] {
-	const f: SettingsFinding[] = []
+	const f: SettingsFinding[] = [...checkJsonDecl(decl, path)]
 	if (decl.type === 'secret')
 		f.push({
 			field: path,
@@ -504,7 +551,7 @@ function checkNested(decl: FieldDecl, path: string): SettingsFinding[] {
 				field: path,
 				severity: 'error',
 				message: `'${path}' is an object with no member declarations`,
-				fix: 'declare `fields: { … }` — a free-form map is `text` with `format: "json"`',
+				fix: 'declare `fields: { … }` — a free-form map is a `json` field',
 			})
 		else
 			for (const [k, member] of Object.entries(decl.fields))
@@ -529,6 +576,7 @@ export function checkSchema(schema: SettingsSchema): SettingsFinding[] {
 		// *field*, not the element, and two of them (`scope`, `side`) have no
 		// meaning inside a row.
 		if (d.type === 'list' || d.type === 'object') f.push(...checkNested(d, key))
+		else f.push(...checkJsonDecl(d, key))
 		if (d.lend !== undefined && d.type !== 'secret')
 			f.push({
 				field: key,
@@ -591,6 +639,242 @@ export function checkSchema(schema: SettingsSchema): SettingsFinding[] {
 	return f
 }
 
+
+// ── The `json` field ────────────────────────────────────────────────────────
+
+/** 🚧 A `json` field's default cap: the UTF-8 bytes of its JSON text. @experimental */
+export const JSON_FIELD_MAX_BYTES = 16384
+/** 🚧 The most a `json` field may declare for `maxBytes`. @experimental */
+export const JSON_FIELD_MAX_BYTES_CEILING = 262144
+
+/**
+ * 🚧 The byte cap a `json` field is held to: its declared `maxBytes` clamped to
+ * [1, `JSON_FIELD_MAX_BYTES_CEILING`], `JSON_FIELD_MAX_BYTES` when absent or not
+ * a number. The runtime reads this, never the raw declaration.
+ * @experimental
+ */
+export function jsonFieldByteCap(decl: { maxBytes?: unknown }): number {
+	const n = decl.maxBytes
+	if (typeof n !== 'number' || Number.isNaN(n)) return JSON_FIELD_MAX_BYTES
+	return Math.min(JSON_FIELD_MAX_BYTES_CEILING, Math.max(1, Math.floor(n)))
+}
+
+/** The keywords of the `jsonSchema` subset; `title` and `description` are ignored. */
+const JSON_SCHEMA_KEYWORDS = new Set([
+	'type', 'properties', 'required', 'additionalProperties', 'items', 'enum', 'const',
+	'minimum', 'maximum', 'minLength', 'maxLength', 'minItems', 'maxItems', 'title', 'description',
+])
+const JSON_SCHEMA_TYPES = ['object', 'array', 'string', 'number', 'integer', 'boolean', 'null']
+
+const isPlain = (v: unknown): v is Record<string, unknown> => {
+	if (!v || typeof v !== 'object' || Array.isArray(v)) return false
+	const proto = Object.getPrototypeOf(v)
+	return proto === Object.prototype || proto === null
+}
+
+/** UTF-8 byte length of a string, without `Buffer` (the SDK also runs in a browser). */
+function utf8Length(text: string): number {
+	let n = 0
+	for (let i = 0; i < text.length; i++) {
+		const c = text.charCodeAt(i)
+		if (c < 0x80) n += 1
+		else if (c < 0x800) n += 2
+		else if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) {
+			const d = text.charCodeAt(i + 1)
+			if (d >= 0xdc00 && d <= 0xdfff) {
+				n += 4
+				i++
+			} else n += 3
+		} else n += 3
+	}
+	return n
+}
+
+/** The first reason a value is not JSON, at its path; undefined when it is. */
+function notJson(value: unknown, path: string, seen: unknown[] = []): { at: string; why: string } | undefined {
+	if (value === null || typeof value === 'string' || typeof value === 'boolean') return undefined
+	if (typeof value === 'number')
+		return Number.isFinite(value) ? undefined : { at: path, why: `is ${value}, which JSON cannot spell` }
+	if (value === undefined) return { at: path, why: 'is undefined' }
+	if (typeof value !== 'object') return { at: path, why: `is a ${typeof value}` }
+	if (seen.includes(value)) return { at: path, why: 'refers back to itself' }
+	if (!Array.isArray(value) && !isPlain(value)) return { at: path, why: 'is not a plain object or array' }
+	seen.push(value)
+	try {
+		if (Array.isArray(value)) {
+			for (let i = 0; i < value.length; i++) {
+				const bad = notJson(value[i], `${path}[${i}]`, seen)
+				if (bad) return bad
+			}
+		} else
+			for (const [k, v] of Object.entries(value)) {
+				const bad = notJson(v, `${path}.${k}`, seen)
+				if (bad) return bad
+			}
+	} finally {
+		seen.pop()
+	}
+	return undefined
+}
+
+const jsonTypeOf = (v: unknown): string =>
+	v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v === 'number' ? (Number.isInteger(v) ? 'integer' : 'number') : typeof v
+
+const sameJson = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+/** A `jsonSchema` subset declaration's faults, as sentences. */
+function jsonSchemaDeclFaults(schema: unknown, at: string): string[] {
+	if (!isPlain(schema)) return [`${at} is not a schema object`]
+	const out: string[] = []
+	for (const [k, v] of Object.entries(schema)) {
+		if (!JSON_SCHEMA_KEYWORDS.has(k)) {
+			out.push(`${at} uses '${k}', which the jsonSchema subset does not carry`)
+			continue
+		}
+		switch (k) {
+			case 'type': {
+				const types = Array.isArray(v) ? v : [v]
+				if (!types.length || types.some((t) => typeof t !== 'string' || !JSON_SCHEMA_TYPES.includes(t)))
+					out.push(`${at}.type must be one of ${JSON_SCHEMA_TYPES.join(', ')} (or an array of them)`)
+				break
+			}
+			case 'properties':
+				if (!isPlain(v)) out.push(`${at}.properties must be an object of schemas`)
+				else for (const [pk, ps] of Object.entries(v)) out.push(...jsonSchemaDeclFaults(ps, `${at}.properties.${pk}`))
+				break
+			case 'required':
+				if (!Array.isArray(v) || v.some((x) => typeof x !== 'string')) out.push(`${at}.required must be an array of property names`)
+				break
+			case 'additionalProperties':
+				if (typeof v !== 'boolean') out.push(...jsonSchemaDeclFaults(v, `${at}.additionalProperties`))
+				break
+			case 'items':
+				out.push(...jsonSchemaDeclFaults(v, `${at}.items`))
+				break
+			case 'enum':
+				if (!Array.isArray(v) || !v.length) out.push(`${at}.enum must be a non-empty array`)
+				break
+			case 'minimum':
+			case 'maximum':
+				if (typeof v !== 'number' || !Number.isFinite(v)) out.push(`${at}.${k} must be a number`)
+				break
+			case 'minLength':
+			case 'maxLength':
+			case 'minItems':
+			case 'maxItems':
+				if (typeof v !== 'number' || !Number.isInteger(v) || v < 0) out.push(`${at}.${k} must be a whole number from 0`)
+				break
+		}
+	}
+	return out
+}
+
+/** One value against the `jsonSchema` subset; each misfit its message, at its JSON path. */
+function jsonSchemaMisfits(schema: JsonSchema, value: unknown, path: string, out: { at: string; why: string; fix: string }[]): void {
+	const miss = (why: string, fix: string) => out.push({ at: path, why, fix })
+	const type = schema.type as string | string[] | undefined
+	if (type !== undefined) {
+		const types = Array.isArray(type) ? type : [type]
+		const actual = jsonTypeOf(value)
+		if (!types.some((t) => t === actual || (t === 'number' && actual === 'integer'))) {
+			miss(`should be ${types.join(' or ')}, got ${actual}`, `store ${types.join(' or ')} here`)
+			return
+		}
+	}
+	if (schema.enum !== undefined && !(schema.enum as unknown[]).some((e) => sameJson(e, value)))
+		miss(`is not one of ${JSON.stringify(schema.enum)}`, 'use one of the listed values')
+	if ('const' in schema && !sameJson(schema.const, value)) miss(`should be exactly ${JSON.stringify(schema.const)}`, 'store that value')
+	if (typeof value === 'number') {
+		if (typeof schema.minimum === 'number' && value < schema.minimum) miss(`is below the minimum ${schema.minimum}`, `use a value ≥ ${schema.minimum}`)
+		if (typeof schema.maximum === 'number' && value > schema.maximum) miss(`is above the maximum ${schema.maximum}`, `use a value ≤ ${schema.maximum}`)
+	}
+	if (typeof value === 'string') {
+		if (typeof schema.minLength === 'number' && value.length < schema.minLength) miss(`is shorter than ${schema.minLength} characters`, `use at least ${schema.minLength}`)
+		if (typeof schema.maxLength === 'number' && value.length > schema.maxLength) miss(`is longer than ${schema.maxLength} characters`, `use at most ${schema.maxLength}`)
+	}
+	if (Array.isArray(value)) {
+		if (typeof schema.minItems === 'number' && value.length < schema.minItems) miss(`has fewer than ${schema.minItems} items`, `keep at least ${schema.minItems}`)
+		if (typeof schema.maxItems === 'number' && value.length > schema.maxItems) miss(`has more than ${schema.maxItems} items`, `keep at most ${schema.maxItems}`)
+		if (isPlain(schema.items)) value.forEach((item, i) => jsonSchemaMisfits(schema.items as JsonSchema, item, `${path}[${i}]`, out))
+	}
+	if (isPlain(value)) {
+		const props = isPlain(schema.properties) ? schema.properties : {}
+		if (Array.isArray(schema.required))
+			for (const r of schema.required as string[])
+				if (!(r in value)) out.push({ at: `${path}.${r}`, why: 'is required and not set', fix: 'fill it in' })
+		for (const [k, v] of Object.entries(value)) {
+			if (isPlain(props[k])) jsonSchemaMisfits(props[k] as JsonSchema, v, `${path}.${k}`, out)
+			else if (schema.additionalProperties === false)
+				out.push({ at: `${path}.${k}`, why: 'is not a declared property', fix: 'remove it, or declare it in `properties`' })
+			else if (isPlain(schema.additionalProperties)) jsonSchemaMisfits(schema.additionalProperties, v, `${path}.${k}`, out)
+		}
+	}
+}
+
+/**
+ * 🚧 A `json` field's value against its declaration: it is JSON (`JSON.stringify`
+ * round-trips it — no undefined, function, NaN/Infinity, cycle or non-plain
+ * object), its UTF-8 JSON text is within `jsonFieldByteCap(decl)`, and it fits
+ * `jsonSchema` when one is declared. Each misfit is a finding at its JSON path
+ * (`layout.columns[2]`), with a `fix`.
+ * @experimental
+ */
+export function jsonFieldFindings(decl: FieldDecl, value: unknown, path = 'value'): SettingsFinding[] {
+	const bad = notJson(value, path)
+	if (bad)
+		return [{
+			field: bad.at,
+			severity: 'error',
+			message: `'${bad.at}' ${bad.why}, so it is not JSON`,
+			fix: 'store only objects, arrays, strings, finite numbers, booleans and null',
+		}]
+	const f: SettingsFinding[] = []
+	const cap = jsonFieldByteCap(decl)
+	const size = utf8Length(JSON.stringify(value))
+	if (size > cap)
+		f.push({
+			field: path,
+			severity: 'error',
+			message: `'${path}' is ${size} bytes of JSON, over its ${cap}-byte cap`,
+			fix: 'store less, or raise `maxBytes` (never above ' + JSON_FIELD_MAX_BYTES_CEILING + ')',
+		})
+	if (decl.jsonSchema && isPlain(decl.jsonSchema)) {
+		const misfits: { at: string; why: string; fix: string }[] = []
+		jsonSchemaMisfits(decl.jsonSchema, value, path, misfits)
+		for (const m of misfits)
+			f.push({ field: m.at, severity: 'error', message: `'${m.at}' ${m.why}`, fix: m.fix })
+	}
+	return f
+}
+
+/** A declaration's `json` attributes: `maxBytes` / `jsonSchema` belong to `json` only and must be sound. */
+function checkJsonDecl(decl: FieldDecl, path: string): SettingsFinding[] {
+	const f: SettingsFinding[] = []
+	const err = (message: string, fix: string) => f.push({ field: path, severity: 'error', message, fix })
+	if (decl.type !== 'json') {
+		if (decl.maxBytes !== undefined)
+			err(`'${path}' says 'maxBytes', which only a json field has`, "remove 'maxBytes', or declare the field `type: 'json'`")
+		if (decl.jsonSchema !== undefined)
+			err(`'${path}' says 'jsonSchema', which only a json field has`, "remove 'jsonSchema', or declare the field `type: 'json'`")
+		return f
+	}
+	const capOk = decl.maxBytes === undefined || (Number.isInteger(decl.maxBytes) && decl.maxBytes >= 1 && decl.maxBytes <= JSON_FIELD_MAX_BYTES_CEILING)
+	if (!capOk)
+		err(`'${path}' declares maxBytes ${String(decl.maxBytes)}`, `use a whole number from 1 to ${JSON_FIELD_MAX_BYTES_CEILING}`)
+	let schemaOk = true
+	if (decl.jsonSchema !== undefined) {
+		const faults = jsonSchemaDeclFaults(decl.jsonSchema, `'${path}'.jsonSchema`)
+		schemaOk = !faults.length
+		for (const m of faults)
+			err(m, 'use only type, properties, required, additionalProperties, items, enum, const, minimum/maximum, minLength/maxLength, minItems/maxItems, title, description')
+	}
+	// the first fault only: a default judged against a cap or schema that is itself wrong says nothing true
+	if (decl.default !== undefined && schemaOk && capOk)
+		for (const d of jsonFieldFindings(decl, decl.default, `${path}.default`))
+			err(`the default of ${d.message}`, d.fix)
+	return f
+}
+
 // ── Value validation ────────────────────────────────────────────────────────
 
 /**
@@ -633,6 +917,9 @@ function checkOne(decl: FieldDecl, value: unknown, path: string): SettingsFindin
 		case 'string[]':
 			if (!Array.isArray(value)) bad('should be a list of strings', 'store an array')
 			break
+		case 'json':
+			f.push(...jsonFieldFindings(decl, value, path))
+			break
 		case 'list': {
 			if (!Array.isArray(value)) {
 				bad('should be a list', 'store an array — the order is part of the value')
@@ -664,6 +951,29 @@ function checkOne(decl: FieldDecl, value: unknown, path: string): SettingsFindin
 				}
 				f.push(...checkOne(member, mv, `${path}.${k}`))
 			}
+			break
+		}
+		// 🚧 A weekly routine (M0, SHAPES F3): `{ weekday, weekend }`, each
+		// a list of `[hour, where]` — hours 0–23 in rising order, a place each.
+		case 'schedule': {
+			const row = value as { weekday?: unknown; weekend?: unknown } | null
+			if (!row || typeof row !== 'object' || Array.isArray(row) || !Array.isArray(row.weekday) || !Array.isArray(row.weekend)) {
+				bad('must be a weekly routine — { weekday, weekend }, each a list of [hour, where]', 'store { weekday: [[7, "work"]], weekend: [[9, "home"]] }')
+				break
+			}
+			const rising = (pairs: unknown[]) => {
+				let last = -1
+				for (const p of pairs) {
+					if (!Array.isArray(p) || p.length !== 2) return false
+					const [hour, where] = p as [unknown, unknown]
+					if (typeof hour !== 'number' || !Number.isInteger(hour) || hour < 0 || hour > 23 || hour <= last) return false
+					if (typeof where !== 'string' || !where.trim()) return false
+					last = hour
+				}
+				return true
+			}
+			if (!rising(row.weekday) || !rising(row.weekend))
+				bad('needs, in each [hour, where], an hour from 0 to 23 in rising order and a place', 'list each day\'s moves as [hour, where], earliest first')
 			break
 		}
 		default:
@@ -984,7 +1294,7 @@ export function valuesForForm(
 	const out: Record<string, unknown> = {}
 	for (const [key, decl] of Object.entries(schema)) {
 		const v = source[key]
-		out[key] = decl.format === 'json' ? JSON.stringify(v ?? null, null, 2) : v
+		out[key] = decl.format === 'json' || decl.type === 'json' ? JSON.stringify(v ?? null, null, 2) : v
 	}
 	return out
 }
@@ -1015,7 +1325,7 @@ export function applyFormValues(
 	for (const [key, decl] of Object.entries(schema)) {
 		if (!(key in edited)) continue
 		const v = edited[key]
-		if (decl.format === 'json') {
+		if (decl.format === 'json' || decl.type === 'json') {
 			try {
 				base[key] = JSON.parse(String(v))
 			} catch {

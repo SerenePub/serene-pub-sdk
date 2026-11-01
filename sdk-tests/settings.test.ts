@@ -19,6 +19,11 @@ import {
 	configState,
 	isVisible,
 	SettingsError,
+	jsonFieldFindings,
+	jsonFieldByteCap,
+	JSON_FIELD_MAX_BYTES,
+	JSON_FIELD_MAX_BYTES_CEILING,
+	type FieldDecl,
 	type SettingsValues,
 } from '@serene-pub/sdk'
 
@@ -257,5 +262,90 @@ describe('82 · audiences', () => {
 
 	test('a component receives only component-side fields', () => {
 		assert.deepEqual(S.forComponent(configured), { showBadge: true })
+	})
+})
+
+describe('the json field type', () => {
+	const layout: FieldDecl = {
+		type: 'json',
+		jsonSchema: {
+			type: 'object',
+			required: ['columns'],
+			properties: { columns: { type: 'array', items: { type: 'string' }, maxItems: 3 }, gap: { type: 'integer', minimum: 0 } },
+			additionalProperties: false,
+		},
+	}
+
+	test('checkSchema refuses a bad maxBytes, an unknown keyword, maxBytes on a string and a bad default', () => {
+		const msgs = (s: Parameters<typeof checkSchema>[0]) => checkSchema(s).map((x) => x.message).join('\n')
+		assert.match(msgs({ j: { type: 'json', maxBytes: 0 } }), /maxBytes 0/)
+		assert.match(msgs({ j: { type: 'json', maxBytes: JSON_FIELD_MAX_BYTES_CEILING + 1 } }), /maxBytes/)
+		assert.match(msgs({ j: { type: 'json', maxBytes: 1.5 } }), /maxBytes/)
+		assert.match(msgs({ j: { type: 'json', jsonSchema: { oneOf: [] } } }), /'oneOf'/)
+		assert.match(msgs({ j: { type: 'json', jsonSchema: { properties: { a: { $ref: '#/x' } } } } }), /\$ref/)
+		assert.match(msgs({ s: { type: 'string', maxBytes: 10 } }), /only a json field has/)
+		assert.match(msgs({ s: { type: 'string', jsonSchema: {} } }), /only a json field has/)
+		assert.match(msgs({ j: { ...layout, default: { columns: [1] } } }), /default of 'j\.default\.columns\[0\]'/)
+		assert.deepEqual(checkSchema({ j: { ...layout, default: { columns: ['a'] } } }), [])
+		assert.match(msgs({ l: { type: 'list', item: { type: 'json', maxBytes: -1 } } }), /l\[\]/)
+		// an invalid cap is the one finding: its default is not judged against it as well
+		assert.equal(checkSchema({ j: { type: 'json', maxBytes: -1, default: { a: 1 } } }).length, 1)
+	})
+
+	test('values: not JSON, over the cap, the default cap', () => {
+		const d: FieldDecl = { type: 'json' }
+		assert.deepEqual(jsonFieldFindings(d, { a: [1, 'x', null, true] }, 'j'), [])
+		assert.deepEqual(jsonFieldFindings(d, ['root', 'array'], 'j'), [])
+		assert.match(jsonFieldFindings(d, { a: undefined }, 'j')[0].message, /'j\.a' is undefined/)
+		assert.match(jsonFieldFindings(d, { a: NaN }, 'j')[0].message, /NaN/)
+		assert.match(jsonFieldFindings(d, { a: () => 1 }, 'j')[0].message, /function/)
+		assert.match(jsonFieldFindings(d, new Date(), 'j')[0].message, /plain object/)
+		const cyc: Record<string, unknown> = {}
+		cyc.self = cyc
+		assert.match(jsonFieldFindings(d, cyc, 'j')[0].message, /itself/)
+		assert.equal(jsonFieldFindings(d, 'x'.repeat(JSON_FIELD_MAX_BYTES), 'j').length, 1) // + 2 quotes > cap
+		assert.deepEqual(jsonFieldFindings(d, 'x'.repeat(JSON_FIELD_MAX_BYTES - 2), 'j'), [])
+		// bytes, not characters
+		assert.equal(jsonFieldFindings({ type: 'json', maxBytes: 8 }, '\u00e9\u00e9\u00e9\u00e9', 'j').length, 1)
+		assert.equal(jsonFieldFindings({ type: 'json', maxBytes: 8 }, '\u00e9\u00e9\u00e9', 'j').length, 0)
+		assert.equal(checkValues({ j: d }, { j: { a: undefined } }).length, 1)
+	})
+
+	test('jsonSchema misfits are findings at their JSON paths; a fitting value passes', () => {
+		assert.deepEqual(jsonFieldFindings(layout, { columns: ['a', 'b'], gap: 2 }, 'layout'), [])
+		const f = jsonFieldFindings(layout, { columns: ['a', 'b', 3, 'd'], gap: -1, extra: true }, 'layout')
+		const at = f.map((x) => x.field)
+		assert.ok(at.includes('layout.columns[2]'))
+		assert.ok(at.includes('layout.columns'))
+		assert.ok(at.includes('layout.gap'))
+		assert.ok(at.includes('layout.extra'))
+		assert.ok(f.every((x) => x.fix))
+		assert.equal(jsonFieldFindings(layout, {}, 'layout')[0].field, 'layout.columns')
+		assert.equal(jsonFieldFindings(layout, [], 'layout')[0].field, 'layout')
+		const arr: FieldDecl = { type: 'json', jsonSchema: { type: ['array', 'null'], items: { type: 'number' } } }
+		assert.deepEqual(jsonFieldFindings(arr, [1, 2.5], 'a'), [])
+		assert.deepEqual(jsonFieldFindings(arr, null, 'a'), [])
+		assert.equal(jsonFieldFindings(arr, [1, 'x'], 'a')[0].field, 'a[1]')
+		assert.equal(jsonFieldFindings({ type: 'json', jsonSchema: { enum: ['a', 'b'] } }, 'c', 'e').length, 1)
+		assert.equal(jsonFieldFindings({ type: 'json', jsonSchema: { const: { k: 1 } } }, { k: 1 }, 'e').length, 0)
+	})
+
+	test('jsonFieldByteCap clamps a hostile declaration', () => {
+		assert.equal(jsonFieldByteCap({}), JSON_FIELD_MAX_BYTES)
+		assert.equal(jsonFieldByteCap({ maxBytes: 10 * 1024 ** 3 }), JSON_FIELD_MAX_BYTES_CEILING)
+		assert.equal(jsonFieldByteCap({ maxBytes: Infinity }), JSON_FIELD_MAX_BYTES_CEILING)
+		assert.equal(jsonFieldByteCap({ maxBytes: -5 }), 1)
+		assert.equal(jsonFieldByteCap({ maxBytes: NaN }), JSON_FIELD_MAX_BYTES)
+		assert.equal(jsonFieldByteCap({ maxBytes: '9' as unknown as number }), JSON_FIELD_MAX_BYTES)
+	})
+
+	test('values are inferred as JSON and the form round-trips parsed', async () => {
+		const { valuesForForm, applyFormValues } = await import('@serene-pub/sdk')
+		const sch = { j: { type: 'json' } } as const
+		const v: SettingsValues<typeof sch> = {}
+		v.j = { a: [1] }
+		assert.deepEqual(valuesForForm(sch, { j: { a: 1 } }), { j: '{\n  "a": 1\n}' })
+		assert.deepEqual(applyFormValues(sch, { j: null }, { j: '[1,2]' }), { j: [1, 2] })
+		assert.throws(() => applyFormValues(sch, {}, { j: '{nope' }), SettingsError)
 	})
 })

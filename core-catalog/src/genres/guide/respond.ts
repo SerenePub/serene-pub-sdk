@@ -72,6 +72,12 @@ export const GUIDE_RESPOND_SPEC_ID = 'core:spec/guide-respond'
 // `specHashes.test.ts` records the move. A `heard` step (transcribe-audio)
 // before placement hears the audio the reply cannot; `generate` names its
 // speech sampling, and `save` writes the reply's media parts in order.
+// ⚠ Edited in place (2026-10-31, M2c T — library writes) — content-addressed;
+// `specHashes.test.ts` records the move. `libraryDraft` reads the hidden draft
+// block a reply ends with when the person asked for a character or a lorebook
+// (owner ruling: one model call per turn, the reply's own), `save` keeps the
+// reply without it, and a `library` junction hands the draft to
+// `create-character` / `create-lorebook`.
 /** @internal */
 export const GUIDE_RESPOND_VERSION = '1.2.0'
 
@@ -385,10 +391,12 @@ export const guideRespondSpec = () =>
 				}),
 				{ expose: { stream: true, status: '{speaker} is typing' } },
 			)
+			// The reply without its hidden draft block (a person who asked for a card or a book).
+			.task('libraryDraft', ($) => C.readLibraryDraft.v1({ text: $.generate.text }))
 			.outlet('save', ($) =>
 				C.updateMessage.v1({
 					target: $.placeholder.messageId,
-					text: $.generate.text,
+					text: $.libraryDraft.text,
 					reasoning: $.generate.reasoning,
 					parts: $.generate.parts,
 				}),
@@ -403,7 +411,7 @@ export const guideRespondSpec = () =>
 				'spritePick',
 				($) =>
 					C.pickSprite.v1({
-						text: $.generate.text,
+						text: $.libraryDraft.text,
 						speaker: $.input.speaker,
 						scope: $.input.sessionScope,
 						params: slot.params(),
@@ -416,6 +424,20 @@ export const guideRespondSpec = () =>
 					pick: $.spritePick.main,
 					source: 'picker',
 				}),
+			)
+			/**
+			 * Library writes (M2c T, owner ruling 2026-10-31): the reply drafts a card or a book in its own hidden block
+			 * when the person asked for one (`libraryDraft`, above); the junction hands it to the app, which judges the
+			 * person and their library write mode (the genre declares `writes.library`). No second model call, no tool loop.
+			 */
+			.junction('library', { on: ($) => $.libraryDraft.make }, (j) =>
+				j
+					.when('character', { equals: 'character' }, (c) =>
+						c.outlet('make', ($) => C.createCharacter.v1({ card: $.libraryDraft.draft })),
+					)
+					.when('lorebook', { equals: 'lorebook' }, (c) =>
+						c.outlet('make', ($) => C.createLorebook.v1({ lorebook: $.libraryDraft.draft })),
+					),
 			)
 			/** The guide's own template (1.2.0) — see `GUIDE_RESPOND_TEMPLATE`. */
 			.defaults((p) =>

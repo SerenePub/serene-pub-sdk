@@ -105,6 +105,9 @@ export * from './dowry.js'
 // one level down (a sheet names slots, a slot names its shape).
 export * from './statShapes.js'
 export * from './storyTime.js'
+// 🚧 Speech (PLAN-speech-build S3, 2026-10-28): cues, inflection, the cue map,
+// spoken metadata, the line template's scope and the two inflection variables.
+export * from './speech.js'
 // 🚧 Scene settings (live scenes §4–§5): how a session places its scene
 // boundaries and when a scene's summary runs; `SessionShape.scenes`.
 export * from './sceneSettings.js'
@@ -117,6 +120,7 @@ export * from './wire.js'
 export * from './preview.js'
 export * from './migration.js'
 export * from './extension.js'
+export * from './lorebookFile.js'
 export * from './identity.js'
 export * from './events.js'
 export * from './eventMapLaws.js'
@@ -162,6 +166,8 @@ export * from './personGate.js'
 // Annex fields (2026-09-26): a declared key a widget sets through core's one
 // pipeline — no pipeline per value. Imports participants/settings/i18n only.
 export * from './annexFields.js'
+// 🚧 The user annex (M2b): a person's own versioned documents under an owner.
+export * from './userAnnex.js'
 export * from './surfaces.js'
 // The widget declarations a layout places. Beside surfaces because it is the
 // other half of the same story: a surface is where a plugin renders, a widget
@@ -229,3 +235,5 @@ export * from './names.js'
 // executor's own `await import('./tokenizers.js')` stays a real split point —
 // on it, every bundle that can see `run` would carry the registry.
 export * from './widgetDecls.js'
+// 🚧 A drafted card or book read out of a reply (M2c path B): `readLibraryDraft`.
+export * from './libraryDraft.js'

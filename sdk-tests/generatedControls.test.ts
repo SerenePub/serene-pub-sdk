@@ -69,6 +69,11 @@ const ONE_OF_EACH: Record<FieldType, Record<string, unknown>> = {
 		label: 'Ob',
 		fields: { a: { type: 'string' } },
 	},
+	// 🚧 M0 (SHAPES F3): a weekly routine — structured like the nesting
+	// kinds, so it bridges to no value declaration either.
+	schedule: { type: 'schedule', label: 'Sc' },
+	// 🚧 any JSON value — edited as JSON text, so it bridges to the text box.
+	json: { type: 'json', label: 'Js' },
 }
 
 /**
@@ -82,6 +87,7 @@ const RENDERED_WITHOUT_A_VALUE_DECL = new Set([
 	'secret',
 	'list',
 	'object',
+	'schedule',
 ])
 
 describe('the field vocabulary reaches a control (24 §8 · 12 §6)', () => {

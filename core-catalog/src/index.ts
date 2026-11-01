@@ -91,12 +91,14 @@ import { STORY_NARRATE_SPEC_ID, narrateSpec } from './genres/story/narrate.js'
 import { STORY_SIDE_CHARACTER_SPEC_ID, narrateCharacterSpec } from './genres/story/narrateCharacter.js'
 import { CORE_ANNEX_FIELDS, SET_ANNEX_FIELD_SPEC_ID, setAnnexFieldSpec } from './shared/annexField.js'
 import { SAVE_MESSAGE_SPEC_ID, saveMessageSpec } from './shared/saveMessage.js'
+import { WEATHER_SPEC_ID, weatherSpec } from './shared/weather.js'
 import { BUILTIN_DELETE_SPEC_ID, builtinDeleteSpec } from './shared/builtins/delete.js'
 import { BUILTIN_HIDE_SPEC_ID, builtinHideSpec } from './shared/builtins/hide.js'
 import { BUILTIN_EDIT_SPEC_ID, builtinEditSpec } from './shared/builtins/edit.js'
 import { BUILTIN_SWIPE_SPEC_ID, builtinSwipeSpec } from './shared/builtins/swipe.js'
 import { BUILTIN_BRANCH_SPEC_ID, builtinBranchSpec } from './shared/builtins/branch.js'
 import { SHOW_SPRITE_SPEC_ID, showSpriteSpec } from './shared/sprites.js'
+import { SPEAK_MESSAGE_SPEC_ID, speakMessageSpec } from './shared/speakMessage.js'
 import { SPRITE_SET_FILL_SPEC_ID, spriteSetFillSpec } from './shared/spriteFill.js'
 import { RULES_ACTION_SPEC_ID, rulesActionSpec } from './rulesets/rulesAction.js'
 import { CHARACTER_PORTRAIT_SPEC_ID, characterPortraitSpec } from './shared/portrait.js'
@@ -191,18 +193,22 @@ export * from './rulesets/rulesAction.js'
  */
 export * from './registry/entries.js'
 /**
- * 🚧 Core's primers — Vis Itineris's starter world and Freeform's blank. Registers on
- * import (after the entry types its entries are checked against); named in
+ * 🚧 Core's primers — Freeform's blank, the Ninth Mile (a Freeform starter world) and Vis Itineris's starter world.
+ * Registers on import (after the entry types its entries are checked against); named in
  * `sideEffects` on the same terms.
  */
 export * from './registry/primers.js'
 export * from './rulesets/vis-itineris/primer/index.js'
+export * from './primers/ninth-mile.js'
 export * from './seed/prompts.js'
 export * from './seed/presets.js'
 // 🚧 The scripts core seeds by key (2026-10-15).
 export * from './seed/scripts.js'
 export * from './seed/visItinerisScripts.js'
 export * from './seed/wherewithalScripts.js'
+// 🚧 The speech templates core seeds (PLAN-speech-build S3, 2026-10-28):
+// three line templates for speak@1 and the two inflection layouts.
+export * from './seed/speechTemplates.js'
 // The core loadouts (I12): declarations the instance seeds unfilled by id.
 export * from './loadouts.js'
 /** Every genre's pipelines, a folder each, and the lists that span them. */
@@ -355,6 +361,8 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * Every preset binds it unless it binds its own (`preset()`).
 	 */
 	{ slug: SAVE_MESSAGE_SPEC_ID, name: 'Save message', build: saveMessageSpec },
+	/** 🚧 The day's weather (M0, T5): a routine, unregistered until a genre names it. */
+	{ slug: WEATHER_SPEC_ID, name: 'Weather', build: weatherSpec },
 	/**
 	 * The built-in writes (R-15): one one-node spec per message verb core
 	 * implements, published like every other so a delete is a receipted,
@@ -371,6 +379,8 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * same way: one receipted action per press, emitting `sprite-shown`.
 	 */
 	{ slug: SHOW_SPRITE_SPEC_ID, name: 'Change sprite', build: showSpriteSpec },
+	/** 🚧 Read aloud (speech lane D4): a message's ⋮, one spoken part per line — in every genre's defaults. */
+	{ slug: SPEAK_MESSAGE_SPEC_ID, name: 'Read aloud', build: speakMessageSpec },
 	{
 		slug: STORY_GENERATE_IMAGE_SPEC_ID,
 		name: 'Generate image',
@@ -547,3 +557,7 @@ export const coreExtension = (): Extension =>
 			Object.entries(CORE_HOOK_DECLARATIONS).map(([id, decl]) => [id.replace(/^core:hook\//, ''), decl]),
 		),
 	})
+export * from './shared/speechFields.js'
+export * from './shared/speakMessage.js'
+export * from './shared/weather.js'
+export * from './shared/characterReachesOut.js'

@@ -49,6 +49,9 @@ import type { StatusText, WidgetActionReason } from './status.js'
 import type { EnabledWhen } from './predicates.js'
 import type { StoryTime, StoryTimeUnit } from './storyTime.js'
 import type { SceneSummaryMode } from './sceneSettings.js'
+import type { I18n } from './i18n.js'
+import type { UserAnnexEntryV1, UserAnnexListRowV1, UserAnnexWriteResult } from './userAnnex.js'
+import { parseChannel } from './channels.js'
 
 /** Free-form data riding beside a verb or an event. Keys are the sender's. @experimental */
 export type WidgetPayload = Record<string, unknown>
@@ -1203,6 +1206,17 @@ export interface SessionSceneImageV1 {
 // ─── The one table of scoped sections (🚧; C5 L3) ───────────────────────────
 
 /**
+ * 🚧 M0 (L9): the `lore` section — the lore grant marker, plus the lorebook annex as THIS viewer may see it: per owner, the values whose
+ * stored audience (the declaration's `see`) holds for them, as `sessions:lorebookAnnex` answers. `{}` until it arrives, or when nothing
+ * is visible. Pipelines read the whole annex through `core:query/lorebook-annex@1`; a widget reads only this view.
+ * @experimental
+ */
+export interface SessionLoreV1 {
+	granted: true
+	annex: Record<string, Record<string, unknown>>
+}
+
+/**
  * 🚧 **The** table of scoped sections: each widget scope that delivers data,
  * the name its section is posted under, and that section's `v1` shape.
  * Every other spelling is derived from this one — `WidgetScope`,
@@ -1248,13 +1262,14 @@ export interface WidgetScopedSections {
 	 */
 	characters: { section: 'characters'; v1: SessionCharactersV1 }
 	/**
-	 * 🚧 The **lore grant marker**. The lore is not pushed: it is paged by
+	 * 🚧 The **lore grant marker**. The lore entries are still paged by
 	 * request (`session-entries`), as messages are, and this scope is the
-	 * grant a plugin's widget holds to ask. The section carries no data —
-	 * `{ granted: true }`, posted when the scope is granted and absent
-	 * otherwise — so present means granted, never "not yet".
+	 * grant a plugin's widget holds to ask. The section is `{ granted: true }`
+	 * plus `annex` (the viewer's lorebook-annex view, {@link SessionLoreV1}),
+	 * posted when the scope is granted and absent otherwise — so present
+	 * means granted, never "not yet".
 	 */
-	lore: { section: 'lore'; v1: { granted: true } }
+	lore: { section: 'lore'; v1: SessionLoreV1 }
 }
 
 /** A widget scope that delivers a scoped section — every scope but `channel:<slug>`. @experimental */
@@ -1419,6 +1434,15 @@ export interface MenuSpec {
 export interface MenuResult {
 	id: string
 }
+
+/**
+ * 🚧 (M2a) What a `handler:<action>` of a `file-save` request answers: the
+ * text to save, or `{ bytes }` in base64. A non-empty `name` or `mime`
+ * replaces the frame's suggestion (the host keeps only the file name part of
+ * `name`).
+ * @experimental
+ */
+export type FileSaveAnswer = string | { bytes: string; name?: string; mime?: string }
 
 /**
  * 🚧 What a widget may ASK the host for — by kind, with its params and
@@ -1981,6 +2005,139 @@ export interface WidgetRequests {
 		params: { cursor?: string }
 		result: { images: Array<{ ref: string; src: string; caption?: string }>; nextCursor?: string }
 	}
+	/**
+	 * 🚧 Ask the person for a file (M0, SHAPES L12 Seams): the host
+	 * opens its own picker, limited to `accept`, and invokes the handler of
+	 * the plugin action `action` (a key of the package's `pluginActions`)
+	 * with `{ name, mime, bytes, target? }` — never the frame, which is
+	 * answered with nothing. 🚧 (M2a) `target` is the frame's own pointer to
+	 * what the file is for (`'summer/portrait'`); the host never reads it, it
+	 * hands it on as `input.target` when the frame gave one. At most 512
+	 * characters; longer is refused with a sentence.
+	 */
+	'file-pick': { params: { accept: string[]; action: string; target?: string }; result: void }
+	/**
+	 * 🚧 Offer the person a download (M0, SHAPES L12 Seams): the
+	 * browser saves `name` as `mime`, its bytes read from the plugin's own
+	 * storage (`storage:<path>`) or answered by one of its plugin actions
+	 * (`handler:<action>`). 🚧 (M2a) `target` is the frame's own pointer to
+	 * what is being saved (`'summer:zip'`); the host never reads it. A
+	 * `handler:` action is invoked with `{ name, mime, target? }` — `name` and
+	 * `mime` are the SUGGESTION — and answers a {@link FileSaveAnswer}. At
+	 * most 512 characters; longer is refused with a sentence.
+	 */
+	'file-save': {
+		params: { name: string; mime: string; source: `storage:${string}` | `handler:${string}`; target?: string }
+		result: void
+	}
+	/**
+	 * 🚧 Full screen, as a person's press routed through a widget or a frame
+	 * (M0, SHAPES L1): `on` enters or leaves; absent toggles. The
+	 * viewer's choice — the host never holds a session in full screen against
+	 * it. Answered by the session page (U2).
+	 */
+	'session-fullscreen': { params: { on?: boolean }; result: void }
+	/**
+	 * 🚧 A notice in the app's one toaster (M0, SHAPES L6): `kind`,
+	 * `text`, and an optional `action` the person may press (answered to the
+	 * widget by its `key`); `sticky` also lands in the Activity panel. Never
+	 * covers an action; at most one each 2 s per widget, the rest dropped with
+	 * a console note. Answered by the session page (U3); `action` is not drawn yet.
+	 */
+	notify: {
+		params: { kind: 'info' | 'success' | 'warning'; text: I18n; sticky?: boolean; action?: { key: string; label: I18n } }
+		result: void
+	}
+	// ─── 🚧 M2b, navigation requests (plan §5 b3, §9): each opens the APP's own UI, and nothing happens until the person
+	// presses there. `open-session` / `open-sessions` are the `ui` API's; `create-session` / `delete-session` the `applet`
+	// API's (ruled 2026-10-31). Declared now; a host answers them from M2c ("not available yet" until then).
+	/** 🚧 Open the app's start form for one of the package's own genres, prefilled with `fields`; the person presses Start. */
+	'create-session': { params: { genre: string; fields?: Record<string, unknown>; lorebookId?: number }; result: void }
+	/** 🚧 Open a session the person can already open. */
+	'open-session': { params: { sessionId: number }; result: void }
+	/** 🚧 Open the Sessions list, filtered to one of the package's own genres (or all of them). */
+	'open-sessions': { params: { genre?: string }; result: void }
+	/** 🚧 Ask the app to delete one of the person's sessions of the package's genres: the app shows its own confirm. */
+	'delete-session': { params: { sessionId: number }; result: void }
+	// ─── 🚧 M2b, the `applet` API: the person's library and the pub, outside any one session. The client half: the kinds,
+	// their types and the gate; a host answers them from M2c ("not available yet" until then), each bounded by the
+	// package's `permissions.applet` grant and by the acting person.
+	/** 🚧 The person's characters (their own; personas included, marked), a page at a time. */
+	'library-characters': { params: { q?: string; cursor?: string; limit?: number }; result: { rows: AppletCharacterV1[]; nextCursor?: string } }
+	/**
+	 * 🚧 (M2c) Change one of the person's characters that THIS package provided (its provided mark, the person's own row):
+	 * the card's text fields only. Needs `applet:characters:write`; any other row is refused in words.
+	 */
+	'update-character': {
+		params: {
+			characterId: number
+			name?: string
+			nickname?: string | null
+			description?: string
+			personality?: string
+			scenario?: string
+			firstMessage?: string
+		}
+		result: AppletCharacterV1
+	}
+	/** 🚧 The lorebooks the person may read, a page at a time. */
+	'library-lorebooks': { params: { q?: string; cursor?: string; limit?: number }; result: { rows: AppletLorebookV1[]; nextCursor?: string } }
+	/** 🚧 The person's own sessions of the package's declared genres (the `sessions` grant's genres), newest first. */
+	'library-sessions': {
+		/** 🚧 (M2c) `sessionId`: that one session, when the person can open it and it is of the package's genres — the check `open-session` / `delete-session` ask first. */
+		params: { genre?: string; cursor?: string; limit?: number; sessionId?: number }
+		result: { rows: AppletSessionV1[]; nextCursor?: string }
+	}
+	/**
+	 * 🚧 Change one of those sessions: its name, the genre's declared fields, or (🚧 M2c) the lorebook it reads —
+	 * `lorebookId` a book the person may read (needs `applet:lorebooks:read` too), `null` to detach. Sessions have no
+	 * cover today. Never pipelines, loadouts or anything a member cannot change by hand.
+	 */
+	'update-session': { params: { sessionId: number; name?: string; fields?: Record<string, unknown>; lorebookId?: number | null }; result: AppletSessionV1 }
+	/** 🚧 The person's own annex documents, owned by the package (`user annex`): get · set (with `base`) · list · remove. */
+	'user-annex': {
+		params:
+			| { op: 'get'; key: string }
+			| { op: 'set'; key: string; doc: unknown; base?: number }
+			| { op: 'list'; prefix?: string }
+			| { op: 'remove'; key: string; base?: number }
+		result: UserAnnexEntryV1 | null | UserAnnexWriteResult | { rows: UserAnnexListRowV1[] }
+	}
+	/** 🚧 The package's own files: `scope: 'pub'` the pub-wide store, `'user'` the acting person's (per-user plugin storage). */
+	'plugin-storage': {
+		params:
+			| { op: 'read'; scope: 'pub' | 'user'; path: string }
+			| { op: 'write'; scope: 'pub' | 'user'; path: string; text?: string; bytes?: string }
+			| { op: 'list'; scope: 'pub' | 'user'; prefix?: string }
+			| { op: 'remove'; scope: 'pub' | 'user'; path: string }
+		result: unknown
+	}
+}
+
+/** 🚧 A character as the `applet` API lists it (M2b). @experimental */
+export interface AppletCharacterV1 {
+	id: number
+	name: string
+	/** A persona (who the person plays) rather than a character. */
+	isPersona: boolean
+	avatarUrl?: string | null
+}
+
+/** 🚧 A lorebook as the `applet` API lists it (M2b). @experimental */
+export interface AppletLorebookV1 {
+	id: number
+	name: string
+	/** The person may change it. */
+	canEdit: boolean
+}
+
+/** 🚧 A session as the `applet` API lists it (M2b): the person's own, of the package's genres. @experimental */
+export interface AppletSessionV1 {
+	id: number
+	name: string | null
+	genreId: string
+	/** ms since the epoch. */
+	updatedAt: number
 }
 
 /**
@@ -2484,12 +2641,247 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'session-images': 'core',
 	// 🚧 While you were away (A7, R23; lane 7): what the session's routines did — core's only for now.
 	'routine-log': 'core',
+	// 🚧 M0 (SHAPES L12 Seams): a file in, to the plugin's handler; a file out, as a download.
+	'file-pick': 'any',
+	'file-save': 'any',
+	// 🚧 M0 (SHAPES L1, L6): a person's full-screen press, and a notice in the one toaster.
+	'session-fullscreen': 'any',
+	notify: 'any',
+	// 🚧 M2b: the `ui` API's navigation requests (the person confirms in the app) and the `applet` API's library
+	// requests (bounded by `permissions.applet` and the acting person, server-side): any owner may ask; the
+	// front-end API decides which mounts may (`frontEndApiRefusal`).
+	'create-session': 'any',
+	'open-session': 'any',
+	'open-sessions': 'any',
+	'delete-session': 'any',
+	'library-characters': 'any',
+	'update-character': 'any',
+	'library-lorebooks': 'any',
+	'library-sessions': 'any',
+	'update-session': 'any',
+	'user-annex': 'any',
+	'plugin-storage': 'any',
 })
 
 /** Every request kind — what a host checks an incoming `request` against. @experimental */
 export const WIDGET_REQUEST_KINDS: readonly WidgetRequestKind[] = Object.freeze(
 	Object.keys(WIDGET_REQUEST_ASKERS) as WidgetRequestKind[],
 )
+
+/**
+ * 🚧 The three **front-end APIs** (M2b, plan §9): what a mounted frame or component may use of the host, by group.
+ * - `ui` — the host's chrome, no data: notify, full screen, file pick and save, translate, save-state, the theme,
+ *   locale and viewer, and the person-confirmed navigation requests (open the start form, a session, the Sessions
+ *   list, the delete confirm).
+ * - `session` — the session it is mounted in: its sections (messages, annex, actions, state…), its verbs (`invoke`,
+ *   `action`) and its requests.
+ * - `applet` — the person's library and the pub, outside any one session: characters, lorebooks, sessions (list,
+ *   update), the user annex, plugin storage.
+ *
+ * A widget placed in a session's layout holds `ui` + `session` ({@link WIDGET_FRONT_END_APIS}); an applet frame (its
+ * genre's `applet: true`) holds `ui` + `applet`, and `session` as well while it is mounted in one
+ * ({@link appletFrontEndApis}). Every grant is still bounded by the acting person.
+ * @experimental
+ */
+export type FrontEndApi = 'ui' | 'session' | 'applet'
+
+/** 🚧 What a widget placed in a session's layout holds — every mount before applets. @experimental */
+export const WIDGET_FRONT_END_APIS: readonly FrontEndApi[] = Object.freeze(['ui', 'session'] as const)
+
+/** 🚧 What an applet frame holds: `ui` + `applet`, and `session` while it is mounted in one. @experimental */
+export function appletFrontEndApis(mountedInSession: boolean): readonly FrontEndApi[] {
+	return Object.freeze(mountedInSession ? ['ui', 'session', 'applet'] : ['ui', 'applet']) as readonly FrontEndApi[]
+}
+
+/** 🚧 The front-end API each request kind belongs to (M2b). Typed off {@link WidgetRequests}: a kind added there and not here does not compile. @experimental */
+export const WIDGET_REQUEST_APIS = Object.freeze({
+	messages: 'session',
+	'open-character': 'session',
+	'view-avatar': 'session',
+	'view-image': 'session',
+	'open-lore': 'session',
+	'prompt-details': 'session',
+	'inspect-run': 'session',
+	'pick-turn': 'session',
+	'change-sprite': 'session',
+	'actions-seen': 'session',
+	summarize: 'session',
+	'scene-open': 'session',
+	'scene-close': 'session',
+	'scene-move': 'session',
+	'scene-rename': 'session',
+	'scene-remove': 'session',
+	send: 'session',
+	'attach-files': 'session',
+	'remove-tray-item': 'session',
+	'remove-attachment': 'session',
+	draft: 'session',
+	'switch-persona': 'session',
+	'add-persona': 'session',
+	'take-seat': 'session',
+	'fire-turn': 'session',
+	'rewind-turn': 'session',
+	'forward-turn': 'session',
+	'decide-proposal': 'session',
+	'load-older': 'session',
+	'set-attribute-value': 'session',
+	'give-piece': 'session',
+	'set-tie-shown': 'session',
+	'set-attribute-carry': 'session',
+	'set-sprite-set': 'session',
+	'clear-scene-image': 'session',
+	'character-images': 'session',
+	'session-entries': 'session',
+	'set-entry-marks': 'session',
+	'authors-note': 'session',
+	'set-authors-note': 'session',
+	'history-entries': 'session',
+	'set-story-clock': 'session',
+	'start-history-entry': 'session',
+	'extend-graph': 'session',
+	'summarize-scenes': 'session',
+	'decide-scene-cue': 'session',
+	'session-places': 'session',
+	'channel-lanes': 'session',
+	'stat-trail': 'session',
+	'set-chosen-image': 'session',
+	'set-backdrop': 'session',
+	'set-owner-face': 'session',
+	'session-images': 'session',
+	'routine-log': 'session',
+	'file-pick': 'ui',
+	'file-save': 'ui',
+	'session-fullscreen': 'ui',
+	notify: 'ui',
+	// ruled 2026-10-31: opening a session or the Sessions list is chrome; creating and deleting one is session
+	// management — the applet group's, though the app's own start form and confirm still take the press.
+	'create-session': 'applet',
+	'open-session': 'ui',
+	'open-sessions': 'ui',
+	'delete-session': 'applet',
+	'library-characters': 'applet',
+	'update-character': 'applet',
+	'library-lorebooks': 'applet',
+	'library-sessions': 'applet',
+	'update-session': 'applet',
+	'user-annex': 'applet',
+	'plugin-storage': 'applet',
+} as const satisfies { readonly [K in WidgetRequestKind]: FrontEndApi })
+
+/** 🚧 The request kinds of one front-end API. @experimental */
+export type FrontEndApiRequestKind<A extends FrontEndApi> = {
+	[K in WidgetRequestKind]: (typeof WIDGET_REQUEST_APIS)[K] extends A ? K : never
+}[WidgetRequestKind]
+/** 🚧 @experimental */
+export type UiRequestKind = FrontEndApiRequestKind<'ui'>
+/** 🚧 @experimental */
+export type SessionRequestKind = FrontEndApiRequestKind<'session'>
+/** 🚧 @experimental */
+export type AppletRequestKind = FrontEndApiRequestKind<'applet'>
+
+/** 🚧 The front-end API each base section belongs to (M2b): a mount without `session` is posted none of the session's. @experimental */
+export const WIDGET_SECTION_APIS: { readonly [S in WidgetBaseSection]: FrontEndApi } = Object.freeze({
+	layout: 'ui',
+	props: 'ui',
+	settings: 'ui',
+	locale: 'ui',
+	viewer: 'ui',
+	session: 'session',
+	channels: 'session',
+	messages: 'session',
+	actions: 'session',
+	annex: 'session',
+	turnOrder: 'session',
+	attendance: 'session',
+})
+
+/**
+ * 🚧 An applet grant as a mount holds it (M2b): the keys the manifest's `permissions.applet` group compiles to (P's
+ * `DeclaredPermissions`), and the two storage keys `plugin-storage` reads. Sent with an applet frame's grants.
+ * @experimental
+ */
+export type AppletGrant =
+	| `applet:characters:${'read' | 'write'}`
+	| `applet:lorebooks:${'read' | 'write'}`
+	| `applet:sessions:${string}`
+	| 'applet:annex:user'
+	| 'storage'
+	| 'storage-per-user'
+
+/**
+ * 🚧 The applet grant an `applet` request kind needs (M2b), as the keys the manifest's `permissions.applet` group
+ * compiles to — `applet:characters:<read|write>` · `applet:lorebooks:<read|write>` · `applet:sessions:<genre id>` ·
+ * `applet:annex:user` — and `plugin-storage`'s `storage` (pub-wide) or `storage-per-user` (the acting person's).
+ * Why a mount holding `grants` may not ask `kind` with `params`, as a sentence — or null (not an applet kind, core's
+ * own, or granted). `write` levels hold `read`. A sessions kind naming a genre needs that genre's key; one that names
+ * a session (the genre is the server's to read) needs any `applet:sessions:` key, and the server filters to them.
+ * @experimental
+ */
+export function appletGrantRefusal(
+	kind: string,
+	from: { owner: string; grants?: readonly string[] },
+	params?: unknown,
+): string | null {
+	if (!Object.hasOwn(WIDGET_REQUEST_APIS, kind) || WIDGET_REQUEST_APIS[kind as WidgetRequestKind] !== 'applet') return null
+	if (from.owner === 'core') return null
+	const grants = Array.isArray(from.grants) ? from.grants.filter((g): g is string => typeof g === 'string') : []
+	const holds = (key: string) => grants.includes(key)
+	const either = (base: string) => holds(`${base}:read`) || holds(`${base}:write`)
+	const p = (params ?? {}) as { genre?: unknown; scope?: unknown }
+	const genre = typeof p.genre === 'string' && p.genre ? p.genre : null
+	const refuse = (what: string, key: string) => `'${kind}' ${what}, and this applet was not granted '${key}'`
+	switch (kind as AppletRequestKind) {
+		case 'library-characters':
+			return either('applet:characters') ? null : refuse("reads the person's characters", 'applet:characters:read')
+		case 'update-character':
+			return holds('applet:characters:write') ? null : refuse("changes the person's characters", 'applet:characters:write')
+		case 'library-lorebooks':
+			return either('applet:lorebooks') ? null : refuse("reads the person's lorebooks", 'applet:lorebooks:read')
+		case 'create-session':
+		case 'library-sessions':
+		case 'update-session':
+		case 'delete-session':
+			if (genre) return holds(`applet:sessions:${genre}`) ? null : refuse(`works with the person's '${genre}' sessions`, `applet:sessions:${genre}`)
+			return grants.some((g) => g.startsWith('applet:sessions:')) ? null : refuse("works with the person's sessions", 'applet:sessions:<genre id>')
+		case 'user-annex':
+			return holds('applet:annex:user') ? null : refuse("keeps the person's own annex documents", 'applet:annex:user')
+		case 'plugin-storage':
+			return p.scope === 'user'
+				? holds('storage-per-user') ? null : refuse("keeps the person's own files", 'storage-per-user')
+				: holds('storage') ? null : refuse("keeps the package's files", 'storage')
+		default:
+			return null
+	}
+}
+
+/**
+ * 🚧 Why a mount holding `apis` may not ask `kind`, as a sentence — or null (M2b). Asked BEFORE
+ * {@link widgetRequestRefusal}: the API decides whether a kind is this mount's at all, the asker table who of its
+ * owners may ask it. A kind no host answers is left to `widgetRequestRefusal` to say so.
+ * @experimental
+ */
+export function frontEndApiRefusal(
+	kind: string,
+	apis: readonly FrontEndApi[] = WIDGET_FRONT_END_APIS,
+	/** 🚧 M2c: what is asking, for the sentence — a widget placed in a session, a plugin page (`/x/…`), an applet. */
+	mount: FrontEndMount = 'widget',
+): string | null {
+	if (!Object.hasOwn(WIDGET_REQUEST_APIS, kind)) return null
+	const api = WIDGET_REQUEST_APIS[kind as WidgetRequestKind]
+	if (apis.includes(api)) return null
+	if (api === 'applet')
+		return mount === 'page'
+			? `'${kind}' is an applet request: a plugin page is not an applet`
+			: `'${kind}' is an applet request: a widget placed in a session cannot ask it`
+	if (api === 'session')
+		return mount === 'page'
+			? `'${kind}' is a session request, and a plugin page is not mounted in a session`
+			: `'${kind}' is a session request, and this frame is not mounted in a session`
+	return `'${kind}' is a ui request, and this mount does not hold the ui API`
+}
+
+/** 🚧 What a mount is, for the front-end API's refusal sentences (M2c): a widget placed in a session, a plugin page, an applet. @experimental */
+export type FrontEndMount = 'widget' | 'page' | 'applet'
 
 /**
  * Why a host must decline this request from this widget, as a sentence — or
@@ -2533,15 +2925,36 @@ export function widgetRequestRefusal(
 	const declared = Array.isArray(from.channels) ? from.channels.filter((c) => typeof c === 'string') : []
 	const named = (params as { channel?: unknown } | null | undefined)?.channel
 	if (named !== undefined) {
-		if (typeof named !== 'string' || !declared.includes(named))
+		// 🚧 M1 fix: a lane is its channel's (`phone:12` is `phone`'s, as the host's own send door reads it) — a declared
+		// channel covers its lanes, and the write grant is the channel's.
+		const slug = typeof named === 'string' ? parseChannel(named).slug : ''
+		if (typeof named !== 'string' || !(declared.includes(named) || declared.includes(slug)))
 			return `'${kind}' writes to '${String(named)}', which is not one of this widget's channels`
-		return holds(`channel:${named}:write`)
+		return holds(`channel:${named}:write`) || holds(`channel:${slug}:write`)
 			? null
-			: `'${kind}' writes to the '${named}' channel, and this widget was not granted the write grant 'channel:${named}:write'`
+			: `'${kind}' writes to the '${named}' channel, and this widget was not granted the write grant 'channel:${slug}:write'`
 	}
 	return declared.some((c) => holds(`channel:${c}:write`))
 		? null
 		: `'${kind}' writes to a channel, and this widget was not granted the write grant 'channel:<slug>:write' on any channel it declares`
+}
+
+/**
+ * 🚧 What a session action's `invoke` is answered with when its run ENDS (M2a a6): the `result` of the host's
+ * `{ t: 'response', requestId, ok: true }` to a frame's or a component's `invoke` that carried a `requestId`.
+ * `halted` (with its sentence as `reason`) when a step stopped the run on purpose — a refusal, nothing to
+ * write, not an error; `parked` when a run under it waits at a review gate. A run that errored, a press
+ * refused before any run (the session is answering someone: "Wait for the reply to finish.") and a Stop
+ * answer `ok: false` with the sentence as `error` (`'cancelled'` for a Stop). A core verb (`core#extend`)
+ * and a press that asks the person first (a confirm, a collect dialog) run no run now: they answer `{}` at once.
+ * Every run's end also reaches every widget as the `run:ended` event.
+ * @experimental
+ */
+export interface WidgetInvokeResult {
+	runId: string
+	halted?: true
+	reason?: string
+	parked?: true
 }
 
 /** What rides beside an invocation: the subject message, entered values. @experimental */
@@ -2689,6 +3102,24 @@ export type WidgetEvent =
 	 * `lore:ranked` ({@link WIDGET_EVENT_SCOPES}); names no channel.
 	 */
 	| { kind: 'story:moved' }
+	/**
+	 * 🚧 The viewer entered or left full screen (M0, SHAPES L1, L8) —
+	 * by the corner control, a key, or a `session-fullscreen` request. Names
+	 * no channel. Answered by the session page (U2).
+	 */
+	| { kind: 'fullscreen'; on: boolean }
+	/**
+	 * 🚧 A run a person's press started — a session action pressed in any
+	 * widget, frame or the page — has ended (M2a a6, 2026-10-31). `runId`
+	 * is the one the press's answer carried; `outcome` the receipt's word:
+	 * `ok`, `halt` (a step stopped it on purpose — a refusal, nothing to
+	 * write; not an error), `err` or `cancelled` (somebody pressed Stop).
+	 * `reason` is the sentence the run's progress card showed, on `halt` and
+	 * `err` only. Names no channel: session news, heard by every widget —
+	 * including a widget that did not press, so a board can redraw when
+	 * anybody's move lands or is refused.
+	 */
+	| { kind: 'run:ended'; runId: string; outcome: 'ok' | 'halt' | 'err' | 'cancelled'; reason?: string }
 	/** Anything core does not ship. Namespaced so it cannot shadow a member. */
 	| { kind: `custom:${string}`; payload?: WidgetPayload }
 
@@ -2773,9 +3204,12 @@ export interface WidgetVerbs {
 	 * the source itself until a translation arrives, then re-rendered. For
 	 * a widget's OWN literals; declared text (a label, a title) is a locale
 	 * map read with `i18nText(text, locale.v1)`.
+	 * Precedence: the plugin's own catalog (`lang/<locale>.json`), then the app's
+	 * translation, then the English source. `{0}`…`{n}` in the text are filled
+	 * from `args` afterwards (a missing argument leaves `{n}` as written).
 	 * @ruling C0b
 	 */
-	t(source: string): string
+	t(source: string, ...args: ReadonlyArray<string | number>): string
 	/**
 	 * ⏳ RETIRED 2026-10-10.
 	 * REMOVE in 0.7.0. A host-rendered menu at a point: no host ever drew
@@ -2812,3 +3246,23 @@ export const WIDGET_PROTOCOL = 2 as const
 
 /** A version of the widget contract a host and a frame can both speak. @experimental */
 export type WidgetProtocolVersion = 1 | 2
+
+/**
+ * 🚧 The most view state a host holds for one surface's `save-state` (M0,
+ * SHAPES L8): 256 KB of JSON, was about 16 KB. Still not storage — a
+ * plugin's own storage is — and a host may still drop it. The cap is
+ * enforced by the host's `frameStateStore`.
+ * @experimental
+ */
+export const SAVE_STATE_MAX_BYTES = 256 * 1024
+
+/**
+ * 🚧 A saved view state as a frame writes it (M0, SHAPES L8): `v`, the
+ * version of the plugin that wrote it, beside its `data`, so a later version
+ * reads an earlier one knowingly. The host keeps it as written.
+ * @experimental
+ */
+export interface SavedStateV1 {
+	v: string
+	data: unknown
+}

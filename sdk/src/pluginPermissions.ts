@@ -13,7 +13,7 @@
  */
 
 import { HOOK_CTX_KINDS, hookCtxKeysFor, type HookCtxKind } from './hookGrants.js'
-import type { PluginRule } from './pluginRuleRef.js'
+import { PLUGIN_PERMISSIONS_GUIDE, type PluginRule } from './pluginRuleRef.js'
 
 export { PLUGIN_PERMISSIONS_GUIDE, pluginRuleRef, type PluginRule } from './pluginRuleRef.js'
 
@@ -84,6 +84,37 @@ const KIND_ROLE: Record<HookCtxKind, string> = {
 export const PLUGIN_RULE_ANCHORS: readonly string[] = [
 	...HOOK_CTX_KINDS.map(kindAnchor),
 	...Object.keys(PLUGIN_RULES),
+	'permission-groups',
+]
+
+/** ` (see guides/plugin-permissions.md#permission-groups)` — the groups section's pointer. 🚧 (M2b) @experimental */
+export const permissionGroupsRef = (): string => ` (see ${PLUGIN_PERMISSIONS_GUIDE}#permission-groups)`
+
+/**
+ * 🚧 (M2b) The permission keys a package's manifest carries, by group: the rows of the
+ * guide's key table (key · group · what it grants · declared as). One table, so the
+ * guide and the admin's review list name the same keys.
+ * @experimental
+ */
+export const PERMISSION_KEY_ROWS: ReadonlyArray<{
+	key: string
+	group: 'session' | 'applet' | 'system'
+	grants: string
+	declaredAs: string
+}> = [
+	{ key: 'widget:<scope>', group: 'session', grants: "A frame's data request in the session it is mounted in (`session:state`, `lore`, a channel…).", declaredAs: "a widget's `scopes`, or `permissions.session.scopes`" },
+	{ key: 'widget:<scope>:write', group: 'session', grants: 'A write grant, reviewed apart from the read it never implies.', declaredAs: "`'session:state:write'`, `'channel:<slug>:write'` in the same `scopes`" },
+	{ key: 'event:<name>', group: 'session', grants: 'Hearing a session event, or running a pipeline on it.', declaredAs: 'an event listener, or a pipeline `input.event`' },
+	{ key: 'applet:characters:read|write', group: 'applet', grants: "The person's characters: list and read, or also create and change (write holds read).", declaredAs: "`permissions.applet.characters`" },
+	{ key: 'applet:lorebooks:read|write', group: 'applet', grants: "The person's lorebooks: read, or also create, import and attach (write holds read).", declaredAs: "`permissions.applet.lorebooks`" },
+	{ key: 'applet:sessions:<genre id>', group: 'applet', grants: "The person's sessions of that one genre of this package: list, open, start, update, delete.", declaredAs: '`permissions.applet.sessions.genres` (own genres only)' },
+	{ key: 'applet:annex:user', group: 'applet', grants: "The person's user annex under the plugin's own name.", declaredAs: '`permissions.applet.annex.user`' },
+	{ key: 'storage-per-user[:<bytes>]', group: 'applet', grants: 'A private folder for each person, with an optional quota each.', declaredAs: '`permissions.storage.perUser`' },
+	{ key: 'storage[:<bytes>]', group: 'system', grants: "The plugin's own pub-wide files, with an optional quota.", declaredAs: '`permissions.storage`' },
+	{ key: 'storage-serve:<glob>', group: 'system', grants: 'Serving matching own files to its own frames, read-only.', declaredAs: '`permissions.storage.serve`' },
+	{ key: 'network:<host>', group: 'system', grants: 'Fetching that host.', declaredAs: '`permissions.network.hosts`' },
+	{ key: 'media:autoplay', group: 'system', grants: "Frames starting sound after the person's first gesture.", declaredAs: '`permissions.media.autoplay`' },
+	{ key: 'resource:<name>', group: 'system', grants: 'A named resource the sandbox reads.', declaredAs: 'a sandbox manifest' },
 ]
 
 const code = (keys: readonly string[]) => keys.map((k) => `\`${k}\``)
@@ -95,7 +126,7 @@ export function renderPluginPermissionsGuide(): string {
 		'',
 		"Your plugin's code runs in a sandbox, and what it may do depends on what kind of handler it is. " +
 			'Each kind is handed a `ctx` with exactly these members and nothing else: `random`, `now`, `log` ' +
-			"and `signal` are every kind's, and storage and network are granted by kind. This page is generated " +
+			"and `signal` are every kind's, and storage, package files, the person's saved data and network are granted by kind. This page is generated " +
 			'from the table the sandboxes enforce, and a refusal names the section below that explains it. ' +
 			'For what each part of a plugin is for, see [What a plugin can do](extending.md).',
 		'',
@@ -116,10 +147,27 @@ export function renderPluginPermissionsGuide(): string {
 			'',
 			`- Handed: ${code(keys).join(', ')}.`,
 			`- ${keys.includes('storage') ? "Storage: your plugin's own files, when it asks for storage (`permissions.storage`)." : 'No storage.'}`,
+			`- ${keys.includes('package') ? "Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`)." : 'No package files.'}`,
+			`- ${keys.includes('annex') ? "The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject." : "No saved data (`ctx.annex`) — a task is pure."}`,
 			`- ${keys.includes('fetch') ? 'Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.' : 'No network.'}`,
 			'',
 		)
 	}
+	lines.push(
+		'## Permission groups',
+		'',
+		'A package asks for permissions in three groups, and the admin reviews and grants each group on its own. ' +
+			'A grant is always bounded by the person acting.',
+		'',
+		'- **In a session** (`permissions.session`, or a widget\'s `scopes`): what a frame may do in the session it is mounted in.',
+		'- **Outside a session, its applet** (`permissions.applet`, `permissions.storage.perUser`): what the package\'s applet may do with the person\'s library. A widget declaration may never ask for these, and `applet.sessions.genres` may name only the package\'s own genres.',
+		'- **On this pub** (`permissions.storage`, `network`, `media`): the sandbox\'s own reach.',
+		'',
+		'| Key | Group | What it grants | Declared as |',
+		'|---|---|---|---|',
+		...PERMISSION_KEY_ROWS.map((r) => `| \`${r.key}\` | ${r.group} | ${r.grants} | ${r.declaredAs} |`),
+		'',
+	)
 	lines.push('## Rules for every kind', '')
 	// Each heading is its anchor in words — "Private nodes" slugs to
 	// `private-nodes` — with the rule itself as the first line.

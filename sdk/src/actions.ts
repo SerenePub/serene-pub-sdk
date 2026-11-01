@@ -117,6 +117,20 @@ export interface CollectedText {
 	 * @ruling R-20
 	 */
 	ifEmpty?: I18n
+	/**
+	 * Ready-made answers the modal offers as chips above the box; choosing one
+	 * fills the box with its `value`. `common` ones show first, the rest sit
+	 * behind a "More" disclosure. `icon` is a lucide kebab name. Display text.
+	 */
+	suggestions?: Array<{ value: string; label: I18n; icon?: string; common?: boolean }>
+	/** `session`: the viewer's last answer to this action is remembered per session and offered next time. */
+	remember?: (typeof TEXT_REMEMBER)[number]
+	/**
+	 * A one-line preview drawn under the box while it holds a value:
+	 * `{subject}` is the first words of the message the action was pressed on,
+	 * `{value}` the box's text. Display text.
+	 */
+	preview?: I18n
 }
 
 /**
@@ -197,7 +211,21 @@ export function clockStepRefusal(raw: unknown): string | null {
 /** The keys `ActionDecl.collects` may carry, and each request's own keys. */
 const COLLECTS_KEYS: readonly string[] = ['text', 'recipients', 'clockStep']
 const COLLECTED_CLOCK_STEP_KEYS: readonly string[] = ['label', 'default']
-const COLLECTED_TEXT_KEYS: readonly string[] = ['need', 'label', 'placeholder', 'ifEmpty']
+const COLLECTED_TEXT_KEYS: readonly string[] = [
+	'need',
+	'label',
+	'placeholder',
+	'ifEmpty',
+	'suggestions',
+	'remember',
+	'preview',
+]
+
+/** The most suggestions one collected text may offer. @experimental */
+export const MAX_TEXT_SUGGESTIONS = 40
+
+/** Where a collected text's last value is remembered (per viewer). @experimental */
+export const TEXT_REMEMBER = ['session'] as const
 const COLLECTED_RECIPIENTS_KEYS: readonly string[] = ['label', 'min', 'max', 'overwrites']
 
 /**
@@ -643,6 +671,29 @@ export function collectsFindings(raw: unknown, where: string): string[] {
 						`empty submit does ('The room decides.')`,
 				)
 			else out.push(...i18nFindings(t.ifEmpty, `${at}.ifEmpty`))
+			out.push(...i18nFindings(t.preview, `${at}.preview`))
+			if (t.remember !== undefined && !(TEXT_REMEMBER as readonly unknown[]).includes(t.remember))
+				out.push(`${at}.remember is one of ${TEXT_REMEMBER.join(', ')} — where the last answer is remembered`)
+			if (t.suggestions !== undefined) {
+				const sg = t.suggestions
+				if (!Array.isArray(sg) || sg.length === 0 || sg.length > MAX_TEXT_SUGGESTIONS)
+					out.push(`${at}.suggestions is a list of 1 to ${MAX_TEXT_SUGGESTIONS} { value, label, icon?, common? }`)
+				else
+					sg.forEach((x: unknown, i: number) => {
+						const w = `${at}.suggestions[${i}]`
+						if (!x || typeof x !== 'object' || Array.isArray(x))
+							return void out.push(`${w} is { value, label, icon?, common? }`)
+						const o = x as Record<string, unknown>
+						unknownKeys(o, ['value', 'label', 'icon', 'common'], w)
+						if (typeof o.value !== 'string' || !o.value.trim())
+							out.push(`${w}.value is the text the chip fills in — a non-empty string`)
+						out.push(...i18nFindings(o.label, `${w}.label`, { required: true }))
+						if (o.icon !== undefined && (typeof o.icon !== 'string' || !/^[a-z0-9]+(-[a-z0-9]+)*$/.test(o.icon)))
+							out.push(`${w}.icon is a lucide kebab name ('smile')`)
+						if (o.common !== undefined && typeof o.common !== 'boolean')
+							out.push(`${w}.common is a boolean`)
+					})
+			}
 		}
 	}
 	if (c.recipients !== undefined) {

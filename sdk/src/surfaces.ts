@@ -68,6 +68,7 @@ import {
 	type WidgetScopedSectionName,
 	type WidgetSectionScope,
 	type WidgetWriteGrant,
+	type AppletGrant,
 } from './widgets.js'
 
 /**
@@ -193,7 +194,21 @@ export type RequestDeclineCode = 'unmounted'
  * @ruling R57, 10 §6, RESEARCH §7b, C0b, C5, W10
  */
 export type HostFrameMessage =
-	| { t: 'init'; protocol: FrameProtocolVersion; surface: FramePoint; payload?: unknown }
+	| {
+			t: 'init'
+			protocol: FrameProtocolVersion
+			surface: FramePoint
+			payload?: unknown
+			/**
+			 * 🚧 Where this frame's own package assets are served, versioned:
+			 * `/plugin-assets/<id>/<version>/` — append an asset's path
+			 * (`assets/img/a.png`). Absent for core. A document a component nests
+			 * (`sp-frame`) gets it too, addressed with its component's version (M2a).
+			 */
+			assetsBase?: string
+			/** 🚧 M0 (L1): whether the viewer has this session in full screen as the frame boots; later changes arrive as the `fullscreen` event. Absent from hosts that predate it. */
+			fullscreen?: boolean
+	  }
 	| { t: 'session'; session: SessionV1 }
 	| { t: 'messages'; messages: MessageV1[] }
 	| { t: 'message'; message: MessageV1 }
@@ -314,7 +329,7 @@ export type HostFrameMessage =
 	 * section has not been posted yet (wait): both are an absent `scoped`.
 	 * Sent over a component's wire only, never to a frame.
 	 */
-	| { t: 'grants'; grants: (WidgetSectionScope | WidgetWriteGrant)[] }
+	| { t: 'grants'; grants: (WidgetSectionScope | WidgetWriteGrant | AppletGrant)[] }
 
 /**
  * frame → host. Deliberately tiny: a frame proposes, the host decides.
@@ -377,6 +392,10 @@ export type FrameHostMessage =
 			blockId?: string
 			/** The text the press supplies (a slash argument) — the frame half of `WidgetInvokeArgs.text`. */
 			text?: string
+			/**
+			 * 🚧 Set it to hear the answer (M0; M2a a6). The host replies `{ t: 'response', requestId, ok, result?, error? }`: for one of the package's own `pluginActions`, `result` is the handler's `out.main`; for a session action, the answer comes when its run ENDS — `ok: true` with a {@link WidgetInvokeResult} (`{ runId }`, or `{ runId, halted: true, reason }` when the run halted), `ok: false` with the sentence when it errored or was refused before any run (`'cancelled'` for a Stop). A core verb, and a press that asks the person first, answer `{}` at once. Absent, nothing is posted back.
+			 */
+			requestId?: string
 	  }
 	/**
 	 * Something went wrong inside the frame. The host logs it against the

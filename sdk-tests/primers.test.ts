@@ -1,18 +1,20 @@
 /**
- * 🚧 Primers (rulesets §21, W3-S 2026-10-16): Vis Itineris's starter world and
- * Story's blank pass their findings; Vis Itineris's places graph is connected;
+ * 🚧 Primers (rulesets §21, W3-S 2026-10-16): Vis Itineris's starter world, the
+ * Ninth Mile and Freeform's blank pass their findings; Vis Itineris's places graph is connected;
  * `derived` mode materialises every compendium row as a derived entry.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { definePrimer, EMPTY_PRIMER_CONTENT, getPrimer, primerDerivedEntries, primerFindings, RulesetError, type PrimerProps } from '@serene-pub/sdk'
+import { definePrimer, EMPTY_PRIMER_CONTENT, getPrimer, primers, primerDerivedEntries, primerFindings, RulesetError, type PrimerProps } from '@serene-pub/sdk'
 import * as cat from '../core-catalog/src/index.js'
 
 const reasons = (f: string[]) => f.map((x) => x.slice(1, x.indexOf(']')))
 
 describe('core primers', () => {
-	test('both are registered and pass every finding', () => {
-		assert.deepEqual(cat.CORE_PRIMERS.map((p) => p.id), ['core:primer/freeform@1', 'core:primer/vis-itineris@1'])
+	test('all three are registered and pass every finding', () => {
+		assert.deepEqual(cat.CORE_PRIMERS.map((p) => p.id), ['core:primer/freeform@1', 'core:primer/ninth-mile@1', 'core:primer/vis-itineris@1'])
+		// The app's starter lorebook list reads registration order, so the Freeform world shows before the d20 one.
+		assert.deepEqual(primers().filter((p) => p.id.startsWith('core:')).map((p) => p.id), cat.CORE_PRIMERS.map((p) => p.id))
 		for (const p of cat.CORE_PRIMERS) {
 			assert.equal(getPrimer(p.id), p)
 			assert.deepEqual(primerFindings(p.id, p), [], p.id)
@@ -25,6 +27,26 @@ describe('core primers', () => {
 	test('Story is blank', () => {
 		assert.deepEqual(cat.freeformPrimer.content, EMPTY_PRIMER_CONTENT)
 		assert.deepEqual(primerDerivedEntries(cat.freeformPrimer), [])
+	})
+
+	test('The Ninth Mile: Freeform, one inn, 3–5 world-lore entries, one lead, no cast', () => {
+		const p = cat.ninthMilePrimer
+		const c = p.content
+		assert.equal(p.id, 'core:primer/ninth-mile@1')
+		assert.equal(p.ruleset, 'core:ruleset/freeform@1')
+		assert.equal(p.ruleset, cat.freeformPrimer.ruleset)
+		assert.equal(p.compendiumMode, 'referenced')
+		assert.equal(c.places.length, 1)
+		assert.ok(c.entries.length >= 3 && c.entries.length <= 5, `${c.entries.length} entries`)
+		for (const e of c.entries) assert.equal(e.type, 'core:entry/world-lore@1', e.key)
+		assert.equal(c.leads.length, 1)
+		assert.ok(c.leads[0]!.involves?.includes(c.places[0]!.key))
+		// The starter character is offered by the app's wizard, not written by the book.
+		assert.deepEqual(c.cast, [])
+		assert.deepEqual(c.relationships, [])
+		assert.equal(c.calendar, undefined)
+		assert.equal(c.clock, undefined)
+		assert.deepEqual(primerDerivedEntries(p), [])
 	})
 
 	test('Vis Itineris: one region and a town, 8–12 places, 3 factions, 6–8 cast, 5 leads, a calendar and a clock', () => {
@@ -70,8 +92,9 @@ describe('core primers', () => {
 	})
 
 	test('the content names no one outside it', () => {
-		const text = JSON.stringify(cat.visItinerisPrimer.content)
-		assert.ok(!/https?:\/\//.test(text))
+		for (const p of [cat.visItinerisPrimer, cat.ninthMilePrimer]) {
+			assert.ok(!/https?:\/\//.test(JSON.stringify(p.content)), p.id)
+		}
 	})
 })
 

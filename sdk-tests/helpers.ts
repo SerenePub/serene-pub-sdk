@@ -187,6 +187,11 @@ export function bindings(over: Bindings | FixtureOptions = {}): Bindings {
 			const row = await ctx.commit({ target: i.target, pick: i.pick, source: i.source })
 			return ok({ main: row.id, messageId: row.id, sprite: i.pick ?? null, kept: false })
 		},
+		// 🚧 The speech tail every reply spec ends with (speech build, 2026-10-28;
+		// lane V): its `cue` step runs on every reply, Read aloud on or off (the
+		// junction after it is what gates speaking). A stand-in that cues nothing
+		// — the fixture's sessions never read aloud, so speak/attach never fire.
+		'core:task/cue-lines@1': async () => ok({ main: [], cues: [] }),
 
 		'core:task/context-budget@1': async (i: any) => {
 			const ctxLen = i.connection?.metadata?.contextLength ?? 2048

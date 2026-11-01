@@ -44,6 +44,7 @@ import {
 	type SessionCharactersV1,
 	type SessionDossierV1,
 	type SessionPersonaV1,
+	type SessionLoreV1,
 	type SessionStateV1,
 	type WidgetData,
 	type WidgetRequests,
@@ -70,7 +71,8 @@ typed<Same<{ [S in WidgetSectionScope]: Named<WidgetScopedSections[S]['v1']> }[W
 typed<Same<NonNullable<WidgetData['session_full']>, { v1: SessionDossierV1 }>>(true)
 typed<Same<NonNullable<WidgetData['persona']>, { v1: SessionPersonaV1[] }>>(true)
 typed<Same<SessionPersonaV1, SessionCharacterV1 & { isPersona: true }>>(true)
-typed<Same<NonNullable<WidgetData['lore']>, { v1: { granted: true } }>>(true)
+// 🚧 M0 (L9): the lore section also carries the viewer's lorebook-annex view.
+typed<Same<NonNullable<WidgetData['lore']>, { v1: SessionLoreV1 }>>(true)
 // The catalogue's old name is the SDK's dossier, not a second shape (⏳ REMOVE in 0.7.0).
 typed<Same<ConversationDossierV1, SessionDossierV1>>(true)
 // The retired ⏳ `menu` verb keeps its stub's signature until 0.7.0 — and no frame message carries it.

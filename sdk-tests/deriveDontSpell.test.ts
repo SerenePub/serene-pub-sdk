@@ -140,6 +140,8 @@ const RULED: ReadonlyArray<{
 		// 2026-10-22: 18 → 19 — one more published-value read in the rulesets build (M2–M4).
 		// 2026-10-23: 19 → 21 — *Replies carry changes* (D7): the reply's JSON
 		// read for its `message` and its `changes` (`reply.changes.generate` / `.asked`).
+		// E M0 2026-10-28: 21 → 23 — the speech build's tail (shared/speechTail.ts) gates its two branches on `path: 'fields.<readAloud>'`, a published field read.
+		// speech follow-ups A3 2026-10-29: 23 → 21 — the tail is gone; replies are spoken by their own run.
 		count: 21,
 		why: "a step's `path` param reads the session's published values ('world.location') or a part of a value — data the host publishes, not a node; typed condition properties (sessionOf) cover conditions, not params",
 	},

@@ -22,6 +22,7 @@ import {
 	assertMessageVerbFloors,
 	assertSessionWrites,
 	assertTurnControls,
+	SESSION_CREATION_MODES,
 	channelDecls,
 	lorebookReadOptional,
 	lorebookShapeFindings,
@@ -31,6 +32,7 @@ import {
 	type SlotDecl,
 } from './descriptors.js'
 import { assertSceneSettings, declaredScenePlace } from './sceneSettings.js'
+import { storyCalendarProblems } from './storyTime.js'
 import { i18nFindings, localeMapOf, type LocaleMap } from './i18n.js'
 import { eventById, notADeclaredEvent } from './events.js'
 import { settingsSchemaFindings } from './settings.js'
@@ -165,6 +167,8 @@ export const sessionEvents = Object.freeze({
 	sceneSummaryApplied: 'core:event/scene-summary-applied@1',
 	/** 🚧 The session's settle line moved (pr-6, pass 4). */
 	historySettled: 'core:event/history-settled@1',
+	/** 🚧 A line a run wrote is settled — its run closed its receipt (speech follow-ups A1). Not `message-completed`, not the settle line. */
+	messageSettled: 'core:event/message-settled@1',
 } as const)
 
 /** @experimental */
@@ -406,10 +410,16 @@ export interface GenreDecl {
 	 * `recommended` with a `default` — offered first, every other ruleset
 	 * still allowed. Absent, every ruleset is offered alike. (`only` was
 	 * `strict` until 2026-10-17: in the interface _strict_ means rigour.)
+	 *
+	 * 🚧 `autoConvert` (M0, SHAPES L4 Conversion): `true` converts a
+	 * session pinned to an earlier version of its ruleset when it opens, with
+	 * a notice; absent or `false` (the default), converting is the owner's
+	 * press with a confirm.
 	 */
-	readonly rulesets?:
+	readonly rulesets?: (
 		| { readonly only: readonly string[] }
 		| { readonly recommended: readonly string[]; readonly default: string }
+	) & { readonly autoConvert?: boolean }
 	readonly summarize?: {
 		/**
 		 * The spec a scene is summarized with — `owner:spec/<name>`. Only
@@ -472,7 +482,10 @@ export interface GenreRigour {
 }
 
 /** 🚧 The rulesets a genre names (`GenreDecl.rulesets`). @experimental */
-export type GenreRulesets = { only: readonly string[] } | { recommended: readonly string[]; default: string }
+export type GenreRulesets = ({ only: readonly string[] } | { recommended: readonly string[]; default: string }) & {
+	/** 🚧 Convert an earlier-version session at open, with a notice — see `GenreDecl.rulesets`. */
+	autoConvert?: boolean
+}
 
 /**
  * 🚧 Why a genre's `rigour` or `rulesets` is refused, each finding opened by
@@ -502,6 +515,8 @@ export function genreRulesetFindings(id: string, props: Pick<GenreProps, 'rigour
 		const only = rs?.only
 		const recommended = rs?.recommended
 		let ids: unknown[] = []
+		if (rs?.autoConvert !== undefined && typeof rs.autoConvert !== 'boolean')
+			out.push(finding('bad-rulesets', `${id}.rulesets.autoConvert is '${String(rs.autoConvert)}'; say true or false.`))
 		if (rs?.strict !== undefined)
 			out.push(finding('bad-rulesets', `${id}.rulesets.strict is now 'only' (2026-10-17) — say { only: [...] }.`))
 		else if ((only === undefined) === (recommended === undefined))
@@ -644,6 +659,8 @@ export interface EnvoyDecl {
 	 * @ruling lair re-plan R6 (2026-09-28)
 	 */
 	greeting?: EnvoyGreeting
+	/** Casting tags for Auto voice picks (a hint only; the voicebank decides): a speaker role and the gender / age labels to prefer. */
+	casting?: { role?: 'narrator-like' | 'speaker'; gender?: string; age?: string }
 }
 
 /** An envoy's opening line and where it lands — see `EnvoyDecl.greeting`. @experimental */
@@ -1049,6 +1066,20 @@ export function genre<const P extends GenreProps>(
 	assertSessionWrites(props.shape, id)
 	assertTurnControls(props.shape, id)
 	assertChannelDecls(props.shape, id)
+	{
+		const proposed = (props.shape as { creationMode?: unknown } | undefined)?.creationMode
+		if (
+			proposed !== undefined &&
+			!(
+				proposed !== null &&
+				typeof proposed === 'object' &&
+				(SESSION_CREATION_MODES as readonly unknown[]).includes((proposed as { propose?: unknown }).propose)
+			)
+		)
+			throw new Error(
+				`${id} proposes creation mode ${JSON.stringify(proposed)}. A genre may propose one of 'new', 'new-world', 'branch' or 'next-chapter' — { propose: 'next-chapter' } — and never lock it.`,
+			)
+	}
 	// ⏳ `lorebook: 'required'` (retired RF fix 2, 2026-10-23): accepted for
 	// one release, warned here, and read as 'optional' in the declaration.
 	for (const f of lorebookShapeFindings(props.shape, `${id}.shape.lorebook`))
@@ -1057,6 +1088,25 @@ export function genre<const P extends GenreProps>(
 	// a mode or a trigger that does not read is an authoring mistake, not a
 	// default to fall back to silently.
 	assertSceneSettings(props.shape, id)
+	// The calendar an own book of this genre starts with (M0, SHAPES F2).
+	if (props.shape?.calendar !== undefined) {
+		const calendarProblems = storyCalendarProblems(props.shape.calendar, { declaration: true })
+		if (calendarProblems.length) throw new Error(`${id}.shape.calendar: ${calendarProblems.join(' ')}`)
+	}
+	// Full screen is only ever proposed, and only for a genre with its own session view (M0, SHAPES L1).
+	if (props.shape?.fullscreen !== undefined) {
+		if (props.shape.fullscreen !== 'propose')
+			throw new Error(`${id}.shape.fullscreen: only 'propose' — a genre proposes full screen and the viewer's choice wins; it never locks.`)
+		if (typeof props.shape.view !== 'string')
+			throw new Error(`${id}.shape.fullscreen proposes full screen without a session view. Declare shape.view (the plugin whose frame is the session view) or drop fullscreen.`)
+	}
+	// 🚧 An applet's frame is the genre's session view, mounted without a session (M2c, plan §6).
+	if (props.shape?.applet !== undefined) {
+		if (props.shape.applet !== true)
+			throw new Error(`${id}.shape.applet: only true — the genre's frame is also a launcher outside any session; leave it out otherwise.`)
+		if (typeof props.shape.view !== 'string')
+			throw new Error(`${id}.shape.applet without a session view. Declare shape.view (the plugin whose frame the applet mounts) or drop applet.`)
+	}
 	assertScenePlaceDeclared(props, id)
 	const events: Record<string, GenreEventDecl> = { ...(props.events ?? {}) }
 	// The turn-order write's own event is core-internal (PLAN-turn-order
@@ -1276,10 +1326,12 @@ export function withGenreDefaults<G extends GenreDecl>(g: G, defaults: GenreDefa
 	return next as G
 }
 
-const freezeRulesets = (r: GenreRulesets): GenreRulesets =>
-	'only' in r
-		? { only: Object.freeze([...r.only]) }
-		: { recommended: Object.freeze([...r.recommended]), default: r.default }
+const freezeRulesets = (r: GenreRulesets): GenreRulesets => {
+	const auto = r.autoConvert !== undefined ? { autoConvert: r.autoConvert } : {}
+	return 'only' in r
+		? { only: Object.freeze([...r.only]), ...auto }
+		: { recommended: Object.freeze([...r.recommended]), default: r.default, ...auto }
+}
 
 /**
  * Declared genres, by id.

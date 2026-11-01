@@ -158,8 +158,11 @@
 				{#each players as item (item.partId)}
 					<li data-widget-part="messages.media-item">
 						<figure data-widget-part="messages.media-player">
-							{#if item.kind === 'audio'}
+							{#if missing.has(item.partId)}
+								<p data-widget-part="messages.media-missing-text">File no longer available</p>
+							{:else if item.kind === 'audio'}
 								<audio
+									onerror={() => missing.add(item.partId)}
 									data-widget-part="messages.media-audio"
 									controls
 									preload="metadata"

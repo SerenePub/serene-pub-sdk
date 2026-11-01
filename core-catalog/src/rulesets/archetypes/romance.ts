@@ -16,8 +16,8 @@ export const romanceTemplate = defineRulesetTemplate(ROMANCE_ID, {
 		name: { en: "Romance" },
 		description: { en: "Affection, nerve and mood; confessions compare, nerve is spent, bonds keep score." },
 		attributes: [
-			{ id: "nerve", name: { en: "Nerve" }, kind: "pool", bounds: { max: 5 }, start: 3, carriedBy: ["cast"], tags: ["resource"], shownAs: "bar", changedBy: ["rules"], prose: "Nerve: courage held in reserve, 0 to 5. It is spent to do something brave and comes back each morning." },
-			{ id: "mood", name: { en: "Mood" }, kind: "label", of: ["guarded", "warm", "giddy", "hurt", "restless"], start: "guarded", carriedBy: ["cast"], shownAs: "words", prose: "Mood: how someone is carrying themselves today. It colours their words and shifts after a confession." }
+			{ id: "nerve", name: { en: "Nerve" }, kind: "pool", bounds: { max: 5 }, start: 3, owner: "cast", scope: "session", tags: ["resource"], shownAs: "bar", changedBy: ["rules"], prose: "Nerve: courage held in reserve, 0 to 5. It is spent to do something brave and comes back each morning." },
+			{ id: "mood", name: { en: "Mood" }, kind: "label", of: ["guarded", "warm", "giddy", "hurt", "restless"], start: "guarded", owner: "cast", scope: "session", shownAs: "words", prose: "Mood: how someone is carrying themselves today. It colours their words and shifts after a confession." }
 		],
 		entryTypes: [
 			{ id: "bond", name: { en: "Bond" }, relational: true, farEnd: "person", tags: ["relationship"], shownAs: "ties", readsOnto: { standing: "relationship-type" }, prose: "Bonds: what two people are to each other. Each holds their own side, with their affection for the other, 0 to 10: above 7 they say so unprompted; below 3 they avoid that person. The standing is worked out from it, cold, wary, warm or close; a confession moves the other's: cooled -1, warmed +1, confessed +2.", fields: { affection: { type: "integer", min: 0, max: 10, default: 3, label: { en: "Affection" } }, standing: { type: "enum", of: ["cold", "wary", "warm", "close"], default: "wary", label: { en: "Standing" } } } },

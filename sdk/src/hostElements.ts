@@ -172,9 +172,15 @@ export const SP_HOST_ELEMENTS = {
 	figcaption: plain("A figure's caption (1.3).", ARIA),
 	audio: plain(
 		'🚧 A sound player (1.3, O11). `src` is an app media URL (`/media/…`) — never another host, as `img`; `controls` draws the ' +
-			'browser\'s own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load.',
-		[...ARIA, 'src', 'controls', 'preload'],
-		['error'],
+			'browser\'s own; `preload` is `none` · `metadata` · `auto`. Name it (`aria-label`). `error` (nothing carried) is the file failing to load. ' +
+			'🚧 `autoplay` (core\'s alone; speech build 2026-10-28) plays it once it loads, as far as the browser allows — the newest spoken line under Read aloud: Make and play. ' +
+			'🚧 `loadedmetadata`, `play`, `pause`, `ended` and `timeupdate` (1.7; speech polish 2026-10-29) carry `{ currentTime, duration, paused }` — seconds, seconds (0 until known), and whether it is paused; `timeupdate` arrives about four times a second. ' +
+			'🚧 `playing` (1.8; heading audio control 2026-10-29; core\'s alone) — present, the page plays it; absent after present, the page pauses it. ' +
+			'An element that lands without it is left alone, so `autoplay` still plays. A play the browser refuses is answered with a `pause` event. ' +
+			'The page plays one sound at a time: another player starting pauses this one, and its `pause` arrives. ' +
+			'The element\'s own `play` / `pause` / `ended` events stay the truth; to start over, draw a fresh element.',
+		[...ARIA, 'src', 'controls', 'preload', 'autoplay', 'playing'],
+		['error', 'play', 'pause', 'ended', 'timeupdate', 'loadedmetadata'],
 	),
 	video: plain(
 		'🚧 A moving-picture player (1.3, O11) — `audio`\'s rules, and a `track` of captions inside it.',
@@ -839,4 +845,4 @@ export function hostElementsDts(): string {
  * the suite says which to bump. `doc` strings are not the shape.
  * @ruling F1, R22
  */
-export const HOST_ELEMENTS_VERSION = '1.5' as const
+export const HOST_ELEMENTS_VERSION = '1.8' as const

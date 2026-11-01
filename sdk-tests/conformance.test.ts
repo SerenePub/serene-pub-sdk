@@ -204,7 +204,8 @@ const FRAME_CSP = [
 	"img-src 'self' data: blob:",
 	"font-src 'self' data:",
 	"media-src 'self' blob:",
-	"connect-src 'none'",
+	// 🚧 (M2a) The frame's own two GET doors, host-sources with a path.
+	"connect-src localhost:3000/plugin-assets/p/ localhost:3000/plugin-data/p/ https://api.example.com",
 	"form-action 'none'",
 	"base-uri 'none'",
 ].join('; ')
@@ -1508,6 +1509,24 @@ test('95d · the six laws the showcase lanes hit each fail on a host that gets t
 	assert.match(
 		await failing(mounted({ csp: `${mount.csp}; worker-src 'self' 'unsafe-eval'` }), 'C26'),
 		/allows 'unsafe-eval'/,
+	)
+	// 🚧 (M2a) connect-src is judged: 'self', a wildcard, a bare scheme and a
+	// path outside the two doors are refused; the doors and granted hosts pass.
+	for (const open of [
+		"connect-src 'self'",
+		'connect-src *',
+		'connect-src https:',
+		'connect-src localhost:3000/api/',
+		'connect-src localhost:3000/plugin-assets/p/ localhost:3000/',
+	])
+		assert.match(
+			await failing(mounted({ csp: mount.csp.replace(/connect-src [^;]*/, open) }), 'C26'),
+			/opens more than the frame's own/,
+			open,
+		)
+	assert.equal(
+		(await result(mounted({ csp: mount.csp.replace(/connect-src [^;]*/, "connect-src 'none'") }), 'C26')).pass,
+		true,
 	)
 	assert.match(
 		await failing(mounted({ accepts: ['ready', 'action', 'commit'] }), 'C26'),

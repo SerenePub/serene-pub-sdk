@@ -524,6 +524,11 @@ export const setTurnOrder = pin(
  * ruling, reversing the original "no causesEvent"): a package's state is the annex, and a
  * genre that wants its turn order to answer that state binds the event in
  * the open, where the event map draws it — not through a back door.
+ *
+ * 🚧 Every write that moves the document moves the owner's **annex document
+ * version** (a count, 0 before the first): `base` makes the write a
+ * compare-and-set on it, so a run that read the document before another run
+ * wrote it is refused rather than overwriting that run's write.
  * @experimental
  */
 export const setSessionAnnex = pin(
@@ -580,8 +585,26 @@ export const setSessionAnnex = pin(
 			},
 		},
 		ports: {
-			in: { value: S.json },
-			out: { main: S.writeResult, annex: S.json },
+			in: {
+				value: S.json,
+				/**
+				 * 🚧 Compare-and-set (M2a a8): the owner's **annex document
+				 * version** this run read — `session-annex`'s `version`. When the
+				 * stored version is another, nothing is written: the write result
+				 * says `stale: true` (`written: false`, with a receipt note), and
+				 * `annex` and `version` carry the document as it stands now, to
+				 * build on again. Absent, the write lands as it always did (the
+				 * last writer's value wins).
+				 */
+				base: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				/** The owner's document as written — or, when `base` was stale, as it stands now. Never core's runtime keys. */
+				annex: S.json,
+				/** 🚧 The owner's annex document version after this write (unchanged when nothing was written). */
+				version: S.json,
+			},
 		},
 	}),
 )
@@ -862,6 +885,97 @@ export const setAnnexField = pin(
 		ports: {
 			in: { payload: S.json },
 			out: { main: S.writeResult, annex: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 Write one owner's document into the **lorebook annex** (M0,
+ * SHAPES L9): the `set-session-annex` write at book scope. A write from a
+ * session is a change — anchored to the turn, filed as a `lore_imprints` row
+ * (subject `annex`), retractable, settled with the stretch — routed like
+ * every lore write; a write from a book-level run is lasting at once.
+ * @experimental
+ */
+export const setLorebookAnnex = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-lorebook-annex@1',
+		i18n: { name: { en: 'Set lorebook annex' } },
+		effects: 'write',
+		/** The lorebook twin of `annex-changed`, as `set-session-annex` causes that one. */
+		causesEvent: 'core:event/lorebook-annex-changed@1',
+		reviewDefault: 'off',
+		review: { fields: ['value'] },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				value: S.json,
+				/**
+				 * 🚧 Compare-and-set (M2b), as `set-session-annex`'s `base`: the
+				 * owner's annex document version this run read — `lorebook-annex`'s
+				 * `version`. Another stored version writes nothing (`written: false`,
+				 * `stale: true`, a receipt note), and `annex` and `version` carry the
+				 * document as it stands now. Absent, the last write wins.
+				 */
+				base: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				/** The owner's document as written — or, when `base` was stale, as it stands now. */
+				annex: S.json,
+				/** 🚧 (M2b) The owner's annex document version on the book after this write (unchanged when nothing was written). */
+				version: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 Set one annex field declared `annexField({ scope: 'lorebook' })`
+ * (M0, SHAPES L9): the `set-annex-field` write at book scope, under the
+ * same rules as {@link setLorebookAnnex}.
+ * @experimental
+ */
+export const setLorebookAnnexField = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-lorebook-annex-field@1',
+		i18n: { name: { en: 'Set lorebook annex field' } },
+		effects: 'write',
+		causesEvent: 'core:event/lorebook-annex-changed@1',
+		reviewDefault: 'off',
+		/** The payload was judged at the door and is judged again here — approve or refuse, never rewrite. */
+		review: { fields: [] },
+		timeoutMs: 2000,
+		ports: {
+			in: { payload: S.json },
+			out: { main: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * 🚧 Move the session's rules to another version of their ruleset (M0,
+ * SHAPES L4 Conversion): built-in and owner-only, also the socket
+ * `sessions:convertRuleset`. Per session it re-keys renamed slots, retracts
+ * removed ones and inserts defaults for added ones — each an anchored change,
+ * retractable — then sets the session's ruleset version to `to`.
+ * @experimental
+ */
+export const convertRuleset = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/convert-ruleset@1',
+		i18n: { name: { en: 'Convert ruleset' } },
+		effects: 'write',
+		causesEvent: 'core:event/ruleset-converted@1',
+		/** The version is the ruleset's own, and the slots its upgrades name: approve or refuse, never rewrite. */
+		review: { fields: [] },
+		timeoutMs: 5000,
+		ports: {
+			in: {
+				/** The ruleset version to move to (semver). */
+				to: S.text,
+			},
+			out: { main: S.writeResult },
 		},
 	}),
 )
@@ -1208,6 +1322,26 @@ export const offerMedia = pin(
 // ── The story clock (DESIGN-story-time P3, 2026-09-28) ──────────────────────
 
 /**
+ * 🚧 **A clock target** — the value of `core:shape/clock-target@1`
+ * (`S.clockTarget`; M0, SHAPES L3): an hour and, optionally, a minute
+ * within a story day. `day` says which day: `next` (the default) — today when
+ * the moment is still ahead, tomorrow when it is not ("sleep until 07:00");
+ * `today` — refused when the moment is not ahead; `tomorrow`. A clock target
+ * never moves the clock back. What `advance-story-clock@1` moves `to` and
+ * (once ruled) the hour `cast-presences@1` reads. ⚠ Not a `StoryTime`: it names a moment of a
+ * day, never a date.
+ * @experimental
+ */
+export interface ClockTargetV1 {
+	/** 0–23. */
+	hour: number
+	/** 0–59; absent is 0. */
+	minute?: number
+	/** Absent is `next`. */
+	day?: 'today' | 'tomorrow' | 'next'
+}
+
+/**
  * Move a session's **story clock** — the session's own story now — by `by` of
  * `unit`, through its lorebook's calendar (`advanceStoryTime`): carried by a
  * declared calendar, and by the smallest-part rule in a free-form book.
@@ -1279,6 +1413,16 @@ export const advanceStoryClock = pin(
 				/** One of the units; wins over the `unit` parameter when wired. */
 				unit: S.text,
 				/**
+				 * 🚧 **Where the clock moves to** (M0, SHAPES L3), a
+				 * `ClockTargetV1` — the second input shape: an absolute moment
+				 * within the day ("sleep until 07:00") instead of a relative
+				 * `by`. Exactly one of the `by` and `to` in-ports may be wired;
+				 * both is refused with a sentence naming both. Wired, the `by`
+				 * and `unit` parameters are not read. One ledger move either
+				 * way, retractable as every move is.
+				 */
+				to: S.clockTarget,
+				/**
 				 * 🚧 **Why the clock moves** (live scenes §15 G4, 2026-10-13),
 				 * a literal: `'action'` — a person's press (*Time passes…*);
 				 * `'keeper'` — the state-keeper's move under Trust the
@@ -1323,6 +1467,12 @@ export const advanceStoryClock = pin(
 				skipped: S.text,
 				/** It spelled through the book's calendar. */
 				label: S.text,
+				/**
+				 * 🚧 The minutes a `to` move moved the clock (M0, T1) — 0
+				 * when it stood where it was or was refused under `skip`, with
+				 * no ledger row. Absent on a `by` move.
+				 */
+				moved: S.json,
 			},
 		},
 	}),
@@ -1395,7 +1545,15 @@ export const answerForm = pin(
 	}),
 )
 
-/** The audio twin of `attach-image` — same `target`, same commit, bound the same day. @experimental */
+/**
+ * The audio twin of `attach-image` — same `target`, same commit, bound the same day.
+ *
+ * 🚧 Speech (seam S3, 2026-10-28): `meta` is the `SpokenMeta` record
+ * `core:oracle/speak@1` publishes, kept in the line's metadata for the swipe
+ * (`spoken`) beside the audio part; `replace` swaps the line's earlier spoken
+ * audio rather than adding a second part — what re-speaking a line does.
+ * @experimental
+ */
 export const attachAudio = pin(
 	describeOutletDefinition({
 		id: 'core:outlet/attach-audio@1',
@@ -1404,7 +1562,31 @@ export const attachAudio = pin(
 		review: { fields: [] },
 		timeoutMs: 5000,
 		causesEvent: 'core:event/message-updated@1',
-		ports: { in: { target: S.rowIds, audio: S.audio }, out: { main: S.writeResult } },
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					replace: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'Replace earlier speech' },
+						description: {
+							en: "Swap the line's spoken audio for this one instead of adding a second part.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				target: S.rowIds,
+				audio: S.audio,
+				/** 🚧 `SpokenMeta` — absent writes the audio part alone. */
+				meta: S.spokenMeta,
+			},
+			out: { main: S.writeResult },
+		},
 	}),
 )
 
@@ -1841,6 +2023,117 @@ export const graphProposal = pin(
 				sources: S.loreSources,
 			},
 			out: { main: S.writeResult, proposalId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * Make a character: write one character card into the acting person's library.
+ *
+ * Takes `card` — a V3 card `{ spec: 'chara_card_v3', data }`, its `data`, or a
+ * plain `{ name, description, personality?, scenario?, first_mes?,
+ * mes_example?, creator_notes?, tags? }`, exactly what the app's card reader
+ * takes. Writes one character row (or, under the person's library write mode,
+ * a proposal for it); `characterId` is the new row's id, or absent while the
+ * write waits.
+ *
+ * ⚠ The app, not the pipeline, judges the write: it finds the person acting
+ * for the run, and their **library write mode** decides whether the card lands
+ * now (Full), waits for them to accept it in the session (Review, the
+ * default), or is refused (Off). A genre must also declare
+ * `writes.library.characters`, or the host refuses the write.
+ * @internal
+ */
+export const createCharacter = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/create-character@1',
+		i18n: { name: { en: 'Make a character' } },
+		effects: 'write',
+		/** R-15: the card a person may retype before it lands. */
+		review: { fields: ['card'] },
+		timeoutMs: 10000,
+		ports: {
+			in: { card: S.json },
+			out: { main: S.writeResult, characterId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * Change a character: edit the text fields of a character the acting person
+ * may write to.
+ *
+ * Takes `characterId` and `changes` — an object of the card's text fields
+ * (name, description, personality, scenario, first_mes, mes_example). Writes
+ * those fields on that character, and nothing else; the fields it replaced are
+ * kept so Back can restore them. The app judges the person (write rights on
+ * the character) and their library write mode (Full, Review or Off); a genre
+ * must declare `writes.library.characters`.
+ * @internal
+ */
+export const updateCharacter = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/update-character@1',
+		i18n: { name: { en: 'Change a character' } },
+		effects: 'write',
+		/** R-15: the change a person may retype before it lands. */
+		review: { fields: ['changes'] },
+		timeoutMs: 10000,
+		ports: {
+			in: { characterId: S.json, changes: S.json },
+			out: { main: S.writeResult, characterId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * Make a lorebook: write one lorebook into the acting person's library.
+ *
+ * Takes `lorebook` — a lorebook document as Lorebooks › Import reads it (a
+ * SillyTavern world-info JSON is the safe shape: `{ name, description?,
+ * entries }`). Writes a lorebook and its entries (or, under the person's
+ * library write mode, a proposal for them); `lorebookId` is the new book's id.
+ * The app judges the person and their library write mode (Full, Review or
+ * Off); a genre must declare `writes.library.lorebooks`.
+ * @internal
+ */
+export const createLorebook = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/create-lorebook@1',
+		i18n: { name: { en: 'Make a lorebook' } },
+		effects: 'write',
+		/** R-15: the book a person may retype before it lands. */
+		review: { fields: ['lorebook'] },
+		timeoutMs: 10000,
+		ports: {
+			in: { lorebook: S.json },
+			out: { main: S.writeResult, lorebookId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * Read a lorebook into a session: attach an existing lorebook to a session.
+ *
+ * Takes `lorebookId` and, optionally, `sessionId` (absent: the run's own
+ * session). Writes the session's lorebook; what it replaced is kept so Back
+ * can restore it. The app judges the person (read rights on the book and write
+ * rights on the session) and their library write mode (Full, Review or Off).
+ * A genre must declare `writes.library.lorebooks`, and
+ * `writes.library.sessions` to name a session other than the run's.
+ * @internal
+ */
+export const attachLorebook = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/attach-lorebook@1',
+		i18n: { name: { en: 'Read a lorebook into a session' } },
+		effects: 'write',
+		/** R-15: a reference, not a value to retype: a reviewer who disagrees refuses the write. */
+		review: { fields: [] },
+		timeoutMs: 10000,
+		ports: {
+			in: { lorebookId: S.json, sessionId: S.json },
+			out: { main: S.writeResult },
 		},
 	}),
 )

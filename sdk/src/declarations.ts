@@ -420,6 +420,40 @@ export function genrePresetFindings(
 }
 
 /**
+ * 🚧 **Every genre ships exactly one create spec** (24 §3), counted the way an
+ * install counts it: a pipeline document whose inlet lock is
+ * `input.genre === <genre id>` and `input.event === 'core:event/session-created@1'`.
+ * A genre IS its create spec's published row, so a genre with none reaches no
+ * picker, and one with two has no single start. The ONE rule: the install's
+ * package reader and the packager (`serene-pub check`/`build`) both call it,
+ * so a package the packager passes is never refused here at install
+ * (2026-10-29). A registration a genre's defaults name is not counted — only
+ * the lock is.
+ * @experimental
+ */
+export function genreCreateSpecFindings(
+	genres: readonly { id?: unknown }[],
+	documents: readonly unknown[],
+): string[] {
+	const out: string[] = []
+	for (const g of genres) {
+		const id = g && typeof g.id === 'string' ? g.id : ''
+		if (!id) continue
+		const creates = documents.filter((d) => {
+			const input = (d as { input?: { genre?: unknown; event?: unknown } } | null)?.input
+			return input?.genre === id && input?.event === 'core:event/session-created@1'
+		})
+		if (creates.length !== 1)
+			out.push(
+				`genre '${id}' ships ${creates.length} create pipelines — every genre needs ` +
+					`exactly one spec answering 'core:event/session-created@1' (24 §3). A genre is its ` +
+					`create pipeline's published row, so a genre without one reaches no picker.`,
+			)
+	}
+	return out
+}
+
+/**
  * Contributed actions: each declaration sound, and one slash name
  * meaning one function across the whole package — the per-document check cannot
  * see two specs of one package claiming `/acme.roll` for two different things,

@@ -661,6 +661,7 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 							;(n as Element).querySelectorAll('input, textarea').forEach((c) => sync(c, null))
 						}
 		})
+		// `audio`'s `playing` (host elements 1.8) is not mirrored: the page plays or pauses the element; here the attribute lands and no sound exists.
 		controls.observe(theBox, { subtree: true, childList: true, attributes: true, attributeFilter: ['value', 'checked'] })
 
 		let mutations = 0
@@ -738,7 +739,9 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 			if (!m || typeof m !== 'object') return
 			if (m.t === 'ready') onReady?.()
 			else if (m.t === 'invoke') {
-				const { t: _t, ...rest } = m
+				// 🚧 M2b (2026-10-31): a component's invoke carries a `requestId` and is answered, as a frame's is; the
+				// record keeps what the component pressed, without the id.
+				const { t: _t, requestId, ...rest } = m
 				const record = rest as unknown as InvokeRecord
 				// The page's gate: a verb that changes a message, from a box that
 				// is not core's, needs a person acting in the box right now.
@@ -746,6 +749,9 @@ export async function mountComponent(opts: MountComponentOptions): Promise<Mount
 				const verdict = action ? personGateVerdict(action, lastPress, Date.now()) : { allowed: true as const }
 				if (!verdict.allowed) refusedInvokes.push({ ...record, reason: verdict.reason })
 				else invoked.push(record)
+				// The test host runs no runs: an allowed press is answered `ok` with nothing, a refused one with its reason.
+				if (typeof requestId === 'string')
+					reply(requestId, verdict.allowed ? { t: 'response', ok: true } : { t: 'response', ok: false, error: verdict.reason })
 			} else if (m.t === 'save-state') saved.push(m.state)
 			else if (m.t === 'error') errors.push({ message: String(m.message), fatal: !!m.fatal })
 			else if (m.t === 'request' && typeof m.requestId === 'string') answer(m)

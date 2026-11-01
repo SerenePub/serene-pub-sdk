@@ -39,6 +39,20 @@ export const HOOK_CTX_KINDS: readonly HookCtxKind[] = [
 export interface HookCtxGrants {
 	/** The extension's own namespaced files (`ctx.storage`). */
 	storage: boolean
+	/**
+	 * The package's own shipped files, read-only (`ctx.package`). 🚧 (M2a)
+	 * Granted exactly where `storage` is: reading what the package ships is the
+	 * same reach as reading what it keeps, and a pure kind has neither.
+	 */
+	package: boolean
+	/**
+	 * The acting person's own saved documents (`ctx.annex('user')`). 🚧 (M2b)
+	 * Granted exactly where `storage` is: a task is pure (F11), so it has none.
+	 * Present on the ctx of those kinds whether or not the extension holds
+	 * `applet:annex:user` — without it, or with no acting person, the methods
+	 * reject with a sentence (the way `ctx.storage.user` does).
+	 */
+	annex: boolean
 	/** Host-scoped network access (`ctx.fetch`). */
 	fetch: boolean
 }
@@ -50,19 +64,20 @@ export interface HookCtxGrants {
  *    is a script: the in-app script host hands one `{ random, log }` and a
  *    plugin's link gets the same.
  *  - **query**, **outlet**, **event**, **lifecycle** — storage: an
- *    extension's own files, no network.
- *  - **oracle** — storage and fetch. The one kind that calls out, which is what
+ *    extension's own files, `package`: the files it ships, and `annex`: the acting
+ *    person's saved documents (🚧 M2b); no network.
+ *  - **oracle** — storage, package and fetch. The one kind that calls out, which is what
  *    `effects: 'external'` names.
  * @ruling F11, F32
  */
 const GRANTS: Record<HookCtxKind, HookCtxGrants> = {
-	task: { storage: false, fetch: false },
-	'chain-link': { storage: false, fetch: false },
-	query: { storage: true, fetch: false },
-	outlet: { storage: true, fetch: false },
-	event: { storage: true, fetch: false },
-	lifecycle: { storage: true, fetch: false },
-	oracle: { storage: true, fetch: true },
+	task: { storage: false, package: false, annex: false, fetch: false },
+	'chain-link': { storage: false, package: false, annex: false, fetch: false },
+	query: { storage: true, package: true, annex: true, fetch: false },
+	outlet: { storage: true, package: true, annex: true, fetch: false },
+	event: { storage: true, package: true, annex: true, fetch: false },
+	lifecycle: { storage: true, package: true, annex: true, fetch: false },
+	oracle: { storage: true, package: true, annex: true, fetch: true },
 }
 
 /** @internal */
@@ -97,6 +112,6 @@ const BASE_KEYS = ['random', 'now', 'log', 'signal'] as const
  */
 export function hookCtxKeysFor(kind: HookCtxKind): string[] {
 	const g = hookCtxGrants(kind)
-	return [...BASE_KEYS.slice(0, 3), ...(g.storage ? ['storage'] : []), ...(g.fetch ? ['fetch'] : []), BASE_KEYS[3]!]
+	return [...BASE_KEYS.slice(0, 3), ...(g.storage ? ['storage'] : []), ...(g.package ? ['package'] : []), ...(g.annex ? ['annex'] : []), ...(g.fetch ? ['fetch'] : []), BASE_KEYS[3]!]
 }
 

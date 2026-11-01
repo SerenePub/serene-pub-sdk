@@ -569,7 +569,9 @@ describe('R-2 · a provisional definition is declared, not bound, and cannot be 
 		// handler, published as a contract stub (P1-B); the host binds it later.
 		// 2026-10-17: − `core:task/ruleset-resolve@1` — the app binds it now, and
 		// the Dungeon Crawler create spec refuses to seed a provisional node.
-		const flagged = ['core:oracle/speak@1', 'core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']
+		// 2026-10-28: − `core:oracle/speak@1` — the speech build bound it (cue-lines
+		// → speak → attach-audio), and the five reply specs place it.
+		const flagged = ['core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']
 		for (const id of flagged) assert.equal(getDefinition(id)?.provisional, true, id)
 		assert.deepEqual(
 			allDefinitions()
@@ -579,6 +581,7 @@ describe('R-2 · a provisional definition is declared, not bound, and cannot be 
 			[...flagged].sort(),
 		)
 		assert.equal(C.attachImage.descriptor.provisional, undefined, 'bound 2026-09-17')
+		assert.equal(C.speak.descriptor.provisional, undefined, 'bound 2026-10-28')
 	})
 
 	test('validate() refuses the document under R-2, and the fix is the two things an author can do', () => {

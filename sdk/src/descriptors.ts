@@ -42,6 +42,8 @@ import { authoredSlots } from './settingsSlot.js'
 // `scripts.ts` imports only types from here, so this runtime import starts no cycle.
 import { isScriptKindId, seamAddressOf, type SeamAddress } from './scripts.js'
 import { DEFAULT_CHANNEL, parseChannel } from './channels.js'
+import { isParticipantRef, type ParticipantRef } from './participants.js'
+import { storyCalendarProblems, type StoryCalendar } from './storyTime.js'
 import { assertSceneSettings, type SceneSettingsDecl } from './sceneSettings.js'
 // F39's registry door: `register()` hears `core:verdict/settings-travel` for
 // every declared out-port (01 §13). `verdicts.ts` reads only leaf
@@ -712,6 +714,35 @@ export function resolveWrites(shape: unknown): SessionWritePolicy {
 	) as SessionWritePolicy
 }
 
+/** The library writes a genre may declare, in `SessionShape.writes.library`. @experimental */
+export const LIBRARY_WRITES = ['characters', 'lorebooks', 'sessions'] as const
+/** @experimental */
+export type LibraryWrite = (typeof LIBRARY_WRITES)[number]
+/** Availability of every library write. @experimental */
+export type LibraryWritePolicy = Record<LibraryWrite, boolean>
+
+/**
+ * What this shape lets a session's pipelines write into the library,
+ * resolved. Absent, unknown or unreadable is **all off**: a library write
+ * is opt-in. Only an explicit `true` allows one. Pure, and takes `unknown`
+ * like `resolveWrites`.
+ * @experimental
+ */
+export function resolveLibraryWrites(shape: unknown): LibraryWritePolicy {
+	const writes =
+		shape && typeof shape === 'object'
+			? ((shape as { writes?: unknown }).writes ?? null)
+			: null
+	const declared =
+		writes && typeof writes === 'object'
+			? ((writes as { library?: unknown }).library ?? null)
+			: null
+	const d = (declared && typeof declared === 'object' ? declared : {}) as Record<string, unknown>
+	return Object.fromEntries(
+		LIBRARY_WRITES.map((w) => [w, d[w] === true]),
+	) as LibraryWritePolicy
+}
+
 /**
  * A `writes` declaration whose values are not booleans is refused — with a
  * sentence, at the declaration, where the author is. Shared by `register`
@@ -729,6 +760,24 @@ export function assertSessionWrites(shape: SessionShape | undefined, who: string
 				`{ lore?: boolean; scenes?: boolean } — absent means both on, and only an ` +
 				`explicit false takes one away (R-B).`,
 		)
+	const library = writes.library
+	if (library !== undefined) {
+		if (!library || typeof library !== 'object' || Array.isArray(library))
+			throw new Error(
+				`${who} declares a 'writes.library' that is not an object. It is ` +
+					`{ characters?: boolean; lorebooks?: boolean; sessions?: boolean } — absent means off.`,
+			)
+		const lib = library as Record<string, unknown>
+		const badLib = LIBRARY_WRITES.filter(
+			(w) => lib[w] !== undefined && typeof lib[w] !== 'boolean',
+		)
+		if (badLib.length)
+			throw new Error(
+				`${who} declares writes.library { ${badLib.map((w) => `${w}: ${JSON.stringify(lib[w])}`).join(', ')} }. ` +
+					`Each library write is a boolean or absent — absent means off, and only an ` +
+					`explicit true allows the write.`,
+			)
+	}
 	const bad = SESSION_WRITES.filter(
 		(w) => writes[w] !== undefined && typeof writes[w] !== 'boolean',
 	)
@@ -910,6 +959,25 @@ export interface PortDecl {
  * open `PortDecl`, so nothing that ignores the generics changes.
  */
 /**
+ * 🚧 **A declared calendar** (M0, SHAPES F2): the calendar a genre gives
+ * the own books its sessions make — `SessionShape.calendar` — in the book's
+ * own shape (`StoryCalendar`, stored in `lorebooks.story_calendar`). Periods
+ * and seasons belong to the CALENDAR, never the genre (`StoryCalendar.periods`,
+ * `.seasons`): a book the session reads keeps its own in every session and
+ * genre that reads it, and this declaration is only where an own book starts.
+ * Absent `months`, the own book keeps core's own-book calendar (twelve
+ * months) with the declared `periods` and `seasons` laid on it; absent
+ * altogether, the own book is made as it always was.
+ * @experimental
+ */
+export type CalendarDecl = Partial<StoryCalendar>
+
+/** 🚧 How a new session starts (M0, F5). @experimental */
+export const SESSION_CREATION_MODES = ['new', 'new-world', 'branch', 'next-chapter'] as const
+/** @experimental */
+export type SessionCreationMode = (typeof SESSION_CREATION_MODES)[number]
+
+/**
  * The chat-shape contract a mode-bearing input type carries. See
  * `Descriptor.shape` for the rules; this is the vocabulary.
  *
@@ -1079,6 +1147,22 @@ export interface SessionShape {
 		lore?: boolean
 		/** May a session of this genre open scenes? */
 		scenes?: boolean
+		/**
+		 * The library writes a genre opts into — making or changing characters,
+		 * making lorebooks and reading them into sessions. **Absent = all off**
+		 * (unlike `lore` and `scenes`): a library write is something a genre
+		 * asks for. Declaring it only lets the genre's pipelines try: the
+		 * person's rights and their library write mode (Full, Review, Off)
+		 * still decide each write.
+		 */
+		library?: {
+			/** May a pipeline of this genre make or change characters? */
+			characters?: boolean
+			/** May a pipeline of this genre make lorebooks, or read one into the session? */
+			lorebooks?: boolean
+			/** May a pipeline of this genre read a lorebook into a session other than its own? */
+			sessions?: boolean
+		}
 	}
 	/**
 	 * 🚧 How sessions of this genre place their **scene boundaries** while
@@ -1102,6 +1186,36 @@ export interface SessionShape {
 	 * @ruling 20 §12
 	 */
 	view?: string
+	/**
+	 * 🚧 A declared session view may PROPOSE full screen (M0, SHAPES L1):
+	 * the first open of a session of this genre enters full screen once, with
+	 * the one-line notice "Press Esc to leave full screen."; the viewer's
+	 * choice afterwards wins, stored as their own. Never `'lock'`. Meaningful
+	 * only beside `view`. Answered by the session page (U2).
+	 */
+	fullscreen?: 'propose'
+	/**
+	 * 🚧 The genre's frame is also an **applet** (M2c, plan §6 · §9): the Sessions rail lists the plugin under **Apps**
+	 * (one row per plugin, however many of its genres say so), and opening that row mounts the genre's `view` frame WITHOUT a
+	 * session, full screen, holding the `ui` + `applet` front-end APIs — a launcher (New game, Continue, Load) that starts and
+	 * opens ordinary sessions of the genre through the app's own start form and lists. Sessions › New › this genre opens the
+	 * launcher (the generic start form stays one click away); an existing session of the genre opens straight to the session,
+	 * never through the launcher. Meaningful only beside `view`; a widget may not declare it. Never a lock.
+	 * (Ruled 2026-10-31: `applet: true`, not `presentation` — that word is the Messages widget's setting, R1.)
+	 */
+	applet?: true
+	/**
+	 * 🚧 The creation mode the start form proposes for this genre (M0,
+	 * F5) — a sequel genre proposes 'next-chapter'; the person may pick
+	 * another. Never a lock.
+	 */
+	creationMode?: { propose: SessionCreationMode }
+	/**
+	 * 🚧 The calendar an own book of this genre's sessions starts with (M0,
+	 * SHAPES F2) — see {@link CalendarDecl}. Never written onto a book the
+	 * session reads that is not its own.
+	 */
+	calendar?: CalendarDecl
 	/**
 	 * The session's channels beyond the implicit `main` — filter
 	 * lanes inside one session. What renders a channel is the surface story
@@ -1265,8 +1379,17 @@ export type ChannelLoreRole = (typeof CHANNEL_LORE_ROLES)[number]
 
 /** 🚧 Who reads a channel: every member (`all`, the default) or the session's owner alone (`owner`). @experimental */
 export const CHANNEL_AUDIENCES = ['all', 'owner'] as const
-/** @experimental */
-export type ChannelAudience = (typeof CHANNEL_AUDIENCES)[number]
+/**
+ * 🚧 Who reads a channel: one of {@link CHANNEL_AUDIENCES}, or (M0,
+ * SHAPES L6) `{ participants }` — the participants named and nobody else:
+ * through reads, the send door, `channel-lanes` and `session-history@1`; on a
+ * `personal` lane mode it narrows per lane. ★6: it REPLACES the
+ * private-messages gate — one mechanism, the word **audience**; *private
+ * message* stays the interface's label for a lane whose audience is two
+ * people.
+ * @experimental
+ */
+export type ChannelAudience = (typeof CHANNEL_AUDIENCES)[number] | { participants: readonly ParticipantRef[] }
 
 /** 🚧 Whose a channel's lanes are: the genre's (`shared`) or one per person (`personal`). @experimental */
 export const CHANNEL_LANE_MODES = ['shared', 'personal'] as const
@@ -1361,7 +1484,18 @@ export function channelDecls(shape: unknown): ChannelDecl[] {
 export function channelAudience(shape: unknown, channel: string): ChannelAudience {
 	const slug = parseChannel(channel).slug
 	const decl = channelDecls(shape).find((d) => d.slug === slug)
-	return decl?.audience === 'owner' ? 'owner' : 'all'
+	const audience = decl?.audience
+	if (audience === 'owner') return 'owner'
+	if (
+		audience !== undefined &&
+		typeof audience === 'object' &&
+		audience !== null &&
+		Array.isArray(audience.participants) &&
+		audience.participants.length > 0 &&
+		audience.participants.every(isParticipantRef)
+	)
+		return audience
+	return 'all'
 }
 
 /** 🚧 The lore role of `channel` (may be `slug:lane`; the slug decides), default resolved. @experimental */
@@ -1373,6 +1507,13 @@ export function channelLoreRole(shape: unknown, channel: string): ChannelLoreRol
 		: slug === DEFAULT_CHANNEL
 			? 'story'
 			: 'never'
+}
+
+function assertShapeCalendar(shape: SessionShape | undefined, who: string): void {
+	const calendar = shape?.calendar as unknown
+	if (calendar === undefined) return
+	const problems = storyCalendarProblems(calendar, { declaration: true })
+	if (problems.length) throw new Error(`${who}.shape.calendar: ${problems.join(' ')}`)
 }
 
 /**
@@ -1438,11 +1579,29 @@ export function assertChannelDecls(shape: SessionShape | undefined, who: string)
 					`reads; declare another channel for lanes of one person each.`,
 			)
 		// 🚧 D6: who reads it — a mode, and two refusals where it cannot mean what it says.
-		if (decl.audience !== undefined && !CHANNEL_AUDIENCES.includes(decl.audience))
+		if (decl.audience !== undefined && typeof decl.audience === 'object') {
+			const people = (decl.audience as { participants?: unknown } | null)?.participants
+			if (decl.audience === null || !Array.isArray(people) || people.length === 0)
+				throw new Error(
+					`${at} declares audience ${JSON.stringify(decl.audience)}. A channel's audience is 'all', 'owner' or { participants: [ … ] } — every member, the session's owner alone, or the people named.`,
+				)
+			for (const r of people) {
+				if (!isParticipantRef(r))
+					throw new Error(
+						`${at} declares audience participant '${String(r)}', which is not a participant reference — 'owner', 'user:<id>', 'character:<id>', 'player-seat:<id>' or 'envoy:<slug>'.`,
+					)
+				if (r === 'ai' || r === 'item' || r === 'run-owner')
+					throw new Error(
+						`${at} declares audience participant '${r}', which is never a person. Pipelines read every channel already; name the people who may read it.`,
+					)
+			}
+			if (slug === DEFAULT_CHANNEL)
+				throw new Error(
+					`${at} declares a participants audience. '${DEFAULT_CHANNEL}' is the channel every member reads; declare another channel for a conversation among a few.`,
+				)
+		} else if (decl.audience !== undefined && !CHANNEL_AUDIENCES.includes(decl.audience))
 			throw new Error(
-				`${at} declares audience '${String(decl.audience)}'. A channel's audience is ` +
-					`${CHANNEL_AUDIENCES.map((a) => `'${a}'`).join(' or ')} — every member, or the ` +
-					`session's owner alone.`,
+				`${at} declares audience '${String(decl.audience)}'. A channel's audience is 'all', 'owner' or { participants: [ … ] } — every member, the session's owner alone, or the people named.`,
 			)
 		if (slug === DEFAULT_CHANNEL && decl.audience === 'owner')
 			throw new Error(
@@ -2263,6 +2422,7 @@ function register<D extends Descriptor<any, any, any>>(d: D): D {
 	assertTurnControls((d as Descriptor).sessionShape, d.id)
 	assertChannelDecls((d as Descriptor).sessionShape, d.id)
 	assertSceneSettings((d as Descriptor).sessionShape, d.id)
+	assertShapeCalendar((d as Descriptor).sessionShape, d.id)
 	// A finding, not a refusal: the fallback is documented (inference), the
 	// omission is recorded, and `validate()` says it on every placement.
 	const reviewFinding = reviewFieldsFinding(d as Descriptor)
@@ -2691,6 +2851,22 @@ export function allDefinitions(): Descriptor[] {
 export function _clearDefinitions(): void {
 	types.clear()
 	registrationFindings.clear()
+}
+
+/**
+ * Take one node definition back out of this process's registry — a HOST's door, for
+ * the declarations it registered from a plugin's stored manifest and replaces when
+ * that plugin is reinstalled (the way `_withdrawVariable` serves a plugin's variables).
+ * Refuses `core:` ids: core's definitions are this build's. An entry type is
+ * `_withdrawEntryType`'s. Returns whether one was held.
+ * @internal
+ */
+export function _withdrawDefinition(id: string): boolean {
+	if (id.startsWith('core:')) throw new Error(`'${id}' is core's; it is never withdrawn`)
+	const held = types.get(id)
+	if (!held || held.kind === 'entry') return false
+	registrationFindings.delete(id)
+	return types.delete(id)
 }
 
 // ── describe*Definition — one per kind, same shape, no modality anywhere ─────

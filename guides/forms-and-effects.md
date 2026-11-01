@@ -156,6 +156,14 @@ enforced, not advisory:
 - **A genre says what its sessions may write at all**: `writes: { lore, scenes }` on its shape.
   Absent means both are allowed. A genre that says `lore: false` reads its lorebook and never
   touches it, and every path that could write it is refused with a sentence naming the genre.
+- **A genre opts into library writes**: `writes: { library: { characters, lorebooks, sessions } }`.
+  Absent means all off, unlike `lore` and `scenes`. `characters` lets its pipelines make or change
+  characters (`core:outlet/create-character@1`, `core:outlet/update-character@1`); `lorebooks` lets
+  them make lorebooks and read one into the session (`core:outlet/create-lorebook@1`,
+  `core:outlet/attach-lorebook@1`); `sessions` also lets that read name another session. Declaring
+  it only lets the genre try: the app judges the person acting, and their library write mode
+  (Full, Review or Off) decides whether each write lands, waits for them to accept it in the
+  session, or is refused.
 
 Design with the line, not around it. If a form's answer must change the world, the answer runs a
 pipeline, and that pipeline's write goes through review.

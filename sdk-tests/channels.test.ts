@@ -344,7 +344,7 @@ describe('a channel’s audience', () => {
 	})
 
 	test('refused where it cannot mean what it says', () => {
-		assert.throws(() => declare('test.channels:genre/aud-bad', [{ slug: 'sanctum', audience: 'gm' }]), /audience 'gm'[\s\S]*'all' or 'owner'/)
+		assert.throws(() => declare('test.channels:genre/aud-bad', [{ slug: 'sanctum', audience: 'gm' }]), /audience 'gm'[\s\S]*'all', 'owner' or \{ participants/)
 		assert.throws(() => declare('test.channels:genre/aud-main', [{ slug: 'main', audience: 'owner' }]), /'main' is the channel every member reads/)
 		assert.throws(
 			() => declare('test.channels:genre/aud-lanes', [{ slug: 'planner', audience: 'owner', lanes: 'personal' }]),

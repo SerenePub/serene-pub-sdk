@@ -269,14 +269,21 @@ export interface LifecycleUpdateInput {
  * @experimental
  */
 export interface LifecycleMigrateInput {
-	/** The session whose owner document this is. */
-	sessionId: number
+	/** ⏳ Transitional, session scope only: the session's id for a session document, absent for a lorebook document. Read `scope`. */
+	sessionId?: number
 	/** The version that last wrote it — the owner's package version; '0.0.0' when none was recorded. */
 	fromVersion: string
 	/** The version now running. */
 	version: string
 	/** The owner document as stored — the callback's own owner only. */
 	document: Readonly<Record<string, unknown>>
+	/**
+	 * 🚧 Which annex the document lives in (M0, SHAPES L9 Migration):
+	 * a session's (`{ kind: 'session', sessionId }`) or a lorebook's
+	 * (`{ kind: 'lorebook', lorebookId }`). Absent reads as the session
+	 * `sessionId` names: a host before M0 migrates session annexes only.
+	 */
+	scope?: { kind: 'session'; sessionId: number } | { kind: 'lorebook'; lorebookId: number }
 }
 
 /**

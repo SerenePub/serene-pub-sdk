@@ -479,6 +479,12 @@ export function valueDeclOf(entry: unknown): ValueDecl | null {
 						}
 					: {}),
 			})
+		// 🚧 A `json` field is edited as JSON text, exactly like `format: 'json'`.
+		case 'json':
+			return decl('text@1', {
+				multiline: true,
+				...(e.default !== undefined ? { default: JSON.stringify(e.default, null, 2) } : {}),
+			})
 		case 'enum': {
 			const options = ((e.of as unknown[]) ??
 				(e.members as any[])?.map((m) => ({

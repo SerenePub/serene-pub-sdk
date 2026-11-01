@@ -451,6 +451,17 @@ export const FEATURES = [
 	'continue_reply',
 	'wire_chat',
 	'wire_completion',
+	/**
+	 * 🚧 Speech arrives while it is still being made (PLAN-speech-build S3,
+	 * 2026-10-28) — the first words play before the last are rendered. Banded
+	 * (`BANDS.audio_streaming`): `native` — the service streams audio itself;
+	 * `emulated` — it does not, and the HOST streams by splitting the line at its
+	 * cue groups (`core:oracle/speak@1` makes one call per group anyway), handing
+	 * each group's audio on as it lands; `none` — one whole file, after the last
+	 * group. ⚠ Not `streaming`: that one is TEXT arriving token by token.
+	 * Phase 1 records it and plays whole files (build assumption A5).
+	 */
+	'audio_streaming',
 ] as const
 /** 🚧 A feature core knows by name — one of `FEATURES`, the KNOWN list. @experimental */
 export type KnownFeatureId = (typeof FEATURES)[number]
@@ -497,6 +508,13 @@ export const EMULATABLE_VIA: Partial<Record<KnownFeatureId, readonly KnownFeatur
 	json_object: ['json_schema', 'grammar'],
 	json_schema: ['grammar'],
 	tools: ['json_schema', 'grammar'],
+	/**
+	 * 🚧 Emulated by core itself, via no backend feature (★A2, lane V
+	 * 2026-10-28): the host splits a line at its cue groups. Empty, so
+	 * `closure` never raises it — an adapter declares `emulated` directly — and
+	 * the rule "only EMULATABLE_VIA keys have an emulated band" still holds.
+	 */
+	audio_streaming: [],
 }
 
 // ── Grades ──────────────────────────────────────────────────────────────────
@@ -562,7 +580,7 @@ export const BAND_ORDER = [BAND.none, BAND.emulated, BAND.native] as const
  * grade correctly: a plugin introduces a transform, and it is binary until
  * somebody says otherwise.
  *
- * The three listed here are exactly the keys of `EMULATABLE_VIA`, and that is
+ * The bands listed here are exactly the keys of `EMULATABLE_VIA`, and that is
  * not a coincidence. An `emulated` band exists precisely where Serene Pub can
  * supply the capability itself over a backend that cannot, which is what that
  * table records. `closure` raises through `gradeOf(id, BAND.emulated)`, so a
@@ -574,6 +592,13 @@ export const BANDS: Partial<Record<CapabilityId, readonly Band[]>> = {
 	json_object: [BAND.none, BAND.emulated, BAND.native],
 	json_schema: [BAND.none, BAND.emulated, BAND.native],
 	tools: [BAND.none, BAND.emulated, BAND.native],
+	/**
+	 * 🚧 Its `EMULATABLE_VIA` entry is EMPTY, deliberately: its `emulated`
+	 * band is supplied by the host splitting a line at its cue groups, which
+	 * needs no other feature of the backend — so an adapter declares
+	 * `emulated` directly rather than having `closure` raise it.
+	 */
+	audio_streaming: [BAND.none, BAND.emulated, BAND.native],
 }
 
 /** A capability nobody gave bands: it either works or it does not. @experimental */
@@ -1066,6 +1091,8 @@ const FEATURE_LABELS: Record<KnownFeatureId, string> = {
 	// completion is that the model is handed one formatted string.
 	wire_chat: 'Chat messages',
 	wire_completion: 'Text completion',
+	// 🚧 The user's word: speech starts playing before the whole line is made.
+	audio_streaming: 'Streaming speech',
 }
 
 /**

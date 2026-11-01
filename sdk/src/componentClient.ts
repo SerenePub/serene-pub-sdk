@@ -20,7 +20,12 @@
  */
 
 import type {
+	AppletGrant,
+	AppletRequestKind,
+	FrontEndApi,
 	MessageV1,
+	SessionRequestKind,
+	UiRequestKind,
 	WidgetBaseSection,
 	WidgetData,
 	WidgetEvent,
@@ -77,7 +82,7 @@ export interface ComponentSections extends ComponentBaseSections {
 	 * grant ({@link WidgetWriteGrant}) pushes no section of its own. Read one
 	 * with {@link ComponentContext.granted}.
 	 */
-	grants?: readonly (WidgetSectionScope | WidgetWriteGrant)[]
+	grants?: readonly (WidgetSectionScope | WidgetWriteGrant | AppletGrant)[]
 	/** The view state this widget saved last time, handed back once on mount. */
 	state?: unknown
 	suspended: boolean
@@ -101,8 +106,15 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	subscribe(fn: (section: ComponentSection) => void): () => void
 	/** Widget events (`message:created`, `layout:changed`, …). */
 	onEvent(fn: (event: WidgetEvent) => void): () => void
-	/** Press an action by key or identity, as the native `invoke` verb does. */
-	invoke(key: string, args?: ComponentInvokeArgs): void
+	/**
+	 * Press an action by key or identity, as the native `invoke` verb does (the `session` API). Resolves — never
+	 * rejects — when the host answers (M2b): for a session action when its run ENDS, `{ ok: true, result }` with a
+	 * {@link WidgetInvokeResult} (`{ runId }`, or `{ runId, halted: true, reason }`), or `{ ok: false, error }` when it
+	 * errored, was refused before any run (`'Wait for the reply to finish.'`) or was stopped (`'cancelled'`); a core
+	 * verb, and a press that asks the person first, `{ ok: true }` at once; one of the package's own `pluginActions`,
+	 * its handler's `out.main` as `result`. Every run's end also reaches every widget as the `run:ended` event.
+	 */
+	invoke(key: string, args?: ComponentInvokeArgs): Promise<ComponentInvokeAnswer>
 	/**
 	 * ⏳ Fire a function by name — a form block's press, whose identity the
 	 * outlet stamped and no venue need list (the native `action` verb).
@@ -118,8 +130,11 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	 * 🚧 The viewer's translation of one of the component's own English
 	 * strings — the source until a translation arrives, when `subscribe` hears
 	 * `strings` and a redraw shows it.
+	 * Precedence: the plugin's own catalog (`lang/<locale>.json`), then the app's
+	 * translation, then the English source. `{0}`…`{n}` in the text are filled
+	 * from `args` afterwards (a missing argument leaves `{n}` as written).
 	 */
-	t(source: string): string
+	t(source: string, ...args: ReadonlyArray<string | number>): string
 	/**
 	 * 🚧 Was `scope` — or a write grant, `session:state:write`,
 	 * `channel:<slug>:write` — granted? `true` or `false` once the host has
@@ -128,7 +143,7 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	 * A widget that asks `send`, `draft` or `set-attribute-value` checks its
 	 * write grant here before it offers the button.
 	 */
-	granted(scope: WidgetSectionScope | WidgetWriteGrant): boolean | undefined
+	granted(scope: WidgetSectionScope | WidgetWriteGrant | AppletGrant): boolean | undefined
 	/**
 	 * 🚧 The section a granted scope delivers, by the same string `scopes`
 	 * and `granted` take: `ctx.scope('session:state')` is the session's
@@ -137,6 +152,30 @@ export interface ComponentContext extends Readonly<ComponentSections> {
 	 * list a widget declares.)
 	 */
 	scope<S extends WidgetSectionScope>(scope: S): WidgetScopedSectionValues[WidgetScopedSections[S]['section']] | undefined
+}
+
+/** 🚧 What a component's `invoke` resolves to (M2b): the host's answer, never a rejection. @experimental */
+export type ComponentInvokeAnswer = { ok: true; result?: unknown } | { ok: false; error: string }
+
+/**
+ * 🚧 The component's members by **front-end API** (M2b, {@link FrontEndApi}) — the same three groups as the frame
+ * protocol and the request kinds ({@link WIDGET_REQUEST_APIS}). A widget placed in a session's layout holds `ui` +
+ * `session`; an applet holds `ui` + `applet`, and `session` while mounted in one. `request` takes any kind and the
+ * host refuses one outside the mount's APIs, in words; these types say which kinds are whose.
+ * @experimental
+ */
+export type ComponentUiApi = Pick<
+	ComponentContext,
+	'subscribe' | 'onEvent' | 'saveState' | 'error' | 't' | 'granted' | 'theme' | 'locale' | 'viewer' | 'props' | 'settings' | 'layout'
+> & { request<K extends UiRequestKind>(kind: K, params: WidgetRequests[K]['params']): Promise<WidgetRequests[K]['result']> }
+/** 🚧 The `session` API of a component: the mounted session's sections, verbs and requests. @experimental */
+export type ComponentSessionApi = Pick<
+	ComponentContext,
+	'session' | 'channels' | 'messages' | 'actions' | 'annex' | 'turnOrder' | 'attendance' | 'scoped' | 'scope' | 'invoke' | 'action'
+> & { request<K extends SessionRequestKind>(kind: K, params: WidgetRequests[K]['params']): Promise<WidgetRequests[K]['result']> }
+/** 🚧 The `applet` API of a component: the person's library and the pub, by request. @experimental */
+export type ComponentAppletApi = {
+	request<K extends AppletRequestKind>(kind: K, params: WidgetRequests[K]['params']): Promise<WidgetRequests[K]['result']>
 }
 
 /** What a component module exports: mount into `root`; return a cleanup. @experimental */

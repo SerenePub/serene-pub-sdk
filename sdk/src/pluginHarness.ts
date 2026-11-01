@@ -8,7 +8,7 @@
  * plugin's node handlers do not go through that path at all: the app's
  * `pipelines/runtime/pluginBindings.ts` calls `RuntimeManager.callHook`, which
  * runs the hook inside the plugin's sandbox against a context the sandbox
- * builds — `{ random, now, log, storage, fetch, signal }` — and commits its files
+ * builds — `{ random, now, log, storage, package, fetch, signal }` — and commits its files
  * afterwards.
  *
  * Two packages paid for that gap before it was written down:
@@ -42,6 +42,8 @@ import type {
 	ExtensionFiles,
 	ExtensionStorage,
 	FileEntry,
+	PackageFiles,
+	PerUserStorage,
 	StorageUsage,
 	WriteReceipt,
 } from './storage.js'
@@ -49,6 +51,7 @@ import type {
 // ── The grant table (plans 29 R-3) ──────────────────────────────────────────
 // Lives in `hookGrants.ts`, the one copy the sandboxes, the harness and the
 // guide all read (K1c); re-exported here so the harness's API is unchanged.
+import { userAnnexProjection, type ExtensionUserAnnex, type HookAnnex, type UserAnnexBufferedWrite, type UserAnnexSnapshotEntry } from './userAnnex.js'
 import { hookCtxGrants, hookCtxKeysFor, isHookCtxKind, type HookCtxGrants, type HookCtxKind } from './hookGrants.js'
 export { HOOK_CTX_KINDS, hookCtxGrants, hookCtxKeysFor, isHookCtxKind, type HookCtxGrants, type HookCtxKind } from './hookGrants.js'
 
@@ -170,7 +173,7 @@ export function formatHookLog(args: unknown[]): string {
 // ── The in-memory ExtensionStorage ──────────────────────────────────────────
 
 /** The grant a sandbox falls back to when the manifest declares none. @experimental */
-export const DEFAULT_STORAGE_QUOTA_BYTES = 10 * 1024 * 1024
+export const DEFAULT_STORAGE_QUOTA_BYTES = 64 * 1024 * 1024
 
 /**
  * The clock this harness pins when a caller names none.
@@ -196,6 +199,20 @@ export interface MemoryStorageOptions {
 	 * stamps supplies a clock that moves.
 	 */
 	now?: () => number
+	/**
+	 * 🚧 (M2b) The acting person's own store for `ctx.storage.user` — usually a
+	 * second `memoryStorage()`. Absent: every `storage.user` method refuses with
+	 * "storage.user: no person is acting for this call", as a call with no
+	 * signed-in person does.
+	 */
+	user?: PerUserStorage
+}
+
+/** The refusing `ctx.storage.user` of a call with no person (M2b). */
+function noPersonStorage(): PerUserStorage {
+	const d = (): Promise<never> =>
+		Promise.reject(new Error('storage.user: no person is acting for this call'))
+	return { usage: d, files: { list: d, stat: d, read: d, write: d, delete: d, deleteAll: d } }
 }
 
 /** @experimental */
@@ -297,6 +314,7 @@ export function memoryStorage(opts: MemoryStorageOptions = {}): MemoryStorage {
 		},
 		usage: async () => usage(),
 		files: extensionFiles,
+		user: opts.user ?? noPersonStorage(),
 	}
 
 	return store
@@ -370,6 +388,10 @@ export interface PluginHandlerContext {
 	now(): number
 	log(...args: unknown[]): void
 	storage?: ExtensionStorage
+	/** The package's shipped files, read-only. 🚧 (M2a) */
+	package?: PackageFiles
+	/** 🚧 (M2b) `ctx.annex('user')`: the acting person's saved documents. */
+	annex?: HookAnnex
 	fetch?(url: string, init?: HookFetchInit): Promise<HookFetchResponse>
 	signal: AbortSignal
 }
@@ -393,6 +415,24 @@ export interface PluginHandlerContextOptions {
 	grants?: Partial<HookCtxGrants>
 	/** The extension's store. A fresh `memoryStorage()` when the grant holds and none is given. */
 	storage?: ExtensionStorage
+	/**
+	 * 🚧 (M2b) The acting person's store for `ctx.storage.user`, used when no
+	 * `storage` is given. Absent: `ctx.storage.user` refuses ("no person is acting").
+	 */
+	user?: PerUserStorage
+	/**
+	 * 🚧 (M2b) The acting person's annex for `ctx.annex('user')` — usually a
+	 * `memoryUserAnnex({ 'profile': { … } })`. Absent: every method rejects with
+	 * "annex('user'): no person is acting for this call", as a call with no
+	 * signed-in person does.
+	 */
+	userAnnex?: ExtensionUserAnnex
+	/**
+	 * The package's shipped files (🚧 M2a): a `PackageFiles`, or a map of
+	 * package path → bytes (or text) such as `{ 'assets/a.json': '{}' }`. Absent:
+	 * a read answers err "no package files in this harness: pass `package`".
+	 */
+	package?: PackageFiles | Record<string, Uint8Array | string>
 	/** The pinned clock, in milliseconds. */
 	now?: number
 	signal?: AbortSignal
@@ -413,9 +453,11 @@ export interface PluginHandlerContextOptions {
  * @experimental
  */
 export function pluginHandlerContext(opts: PluginHandlerContextOptions): PluginHandlerContext {
-	const base = opts.kind ? hookCtxGrants(opts.kind) : { storage: true, fetch: true }
+	const base = opts.kind ? hookCtxGrants(opts.kind) : { storage: true, package: true, annex: true, fetch: true }
 	const grants: HookCtxGrants = {
 		storage: opts.grants?.storage ?? base.storage,
+		package: opts.grants?.package ?? base.package,
+		annex: opts.grants?.annex ?? base.annex,
 		fetch: opts.grants?.fetch ?? base.fetch,
 	}
 	const nowMs = Math.floor(opts.now ?? HARNESS_CLOCK)
@@ -432,9 +474,60 @@ export function pluginHandlerContext(opts: PluginHandlerContextOptions): PluginH
 		signal: opts.signal ?? new AbortController().signal,
 	}
 	const members = ctx as unknown as Record<string, unknown>
-	if (grants.storage) insertBefore(members, 'signal', 'storage', opts.storage ?? memoryStorage())
+	if (grants.storage) insertBefore(members, 'signal', 'storage', opts.storage ?? memoryStorage({ user: opts.user }))
+	if (grants.package) insertBefore(members, 'signal', 'package', packageFilesOf(opts.package))
+	if (grants.annex) insertBefore(members, 'signal', 'annex', makeHookAnnex(opts.userAnnex))
 	if (grants.fetch) insertBefore(members, 'signal', 'fetch', makeFetch(opts, ctx.signal))
 	return ctx
+}
+
+/**
+ * 🚧 (M2b) An in-memory user annex for a harness: the same semantics a hook
+ * sees in the sandbox (`base`, the caps, the refusals, read-your-writes), over
+ * `initial` documents (key → document, each at version 1). `writes()` is what
+ * the call would commit.
+ * @experimental
+ */
+export function memoryUserAnnex(
+	initial: Record<string, unknown> = {},
+): ExtensionUserAnnex & { writes(): UserAnnexBufferedWrite[] } {
+	const snapshot: Record<string, UserAnnexSnapshotEntry> = {}
+	for (const k of Object.keys(initial)) snapshot[k] = { doc: initial[k], version: 1, updatedAt: new Date(HARNESS_CLOCK).toISOString() }
+	const p = userAnnexProjection(snapshot, () => new Date(HARNESS_CLOCK).toISOString())
+	return Object.assign(p.api, { writes: p.writes })
+}
+
+function makeHookAnnex(userAnnex: ExtensionUserAnnex | undefined): HookAnnex {
+	return (host: string) => {
+		if (host !== 'user') throw new Error(`annex: unknown host '${String(host)}'; a hook may name: 'user'.`)
+		if (userAnnex) return userAnnex
+		const d = (): Promise<never> => Promise.reject(new Error("annex('user'): no person is acting for this call"))
+		return { get: d, set: d, list: d, remove: d }
+	}
+}
+
+/**
+ * A `PackageFiles` over a map of package path → bytes, answering what the host
+ * answers: bytes for a shipped file, `err` for anything else.
+ * @experimental
+ */
+export function memoryPackage(files: Record<string, Uint8Array | string> = {}): PackageFiles {
+	const enc = new TextEncoder()
+	return {
+		read: async (path: string) => {
+			const f = typeof path === 'string' && Object.hasOwn(files, path) ? files[path]! : undefined
+			if (f === undefined) return err(`package: '${path}' is not one of this package's assets`)
+			return ok(typeof f === 'string' ? enc.encode(f) : new Uint8Array(f))
+		},
+	}
+}
+
+function packageFilesOf(given: PluginHandlerContextOptions['package']): PackageFiles {
+	if (!given)
+		return { read: async () => err('package: no package files in this harness: pass `package`') }
+	return typeof (given as PackageFiles).read === 'function'
+		? (given as PackageFiles)
+		: memoryPackage(given as Record<string, Uint8Array | string>)
 }
 
 /**
@@ -504,6 +597,8 @@ export interface PluginNodeBindingOptions {
 	 * `fire` reads. A fresh `memoryStorage()` when none is given.
 	 */
 	storage?: ExtensionStorage
+	/** The package's shipped files, as `pluginHandlerContext` takes them. 🚧 (M2a) */
+	package?: PluginHandlerContextOptions['package']
 	/** The run seed the RNG labels derive from. */
 	seed?: string
 	/** The pinned clock. */
@@ -554,6 +649,7 @@ export function pluginNodeBindings(opts: PluginNodeBindingOptions): Bindings {
 					kind,
 					seed: nodeSeedLabel(seed, pin, input),
 					storage,
+					package: opts.package,
 					now: opts.now,
 					signal: execCtx?.signal,
 					network: opts.network,

@@ -80,8 +80,10 @@ describe('the core catalog', () => {
 		// unlisted `summarize-*` action — 13 action registrations, 9 a person presses.
 		const storyActions = registered(storyGenre.id).filter((r) => r.trigger.family === 'action')
 		// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
-		assert.equal(storyActions.length, 14)
-		assert.equal(storyActions.filter((r) => !/#(summarize-(world|character|scene|history)|close-out)$/.test((r.trigger as { action: string }).action)).length, 9)
+		// Moved 2026-10-28 (speech build, lane D follow-up ★1; lane V): + Read aloud and Say it as…
+		// (`core:spec/speak-message`), registered by every core genre — 16, 11 a person presses.
+		assert.equal(storyActions.length, 16)
+		assert.equal(storyActions.filter((r) => !/#(summarize-(world|character|scene|history)|close-out)$/.test((r.trigger as { action: string }).action)).length, 11)
 		// The answer pipeline (R-15 *Forms*): one per shipped genre, on the
 		// optional `form-addressed` event, in every preset's effective set.
 		for (const [g, spec0] of [
@@ -1038,6 +1040,10 @@ describe("core's announcement (golden)", () => {
 		// Sanctum is an `aside`. (was '89d536b2365cf8a5')
 		// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0. (was 'efdfcf305d41f1d3')
 		// Moved 2026-10-25 (sprint 2 lane I2): Story's sweep gains *Notice when the scene moves on* — the duty, its `sceneCheck` port, the `sceneCue` junction and `propose-scene-cue@1`. (was '5a372154cc93cc6a')
-		assert.equal(digest.slice(0, 16), '0542b047614b9f33')
+		// E M0 2026-10-28: the M0 lanes (ruleset conversion, lorebook annex, plugin actions, derived time, creation modes, weather pick, fullscreen/save-state/notify declarations) and the speech build's declarations moved the document. (was '0542b047614b9f33')
+		// Moved 2026-10-29 (speech follow-ups A3): the five reply specs lose the speech tail (cue → readAloud make/play speak → attach); replies are spoken by their own run. Proven: the tail restored in a scratch copy of the same tree digests to the old pin. (was 'a0340e2c66a0f72a')
+		// Moved 2026-10-29 (speech polish w1): both speak-message actions are `quick` (message heading), Say it as… is `drama` and collects mood `suggestions`, `remember: 'session'` and a `preview`. Proven: with those removed from speakMessage.ts (dist rebuilt) it hashes to the old pin. (was '96aeed382237b2ad')
+		// Moved 2026-10-31 (M2c; re-pinned by E): core:query/plugin-storage@1, core:task/read-library-draft@1 and the four library outlets (create-character, update-character, create-lorebook, attach-lorebook, with review.fields); the Guide's reply drafts in a hidden block read by read-library-draft and its `library` junction on `$.libraryDraft.make`. (was '029f3af74876abd9')
+		assert.equal(digest.slice(0, 16), '6bfc98fb75e478fe')
 	})
 })

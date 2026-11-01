@@ -418,10 +418,11 @@ describe('derive, rules and scripts', () => {
 		assert.equal(slotDerivation(hp()), undefined)
 	})
 
-	test('the core derivations are the two, by id', () => {
+	// E M0 2026-10-28: the five — lane T2 added day-period, season and time-of-day (derived time), after age and liquid.
+	test('the core derivations are the five, by id', () => {
 		assert.deepEqual(
 			Object.values(derivations).map((d) => d.id),
-			['core:derive/age@1', 'core:derive/liquid@1'],
+			['core:derive/age@1', 'core:derive/liquid@1', 'core:derive/day-period@1', 'core:derive/season@1', 'core:derive/time-of-day@1'],
 		)
 	})
 

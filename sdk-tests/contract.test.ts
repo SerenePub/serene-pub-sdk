@@ -141,9 +141,11 @@ describe('V6 · policy moves no hash', () => {
 
 	test('provisional: true — toggled on, and off a shipped definition', () => {
 		assert.equal(moved({ provisional: true }), before)
-		// The three core definitions that carry the flag today: dropping it
-		// moves nothing, which is the whole reversal of U6's choice.
-		for (const id of ['core:oracle/speak@1', 'core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']) {
+		// The core definitions that carry the flag today: dropping it moves
+		// nothing, which is the whole reversal of U6's choice. (Three until
+		// 2026-10-28: the speech build bound `speak` and dropped its flag.)
+		assert.equal(getDefinition('core:oracle/speak@1')!.provisional, undefined)
+		for (const id of ['core:oracle/mcp-tool@1', 'core:oracle/mcp-resource@1']) {
 			const d = getDefinition(id)!
 			assert.equal(d.provisional, true, id)
 			const { provisional: _p, ...bound } = d
@@ -295,7 +297,9 @@ describe('V6 · one material from either end of the table', () => {
 			timeoutKind: 'wall',
 			toggleable: false,
 		})
-		assert.deepEqual(definitionPolicy(C.speak.descriptor).provisional, true)
+		// `mcpTool`, not `speak`, since the speech build bound speak (2026-10-28).
+		assert.deepEqual(definitionPolicy(C.mcpTool.descriptor).provisional, true)
+		assert.equal(definitionPolicy(C.speak.descriptor).provisional, undefined)
 		assert.deepEqual(row!.review, { fields: ['text'] })
 		const [placeholder] = snapshotRegistry([C.createMessage.descriptor], { release: 'test' })
 		assert.equal(placeholder!.liveRow, true)

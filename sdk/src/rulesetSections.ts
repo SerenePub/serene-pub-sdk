@@ -124,10 +124,14 @@ import {
  * it names none), `list` (several words), 🚧 `text` (free prose of each
  * holder's own — a backstory, a vow, what they are after: shown as words,
  * read by the model as a sentence of its own; ⚠ not a `label`, whose value
- * is a word or two read inline beside the numbers. RF fix 2, 2026-10-23).
+ * is a word or two read inline beside the numbers. RF fix 2, 2026-10-23),
+ * 🚧 `flag` (a fact that is true or false in the story — the bridge is
+ * repaired, the shop is shut; M0, SHAPES L3 Flag attributes: filed as a
+ * `boolean` slot, read by `isTrue(…)`. ⚠ A fact with words is an entry; a
+ * fact only the engine needs is an annex field).
  * @experimental
  */
-export const ATTRIBUTE_KINDS = ['number', 'pool', 'tally', 'label', 'list', 'text'] as const
+export const ATTRIBUTE_KINDS = ['number', 'pool', 'tally', 'label', 'list', 'text', 'flag'] as const
 /** @experimental */
 export type RulesetAttributeKind = (typeof ATTRIBUTE_KINDS)[number]
 
@@ -151,6 +155,7 @@ export const ATTRIBUTE_KIND_WORDS: Readonly<Record<RulesetAttributeKind, string>
 	label: 'a word',
 	list: 'a list of words',
 	text: 'free text',
+	flag: 'a flag',
 }
 
 /**
@@ -183,6 +188,7 @@ const KINDS_OF_SLOT_TYPE: Readonly<Record<string, readonly RulesetAttributeKind[
 	enum: ['label'],
 	text: ['label', 'text'],
 	list: ['list'],
+	boolean: ['flag'],
 }
 
 /**
@@ -236,7 +242,9 @@ export interface AttributeBounds {
  *    ("How much someone likes you…"); both required for the ruleset's own;
  *  · `kind`, `bounds`, `of` (a label's words), `start` (where it begins);
  *  · 🚧 `required` — every holder carries it (no opt-out);
- *  · `carriedBy` — the owners that carry it (default: each character);
+ *  · 🚧 `scope` — what it survives (`session` · `world`) and `owner` — who
+ *    carries it (`player` · `cast` · `world` · `location`; default: each
+ *    character); ⏳ `carriedBy`, the spelling before them, mapped onto them;
  *  · `visibility` — who sees it (default: everyone); `changedBy` — who may
  *    change it (default: anyone);
  *  · `tags` — what it is, for functions that bind by tag (`resource`);
@@ -275,6 +283,27 @@ export interface RulesetAttributeDecl {
 	 * switch): then it is not shown, not read and not written for them.
 	 */
 	required?: boolean
+	/**
+	 * 🚧 **What it survives** (M0, SHAPES F1) — "is this my game, or the
+	 * world?", one word per attribute: `session` — survives turns, dies with
+	 * the session (bond, needs, money); `world` — survives sessions, lives on
+	 * the book, dated on its timeline (an occupation, a home, a shop that is
+	 * shut). Absent: `session`, which is where a session's writes land today.
+	 */
+	scope?: 'session' | 'world'
+	/**
+	 * 🚧 **Who carries it** (M0, SHAPES F1): `player` — the player's
+	 * seat (`asleep`); `cast` — each character; `world` — the world itself;
+	 * `location` — each place. Absent: read off `carriedBy` when that names
+	 * one owner, else `cast`.
+	 */
+	owner?: 'player' | 'cast' | 'world' | 'location'
+	/**
+	 * The owners that carry it. ⏳ The spelling before `scope` + `owner`
+	 * (SHAPES F1), which said the owner and never the scope: still read, and
+	 * mapped onto them — one owner is that `owner` at `scope: 'session'`.
+	 * New declarations say `scope` and `owner`.
+	 */
 	carriedBy?: readonly SlotAppliesTo[]
 	visibility?: Visibility
 	changedBy?: readonly AttributeChanger[]
@@ -597,6 +626,18 @@ const ownersFindings = (v: unknown, at: string, reason: string): string[] =>
 		: !Array.isArray(v) || !v.length || v.some((o) => !(OWNERS as readonly unknown[]).includes(o)) || new Set(v).size !== v.length
 			? [finding(reason, `${at} is a non-empty list of owners — ${OWNERS.join(', ')}.`)]
 			: []
+/**
+ * 🚧 The owners an attribute is carried by (M0, SHAPES F1): `owner`
+ * `player` / `cast` → `['cast']`, `world` → `['world']`, `location` →
+ * `['location']`; no `owner` → ⏳ `carriedBy` when non-empty, else `['cast']`.
+ * @experimental
+ */
+export function rulesetAttributeOwners(a: Pick<RulesetAttributeDecl, 'owner' | 'carriedBy'>): readonly SlotAppliesTo[] {
+	if (a.owner === 'player' || a.owner === 'cast') return ['cast']
+	if (a.owner === 'world') return ['world']
+	if (a.owner === 'location') return ['location']
+	return a.carriedBy?.length ? a.carriedBy : ['cast']
+}
 const shownAsFindings = (v: unknown, at: string): string[] =>
 	v === undefined || (typeof v === 'string' && PART_ID.test(v)) ? [] : [finding('bad-shown-as', `${at} is a word a widget reads — ${SHOWN_AS.join(', ')}.`)]
 const proseFindings = (v: unknown, at: string): string[] =>
@@ -634,11 +675,13 @@ export function rulesetAttributeFindings(a: RulesetAttributeDecl, at: string, ow
 		if (!b || typeof b !== 'object' || [b.min, b.max].some((n) => n !== undefined && !Number.isInteger(n)))
 			out.push(finding('bad-bounds', `${at}.bounds is { min?, max? } — whole numbers.`))
 		else if (b.min !== undefined && b.max !== undefined && b.min > b.max) out.push(finding('bad-bounds', `${at}.bounds.min is above its max.`))
+		else if (a.kind === 'flag') out.push(finding('bad-bounds', `${at}: a flag is true or false; it has no bounds.`))
 		else if (!numeric && a.kind !== 'list') out.push(finding('bad-bounds', `${at} is a '${String(a.kind)}' — bounds belong to a number, a pool, a tally (and a list's most).`))
 	}
 	if (a.kind === 'pool' && (b?.max === undefined))
 		out.push(finding('bad-bounds', `${at} is a pool with no most. A pool is spent and refilled — say bounds: { max }.`))
-	if (a.of !== undefined && (a.kind !== 'label' || !Array.isArray(a.of) || !a.of.length || a.of.some((w) => typeof w !== 'string' || !w) || new Set(a.of).size !== a.of.length))
+	if (a.of !== undefined && a.kind === 'flag') out.push(finding('bad-attribute', `${at}: a flag is true or false; it names no words.`))
+	else if (a.of !== undefined && (a.kind !== 'label' || !Array.isArray(a.of) || !a.of.length || a.of.some((w) => typeof w !== 'string' || !w) || new Set(a.of).size !== a.of.length))
 		out.push(finding('bad-attribute', `${at}.of lists a label's words — distinct, non-empty — and only a label has them.`))
 	if (inline && a.start !== undefined) {
 		const derived = rulesetAttributeSlotProps(a)
@@ -647,10 +690,19 @@ export function rulesetAttributeFindings(a: RulesetAttributeDecl, at: string, ow
 			if (why) out.push(finding('bad-start', `${at}.start is refused: ${why}`))
 		}
 	}
+	if (a.scope !== undefined && a.scope !== 'session' && a.scope !== 'world')
+		out.push(finding('bad-attribute', `${at}.scope is '${String(a.scope)}'. Say 'session' or 'world'.`))
+	if (a.owner !== undefined && !['player', 'cast', 'world', 'location'].includes(a.owner as string))
+		out.push(finding('bad-attribute', `${at}.owner is '${String(a.owner)}'. Say 'player', 'cast', 'world' or 'location'.`))
+	if (a.owner !== undefined && a.carriedBy !== undefined)
+		out.push(finding('bad-carried-by', `${at} says both owner and carriedBy; say owner — carriedBy is the older spelling.`))
 	out.push(...ownersFindings(a.carriedBy, `${at}.carriedBy`, 'bad-carried-by'))
 	out.push(...visibilityFindings(a.visibility, `${at}.visibility`, own))
-	if (a.visibility === 'holder' && a.carriedBy !== undefined && (a.carriedBy.length !== 1 || a.carriedBy[0] !== 'cast'))
-		out.push(finding('bad-visibility', `${at}: only a value each character carries can be seen by its holder alone — say carriedBy: ['cast'], or another visibility.`))
+	if (a.visibility === 'holder' && (a.carriedBy !== undefined || a.owner !== undefined)) {
+		const owners = rulesetAttributeOwners(a)
+		if (owners.length !== 1 || owners[0] !== 'cast')
+			out.push(finding('bad-visibility', `${at}: only a value each character carries can be seen by its holder alone — say owner: 'cast', or another visibility.`))
+	}
 	if (a.changedBy !== undefined && (!Array.isArray(a.changedBy) || !a.changedBy.length || a.changedBy.some((c) => !(ATTRIBUTE_CHANGERS as readonly unknown[]).includes(c))))
 		out.push(finding('bad-changed-by', `${at}.changedBy is a non-empty list among ${ATTRIBUTE_CHANGERS.join(', ')}.`))
 	out.push(...tagListFindings(a.tags, `${at}.tags`))
@@ -810,14 +862,19 @@ export function rulesetAttributeSlotProps(a: RulesetAttributeDecl): AttributeSlo
 			// 🚧 Free prose per holder: a text slot, read as words.
 			type = 'text'
 			break
+		case 'flag':
+			type = 'boolean'
+			start = start ?? false
+			break
 	}
-	const appliesTo = a.carriedBy?.length ? [...a.carriedBy] : ['cast' as const]
+	const appliesTo = [...rulesetAttributeOwners(a)]
 	return {
 		type,
 		...(a.name !== undefined ? { label: a.name } : {}),
 		...(a.description !== undefined ? { description: a.description } : {}),
 		descriptor: typeof a.prose === 'string' ? a.prose : '',
 		appliesTo,
+		...(a.scope !== undefined ? { scope: a.scope } : {}),
 		...(Object.keys(config).length ? { config } : {}),
 		...(start !== undefined ? { default: start } : {}),
 		...(a.visibility === 'holder' && appliesTo.length === 1 && appliesTo[0] === 'cast' ? { earshot: 'holder' as const } : {}),
@@ -1095,7 +1152,7 @@ export function rulesetSections(decl: unknown): RulesetSections {
 }
 
 /** The keys a declaration says outside the sections and the shapes before them. */
-const KEPT_KEYS = ['name', 'description', 'voice', 'template', 'plays', 'map', 'handbook', 'playtests'] as const
+const KEPT_KEYS = ['name', 'description', 'voice', 'template', 'plays', 'map', 'handbook', 'playtests', 'upgrades'] as const
 
 /**
  * 🚧 A declaration **in the seven sections**: its name, description, voice,
@@ -1272,7 +1329,7 @@ export function sectionsLegacyView(id: string, s: RulesetSections): SectionsLega
 				...(a.required !== undefined ? { required: a.required } : {}),
 				...(a.start !== undefined ? { default: a.start } : {}),
 				...(a.config !== undefined ? { config: a.config } : {}),
-				...(a.carriedBy !== undefined ? { appliesTo: a.carriedBy } : {}),
+				...(a.carriedBy !== undefined || a.owner !== undefined ? { appliesTo: [...rulesetAttributeOwners(a)] } : {}),
 			})) as NonNullable<RulesetProps['stats']>[number][]
 	if (s.entryTypes !== undefined) out.repertoires = s.entryTypes.map(_entryTypeAsRepertoire)
 	if (s.functions !== undefined || attributes.some((a) => typeof a?.slot === 'string' && slotSlug(a.slot) !== a.id)) {

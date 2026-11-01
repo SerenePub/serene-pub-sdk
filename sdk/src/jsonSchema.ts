@@ -62,7 +62,7 @@ import { allEntryTypes, type EntryDescriptor, type EntryShape, type EntryTypeDec
 import { formAnswerSchema, formFireOf, type FormBlock } from './messageBlocks.js'
 import type { CheckMethodKindDecl } from './checkMethods.js'
 import { isFunctionId, type FunctionDecl } from './functions.js'
-import { declaresSections, rulesetSections, rulesetAttributeSlots } from './rulesetSections.js'
+import { declaresSections, rulesetSections, rulesetAttributeSlots, rulesetAttributeOwners } from './rulesetSections.js'
 
 /**
  * 🚧 A JSON Schema document — what `generate-json@1`'s `schema` port takes
@@ -182,7 +182,7 @@ function classify(source: JsonSchemaSource): Classified {
 				...(a.slot !== undefined && a.config !== undefined ? { config: a.config } : {}),
 				...(a.slot !== undefined && a.start !== undefined ? { default: a.start } : {}),
 				...(a.required !== undefined ? { required: a.required } : {}),
-				...(a.slot !== undefined && a.carriedBy !== undefined ? { appliesTo: a.carriedBy } : {}),
+				...(a.slot !== undefined && (a.carriedBy !== undefined || a.owner !== undefined) ? { appliesTo: [...rulesetAttributeOwners(a)] } : {}),
 			})),
 		}
 	}
@@ -222,6 +222,7 @@ function fieldSchema(decl: FieldDecl, path: string, ctx: Ctx): JsonSchema | unde
 	switch (decl.type) {
 		case 'secret':
 		case 'media':
+		case 'json': // structure a person edits, like `format: 'json'`: nothing a model writes
 			return undefined
 		case 'boolean':
 			return { type: 'boolean', ...about }
@@ -254,6 +255,17 @@ function fieldSchema(decl: FieldDecl, path: string, ctx: Ctx): JsonSchema | unde
 			const nested = objectSchema(decl.fields ?? {}, `${path}.`, ctx)
 			if (!Object.keys(nested.properties as object).length) return ctx.strict ? undefined : { type: 'object', ...about }
 			return { ...nested, ...about }
+		}
+		case 'schedule': {
+			// 🚧 A weekly routine (M0, SHAPES F3): each list a run of [hour, where] pairs.
+			const pair: JsonSchema = {
+				type: 'array',
+				prefixItems: [{ type: 'integer', minimum: 0, maximum: 23 }, { type: 'string', minLength: 1 }],
+				minItems: 2,
+				maxItems: 2,
+			}
+			const week: JsonSchema = { type: 'array', items: pair }
+			return { type: 'object', properties: { weekday: week, weekend: { ...week } }, required: ['weekday', 'weekend'], additionalProperties: false, ...about }
 		}
 		case 'share':
 		case 'perMember':

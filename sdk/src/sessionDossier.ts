@@ -249,6 +249,36 @@ export interface SessionDossierV1 {
 	 * @ruling PROPOSAL-live-scenes §15 G9 (2026-10-13)
 	 */
 	storyCalendar?: StoryCalendar | null
+	/**
+	 * 🚧 The session's **Read aloud** setting (genre field `speechReadAloud`,
+	 * speech build S7): under `play` the conversation plays the newest line's
+	 * audio once, as it arrives. Absent reads as `off`.
+	 * @experimental
+	 */
+	readAloud?: 'off' | 'make' | 'play'
+	/**
+	 * 🚧 How spoken lines play for THIS viewer (their own setting, never the
+	 * session's): `auto` plays the newest line as it arrives under `play`,
+	 * `click` shows a player that waits, `never` shows no spoken line.
+	 * Absent reads as `auto`.
+	 * @experimental
+	 */
+	spokenPlayback?: 'auto' | 'click' | 'never'
+	/**
+	 * 🚧 Whether this pub can speak a line at all (a speaking voice pair is
+	 * set up), read on the server as a boolean only; `reason` is the sentence
+	 * the speak verbs carry when it cannot. Absent reads as can speak.
+	 * @experimental
+	 */
+	speech?: { canSpeak: boolean; reason?: string }
+	/**
+	 * 🚧 The run ids in flight for this session, off the `sessions:runStatus`
+	 * pushes the page already hears (speech follow-ups A4): a spoken line whose
+	 * `metadata.spoken.pending` names a run here reads *Speaking…*. Absent reads
+	 * as none known (the pending marker alone then decides).
+	 * @experimental
+	 */
+	liveRunIds?: string[]
 	/** Admins with context debugging on may open a line's prompt. */
 	debugPrompts: boolean
 	/**

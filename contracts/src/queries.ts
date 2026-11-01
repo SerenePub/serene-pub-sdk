@@ -1192,12 +1192,24 @@ export const castPresences = pin(
 		/** A session with no book, or a book that dates nobody, reads nothing — a normal state. */
 		optional: true,
 		ports: {
-			in: { scope: S.sessionScope },
+			in: {
+				scope: S.sessionScope,
+				/**
+				 * 🚧 The hour to place the cast at (M0, SHAPES L3): a clock target. Unwired,
+				 * the clock's present hour, today.
+				 */
+				atHour: S.clockTarget,
+			},
 			out: {
 				/** `{ bindingId, from, until, position }[]`, on the session's line. */
 				main: S.json,
 				/** The story date the session reads at, or null for the head. */
 				at: S.json,
+				/**
+				 * 🚧 `{ bindingId: number; where: string }[]` — where each cast member is at `atHour`, read
+				 * from the first `schedule` field on an entry they hold; a member with none is left out.
+				 */
+				placements: S.json,
 			},
 		},
 	}),
@@ -2482,7 +2494,73 @@ export const sessionAnnex = pin(
 				/** Whose prompt, for `view: 'ai'` — a `character:` or `envoy:` reference. */
 				speaker: S.participantRef,
 			},
-			out: { main: S.json },
+			out: {
+				main: S.json,
+				/**
+				 * 🚧 The owner's **annex document version** (M2a a8): a count the
+				 * host moves with every write of that document, 0 before the
+				 * first. Wire it into `set-session-annex`'s `base` to make the
+				 * write a compare-and-set. Absent for `view: 'template'` (many
+				 * owners, no one version).
+				 */
+				version: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 The **lorebook annex** (M0, SHAPES L9): read one owner's document
+ * out of the annex of the book the session reads — the session annex's model
+ * at book scope, for world-level engine state that is neither an attribute nor
+ * prose. Like `session-annex@1`, the owner defaults to the running spec's own
+ * namespace, and reading another's takes `sharedAnnex`.
+ *
+ * ⚠ Not an entry, and not a save: typed world facts stay attributes, and a
+ * session is the save.
+ * @experimental
+ */
+export const lorebookAnnex = pin(
+	describeQueryDefinition({
+		id: 'core:query/lorebook-annex@1',
+		i18n: { name: { en: 'Lorebook annex' } },
+		timeoutMs: 1000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					owner: {
+						type: 'string',
+						default: '',
+						label: { en: 'Owner' },
+						description: {
+							en: "Whose document to read. Blank means this pipeline's own.",
+						},
+					},
+					sharedAnnex: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'Read another owner' },
+						description: {
+							en: "Allow reading a document this pipeline does not own. Off refuses, with a note on the receipt.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { scope: S.sessionScope },
+			out: {
+				main: S.json,
+				/**
+				 * 🚧 (M2b) The owner's annex document version on the book a
+				 * `set-lorebook-annex` from this run would write (0 before the first
+				 * write) — wire it into that step's `base` for a compare-and-set.
+				 * Absent when the run has no book to write.
+				 */
+				version: S.json,
+			},
 		},
 	}),
 )
@@ -3580,6 +3658,156 @@ export const likenessImages = pin(
 		ports: {
 			in: { scope: S.sessionScope },
 			out: { main: S.mediaList, references: S.mediaList },
+		},
+	}),
+)
+
+// ── 🚧 core:query/message-line@1 (speech lane D follow-up, ★1, 2026-10-28) ──
+
+/**
+ * 🚧 **One message as a line to speak**: its words, whose line it is and the
+ * inflection it was recorded with — what `core:task/cue-lines@1` takes, read
+ * off ONE stored row by id. The manual *Read aloud* / *Say it as…* verbs'
+ * read (`core:spec/speak-message`): the history read's rows are opaque
+ * (`messages@1`), so nothing else can hand cue-lines a stored line's speaker
+ * or inflection.
+ *
+ *  - `text` — the row's words; **empty** when the row is not this session's,
+ *    is hidden, or is still being written (the history read's rule), so a
+ *    spec junctions on it and nothing is spoken.
+ *  - `speaker` — the participant reference the row was voiced by: an envoy's
+ *    `envoy:<slug>`, a persona's or character's `character:<id>`; absent for
+ *    narration and for a person's own line with no persona.
+ *  - `inflection` — the line's recorded inflection: the label of the sprite
+ *    shown on its active swipe (a sprite pick is an inflection). Absent when
+ *    no sprite was shown.
+ *
+ * `say` overrides the recorded inflection with what a person asked for (the
+ * *Say it as…* press's collected text): a word the host's marker table knows
+ * (`sighs`, `angrily`, `joy`) becomes that label; any other words are kept as
+ * the label as written, which a prose-taking model reads as direction and a
+ * tag-taking model drops. Blank `say` keeps the recorded one.
+ *
+ * No writes, no model: a read.
+ * @experimental
+ */
+export const messageLine = pin(
+	describeQueryDefinition({
+		id: 'core:query/message-line@1',
+		i18n: {
+			name: { en: 'Message line' },
+			description: {
+				en: "One message's words, who said it, and how it was said — for reading it aloud.",
+			},
+		},
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				scope: S.sessionScope,
+				/** The row — the inlet's `messageId`, the message a press on a message's ⋮ was made on. */
+				messageId: S.rowIds,
+				/** How it should sound, in a person's words; blank keeps the recorded inflection. */
+				say: S.text,
+			},
+			out: {
+				main: S.text,
+				/** The row's words; empty when the row is hidden, still written, or not this session's. */
+				text: S.text,
+				/** Whose line it is; absent for narration. */
+				speaker: S.participantRef,
+				/** How it is spoken: `say` when given, else the recorded sprite label; absent when neither. */
+				inflection: S.inflection,
+			},
+		},
+	}),
+)
+
+/**
+ * The largest file `core:query/plugin-storage@1` will read: 4 MiB. A bigger
+ * file is refused with a sentence naming both sizes. (M2a)
+ * @experimental
+ */
+export const PLUGIN_STORAGE_QUERY_MAX_BYTES = 4 * 1024 * 1024
+
+/**
+ * 🚧 (M2a) **A file from the running plugin's own storage** — read-only, size
+ * capped, one file per read. Say a plugin's genre has a create pipeline that
+ * loads a custom world the person imported: the world sits in the plugin's
+ * storage, and this reads it into the run.
+ *
+ * Why a query and not a task: tasks are pure (F11) — the same inputs give the
+ * same output — and a file on disk is state outside the graph, so it enters
+ * the way every other outside state does, through a query.
+ *
+ * Whose storage: only the plugin that owns the running pipeline. A core or
+ * person-authored pipeline is refused ("plugin-storage reads only a plugin's
+ * own pipeline's storage"). `scope: 'pub'` reads the plugin's shared files and
+ * needs its `storage` grant in force; `scope: 'me'` reads the acting person's
+ * own folder and needs `storage-per-user` in force and a person on the run.
+ * The path is relative, with no `..`, and stays inside the folder. No write,
+ * no listing. A missing file answers `found: false`, not a halt.
+ * @experimental
+ */
+export const pluginStorage = pin(
+	describeQueryDefinition({
+		id: 'core:query/plugin-storage@1',
+		i18n: { name: { en: 'Plugin storage' } },
+		timeoutMs: 2000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					scope: {
+						type: 'enum',
+						default: 'pub',
+						label: { en: 'Whose files' },
+						members: [
+							{
+								key: 'pub',
+								label: { en: 'The plugin' },
+								description: { en: "The plugin's shared files." },
+							},
+							{
+								key: 'me',
+								label: { en: 'The person' },
+								description: {
+									en: "The acting person's own files for this plugin.",
+								},
+							},
+						],
+					},
+					as: {
+						type: 'enum',
+						default: 'json',
+						label: { en: 'Read as' },
+						members: [
+							{
+								key: 'json',
+								label: { en: 'JSON' },
+								description: { en: 'Parse the file and give the value.' },
+							},
+							{
+								key: 'text',
+								label: { en: 'Text' },
+								description: { en: 'Give the file as text.' },
+							},
+						],
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** The file, relative to the folder: `worlds/atlas.json`. */
+				path: S.text,
+			},
+			out: {
+				/** The parsed JSON, or the text; null when the file is missing. */
+				main: S.json,
+				/** Whether the file was there. */
+				found: S.json,
+			},
 		},
 	}),
 )

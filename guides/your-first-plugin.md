@@ -215,6 +215,29 @@ lets them in, along with every release after them. The plugin's [slug] is the
 namespace every id above sits under. A node definition registered under someone else's slug is
 refused at `defineExtension`, while you are typing, rather than at install.
 
+### A field that holds JSON
+
+Use `type: 'json'` for a value whose shape you cannot fix in advance, such as a layout or a table the plugin keeps. It is
+any JSON value (object, array, string, number, boolean or null), **stored parsed**, never as a string. When you can write every key down in advance, declare an `object`
+instead, so a mistyped key is caught. `text` with `format: 'json'` is a different thing: a string that happens to hold JSON.
+`maxBytes` limits how many bytes the JSON text may take (16384 unless you say otherwise, never more than 262144). `jsonSchema` holds the value to a shape, using a subset:
+`type`, `properties`, `required`, `additionalProperties`, `items`, `enum`, `const`, `minimum`/`maximum`, `minLength`/`maxLength`,
+`minItems`/`maxItems`. Any other keyword (`$ref`, `pattern`, `oneOf`) is refused when the plugin is built.
+
+```ts
+import { defineSettings } from '@serene-pub/sdk'
+
+const settings = defineSettings({
+	layout: {
+		type: 'json',
+		label: 'Layout',
+		maxBytes: 4096,
+		jsonSchema: { type: 'object', required: ['columns'], properties: { columns: { type: 'array', items: { type: 'string' } } } },
+		default: { columns: ['name', 'level'] },
+	},
+})
+```
+
 A node definition is **private** to your package unless its handler says otherwise:
 `handler(roll, rollHandler, { visibility: 'public' })` lets any package's spec, or one a
 person makes, use it. A node definition you offer as a swap must be public, because a swap runs
@@ -292,6 +315,36 @@ When one of your public node definitions runs in a spec **another package owns, 
 person made**, your secrets stay behind: a handle for one of them is refused. Lend one
 deliberately with `lend: true` on the setting (`{ type: 'secret', lend: true }`) when your node
 definition is meant to spend your key for others.
+
+## Ship lore with your plugin
+
+A package can come with [lorebooks](writing-lore-from-a-pipeline.md). Put each file (the kind
+Lorebooks › Import reads) under your `assets` folder, name it in `provides`, and ask for
+permission to add them:
+
+```ts nocheck a fragment: the rest of the declaration is the one above
+defineExtension({
+  slug: 'acme.world',
+  name: 'Acme World',
+  version: '0.1.0',
+  assets: { dir: 'assets' },
+  provides: { lorebooks: ['assets/books/harbor.lorebook.json'] },
+  permissions: { applet: { lorebooks: 'write' } },
+})
+```
+
+Nothing of yours runs to do this. Once an administrator has approved the permission and
+switched the plugin on, Serene Pub imports each file itself, as that administrator, the same way
+Import does, once per version of your plugin. A newer version arrives as a change to what is
+already there: lore the person has not touched is updated, and anything they edited is left as
+they wrote it. If the person set that lore to [Review or Off](writing-lore-from-a-pipeline.md#what-the-host-does-for-you),
+nothing changes until they allow it. On uninstall the administrator chooses to keep what came
+with the plugin or to delete it.
+
+`serene-pub check` refuses a path outside `assets` (`E_PROVIDES_OUTSIDE_ASSETS`), a file that is
+not there (`E_PROVIDES_MISSING`), a package without `applet.lorebooks: 'write'`
+(`E_PROVIDES_UNGRANTED`), and a file Import would refuse (`E_PROVIDES_INVALID`, with Import's own
+sentence). The person gets the plugin's own lore, which is the plugin's to update, not a copy.
 
 ## Package and check
 

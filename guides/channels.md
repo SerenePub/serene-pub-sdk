@@ -109,3 +109,49 @@ they read. Keep it in your plugin's [storage](storage.md).
 ## What a summary reads: lore
 
 A channel says once what its lines are to a summary: `story` (events), `aside` (context, never events) or `never` (no summary reads it, and the host refuses `sources` naming its lines). `main` is `story`; every other channel is `never` until it says otherwise.
+
+## A channel for a few people: `audience: { participants }`
+
+🚧 Provisional. `audience` also takes a list of people. A channel declared this way is read by the
+people named, by the session's owner, and by your pipelines, and by nobody else. A phone
+conversation between a persona and one character is the shape of it:
+
+<!-- prelude:
+import { genre } from '@serene-pub/sdk'
+-->
+```ts
+export const pen = genre('acme.words:genre/pen-pals', {
+	name: { en: 'Pen Pals' },
+	family: 'adventure',
+	shape: {
+		channels: [
+			'main',
+			{ slug: 'letters', audience: { participants: ['character:12', 'user:3'] }, label: { en: 'Letters' } },
+		],
+	},
+})
+```
+
+Each entry is a participant reference: `owner`, `user:<id>`, `character:<id>`, `player-seat:<id>`
+or `envoy:<slug>`. Which person a reference names is worked out for each viewer, so a character
+that a member plays counts as that member. The declaration is refused when the list is empty, when
+an entry is not a participant reference, when an entry is `ai`, `item` or `run-owner` (those are
+never people, and pipelines read every channel already), and on `main`, which every member reads.
+
+The server keeps it, the way it keeps `'owner'`:
+
+- **Reading.** Someone outside the audience is sent none of the channel's messages or pushes, and
+  the channel is left out of their channel list and the composer's switch. The session's owner
+  reads every channel, whatever it names.
+- **Sending.** The send door refuses a person outside the audience, and a turn fired on the
+  channel is refused too, with "That channel is only for the people in it."
+- **Personal lanes.** With `lanes: 'personal'` the audience narrows per lane: a lane is read by
+  its own person and the session's owner, and only if that person is in the audience.
+- **Pipelines.** A read that names the channel (`channel: 'letters'`) reads it, as it reads any
+  other. A read over **all** channels leaves such channels out of the history, so a summary or a
+  prompt that asked for everything does not pick up a private conversation by accident. Name the
+  channel to include it.
+
+`channelAudience(shape, channel)` hands back the declaration (`'all'`, `'owner'` or the object);
+any lane of the slug gives the slug's answer. Say **audience** in your own words and labels.
+"Private message" is only the interface's label for a lane whose audience is two people.

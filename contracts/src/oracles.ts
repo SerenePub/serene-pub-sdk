@@ -8,6 +8,7 @@
 
 import { S, tf, IoKinds } from '@serene-pub/sdk'
 import { jinja2 } from '@serene-pub/sdk'
+import { SPOKEN_LINE_TEMPLATE_SCOPE } from '@serene-pub/sdk'
 import { describeOracleDefinition, pin } from '@serene-pub/sdk'
 import type { FieldDecl } from '@serene-pub/sdk'
 
@@ -884,18 +885,35 @@ export const generateJson = pin(
 	}),
 )
 
-/** @experimental */
+/**
+ * 🚧 **Speak** — a line's script in, its audio out (PLAN-speech-connections-
+ * and-timbre §10–§11; seam S3, evolved in place and bound 2026-10-28).
+ *
+ * Reads `cues` (`core:task/cue-lines@1`'s script), groups consecutive cues
+ * that share a voice and an inflection, renders each group through the line
+ * `template`, and makes one call per group — `speaker` cues in the speaker's
+ * voice, `narrator` cues in the session's narrator voice, `silent` cues never
+ * sent — joining the audio with a fixed `gapMs` gap. Publishes the audio, the
+ * `cueMap` (where each cue sits in it), `spokenAs` (voice, model, applied,
+ * ignored) and `meta`, the three assembled as the `SpokenMeta` record
+ * `core:outlet/attach-audio@1` keeps on the line. Deterministic: the same line,
+ * label and templates make the same requests, byte for byte.
+ *
+ * Never picks a connection: unset, the `loadout` is the `text->audio`
+ * default — the **Narration** loadout, the one global speaking pair (ruled
+ * 2026-10-28). `skipCodeBlocks` left with the cue task, which drops code.
+ * @experimental
+ */
 export const speak = pin(
 	describeOracleDefinition({
 		id: 'core:oracle/speak@1',
 		i18n: { name: { en: 'Speak' } },
 		shape: S.tts,
 		effects: 'external',
-		/** Declared, not bound — no handler exists for it yet. */
-		provisional: true,
-		/** The words to be spoken may be corrected before the call. */
-		review: { fields: ['text'] },
-		timeoutMs: 60000,
+		/** The script may be corrected before the call; `text` is the one-release alias. */
+		review: { fields: ['cues', 'text'] },
+		/** Several group calls on a local TTS server; 60 s was the unbound default. */
+		timeoutMs: 180000,
 		slots: {
 			loadout: LOADOUT_SLOT,
 			connection: {
@@ -905,18 +923,91 @@ export const speak = pin(
 				requires: [tf({ in: [IoKinds.text], out: [IoKinds.audio] })],
 			},
 			sampling: { kind: 'sampling', quick: true, shape: S.tts },
+			/**
+			 * 🚧 The written **direction** — the timbre description, the
+			 * inflection sentence (`{{ inflectionSentence }}`), the genre's tone
+			 * line. Rendered only for a model that takes a written direction
+			 * (`controls.instruction`); any other reports `direction` ignored.
+			 */
+			prompts: {
+				kind: 'prompts',
+				facet: 'prompts',
+				description: 'How the voice is directed — sent only to a voice model that takes written direction.',
+				fields: {
+					direction: { type: 'text' },
+				},
+			},
+			/** 🚧 The **line template**: renders one group of cues into the text of one call. */
 			template: {
 				kind: 'template',
 				engine: jinja2.id,
 				facet: 'templates',
+				variables: SPOKEN_LINE_TEMPLATE_SCOPE,
+				description:
+					'Which parts of a line are spoken, and how each one reads. Whole line, Dialogue only and Narration only ship.',
 			},
+			/** 🚧 How an inflection reads as a direction and as an inline tag (§11.3). */
+			variables: {
+				kind: 'variables',
+				facet: 'variables',
+				description: 'How an inflection reads — as a sentence directing the voice, and as an inline tag.',
+				renders: {
+					inflectionSentence: 'core:var/inflection-sentence@1',
+					inflectionTag: 'core:var/inflection-tag@1',
+				},
+			},
+			/**
+			 * No `facet`, like the image step's: both decide how the audio is
+			 * made and joined, not what the voice is asked for.
+			 */
 			params: {
 				kind: 'parameters',
-				facet: 'weights',
-				schema: { skipCodeBlocks: { type: 'boolean', default: true } },
+				schema: {
+					streaming: {
+						type: 'boolean',
+						default: false,
+						label: { en: 'Stream speech' },
+						description: {
+							en: 'Hand each part of the line on as it is made, where the voice model can (audio_streaming). Off makes the whole line first.',
+						},
+					},
+					gapMs: {
+						type: 'number',
+						default: 200,
+						min: 0,
+						max: 2000,
+						label: { en: 'Pause between parts (ms)' },
+						description: {
+							en: 'The silence put between two parts of a line spoken in separate calls — a change of voice or of inflection.',
+						},
+					},
+				},
 			},
 		},
-		ports: { in: { text: S.text }, out: { main: S.audio, audio: S.audio } },
+		ports: {
+			in: {
+				/** 🚧 The script — `Cue[]` from `core:task/cue-lines@1`. */
+				cues: S.cues,
+				/** Whose line it is: `speaker` cues speak in this participant's voice. */
+				speaker: S.participantRef,
+				/** ISO 639-1. Absent: the voice's timbre language, then the session's, then the pub's. */
+				language: S.text,
+				/**
+				 * ⏳ The one-release alias: a bare text, read as one cue in the
+				 * speaker's voice when `cues` is not wired. Expires the release
+				 * after speech ships.
+				 */
+				text: S.text,
+			},
+			out: {
+				main: S.audio,
+				audio: S.audio,
+				cueMap: S.cueMap,
+				spokenAs: S.spokenAs,
+				/** 🚧 `SpokenMeta` — the record attach-audio keeps on the line. */
+				meta: S.spokenMeta,
+			},
+		},
 	}),
 )
 

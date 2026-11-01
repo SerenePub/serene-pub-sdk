@@ -10,7 +10,7 @@
  * action) or a `request` (something the host opens). Nothing here imports a
  * store, the socket or the page: the same source runs in a UI worker.
  */
-import { getContext, setContext, untrack } from "svelte"
+import { getContext, setContext, tick, untrack } from "svelte"
 import { SvelteMap, SvelteSet } from "svelte/reactivity"
 import { useWidgetContext } from "../context"
 import type { WidgetContextRef } from "@serene-pub/core-catalog/conversation"
@@ -78,6 +78,20 @@ export function createConversation(widget: WidgetContextRef) {
 	/** A scene boundary is being written: its presses wait. */
 	let sceneBusy = $state(false)
 	let menuFor = $state<number | undefined>(undefined)
+	/**
+	 * 🚧 Heading audio control (2026-10-29): the ONE line audible in this
+	 * widget, and which of its players holds it. Starting any line's audio
+	 * stops the previous one (pause + rewind). `takes` re-keys a player so a
+	 * stopped one starts over from the top; plain records, not a Map.
+	 */
+	let speechNow = $state<{ id: number; player: "line" | "menu" } | null>(null)
+	let speechTakes = $state<Record<string, number>>({})
+	/** The menu player's last playhead for a line (caption + state glyph read it). */
+	let speechMenuAt = $state<{ id: number; at: { currentTime: number; duration: number; paused: boolean } } | null>(null)
+	const bumpTake = (id: number, player: "line" | "menu") => {
+		const k = `${id}:${player}`
+		speechTakes = { ...speechTakes, [k]: (speechTakes[k] ?? 0) + 1 }
+	}
 	let selecting = $state(false)
 	/** The lane the composer writes to, and the log shows (`main` by default). */
 	let lane = $state("main")
@@ -396,6 +410,70 @@ export function createConversation(widget: WidgetContextRef) {
 			},
 			set(id: number | undefined) {
 				menuFor = id
+			}
+		},
+
+		/**
+		 * 🚧 Heading audio control: which line's audio is playing (one at a
+		 * time) and through which player. `take(id, player)` is the rewind
+		 * counter a player is keyed by.
+		 */
+		speech: {
+			get playing() {
+				return speechNow
+			},
+			isPlaying(id: number, player: "line" | "menu") {
+				return speechNow?.id === id && speechNow.player === player
+			},
+			/** The ⋮ player's playhead for this line while it is the current player; else null. */
+			menuAt(id: number) {
+				return speechMenuAt?.id === id && speechNow?.id === id && speechNow.player === "menu"
+					? speechMenuAt.at
+					: null
+			},
+			reportMenuAt(id: number, at: { currentTime: number; duration: number; paused: boolean } | null) {
+				if (at) speechMenuAt = { id, at }
+			},
+			take(id: number, player: "line" | "menu" = "line"): number {
+				return speechTakes[`${id}:${player}`] ?? 0
+			},
+			/**
+			 * Make this line's player the playing one. Another line is stopped
+			 * first (its `playing` off, its player re-keyed = pause + rewind),
+			 * a tick ahead of the new one flipping on; the same line's other
+			 * player is only paused.
+			 */
+			async play(id: number, player: "line" | "menu" = "line") {
+				const prev = speechNow
+				if (prev && !(prev.id === id && prev.player === player)) {
+					if (prev.id !== id) bumpTake(prev.id, prev.player)
+					speechNow = null
+					await tick()
+				}
+				speechNow = { id, player }
+			},
+			/** Pause and rewind: nothing playing, that player starts over. */
+			stop(id: number) {
+				if (speechNow?.id === id) {
+					bumpTake(id, speechNow.player)
+					speechNow = null
+				}
+			},
+			/**
+			 * A player's own play / pause / ended. A play makes it the current
+			 * one (stopping any other line); a pause or end of the current one
+			 * clears it. A pause from a player that is not current is old news.
+			 */
+			heard(id: number, player: "line" | "menu", paused: boolean) {
+				const cur = speechNow
+				const mine = cur?.id === id && cur.player === player
+				if (paused) {
+					if (mine) speechNow = null
+					return
+				}
+				if (mine) return
+				if (cur && cur.id !== id) bumpTake(cur.id, cur.player)
+				speechNow = { id, player }
 			}
 		},
 

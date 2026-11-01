@@ -10,6 +10,7 @@ import { handlebars, liquid } from '@serene-pub/sdk'
 import { describeTaskDefinition, pin } from '@serene-pub/sdk'
 import { PROMPT_BLOCKS_DECL } from '@serene-pub/sdk'
 import type { SlotDecl, VarField } from '@serene-pub/sdk'
+import { ASTERISK_READINGS, CUE_VOICES, DEFAULT_CUE_VOICES, DEFAULT_QUOTE_STYLES } from '@serene-pub/sdk'
 
 // ── Tasks ───────────────────────────────────────────────────────────────────
 
@@ -5298,3 +5299,152 @@ export const sweepDuties = pin(
 export type JudgedSceneCheck =
 	| { readonly due: true; readonly channel: string; readonly lines: readonly number[] }
 	| { readonly due: false; readonly why: string }
+
+// ── 🚧 Speech (PLAN-speech-build S3, 2026-10-28) ────────────────────────────
+
+/** The three voices a cue may take, as the picker shows them. */
+const CUE_VOICE_MEMBERS = [
+	{ key: 'speaker', label: { en: "The speaker's voice" } },
+	{ key: 'narrator', label: { en: "The narrator's voice" } },
+	{ key: 'silent', label: { en: 'Not spoken' } },
+] as const
+
+/**
+ * 🚧 **Cue a line** — turn a line's text into the script it is spoken from
+ * (`Cue[]`, PLAN-speech-connections-and-timbre §11.1). Pure and deterministic:
+ * regex and locale tables, the same text giving the same cues, no model.
+ *
+ *  - a quote opens **dialogue** (`quoteStyles`); `*…*` / `_…_` are **action**
+ *    (`asterisks`); `(…)` is an **aside**; the rest is **narration**;
+ *  - `Name:` at the start of a run, where the name is one of `cast`, switches
+ *    the cue's `speaker` (multi-voice lines);
+ *  - inline expression markers the model wrote — `[angry]`, `<laugh>`,
+ *    `*sighs*`, `(((word)))` — are lifted off the text into `markers`, never
+ *    spoken; a marker the shipped marker table knows sets that cue's
+ *    inflection, else the line's `inflection` label does (§11.2);
+ *  - `voices` maps each kind to a voice; code blocks are dropped.
+ *
+ * `inflection` takes a sprite pick as it is (`sprite-pick@1` is assignable to
+ * `inflection@1`): the sprite a line was given is the inflection it is spoken with.
+ * @experimental
+ */
+export const cueLines = pin(
+	describeTaskDefinition({
+		id: 'core:task/cue-lines@1',
+		i18n: { name: { en: 'Cue a line' } },
+		effects: 'none',
+		timeoutMs: 1000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					quoteStyles: {
+						type: 'list',
+						item: { type: 'string' },
+						default: DEFAULT_QUOTE_STYLES,
+						label: { en: 'Quote marks' },
+						description: {
+							en: 'The marks that open and close dialogue — each entry is the opening mark then the closing one.',
+						},
+					},
+					asterisks: {
+						type: 'enum',
+						of: ASTERISK_READINGS,
+						default: 'action',
+						members: [
+							{ key: 'action', label: { en: 'Action' }, description: { en: '*waves* is something done, read in the narrator\'s voice.' } },
+							{ key: 'emphasis', label: { en: 'Emphasis' }, description: { en: '*really* is a stressed word, read in the line\'s own voice.' } },
+							{ key: 'ignore', label: { en: 'Ignore' }, description: { en: 'Asterisks are dropped and the words read as they stand.' } },
+						],
+						label: { en: 'Text between asterisks' },
+					},
+					voices: {
+						type: 'object',
+						label: { en: 'Who speaks what' },
+						description: {
+							en: 'Which voice reads dialogue, narration, actions and asides.',
+						},
+						default: DEFAULT_CUE_VOICES,
+						fields: {
+					dialogue: {
+						type: 'enum',
+						of: CUE_VOICES,
+						default: DEFAULT_CUE_VOICES.dialogue,
+						members: CUE_VOICE_MEMBERS,
+						label: { en: 'Dialogue' },
+					},
+					narration: {
+						type: 'enum',
+						of: CUE_VOICES,
+						default: DEFAULT_CUE_VOICES.narration,
+						members: CUE_VOICE_MEMBERS,
+						label: { en: 'Narration' },
+					},
+					action: {
+						type: 'enum',
+						of: CUE_VOICES,
+						default: DEFAULT_CUE_VOICES.action,
+						members: CUE_VOICE_MEMBERS,
+						label: { en: 'Actions' },
+					},
+					aside: {
+						type: 'enum',
+						of: CUE_VOICES,
+						default: DEFAULT_CUE_VOICES.aside,
+						members: CUE_VOICE_MEMBERS,
+						label: { en: 'Asides' },
+					},
+						},
+					},
+					language: {
+						type: 'string',
+						default: '',
+						label: { en: 'Language' },
+						description: {
+							en: "ISO 639-1 code whose quote and number rules apply. Blank reads the line's own script.",
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: {
+				/** The line's text, as written. */
+				text: S.text,
+				/** Whose line it is — the voice `speaker` cues take. */
+				speaker: S.participantRef,
+				/** The line's recorded inflection — a sprite pick wires in as it is. */
+				inflection: S.inflection,
+				/** `string[]` — the cast's names, which `Name:` may switch to. */
+				cast: S.json,
+			},
+			out: {
+				main: S.cues,
+				cues: S.cues,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Read a drafted card or book** (M2c path B, owner ruling 2026-10-31): a reply that drafts a character card or
+ * a lorebook ends with one hidden block — `<!--draft:character {…}-->` or `<!--draft:lorebook {…}-->`, an HTML
+ * comment the message renderer never shows, even while the reply streams. This step takes every such block out of
+ * the reply (`text`, what is saved) and reads the last one: `make` is `'character'`, `'lorebook'` or `''`, and
+ * `draft` its JSON, for `create-character@1` / `create-lorebook@1` behind a junction on `make`. One model call per
+ * turn — the reply's own — and no tool loop. Pure (the SDK's `readLibraryDraft`). ⚠ Not `parse-json@1` (a whole reply
+ * read as JSON) and not `parse-tool-call@1`.
+ * @experimental
+ */
+export const readLibraryDraft = pin(
+	describeTaskDefinition({
+		id: 'core:task/read-library-draft@1',
+		i18n: { name: { en: 'Read a drafted card or book' } },
+		timeoutMs: 500,
+		ports: {
+			in: { text: S.text },
+			out: { main: S.json, text: S.text, make: S.text, draft: S.json },
+		},
+	}),
+)
