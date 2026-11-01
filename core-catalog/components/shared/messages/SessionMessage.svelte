@@ -481,6 +481,8 @@
 		if (p && conv.dossier?.liveRunIds?.includes(p.runId)) seenLiveRun = p.runId
 	})
 	const speaking = $derived(isSpeaking(spokenPending, conv.dossier?.liveRunIds, seenLiveRun))
+	/** The audio part the strip found gone (404): the heading reads Read aloud again, not Say it again. */
+	let goneSpokenPart = $state<number | null>(null)
 	/** The line's audio is there to play: present, not found gone, and the viewer's playback is not `never`. */
 	const hasAudio = $derived(
 		!!spokenAudio && spokenAudio.partId !== goneSpokenPart && spokenPlaybackOf(conv.dossier) !== "never"
@@ -504,8 +506,6 @@
 		onStop: stopSpoken,
 		onGone: (partId: number) => (goneSpokenPart = partId)
 	})
-	/** The audio part the strip found gone (404): the heading reads Read aloud again, not Say it again. */
-	let goneSpokenPart = $state<number | null>(null)
 	const isSpeakVerb = (a: WidgetAction) => SPEAK_VERB_KEYS.includes(verbKeyOf(a))
 	/** One speak icon's presentation on this line. */
 	function speakLook(action: WidgetAction): { icon: string; name: string } {
