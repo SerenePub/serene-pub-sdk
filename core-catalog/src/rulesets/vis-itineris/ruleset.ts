@@ -41,13 +41,16 @@ const C = VIS_ITINERIS_CONVENTIONS
 /** Its longest rest — the one a night's sleep is (`time.rests`): what the rest it offers takes. */
 const LONG_REST = [...(C.rest ?? [])].sort((a, b) => (b.minutes ?? 0) - (a.minutes ?? 0))[0]!.id
 
-/** Core's level, class and health, borrowed (every genre reads them); then its own, which it owns by listing. */
+/**
+ * Core's level, class and health, borrowed (every genre reads them); then its own, which it owns by listing.
+ * 🚧 Owner ruling 2026-11-05 (plan §25): every attribute is changed by the rules; Vis Itineris declares no Mood, so none is excepted.
+ */
 const ATTRIBUTES: RulesetAttributeDecl[] = [
 	// 🚧 Tagged (RF fix 8): what a genre plays best with is found by tag — health, a level, a calling.
-	{ id: slotSlug(levelSlot.id), slot: levelSlot.id, borrowed: true, config: { min: 1, max: 20 }, tags: ["level"] },
-	{ id: slotSlug(characterClassSlot.id), slot: characterClassSlot.id, borrowed: true, tags: ["class"] },
-	{ id: slotSlug(hpSlot.id), slot: hpSlot.id, borrowed: true, start: 10, config: { min: 0, max: 999 }, tags: ["health"] },
-	...VIS_ITINERIS_OWN_SLOTS.map((s) => ({ id: slotSlug(s.id), slot: s.id }))
+	{ id: slotSlug(levelSlot.id), slot: levelSlot.id, borrowed: true, config: { min: 1, max: 20 }, tags: ["level"], changedBy: ["rules"] },
+	{ id: slotSlug(characterClassSlot.id), slot: characterClassSlot.id, borrowed: true, tags: ["class"], changedBy: ["rules"] },
+	{ id: slotSlug(hpSlot.id), slot: hpSlot.id, borrowed: true, start: 10, config: { min: 0, max: 999 }, tags: ["health"], changedBy: ["rules"] },
+	...VIS_ITINERIS_OWN_SLOTS.map((s) => ({ id: slotSlug(s.id), slot: s.id, changedBy: ["rules" as const] }))
 ]
 
 /** A key as a person reads it: `sleight-of-hand` → "Sleight of hand". */

@@ -202,6 +202,16 @@ export async function providedFilesIn(
 	return out
 }
 
+/** 🚧 (M2d) Which of the `appletCard` picture paths exist on disk — existence only, never read. */
+async function appletCardFilesIn(dir: string, card: { poster?: unknown; logo?: unknown } | undefined): Promise<string[]> {
+	const out: string[] = []
+	for (const raw of [card?.poster, card?.logo]) {
+		if (typeof raw !== 'string' || raw.startsWith('/') || raw.includes('\\') || raw.split('/').includes('..')) continue
+		if (await stat(resolve(dir, raw)).then((s) => s.isFile(), () => false)) out.push(raw)
+	}
+	return out
+}
+
 /**
  * The dynamic half. The packager reads source statically *and* evaluates the author's
  * entry module to get the built `Extension` — the two halves are cross-checked against
@@ -334,7 +344,8 @@ export async function validatePackage(
 		dir,
 		(extension as { provides?: { lorebooks?: readonly unknown[] } } | undefined)?.provides?.lorebooks ?? [],
 	)
-	const compiled = compilePlugin({ sources, extension: extension as never, frameDocuments, providedFiles })
+	const appletCardFiles = await appletCardFilesIn(dir, (extension as { appletCard?: { poster?: unknown; logo?: unknown } } | undefined)?.appletCard)
+	const compiled = compilePlugin({ sources, extension: extension as never, frameDocuments, providedFiles, appletCardFiles })
 	// What the install holds the package to as well (2026-10-29, readiness R-a/R-b): the
 	// one create spec per genre counted by the inlet lock, and the SDK's `validate()` over
 	// every document it saves — so `check`/`build` never pass what install refuses.

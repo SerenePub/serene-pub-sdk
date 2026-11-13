@@ -307,6 +307,49 @@ test('time moved before anything was said is the ledger head: drawn on the empty
 	}
 })
 
+/* ── a line's time is the story's (owner 2026-11-06) ─────────────────── */
+
+test('a stamped line shows its story time with the real time on hover; an unstamped line keeps the real one', { timeout: 120_000 }, async () => {
+	const stamped = row(1, 'user', 'Morning', { storyClockYear: 412, storyClockMonth: 3, storyClockDay: 5, storyClockHour: 8, storyClockMinute: 30 })
+	const old = row(2, 'assistant', 'Hi', { createdAt: '2026-09-24T10:00:00Z' })
+	const mount = (settings: Record<string, unknown>) =>
+		mountComponent({
+			root: CORE_CATALOG,
+			entry: 'components/shared/messages/messages.ts',
+			owner: 'core',
+			coreConversation: true,
+			timeoutMs: 60_000,
+			context: {
+				session: { id: 1, name: 'Proof' },
+				messages: [stamped, old],
+				settings,
+				viewer: { userId: 1, isAdmin: false, isGuest: false },
+				scoped: { session_full: dossier },
+			},
+		})
+	const times = (view: { queryAll(s: string): Element[] }) =>
+		view.queryAll('[data-widget-part~="messages.message-time"]')
+	const view = await mount({})
+	try {
+		assert.deepEqual(view.refused, [])
+		const [first, second] = times(view)
+		assert.equal(first?.textContent?.trim(), '08:30')
+		assert.equal(first?.hasAttribute('data-story-time'), true)
+		assert.equal(first?.getAttribute('title')?.startsWith('Year 412, Mo. 3, Day 5, 08:30 · written '), true)
+		assert.equal(second?.hasAttribute('data-story-time'), false)
+		assert.equal(second?.textContent?.trim() === '08:30', false)
+		assert.equal((second?.getAttribute('title') ?? '').length > 0, true)
+	} finally {
+		await view.unmount()
+	}
+	const formatted = await mount({ timeFormat: '{day}/{month}' })
+	try {
+		assert.equal(times(formatted)[0]?.textContent?.trim(), '5/3')
+	} finally {
+		await formatted.unmount()
+	}
+})
+
 /* ── folded sections (B4; D5, 2026-09-27) ─────────────────────────────── */
 
 test('a reply\'s folded sections render collapsed above the body, and expand', { timeout: 120_000 }, async () => {
@@ -759,7 +802,7 @@ test("a clone of the conversation in a box not granted `session:full` says so �
 		assert.doesNotMatch(view.root.textContent ?? '', /Loading session/)
 		// Granted at runtime: the notice goes; the dossier, once posted, draws the log.
 		await view.setGrants(['session:full'])
-		assert.equal(view.query('[data-scope-not-granted]'), null)
+		assert.equal(view.query('[data-scope-not-granted]') === null, true)
 		await view.push('scoped', { session_full: dossier })
 		assert.deepEqual(view.queryAll('sp-message-body').map((b) => b.getAttribute('text')), ['Hello there'])
 	} finally {
@@ -784,7 +827,7 @@ async function stderrAcrossDraft(requests: (kind: string) => unknown): Promise<s
 	try {
 		const view = await mountComponent({
 			root: CORE_CATALOG,
-			entry: 'components/shared/messages/messages.ts',
+			entry: 'components/shared/composer/composer.ts',
 			owner: 'core',
 			coreConversation: true,
 			timeoutMs: 60_000,
@@ -844,7 +887,7 @@ test("a host write replaces the composer's draft; the same write re-posted does 
 	const mount = (d: ConversationDossierV1) =>
 		mountComponent({
 			root: CORE_CATALOG,
-			entry: 'components/shared/messages/messages.ts',
+			entry: 'components/shared/composer/composer.ts',
 			owner: 'core',
 			coreConversation: true,
 			timeoutMs: 60_000,
@@ -989,16 +1032,55 @@ const mountCopy = (settings: Record<string, unknown>, d: ConversationDossierV1) 
 const bodies = (view: Awaited<ReturnType<typeof mountCopy>>) =>
 	view.queryAll('sp-message-body').map((b) => b.getAttribute('text'))
 
+/**
+ * The Composer and the Turn line are widgets beside the log (owner R8
+ * 2026-11-05): the host gives each its target Messages copy's dossier plus,
+ * under `composer`, the copy it follows (`target`) and — when that panel shows
+ * a tab that is not a Messages tab — `writingTo`.
+ */
+type Target = {
+	instance: string
+	channel: string
+	label: string
+	lineWidth?: 'column' | 'full' | 'comfortable'
+	presentation?: 'rows' | 'folio'
+}
+const withTarget = (
+	d: ConversationDossierV1,
+	target: Target | undefined,
+	writingTo?: { channel: string; label: string },
+): ConversationDossierV1 =>
+	({ ...d, composer: { ...d.composer, ...(target ? { target } : {}), ...(writingTo ? { writingTo } : {}) } }) as ConversationDossierV1
+const sanctumTarget: Target = { instance: 'messages#sanctum', channel: 'sanctum', label: 'Sanctum' }
+const mountWidget = (
+	entry: 'composer/composer.ts' | 'turn-line/turn-line.ts',
+	settings: Record<string, unknown>,
+	d: ConversationDossierV1,
+) =>
+	mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${entry}`,
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		requests: () => undefined,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: sanctumRows,
+			settings,
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: { session_full: d },
+		},
+	})
+
 test('a copy pinned to the Sanctum draws the Sanctum alone, names it, and writes, continues and lists there', { timeout: 120_000 }, async () => {
-	const view = await mountCopy(
-		{ channel: 'sanctum', composer: 'minimal' },
-		channelDossier(['sanctum'], {
-			order: [{ ref: null, channel: 'sanctum' }] as ConversationDossierV1['turn']['order'],
-			show: true,
-			canChoose: false,
-			ownVoiceName: 'Castellan',
-		}),
-	)
+	const sanctum = channelDossier(['sanctum'], {
+		order: [{ ref: null, channel: 'sanctum' }] as ConversationDossierV1['turn']['order'],
+		show: true,
+		canChoose: false,
+		ownVoiceName: 'Castellan',
+	})
+	const view = await mountCopy({ channel: 'sanctum' }, sanctum)
 	try {
 		assert.deepEqual(view.refused, [])
 		// Its head names the channel by its declared label, never the slug.
@@ -1008,49 +1090,73 @@ test('a copy pinned to the Sanctum draws the Sanctum alone, names it, and writes
 		assert.deepEqual(bodies(view), ['I am the Castellan, steward of this dungeon.', 'What waits in the vault?'])
 		assert.equal(view.queryAll('[data-widget-part~="messages.message"]').length, 2)
 		// One channel: no tabs to choose from.
-		assert.equal(view.query('[data-widget-part~="messages.channel-tabs"]'), null)
-
-		// The ready line's Continue fires ITS log's channel (R5's follow-up).
-		await view.click('[data-widget-part~="messages.next-up-continue"]')
-		assert.deepEqual(view.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'sanctum' })
-
+		assert.equal(view.query('[data-widget-part~="messages.channel-tabs"]') === null, true)
+		// It tells the host which channel it shows; the Composer and the Turn line follow.
+		assert.deepEqual(view.requested.filter((r) => r.kind === 'show-channel').map((r) => r.params), [{ channel: 'sanctum' }])
+		// …and draws neither itself (owner R8 2026-11-05).
+		assert.equal(view.query('[data-widget-part~="messages.composer"]') === null, true)
+		assert.equal(view.query('[data-widget-part~="messages.turn-line"]') === null, true)
+	} finally {
+		await view.unmount()
+	}
+	// The Turn line beside it: the ready line's Continue fires ITS log's channel (R5's follow-up).
+	const turn = await mountWidget('turn-line/turn-line.ts', {}, withTarget(sanctum, sanctumTarget))
+	try {
+		await turn.click('[data-widget-part~="messages.next-up-continue"]')
+		assert.deepEqual(turn.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'sanctum' })
+	} finally {
+		await turn.unmount()
+	}
+	// The Composer beside it, the pill its copy chose.
+	const composer = await mountWidget('composer/composer.ts', { composer: 'minimal' }, withTarget(sanctum, sanctumTarget))
+	try {
+		assert.deepEqual(composer.refused, [])
 		// The turn controls and the chips are the Sanctum's listing.
-		await view.click('[data-widget-part~="messages.composer-actions-toggle"]')
-		assert.equal(view.query('sp-host-view[name="session-controls"]')?.getAttribute('channel'), 'sanctum')
+		await composer.click('[data-widget-part~="messages.composer-actions-toggle"]')
+		assert.equal(composer.query('sp-host-view[name="session-controls"]')?.getAttribute('channel'), 'sanctum')
 
 		// A line sent here is sent on the Sanctum.
 		const FIELD = 'sp-composer-field'
-		await view.dispatch(FIELD, 'input', { value: 'Build me a vault.' })
-		await view.click('[data-widget-part~="messages.composer-send"]')
-		assert.equal(view.requested.filter((r) => r.kind === 'send').at(-1)?.params.channel, 'sanctum')
+		await composer.dispatch(FIELD, 'input', { value: 'Build me a vault.' })
+		await composer.click('[data-widget-part~="messages.composer-send"]')
+		assert.equal(composer.requested.filter((r) => r.kind === 'send').at(-1)?.params.channel, 'sanctum')
 	} finally {
-		await view.unmount()
+		await composer.unmount()
 	}
 })
 
 test('the primary log draws the channels no copy claims; 🚧 its tabs name each channel by its label (lair fix 2)', { timeout: 120_000 }, async () => {
 	// The Lair's story log: the Sanctum is claimed, so only `main` is left.
-	const story = await mountCopy(
-		{},
-		channelDossier(['main'], {
-			order: [{ ref: null }] as ConversationDossierV1['turn']['order'],
-			show: true,
-			canChoose: false,
-			ownVoiceName: 'Castellan',
-		}),
-	)
+	const storyDossier = channelDossier(['main'], {
+		order: [{ ref: null }] as ConversationDossierV1['turn']['order'],
+		show: true,
+		canChoose: false,
+		ownVoiceName: 'Castellan',
+	})
+	const story = await mountCopy({}, storyDossier)
 	try {
 		assert.deepEqual(bodies(story), ['We go north.'])
 		assert.equal(story.query('[data-widget-part~="messages.channel-head"]'), null)
 		assert.equal(story.query('[data-widget-part~="messages.channel-tabs"]'), null)
-		await story.click('[data-widget-part~="messages.next-up-continue"]')
-		assert.deepEqual(story.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
+		assert.deepEqual(story.requested.filter((r) => r.kind === 'show-channel').map((r) => r.params), [{ channel: 'main' }])
 	} finally {
 		await story.unmount()
 	}
+	const storyTurn = await mountWidget(
+		'turn-line/turn-line.ts',
+		{},
+		withTarget(storyDossier, { instance: 'messages', channel: 'main', label: 'Story' }),
+	)
+	try {
+		await storyTurn.click('[data-widget-part~="messages.next-up-continue"]')
+		assert.deepEqual(storyTurn.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
+	} finally {
+		await storyTurn.unmount()
+	}
 	// Nothing claimed: one log over both, a tab each above it, by label (the
 	// Lair's Story · Sanctum) — the composer's old switch is gone.
-	const whole = await mountCopy({ otherTabsComposer: 'minimal' }, channelDossier(['main', 'sanctum']))
+	const whole = await mountCopy({}, channelDossier(['main', 'sanctum']))
+	const shownChannels = () => whole.requested.filter((r) => r.kind === 'show-channel').map((r) => r.params.channel)
 	try {
 		// The host's tabs (`sp-tabs`): the page draws the tablist, its roving
 		// focus and its arrows; the copy names the tabs and hears `change`.
@@ -1058,7 +1164,6 @@ test('the primary log draws the channels no copy claims; 🚧 its tabs name each
 		const strip = () => whole.query(STRIP)
 		assert.equal(strip()?.localName, 'sp-tabs')
 		assert.equal(strip()?.getAttribute('label'), 'Conversations')
-		assert.equal(whole.query('[data-widget-part~="messages.composer-channels"]'), null)
 		const tabs = () => whole.queryAll('[data-widget-part~="messages.channel-tab"]')
 		assert.deepEqual(
 			tabs().map((t) => [t.localName, t.getAttribute('value'), t.getAttribute('label')]),
@@ -1080,8 +1185,9 @@ test('the primary log draws the channels no copy claims; 🚧 its tabs name each
 		// channel's rows (PLAN-dc-after-walk2 Q3-6, the walk's #49).
 		const main = whole.query('#message-1')
 		assert.match(main?.getAttribute('aria-label') ?? '', /^Message 1 of 1 from /)
-		const root = () => whole.query('[data-widget-part~="messages.root"]')
-		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+		// The copy told the host it shows the story; the composer is not its own.
+		assert.deepEqual(shownChannels(), ['main'])
+		assert.equal(whole.query('[data-widget-part~="messages.composer"]'), null)
 
 		// A Castellan line lands on the Sanctum while the story is shown: a dot on
 		// its tab, and its name says so to a screen reader.
@@ -1094,25 +1200,22 @@ test('the primary log draws the channels no copy claims; 🚧 its tabs name each
 		assert.equal(tabs()[1]!.getAttribute('label'), 'Sanctum (new lines)')
 		assert.equal(tabs()[0]!.querySelector('[data-widget-part~="messages.channel-tab-dot"]'), null)
 
-		// The Sanctum's tab: its rows, its pill composer, its line sent there — and the dot read.
+		// The Sanctum's tab: its rows, the host told (the Composer follows it) — and the dot read.
 		await whole.dispatch(STRIP, 'change', { value: 'sanctum' })
 		assert.equal(strip()?.getAttribute('value'), 'sanctum')
+		assert.deepEqual(shownChannels(), ['main', 'sanctum'])
 		assert.deepEqual(shown(), [
 			'I am the Castellan, steward of this dungeon.',
 			'What waits in the vault?',
 			'The vault holds a sleeping wyrm.',
 		])
-		assert.equal(root()?.getAttribute('data-composer-skin'), 'minimal')
 		assert.equal(whole.query('[data-widget-part~="messages.channel-tab-dot"]'), null)
 		assert.equal(tabs()[1]!.getAttribute('label'), 'Sanctum')
-		await whole.dispatch('sp-composer-field', 'input', { value: 'Wake it slowly.' })
-		await whole.click('[data-widget-part~="messages.composer-send"]')
-		assert.equal(whole.requested.filter((r) => r.kind === 'send').at(-1)?.params.channel, 'sanctum')
 
-		// Back to the story: its card again.
+		// Back to the story: the host is told again, once.
 		await whole.dispatch(STRIP, 'change', { value: 'main' })
 		assert.equal(strip()?.getAttribute('value'), 'main')
-		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+		assert.deepEqual(shownChannels(), ['main', 'sanctum', 'main'])
 		assert.deepEqual(shown(), ['We go north.'])
 		// A story with nothing in it yet reads as an empty log, whatever the Sanctum holds.
 		assert.equal(whole.query('[data-widget-part~="messages.log-empty"]'), null)
@@ -1122,6 +1225,55 @@ test('the primary log draws the channels no copy claims; 🚧 its tabs name each
 		assert.equal(whole.query('[data-widget-part~="messages.log-empty"]'), null)
 	} finally {
 		await whole.unmount()
+	}
+	// The Composer beside that copy writes on the lane the copy shows — the Lair's
+	// Sanctum pill under the story's card (`otherTabsComposer`) — and follows it live.
+	const both = channelDossier(['main', 'sanctum'])
+	const storyTarget: Target = { instance: 'messages', channel: 'main', label: 'Story' }
+	const writer = await mountWidget('composer/composer.ts', { otherTabsComposer: 'minimal' }, withTarget(both, storyTarget))
+	try {
+		const root = () => writer.query('[data-widget-part~="composer.root"]')
+		assert.equal(writer.query('[data-widget-part~="messages.composer-channels"]'), null)
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+		await writer.push('scoped', { session_full: withTarget(both, { instance: 'messages', channel: 'sanctum', label: 'Sanctum' }) })
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'minimal')
+		await writer.dispatch('sp-composer-field', 'input', { value: 'Wake it slowly.' })
+		await writer.click('[data-widget-part~="messages.composer-send"]')
+		assert.equal(writer.requested.filter((r) => r.kind === 'send').at(-1)?.params.channel, 'sanctum')
+		await writer.push('scoped', { session_full: withTarget(both, storyTarget) })
+		assert.equal(root()?.getAttribute('data-composer-skin'), 'classic')
+	} finally {
+		await writer.unmount()
+	}
+})
+
+test('the log tells the host the channel it shows — on mount, and on each change of lane, never twice in a row — and draws neither the composer nor the turn line (owner R8 2026-11-05)', { timeout: 120_000 }, async () => {
+	const both = channelDossier(['main', 'sanctum'])
+	const view = await mountCopy({}, both)
+	const shown = () => view.requested.filter((r) => r.kind === 'show-channel').map((r) => r.params)
+	try {
+		assert.deepEqual(view.refused, [])
+		assert.deepEqual(shown(), [{ channel: 'main' }])
+		// A dossier re-posted with nothing new changes no lane: nothing is said again.
+		await view.push('scoped', { session_full: { ...both } })
+		assert.deepEqual(shown(), [{ channel: 'main' }])
+		// The Sanctum's tab chosen.
+		await view.dispatch('[data-widget-part~="messages.channel-tabs"]', 'change', { value: 'sanctum' })
+		assert.deepEqual(shown(), [{ channel: 'main' }, { channel: 'sanctum' }])
+		// The same tab chosen again says nothing.
+		await view.dispatch('[data-widget-part~="messages.channel-tabs"]', 'change', { value: 'sanctum' })
+		assert.deepEqual(shown(), [{ channel: 'main' }, { channel: 'sanctum' }])
+		// The channels list moving which lane is current is a change too.
+		await view.push('scoped', { session_full: channelDossier(['main']) })
+		assert.deepEqual(shown(), [{ channel: 'main' }, { channel: 'sanctum' }, { channel: 'main' }])
+		assert.equal(view.query('[data-widget-part~="messages.composer"]') === null, true)
+		assert.equal(view.query('[data-widget-part~="messages.turn-line"]') === null, true)
+		assert.equal(view.query('[data-widget-part~="messages.compose-area"]') === null, true, 'no compose block until a selection')
+		assert.equal(view.query('[data-widget-part~="messages.root"]')?.hasAttribute('data-composer-skin'), false)
+		assert.equal(view.query('[data-widget-part~="messages.root"]')?.hasAttribute('data-composer-position'), false)
+		assert.equal(view.query('[data-widget-part~="messages.root"]')?.hasAttribute('data-show-messages'), false)
+	} finally {
+		await view.unmount()
 	}
 })
 
@@ -1141,7 +1293,7 @@ const seatDossier = (channels: string[], closed?: Record<string, { reason?: stri
 }
 
 test('a seatless guest who plays is offered a seat on the story: a name, Take a seat, or a persona', { timeout: 120_000 }, async () => {
-	const view = await mountCopy({}, seatDossier(['main']))
+	const view = await mountWidget('composer/composer.ts', {}, seatDossier(['main']))
 	try {
 		assert.deepEqual(view.refused, [])
 		const card = view.query('[data-widget-part~="messages.join"]')
@@ -1166,14 +1318,14 @@ test('a seatless guest who plays is offered a seat on the story: a name, Take a 
 
 test("the seat offer is the story's alone, and a closed composer's reason wins", { timeout: 120_000 }, async () => {
 	// A copy pinned to another lane (a Planner's, a Sanctum) never offers it.
-	const pinned = await mountCopy({ channel: 'sanctum' }, seatDossier(['sanctum']))
+	const pinned = await mountWidget('composer/composer.ts', {}, withTarget(seatDossier(['sanctum']), sanctumTarget))
 	try {
 		assert.equal(pinned.queryAll('[data-widget-part~="messages.join"]').length, 0)
 	} finally {
 		await pinned.unmount()
 	}
 	// The genre closed the story's composer (Dungeon Crawler's interview first).
-	const closed = await mountCopy({}, seatDossier(['main'], { main: { reason: 'Make your character on the Planner tab first.' } }))
+	const closed = await mountWidget('composer/composer.ts', {}, seatDossier(['main'], { main: { reason: 'Make your character on the Planner tab first.' } }))
 	try {
 		assert.equal(closed.queryAll('[data-widget-part~="messages.join"]').length, 0)
 	} finally {
@@ -1181,7 +1333,7 @@ test("the seat offer is the story's alone, and a closed composer's reason wins",
 	}
 })
 
-test('Line width is a declared setting, Column by default (★R1) — never a hidden cap', async () => {
+test('Line width is a declared setting, Full by default (2026-11-04 §0-G) — never a hidden cap', async () => {
 	const decl = CORE_WIDGETS.find((w) => w.id === 'messages')?.settings?.lineWidth as
 		| { type: string; label: string; of: string[]; default: string; members: Array<{ key: string; label: string; description?: string }> }
 		| undefined
@@ -1189,13 +1341,13 @@ test('Line width is a declared setting, Column by default (★R1) — never a hi
 	assert.equal(decl.type, 'enum')
 	assert.equal(decl.label, 'Line width')
 	assert.deepEqual(decl.of, ['column', 'full', 'comfortable'])
-	assert.equal(decl.default, 'column')
+	assert.equal(decl.default, 'full')
 	// Each value says what it does, in one line, under its label.
 	assert.deepEqual(decl.members.map((m) => m.label), ['Column', 'Full', 'Comfortable'])
 	for (const m of decl.members) assert.ok(m.description, `${m.key} says what it does`)
 })
 
-test('the widget root carries its Line width: Column unless the settings say Full or Comfortable', { timeout: 120_000 }, async () => {
+test('the widget root carries its Line width: Full unless the settings say Column or Comfortable', { timeout: 120_000 }, async () => {
 	const lineWidthOf = async (settings: Record<string, unknown>) => {
 		const view = await mountCopy(settings, dossier)
 		try {
@@ -1205,11 +1357,12 @@ test('the widget root carries its Line width: Column unless the settings say Ful
 			await view.unmount()
 		}
 	}
-	assert.equal(await lineWidthOf({}), 'column')
-	assert.equal(await lineWidthOf({ lineWidth: 'full' }), 'full')
+	assert.equal(await lineWidthOf({}), 'full')
+	// A stored Column stays Column.
+	assert.equal(await lineWidthOf({ lineWidth: 'column' }), 'column')
 	assert.equal(await lineWidthOf({ lineWidth: 'comfortable' }), 'comfortable')
 	// An unknown value reads as the default, never as no width at all.
-	assert.equal(await lineWidthOf({ lineWidth: 'narrow' }), 'column')
+	assert.equal(await lineWidthOf({ lineWidth: 'narrow' }), 'full')
 })
 
 /* ── Folio (PLAN-core-widgets §3.7) ─────────────────────────────────────── */
@@ -1327,10 +1480,9 @@ test('a Folio copy reads its lines as one block of prose, a rule wherever the sp
 			assert.equal(view.queryAll(part(gone)).length, 0, `${gone} is not drawn`)
 		// Each paragraph keeps its menu, at its edge.
 		assert.equal(view.queryAll(`${part('messages.folio-controls')} ${part('messages.message-menu')}`).length, 4)
-		// Scene markers off; the composer on the page line.
+		// Scene markers off (the composer's page line is the Composer's: see below).
 		const root = view.query(part('messages.root'))!
 		assert.equal(root.getAttribute('data-show-scene-markers'), 'false')
-		assert.equal(root.getAttribute('data-composer-skin'), 'quill')
 	} finally {
 		await view.unmount()
 	}
@@ -1482,7 +1634,6 @@ test('unset, Presentation follows the claimed channel; a stored value wins', { t
 				presentation: presentationOf(view),
 				rules: view.queryAll(part('messages.folio-rule')).length,
 				avatars: view.queryAll(part('messages.message-avatar')).length,
-				skin: view.query(part('messages.root'))?.getAttribute('data-composer-skin'),
 			}
 		} finally {
 			await view.unmount()
@@ -1493,29 +1644,54 @@ test('unset, Presentation follows the claimed channel; a stored value wins', { t
 		presentation: 'folio',
 		rules: 3,
 		avatars: 0,
-		skin: 'quill',
 	})
 	// A stored Rows wins over the channel.
 	assert.deepEqual(await drawn({ channel: 'manuscript', presentation: 'rows' }, { manuscript: 'folio' }), {
 		presentation: 'rows',
 		rules: 0,
 		avatars: 4,
-		skin: 'classic',
 	})
 	// The host says nothing of roles, or the channel is a conversation: Rows.
 	assert.equal((await drawn({ channel: 'manuscript' })).presentation, 'rows')
 	assert.equal((await drawn({ channel: 'manuscript' }, { manuscript: 'conversation' })).presentation, 'rows')
-	// A Folio copy that chose a composer skin keeps it.
-	assert.equal((await drawn({ channel: 'manuscript', composer: 'writer' }, { manuscript: 'folio' })).skin, 'writer')
 	// `auto` — the declared default, Follow the channel — is unset said out loud.
 	assert.equal((await drawn({ channel: 'manuscript', presentation: 'auto' }, { manuscript: 'folio' })).presentation, 'folio')
 	assert.equal((await drawn({ channel: 'manuscript', presentation: 'auto' }, { manuscript: 'conversation' })).presentation, 'rows')
 })
 
+test("the Composer's skin follows its target's Folio rule: the page line, unless the copy chose another skin", { timeout: 120_000 }, async () => {
+	const manuscript: Target = { instance: 'messages#manuscript', channel: 'manuscript', label: 'Manuscript' }
+	const drawn = async (
+		settings: Record<string, unknown>,
+		target: Target,
+		roles?: Record<string, 'conversation' | 'folio'>,
+	) => {
+		const view = await mountWidget('composer/composer.ts', settings, withTarget(manuscriptDossier(roles), target))
+		try {
+			assert.deepEqual(view.refused, [])
+			const root = view.query(part('composer.root'))!
+			return [root.getAttribute('data-composer-skin'), root.getAttribute('data-presentation')]
+		} finally {
+			await view.unmount()
+		}
+	}
+	// The target says Folio: the page line, and the presentation said on the root.
+	assert.deepEqual(await drawn({}, { ...manuscript, presentation: 'folio' }), ['quill', 'folio'])
+	// The target says Rows, whatever its channel is: the card.
+	assert.deepEqual(await drawn({}, { ...manuscript, presentation: 'rows' }, { manuscript: 'folio' }), ['classic', 'rows'])
+	// The target says nothing of it: its channel's role decides.
+	assert.deepEqual(await drawn({}, manuscript, { manuscript: 'folio' }), ['quill', null])
+	assert.deepEqual(await drawn({}, manuscript, { manuscript: 'conversation' }), ['classic', null])
+	assert.deepEqual(await drawn({}, manuscript), ['classic', null])
+	// A Folio copy that chose a composer skin keeps it.
+	assert.deepEqual(await drawn({ composer: 'writer' }, { ...manuscript, presentation: 'folio' }), ['writer', 'folio'])
+})
+
 /* ── the turn line (PLAN-core-widgets §3.16) ────────────────────────────── */
 
 /**
- * Between the log and the composer, ONE row: what the last run is doing on
+ * Beside the log and the composer (a widget of its own, owner R8 2026-11-05),
+ * ONE row: what the last run is doing on
  * the left (a status pill read off the newest reply while it streams or
  * after it failed, Review N changes when proposals wait — nothing at rest,
  * polish parity L1: *Wren replied · 6.2 s* and Inspect run are the newest
@@ -1539,12 +1715,19 @@ const turnDossier = (extra: Partial<ConversationDossierV1> = {}): ConversationDo
 	},
 	...extra,
 })
+/** The turn line's own widget by default; `entry` mounts the log or the composer on the same data. */
 const mountTurnLine = (
-	opts: { reply?: Record<string, unknown>; settings?: Record<string, unknown>; d?: ConversationDossierV1; admin?: boolean } = {},
+	opts: {
+		reply?: Record<string, unknown>
+		settings?: Record<string, unknown>
+		d?: ConversationDossierV1
+		admin?: boolean
+		entry?: 'turn-line' | 'messages' | 'composer'
+	} = {},
 ) =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/shared/messages/messages.ts',
+		entry: `components/shared/${opts.entry ?? 'turn-line'}/${opts.entry ?? 'turn-line'}.ts`,
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -1570,7 +1753,7 @@ test('the turn line is one row: at rest, who is next, and nothing about the run 
 		const next = line.querySelector(part('messages.turn-line-next'))
 		assert.ok(next, 'who is next')
 		assert.equal(run, null, 'a finished run says nothing here: its reply\'s menu says it')
-		assert.equal(view.query(part('messages.turn-line-status')), null)
+		assert.equal(view.query(part('messages.turn-line-status')) === null, true)
 		// The right half: who is typing (the page's view, placed once), then who is due.
 		assert.ok(next.querySelector(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
 		assert.equal(view.queryAll('sp-host-view[name="session-banners"]').length, 1)
@@ -1580,7 +1763,7 @@ test('the turn line is one row: at rest, who is next, and nothing about the run 
 		assert.ok(go.matches(part('messages.next-up-continue')))
 		assert.ok(next.querySelector(part('messages.turn-line-pick')))
 		// A member is offered no Inspect run, and nothing waits: no links.
-		assert.equal(view.query(part('messages.turn-line-links')), null)
+		assert.equal(view.query(part('messages.turn-line-links')) === null, true)
 		await view.click(go)
 		assert.deepEqual(view.requested.filter((r) => r.kind === 'fire-turn').at(-1)?.params, { channel: 'main' })
 	} finally {
@@ -1597,10 +1780,15 @@ test('while the reply streams the pill is live, and the one Stop is the composer
 		// 🚧 One Stop per run (2026-10-18, the 100-turn walk #28): the composer
 		// right under the line already offers it, so the line does not.
 		assert.ok(!view.query(part('messages.turn-line-stop')), 'no second Stop on the turn line')
-		await view.click(part('messages.composer-stop'))
-		assert.equal(view.invoked.at(-1)?.key, 'stop')
 	} finally {
 		await view.unmount()
+	}
+	const composer = await mountTurnLine({ entry: 'composer', reply: { isGenerating: true, content: '' } })
+	try {
+		await composer.click(part('messages.composer-stop'))
+		assert.equal(composer.invoked.at(-1)?.key, 'stop')
+	} finally {
+		await composer.unmount()
 	}
 })
 
@@ -1610,7 +1798,7 @@ test('after a failure the pill says why and the right half is Try again', { time
 		assert.equal(text(view, 'messages.turn-line-status'), 'Last run failed · connection timed out')
 		assert.equal(view.query(part('messages.turn-line-status'))?.getAttribute('data-turn-state'), 'failed')
 		assert.equal(text(view, 'messages.turn-line-retry'), 'Try again')
-		assert.equal(view.query(part('messages.turn-line-continue')), null)
+		assert.equal(view.query(part('messages.turn-line-continue')) === null, true)
 		await view.click(part('messages.turn-line-retry'))
 		const last = view.invoked.at(-1) as { key: string; messageId?: number }
 		assert.equal(last.key, 'retry')
@@ -1623,9 +1811,9 @@ test('after a failure the pill says why and the right half is Try again', { time
 test('Who is due next: Nothing hides the right half only', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine({ settings: { nextUp: 'hidden' } })
 	try {
-		assert.equal(view.query(part('messages.turn-line-next')), null)
-		assert.equal(view.query(part('messages.turn-line-continue')), null)
-		assert.equal(view.query(part('messages.turn-line-status')), null, 'nothing at rest on the left either')
+		assert.equal(view.query(part('messages.turn-line-next')) === null, true)
+		assert.equal(view.query(part('messages.turn-line-continue')) === null, true)
+		assert.equal(view.query(part('messages.turn-line-status')) === null, true, 'nothing at rest on the left either')
 		// Who is typing still has its place.
 		assert.ok(view.query(`${part('messages.turn-line-typing')} sp-host-view[name="session-banners"]`))
 	} finally {
@@ -1702,18 +1890,27 @@ test('Review N changes is the pill when proposals wait; an administrator inspect
 		// At rest the pill IS Review, a button opening its panel — one Review, none beside it.
 		assert.equal(text(view, 'messages.turn-line-status'), 'Review 2 changes')
 		assert.equal(view.query(part('messages.turn-line-status'))?.tagName.toLowerCase(), 'button')
-		assert.equal(view.query(part('messages.turn-line-review')), null)
-		// No Inspect run on the turn line; the reply's ⋮ menu has it.
-		assert.equal(view.query(part('messages.turn-line-inspect')), null)
-		const reply = view.queryAll(part('messages.message'))[1]!
+		assert.equal(view.query(part('messages.turn-line-review')) === null, true)
+		// No Inspect run on the turn line; the reply's ⋮ menu (the log's) has it.
+		assert.equal(view.query(part('messages.turn-line-inspect')) === null, true)
+	} finally {
+		await view.unmount()
+	}
+	const log = await mountTurnLine({
+		entry: 'messages',
+		admin: true,
+		d: turnDossier({ state: { ledgers: {}, pending: {}, waiting: [proposal(14), proposal(12)] } }),
+	})
+	try {
+		const reply = log.queryAll(part('messages.message'))[1]!
 		const inspect = [...reply.querySelectorAll(part('messages.message-option'))].find(
 			(b) => b.textContent?.trim() === 'Inspect run',
 		)!
 		assert.ok(inspect, 'Inspect run in the reply\'s menu')
-		await view.click(inspect)
-		assert.deepEqual(view.requested.filter((r) => r.kind === 'inspect-run').at(-1)?.params, { messageId: 2 })
+		await log.click(inspect)
+		assert.deepEqual(log.requested.filter((r) => r.kind === 'inspect-run').at(-1)?.params, { messageId: 2 })
 	} finally {
-		await view.unmount()
+		await log.unmount()
 	}
 })
 
@@ -1723,14 +1920,17 @@ test('one proposal is ONE Review on screen: none under each ledger, none beside 
 	const reviews = (view: TurnView) =>
 		view.queryAll('button').filter((b) => /^Review \d+ changes?$/.test(b.textContent?.replace(/\s+/g, ' ').trim() ?? ''))
 	const d = turnDossier({ state: { ledgers: { 1: ledger, 2: ledger }, pending: { 2: [proposal] }, waiting: [proposal] } })
+	// On screen are the log and the turn line: Review is said once between them.
+	const log = await mountTurnLine({ d, entry: 'messages' })
 	const replied = await mountTurnLine({ d })
 	try {
-		assert.equal(view_count(replied, 'messages.ledger'), 2, 'both ledgers drawn')
-		assert.equal(replied.query(part('messages.ledger-review')), null, 'no Review under a ledger')
-		assert.equal(reviews(replied).length, 1)
+		assert.equal(view_count(log, 'messages.ledger'), 2, 'both ledgers drawn')
+		assert.equal(log.query(part('messages.ledger-review')), null, 'no Review under a ledger')
+		assert.equal(reviews(log).length + reviews(replied).length, 1)
 		assert.equal(text(replied, 'messages.turn-line-status'), 'Review 1 change')
 	} finally {
 		await replied.unmount()
+		await log.unmount()
 	}
 	// No reply yet: the pill itself says it, and nothing repeats it beside.
 	const quiet = await mountTurnLine({ d, reply: { metadata: { isGreeting: true } } })
@@ -1747,7 +1947,7 @@ const view_count = (view: TurnView, name: string) => view.queryAll(part(name)).l
 test('a greeting is no run: a log with only one has no left half', { timeout: 120_000 }, async () => {
 	const view = await mountTurnLine({ reply: { metadata: { isGreeting: true } } })
 	try {
-		assert.equal(view.query(part('messages.turn-line-run')), null)
+		assert.equal(view.query(part('messages.turn-line-run')) === null, true)
 		assert.equal(text(view, 'messages.turn-line-text'), 'Wren is ready to continue')
 	} finally {
 		await view.unmount()
@@ -1755,18 +1955,22 @@ test('a greeting is no run: a log with only one has no left half', { timeout: 12
 })
 
 test('a run this view saw start and end is timed in its reply\'s menu, never on the turn line', { timeout: 120_000 }, async () => {
-	const view = await mountTurnLine()
+	const view = await mountTurnLine({ entry: 'messages' })
+	const turn = await mountTurnLine()
 	try {
-		assert.equal(view.query(part('messages.message-options-run')), null, 'no time it did not see')
-		await view.event({ kind: 'generation:start', messageId: 2 })
-		await view.event({ kind: 'generation:end', messageId: 2, aborted: false })
+		assert.equal(view.query(part('messages.message-options-run')) === null, true, 'no time it did not see')
+		for (const w of [view, turn]) {
+			await w.event({ kind: 'generation:start', messageId: 2 })
+			await w.event({ kind: 'generation:end', messageId: 2, aborted: false })
+		}
 		const reply = view.queryAll(part('messages.message'))[1]!
 		assert.match(
 			reply.querySelector(part('messages.message-options-run'))?.textContent?.trim() ?? '',
 			/^Replied · \d+(\.\d)? s$/,
 		)
-		assert.equal(view.query(part('messages.turn-line-status')), null)
+		assert.equal(turn.query(part('messages.turn-line-status')), null)
 	} finally {
+		await turn.unmount()
 		await view.unmount()
 	}
 })
@@ -1803,7 +2007,7 @@ test('a table line — a roll line — is drawn in no voice: no face, no name, n
 		assert.equal(lines[2]!.hasAttribute('data-msg-table-line'), false)
 		// Content alone: no face, no name, no controls cell.
 		for (const part of ['messages.message-avatar', 'messages.message-identity', 'messages.message-controls', 'messages.message-name'])
-			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`), null, part)
+			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`) === null, true, part)
 		assert.equal(roll.querySelector('sp-message-body')?.getAttribute('text'), ROLL)
 		assert.match(roll.getAttribute('aria-label') ?? '', /from the table: ⚄ Jandir/)
 		// The other lines keep their speakers.
@@ -1861,7 +2065,7 @@ test('interleave: the table channel’s rows are drawn under the line each belon
 		// Faceless, as a table line is drawn, and shown on the anchor's lane.
 		assert.equal(roll.hasAttribute('data-msg-table-line'), true)
 		for (const part of ['messages.message-avatar', 'messages.message-name'])
-			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`), null, part)
+			assert.equal(roll.querySelector(`[data-widget-part~="${part}"]`) === null, true, part)
 		assert.equal(roll.closest('[data-widget-part~="messages.message-row"]')?.hasAttribute('hidden'), false)
 		// The channel is drawn inline, never a lane to write on: no channel tabs.
 		assert.equal(view.queryAll('[data-widget-part~="messages.channel-tabs"]').length, 0)
@@ -2139,6 +2343,100 @@ test('one playing line: starting another stops the first (its player is re-keyed
 		// The caption follows the ⋮ player too.
 		await view.dispatch('[data-proof="menu-a"]', 'timeupdate', { currentTime: 0.5, duration: 3, paused: false })
 		assert.equal(parts(view, 'messages.spoken-caption')[0]?.textContent?.trim(), 'Hello there.')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('live setting switches never throw: the log\'s presentation; the composer\'s skin (the log always shows, R8)', { timeout: 120_000 }, async () => {
+	const mount = (entry: 'messages/messages.ts' | 'composer/composer.ts') =>
+		mountComponent({
+			root: CORE_CATALOG,
+			entry: `components/shared/${entry}`,
+			owner: 'core',
+			coreConversation: true,
+			timeoutMs: 60_000,
+			context: {
+				session: { id: 1, name: 'Proof' },
+				messages: [row(1, 'user', 'Hello there'), row(2, 'assistant', 'Hi! *waves*')],
+				settings: {},
+				actions: { message: { primary: [edit], overflow: [] } },
+				viewer: { userId: 1, isAdmin: false, isGuest: false },
+				scoped: { session_full: dossier },
+			},
+		})
+	const COMPOSER = '[data-widget-part~="messages.composer"]'
+	const view = await mount('messages/messages.ts')
+	try {
+		const check = (step: string) => {
+			assert.deepEqual(view.errors, [], `${step}: no error`)
+			assert.deepEqual(view.refused, [], `${step}: nothing refused`)
+			assert.equal(view.queryAll('sp-message-body').length, 2, `${step}: bodies`)
+			assert.equal(view.queryAll(COMPOSER).length, 0, `${step}: the composer is not the log's`)
+		}
+		check('mounted')
+		const steps: Array<[string, Record<string, unknown>]> = [
+			['folio', { presentation: 'folio' }],
+			['rows', { presentation: 'rows' }],
+			['folio, old composer keys', { presentation: 'folio', composer: 'quill', showMessages: false, showComposer: false }],
+			['everything default', {}],
+		]
+		for (const [step, settings] of steps) {
+			await view.push('settings', settings)
+			check(step)
+		}
+	} finally {
+		await view.unmount()
+	}
+	const composer = await mount('composer/composer.ts')
+	try {
+		const check = (step: string) => {
+			assert.deepEqual(composer.errors, [], `${step}: no error`)
+			assert.deepEqual(composer.refused, [], `${step}: nothing refused`)
+			assert.ok(composer.queryAll(COMPOSER).length > 0, `${step}: composer`)
+		}
+		check('mounted')
+		const steps: Array<[string, Record<string, unknown>]> = [
+			['quill', { composer: 'quill' }],
+			['classic', { composer: 'classic' }],
+			['writer, other tabs minimal', { composer: 'writer', otherTabsComposer: 'minimal' }],
+			['no Actions label', { showActions: false }],
+			['everything default', {}],
+		]
+		for (const [step, settings] of steps) {
+			await composer.push('settings', settings)
+			check(step)
+		}
+	} finally {
+		await composer.unmount()
+	}
+})
+
+test('a render that throws is said, fatally, and the boundary draws its sentence', { timeout: 120_000 }, async () => {
+	const view = await mountComponent({
+		root: CORE_CATALOG,
+		entry: 'components/shared/messages/messages.ts',
+		owner: 'core',
+		coreConversation: true,
+		timeoutMs: 60_000,
+		context: {
+			session: { id: 1, name: 'Proof' },
+			messages: [row(1, 'user', 'Hello there'), row(2, 'assistant', 'Hi! *waves*')],
+			settings: {},
+			actions: { message: { primary: [edit], overflow: [] } },
+			viewer: { userId: 1, isAdmin: false, isGuest: false },
+			scoped: { session_full: dossier },
+		},
+	})
+	try {
+		assert.equal(view.errors.length, 0)
+		await view.push('scoped', { session_full: { ...dossier, writes: null as unknown as typeof dossier.writes } })
+		assert.equal(view.errors.length, 1)
+		assert.equal(view.errors[0]!.fatal, true)
+		const alerts = view.queryAll('[role="alert"]')
+		assert.equal(alerts.length, 1)
+		assert.equal(alerts[0]!.textContent?.trim(), "This widget stopped and can't show anything.")
+		assert.deepEqual(view.refused, [])
 	} finally {
 		await view.unmount()
 	}

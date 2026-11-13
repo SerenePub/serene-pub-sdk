@@ -34,6 +34,10 @@ import {
 	type MapCanvasEdge,
 	type MapCanvasNode,
 } from '../core-catalog/components/shared/map-canvas/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 const t = (s: string) => s
 
@@ -410,4 +414,33 @@ describe('the map canvas layout', () => {
 		assert.equal(nextMapZoom(2, 'in'), 2)
 		assert.equal(nextMapZoom(0.5, 'out'), 0.5)
 	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('Places with no lorebook, or no places, draws nothing (owner R10)', { timeout: 120_000 }, async () => {
+	for (const answer of [
+		{ lorebookId: null, asOf: null, places: [], ways: [] },
+		{ lorebookId: 4, asOf: null, places: [], ways: [] },
+	]) {
+		const view = await mountEmpty('places', () => answer)
+		try {
+			await view.settle()
+			assert.ok(view.query('[data-widget-part~="places.root"]'), 'the root still mounts')
+			assert.equal(view.query('[data-widget-part~="places.empty"]') === null, true)
+			assert.equal((view.root.textContent ?? '').trim(), '')
+		} finally {
+			await view.unmount()
+		}
+	}
 })

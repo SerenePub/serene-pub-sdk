@@ -1,6 +1,6 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { genreUsesFindings, playsBestWith, playsBestWithLine, rulesetFit, rulesetProvides, ratingGroupOf, RULESET_RATINGS } from '@serene-pub/sdk'
+import { genre, genreUsesFindings, playsBestWith, playsBestWithLine, rulesetFit, rulesetProvides, ratingGroupOf, RULESET_RATINGS } from '@serene-pub/sdk'
 
 const diceRuleset: any = {
 	id: 'acme:ruleset/dice@1',
@@ -318,5 +318,88 @@ describe("🚧 core's rulesets against core's genres, read by tags and check met
 		// Read by tags: conditions from `troubles`, no casting; by methods: no chance.
 		const p = rulesetProvides(cat.wherewithalRuleset)
 		assert.deepEqual([p.conditions, p.casting, p.chance, p.tagged], [true, false, false, true])
+	})
+})
+
+// ── 🚧 Which time a ruleset counts on, against which time a genre keeps (sense-age, 2026-11-11) ──
+
+describe('🚧 rulesetFit weighs countsTime against keepsTime', () => {
+	const fn = (id: string, countsTime?: 'story' | 'real' | 'both') => ({
+		ref: `test.age:function/${id}@1`,
+		module: {
+			id: `test.age:function/${id}@1`,
+			name: 'Counts',
+			meaning: 'Counts a time.',
+			kind: 'time',
+			prose: 'Something moves as time passes.',
+			...(countsTime ? { countsTime } : {}),
+		},
+	})
+	const rulesetOf = (...functions: any[]): any => ({ id: 'test.age:ruleset/r@1', name: 'R', functions })
+	const storyRules = rulesetOf(fn('story', 'story'))
+	const nothingRules = rulesetOf(fn('none'))
+	const uses = { verbs: [] as string[] }
+	const STORY_SENTENCE_REAL = 'its rules count story time, and this genre runs on real time: they would never move'
+	const STORY_SENTENCE_NONE = 'its rules count story time, and this genre keeps no clock: they would never move'
+
+	test('story-counting rules on a real-time genre rate poor, with the sentence and timeUnmet (with and without uses)', () => {
+		for (const g of [{ keepsTime: 'real' as const }, { uses: uses as any, keepsTime: 'real' as const }]) {
+			const fit = rulesetFit(g, storyRules)
+			assert.equal(fit.rating, 'poor')
+			assert.equal(fit.group, ratingGroupOf('poor'))
+			assert.equal(fit.reason, STORY_SENTENCE_REAL)
+			assert.deepEqual(fit.timeUnmet, ['story'])
+		}
+		const none = rulesetFit({ keepsTime: 'none' }, storyRules)
+		assert.equal(none.reason, STORY_SENTENCE_NONE)
+		assert.deepEqual(none.timeUnmet, ['story'])
+	})
+
+	test('story-counting rules on a story genre are exactly what they were', () => {
+		const g = { uses: uses as any, keepsTime: 'story' as const }
+		assert.deepEqual(rulesetFit(g, storyRules), rulesetFit({ uses: g.uses }, storyRules))
+		assert.equal('timeUnmet' in rulesetFit(g, storyRules), false)
+	})
+
+	test('a ruleset whose functions declare nothing rates as it did, on every kept time', () => {
+		for (const keepsTime of ['story', 'real', 'none'] as const)
+			for (const base of [{}, { uses: uses as any }]) {
+				assert.deepEqual(rulesetFit({ ...base, keepsTime }, nothingRules), rulesetFit(base, nothingRules))
+				assert.deepEqual(rulesetFit({ ...base, keepsTime }, null), rulesetFit(base, null))
+			}
+	})
+
+	test('recurring counts as story each hour or day, and as nothing each round', () => {
+		const recurring = (every: string) => rulesetOf({ ref: 'core:function/recurring@1', options: { every } })
+		for (const every of ['hour', 'day']) assert.deepEqual(rulesetFit({ keepsTime: 'real' }, recurring(every)).timeUnmet, ['story'])
+		const round = rulesetFit({ keepsTime: 'real' }, recurring('round'))
+		assert.equal('timeUnmet' in round, false)
+		assert.deepEqual(round, rulesetFit({}, recurring('round')))
+	})
+
+	test('an incompatible rating stays, with its own reason, and carries timeUnmet', () => {
+		const g = { uses: { verbs: ['harm'], casting: true } as any, keepsTime: 'real' as const }
+		const without = rulesetFit({ uses: g.uses }, storyRules)
+		assert.equal(without.rating, 'incompatible')
+		const fit = rulesetFit(g, storyRules)
+		assert.equal(fit.rating, 'incompatible')
+		assert.equal(fit.reason, without.reason)
+		assert.deepEqual(fit.timeUnmet, ['story'])
+	})
+
+	test('real-counting rules on a story genre, or both on a real genre, say the real-time sentence', () => {
+		const fit = rulesetFit({ keepsTime: 'story' }, rulesetOf(fn('real', 'real')))
+		assert.equal(fit.rating, 'poor')
+		assert.equal(fit.reason, 'its rules count real time, and this genre keeps a story clock: they would move with the hours outside the story')
+		assert.deepEqual(fit.timeUnmet, ['real'])
+		const none = rulesetFit({ keepsTime: 'none' }, rulesetOf(fn('real', 'real')))
+		assert.equal(none.reason, 'its rules count real time, and this genre keeps no clock: they would move with the hours outside the story')
+		const both = rulesetFit({ keepsTime: 'real' }, rulesetOf(fn('both', 'both')))
+		assert.deepEqual(both.timeUnmet, ['story'])
+		assert.equal(both.reason, STORY_SENTENCE_REAL)
+	})
+
+	test('a genre refuses a keepsTime that is not story, real or none', () => {
+		assert.throws(() => genre('test.age:genre/bad', { name: { en: 'X' }, family: 'test', keepsTime: 'sometimes' as never } as never), /keepsTime/)
 	})
 })

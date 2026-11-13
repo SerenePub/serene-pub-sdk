@@ -29,7 +29,7 @@ export const moodDial = widget({
 	title: 'Mood dial',
 	component: 'mood-dial',
 	reads: ['actions', 'settings'],
-	scopes: ['session:state', 'session:state:write', 'persona'],
+	scopes: ['session:state', 'session:state:write'],
 	settings: { step: { type: 'integer', label: 'Step', default: 1 } },
 })
 

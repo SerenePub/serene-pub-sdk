@@ -32,7 +32,7 @@ const session = () => ({
 	sessionId: 7,
 	ownerUserId: 1,
 	guests: [],
-	cast: { sessionPersonas: [MIRA], characters: [] },
+	cast: { sessionPersonas: [MIRA], sessionCharacters: [] },
 	channelLanes: { [cat.PARLEY_CHANNEL]: { 'user:1': 'parley' } },
 	annex: { core: { [K.progress]: { shape: 'dungeon', built: true, heroes: { 'user:1': { name: 'Mira', made: true } } } } },
 })
@@ -83,7 +83,7 @@ test('R2-2: with the pieces held, the crib names each way out exactly before any
 		locations: { byId: Object.fromEntries(Object.entries(byPlace).map(([id, list]) => [id, { 'crawl-exits': list }])) },
 		configs: {},
 	}
-	const books = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: session(), state, story: [{ role: 'user', content: 'I look.', speaker: 'player-seat:4' }], places: PLACES, people: [], fallen: [], log: [] })
+	const books = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: session(), state, story: [{ role: 'user', content: 'I look.', speaker: 'player-seat:4' }], places: PLACES, people: [], log: [] })
 	assert.match(books.crib, /- The Sunken Gate \[location:50\]: Wet stone\. Ways out: Gate to The Hall \(open\); Door to The Vault \(locked; trapped: poison needle\)\./)
 	assert.match(books.crib, /- The Hall \[location:51\]: Pillars\. Ways out: Door to The Sunken Gate \(open\)\./)
 	// The Planner's first re-listing of the gate, as it stands: nothing to add.

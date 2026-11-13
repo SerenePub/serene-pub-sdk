@@ -198,7 +198,7 @@ that row mounts your session-view frame **without a session**, full screen. The 
 it gets no session sections and presses no session verbs. Your own plugin actions (`invoke('world.load')`) still work.
 From there it starts and opens ordinary sessions of your genres through Serene Pub's own screens:
 
-- `create-session { genre, fields, lorebookId? }` opens Serene Pub's start form with your genre's declared fields filled
+- `create-session { genre, fields, lorebookId?, persona? }` opens Serene Pub's start form with your genre's declared fields filled
   in. The person presses Start; when nothing is left to ask, the form is one confirm.
 - `open-sessions { genre? }` opens the Sessions list filtered to your genres; `open-session { sessionId }` opens one the
   person can open.
@@ -207,11 +207,33 @@ From there it starts and opens ordinary sessions of your genres through Serene P
 - `library-sessions` lists the person's sessions of your genres and `update-session` changes one; both arrive in a later
   update and are refused with "not available yet" until then.
 
+`persona: { name, description? }` (at most 80 and 2,000 characters) makes the start form offer that player as a new persona
+the person may keep or swap for one of their own; the card is created only when they press Start, and is theirs. A shape
+that says `castFromLorebook: { field: 'examples' }` seats the attached lorebook's own people, card or not, as the new session's
+characters when its `examples` switch field is on (never someone drawn with a persona card; for a lorebook that comes with a
+package, all of its people).
+
 Each needs the matching grant in `permissions.applet` (`sessions: { genres: [...] }` for the session requests). Pressing
 Sessions › New and choosing your genre opens the launcher; the plain start form stays one click away ("Use the start
 form"). An existing session of your genre opens straight into the session, never through the launcher. The same frame
-is mounted again inside each session, holding `ui` and `session`. Read which one it is from `init`: a mount without a
-session gets no `session` section.
+is mounted again inside each session, holding `ui`, `session` and `applet`. Read which one it is from `init`: a mount
+without a session gets no `session` section. `init`'s `mount` reads `applet` in both places (`widget` for a frame placed
+in a session, `page` for a plugin page; absent from older hosts); whether a session is mounted is still told by the
+`session` section. From M3 on, `init` also says `inSession`: `true` on a session page (the `session` section follows), `false` for the launcher, so a frame need not wait to see which section arrives first.
+
+Give the applet a card with `appletCard`. It is shown on the Apps view, on Home and on the launcher's loading screen.
+The poster is shown 16:9 and cropped (1280×720 is recommended); the logo is an optional small square mark over its lower-left;
+the blurb is one line of at most 160 characters. Both pictures live under your `assets` folder.
+
+```ts nocheck a fragment: the rest of the declaration is the one above
+defineExtension({
+  assets: { dir: 'assets' },
+  appletCard: { poster: 'assets/card/poster.png', logo: 'assets/card/logo.png', blurb: { en: '…' } },
+})
+```
+
+`serene-pub check` refuses a picture outside `assets` (`E_APPLET_CARD_OUTSIDE_ASSETS`), a picture that is not in the package
+(`E_APPLET_CARD_MISSING`), a longer blurb (`E_APPLET_CARD_BLURB_LONG`) and a card with no applet genre (`E_APPLET_CARD_WITHOUT_APPLET`).
 
 ## What a frame can never do
 

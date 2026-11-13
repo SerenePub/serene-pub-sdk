@@ -145,13 +145,23 @@ describe('serene-pub clone', () => {
 		const { code, err, out } = await cli(['clone', 'messages', '--as', 'question-log', '--dir', pkg])
 		assert.equal(code, 0)
 		assert.match(err, /view-only in the app/)
-		for (const kind of ['send', 'draft', 'fire-turn', 'summarize']) assert.match(err, new RegExp(`'${kind}'`))
-		assert.match(err, /<sp-host-view> is core's/)
+		for (const kind of ['summarize', 'load-older', 'show-channel']) assert.match(err, new RegExp(`'${kind}'`))
+		assert.doesNotMatch(err, /<sp-host-view>/)
 		assert.match(err, /autofocus is core's/)
 		assert.doesNotMatch(err, /'open-character'/, "a kind any widget asks is not listed as lost")
 		// Core's widget holds every scope; the copy declares the one its source reads.
 		assert.match(out, /scopes: \['session:full'\]/)
 		assert.match(out, /the copy imports: .*@serene-pub\/core-catalog/)
+	})
+
+	test("composer: allowed as a package copy, with a warning naming what a plugin's widget cannot do", async () => {
+		const pkg = await scratch('composer')
+		const { code, err } = await cli(['clone', 'composer', '--as', 'quick-note', '--dir', pkg])
+		assert.equal(code, 0)
+		assert.match(err, /view-only in the app/)
+		// 'fire-turn' is not in the warning: a plugin's widget may ask it, so it is not a lost kind.
+		for (const kind of ['send', 'draft']) assert.match(err, new RegExp(`'${kind}'`))
+		assert.match(err, /<sp-host-view> is core's/)
 	})
 
 	test('refuses to overwrite unless --force, and writes nothing when it refuses', async () => {
@@ -210,7 +220,11 @@ describe('serene-pub clone', () => {
 		for (const r of rows) assert.equal(r.sourceHash, (await coreSource(r.slug)).sourceHash)
 		const messages = rows.find((r) => r.slug === 'messages')!
 		assert.equal(messages.viewOnly, true)
-		assert.ok(messages.loses.some((l) => l.includes("'send'")))
+		assert.ok(messages.loses.some((l) => l.includes("'summarize'")))
+		const composer = rows.find((r) => r.slug === 'composer')!
+		assert.equal(composer.viewOnly, true)
+		assert.ok(composer.loses.some((l) => l.includes("'send'")))
+		assert.equal(rows.find((r) => r.slug === 'turn-line')!.viewOnly, true)
 		assert.equal(rows.find((r) => r.slug === 'stats')!.viewOnly, false)
 
 		const { code, out } = await cli(['clone', '--list'])

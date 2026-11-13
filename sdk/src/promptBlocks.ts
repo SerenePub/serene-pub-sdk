@@ -63,6 +63,10 @@ export interface PromptBlockEntry {
  * the one system-block value that changes on its own. Do not tidy it: every
  * entry's position is a byte in every prompt on every install that has
  * changed nothing.
+ *
+ * 🚧 `earlierScenes` sits after `history` and before the relationships, for
+ * comprehension: the compiled history, then the later scenes' summaries, then
+ * the lines.
  * @internal
  * @ruling B2 (2026-10-03)
  */
@@ -74,6 +78,7 @@ export const SHIPPED_PROMPT_BLOCK_IDS = [
 	'scenario',
 	'worldLore',
 	'history',
+	'earlierScenes',
 	'relationshipsPerspectives',
 	'relationshipsKnown',
 	'currentDate',
@@ -92,6 +97,7 @@ const BLOCK_LABELS: Record<ShippedPromptBlockId, string> = {
 	scenario: 'Scenario',
 	worldLore: 'World lore',
 	history: 'History',
+	earlierScenes: 'Earlier in the story',
 	relationshipsPerspectives: 'Relationships — their view',
 	relationshipsKnown: 'Relationships — how others see them',
 }
@@ -152,6 +158,18 @@ export const PROMPT_BLOCKS_DECL: FieldDecl = {
 }
 
 /**
+ * 🚧 The shipped ids as they were before `earlierScenes` was added. A stored
+ * list from before the block existed means "leave the template alone", so the
+ * shipped template renders the block in its place; a list a person reordered or
+ * switched a block off in is not "shipped" and does not get the block by itself
+ * (the docs say how to add it).
+ * @internal
+ */
+const PREVIOUS_SHIPPED_PROMPT_BLOCK_IDS: readonly string[] = SHIPPED_PROMPT_BLOCK_IDS.filter(
+	(id) => id !== 'earlierScenes',
+)
+
+/**
  * Is this value the shipped pack, entry for entry?
  *
  * The host's identity test, and the reason it is worth exporting rather than
@@ -164,12 +182,14 @@ export const PROMPT_BLOCKS_DECL: FieldDecl = {
  */
 export function isShippedPromptBlocks(value: unknown): boolean {
 	if (!Array.isArray(value)) return false
-	if (value.length !== SHIPPED_PROMPT_BLOCKS.length) return false
-	return value.every((entry, i) => {
-		const e = entry as PromptBlockEntry | null
-		if (!e || typeof e !== 'object') return false
-		return e.id === SHIPPED_PROMPT_BLOCKS[i]!.id && e.enabled !== false
-	})
+	const matches = (ids: readonly string[]) =>
+		value.length === ids.length &&
+		value.every((entry, i) => {
+			const e = entry as PromptBlockEntry | null
+			if (!e || typeof e !== 'object') return false
+			return e.id === ids[i] && e.enabled !== false
+		})
+	return matches(SHIPPED_PROMPT_BLOCK_IDS) || matches(PREVIOUS_SHIPPED_PROMPT_BLOCK_IDS)
 }
 
 /** What a resolution decided, and what the receipt says about it. @experimental */

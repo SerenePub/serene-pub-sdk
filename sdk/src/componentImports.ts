@@ -66,6 +66,8 @@ export const COMPONENT_IMPORTS = [
 	'@serene-pub/core-catalog/attendance',
 	// 🚧 2026-10-12 (DESIGN-image-generation §6.4): the backdrop widget's plain half — appended.
 	'@serene-pub/core-catalog/backdrop',
+	// 🚧 2026-11-06 (lay-R): the Runs widget's plain half — appended.
+	'@serene-pub/core-catalog/session-runs',
 ] as const
 
 /**

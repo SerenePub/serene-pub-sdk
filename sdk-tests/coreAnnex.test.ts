@@ -20,6 +20,10 @@ import {
 	type AnnexWidgetInputs,
 } from '../core-catalog/src/shared/ui/annex/index.js'
 import { CORE_COMPONENTS, CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 const OWNER: ViewerV1 = { userId: 10, isAdmin: false, isGuest: false }
 const GUEST: ViewerV1 = { userId: 11, isAdmin: false, isGuest: true }
@@ -369,4 +373,32 @@ describe('the view', () => {
 		assert.equal(first.canEdit, true)
 		assert.equal(first.identity, 'acme.dice:annex#score')
 	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('an Annex with no key says its cause (lay-B-fix, P1); with nothing written it draws no sentence (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('annex')
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="annex.root"]'), 'the root still mounts')
+		// No key set: a cause the reader can act on, not a placeholder.
+		assert.match(view.root.textContent ?? '', /Pick a key in settings/)
+		// A key set but nothing written: the widget at rest draws nothing.
+		await view.push('settings', { key: 'acme.notes' })
+		await view.settle()
+		assert.doesNotMatch(view.root.textContent ?? '', /Nothing written yet/)
+	} finally {
+		await view.unmount()
+	}
 })

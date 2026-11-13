@@ -13,3 +13,6 @@ playground/dist/
 # Build output: every package's dist/ is produced by `npm run build` (CI publishes
 # from a clean build), so none of it is tracked.
 /*/dist/
+
+# Local Claude Code rules (the app keeps its CLAUDE.md untracked too)
+/CLAUDE.md

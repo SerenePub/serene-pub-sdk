@@ -70,7 +70,7 @@ const dossier = (draft: string, write: number): ConversationDossierV1 => ({
 test('the palette tells the page of a newcomer once, and keeps its New chip', { timeout: 120_000 }, async () => {
 	const view = await mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/shared/messages/messages.ts',
+		entry: 'components/shared/composer/composer.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,

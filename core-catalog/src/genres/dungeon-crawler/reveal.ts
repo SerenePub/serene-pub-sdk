@@ -108,13 +108,13 @@ export const dungeonCrawlerRevealSpec = () => {
 					icon: 'scroll-text',
 					label: { en: 'Reveal the planning notes' },
 					description: {
-						en: "Shows everyone the Planner's secret notes, for good. It cannot be taken back.",
+						en: "Shows everyone the Planner's secret notes. Going Back past it hides them again.",
 					},
 					// 🚧 Asked first (P4-10, 2026-10-18): one press revealed them for good.
 					confirm: {
 						question: { en: 'Reveal the planning notes?' },
 						description: {
-							en: "Everyone at the table reads the Planner's secret notes from now on: the goal, what is hidden and what the world will do next. This can't be taken back.",
+							en: "Everyone at the table reads the Planner's secret notes from now on: the goal, what is hidden and what the world will do next. Going Back past this hides them again.",
 						},
 						confirmLabel: { en: 'Reveal' },
 					},

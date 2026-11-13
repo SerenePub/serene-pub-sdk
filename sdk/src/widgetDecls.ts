@@ -137,6 +137,18 @@ export function widget(d: WidgetInput): WidgetDecl {
 	problems.push(...widgetReadsFindings(d.reads, `widget '${d.id}' reads`))
 	if (d.maxInstances !== undefined && !(Number.isInteger(d.maxInstances) && d.maxInstances > 0))
 		problems.push(`widget '${d.id}' maxInstances: a positive whole number, or leave it out for no cap`)
+	if (d.panel !== undefined) {
+		const p = d.panel as unknown
+		if (typeof p !== 'object' || p === null || Array.isArray(p))
+			problems.push(`widget '${d.id}' panel: { height?, priority? } — an object`)
+		else {
+			const { height, priority } = p as { height?: unknown; priority?: unknown }
+			if (height !== undefined && height !== 'fit' && height !== 'fill')
+				problems.push(`widget '${d.id}' panel.height: 'fit' or 'fill'`)
+			if (priority !== undefined && priority !== 'high' && priority !== 'normal' && priority !== 'low')
+				problems.push(`widget '${d.id}' panel.priority: 'high', 'normal' or 'low'`)
+		}
+	}
 	const genres = d.genres?.map((g) => g?.id)
 	if (genres?.some((g) => typeof g !== 'string' || !g))
 		problems.push(`widget '${d.id}' genres: each is a genre value (or use('<id>')), never a bare string`)

@@ -16,14 +16,17 @@ const VI_IN = { id: 'core:ruleset/vis-itineris@1', rigour: 'scripts', settings: 
 
 const g = cat.dungeonCrawlerGenre
 
-test('no lorebook, no lore or scene writes, no scene summary', () => {
+test('no lorebook; lore and scene writes on, no time-action scene trigger, its own scene summary', () => {
 	assert.equal(g.id, 'core:genre/dungeon-crawler')
 	// Absent is "this genre has no lorebook": no picker, and one is refused.
 	assert.equal(g.shape?.lorebook, undefined)
 	// 2026-10-17: lore writes allowed — the world lives in the session's
-	// notes (the phantom lorebook), not a picked one. Scenes stay off.
-	assert.deepEqual(g.shape?.writes, { lore: true, scenes: false })
-	assert.equal(g.summarize, undefined)
+	// notes (the phantom lorebook), not a picked one. Scenes first (2026-11-10): scenes on.
+	// Moved 2026-11-11 (bench-L3, benched seats): the genre opts into `writes.seats` (owner ruling 2026-11-10, ★4). (was '{ lore: true, scenes: true }')
+	assert.deepEqual(g.shape?.writes, { lore: true, scenes: true, seats: true })
+	// ★D1-1 (owner to confirm): the story moves the clock every round, so no time-action trigger.
+	assert.equal((g.shape?.scenes as any)?.triggers?.timeAction, false)
+	assert.deepEqual(g.summarize, { scene: 'core:spec/dungeon-crawler-summarize-scene' })
 	assert.deepEqual(g.shape?.greeting, { enabled: false })
 	// A persona is only a seed: the new-session form starts with none (2026-10-15).
 	assert.deepEqual(g.shape?.personas, { min: 0, preselectDefault: false })
@@ -94,7 +97,8 @@ test('the crawl declares no sheet: the host keeps its tools, the place on each h
 	const of = (id: string) => kept.filter((d) => d.slot === id)
 	for (const id of [cat.DUNGEON_CRAWLER_SLOT_IDS.standingOrder, cat.DUNGEON_CRAWLER_SLOT_IDS.fate, cat.DUNGEON_CRAWLER_SLOT_IDS.difficulty, cat.DUNGEON_CRAWLER_SLOT_IDS.goalMode])
 		assert.deepEqual(of(id).map((d) => d.role), ['tool'], id)
-	assert.deepEqual(of(cat.DUNGEON_CRAWLER_SLOT_IDS.clock).map((d) => d.role), ['time'])
+	// 2026-11-10: the crawl's time is the session's story clock; its own slot declares no role.
+	assert.deepEqual(of(cat.DUNGEON_CRAWLER_SLOT_IDS.clock).map((d) => d.role), [])
 	// The party may split: where someone is, is theirs.
 	assert.deepEqual(of(cat.DUNGEON_CRAWLER_SLOT_IDS.location).map((d) => [d.role, d.owners]), [['place', ['cast']]])
 	// Health, level and class are the rules' — never the host's, never the genre's.
@@ -106,21 +110,22 @@ test('the crawl declares no sheet: the host keeps its tools, the place on each h
 
 const s0 = (layout: any) => layout.widgetSettings
 
-test('the layout: the Planner, Story and the planning notes as tabs of the middle, the Planner first; the journal on the right', () => {
+test('the layout: the Planner, Story, the planning notes and the characters as tabs of the middle, the Planner first; the journal and the table talk on the right', () => {
 	const layout = g.layouts![0]!.preset as any
 	// The Planner first: a session opens on its interview, on a phone too, where the sides are hidden.
-	assert.deepEqual(layout.panels.middle.primary.tabs, ['messages#parley', 'messages', 'annex#planning-notes'])
-	assert.equal(layout.panels.middle.primary.open, undefined, 'absent open is the first tab: the Planner')
-	assert.deepEqual(layout.panels.left, [])
-	assert.deepEqual(layout.panels.middle.above, [])
-	assert.deepEqual(layout.panels.middle.below, [])
+	assert.deepEqual(layout.panels.middle[0].tabs, ['messages#parley', 'messages', 'annex#planning-notes', 'stats#characters'])
+	assert.equal(layout.panels.middle[0].open, undefined, 'absent open is the first tab: the Planner')
+	// The turn line and the composer follow the tabs, each its own panel.
+	assert.deepEqual(layout.panels.middle.slice(1).map((p: any) => p.tabs), [['turn-line'], ['composer']])
+	assert.deepEqual(layout.panels.left.map((p: any) => p.tabs), [['stats', 'turn-order'], ['scene-portraits#character']])
+	assert.equal(layout.panels.version, 2)
 	assert.deepEqual(validateSessionLayout(layout).errors, [])
-	// 🚧 The Dice tab beside the Journal (2026-10-18): the whole table, no composer.
-	assert.deepEqual(layout.panels.right.map((p: any) => p.tabs), [['stats'], ['annex#journal'], ['messages#journal', 'messages#table']])
+	// 🚧 Table talk beside the Journal: the whole table, and no composer in the right zone.
+	assert.deepEqual(layout.panels.right.map((p: any) => p.tabs), [['annex#journal', 'messages#journal', 'messages#table'], ['scene-portraits#persona']])
+	assert.ok(!layout.panels.right.some((p: any) => p.tabs.includes('composer')), 'the right is a reading pane')
 	assert.deepEqual(s0(layout)['messages#table'], {
 		channel: 'table',
-		title: 'Dice',
-		showComposer: false,
+		title: 'Table talk',
 		emptyState: "The rolls and the table's notes show here as the story is played.",
 		// 🚧 The crawl's clock as the Story spells it (PLAN-dc-after-walk3 R1-6).
 		timeFormat: 'Day {day}, {hh}:{mm}',
@@ -134,7 +139,6 @@ test('the layout: the Planner, Story and the planning notes as tabs of the middl
 	assert.equal(s['messages#parley'].channelLane, 'mine')
 	assert.deepEqual(s['messages#journal'], {
 		channel: cat.TRAVELOGUE_CHANNEL,
-		showComposer: false,
 		emptyState: 'Your journal fills as the story unfolds.',
 		rowKinds: ['did', 'found', 'met', 'changed', 'lead'],
 	})
@@ -222,9 +226,9 @@ test('the genre is published: its pipelines, its preset, both envoys seated', ()
 			`${cat.SUMMARIZE_WORLD_SPEC_ID}#summarize-world`,
 			`${cat.SUMMARIZE_CHARACTER_SPEC_ID}#summarize-character`,
 			`${cat.SUMMARIZE_HISTORY_SPEC_ID}#summarize-history`,
-			`${cat.SUMMARIZE_SCENE_SPEC_ID}#summarize-scene`,
+			`core:spec/dungeon-crawler-summarize-scene#summarize-scene`,
 			// Moved 2026-10-25 (pr-6 B4): every summarize-scene spec contributes the close-out action; summaries register it with minAge 0.
-			`${cat.SUMMARIZE_SCENE_SPEC_ID}#close-out`,
+			`core:spec/dungeon-crawler-summarize-scene#close-out`,
 		],
 	)
 	assert.deepEqual(preset.defaults?.envoys, ['planner', 'narrator'])
@@ -238,11 +242,18 @@ test('create: the rules on the world, the annex keys, a greeted lane per person 
 	assert.ok(!doc.nodes.some((n: any) => n.kind === 'oracle'))
 	const rules = doc.nodes.find((n: any) => n.key === 'rules')
 	const slots = JSON.stringify(rules)
-	for (const id of ['core:slot/difficulty@1', 'core:slot/goal-mode@1', 'core:slot/crawl-time@1'])
+	for (const id of ['core:slot/difficulty@1', 'core:slot/goal-mode@1'])
 		assert.ok(slots.includes(id), id)
 	// Numbers and dice are the session's rigour (How strict), never the world's (walk 6, 2026-10-17).
 	assert.ok(!slots.includes('core:slot/stat-mode@1'))
-	assert.ok(slots.includes(cat.DUNGEON_CRAWLER_EPOCH))
+	// 2026-11-10: the clock is the session's story clock, set to 08:00 through core's outlet (not the crawl's own slot).
+	assert.ok(!slots.includes('core:slot/crawl-time@1'))
+	assert.ok(!slots.includes(cat.DUNGEON_CRAWLER_EPOCH))
+	const clock = doc.nodes.find((n: any) => n.definitionId === 'core:outlet/advance-story-clock')
+	assert.deepEqual(
+		[clock.config.to, clock.config.cause, clock.config.onRefusal],
+		[{ hour: 8, day: 'today' }, 'action', 'skip'],
+	)
 	const scripts = named(doc, 'scripts')
 	assert.deepEqual(scripts.lanes, [{ seedKey: cat.DUNGEON_CRAWLER_LANES_SCRIPT.seedKey }])
 	assert.deepEqual(named(doc, 'params').welcome, { envoy: 'planner' })

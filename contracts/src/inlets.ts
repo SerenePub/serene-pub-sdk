@@ -935,18 +935,20 @@ export const summarizeRequest = pin(
 // ── A card's own action (image generation I5, 2026-10-12) ──────────────────
 
 /**
- * 🚧 A person pressed an action on a **card** — the Characters view, not a
- * session: *Fill empty sprites* on the
- * Sprites tab, and *Generate portrait* on the Gallery tab (`count`, widened
- * in place 2026-10-12).
+ * 🚧 A person pressed an action on a **card** or a **cast member** — the
+ * Characters view or the member page, not a session: *Fill empty sprites* on
+ * the Sprites tab, and *Generate portrait* on the Gallery tab (`count`,
+ * widened in place 2026-10-12).
  *
  * ## No session
  *
  * A card action runs with no session in scope: nothing here is a session's,
  * no live row is filled, no session event is written. The host checks the
- * person may act on the card (its owner, or an admin) before the run starts,
- * and resolves the card ONCE, here — its likeness as text and as the
- * reference image — so no node re-reads the character for a setting.
+ * person may act on it before the run starts (a card: its owner, or an
+ * admin; a cast member: whoever may edit the member's lorebook), and
+ * resolves its likeness ONCE, here — as text and as the reference image (a
+ * member's from the member as the story reads it) — so no node re-reads the
+ * character for a setting. `main` is `{ characterId, castMemberId, fields }`.
  *
  * ## The form's answers
  *
@@ -968,12 +970,19 @@ export const cardAction = pin(
 		 */
 		entities: {
 			characterId: 'subject',
+			castMemberId: 'cast-member',
 		},
 		ports: {
 			out: {
 				main: S.json,
-				/** The card the action was pressed on. */
+				/** The card the action was pressed on; null when it was pressed on a cast member. */
 				characterId: S.rowIds,
+				/**
+				 * 🚧 The cast member the action was pressed on (host-filled); then
+				 * `characterId` is null and the action's writes go to the member's
+				 * own sprite sets / gallery.
+				 */
+				castMemberId: S.rowIds,
 				/** The card's likeness prompt — its look as a tag line; empty when unset. */
 				likeness: S.text,
 				/** The card's likeness negative; empty when unset. */

@@ -57,6 +57,13 @@ const messagesClone = () =>
 		if (b.errors.length) throw new Error(JSON.stringify(b.errors))
 		return b.code
 	}))
+let composerCloneCode: Promise<string> | undefined
+/** The composer clone: `composer.source.json` compiled in-app, as a clone is built before anyone edits it. */
+const composerClone = () =>
+	(composerCloneCode ??= compileCoreSource('composer').then((b) => {
+		if (b.errors.length) throw new Error(JSON.stringify(b.errors))
+		return b.code
+	}))
 /** …mounted in a plugin's box, holding the scope a messages clone declares. */
 const mountClone = async () =>
 	mountCode(await messagesClone(), componentParitySections(), { grants: ['session:full'], timeoutMs: 60_000 })
@@ -136,18 +143,18 @@ test('C31 mounts every listed module in a plugin’s box — clean modules pass,
 })
 
 /**
- * What C30's parity half cannot see: an UNEDITED clone of core's messages
- * widget renders and edits the same as core's copy, and still places the
- * page's own views (`sp-host-view`), which a plugin's box refuses. A clone
- * must drop them (the Twenty Questions Question log does); C31 says so.
+ * What C30's parity half cannot see: an UNEDITED clone of core's composer
+ * widget still places the page's own views (`sp-host-view`: run progress,
+ * session controls, actions…), which a plugin's box refuses. A clone must
+ * drop them; C31 says so. (Messages places none any more, so its clone passes.)
  */
-test('C31 refuses an unedited clone of core’s messages widget in a plugin’s box — it places core’s host views', { timeout: 240_000 }, async () => {
+test('C31 refuses an unedited clone of core’s composer widget in a plugin’s box — it places core’s host views', { timeout: 240_000 }, async () => {
 	const [c31] = await conformPackage(
-		componentHost([{ id: 'question-log', code: await messagesClone(), grants: ['session:full'] }]),
+		componentHost([{ id: 'quick-note', code: await composerClone(), grants: ['session:full'] }]),
 		['C31'],
 	)
 	assert.equal(c31!.pass, false)
-	assert.match(c31!.error!, /component 'question-log': the page refused what it placed — <sp-host-view> is core's/)
+	assert.match(c31!.error!, /component 'quick-note': the page refused what it placed — <sp-host-view> is core's/)
 })
 
 test('C31 fails on a module the page refuses, and on one that raises an error, naming each', { timeout: 120_000 }, async () => {

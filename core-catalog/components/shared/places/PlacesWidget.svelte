@@ -151,9 +151,7 @@
 			{t("Who stands where isn't shown: this widget has not been granted the session's stats. An administrator can grant it in the extension's permissions.")}
 		</p>
 	{/if}
-	{#if view.state !== "ready"}
-		<p data-widget-part="places.empty empty" role="status">{view.empty}</p>
-	{:else}
+	{#if view.state === "ready"}
 		<div data-widget-part="places.toolbar toolbar">
 			<span data-widget-part="places.headline">{view.headline}</span>
 			<button
@@ -237,17 +235,13 @@
 							<sp-icon name="x" size="14"></sp-icon>
 						</button>
 					</header>
-					{#if settings.showWays}
+					{#if settings.showWays && detail.ways.length}
 						<h4 data-widget-part="places.detail-heading label">{t("Ways")}</h4>
-						{#if detail.ways.length}
-							<ul data-widget-part="places.detail-ways list">
-								{#each detail.ways as says, i (i)}
-									<li>{says}</li>
-								{/each}
-							</ul>
-						{:else}
-							<p data-widget-part="places.detail-none empty">{t("No way out of here yet.")}</p>
-						{/if}
+						<ul data-widget-part="places.detail-ways list">
+							{#each detail.ways as says, i (i)}
+								<li>{says}</li>
+							{/each}
+						</ul>
 					{/if}
 					{#if detail.linked.length}
 						<h4 data-widget-part="places.detail-heading label">{t("Linked")}</h4>
@@ -286,5 +280,8 @@
 				</section>
 			{/if}
 		{/if}
+	{:else if view.state === "filtered"}
+		<!-- The categories the reader picked in settings match none of the book's places: a cause they can act on. -->
+		<p data-widget-part="places.empty empty" role="status">{view.empty}</p>
 	{/if}
 </div>

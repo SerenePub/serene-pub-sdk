@@ -8,6 +8,13 @@
 /** @experimental */
 export const DUNGEON_CRAWLER_GENRE_ID = 'core:genre/dungeon-crawler'
 
+/**
+ * ⏳ The crawl's summarize-scene (live scenes §13), kept here so the genre can
+ * name it without importing the spec.
+ * @experimental
+ */
+export const DUNGEON_CRAWLER_SUMMARIZE_SCENE_SPEC_ID = 'core:spec/dungeon-crawler-summarize-scene'
+
 /* ── Channels ───────────────────────────────────────────────────────────── */
 
 /** The story — `main`, labelled **Story**. @experimental */
@@ -54,11 +61,12 @@ export const DUNGEON_CRAWLER_ANNEX_KEYS = Object.freeze({
 	/**
 	 * 🚧 The crawl's own bookkeeping (2026-10-16, rulesets W3-B): the interview's
 	 * heroes, the adventure's shape, the goal and where it stands, the owed
-	 * arrivals, ⏳ who is out of the round (`fates`, the round script's mirror
+	 * arrivals, the fallen (`fallen`, never spent: a death writes no lore since
+	 * 2026-11-10 — `death.ts`), ⏳ who is out of the round (`fates`, the round script's mirror
 	 * until its select point is handed the state — `roundScript.ts`), whether
 	 * the world is built or being built, whether it has ended, and the last
-	 * telling a swipe re-tells. Pipelines only. **Not the world**: places, people and
-	 * the fallen are entries of the session's own lorebook (PLAN-rulesets
+	 * telling a swipe re-tells. Pipelines only. **Not the world**: places and
+	 * people are entries of the session's own lorebook (PLAN-rulesets
 	 * §26), and stats are state rows.
 	 */
 	progress: 'dungeon-crawler-progress',

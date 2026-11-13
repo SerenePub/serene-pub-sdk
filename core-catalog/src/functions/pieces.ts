@@ -95,6 +95,7 @@ export const obligationFunction = defineFunction("core:function/obligation@1", {
 	name: { en: "An obligation with a deadline" },
 	meaning: { en: "Something owed by a certain time — a debt, a promise, a delivery — comes due when the time passes." },
 	kind: "pieces",
+	countsTime: "story",
 	bindings: { owed: { to: "entry-type", label: { en: "Owed" } } },
 	adds: { events: [{ id: CAME_DUE, name: { en: "An obligation came due" }, description: { en: "The story clock passed what an obligation was owed by." } }] },
 	prose: "{{owed}} are owed by a certain time; when the time passes they have come due, and that has consequences.",

@@ -149,7 +149,7 @@ test("core's Lore entries pages the book through 'session-entries' and draws wha
 		)
 		// The markup carries parts, never a class (P3d): the sheet draws them.
 		assert.equal(view.query('sp-combobox')?.getAttribute('data-widget-part'), 'lore-entries.sort-field')
-		assert.equal(view.query('[class]:not(sp-icon):not(sp-combobox):not(sp-option)'), null)
+		assert.equal(view.query('[class]:not(sp-icon):not(sp-combobox):not(sp-option)') === null, true)
 		// The sort, by the combobox's own `change`.
 		await view.dispatch('sp-combobox', 'change', { value: 'name' })
 		await view.settle()
@@ -358,15 +358,16 @@ test('only the newest ask is shown: an older answer that lands last is dropped (
 	}
 })
 
-test('the three answers that are not a list: owner only, no lorebook, and a read the page refused', { timeout: 120_000 }, async () => {
-	const answers: Array<[unknown, RegExp]> = [
+test('the three answers that are not a list: owner only, no lorebook (draws nothing), and a read the page refused', { timeout: 120_000 }, async () => {
+	const answers: Array<[unknown, RegExp | null]> = [
 		[{ lorebookId: 7, ownerOnly: true, rows: [], total: 0, offset: 0 }, /These entries are the lorebook owner's to manage\./],
-		[{ lorebookId: null, ownerOnly: false, rows: [], total: 0, offset: 0 }, /This session reads no lorebook\./],
+		[{ lorebookId: null, ownerOnly: false, rows: [], total: 0, offset: 0 }, null],
 	]
 	for (const [answer, says] of answers) {
 		const { view } = await mountBook({ requests: () => answer })
 		try {
-			assert.match(view.root.textContent ?? '', says)
+			if (says) assert.match(view.root.textContent ?? '', says)
+			else assert.equal((view.root.textContent ?? '').trim(), '', 'no lorebook: nothing is drawn')
 			assert.equal(view.query('input') === null, true)
 		} finally {
 			await view.unmount()
@@ -383,13 +384,15 @@ test('the three answers that are not a list: owner only, no lorebook, and a read
 	} finally {
 		await view.unmount()
 	}
-	// An empty book, and an empty search, say different things.
+	// An empty book with no search says nothing (owner R10); a search or filter that matches nothing says "Nothing matches.".
 	const empty = await mountBook({ requests: () => ({ lorebookId: 7, ownerOnly: false, rows: [], total: 0, offset: 0 }) })
 	try {
-		assert.match(empty.view.root.textContent ?? '', /This lorebook has no entries yet\./)
+		assert.doesNotMatch(empty.view.root.textContent ?? '', /no entries yet/)
+		assert.equal(empty.view.query('[data-widget-part~="lore-entries.empty"]') === null, true)
 		await empty.view.check('input[type="radio"][value="off"]')
 		await empty.view.settle()
 		assert.match(empty.view.root.textContent ?? '', /Nothing matches\./)
+		assert.equal(empty.view.query('[data-widget-part~="lore-entries.empty"]') === null, false)
 	} finally {
 		await empty.view.unmount()
 	}

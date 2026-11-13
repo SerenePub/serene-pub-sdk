@@ -9,7 +9,7 @@
  * @ruling 04 §5a, F3, F6
  */
 
-import type { BuiltSpec, BuiltNode, BuiltSpecWithActions } from './builder.js'
+import type { BuiltSpec, BuiltNode, BuiltClause, BuiltSpecWithActions } from './builder.js'
 import { collectDataRefs, envoyConfigKey, isEnvoyConfigKey, isSlotRef, type SlotRef } from './refs.js'
 import { getDefinition } from './descriptors.js'
 import { getGenre } from './genres.js'
@@ -251,6 +251,33 @@ function withActionHandles(doc: SpecDocument): CompiledSpec {
 	return doc as CompiledSpec
 }
 
+/**
+ * A clause's chains: the member-holding ones in position order (the position
+ * of each chain's first member, node or nested clause), then the member-less
+ * ones sorted by name (code-unit order). The app's store rebuilds chains from
+ * the members that sit in them and from the stored `branches` keys, and jsonb
+ * does not keep key order while a document's hash keeps array order, so the
+ * compiler writes the order the store can rebuild. The app's store `chainsOf`
+ * follows the same rule.
+ */
+function orderedChains(
+	clause: BuiltClause,
+	nodes: ReadonlyArray<BuiltSpec['nodes'][number]>,
+	clauses: ReadonlyArray<BuiltClause>,
+): string[] {
+	const first = new Map<string, number>()
+	for (const m of [...nodes, ...clauses]) {
+		if (m.clauseId !== clause.id || m.clauseChain === undefined) continue
+		const at = first.get(m.clauseChain)
+		if (at === undefined || m.position < at) first.set(m.clauseChain, m.position)
+	}
+	const held = clause.chains
+		.filter((c) => first.has(c))
+		.sort((a, b) => first.get(a)! - first.get(b)!)
+	const empty = clause.chains.filter((c) => !first.has(c)).sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+	return [...held, ...empty]
+}
+
 function compileBuilt(built: BuiltSpec): SpecDocument {
 	const nodes: DocNode[] = built.nodes.map((n) => ({
 		key: n.key,
@@ -406,7 +433,7 @@ function compileBuilt(built: BuiltSpec): SpecDocument {
 		presets: built.presets,
 		nodes,
 		edges,
-		clauses: built.clauses,
+		clauses: built.clauses.map((c) => ({ ...c, chains: orderedChains(c, built.nodes, built.clauses) })),
 	}
 }
 
@@ -433,6 +460,25 @@ export function resolveDownstreamOracle(built: BuiltSpec, fromKey: string): stri
 		)
 	}
 	return spineOracles[0]!.key
+}
+
+/**
+ * 🚧 The param values a document declares for one node: the node's own `config.params`, with
+ * every **default** preset's `params` row for it laid over them, in order. What the packager's
+ * `W_WRITES_HISTORY` and conformance C39 read a lore write's `entryType` from — one copy for
+ * both. Pure.
+ * @experimental
+ */
+export function declaredNodeParams(doc: Pick<SpecDocument, 'nodes' | 'presets'>, nodeKey: string): Record<string, unknown> {
+	const out: Record<string, unknown> = {}
+	const own = doc.nodes.find((n) => n.key === nodeKey)?.config?.params
+	if (own && typeof own === 'object') Object.assign(out, own)
+	for (const p of doc.presets ?? [])
+		if (p.default)
+			for (const v of p.values)
+				if (v.nodeKey === nodeKey && v.slot === 'params' && v.value && typeof v.value === 'object')
+					Object.assign(out, v.value)
+	return out
 }
 
 /**

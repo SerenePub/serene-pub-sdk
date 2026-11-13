@@ -101,6 +101,16 @@
 		return out
 	})
 	const shownFaces = $derived(faces.slice(0, 4))
+	/** 🚧 Why it began by itself, and what keeps its cast up to date (S-4); absent reads as nothing. */
+	const openedBecause = $derived((scene as { openedBecause?: string }).openedBecause)
+	const castCause = $derived((scene as { castCause?: string }).castCause)
+	const factsTitle = $derived.by(() => {
+		const who = faces.length ? `${facts} · ${faces.map((f) => f.name).join(", ")}` : null
+		return [who, castCause].filter(Boolean).join("\n") || undefined
+	})
+	const facesTitle = $derived(
+		`Who speaks in it: ${faces.map((f) => f.name).join(", ")}${castCause ? `\n${castCause}` : ""}`
+	)
 
 	let menuOpen = $state(false)
 	let renaming = $state(false)
@@ -233,7 +243,7 @@
 		     keeps the row to swatch · name · count · ⋯ and draws no faces. -->
 		<span
 			data-widget-part="messages.scene-facts"
-			title={faces.length ? `${facts} · ${faces.map((f) => f.name).join(", ")}` : undefined}
+			title={factsTitle}
 		>{facts}</span>
 		{#if summarizing}
 			<span data-widget-part="messages.scene-summary" role="status">Summarizing…</span>
@@ -269,7 +279,7 @@
 			</span>
 		{/if}
 		{#if shownFaces.length}
-			<span data-widget-part="messages.scene-faces" title="Who speaks in it: {faces.map((f) => f.name).join(', ')}">
+			<span data-widget-part="messages.scene-faces" title={facesTitle}>
 				{#each shownFaces as f (f.key)}
 					{#if f.face}
 						<img data-widget-part="messages.scene-face" src={f.face} alt={f.name} />
@@ -417,6 +427,12 @@
 					</div>
 				</sp-popover>
 			</span>
+		{/if}
+		{#if openedBecause}
+			<span
+				data-widget-part="messages.scene-cause"
+				title="This scene began by itself because {openedBecause}. Set How scenes begin to Suggested or Manual to choose each scene yourself."
+			>Began by itself: {openedBecause}</span>
 		{/if}
 	</div>
 	{#if refusal}

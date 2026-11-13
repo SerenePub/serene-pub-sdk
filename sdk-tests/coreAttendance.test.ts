@@ -23,6 +23,10 @@ import {
 	readAttendanceSettings,
 } from '../core-catalog/src/shared/ui/attendance/index.js'
 import { CORE_COMPONENTS, CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 const en = (s: string) => s
 const NOW = 1_800_000_000_000
@@ -229,4 +233,29 @@ describe('the view', () => {
 		// A clock a little behind the server's never says "ago" of the future.
 		assert.equal(attendanceLastHere(NOW + 5_000, NOW, en), 'Last here just now')
 	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('an empty Attendance draws nothing (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('attendance')
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="attendance.root"]'), 'the root still mounts')
+		assert.equal(view.query('[data-widget-part~="attendance.empty"]') === null, true)
+		assert.doesNotMatch(view.root.textContent ?? '', /Nobody else is here/)
+		assert.equal((view.root.textContent ?? '').trim(), '')
+	} finally {
+		await view.unmount()
+	}
 })

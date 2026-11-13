@@ -69,6 +69,7 @@ import {
 	type WidgetSectionScope,
 	type WidgetWriteGrant,
 	type AppletGrant,
+	type FrontEndMount,
 } from './widgets.js'
 
 /**
@@ -208,6 +209,16 @@ export type HostFrameMessage =
 			assetsBase?: string
 			/** 🚧 M0 (L1): whether the viewer has this session in full screen as the frame boots; later changes arrive as the `fullscreen` event. Absent from hosts that predate it. */
 			fullscreen?: boolean
+			/** 🚧 m3-core: what this frame is mounted as — `applet` (the launcher, and an applet genre's session view), `widget` (a frame placed in a session), `page` (a plugin page). Absent from hosts that predate it. */
+			mount?: FrontEndMount
+			/**
+			 * 🚧 m3: whether a session is mounted around this frame — `true` on a session page (the
+			 * `session` section follows), `false` for an applet's launcher (no session ever comes),
+			 * absent from hosts that predate it and from mounts that are neither. The same `applet`
+			 * mount serves both places, so this is how a frame tells the launcher from the game
+			 * without waiting to see which section arrives first.
+			 */
+			inSession?: boolean
 	  }
 	| { t: 'session'; session: SessionV1 }
 	| { t: 'messages'; messages: MessageV1[] }

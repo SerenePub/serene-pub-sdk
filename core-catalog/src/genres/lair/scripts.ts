@@ -72,22 +72,24 @@ function outcomeLine(b) {
 }
 // A name compared as a person reads it: case, spacing and a leading article aside.
 function nameKey(x) { return text(x).toLowerCase().replace(/^(the|a|an)\\s+/, "").replace(/\\s+/g, " "); }
-// Everyone seated and switched on: { ref, name, plays } — a persona seat or a
-// card-less seat is somebody a person plays.
+// A seat's participant ref: the host's, else ⏳ today's card form.
+function seatRefOr(s, today) { return typeof s.ref === "string" && s.ref ? s.ref : today; }
+// Everyone seated and switched on: { ref, name, plays, castMemberId } — a
+// persona seat or a card-less seat is somebody a person plays.
 function peopleOf(doc) {
 	var cast = own(own(doc).cast), out = [];
 	var cs = list(cast.sessionCharacters);
 	for (var i = 0; i < cs.length; i++) {
 		var s = own(cs[i]), ch = own(s.character);
 		if (s.enabled === false || s.removedAt || ch.id === undefined) continue;
-		out.push({ ref: "character:" + ch.id, name: text(ch.name), nick: text(ch.nickname), plays: false, at: num(s.position, out.length) });
+		out.push({ ref: seatRefOr(s, "character:" + ch.id), name: text(ch.name), nick: text(ch.nickname), plays: false, at: num(s.position, out.length), castMemberId: s.castMemberId });
 	}
 	var ps = list(cast.sessionPersonas);
 	for (var j = 0; j < ps.length; j++) {
 		var p = own(ps[j]), pe = p.persona ? own(p.persona) : null;
 		if (p.enabled === false || p.removedAt) continue;
-		if (pe && pe.id !== undefined) out.push({ ref: "character:" + pe.id, name: text(pe.name), nick: "", plays: true, seat: "persona:" + pe.id });
-		else if (p.seatId !== undefined) out.push({ ref: "player-seat:" + p.seatId, name: text(p.seatName) || "a player", nick: "", plays: true, seat: "player-seat:" + p.seatId });
+		if (pe && pe.id !== undefined) out.push({ ref: seatRefOr(p, "character:" + pe.id), name: text(pe.name), nick: "", plays: true, seat: "persona:" + pe.id, castMemberId: p.castMemberId });
+		else if (p.seatId !== undefined) out.push({ ref: seatRefOr(p, "player-seat:" + p.seatId), name: text(p.seatName) || "a player", nick: "", plays: true, seat: "player-seat:" + p.seatId, castMemberId: p.castMemberId });
 	}
 	return out;
 }
@@ -331,7 +333,7 @@ for (var i = 0; i < outs.length; i++) {
 		if (text(c.five)) block.five = text(c.five);
 		for (var e = 0; e < ex.length; e++) { var x = own(ex[e]); if (text(x.target) === roller + "." + text(c.selector) && text(x.text)) { block.explain = text(x.text); break; } }
 	}
-	if (!block.by && /^(character|player-seat):\\d+$/.test(roller)) block.by = roller;
+	if (!block.by && /^(character|seated-member|player-seat):\\d+$/.test(roller)) block.by = roller;
 	blocks.push(block);
 	var who = personRef(people, roller);
 	lines.push((who ? who.name + " — " : "") + outcomeLine(block));

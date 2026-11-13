@@ -1196,6 +1196,12 @@ const ASSEMBLE_TEMPLATE_SCOPE = {
 		description: 'Lore bound to a cast member that fit the budget, laid out — only what this speaker may see.',
 	},
 	history: { type: 'string', optional: true, description: 'History entries that fit the budget, laid out.' },
+	earlierScenes: {
+		type: 'string',
+		optional: true,
+		description:
+			'The summaries of earlier scenes whose lines are no longer in the prompt, laid out.',
+	},
 	currentDate: { type: 'string', optional: true, description: 'The story’s current date, laid out.' },
 	sessionMessages: {
 		type: 'list',
@@ -1331,6 +1337,7 @@ export const assemble = pin(
 					worldLore: 'core:var/world-lore@1',
 					characterLore: 'core:var/character-lore@1',
 					history: 'core:var/history@1',
+					earlierScenes: 'core:var/earlier-scenes@1',
 					currentDate: 'core:var/current-date@1',
 				},
 				/**
@@ -1484,6 +1491,15 @@ export const assemble = pin(
 				 * records.
 				 */
 				decisions: S.decisions,
+				/**
+				 * 🚧 Optional: the summaries of earlier scenes, fed only by
+				 * `core:query/earlier-scenes@1`'s `main`. Unwired, the block is
+				 * empty and the prompt is what it was. The binding renders into
+				 * `earlierScenes` only the scenes whose first line is older than
+				 * the first line the prompt keeps, newest first under
+				 * `maxTokens`, and its transcript fit counts the block.
+				 */
+				earlierScenes: S.json,
 				/**
 				 * The finished chat lines, from `core:task/process-messages@1`.
 				 *
@@ -2891,7 +2907,8 @@ export const turnNarrator = pin(
  *    genre's narrate action; a plain narrator reply when unset), unless a
  *    narration already landed since the person's line.
  *
- * `modes` is `{ 'side-cast': …, 'narrator-interjections': … }` — `full` or
+ * `modes` is `{ 'side-cast': …, 'narrator-interjections': … }` (plus `narrator-every`,
+ * 1–3: the narrator's cadence in rounds; absent = every round) — `full` or
  * `off` each, the genre's voices settings as the turn-order spec reads them
  * (`core:script/unprompted-modes`, 2026-10-20; was the retired background
  * tasks' modes); a key absent or `off` adds nothing, so the order passes
@@ -2974,14 +2991,16 @@ export const turnPool = pin(
 							{
 								key: 'all',
 								label: { en: 'All' },
-								description: { en: 'Ones switched off in the cast too.' },
+								description: {
+									en: 'The same as Active today, kept so presets that name it still load. A benched character never takes a turn.',
+								},
 							},
 							{ key: 'none', label: { en: 'None' } },
 						],
 						default: 'active',
 						label: { en: 'Characters' },
 						description: {
-							en: "Which of the session's characters may take a turn. 'All' admits ones switched off in the cast; a removed character never is.",
+							en: "Which of the session's characters may take a turn. A benched or removed character never does, whichever is picked; 'All' is the same as 'Active'.",
 						},
 					},
 					personas: {
@@ -4844,12 +4863,12 @@ export const picturePlacement = pin(
  * and whether it moves at all (2026-10-13, PROPOSAL-live-scenes §6).
  *
  * Two uses, one shape. *Time passes…* hands it the press's collected
- * `step` (`input.clockStep`), which wins. Chat's reply hands it nothing and
- * reads its own parameters — **By** (0, the default, is off) and **Unit** —
- * exposed as the session setting *Each reply advances the clock by …*. Either
- * way the step publishes `moves` (true when `by` is a whole number other than
- * zero), and the *Advance story clock* outlet sits behind a junction on it,
- * so a step of nothing is never written and never refused. Pure: no read, no
+ * `step` (`input.clockStep`), which wins. The round tick and the Lair's
+ * keeper hand it the round worth's `step` (`core:query/round-worth@1`). Its
+ * own **By** (0, the default, is off) and **Unit** answer when nothing is
+ * handed. Either way the step publishes `moves` (true when `by` is a whole
+ * number other than zero), and the *Advance story clock* outlet sits behind a
+ * junction on it, so a step of nothing is never written and never refused. Pure: no read, no
  * model, never the clock itself.
  * @experimental
  */
@@ -4894,9 +4913,10 @@ export const clockStep = pin(
 				/** A collected step, `{ by, unit }` — wins over the parameters when it reads. */
 				step: S.json,
 				/**
-				 * When truthy, the clock does not move (`moves` false). Chat's
-				 * reply wires the row it re-drives (`input.messageId`), so a
-				 * regenerate, a swipe or an extend never ticks the clock twice.
+				 * When truthy, the clock does not move (`moves` false). Nothing in
+				 * core wires it since 2026-11-11; a pipeline that re-drives a row
+				 * wires it (`input.messageId`) so a regenerate never moves the
+				 * clock twice.
 				 */
 				unless: S.json,
 			},
@@ -5239,7 +5259,7 @@ export const reckoningDuties = pin(
  * JSON call every few turns that looks back over the story and files what is
  * worth keeping. Each duty is a switch; the routine's mode decides whether
  * what it files is written (`full`) or held for review (`review`). Publishes
- * `modes` keyed `summary`, `lore`, `cast`, `relationships`, `world-state`,
+ * `modes` keyed `lore`, `cast`, `relationships`, `world-state`,
  * `scenes`, `goals`, `goal-reached`, `scene-moved-on` — the keys the sweep's scripts and
  * junctions read — and `any`. Duties that write a lorebook read Off in a
  * session with none. *Mark goals reached* (`goal-reached`) is read by the
@@ -5252,7 +5272,7 @@ export const sweepDuties = pin(
 		i18n: {
 			name: { en: 'Look back over the story' },
 			description: {
-				en: 'Switches for what is filed every few turns: a summary, lore, people, how they stand, the world, places, goals. How it lands is the routine’s mode.',
+				en: 'Switches for what is filed every few turns: lore, people, how they stand, the world, places, goals. How it lands is the routine’s mode.',
 			},
 		},
 		timeoutMs: 500,
@@ -5261,7 +5281,6 @@ export const sweepDuties = pin(
 				kind: 'parameters',
 				facet: 'behavior',
 				schema: {
-					summary: duty('Summarize the story', 'Files a summary of what happened in the lorebook’s history.', true),
 					lore: duty('Add to the lore', 'Files new facts the story established as lorebook entries.', true),
 					cast: duty('Note new people', 'Files the people the story introduced as lorebook entries.', true),
 					relationships: duty('Track relationships', 'Proposes how the characters now stand with each other, for you to look over.', false),
@@ -5433,7 +5452,7 @@ export const cueLines = pin(
  * comment the message renderer never shows, even while the reply streams. This step takes every such block out of
  * the reply (`text`, what is saved) and reads the last one: `make` is `'character'`, `'lorebook'` or `''`, and
  * `draft` its JSON, for `create-character@1` / `create-lorebook@1` behind a junction on `make`. One model call per
- * turn — the reply's own — and no tool loop. Pure (the SDK's `readLibraryDraft`). ⚠ Not `parse-json@1` (a whole reply
+ * turn — the reply's own — and no tool loop. Also turns a plain `See: /docs/<path>` line into a markdown link. Pure (the SDK's `readLibraryDraft`). ⚠ Not `parse-json@1` (a whole reply
  * read as JSON) and not `parse-tool-call@1`.
  * @experimental
  */

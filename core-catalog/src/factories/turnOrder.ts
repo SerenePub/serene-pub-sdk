@@ -56,8 +56,11 @@ import { chainIf, type ScopeOf } from '../shared/chains.js'
  * — its fields `sideCast` and `narratorInterjections`, read off the settings
  * document a turn-order spec's inlet carries — as `core:task/turn-unprompted@1`
  * reads them: `{ 'side-cast', 'narrator-interjections' }`, each `full` or
- * `off`. A field set `true` (or a stored `full` / `review`) is on. Seeded by
- * core (`CORE_SCRIPTS`); a turn-order spec with `unprompted` runs it.
+ * `off`, plus `narrator-every` (1, 2 or 3; present only when the narrator is
+ * on). `sideCast` set `true` (or a stored `full` / `review`) is on.
+ * `narratorInterjections` reads `true`, `full`, `review` and `every-round` as
+ * every round, `every-2nd-round` as 2, `every-3rd-round` as 3; anything else
+ * is off (2026-11-04, playtest ruling item 7). Seeded by core (`CORE_SCRIPTS`); a turn-order spec with `unprompted` runs it.
  * @experimental
  */
 export const UNPROMPTED_MODES_SCRIPT = Object.freeze({
@@ -68,7 +71,11 @@ export const UNPROMPTED_MODES_SCRIPT = Object.freeze({
 		'var doc = value && typeof value === "object" ? value.session : null;',
 		'var f = doc && typeof doc === "object" && doc.fields && typeof doc.fields === "object" ? doc.fields : {};',
 		'function on(x) { return x === true || x === "full" || x === "review"; }',
-		'return { "side-cast": on(f.sideCast) ? "full" : "off", "narrator-interjections": on(f.narratorInterjections) ? "full" : "off" };',
+		'var n = f.narratorInterjections;',
+		'var every = n === "every-2nd-round" ? 2 : n === "every-3rd-round" ? 3 : n === true || n === "full" || n === "review" || n === "every-round" ? 1 : 0;',
+		'var out = { "side-cast": on(f.sideCast) ? "full" : "off", "narrator-interjections": every ? "full" : "off" };',
+		'if (every) out["narrator-every"] = every;',
+		'return out;',
 	].join('\n'),
 	varsIn: Object.freeze(['value']),
 	varsOut: Object.freeze(['value']),
@@ -239,9 +246,20 @@ export function turnOrderSpec(opts: {
 	 * such steps, and the strategy's order is written as it came.
 	 */
 	unprompted?: { narrate?: string }
+	/**
+	 * 🚧 **Nobody can take a turn** (owner ruling 2026-11-08): after the
+	 * write, the `main` composer is closed with `reason` while the pool has
+	 * no candidate at all — no character, persona or envoy seated — and
+	 * opened again once it has one. The session's own answer to "who could
+	 * reply?", read off `pool`, never a count a genre keeps; a Story session
+	 * with nobody in it used to take a line and answer with silence. Absent:
+	 * the composer is left as it is. (`emptyCastClosure` closes the same way
+	 * at create, where no turn order runs yet.)
+	 */
+	emptyCast?: { reason: string }
 	version?: string
 }): SpecDocument {
-	const { id, genre, events, strategy, swaps = [], pool = {}, historyChannel, advise, scripts, unprompted, version = TURN_ORDER_VERSION } = opts
+	const { id, genre, events, strategy, swaps = [], pool = {}, historyChannel, advise, scripts, unprompted, emptyCast, version = TURN_ORDER_VERSION } = opts
 	// The model path branches on the genre field `turnMode`; a genre that
 	// does not declare it could never take it (R26, M4 review).
 	if (advise && !(genre.shape?.fields as Record<string, unknown> | undefined)?.turnMode)
@@ -350,8 +368,7 @@ export function turnOrderSpec(opts: {
 			),
 	)
 
-	return compile(
-		voiced
+	const written = voiced
 			/**
 			 * The one write path (§4.2). `basedOnAt` is the answered event's
 			 * instant, so an order computed from an older event is dropped
@@ -371,6 +388,44 @@ export function turnOrderSpec(opts: {
 					cause: $.event.cause,
 				}),
 			)
+
+	/**
+	 * The composer gate (`emptyCast`): a side branch after the write, on the
+	 * pool's candidates. Nobody: close (idempotent — the same closure written
+	 * again — and only on a seat or session event, since no line can be sent
+	 * while it stands). Somebody: open ONLY the closure this gate set, read off
+	 * the settings document's `composerStates` (`main`, everyone, this reason),
+	 * so a closure another pipeline put on `main` is never lifted here.
+	 *
+	 * ⚠ Every branch carries a node: a branch with none is not stored (a
+	 * clause's chains are derived from its members on load), so an empty
+	 * `otherwise` made the published document drift from this one.
+	 */
+	const OURS = { path: 'composerStates.main.*.reason', equals: emptyCast?.reason } as const
+	const gated = chainIf(!!emptyCast, written, (w) =>
+		w.junction('seats', { on: ($) => $.pool.main }, (j) =>
+			j
+				.when('nobody', { path: 'length', equals: 0 }, (n) =>
+					n.outlet(
+						'close',
+						() => C.setComposerState.v1({ channel: 'main', open: false as any, reason: emptyCast!.reason }),
+						{ expose: { label: 'Close the composer while nobody can reply' } },
+					),
+				)
+				.otherwise('somebody', (o) =>
+					o.junction('closed', { on: ($) => $.event.session }, (c) =>
+						c.when('ours', OURS, (k) =>
+							k.outlet('open', () => C.setComposerState.v1({ channel: 'main', open: true as any }), {
+								expose: { label: 'Open the composer once someone can reply' },
+							}),
+						),
+					),
+				),
+		),
+	)
+
+	return compile(
+		gated
 			// The author preset on `pool`, only when the genre pins anything:
 			// an empty value would be a preset that changes nothing.
 			.defaults((p) => {

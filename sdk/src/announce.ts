@@ -123,6 +123,8 @@ import {
 	type RegistrationDecl,
 } from './registrations.js'
 import type { SettingValue } from './exposure.js'
+import type { VariableId } from './variables.js'
+import { parseVariableLayoutReference, variableIdParts } from './variableLayouts.js'
 import { eventById, isEventId, isSessionEventDecl, type SessionEventDecl } from './events.js'
 import { makeValueToolkit, type ValueToolkit } from './values.js'
 import { SAVE_MESSAGE_SPEC_ID } from './descriptors.js'
@@ -400,18 +402,18 @@ export interface PresetDecl {
 	 */
 	settings?: Readonly<Record<string, SettingValue>>
 	/**
-	 * Whether the instance should offer this preset the moment the package is
-	 * enabled. **Absent means no**, and that is the interesting half.
-	 *
-	 * A preset is what a non-admin picks from, so a package that installed one
-	 * straight into everybody's picker would be deciding, on the administrator's
-	 * behalf, what this instance offers. So the projection lands it disabled and
-	 * an administrator switches it on — the same shape as a declared permission,
-	 * which is also announced by the package and granted by the instance.
-	 *
-	 * Setting it is a request, not a grant: an instance is free to ignore it,
-	 * and an administrator who has already disabled a preset keeps that decision
-	 * across upgrades.
+	 * 🚧 Variable id → layout reference (`{ 'core:var/characters@1': 'core/json@1' }`):
+	 * this preset's sessions write that variable out with that layout instead of
+	 * the pub's. A reference to a layout that isn't installed is accepted; the
+	 * host skips it, renders the pub's layout and says so. ⚠ Not a genre's
+	 * `layouts` (session layouts) and not `settings`.
+	 */
+	variableLayouts?: Readonly<Record<VariableId, string>>
+	/**
+	 * @deprecated ⏳ Ignored. The instance offers a plugin's presets as soon as
+	 * the plugin is enabled; an administrator may hide one afterwards, and that
+	 * choice survives upgrades. Kept so existing packages still compile;
+	 * removing it is the owner's call.
 	 */
 	enabled?: boolean
 }
@@ -570,7 +572,9 @@ export interface PresetInput {
 	cast?: { characters?: number; personas?: number }
 	/** 🚧 See `PresetDecl.settings` — each a value, or `{ value, lock?, askAtStart? }`. */
 	settings?: Readonly<Record<string, SettingValue>>
-	/** Ask the instance to offer this preset immediately. See `PresetDecl.enabled`. */
+	/** 🚧 See `PresetDecl.variableLayouts`. */
+	variableLayouts?: Readonly<Record<VariableId, string>>
+	/** @deprecated ⏳ Ignored — presets are offered once the plugin is enabled. See `PresetDecl.enabled`. */
 	enabled?: boolean
 }
 
@@ -683,6 +687,36 @@ const isBindingObject = (v: unknown): v is { spec: SpecRef; config?: ConfigInput
 	!!v && typeof v === 'object' && 'spec' in v
 
 /**
+ * What is wrong with a preset's `variableLayouts`, as sentences — the one
+ * statement of the rule, for a preset that arrives as data (a manifest, a row)
+ * and for `preset()`. Empty when it is clean or absent.
+ * @experimental
+ */
+export function presetVariableLayoutFindings(
+	preset: { slug?: string; variableLayouts?: unknown } | null | undefined,
+): string[] {
+	const where = `preset '${preset?.slug ?? '?'}'`
+	const map = preset?.variableLayouts
+	if (map === undefined) return []
+	if (!map || typeof map !== 'object' || Array.isArray(map))
+		return [
+			`${where}.variableLayouts is a map from variable id to layout reference — ` +
+				`{ 'core:var/characters@1': 'core/json@1' }`,
+		]
+	const findings: string[] = []
+	for (const [key, value] of Object.entries(map)) {
+		if (!variableIdParts(key))
+			findings.push(`${where}.variableLayouts: '${key}' is not a variable id — it reads 'core:var/characters@1'`)
+		else if (!parseVariableLayoutReference(value))
+			findings.push(
+				`${where}.variableLayouts: '${key}' is given '${String(value)}', which is not a layout reference — ` +
+					`it reads '<owner>/<slug>@<major>', such as 'core/json@1'`,
+			)
+	}
+	return findings
+}
+
+/**
  * The stored form of a preset. Every reference is read down to its id and
  * checked against what the value says: a binding's events against its spec's
  * lock, a config against the spec it was made for, an action key against
@@ -692,6 +726,8 @@ const isBindingObject = (v: unknown): v is { spec: SpecRef; config?: ConfigInput
 export function preset(input: PresetInput): PresetDecl {
 	const where = `preset '${input?.slug}'`
 	assertDisplayText(where, input)
+	const layoutFindings = presetVariableLayoutFindings(input)
+	if (layoutFindings.length) throw new Error(layoutFindings[0])
 	if (typeof input.genre === 'string')
 		throw new Error(
 			`${where} names its genre as a string — pass the genre value (import it), or use('${input.genre}')`,
@@ -845,6 +881,7 @@ export function preset(input: PresetInput): PresetDecl {
 		...(input.callsPerTurn !== undefined ? { callsPerTurn: assertCallsPerTurn(input.callsPerTurn, where) } : {}),
 		...(input.cast ? { cast: assertCastFloor(input.cast, where) } : {}),
 		...(input.settings && Object.keys(input.settings).length ? { settings: { ...input.settings } } : {}),
+		...(input.variableLayouts && Object.keys(input.variableLayouts).length ? { variableLayouts: { ...input.variableLayouts } } : {}),
 	}
 }
 

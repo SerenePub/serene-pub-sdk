@@ -193,7 +193,7 @@ nothing arrives.
 
 ## Mood dial
 
-The session's stats for the viewer's persona (or the world's, when they write as none), with
+The session's stats for the viewer's own owner (or the world's, when they have none), with
 **−1** and **+1** on each whole-number stat, and one action button.
 
 <!-- prelude:
@@ -205,18 +205,17 @@ export const moodDial = widget({
 	title: 'Mood dial',
 	component: 'mood-dial',
 	reads: ['actions', 'settings'],
-	scopes: ['session:state', 'session:state:write', 'persona'],
+	scopes: ['session:state', 'session:state:write'],
 	settings: { step: { type: 'integer', label: 'Step', default: 1 } },
 })
 ```
 
-It asks for three scopes, and an admin grants each one separately:
+It asks for two scopes, and an admin grants each one separately:
 
 | Scope | What it gives |
 | --- | --- |
 | `session:state` | The stats and states, read with `ctx.scope('session:state')`. |
 | `session:state:write` | A **write grant**: it may ask `set-attribute-value`. It sends no data of its own. |
-| `persona` | The viewer's own persona, to find whose stats to show. |
 
 It reads `actions` (to show a button) and `settings` (its own `step`), and nothing else.
 
@@ -226,18 +225,16 @@ It reads `actions` (to show a button) and `settings` (its own `step`), and nothi
 	import { actionIdentity } from '@serene-pub/sdk/component'
 	import type { SessionStateSlotV1, SlotConfig } from '@serene-pub/sdk'
 
-	// Declared `scopes: ['session:state', 'session:state:write', 'persona']`:
+	// Declared `scopes: ['session:state', 'session:state:write']`:
 	// an admin grants each apart, so draw what was granted, not what was asked.
 	let { ctx }: { ctx: ComponentContext } = $props()
 
 	const section = $derived(ctx.scope('session:state'))
-	const persona = $derived(ctx.scope('persona')?.[0])
-	// The viewer's persona's stats when it has any, else the world's. A cast
-	// owner names no character, so the persona is matched by its label.
+	// The viewer's own stats when they have any, else the world's. The host
+	// marks the viewer's own owner `mine`; never match one by kind or key.
 	const owner = $derived.by(() => {
 		const owners = section?.owners ?? []
-		const mine = persona && owners.find((o) => o.kind === 'session_cast' && o.label === persona.name)
-		return mine ?? owners.find((o) => o.kind === 'session')
+		return owners.find((o) => o.mine) ?? owners.find((o) => o.kind === 'session')
 	})
 	const values = $derived(
 		!section || !owner ? {} : owner.kind === 'session' ? section.resolved.world : (section.resolved.cast[owner.key] ?? {}),
@@ -301,8 +298,9 @@ It reads `actions` (to show a button) and `settings` (its own `step`), and nothi
   loading. Only then is there something to draw.
 - **Whose stats.** A slot belongs to an owner when its id is a key of `owner.configs`. The
   owner's values are in `resolved.world` or `resolved.cast[owner.key]`, filed by the slot's
-  `qualifiedKey`. A write names the slot by its `slotId` and the owner by `{ kind, id }`. A cast
-  owner does not name its character yet, so the widget finds the persona's owner by its label.
+  `qualifiedKey`. A write names the slot by `slotId` and the owner by `{ kind, id }`. The widget
+  finds the viewer's own owner by the host's `mine` flag, never by a kind or a key (a key is
+  opaque: read it off the owner, never build or parse it).
 - **Writing.** `set-attribute-value` resolves once the value is written; the new value arrives as
   the next `session:state` push, never in the reply. The buttons are shown only while
   `granted('session:state:write')` is true, and a press with no person behind it is refused. A

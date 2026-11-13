@@ -156,11 +156,15 @@ enforced, not advisory:
 - **A genre says what its sessions may write at all**: `writes: { lore, scenes }` on its shape.
   Absent means both are allowed. A genre that says `lore: false` reads its lorebook and never
   touches it, and every path that could write it is refused with a sentence naming the genre.
+- **A genre opts into benching seats**: `writes: { seats: true }`. Absent means off, unlike `lore`
+  and `scenes`. It lets the genre's pipelines bench a seat or bring it back
+  (`core:outlet/set-seat-bench@1`); without it the write is refused with a sentence naming the
+  genre. A person's own bench and drag are never gated by it.
 - **A genre opts into library writes**: `writes: { library: { characters, lorebooks, sessions } }`.
   Absent means all off, unlike `lore` and `scenes`. `characters` lets its pipelines make or change
   characters (`core:outlet/create-character@1`, `core:outlet/update-character@1`); `lorebooks` lets
-  them make lorebooks and read one into the session (`core:outlet/create-lorebook@1`,
-  `core:outlet/attach-lorebook@1`); `sessions` also lets that read name another session. Declaring
+  them make lorebooks (`core:outlet/create-lorebook@1`); `sessions` is ⏳ read by nothing since
+  0.6 removed `core:outlet/attach-lorebook@1` (a session keeps the lorebook it started with). Declaring
   it only lets the genre try: the app judges the person acting, and their library write mode
   (Full, Review or Off) decides whether each write lands, waits for them to accept it in the
   session, or is refused.

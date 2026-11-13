@@ -9,6 +9,7 @@
 	import type { ComponentContext } from "@serene-pub/sdk/component"
 	import { WIDGET_CONTEXT_KEY } from "@serene-pub/core-catalog/widgets"
 	import RoutineLogWidget from "./RoutineLogWidget.svelte"
+	import WidgetBoundary from "../WidgetBoundary.svelte"
 	import { widgetRefFromComponent } from "../widgetRef.svelte"
 
 	let { ctx }: { ctx: ComponentContext } = $props()
@@ -30,4 +31,4 @@
 	)
 </script>
 
-<RoutineLogWidget ready={settled} />
+<WidgetBoundary {ctx}><RoutineLogWidget ready={settled} /></WidgetBoundary>

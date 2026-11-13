@@ -54,13 +54,22 @@ export const setAnnexFieldSpec = () =>
  * bookkeeping declare the members a reader relies on and let the rest
  * through. The hand-marked round (`dungeon-crawler-round`) is retired (AUDIT
  * B): the round is read off the rows. The world itself
- * left the annex on 2026-10-16 (PLAN-rulesets §26): places, people and the
- * fallen are entries of the session's own lorebook.
+ * left the annex on 2026-10-16 (PLAN-rulesets §26): places and people
+ * are entries of the session's own lorebook (the fallen are the cast's
+ * deceased state plus `progress.fallen`).
+ *
+ * `keepOnRetell: true` (2026-11-11, S2) on `progress`, `planning-notes`,
+ * `planning-notes-revealed` and `journal`: the story turn's re-telling
+ * (`story.ts`, the books' `redo`) files none of these again — its plan
+ * (`progress.lastTelling`), notes and journal stand — so a swipe must not
+ * take them with the row. What the plan applied (sheet changes, the clock,
+ * the companions' fates) is taken with the row and filed again once.
  * @internal
  */
 const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 	annexField({
 		key: DC.progress,
+		keepOnRetell: true,
 		shape: {
 			type: 'object',
 			fields: {
@@ -93,6 +102,14 @@ const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 						'<seat>': { type: 'string' },
 					},
 				},
+				fallen: {
+					type: 'list',
+					description: 'Those who have died in the crawl, with where they fell and the seat and cast member they were.',
+					item: {
+						type: 'object',
+						fields: { name: { type: 'string' }, where: { type: 'string' }, seat: { type: 'string' }, castMemberId: { type: 'number', description: 'The cast member (a lorebook binding id); empty when the seat had none.' } },
+					},
+				},
 				arrivals: {
 					type: 'list',
 					description: 'Newcomers owed to the story after a death, each with the rounds left to bring them in.',
@@ -109,7 +126,7 @@ const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 		genre: dungeonCrawlerGenre,
 		label: { en: 'Crawl' },
 		description: {
-			en: "The crawl's bookkeeping: the heroes, the goal and where it stands, who is out, who is owed. The world itself — places, people, the fallen — is the session's own lorebook. Only the pipelines read it.",
+			en: "The crawl's bookkeeping: the heroes, the goal and where it stands, who is out, who is owed. The world itself — places and people — is the session's own lorebook, and the fallen are the cast's deceased state plus `progress.fallen`. Only the pipelines read it.",
 		},
 	}),
 	annexField({
@@ -146,6 +163,7 @@ const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 	}),
 	annexField({
 		key: DC.planningNotes,
+		keepOnRetell: true,
 		shape: { type: 'text', default: '' },
 		see: [`envoy:${DUNGEON_CRAWLER_PLANNER_KEY}`],
 		genre: dungeonCrawlerGenre,
@@ -156,6 +174,7 @@ const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 	}),
 	annexField({
 		key: DC.planningNotesRevealed,
+		keepOnRetell: true,
 		shape: { type: 'text', default: '' },
 		see: ['participant'],
 		genre: dungeonCrawlerGenre,
@@ -166,6 +185,7 @@ const DUNGEON_CRAWLER_ANNEX_FIELDS: readonly AnnexFieldDecl[] = [
 	}),
 	annexField({
 		key: DC.journal,
+		keepOnRetell: true,
 		shape: {
 			type: 'object',
 			fields: {

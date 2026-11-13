@@ -150,18 +150,21 @@ describe("core's World State component", { timeout: 180_000 }, () => {
 		}
 	})
 
-	test('loading, its two empty states, the list layout, and a scoped push re-draws', async () => {
+	test('loading and its two empty states draw nothing, the list layout, and a scoped push re-draws', async () => {
 		const view = await mount('world-state', { state: null, settings: { layout: 'list' } })
 		try {
-			assert.match(text(view.query('[role="status"]'))!, /Loading the world's stats/)
+			assert.equal(view.query('[role="status"]') === null, true, 'loading draws nothing')
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
 			assert.equal(view.query('[data-state-widget]')!.getAttribute('data-arrangement'), 'list')
 			await view.push('scoped', { session_state: sessionState({ slots: [] }) })
-			// 🚧 RF fix 8: attributes are the rules' — rules that declare none say so.
-			assert.match(text(view.root)!, /This session's rules declare no attributes/)
+			// 🚧 RF fix 8: attributes are the rules' — rules that declare none draw nothing (owner R10).
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
+			assert.doesNotMatch(view.root.textContent ?? '', /declare no attributes/)
 			await view.push('scoped', {
 				session_state: sessionState({ owners: sessionState().owners.filter((o) => o.key !== 'world') }),
 			})
-			assert.match(text(view.root)!, /This session's world declares no stats to show here/)
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
+			assert.doesNotMatch(view.root.textContent ?? '', /declares no stats/)
 			const next = sessionState()
 			next.resolved.world['core.weather'] = 'storm'
 			await view.push('scoped', { session_state: next })
@@ -322,22 +325,41 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 		}
 	})
 
+	test('S4: a seated_member owner draws its face, like a session_cast one', async () => {
+		const base = sessionState()
+		const state = {
+			...base,
+			owners: base.owners.map((o) => (o.key === 'mira' ? { ...o, kind: 'seated_member' } : o)),
+		} as SessionStateV1
+		const view = await mount('stats', { state })
+		try {
+			assert.deepEqual(view.refused, [])
+			const card = view.query('[data-owner-key="mira"]')!
+			assert.equal(text(card.querySelector('button[data-widget-part~="stats.face"]')), 'M')
+		} finally {
+			await view.unmount()
+		}
+	})
+
 	test('all, pick, compact, the empty states, and a push', async () => {
 		const view = await mount('stats', { settings: { members: 'all', density: 'compact' } })
 		try {
 			assert.deepEqual(view.queryAll('[data-widget-part~="stats.card"]').map((c) => c.getAttribute('data-owner-key')), ['mira', 'bram'])
 			assert.equal(view.queryAll('[data-widget-part~="stats.card-body"][data-density="compact"]').length, 2)
 			// ⏳ Written before W7 (`members: pick`): read as `owners: pick`, which
-			// may name the world or a place too, so it says nothing matched at all.
+			// may name the world or a place too, so nothing matches at all. Names
+			// picked in settings that match nobody are a CAUSE (lay-B-fix, P1): said.
 			await view.push('settings', { members: 'pick', pickMembers: ['nobody'] })
-			assert.match(text(view.root)!, /Nothing in this session matches the names in this widget's settings/)
+			assert.match(view.root.textContent ?? '', /Nothing in this session matches the names in this widget's settings\./)
 			await view.push('settings', {})
 			await view.push('scoped', { session_state: sessionState({ resolved: { world: {}, cast: {} } }) })
-			assert.match(text(view.root)!, /No one in the cast has a stat in play yet/)
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
+			assert.doesNotMatch(view.root.textContent ?? '', /No one in the cast has a stat in play/)
 			await view.push('scoped', { session_state: sessionState({ slots: [] }) })
-			assert.match(text(view.root)!, /This session's rules declare no attributes/)
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
+			assert.doesNotMatch(view.root.textContent ?? '', /declare no attributes/)
 			await view.push('scoped', { session_state: sessionState({ loaded: false }) })
-			assert.match(text(view.query('[role="status"]'))!, /Loading the cast's stats/)
+			assert.equal(view.query('[role="status"]') === null, true, 'loading draws nothing')
 		} finally {
 			await view.unmount()
 		}
@@ -408,6 +430,39 @@ describe("core's Stats component", { timeout: 180_000 }, () => {
 			assert.equal(view.queryAll('[data-widget-part~="stats.trail-open"]').length, 0)
 		} finally {
 			await view.unmount()
+		}
+	})
+
+	test('faces: the Characters sheet is a portrait column then the sections; cards keep their head (lay-B D13)', async () => {
+		const state = sessionState()
+		const mira = state.owners.find((o) => o.key === 'mira') as unknown as Record<string, unknown>
+		mira.zones = [{ zoneType: 'carried', label: 'Carried', shownAs: 'list', entries: [{ name: 'Rope', entryType: 'gear', typeLabel: 'Gear' }] }]
+		const faces = await mount('stats', { state, settings: { arrangement: 'faces', owners: 'all' } })
+		try {
+			assert.deepEqual(faces.refused, [])
+			await faces.click('[data-widget-part~="stats.faces-chip"][data-owner-key="mira"]')
+			const sheet = faces.query('[data-widget-part~="stats.faces-sheet"]')!
+			assert.equal(sheet.hasAttribute('data-sheet'), true)
+			const portrait = sheet.querySelector('[data-widget-part~="stats.sheet-portrait"]')!
+			assert.equal(text(portrait.querySelector('[data-widget-part~="stats.sheet-name"]')), 'Mira')
+			assert.equal(text(portrait.querySelector('[data-widget-part~="stats.sheet-role"]')), 'Cast')
+			// The face stays the portrait picker's button.
+			assert.equal(text(portrait.querySelector('button[data-widget-part~="stats.face"]')), 'M')
+			const sections = sheet.querySelector('[data-widget-part~="stats.sheet-sections"]')!
+			assert.ok(sections.querySelector(`[data-slot-id="${id('hp')}"]`), 'the attributes are in the sections')
+			assert.equal(text(sections.querySelector('[data-widget-part~="stats.zone-head"]')), 'Carried')
+			// Portrait column first, sections second; the card head is not drawn in a faces sheet.
+			assert.equal(portrait.nextElementSibling, sections)
+			assert.equal(sheet.querySelector('[data-widget-part~="stats.card-head"]') === null, true)
+		} finally {
+			await faces.unmount()
+		}
+		const cards = await mount('stats', { state, settings: { arrangement: 'cards', owners: 'all' } })
+		try {
+			assert.ok(cards.query('[data-widget-part~="stats.card-head"]'))
+			assert.equal(cards.query('[data-widget-part~="stats.sheet-portrait"]'), null)
+		} finally {
+			await cards.unmount()
 		}
 	})
 })
@@ -486,7 +541,7 @@ const shapedState = (): SessionStateV1 =>
 	})
 
 describe("core's state widgets draw and edit every catalogue shape", { timeout: 180_000 }, () => {
-	test("🚧 a copy's timeFormat spells a story-time stat; its emptyState is what an empty widget says", async () => {
+	test("🚧 a copy's timeFormat spells a story-time stat; its emptyState is what an empty widget says, and unset it says nothing", async () => {
 		const view = await mount('stats', {
 			state: shapedState(),
 			settings: { owners: 'world', arrangement: 'list', timeFormat: 'Day {day}, {hh}:{mm}' },
@@ -498,9 +553,10 @@ describe("core's state widgets draw and edit every catalogue shape", { timeout: 
 			await view.push('settings', { emptyState: 'Your sheet appears once your character is made.' })
 			await view.push('scoped', { session_state: sessionState({ slots: [], owners: [], resolved: { world: {}, cast: {} } }) })
 			assert.equal(text(view.query('[data-widget-part~="stats.empty"]')), 'Your sheet appears once your character is made.')
-			// Without one, the widget's own sentence.
+			// Without one, nothing (owner R10): no default sentence.
 			await view.push('settings', {})
-			assert.match(text(view.root)!, /This session's rules declare no attributes/)
+			assert.equal(view.query('[data-widget-part~="stats.empty"]') === null, true)
+			assert.doesNotMatch(view.root.textContent ?? '', /declare no attributes/)
 		} finally {
 			await view.unmount()
 		}

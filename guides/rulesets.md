@@ -272,6 +272,18 @@ collected and raised after the receipt. A function with no body is **header-only
 is what the model reads, and the table judges. Editing a core function **forks** it
 (`forkFunction`) into your ruleset and records `forkedFrom`.
 
+🚧 Say which time a function counts on with `countsTime`: `'story'` (the story clock), `'real'`
+(real elapsed time) or `'both'`; left out, it counts on neither. Ruleset fit reads it: rules that
+count story time, put on a genre that runs on real time, rate Poor, with the reason (they would
+never move). It is a rating and a sentence, never a refusal. 🚧 Each attribute role
+also carries `writtenAgo[id].minutes`: the story minutes since a session last wrote that value,
+measured on the session's story clock. It is null when the story has no clock, when no session ever
+wrote the value (a starting value, a book's or a card's value), or when the time cannot be placed (a
+free-form calendar across a month). Writing the value brings it to 0, so a rule that drains by it
+applies once. `'real'` or `'both'` also hands `writtenAgo[id].realSeconds`, the real seconds since
+the value was written; one instant is taken per moment and recorded on the run, and **a rule that
+reads real time gives a different result on a re-run, by design**.
+
 ## Entry types you borrow, tags you choose
 
 Functions find what they act on by tag: `tags: ['resource']` on an attribute, `['relationship']`

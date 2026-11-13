@@ -82,12 +82,13 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			[ev('message-respond')]: 'core:spec/story-respond',
 			[ev('form-addressed')]: 'core:spec/story-answer-form',
 			[ev('message-offered')]: 'core:spec/save-message',
+			// 🚧 2026-11-11 (sense-clk, PLAN-sensible-engine §2.11; sense-clk2; sense-st2b): the round tick moves Story's clock by the round worth, as the Lair's does.
+			[ev('round-ended')]: 'core:spec/round-tick',
 		},
 		actions: [
 			...SPEAK_VERBS,
 			'core:spec/story-advance-time#advance-time',
 			'core:spec/story-answer#answer',
-			'core:spec/story-ask#ask',
 			'core:spec/story-generate-image#generate-image',
 			'core:spec/story-illustrate-scene#illustrate-scene',
 			'core:spec/story-look#look',
@@ -131,6 +132,8 @@ const TODAY: Record<string, { events: Record<string, string>; actions: string[] 
 			[ev('member-added')]: 'core:spec/lair-welcome',
 			[ev('form-addressed')]: 'core:spec/lair-answer-form',
 			[ev('message-offered')]: 'core:spec/save-message',
+			// 🚧 2026-11-11 (sense-st2b, owner ruling): the round tick moves the Lair's clock too, in every preset.
+			[ev('round-ended')]: 'core:spec/round-tick',
 		},
 		actions: [
 			'core:spec/lair-build-room#build-room',
@@ -244,6 +247,107 @@ describe("core's genres on registrations (lane 3)", () => {
 			)
 	})
 
+	test('the round tick (sense-clk, 2026-11-11; sense-clk2: no values, reads the round worth; sense-st2b: Story and the Lair, in their genre defaults): no model', () => {
+		const ROUND_ENDED = ev('round-ended')
+		const TICK = 'core:spec/round-tick'
+		for (const g of genres()) {
+			const regs = defaultsOf(g)
+			const onRound = regs.filter((r) => r.trigger.family === 'event' && r.trigger.event === ROUND_ENDED)
+			const naming = regs.filter((r) => r.pipeline === TICK)
+			if (g.id === 'core:genre/story' || g.id === 'core:genre/lair') {
+				assert.equal(onRound.length, 1, g.id)
+				assert.equal(naming.length, 1, g.id)
+				assert.equal(onRound[0]!.pipeline, TICK, g.id)
+				// Nothing is exposed on the tick: the registration carries no values.
+				assert.equal((onRound[0] as any).values, undefined, g.id)
+			} else {
+				assert.equal(onRound.length, 0, `${g.id}: nothing on round-ended`)
+				assert.equal(naming.length, 0, `${g.id}: nothing names the spec`)
+			}
+		}
+		// Every Story and Lair preset ticks; no preset adds the registration itself (it comes from the genre defaults).
+		for (const p of corePresets().filter((q) => q.genre === 'core:genre/story' || q.genre === 'core:genre/lair')) {
+			assert.ok(effective(p).some((r) => r.trigger.family === 'event' && r.trigger.event === ROUND_ENDED && r.pipeline === TICK), `${p.slug}: ticks`)
+			assert.equal(presetChangesOf(p, defaultsOf(genres().find((g) => g.id === p.genre)!))?.register?.length ?? 0, 0, `${p.slug}: adds no registration`)
+		}
+
+		const doc: any = pipelines()(TICK)
+		assert.ok(doc, 'the spec is in CORE_SPECS')
+		assert.ok(!doc.nodes.some((n: any) => String(n.definitionId).startsWith('core:oracle/')), 'no model call')
+		const node = (key: string) => doc.nodes.find((n: any) => n.key === key)
+		assert.equal(node('tick').expose, undefined, 'nothing exposed')
+		assert.equal(node('worth').definitionId, 'core:query/round-worth')
+		assert.deepEqual(doc.presets?.[0]?.values ?? [], [], 'no values')
+		const advance = node('clock.moves.clocked.at.advance')
+		assert.equal(advance.definitionId, 'core:outlet/advance-story-clock')
+		assert.equal(advance.config.cause, 'tick')
+		assert.equal(advance.config.onRefusal, 'skip')
+		// The outlet sits in the `clocked` clause's `at` branch, on the presences read's `at`, inside the junction on `tick.moves`.
+		const clause = (id: string) => doc.clauses.find((c: any) => c.id === id)
+		assert.deepEqual(clause('clock').on, { __ref: 'data', node: 'tick', port: 'moves' })
+		assert.deepEqual(clause('clock.moves.clocked').on, { __ref: 'data', node: 'clock.moves.present', port: 'at' })
+		assert.equal(clause('clock.moves.clocked').clauseId, 'clock')
+		assert.equal(node('clock.moves.present').definitionId, 'core:query/cast-presences')
+		assert.equal(node('clock.moves.present').clauseId, 'clock')
+		assert.equal(advance.clauseId, 'clock.moves.clocked')
+		// No third gate: no `modes` step, no `keeper` clause, no session-settings read.
+		assert.equal(node('clock.moves.clocked.at.modes'), undefined)
+		assert.equal(clause('clock.moves.clocked.at.keeper'), undefined)
+		assert.ok(!doc.nodes.some((n: any) => String(n.definitionId).startsWith('core:query/session-settings')))
+	})
+
+	test('the scenes routine (sense-scn, 2026-11-12): Story, the Lair and the crawl register it every 2 rounds; Minimal drops it; the three genres begin scenes by themselves', () => {
+		const SPEC = 'core:spec/scene-boundaries'
+		const CADENCE = 'core:cadence/every-n-rounds@1'
+		for (const g of genres()) {
+			const named = defaultsOf(g).filter((r) => r.pipeline === SPEC)
+			if (['core:genre/story', 'core:genre/lair', 'core:genre/dungeon-crawler'].includes(g.id)) {
+				assert.equal(named.length, 1, g.id)
+				const t = named[0]!.trigger as any
+				assert.equal(t.family, 'routine', g.id)
+				assert.equal(t.cadence.id, CADENCE, g.id)
+				assert.equal(t.cadence.options.n, 2, g.id)
+				assert.equal((g as any).shape.scenes.mode, 'automatic', g.id)
+			} else assert.equal(named.length, 0, `${g.id}: registers no scenes routine`)
+		}
+		const holds = (slug: string) => effective(corePresets().find((x) => x.slug === slug)!).some((r) => r.pipeline === SPEC)
+		assert.equal(holds('story-minimal'), false)
+		for (const slug of ['story-living', 'story-rule-based', 'dungeon-crawler-default']) assert.equal(holds(slug), true, slug)
+		for (const p of corePresets().filter((q) => q.genre === 'core:genre/lair')) assert.equal(holds(p.slug), true, p.slug)
+		// It makes no model call, so no preset's calls per turn moved (the cadence is not a per-turn one).
+		assert.equal(PER_TURN.has(CADENCE), false)
+	})
+
+	test('the scene summaries routine (sense-sum, 2026-11-12): Story, the Lair and the crawl register it every 2 rounds at minAge 0; Minimal drops it; Chat and the Guide have none', () => {
+		const SPEC = 'core:spec/scene-summaries'
+		for (const g of genres()) {
+			const named = defaultsOf(g).filter((r) => r.pipeline === SPEC)
+			if (['core:genre/story', 'core:genre/lair', 'core:genre/dungeon-crawler'].includes(g.id)) {
+				assert.equal(named.length, 1, g.id)
+				const t = named[0]!.trigger as any
+				assert.equal(t.family, 'routine', g.id)
+				assert.equal(t.cadence.id, 'core:cadence/every-n-rounds@1', g.id)
+				assert.equal(t.cadence.options.n, 2, g.id)
+				assert.equal(named[0]!.minAge, 0, g.id)
+				assert.equal((named[0] as any).mode ?? 'full', 'full', g.id)
+			} else assert.equal(named.length, 0, `${g.id}: registers no scene summaries routine`)
+		}
+		const holds = (slug: string) => effective(corePresets().find((x) => x.slug === slug)!).some((r) => r.pipeline === SPEC)
+		assert.equal(holds('story-minimal'), false)
+		for (const slug of ['story-living', 'story-rule-based', 'dungeon-crawler-default']) assert.equal(holds(slug), true, slug)
+		for (const p of corePresets().filter((q) => q.genre === 'core:genre/lair')) assert.equal(holds(p.slug), true, p.slug)
+		for (const p of corePresets().filter((q) => ['core:genre/chat', 'core:genre/guide'].includes(q.genre)))
+			assert.equal(holds(p.slug), false, p.slug)
+	})
+
+	test('Story registers no Ask (retired 2026-11-04, owner §0-F), and Answer stays', () => {
+		for (const p of corePresets().filter((q) => q.genre === 'core:genre/story')) {
+			const acts = actionsOf(effective(p))
+			assert.ok(!acts.some((a) => a.startsWith('core:spec/story-ask')), `${p.slug}: no Ask`)
+			assert.ok(acts.includes('core:spec/story-answer#answer'), `${p.slug}: Answer stays`)
+		}
+	})
+
 	test('the summaries (R50): every genre registers world, character, history and its own summarize-scene, on the summarize action', () => {
 		const shared = ['core:spec/summarize-character', 'core:spec/summarize-history', 'core:spec/summarize-world']
 		const scene: Record<string, string> = {
@@ -251,7 +355,7 @@ describe("core's genres on registrations (lane 3)", () => {
 			'core:genre/chat': 'core:spec/summarize-scene',
 			'core:genre/guide': 'core:spec/guide-summarize-scene',
 			'core:genre/lair': 'core:spec/lair-summarize-scene',
-			'core:genre/dungeon-crawler': 'core:spec/summarize-scene',
+			'core:genre/dungeon-crawler': 'core:spec/dungeon-crawler-summarize-scene',
 		}
 		for (const p of corePresets())
 			assert.deepEqual(summariesOf(effective(p)), [...shared, scene[p.genre]!].sort(), `${p.slug}: summaries`)
@@ -267,30 +371,35 @@ describe("core's genres on registrations (lane 3)", () => {
 		const by = Object.fromEntries(corePresets().map((p) => [p.slug, routinesOf(effective(p))]))
 		// 🚧 GM 2026-10-23 (G1 ★5, S3): Story's clock after the rules' Rest — no model call, so Minimal keeps it.
 		const afterRest = { 'on-event→story-after-rest': 'full' }
+		// 🚧 2026-11-12 (sense-scn): the scenes routine, every 2 rounds, no model — Story's, the Lair's and the crawl's.
+		// 🚧 2026-11-12 (sense-sum): and the scene summaries routine, every 2 rounds, no model of its own — the same three.
+		const scenes = { 'every-n-rounds→scene-boundaries': 'full', 'every-n-rounds→scene-summaries': 'full' }
 		const living = {
+			...scenes,
 			'after-each-round→story-reckoning': 'full',
 			'every-n-turns→story-sweep': 'full',
 			'on-event→story-illustrate-new-scene': 'off',
 			...afterRest,
 		}
-		assert.deepEqual(by['story-minimal'], afterRest)
+		assert.deepEqual(by['story-minimal'], afterRest) // the scenes routine and the scene summaries routine are dropped
 		assert.deepEqual(by['story-living'], living)
 		assert.deepEqual(by['story-rule-based'], living)
 		assert.deepEqual(by['chat-basic'], { 'every-n-turns→assistant-memory': 'off' })
 		assert.deepEqual(by['chat-agentic'], { 'every-n-turns→assistant-memory': 'off' })
 		assert.deepEqual(by['guide-default'], {})
 		// 🚧 lane G3 (2026-10-23, S3): the crawl's own effects after the rules' Rest.
-		assert.deepEqual(by['dungeon-crawler-default'], { 'on-event→dungeon-crawler-after-rest': 'full' })
+		assert.deepEqual(by['dungeon-crawler-default'], { 'on-event→dungeon-crawler-after-rest': 'full', ...scenes })
 		// 🚧 The Lair's (D7, 2026-10-21): the keeper after each round at Review, the
 		// Castellan's notes, filing the current room Off — the keeper Off on Words only.
 		const lair = {
+			...scenes,
 			'after-each-round→lair-keeper': 'review',
 			'on-event→lair-scratchpad': 'full',
 			'on-event→lair-file-current-room': 'off',
 		}
 		assert.deepEqual(by['lair-rules'], lair)
 		assert.deepEqual(by['lair-rules-and-dice'], lair)
-		assert.deepEqual(by['lair-words-only'], { 'after-each-round→lair-keeper': 'off', 'on-event→lair-scratchpad': 'full' })
+		assert.deepEqual(by['lair-words-only'], { ...scenes, 'after-each-round→lair-keeper': 'off', 'on-event→lair-scratchpad': 'full' })
 	})
 
 	test("🚧 S3 (GM, G1 ★5): Story's After a rest answers the rules' Rest — the story clock moves by it", () => {
@@ -330,7 +439,7 @@ describe("core's genres on registrations (lane 3)", () => {
 		const r = storyRegistrations()
 		const p = (slug: string) => corePresets().find((x) => x.slug === slug)!
 		const minimal = p('story-minimal')
-		assert.deepEqual([...(minimal.registrations?.drop ?? [])].sort(), [r.reckoning.key, r.sweep.key, r.illustrate.key].sort())
+		assert.deepEqual([...(minimal.registrations?.drop ?? [])].sort(), [r.reckoning.key, r.sweep.key, r.illustrate.key, r.scenes.key, r.sceneSummaries.key].sort())
 		assert.deepEqual(minimal.registrations?.change, [
 			{ key: r.reply.key, values: { reading: { params: { scene: false } } } },
 		])

@@ -133,7 +133,8 @@
 		canRerun,
 		canDelete,
 		extendRefusal,
-		speechReason: conv.dossier?.speech?.canSpeak === false ? conv.dossier.speech.reason : undefined
+		speechReason: conv.dossier?.speech?.canSpeak === false ? conv.dossier.speech.reason : undefined,
+		refOfMember: conv.refOfMember
 	})
 	// `itemGated` rides with `canAct` (W6): a contributed action whose
 	// audience is `item` was answered `true` ahead of any message, and this
@@ -312,7 +313,7 @@
 								</span>
 							{/if}
 						{/each}
-						{#if conv.dossier?.writes.lore && !msg.isGenerating}
+						{#if conv.dossier?.writes.lore && !msg.isGenerating && conv.select.offered}
 							<button
 								data-widget-part="messages.message-option"
 								title="Select for summary"

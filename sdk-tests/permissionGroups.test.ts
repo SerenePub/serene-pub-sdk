@@ -91,3 +91,71 @@ describe('permission group refusals', () => {
 		assert.equal(codes(build({ genres: [{ id: `${SLUG}:genre/desk@1`, name: 'Desk', shape: { writes: { library: { characters: false } } } }] })).includes('E_PLUGIN_LIBRARY_WRITES'), false)
 	})
 })
+
+describe('the applet card (M2d)', () => {
+	const applet = { id: `${SLUG}:genre/a@1`, name: 'A', shape: { view: SLUG, applet: true } }
+	const frame = { 'session-view': { entry: 'ui/a.html', title: 'A' } }
+	const card = (extra: Record<string, unknown>, files: string[] = [], genres: unknown[] = [applet]) =>
+		compilePlugin({
+			sources: [{ path: 'index.ts', text: '' }],
+			extension: Object.assign(defineExtension({ slug: SLUG, name: 'Lab', version: '0.1.0' }), {
+				genres,
+				surfaces: frame,
+				...extra,
+			}) as never,
+			appletCardFiles: files,
+		})
+	const withAssets = { assets: { dir: 'assets' } }
+	const cardCodes = (r: CompileResult) => codes(r).filter((c) => c.startsWith('E_APPLET_CARD'))
+
+	test('a good card is clean', () => {
+		const appletCard = { poster: 'assets/card/poster.png', logo: 'assets/card/logo.png', blurb: { en: 'Roll dice.' } }
+		const r = card({ ...withAssets, appletCard }, ['assets/card/poster.png', 'assets/card/logo.png'])
+		assert.deepEqual(cardCodes(r), [])
+	})
+	test('E_APPLET_CARD_OUTSIDE_ASSETS: outside the folder, unsafe, or no assets declared', () => {
+		for (const poster of ['card/poster.png', '/assets/p.png', 'assets/../p.png', 'assets\\p.png'])
+			assert.ok(cardCodes(card({ ...withAssets, appletCard: { poster } }, [poster])).includes('E_APPLET_CARD_OUTSIDE_ASSETS'), poster)
+		const none = card({ appletCard: { logo: 'assets/l.png' } }, ['assets/l.png'])
+		assert.ok(cardCodes(none).includes('E_APPLET_CARD_OUTSIDE_ASSETS'))
+		assert.ok(none.findings.find((f) => f.code === 'E_APPLET_CARD_OUTSIDE_ASSETS')!.fix)
+	})
+	test('E_APPLET_CARD_MISSING', () => {
+		assert.ok(cardCodes(card({ ...withAssets, appletCard: { poster: 'assets/p.png' } }, [])).includes('E_APPLET_CARD_MISSING'))
+	})
+	test('E_APPLET_CARD_BLURB_LONG: 160 passes, 161 does not', () => {
+		assert.deepEqual(cardCodes(card({ appletCard: { blurb: 'x'.repeat(160) } })), [])
+		assert.ok(cardCodes(card({ appletCard: { blurb: { en: 'x'.repeat(161) } } })).includes('E_APPLET_CARD_BLURB_LONG'))
+	})
+	test('E_APPLET_CARD_WITHOUT_APPLET', () => {
+		const plain = { id: `${SLUG}:genre/p@1`, name: 'P', shape: {} }
+		assert.ok(cardCodes(card({ appletCard: { blurb: 'x' } }, [], [plain])).includes('E_APPLET_CARD_WITHOUT_APPLET'))
+		assert.deepEqual(cardCodes(card({ appletCard: { blurb: 'x' } })), [])
+	})
+})
+
+describe('W_SETTING_UNDESCRIBED: a user-facing setting without purpose, group and reach (P5, warning only)', () => {
+	const field = (extra: Record<string, unknown>) => ({ type: 'number', label: 'Difficulty', ...extra })
+	const genre = (fields: Record<string, unknown>) => ({ id: `${SLUG}:genre/g@1`, name: 'G', shape: { fields } })
+	const warned = (r: CompileResult) => r.findings.filter((f) => f.code === 'W_SETTING_UNDESCRIBED')
+
+	test('a genre field missing description, group or reach warns; all three do not; reach admin does not', () => {
+		const r = build({ genres: [genre({ difficulty: field({}) })] })
+		const w = warned(r)
+		assert.equal(w.length, 1)
+		assert.equal(w[0]!.severity, 'warning')
+		assert.match(w[0]!.message, /'difficulty'.*lands under Advanced/)
+		assert.ok(w[0]!.fix)
+		assert.equal(warned(build({ genres: [genre({ d: field({ description: 'How hard.', group: 'Rules', reach: 'owner' }) })] })).length, 0)
+		assert.equal(warned(build({ genres: [genre({ d: field({ reach: 'admin' }) })] })).length, 0)
+		assert.equal(warned(build({ genres: [genre({ d: field({ description: 'How hard.', group: 'Rules' }) })] })).length, 1, 'reach missing')
+	})
+	test('a scope user plugin setting without description warns; scope pub does not; ok stays true', () => {
+		const settings = (scope: string) => ({ schema: { theme: field({ scope, group: 'Look' }) } })
+		const user = build({ settings: settings('user') })
+		assert.equal(warned(user).length, 1)
+		assert.equal(user.ok, true)
+		assert.equal(warned(build({ settings: settings('pub') })).length, 0)
+		assert.equal(warned(build({ settings: { schema: { t: field({ scope: 'user', group: 'Look', description: 'Pick one.' }) } } })).length, 0)
+	})
+})

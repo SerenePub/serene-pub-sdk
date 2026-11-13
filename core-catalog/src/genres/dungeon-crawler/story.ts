@@ -15,8 +15,7 @@
  *     a reply and declares for the next round, never lost between the last
  *     reply and this one; every write of the turn is anchored to it, so a
  *     retake or a delete takes it back;
- *  1. `fallen`, `log`, `books` — the story turn's own reads (the fallen, the
- *     Journal folio) and `core:script/dungeon-crawler-books`: the Planner's
+ *  1. `log`, `books` — the story turn's own reads (the Journal folio) and `core:script/dungeon-crawler-books`: the Planner's
  *     crib (the preamble's one crib builder — the world as the session's own
  *     lorebook holds it, the goal, the leads, the notes and their Asks, the
  *     story so far) and this round's brief (each player seat, what they
@@ -52,7 +51,7 @@
  *     **table** channel (`stakes.shown.write`), anchored to the Narrator's
  *     row, in no voice;
  *  7. `ledger` — `core:script/dungeon-crawler-ledger`: the genre's own
- *     bookkeeping — its fields (fate, the clock, where a newcomer stands, a
+ *     bookkeeping — its fields (fate, where a newcomer stands, a
  *     level's new full health), death (`death.ts`), the goal (`goal.ts`), the
  *     leads, the journal line and its kinds (`journal.ts`), the world's new
  *     places and people for the session's lorebook (`lore.ts`), the
@@ -60,8 +59,15 @@
  *  8. `raise.levels.*`, `sheet.changed.*` — the genre fields written, filed at
  *     the Narrator's row (the revealed notes kept in step, A24);
  *     `time.passed.advance` — the handler's **advance** with the turn's
- *     minutes (A4: durations tick every turn); `lorePlaces` … `loreFallen` —
- *     the world written; `filed.kept.write` — the bookkeeping and the
+ *     minutes (A4: durations tick every turn); `time.clock.advance` — the
+ *     clock is the session's story clock (2026-11-10), moved by the turn's
+ *     minutes through `advance-story-clock@1`; `lorePlaces`, `lorePeople` —
+ *     the world written; `deaths` — each seat that died marked `deceased` in
+ *     the cast (`core:outlet/update-cast-member@1`, tied to the row;
+ *     2026-11-10: no lore is written for a death); `companions.fates.*` — a
+ *     companion's death or revival (bench-L3, ★4 2026-11-10): the seat benched
+ *     or brought back and its cast member marked, tied to the row;
+ *     `filed.kept.write` — the bookkeeping and the
  *     journal, one annex write;
  *  9. `outcomes`, `context` … `say` → `save` — the Narrator, streamed, under
  *     its own prompt row with the brief as `{{turnDirection}}` and the
@@ -83,7 +89,7 @@ import { DUNGEON_CRAWLER_DOOR_SCRIPT } from './dice.js'
 import { DUNGEON_CRAWLER_DEATH_JS } from './death.js'
 import { DUNGEON_CRAWLER_GOAL_JS } from './goal.js'
 import { DUNGEON_CRAWLER_JOURNAL_JS, journalWrites } from './journal.js'
-import { DUNGEON_CRAWLER_ENTRY_TYPES, DUNGEON_CRAWLER_WORLD_WRITES_JS, loreWrites } from './lore.js'
+import { DUNGEON_CRAWLER_WORLD_WRITES_JS, loreWrites } from './lore.js'
 import { deliverSecrets } from './secrets.js'
 import { DUNGEON_CRAWLER_CRIB_ROUNDS, DUNGEON_CRAWLER_STORY_PREAMBLE, storySeed } from './storyScripts.js'
 import { DUNGEON_CRAWLER_SHAPE_SCRIPT } from './shape.js'
@@ -112,10 +118,11 @@ import { TABLE_CHANNEL } from '../../shared/ui/conversation/tableChannel.js'
 
 /**
  * 🚧 `core:script/dungeon-crawler-books`: what a story turn starts from.
- * Handed `{ session, state, story, messageId, places, people, fallen, log }`
+ * Handed `{ session, state, story, messageId, places, people, log, cast }`
  * — the settings document, the session's state, the Story's newest rows, the
- * inlet's re-driven row, the three listings of the session's lorebook and
- * the Journal folio's newest lines. Returns:
+ * inlet's re-driven row, the two listings of the session's lorebook, the
+ * Journal folio's newest lines and the session's cast read (it carries the
+ * session's story time). Returns:
  *
  *  - `fresh` — plan this turn (not a re-telling, not ended); `redo` — the row
  *    being re-driven is the last turn's, whose `told` brief and outcomes
@@ -125,8 +132,8 @@ import { TABLE_CHANNEL } from '../../shared/ui/conversation/tableChannel.js'
  *    reference, and `location:<entry id>` for each place one stands in;
  *    `actions` — `[{ owner, text }]`, each live seat's declared lines, else
  *    its standing order;
- *  - `clockBase`, `rules` (`difficulty`), `seats`, `places`, `people` — as
- *    read; `log` — the Journal's newest lines; `crib` (the preamble's one
+ *  - `clockBase` (the session's story now, as the cast read carries it),
+ *    `rules` (`difficulty`), `seats`, `places`, `people` — as read; `log` — the Journal's newest lines; `crib` (the preamble's one
  *    crib builder), `brief`;
  *  - `rigour` — the session's, as its document carries it (empty when it
  *    carries none: the ruleset handler then reads the stored one);
@@ -160,7 +167,7 @@ var rules = { difficulty: text(w0.difficulty) || "fair" };
 // 🚧 How the session's ruleset plays (P2-4, P2-6): the kit's own ruleset or
 // another (Story: words), and Vis Itineris's casting and dying choices.
 var rs = rulesetOf(v.ruleset);
-var clockBase = text(w0["crawl-time"]) || ${JSON.stringify(DUNGEON_CRAWLER_EPOCH)};
+var clockBase = storyNowClock(own(own(v.cast).storyTime).now) || ${JSON.stringify(DUNGEON_CRAWLER_EPOCH)};
 var seats = seatsOf(doc, state);
 // 🚧 What a level brings to each seat's full health (S4, D9: the genre's
 // HP_PER_LEVEL retired): its class's kit's level gain, read off the
@@ -180,7 +187,7 @@ function levelHpOf(cls) {
 for (var lh = 0; lh < seats.length; lh++) seats[lh].levelHp = levelHpOf(seats[lh]["class"]);
 var heroes = own(progress.heroes);
 var places = placesOf(v.places);
-var people = peopleOf(v.people);
+var people = peopleOf(v.people, progress.fallen);
 var log = logOf(v.log, CRIB_ROUNDS);
 
 // This round's declarations: the person lines on Story since its newest
@@ -190,7 +197,11 @@ var said = {};
 function seatOfLine(m) {
 	var sp = text(m.speaker);
 	for (var q = 0; q < seats.length; q++) if (seats[q].ref === sp) return seats[q];
-	if (m.personaId != null) for (var p = 0; p < seats.length; p++) if (seats[p].ref === "character:" + m.personaId) return seats[p];
+	// A line stamped with its cast member is matched by it alone when the seats carry theirs (a card id may now be somebody else's); ⏳ else by its card.
+	var byMember = false;
+	for (var bm = 0; bm < seats.length; bm++) if (seats[bm].castMemberId != null) byMember = true;
+	if (m.castMemberId != null && byMember) { for (var cm = 0; cm < seats.length; cm++) if (seats[cm].castMemberId === m.castMemberId) return seats[cm]; }
+	else if (m.personaId != null) for (var p = 0; p < seats.length; p++) if (seats[p].ref === "character:" + m.personaId) return seats[p];
 	if (m.userId != null) for (var u = 0; u < seats.length; u++) if (seats[u].user === Number(m.userId)) return seats[u];
 	return seats.length === 1 ? seats[0] : null;
 }
@@ -207,7 +218,7 @@ function placeNamed(name) {
 	for (var i = 0; i < places.length; i++) if (places[i].name.toLowerCase() === n) return places[i];
 	return null;
 }
-var crib = cribLines(progress, journal, { state: state, places: v.places, people: v.people, fallen: v.fallen, log: log, detail: true });
+var crib = cribLines(progress, journal, { state: state, places: v.places, people: v.people, log: log, detail: true });
 
 var brief = [];
 brief.push("Difficulty: " + rules.difficulty + ". Time: " + clockLabel(clockBase) + ".");
@@ -248,7 +259,11 @@ if (!anyDeclared && actions.length) brief.push("Nobody new declared this round: 
 // 🚧 The companions are narrative only (owner ruling 2026-10-18, P3-9): no
 // sheet is kept for them and no change reaches them — said so, by name.
 var comp = companionNames(doc);
-if (comp.length) brief.push("Companions travelling with the party, voiced by the Narrator — narrative only: no sheet keeps their health or their things, so propose no delta for them; tell what befalls them in the brief:\\n- " + comp.join("\\n- "));
+if (comp.length) brief.push("Companions travelling with the party, voiced by the Narrator — narrative only: no sheet keeps their health or their things, so propose no delta for them; tell what befalls them in the brief; if one of them dies this round, name them in fallenCompanions:\\n- " + comp.join("\\n- "));
+// 🚧 The fallen companions the story could bring back (bench-L3, ★4 2026-11-10).
+var lost = [], fl0 = Array.isArray(progress.fallen) ? progress.fallen : [];
+for (var fi = 0; fi < fl0.length; fi++) if (own(fl0[fi]).companion === true && text(own(fl0[fi]).name)) lost.push(text(own(fl0[fi]).name));
+if (lost.length) brief.push("Fallen companions the story could bring back to life (a shrine, a Raise): " + lost.join(", ") + "; name any it does in revivedCompanions.");
 var owed = Array.isArray(progress.arrivals) ? progress.arrivals : [];
 for (var oi = 0; oi < owed.length; oi++) {
 	var o = own(owed[oi]);
@@ -264,7 +279,10 @@ return {
 		brief: text(last.brief), outcomes: text(last.outcomes),
 		changes: Array.isArray(last.changes) && last.changes.length ? last.changes : null,
 		raises: Array.isArray(last.raises) && last.raises.length ? last.raises : null,
-		replay: Array.isArray(last.replay) && last.replay.length ? last.replay : null
+		replay: Array.isArray(last.replay) && last.replay.length ? last.replay : null,
+		deceased: Array.isArray(last.deceased) && last.deceased.length ? last.deceased : null,
+		companionFates: Array.isArray(last.companionFates) && last.companionFates.length ? last.companionFates : null,
+		clock: num(last.clock, 0) > 0 ? num(last.clock, 0) : null
 	} : null,
 	base: { progress: progress, journal: journal },
 	owners: owners, actions: actions, rigour: text(doc.rigour),
@@ -320,7 +338,7 @@ var counted = rigour === "mechanics" || rigour === "scripts";
 var slotLines = [];
 var seatsF = Array.isArray(own(v.books).seats) ? own(v.books).seats : [];
 for (var sf = 0; sf < seatsF.length; sf++) {
-	var sw = slotWords(own(own(own(own(v.state).cast).byId)[stateKeyOf(seatsF[sf].ref)]));
+	var sw = slotWords(own(own(own(own(v.state).cast).byId)[stateKeyOf(seatsF[sf].ref, own(own(own(v.state).cast).byId))]));
 	if (sw.length) slotLines.push(seatsF[sf].name + " — spell slots " + sw.join(", ") + ". A spell of a level with none left cannot be cast.");
 }
 var sheetText = blockText(blocks.sheet);
@@ -471,7 +489,7 @@ function seatOfRef(ref) {
 function bagOf(ref) {
 	var m0 = /^location:(\\d+)$/.exec(ref);
 	if (m0) return own(own(own(state.locations).byId)[m0[1]]);
-	return own(own(own(state.cast).byId)[stateKeyOf(ref)]);
+	return own(own(own(state.cast).byId)[stateKeyOf(ref, own(own(state.cast).byId))]);
 }
 // The repertoire an owner holds a piece in, by its name or compendium id.
 function heldIn(ref, piece) {
@@ -494,7 +512,7 @@ function isHealth(slot) { var k = text(slot).toLowerCase(); return k === "hp" ||
 function healthNow(ref) {
 	var st0 = seatOfRef(ref);
 	if (st0) return st0.hp !== null ? st0.hp : st0.maxHp;
-	var e0 = own(own(own(state.cast).byId)[stateKeyOf(ref)]);
+	var e0 = own(own(own(state.cast).byId)[stateKeyOf(ref, own(own(state.cast).byId))]);
 	return num(e0.hp, null);
 }
 // 🚧 Who crosses a way (Q2-1, owner ruling ★6 — no grammar change): the seat
@@ -590,7 +608,7 @@ var spentNow = {};
 function spendSlot(dl) {
 	var lv = Number((/\\d+/.exec(text(dl.piece)) || [])[0]);
 	var ref = seatRefFor(dl.owner);
-	var held = own(own(own(state.cast).byId)[stateKeyOf(ref)])["crawl-spell-slots"];
+	var held = own(own(own(state.cast).byId)[stateKeyOf(ref, own(own(state.cast).byId))])["crawl-spell-slots"];
 	held = Array.isArray(held) ? held : [];
 	var already = num(spentNow[ref + "|" + lv], 0);
 	for (var i = 0; i < held.length; i++) {
@@ -650,10 +668,11 @@ return {
  * the state it left (`state`, the turn's own, when it applied nothing),
  * `row` the Narrator's row. Returns `{ changes, progress, journal, notes,
  * notesRevealed, brief, narrator, travelogue, journalLines, secrets,
- * laneLines, raises, places, people, fallen, replay, advance }` — see the
- * file header, step 8. `advance` is the turn's minutes for the handler's
- * `advance` (AUDIT A4: durations tick on every story turn, not only on
- * Rest). On a re-telling (a swipe), the brief and the outcomes as the turn
+ * laneLines, raises, places, people, deceased, companionFates, replay, advance, clock }` —
+ * see the file header, step 8. `advance` is the turn's minutes for the
+ * handler's `advance` (AUDIT A4: durations tick on every story turn, not only
+ * on Rest). `clock` is the minutes the session's story clock moves
+ * (`advance-story-clock@1`), or null when the turn moves none. On a re-telling (a swipe), the brief and the outcomes as the turn
  * first told them, and what it files again (`changes`, `raises`, `replay`:
  * the host took back what was anchored to the row).
  * @experimental
@@ -676,7 +695,11 @@ if (b.redo) {
 		raises: Array.isArray(told0.raises) ? told0.raises.map(function (r) { var o = own(r); if (!o.slot) o.slot = SL.hp; return o; }) : null,
 		replay: told0.replay || null,
 		progress: null, journal: null, notes: null, notesRevealed: null, travelogue: null, journalLines: null,
-		secrets: null, laneLines: null, places: null, people: null, fallen: null, advance: null,
+		secrets: null, laneLines: null, places: null, people: null, deceased: told0.deceased || null, advance: null,
+		// 🚧 The companions' fates (bench-L3, owner ★4 2026-11-10): the swipe took them back with the row; filed again, once.
+		companionFates: told0.companionFates || null,
+		// A swipe took the move back with the row: the redo files it again, once.
+		clock: told0.clock || null,
 		brief: text(told0.brief) || "Tell this round again from what the players just did.",
 		narrator: (function () {
 			var c0 = text(own(own(v.applied).facts).rigour) || text(b.rulesetRigour), dr = c0 === "mechanics" || c0 === "scripts" ? "yes" : "";
@@ -738,13 +761,15 @@ for (var lu = 0; lu < seats.length; lu++) {
 	changes.push({ owner: was.ref, slot: SL.hp, value: Math.min(top, (is.hp === null ? was.maxHp : is.hp) + gained * perLevel) });
 }
 
-// The clock: the turn's minutes, from where the turn started.
+// The clock: the turn's minutes, from where the turn started. The session's
+// story clock moves by them (\`advance-story-clock@1\`, the ledger's \`clock\`);
+// the journal's time line reads \`clockNext\`.
 var clockNext = null;
 if (plan && plan.clock.minutes > 0) {
 	clockNext = addMinutes(b.clockBase, plan.clock.minutes);
-	if (clockNext && clockNext !== b.clockBase) changes.push({ owner: "world", slot: SL.clock, value: clockNext });
-	else clockNext = null;
+	if (!clockNext || clockNext === b.clockBase) clockNext = null;
 }
+var clockMinutes = clockNext ? Math.round(plan.clock.minutes) : 0;
 
 // The world the Planner moved, for the session's own lorebook: new places
 // with their ways out (a link says the way and how it stands), new people
@@ -752,11 +777,59 @@ if (plan && plan.clock.minutes > 0) {
 // in this turn's deltas (\`exitDeltas\`, the turn script).
 var placesNow = Array.isArray(b.places) ? b.places : [];
 var writes = plan ? worldWrites(placesNow, Array.isArray(b.people) ? b.people : [], plan.world.rooms, plan.world.npcs, counted) : { places: [], people: [] };
-var fallenNew = [];
+var deceased = [];
 ${DUNGEON_CRAWLER_DEATH_JS}
 // Who is out of the round once this turn lands (the round script's mirror).
 var outNow = fatesAfter(seatsNow, changes);
 keepFates(progress, seatsNow, changes);
+// 🚧 The companions' fates (bench-L3, owner ★4 2026-11-10; "seat to benched is
+// something managed by the genre/pipelines, not automatically by core"): a
+// companion the Planner names in \`fallenCompanions\` is benched and its cast
+// member marked deceased; one named in \`revivedCompanions\` is brought back
+// from \`progress.fallen\`. A hero is never touched here (\`death.ts\` owns
+// heroes). The crawl's fallen list moves with it, in this turn's own write.
+var companionFates = [];
+function memberOf(castMemberId, ref) {
+	if (castMemberId != null) return "seated-member:" + castMemberId;
+	return typeof ref === "string" && ref.indexOf("seated-member:") === 0 ? ref : "";
+}
+if (plan) {
+	var cdone = {};
+	var cfall = Array.isArray(plan.fallenCompanions) ? plan.fallenCompanions : [];
+	var cnow = companionsOf(doc);
+	for (var cf = 0; cf < cfall.length; cf++) {
+		var cname = text(cfall[cf]).toLowerCase();
+		if (!cname || cdone[cname]) continue;
+		var cmatch = null;
+		for (var cn = 0; cn < cnow.length; cn++) if (cnow[cn].name.toLowerCase() === cname || cnow[cn].ref === text(cfall[cf])) cmatch = cnow[cn];
+		if (!cmatch) continue;
+		var cmember = memberOf(cmatch.castMemberId, cmatch.ref);
+		if (!cmember) continue;
+		cdone[cname] = true;
+		companionFates.push({ seat: cmatch.ref, benched: true, member: cmember, changes: { nodeState: "deceased" } });
+		var cfallen = Array.isArray(progress.fallen) ? progress.fallen.slice() : [];
+		cfallen.push({ name: cmatch.name, where: partyPlace(""), seat: cmatch.ref, castMemberId: cmatch.castMemberId != null ? cmatch.castMemberId : null, companion: true });
+		progress.fallen = cfallen;
+		told.push(cmatch.name + " is dead. Name " + cmatch.name + "'s death plainly, in a sentence of its own, and give it weight.");
+	}
+	var crev = Array.isArray(plan.revivedCompanions) ? plan.revivedCompanions : [];
+	for (var cr = 0; cr < crev.length; cr++) {
+		var rname = text(crev[cr]).toLowerCase();
+		if (!rname) continue;
+		var rlist = Array.isArray(progress.fallen) ? progress.fallen : [];
+		var rat = -1;
+		for (var rf = 0; rf < rlist.length; rf++) if (own(rlist[rf]).companion === true && text(own(rlist[rf]).name).toLowerCase() === rname) { rat = rf; break; }
+		if (rat < 0) continue;
+		var rentry = own(rlist[rat]);
+		var rmember = memberOf(rentry.castMemberId, rentry.seat);
+		if (!rmember) continue;
+		companionFates.push({ seat: rentry.seat, benched: false, member: rmember, changes: { nodeState: "active" } });
+		var rrest = rlist.slice();
+		rrest.splice(rat, 1);
+		progress.fallen = rrest;
+		told.push(text(rentry.name) + " is alive again: the story brought them back. Tell how, plainly.");
+	}
+}
 // 🚧 Where everybody is (core:slot/location@1, AUDIT A9): a living seat nobody
 // has placed yet (a newcomer) stands where a living seat of the party stands,
 // else where its arrival was owed, else the first place of the world.
@@ -844,7 +917,10 @@ for (var op2 = 0; op2 < opened.length; op2++) replay.push(opened[op2]);
 if (nowOpen.length) outcomesText = (outcomesText ? outcomesText + "\\n\\n" : "") + nowOpen.join(" ");
 progress.lastTelling = {
 	row: row, brief: briefText, outcomes: outcomesText,
-	changes: changes.length ? changes : null, raises: raises.length ? raises : null, replay: replay.length ? replay : null
+	changes: changes.length ? changes : null, raises: raises.length ? raises : null, replay: replay.length ? replay : null,
+	deceased: deceased.length ? deceased : null,
+	companionFates: companionFates.length ? companionFates : null,
+	clock: clockMinutes > 0 ? clockMinutes : null
 };
 return {
 	changes: changes.length ? changes : null,
@@ -865,8 +941,10 @@ return {
 	replay: opened.length ? opened : null,
 	places: writes.places.length ? writes.places : null,
 	people: writes.people.length ? writes.people : null,
-	fallen: fallenNew.length ? fallenNew : null,
-	advance: plan && plan.clock.minutes > 0 ? { minutes: plan.clock.minutes } : null
+	deceased: deceased.length ? deceased : null,
+	companionFates: companionFates.length ? companionFates : null,
+	advance: plan && plan.clock.minutes > 0 ? { minutes: plan.clock.minutes } : null,
+	clock: clockMinutes > 0 ? clockMinutes : null
 };
 `,
 )
@@ -932,9 +1010,11 @@ export interface Ledger {
 	readonly raises: unknown
 	readonly places: unknown
 	readonly people: unknown
-	readonly fallen: unknown
+	readonly deceased: unknown
+	readonly companionFates: unknown
 	readonly replay: unknown
 	readonly advance: unknown
+	readonly clock: unknown
 }
 
 /**
@@ -966,7 +1046,7 @@ const applied = (a: Applied) => ({
 /**
  * The `channel.story` branch (see the header): the spec's reads — the cast,
  * the Story's newest rows, the session's lorebook — are the respond spec's
- * head (`respond.ts`); the fallen and the Journal folio are its own.
+ * head (`respond.ts`); the Journal folio is its own.
  * @internal
  */
 export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
@@ -978,12 +1058,8 @@ export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 	w.params.push([replanWrite.fresh, { emptyIsUnreadable: true }])
 	w.params.push([planWrite.words, { emptyIsUnreadable: true }])
 	w.params.push([replanWrite.words, { emptyIsUnreadable: true }])
-	w.params.push([on(s, 'fallen'), { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.fallen] }])
 	w.params.push([on(s, 'log'), { channel: TRAVELOGUE_CHANNEL, limit: DUNGEON_CRAWLER_CRIB_ROUNDS }])
 	const reads = s
-		.query('fallen', ($) => C.lorebookEntries.v1({ scope: $.input.sessionScope, params: slot.params() }), {
-			expose: { label: 'The fallen', status: STORY_STATUS.planning },
-		})
 		.query('log', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope, params: slot.params() }), {
 			expose: { label: 'The journal so far', status: STORY_STATUS.planning },
 		})
@@ -998,10 +1074,11 @@ export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 						messageId: $.input.messageId,
 						places: $.places.entries,
 						people: $.people.entries,
-						fallen: $.fallen.entries,
 						log: $.log.messages,
 						// 🚧 The ruleset the session plays and its settings (P2-4, P2-6).
 						ruleset: $.input.ruleset,
+						// The session's story time rides on the cast read (2026-11-10).
+						cast: $.cast.main,
 					}), "Open the Planner's books", STORY_STATUS.planning),
 					w,
 					'crib',
@@ -1386,7 +1463,27 @@ export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 					}),
 				{ expose: { label: "Pass the turn's time under the rules", status: STORY_STATUS.books } },
 			),
-		),
+		)
+			/**
+			 * The session's story clock moves by the turn's minutes (owner ruling
+			 * 2026-11-10: the crawl keeps no clock of its own). A move the story
+			 * cannot take moves nothing (`onRefusal: 'skip'`); a swipe takes it
+			 * back with the row, the redo moves it again, once.
+			 */
+			.when('clock', { path: (v: Ledger) => v.clock, truthy: true }, (k) =>
+				jsonPart(k, w, 'minutes', ($) => $.channel.story.ledger.main, 'clock', "The round's minutes").outlet(
+					'advance',
+					($) =>
+						C.advanceStoryClock.v1({
+							by: $.minutes.main,
+							unit: 'minutes',
+							cause: 'action',
+							onRefusal: 'skip',
+							params: slot.params(),
+						}),
+					{ expose: { label: 'Move the story clock', status: STORY_STATUS.books } },
+				),
+			),
 	)
 	/**
 	 * A swipe's re-filing (the host took back what the turn wrote at its row):
@@ -1410,10 +1507,80 @@ export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 			),
 		),
 	)
-	// The world the turn moved: new places, ways out, people and cairns, in
-	// the session's own lorebook, each anchored to the turn's row (`lore.ts`).
+	// The world the turn moved: new places, ways out and people, in the
+	// session's own lorebook, each anchored to the turn's row (`lore.ts`).
 	const worlded = loreWrites(replayed, w, ($) => $.channel.story.ledger.main)
-	const filed = worlded.junction('filed', { on: ($) => $.ledger.main }, (j) =>
+	/**
+	 * 🚧 A death writes no lore (owner ruling 2026-11-10): each seat that died
+	 * has its cast member marked `deceased`, a cast version the host ties to
+	 * the Narrator's row — a swipe takes it back (the redo files it again,
+	 * once), a retake or a delete takes it back for good.
+	 */
+	const deathsFiled = worlded.junction('deaths', { on: ($) => $.ledger.main }, (j) =>
+		j.when('deceased', { path: (v: Ledger) => v.deceased, truthy: true }, (k) =>
+			jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'deceased', 'The seats that died').each(
+				'member',
+				{ over: ($) => $.list.main, max: 8 },
+				(m) =>
+					jsonPart(
+						jsonPart(m, w, 'who', ($) => $[ITEM], 'member', 'Whose cast member'),
+						w,
+						'changes',
+						($) => $[ITEM],
+						'changes',
+						'Their new state',
+					).outlet('write', ($) => C.updateCastMember.v1({ member: $.who.main, changes: $.changes.main }), {
+						expose: { label: 'Mark the fallen deceased' },
+					}),
+			),
+		),
+	)
+	/**
+	 * 🚧 A companion's death or revival (bench-L3, owner ★4 2026-11-10):
+	 * the genre, not core, benches the seat (\`set-seat-bench@1\`) and marks its
+	 * cast member (\`update-cast-member@1\`), both tied to the Narrator's row. A
+	 * swipe takes them back and the redo files them once; a retake or a delete
+	 * takes them back for good. A person's later drag back into the seat wins,
+	 * in core. Heroes stay with \`deaths\`.
+	 */
+	const companionsFiled = deathsFiled.junction('companions', { on: ($) => $.ledger.main }, (j) =>
+		j.when('fates', { path: (v: Ledger) => v.companionFates, truthy: true }, (k) =>
+			jsonPart(k, w, 'list', ($) => $.channel.story.ledger.main, 'companionFates', "The companions' fates").each(
+				'companion',
+				{ over: ($) => $.list.main, max: 8 },
+				(m) =>
+					jsonPart(
+						jsonPart(
+							jsonPart(
+								jsonPart(m, w, 'seat', ($) => $[ITEM], 'seat', 'Which seat'),
+								w,
+								'benched',
+								($) => $[ITEM],
+								'benched',
+								'Benched or back',
+							),
+							w,
+							'member',
+							($) => $[ITEM],
+							'member',
+							"The companion's cast member",
+						),
+						w,
+						'changes',
+						($) => $[ITEM],
+						'changes',
+						"The companion's new state",
+					)
+						.outlet('bench', ($) => C.setSeatBench.v1({ seat: $.seat.main, benched: $.benched.main }), {
+							expose: { label: 'Bench or bring back the companion' },
+						})
+						.outlet('state', ($) => C.updateCastMember.v1({ member: $.member.main, changes: $.changes.main }), {
+							expose: { label: "Mark the companion's state" },
+						}),
+			),
+		),
+	)
+	const filed = companionsFiled.junction('filed', { on: ($) => $.ledger.main }, (j) =>
 		j.when('kept', { path: (v: Ledger) => v.progress, truthy: true }, (k) =>
 			jsonPart(
 				jsonPart(k, w, 'progress', ($) => $.channel.story.ledger.main, 'progress', 'The crawl, after the round'),
@@ -1478,8 +1645,32 @@ export const storyBranch = (s: StoryOn, w: Wiring): StoryOn => {
 				}),
 			telling,
 		)
+		// 🚧 Earlier in the story. The Narrator has no budget and no fit, so
+		// this budget is for its own model's window and sizes only the block's
+		// share; it is not wired into `prompt`, which stays without a fit.
+		.task(
+			'sceneBudget',
+			($) =>
+				C.contextBudget.v1({
+					sampling: slot.samplingOf(sibling($.context, 'say')),
+					connection: slot.connectionOf(sibling($.context, 'say')),
+					params: slot.params(),
+				}),
+			telling,
+		)
+		.query(
+			'earlierScenes',
+			($) =>
+				C.earlierScenes.v1({
+					scope: $.input.sessionScope,
+					budget: $.sceneBudget.available,
+					params: slot.params(),
+				}),
+			telling,
+		)
 		.task('prompt', ($) =>
 			C.assemble.v2({
+				earlierScenes: $.earlierScenes.main,
 				messages: $.lines.messages,
 				templateContext: $.context.templateContext,
 				template: slot.template(),

@@ -7,6 +7,7 @@ import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 import {
 	everyNTurns,
+	everyNRounds,
 	afterEachTurn,
 	afterEachRound,
 	afterEachScene,
@@ -74,9 +75,9 @@ const CAL: StoryCalendar = {
 	weekdays: ['Oneday', 'Twoday', 'Threeday', 'Fourday', 'Fiveday'],
 }
 
-describe('the ten are declared, addressable and serializable (§11-3)', () => {
+describe('the eleven are declared, addressable and serializable (§11-3)', () => {
 	test('every core cadence has a stable id, options as fields, the moments it wakes on and what it carries', () => {
-		assert.equal(Object.keys(coreCadences).length, 10)
+		assert.equal(Object.keys(coreCadences).length, 11)
 		for (const def of Object.values(coreCadences)) {
 			assert.match(def.id, /^core:cadence\/[a-z-]+@1$/)
 			assert.equal(def.evaluate, 'host')
@@ -84,7 +85,7 @@ describe('the ten are declared, addressable and serializable (§11-3)', () => {
 			assert.ok(def.carries.includes('session'), def.id)
 			assert.equal(getCadence(def.id), def)
 		}
-		assert.equal(allCadences().filter((c) => c.id.startsWith('core:')).length, 10)
+		assert.equal(allCadences().filter((c) => c.id.startsWith('core:')).length, 11)
 		const ref = everyNTurns({ n: 5 })
 		assert.deepEqual(JSON.parse(JSON.stringify(ref)), {
 			id: 'core:cadence/every-n-turns@1',
@@ -111,6 +112,17 @@ describe('turns, rounds, scenes', () => {
 		const run = simulateCadence(everyNTurns({ n: 5 }), turnMoments(1, 12))
 		assert.deepEqual(run.fired, [4, 9])
 		assert.throws(() => everyNTurns({ n: 0 }), /minimum 1/)
+	})
+
+	test('everyNRounds fires on the multiples of n, and a turn never wakes it', () => {
+		const rounds = [1, 2, 3, 4, 5, 6].map((r) => ({ event: sessionEvents.roundEnded, round: r }))
+		const run = simulateCadence(everyNRounds({ n: 2 }), rounds as never)
+		assert.deepEqual(run.fired, [1, 3, 5]) // indexes: rounds 2, 4 and 6
+		assert.ok(coreCadences.everyNRounds)
+		assert.equal(coreCadences.everyNRounds.id, 'core:cadence/every-n-rounds@1')
+		assert.equal(cadenceDue(everyNRounds({ n: 2 }), { kind: 'turn-ended', turn: 2 }).due, false)
+		assert.equal(cadenceDue(everyNRounds({ n: 2 }), { event: sessionEvents.roundEnded, round: 4 } as never).due, true)
+		assert.equal(cadenceDue(everyNRounds({ n: 2 }), { event: sessionEvents.roundEnded, round: 3 } as never).due, false)
 	})
 
 	test('afterEachTurn fires every turn and sleeps at other moments', () => {

@@ -10,13 +10,18 @@ import {
 	boundaryOffer,
 	laneOf,
 	markedRun,
+	messageStoryTime,
 	runOffer,
 	sceneMarks,
 	sceneSwatches,
 	storyDayLabel,
+	storyTimeOfRow,
+	type StoryTimeSpelling,
 	type SceneMarkRow,
 	type SceneMarkScene,
 } from '../core-catalog/components/shared/messages/sceneMarks.js'
+import { formatStoryTime, type StoryCalendar } from '@serene-pub/sdk'
+import { formatStoryTimeAs, storyTimePartsOf } from '../core-catalog/src/shared/ui/session-state/timeFormat.js'
 import { storyDayLabelIn, storyDayText } from '../core-catalog/src/shared/ui/conversation/storyDays.js'
 
 const row = (id: number, extra: Partial<SceneMarkRow> = {}): SceneMarkRow => ({ id, channel: 'main', ...extra })
@@ -222,5 +227,50 @@ describe('lane E: a run, a start nudged, a scene reopened', () => {
 			true,
 			"another lane's open scene is not in the way",
 		)
+	})
+})
+
+describe('a line\'s story time', () => {
+	const calendar: StoryCalendar = {
+		months: [{ name: 'Frost', days: 30 }, { name: 'Thaw', days: 30 }, { name: 'Bloom', days: 30 }],
+		weekdays: ['Moonday', 'Fireday', 'Starday'],
+	} as StoryCalendar
+	const spellIn = (c: StoryCalendar | null): StoryTimeSpelling => ({
+		full: (t) => formatStoryTime(t, c),
+		as: (t, f) => formatStoryTimeAs(storyTimePartsOf(t, c), f),
+		day: (t) => storyDayText(t, c),
+	})
+	const at = (extra: Record<string, unknown>) => row(1, { storyClockYear: 412, storyClockMonth: 3, storyClockDay: 5, ...extra })
+
+	it('reads a stamp with its time of day, or null when it is not a place in time', () => {
+		assert.deepEqual(storyTimeOfRow(at({ storyClockHour: 8, storyClockMinute: 30 })), { year: 412, month: 3, day: 5, hour: 8, minute: 30 })
+		assert.deepEqual(storyTimeOfRow(at({ storyClockHour: 8 })), { year: 412, month: 3, day: 5, hour: 8, minute: 0 })
+		assert.equal(storyTimeOfRow(row(1)) === null, true)
+		assert.equal(storyTimeOfRow(row(1, { storyClockYear: 1.5 })) === null, true)
+		assert.equal(storyTimeOfRow(row(1, { storyClockYear: null, storyClockMonth: 3 })) === null, true)
+		assert.deepEqual(storyTimeOfRow(row(1, { storyClockYear: 4, storyClockDay: 5 })), { year: 4 })
+		assert.deepEqual(storyTimeOfRow(row(1, { storyClockYear: 4, storyClockMinute: 5 })), { year: 4 })
+		assert.equal(messageStoryTime(row(1), spellIn(null)) === null, true)
+	})
+
+	it('shows HH:MM when the stamp has an hour, hovering the full story time', () => {
+		const t = messageStoryTime(at({ storyClockHour: 8, storyClockMinute: 30 }), spellIn(null))
+		assert.deepEqual(t, { text: '08:30', full: 'Year 412, Mo. 3, Day 5, 08:30' })
+	})
+
+	it('shows the calendar day on a date-only stamp', () => {
+		assert.equal(messageStoryTime(at({}), spellIn(null))?.text, 'Year 412, Mo. 3, Day 5')
+		const declared = messageStoryTime(at({}), spellIn(calendar))
+		assert.equal(declared?.text.includes('Bloom'), true)
+		assert.equal(declared?.full, declared?.text)
+	})
+
+	it('lets the time format win and collapse; declared calendars name the weekday', () => {
+		const stamped = at({ storyClockHour: 8, storyClockMinute: 5 })
+		assert.equal(messageStoryTime(stamped, spellIn(null), '{hh}h{mm}')?.text, '08h05')
+		assert.equal(messageStoryTime(at({}), spellIn(null), '{day}/{month} {hh}:{mm}')?.text, '5/3')
+		const named = messageStoryTime(stamped, spellIn(calendar), '{dayName}, {day} {monthName}')?.text
+		assert.equal(named?.endsWith(', 5 Bloom'), true)
+		assert.equal(messageStoryTime(stamped, spellIn(calendar), '   ')?.text, '08:05')
 	})
 })

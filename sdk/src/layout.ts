@@ -14,6 +14,7 @@
  */
 
 import type { I18n } from './i18n.js'
+import type { PanelPriority } from './sessionLayout.js'
 import type { SettingsSchema } from './settings.js'
 import type { WidgetBaseSection, WidgetSectionScope, WidgetWriteGrant } from './widgets.js'
 
@@ -193,6 +194,20 @@ export interface WidgetDecl {
 	 * reading order (middle, left, right) and `validateSessionLayout` warns.
 	 */
 	maxInstances?: number
+	/**
+	 * 🚧 How the host sizes and weighs the panel that shows this widget when the
+	 * layout doesn't say. `height`: `fit` its content, or `fill` a share of what
+	 * is left (absent: `fill`). `priority`: when a zone runs short, `low` gives
+	 * way first, then `normal` (absent: `normal`). A layout's own
+	 * `PanelV2.height` / `priority` win. Core's: Messages
+	 * `{ height: 'fill', priority: 'low' }`, Composer
+	 * `{ height: 'fit', priority: 'high' }`, Turn line
+	 * `{ height: 'fit', priority: 'normal' }`.
+	 *
+	 * @ruling the owner, 2026-11-05 (R8: "an expanding composer weighs more than
+	 * the activity/turn, and it weighs more than the messages")
+	 */
+	panel?: { height?: 'fit' | 'fill'; priority?: PanelPriority }
 	/**
 	 * ⏳ The surface manager's packing hints — what the app's panel packer
 	 * reads: the column span a widget asks for, its minimum box, whether it may

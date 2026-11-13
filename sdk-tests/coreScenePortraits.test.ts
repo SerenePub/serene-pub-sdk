@@ -77,6 +77,8 @@ describe('the declaration (W6)', () => {
 		assert.equal(coreWidgets.scenePortraits, decl)
 		assert.equal(decl.icon, 'SquareUserRound')
 		assert.deepEqual(s.who!.of, ['scene', 'recent', 'pick'])
+		assert.deepEqual(s.whoKind!.of, ['characters', 'personas', 'both'])
+		assert.equal(s.whoKind!.showIf, undefined)
 		assert.deepEqual(s.face!.of, ['avatar', 'sprite', 'chosen'])
 		assert.deepEqual(s.arrangement!.of, ['row', 'grid', 'column', 'stage'])
 		assert.deepEqual(
@@ -84,9 +86,11 @@ describe('the declaration (W6)', () => {
 				who: s.who!.default,
 				recentTurns: s.recentTurns!.default,
 				pickMembers: s.pickMembers!.default,
+				whoKind: s.whoKind!.default,
 				face: s.face!.default,
 				chosenImages: s.chosenImages!.default,
 				arrangement: s.arrangement!.default,
+				speakerFocus: s.speakerFocus!.default,
 				persona: s.persona!.default,
 				playerSeats: s.playerSeats!.default,
 				metPeople: s.metPeople!.default,
@@ -208,6 +212,91 @@ describe('who', () => {
 	})
 })
 
+describe('🚧 whoKind (lay-B D13)', () => {
+	test('the default pins today: both reads exactly as the setting never existed', () => {
+		assert.equal(SCENE_PORTRAITS_DEFAULTS.whoKind, 'both')
+		const today: Record<string, string[]> = {
+			'scene/false': ['character:3', 'character:4', 'character:5', 'character:7'],
+			'scene/true': [
+				'character:3',
+				'character:4',
+				'character:5',
+				'character:7',
+				'character:9',
+			],
+			'recent/false': ['character:4', 'character:3', 'character:7'],
+			'recent/true': ['character:9', 'character:4', 'character:3'],
+		}
+		for (const who of ['scene', 'recent'] as const)
+			for (const persona of [false, true]) {
+				const bare = scenePortraitMembersOf(cast, as({ who, persona }))
+				assert.deepEqual(
+					bare,
+					scenePortraitMembersOf(cast, as({ who, persona, whoKind: 'both' })),
+				)
+				assert.deepEqual(refs(bare), today[`${who}/${persona}`])
+			}
+	})
+	test('characters: no persona, even with Include your persona on', () => {
+		for (const who of ['scene', 'recent'] as const)
+			assert.ok(
+				!scenePortraitMembersOf(
+					cast,
+					as({ who, persona: true, whoKind: 'characters' }),
+				).some((m) => m.isPersona),
+			)
+		assert.deepEqual(
+			refs(scenePortraitMembersOf(cast, as({ persona: true, whoKind: 'characters' }))),
+			['character:3', 'character:4', 'character:5', 'character:7'],
+		)
+	})
+	test("personas: every visible persona that spoke, any player's, ranked under recent", () => {
+		assert.deepEqual(
+			refs(scenePortraitMembersOf(cast, as({ who: 'recent', whoKind: 'personas' }))),
+			['character:10', 'character:9'],
+		)
+		assert.deepEqual(
+			refs(
+				scenePortraitMembersOf(
+					cast,
+					as({ who: 'recent', recentTurns: 1, whoKind: 'personas' }),
+				),
+			),
+			['character:10'],
+		)
+		// The scene: those that spoke, in the cast's order; `persona` changes nothing.
+		for (const persona of [false, true])
+			assert.deepEqual(
+				refs(scenePortraitMembersOf(cast, as({ persona, whoKind: 'personas' }))),
+				['character:9', 'character:10'],
+			)
+		// A persona that never spoke is not in the scene's personas.
+		const quiet: SessionCharactersV1 = {
+			...cast,
+			members: [...cast.members, member({ characterId: 11, name: 'Quin', isPersona: true })],
+		}
+		assert.ok(
+			!refs(scenePortraitMembersOf(quiet, as({ whoKind: 'personas' }))).includes(
+				'character:11',
+			),
+		)
+	})
+	test('pick ignores whoKind', () => {
+		const pick: Partial<ScenePortraitsSettings> = { who: 'pick', pickMembers: ['Ada', 'Zed'] }
+		for (const whoKind of ['characters', 'personas', 'both'] as const)
+			assert.deepEqual(refs(scenePortraitMembersOf(cast, as({ ...pick, whoKind }))), [
+				'character:3',
+				'character:10',
+			])
+	})
+	test('the reader falls back to both on anything else', () => {
+		assert.equal(readScenePortraitsSettings({ whoKind: 'personas' }).whoKind, 'personas')
+		for (const junk of ['nobody', 3, null, undefined])
+			assert.equal(readScenePortraitsSettings({ whoKind: junk }).whoKind, 'both')
+		assert.equal(readScenePortraitsSettings(undefined).whoKind, 'both')
+	})
+})
+
 describe('which picture', () => {
 	test('sprite (the current one, else the avatar), avatar, and chosen (looked up, the avatar until then)', () => {
 		const srcOf = (
@@ -288,9 +377,23 @@ describe('🚧 the scene figures: player seats and the people met (PLAN-dc-after
 			// A companion: cast, not a seat.
 			owner({ key: '3', kind: 'session_cast', id: 3, label: 'Ada' }),
 			// Another player's card, seated as a player seat.
-			owner({ key: '10', kind: 'session_cast', id: 10, label: 'Zed', seat: true, face: { src: '/media/zed', mediaRef: null } }),
+			owner({
+				key: '10',
+				kind: 'session_cast',
+				id: 10,
+				label: 'Zed',
+				seat: true,
+				face: { src: '/media/zed', mediaRef: null },
+			}),
 			// The viewer's card-less player seat.
-			owner({ key: 'player_seat:4', kind: 'player_seat', id: 4, label: 'Ash Fenwick', seat: true, mine: true }),
+			owner({
+				key: 'player_seat:4',
+				kind: 'player_seat',
+				id: 4,
+				label: 'Ash Fenwick',
+				seat: true,
+				mine: true,
+			}),
 		],
 		metPeople: [
 			{ entryId: 21, name: 'Moss' },
@@ -320,8 +423,14 @@ describe('🚧 the scene figures: player seats and the people met (PLAN-dc-after
 	})
 
 	test('the scene only: the latest speakers and a pick name cast members', () => {
-		assert.deepEqual(sceneFiguresOf(cast, state, as({ who: 'recent', playerSeats: true, metPeople: true })), [])
-		assert.deepEqual(sceneFiguresOf(cast, state, as({ who: 'pick', playerSeats: true, metPeople: true })), [])
+		assert.deepEqual(
+			sceneFiguresOf(cast, state, as({ who: 'recent', playerSeats: true, metPeople: true })),
+			[],
+		)
+		assert.deepEqual(
+			sceneFiguresOf(cast, state, as({ who: 'pick', playerSeats: true, metPeople: true })),
+			[],
+		)
 	})
 
 	test('read from settings; Dungeon Crawler pins both on for whoever adds the widget', () => {
@@ -329,8 +438,37 @@ describe('🚧 the scene figures: player seats and the people met (PLAN-dc-after
 		assert.equal(read.playerSeats, true)
 		assert.equal(read.metPeople, false)
 		const pinned = readScenePortraitsSettings(
-			(DUNGEON_CRAWLER_LAYOUT.widgetSettings as Record<string, Record<string, unknown>>)['scene-portraits'],
+			(DUNGEON_CRAWLER_LAYOUT.widgetSettings as Record<string, Record<string, unknown>>)[
+				'scene-portraits'
+			],
 		)
-		assert.deepEqual([pinned.who, pinned.playerSeats, pinned.metPeople, pinned.bars], ['scene', true, true, true])
+		assert.deepEqual(
+			[pinned.who, pinned.playerSeats, pinned.metPeople, pinned.bars],
+			['scene', true, true, true],
+		)
+	})
+})
+
+describe('🚧 speaker focus (PLAN-visual-novel-layout ★2)', () => {
+	test('declared: a boolean, off, labelled, no group; in the defaults; read from settings', () => {
+		const decl = CORE_WIDGETS.find((w) => w.id === 'scene-portraits')!
+		const f = (decl.settings as Record<string, { type: string; default?: unknown; label?: string; group?: string }>).speakerFocus!
+		assert.deepEqual([f.type, f.default, f.label, f.group], ['boolean', false, "Dim whoever isn't speaking", undefined])
+		assert.equal(SCENE_PORTRAITS_DEFAULTS.speakerFocus, false)
+		assert.equal(readScenePortraitsSettings({ speakerFocus: true }).speakerFocus, true)
+		assert.equal(readScenePortraitsSettings({ speakerFocus: false }).speakerFocus, false)
+		assert.equal(readScenePortraitsSettings({ speakerFocus: 'yes' }).speakerFocus, false)
+		assert.equal(readScenePortraitsSettings(undefined).speakerFocus, false)
+	})
+
+	test('speaking is true only for the member whose ref is speakerRef', () => {
+		const speaking = (c: SessionCharactersV1 | undefined) =>
+			scenePortraitsOf(c, undefined, as({ who: 'scene' })).filter((p) => p.speaking).map((p) => p.key)
+		assert.deepEqual(speaking({ ...cast, speakerRef: 'character:4' }), ['character:4'])
+		assert.deepEqual(speaking({ ...cast, speakerRef: null }), [])
+		assert.deepEqual(speaking(cast), [])
+		assert.deepEqual(speaking({ ...cast, speakerRef: '' }), [])
+		assert.deepEqual(speaking({ ...cast, speakerRef: 'character:99' }), [])
+		assert.deepEqual(speaking(undefined), [])
 	})
 })

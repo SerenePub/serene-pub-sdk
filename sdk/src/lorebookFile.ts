@@ -11,6 +11,14 @@
  * file-level shape only: size, JSON, nesting, the entries list, and the
  * ceilings on counts and lengths. It never touches a database.
  *
+ * The file-level fields it also checks are a book's **rules**:
+ * `extensions.serenepub.primaryRuleset` (plus an optional `rulesetVersion`), the
+ * book's own ruleset beside `storyTime` (ruling ★M3b-S5-1, 2026-11-05). They are
+ * not a session's ruleset and not a lock: a session started on the book adopts
+ * them, and a Freeform book brings none. An id this pub doesn't have is the
+ * importer's business (it imports the book on Freeform with a warning), not the
+ * validator's; this checks the shape only.
+ *
  * @experimental
  */
 
@@ -164,6 +172,19 @@ export function lorebookFileFindings(text: string): string[] {
 		out.push(`Lorebook's narrative graph has too many nodes (${count(graph?.nodes)}); the maximum supported is ${L.maxNarrativeNodes}.`)
 	if (count(graph?.relationships) > L.maxNarrativeRelationships)
 		out.push(`Lorebook's narrative graph has too many relationships (${count(graph?.relationships)}); the maximum supported is ${L.maxNarrativeRelationships}.`)
+
+	if (serenepub && typeof serenepub === 'object' && !Array.isArray(serenepub)) {
+		const { primaryRuleset, rulesetVersion } = serenepub
+		const named = primaryRuleset !== undefined && primaryRuleset !== null
+		const versioned = rulesetVersion !== undefined && rulesetVersion !== null
+		if (named && (typeof primaryRuleset !== 'string' || primaryRuleset === '' || primaryRuleset.length > L.maxNameChars))
+			out.push("This lorebook's primaryRuleset must be a ruleset id, such as 'core:ruleset/freeform@1'.")
+		if (versioned && (typeof rulesetVersion !== 'string' || !/^\d+\.\d+\.\d+/.test(rulesetVersion))) {
+			const shown = typeof rulesetVersion === 'string' && rulesetVersion.length <= 40 ? ` '${rulesetVersion}'` : ''
+			out.push(`This lorebook's rulesetVersion${shown} isn't a version like 1.2.0.`)
+		}
+		if (versioned && !named) out.push('This lorebook names a rulesetVersion but no primaryRuleset.')
+	}
 
 	const book = data.character_book ?? data.data?.character_book ?? data
 	if (typeof book?.name === 'string' && book.name.length > L.maxNameChars)

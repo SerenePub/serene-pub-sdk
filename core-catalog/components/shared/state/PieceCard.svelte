@@ -13,7 +13,10 @@
 	 * Pressing it opens `piece-card.detail`, an `sp-popover` on the row: a
 	 * head (name, count, where it came from), every fact, the description,
 	 * the rules under a small "Rules" label, the traits — and, when the viewer
-	 * may change it (`editable`), **Edit**, **Give to…** and **Remove**. Edit
+	 * may change it (`editable`), **Edit**, **Give to…** and **Remove** (Give
+	 * only needs `targets` and a stat not locked: moves are their own
+	 * permission, plan §25 — a sheet hand-locked for the viewer, which the
+	 * list passes as not `editable`, still hands its items over). Edit
 	 * flips the popover's body to the form (`PieceForm`); Save and Cancel go
 	 * back to the detail. Escape closes it, and the host returns focus to the
 	 * row. The list keeps ONE detail open at a time (`open`), and only the
@@ -78,7 +81,11 @@
 	let brief = $derived(pieceBrief(view))
 	let editing = $state(false)
 	let refusal = $state<SlotRefusal | null>(null)
-	let acts = $derived(editable && !locked)
+	// 🚧 Moved 2026-11-05 (lane ed, plan §25): Edit and Remove are the viewer's hand on the
+	// stat; Give to… is a move and asks only for targets (none when the sheet may not move).
+	let edits = $derived(editable && !locked)
+	let gives = $derived(targets.length > 0 && !locked)
+	let acts = $derived(edits || gives)
 	let offers = $derived(targets.some((x) => !x.direct))
 	/** How many of a stack to give; one unless the viewer says otherwise. */
 	let giveCount = $state<number | null>(1)
@@ -197,26 +204,28 @@
 				{/if}
 				{#if acts}
 					<div data-widget-part="piece-card.actions toolbar">
-						<button
-							type="button"
-							data-widget-part="piece-card.edit"
-							aria-label={t("Edit {item}").replace("{item}", view.name)}
-							onclick={() => {
-								refusal = null
-								editing = true
-							}}
-						>
-							<sp-icon name="pencil" size="11"></sp-icon>
-							<span>{t("Edit")}</span>
-						</button>
-						{#if targets.length && view.count > 1}
+						{#if edits}
+							<button
+								type="button"
+								data-widget-part="piece-card.edit"
+								aria-label={t("Edit {item}").replace("{item}", view.name)}
+								onclick={() => {
+									refusal = null
+									editing = true
+								}}
+							>
+								<sp-icon name="pencil" size="11"></sp-icon>
+								<span>{t("Edit")}</span>
+							</button>
+						{/if}
+						{#if gives && view.count > 1}
 							<label data-widget-part="piece-card.give-count">
 								<span>{t("How many")}</span>
 								<input type="number" min="1" max={view.count} step="1" bind:value={giveCount} />
 								<span>{t("of {n}").replace("{n}", String(view.count))}</span>
 							</label>
 						{/if}
-						{#if targets.length}
+						{#if gives}
 							<sp-menu data-widget-part="piece-card.give" label={t("Give {item} to…").replace("{item}", view.name)} onselect={give}>
 								<button slot="trigger" type="button" data-widget-part="piece-card.give-open">
 									<sp-icon name="hand-helping" size="11"></sp-icon>
@@ -240,15 +249,17 @@
 								{/if}
 							</sp-menu>
 						{/if}
-						<button
-							type="button"
-							data-widget-part="piece-card.remove"
-							aria-label={t("Remove {item}").replace("{item}", view.name)}
-							onclick={() => void remove()}
-						>
-							<sp-icon name="trash-2" size="11"></sp-icon>
-							<span>{t("Remove")}</span>
-						</button>
+						{#if edits}
+							<button
+								type="button"
+								data-widget-part="piece-card.remove"
+								aria-label={t("Remove {item}").replace("{item}", view.name)}
+								onclick={() => void remove()}
+							>
+								<sp-icon name="trash-2" size="11"></sp-icon>
+								<span>{t("Remove")}</span>
+							</button>
+						{/if}
 					</div>
 				{/if}
 			{/if}

@@ -62,7 +62,8 @@ const ALLOWED: ReadonlyArray<{ file: string; pattern: PatternName; count: number
 	{
 		file: 'genres/dungeon-crawler/rest.ts',
 		pattern: '($: any)',
-		count: 19,
+		// 2026-11-10: 19 → 21 — hist-D1: the rest's ledger reads the party's deceased and its `clock` (the session story clock moves on a rest).
+		count: 21,
 		why: "one rest body (`restBody`) mounted on two heads — a person's press (`core:inlet/user-message@1`) and the routine on `rest-taken` (`core:inlet/routine@1`, which publishes the moment's `cause` and the session's `ruleset` without declaring them as ports) — so its scope is a union no chain types until the routine inlet declares those ports",
 	},
 	{
@@ -130,7 +131,11 @@ const RULED: ReadonlyArray<{
 		// 2026-10-25: 168 → 172 — sprint 2 lane I2: the sweep's *Notice when the
 		// scene moves on* reads the new scene's `sceneCueFull` / `sceneCueReview`,
 		// its `at`, its lane and its reason off the sort's document.
-		count: 172,
+		// 2026-11-04: 172 → 169 — playtest §0-B: *Summarize the story* retired; the
+		// sweep's crib, sorter and `Swept` no longer read `summary`.
+		// 2026-11-10: 169 → 174 — hist-D1: the crawl's death marks the fallen deceased (the ledger's `deceased` list, each item's `member` and `changes`) and its turn and rest move the session story clock (the ledger's and the rest's `clock`).
+		// 2026-11-11: 174 → 179 — bench-L3: a companion's fate benches its seat and marks its cast member (the ledger's `companionFates` list, each item's `seat`, `benched`, `member` and `changes`).
+		count: 179,
 		why: "each call picks one field of a model's JSON answer, or of a script step's document, or one text it carries ('notes', 'name'): a path into data a model or a script writes, which no declaration names",
 	},
 	{
@@ -158,7 +163,9 @@ const RULED: ReadonlyArray<{
 		name: 'compiled UI module id',
 		pattern: /\bcomponent:\s*['`]/g,
 		files: /^registry\/widgets\.ts$/,
-		count: 15,
+		// 2026-11-05: 15 → 17 — PLAN-session-layout-simplify (owner R8): the Composer and the Turn line are core widgets, each naming its compiled module ('composer', 'turn-line').
+		// 2026-11-11: 17 → 18 — PLAN-visual-novel-layout: the Dialogue box names its compiled module ('dialogue-box'). The Runs widget's 'session-runs' (another lane's, uncommitted) is a further +1 that lane accounts for.
+		count: 18,
 		why: "a widget names its compiled component module by id: the component kit is built apart and never imports the registry (nor the registry the kit's modules)",
 	},
 ]

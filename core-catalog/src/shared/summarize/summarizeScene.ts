@@ -105,6 +105,7 @@ const DRAFT_NODE = 'drafting.item.draft'
 export const DEFAULT_TRANSCRIPT_TEMPLATE = [
 	'{{#*inline "preamble"}}',
 	'{{#if scene.name}}Scene: {{{scene.name}}}{{#if scene.place}}, at {{{scene.place}}}{{/if}}{{#if scene.date}} ({{{scene.date}}}){{/if}}\n{{/if}}',
+	'{{#if scene.notes}}Noted in this scene:{{#each scene.notes}}\n- {{{this}}}{{/each}}\n{{/if}}',
 	'{{#if cast.length}}Present: {{#each cast}}{{{name}}}{{#unless @last}}, {{/unless}}{{/each}}\n{{/if}}',
 	'{{/inline}}',
 	'{{#*inline "line"}}{{{name}}}: {{{text}}}{{{attachments}}}{{/inline}}',

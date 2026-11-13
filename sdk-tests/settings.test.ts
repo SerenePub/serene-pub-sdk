@@ -21,6 +21,8 @@ import {
 	SettingsError,
 	jsonFieldFindings,
 	jsonFieldByteCap,
+	undescribedSettingParts,
+	settingsSchemaFindings,
 	JSON_FIELD_MAX_BYTES,
 	JSON_FIELD_MAX_BYTES_CEILING,
 	type FieldDecl,
@@ -161,6 +163,34 @@ describe('79 · declaration-time refusals', () => {
 			() => defineSettings({ k: { type: 'secret', default: 'sk-live' } }),
 			/not a credential/,
 		)
+	})
+
+	test('a named blank (unset) on a number field is refused at both doors', () => {
+		const n = { type: 'number', unset: { label: 'Default', other: 'Another' } } as const
+		assert.throws(
+			() => defineSettings({ n }),
+			/'unset', which only a string field has/,
+		)
+		const f = checkSchema({ n })
+		assert.equal(f.length, 1)
+		assert.equal(f[0].severity, 'error')
+		const w = settingsSchemaFindings({ n }, 'w')
+		assert.equal(w.length, 1)
+		assert.match(w[0], /w\.n\.unset/)
+	})
+
+	test('a string field with a named blank passes both finders', () => {
+		const c = { type: 'string', unset: { label: 'Default (main)', other: 'Another channel' } } as const
+		assert.deepEqual(checkSchema({ c }), [])
+		assert.deepEqual(settingsSchemaFindings({ c }, 'w'), [])
+	})
+
+	test('a blank unset.label is a finding that names it', () => {
+		const w = settingsSchemaFindings(
+			{ c: { type: 'string', unset: { label: '', other: 'Another' } } },
+			'w',
+		)
+		assert.ok(w.some((m) => /\.unset\.label/.test(m)), w.join('\n'))
 	})
 
 	test('an enum with no options is a dead form field', () => {
@@ -347,5 +377,24 @@ describe('the json field type', () => {
 		assert.deepEqual(valuesForForm(sch, { j: { a: 1 } }), { j: '{\n  "a": 1\n}' })
 		assert.deepEqual(applyFormValues(sch, { j: null }, { j: '[1,2]' }), { j: [1, 2] })
 		assert.throws(() => applyFormValues(sch, {}, { j: '{nope' }), SettingsError)
+	})
+})
+
+describe('undescribedSettingParts (P5, ★E-2): what a user-facing setting lacks', () => {
+	const base = { type: 'boolean' } as FieldDecl
+	test('names every missing part, in order', () => {
+		assert.deepEqual(undescribedSettingParts(base), ['description', 'group', 'reach'])
+		assert.deepEqual(undescribedSettingParts({ ...base, description: { en: 'Does a thing.' } }), ['group', 'reach'])
+	})
+	test('a blank or non-English description is no description', () => {
+		assert.deepEqual(undescribedSettingParts({ ...base, description: '  ', group: 'G', reach: 'owner' }), ['description'])
+		assert.deepEqual(undescribedSettingParts({ ...base, description: { fr: 'Oui' } as any, group: 'G', reach: 'owner' }), ['description'])
+	})
+	test('described is empty; admin reach is not user-facing', () => {
+		assert.deepEqual(undescribedSettingParts({ ...base, description: 'Does it.', group: 'G', reach: 'owner' }), [])
+		assert.deepEqual(undescribedSettingParts({ ...base, reach: 'admin' }), [])
+	})
+	test('a kind with no reach (a plugin setting) is not asked for one', () => {
+		assert.deepEqual(undescribedSettingParts(base, { reach: false }), ['description', 'group'])
 	})
 })

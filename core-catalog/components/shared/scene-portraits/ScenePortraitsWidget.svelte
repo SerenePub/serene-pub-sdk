@@ -97,6 +97,15 @@
 
 	/* ── galleries: what `character-images` answered, page by page ─────── */
 
+	/** The card a member's sprite sets are keyed by: its active card, ⏳ else `characterId` (removed in S5). */
+	const cardOf = (p: ScenePortrait): number => p.cardId ?? p.characterId
+
+	/** Who `character-images` is asked about: the card when the member has one, else its cast member. */
+	const nameOf = (p: ScenePortrait): { characterId: number } | { castMemberId: number } =>
+		p.cardId === null && p.castMemberId != null
+			? { castMemberId: p.castMemberId }
+			: { characterId: cardOf(p) }
+
 	interface GalleryImage {
 		ref: string
 		src: string
@@ -110,10 +119,10 @@
 		/** The host refused: said in the chooser, never as the widget's alert. */
 		error: string | null
 	}
-	/** Each member's gallery as far as it has been paged, by character id. */
-	let galleries = $state<Record<number, GalleryPages>>({})
+	/** Each member's gallery as far as it has been paged, by the member's `ref` (an opaque key). */
+	let galleries = $state<Record<string, GalleryPages>>({})
 	/** Members whose next page is on its way — not state: nothing draws it. */
-	const asking = new Set<number>()
+	const asking = new Set<string>()
 
 	const isImage = (v: unknown): v is GalleryImage =>
 		!!v &&
@@ -122,15 +131,15 @@
 		typeof (v as GalleryImage).src === "string"
 
 	/** Ask for the next page of one member's gallery (once at a time). */
-	async function nextPage(characterId: number): Promise<void> {
-		const held = untrack(() => galleries[characterId])
-		if (asking.has(characterId) || held?.done) return
-		asking.add(characterId)
+	async function nextPage(p: ScenePortrait): Promise<void> {
+		const held = untrack(() => galleries[p.key])
+		if (asking.has(p.key) || held?.done) return
+		asking.add(p.key)
 		const keep = held?.images ?? []
 		let pages: GalleryPages
 		try {
 			const res = (await w?.current.request("character-images", {
-				characterId,
+				...nameOf(p),
 				...(held?.next ? { cursor: held.next } : {})
 			})) as { images?: unknown[]; nextCursor?: string } | undefined
 			const images = (Array.isArray(res?.images) ? res.images : []).filter(isImage)
@@ -139,15 +148,15 @@
 		} catch (e) {
 			pages = { images: keep, next: null, done: true, error: messageOf(e) }
 		} finally {
-			asking.delete(characterId)
+			asking.delete(p.key)
 		}
-		galleries = { ...untrack(() => galleries), [characterId]: pages }
+		galleries = { ...untrack(() => galleries), [p.key]: pages }
 	}
 
 	/** A chosen image's own `src`, once its member's gallery has shown it. */
 	const chosenSrcOf = (p: ScenePortrait): string | null =>
 		p.chosenRef
-			? (galleries[p.characterId]?.images.find((i) => i.ref === p.chosenRef)?.src ?? null)
+			? (galleries[p.key]?.images.find((i) => i.ref === p.chosenRef)?.src ?? null)
 			: null
 
 	// Page each shown member's gallery until its chosen image turns up (or
@@ -155,9 +164,9 @@
 	$effect(() => {
 		for (const p of portraits) {
 			if (!p.chosenRef) continue
-			const g = galleries[p.characterId]
+			const g = galleries[p.key]
 			if (g?.done || g?.images.some((i) => i.ref === p.chosenRef)) continue
-			void nextPage(p.characterId)
+			void nextPage(p)
 		}
 	})
 
@@ -168,11 +177,11 @@
 	const chooser = $derived(
 		chooserFor ? (portraits.find((p) => p.key === chooserFor) ?? null) : null
 	)
-	const chooserPages = $derived(chooser ? galleries[chooser.characterId] : undefined)
+	const chooserPages = $derived(chooser ? galleries[chooser.key] : undefined)
 
 	function openChooser(p: ScenePortrait) {
 		chooserFor = p.key
-		if (!untrack(() => galleries[p.characterId])) void nextPage(p.characterId)
+		if (!untrack(() => galleries[p.key])) void nextPage(p)
 	}
 
 	/**
@@ -188,7 +197,13 @@
 			return
 		}
 		try {
-			await w?.current.request("set-chosen-image", { characterRef: member.key, mediaRef: ref })
+			// 🚧 The member by its cast member; ⏳ `characterRef` (its `ref`) for a host before S3 (removed in S5).
+			await w?.current.request(
+				"set-chosen-image",
+				member.castMemberId != null
+					? { memberRef: `seated-member:${member.castMemberId}`, mediaRef: ref }
+					: { characterRef: member.key, mediaRef: ref }
+			)
 			error = null
 			chooserFor = null
 		} catch (e) {
@@ -196,15 +211,17 @@
 		}
 	}
 
-	/** What the faces say when there are none — by who they would have been. */
-	const emptyText = $derived(
-		settings.who === "recent"
-			? t("Nobody has spoken yet. Faces show up here as the cast speaks.")
-			: settings.who === "pick"
-				? settings.pickMembers.length
-					? t("Nobody in this session goes by the names picked in this widget's settings.")
-					: t("Nobody picked yet. Name who to show in this widget's settings.")
-				: t("Nobody is in this scene yet. Add a character to the session and they show up here.")
+	/**
+	 * Nobody shown because of the names the reader picked in this widget's
+	 * settings: a cause they can act on, so it is said. Any other emptiness
+	 * draws nothing.
+	 */
+	const pickCause = $derived(
+		settings.who !== "pick"
+			? null
+			: settings.pickMembers.length
+				? t("Nobody in this session goes by the names picked in this widget's settings.")
+				: t("Nobody picked yet. Name who to show in this widget's settings.")
 	)
 </script>
 
@@ -230,6 +247,7 @@
 		data-widget-part="scene-portraits.face"
 		data-scene-member={member.isPersona ? `persona:${member.characterId}` : member.key}
 		data-chosen={member.chosenRef && chosenSrcOf(member) ? "" : undefined}
+		data-speaking={member.speaking ? "" : undefined}
 	>
 		{#if src}
 			<img {src} alt={member.name} data-widget-part="scene-portraits.face-img" />
@@ -288,7 +306,7 @@
 								role="menuitemradio"
 								aria-checked={member.spriteSetOverride === setName}
 								data-widget-part="scene-portraits.set-option"
-								onclick={() => changeSpriteSet(member.characterId, setName)}
+								onclick={() => changeSpriteSet(cardOf(member), setName)}
 							>
 								<span>{setName}</span>
 							</button>
@@ -298,7 +316,7 @@
 							role="menuitemradio"
 							aria-checked={!member.spriteSetOverride}
 							data-widget-part="scene-portraits.set-option"
-							onclick={() => changeSpriteSet(member.characterId, null)}
+							onclick={() => changeSpriteSet(cardOf(member), null)}
 						>
 							<span>{t("As the story has it")}</span>
 						</button>
@@ -320,6 +338,7 @@
 	data-state-widget="scene-portraits"
 	data-arrangement={settings.arrangement}
 	data-who={settings.who}
+	data-speaker-focus={settings.speakerFocus && portraits.some((p) => p.speaking) ? "" : undefined}
 >
 	{#if error}
 		<div data-widget-part="scene-portraits.alert" role="alert">
@@ -392,7 +411,7 @@
 				<button
 					type="button"
 					data-widget-part="scene-portraits.chooser-more"
-					onclick={() => nextPage(chooser.characterId)}
+					onclick={() => nextPage(chooser)}
 				>
 					{t("Show more")}
 				</button>
@@ -411,10 +430,13 @@
 			</p>
 		</section>
 	{:else if !portraits.length && !figures.length}
-		<div data-widget-part="scene-portraits.empty empty">
-			<sp-icon name="square-user-round" size="22"></sp-icon>
-			<span>{emptyText}</span>
-		</div>
+		<!-- Nobody to show: nothing is drawn — except when the reader's own "pick" setting is the cause. -->
+		{#if pickCause}
+			<div data-widget-part="scene-portraits.empty empty">
+				<sp-icon name="square-user-round" size="22"></sp-icon>
+				<span>{pickCause}</span>
+			</div>
+		{/if}
 	{:else if settings.arrangement === "stage"}
 		<div data-widget-part="scene-portraits.stage">
 			{#each portraits as member (member.key)}

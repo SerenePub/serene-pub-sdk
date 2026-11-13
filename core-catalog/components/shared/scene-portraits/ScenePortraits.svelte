@@ -8,6 +8,7 @@
 	import type { ComponentContext } from "@serene-pub/sdk/component"
 	import { WIDGET_CONTEXT_KEY } from "@serene-pub/core-catalog/widgets"
 	import ScenePortraitsWidget from "./ScenePortraitsWidget.svelte"
+	import WidgetBoundary from "../WidgetBoundary.svelte"
 	import { widgetRefFromComponent } from "../widgetRef.svelte"
 
 	let { ctx }: { ctx: ComponentContext } = $props()
@@ -22,4 +23,4 @@
 	)
 </script>
 
-<ScenePortraitsWidget />
+<WidgetBoundary {ctx}><ScenePortraitsWidget /></WidgetBoundary>

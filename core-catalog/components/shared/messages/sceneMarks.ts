@@ -50,6 +50,8 @@ export interface SceneMarkRow {
 	storyClockYear?: unknown
 	storyClockMonth?: unknown
 	storyClockDay?: unknown
+	storyClockHour?: unknown
+	storyClockMinute?: unknown
 }
 
 /** How many scene colours the conversation's palette has (the Chronicle's swatches). */
@@ -112,6 +114,58 @@ export function storyDayOfRow(row: SceneMarkRow): StoryDayParts | null {
 	if (year === null) return null
 	const month = whole(row.storyClockMonth)
 	return { year, month, day: month === null ? null : whole(row.storyClockDay) }
+}
+
+/**
+ * A row's stamped story time with its time of day, or null when the stamp is
+ * not a place in time (no whole year). A day needs its month and a minute its
+ * hour, as the columns' checks hold.
+ */
+export function storyTimeOfRow(row: SceneMarkRow): StoryDayParts | null {
+	const day = storyDayOfRow(row)
+	if (day === null) return null
+	const hour = whole(row.storyClockHour)
+	const out: StoryDayParts = { year: day.year }
+	if (day.month != null) out.month = day.month
+	if (day.day != null) out.day = day.day
+	if (hour !== null) {
+		out.hour = hour
+		out.minute = whole(row.storyClockMinute) ?? 0
+	}
+	return out
+}
+
+/** How a story time is spelled; handed in so this file stays import-free. */
+export interface StoryTimeSpelling {
+	/** The time through the book's calendar, in full. */
+	full(t: StoryDayParts): string
+	/** The time through the copy's `timeFormat`; null when the format is empty. */
+	as(t: StoryDayParts, format: string): string | null
+	/** The calendar's day spelling, the time of day left off. */
+	day(t: StoryDayParts): string
+}
+
+/**
+ * What a line's time reads while the story has a clock or a dated present:
+ * `text` beside the name (the copy's `timeFormat` when set, else `HH:MM`
+ * when the stamp has an hour, else the day), `full` for the hover. Null on an
+ * unstamped row, which keeps its real time.
+ */
+export function messageStoryTime(
+	row: SceneMarkRow,
+	spell: StoryTimeSpelling,
+	timeFormat?: string | null
+): { text: string; full: string } | null {
+	const t = storyTimeOfRow(row)
+	if (t === null) return null
+	const full = spell.full(t)
+	const formatted = timeFormat && timeFormat.trim() ? spell.as(t, timeFormat) : null
+	if (formatted) return { text: formatted, full }
+	if (t.hour != null) {
+		const pad = (n: number) => String(n).padStart(2, '0')
+		return { text: `${pad(t.hour)}:${pad(t.minute ?? 0)}`, full }
+	}
+	return { text: spell.day(t), full }
 }
 
 /** Whether two story times fall on one day (as precise as both are). */

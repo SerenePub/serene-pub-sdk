@@ -10,10 +10,12 @@ import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
 	WIDGET_EVENT_SCOPES,
+	WIDGET_REQUEST_APIS,
 	WIDGET_REQUEST_ASKERS,
 	widgetEventHeard,
 	type HistoryEntriesV1,
 	type HistoryEntryV1,
+	type HistorySceneV1,
 	type ViewerV1,
 } from '@serene-pub/sdk'
 import {
@@ -26,6 +28,10 @@ import {
 	readChronicleSettings,
 } from '../core-catalog/src/shared/ui/chronicle/index.js'
 import { CORE_COMPONENTS, CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 const OWNER: ViewerV1 = { userId: 10, isAdmin: false, isGuest: false }
 const GUEST: ViewerV1 = { userId: 11, isAdmin: false, isGuest: true }
@@ -484,4 +490,134 @@ describe('🚧 live scenes (PROPOSAL-live-scenes §7, lane D)', () => {
 		assert.equal(WIDGET_REQUEST_ASKERS['summarize-scenes'], 'core')
 		assert.equal(WIDGET_REQUEST_ASKERS['decide-scene-cue'], 'core')
 	})
+})
+
+describe('🚧 ★S2-1b: Not yet compiled', () => {
+	const sc = (id: number, over: Partial<HistorySceneV1> = {}): HistorySceneV1 => ({
+		id,
+		name: `Scene ${id}`,
+		lineCount: 3,
+		order: id,
+		summarized: false,
+		graphed: false,
+		...over,
+	})
+	const days = [
+		{ date: { year: 412, month: 3, day: 6 }, label: '6 March, Year 412', scenes: [sc(10), sc(11)] },
+		{ date: { year: 413 }, label: '', scenes: [sc(12)] },
+		{ date: null, label: '', scenes: [sc(13, { name: null })] },
+	]
+	const view = (over: Partial<HistoryEntriesV1> = {}, viewer: ViewerV1 = OWNER) =>
+		chronicleView(answer({ unfiledDays: days, ...over }), CHRONICLE_DEFAULTS, viewer, t)
+
+	test('days in the answer’s order with their label, Undated for a null date, and the count words', () => {
+		const v = view()
+		assert.deepEqual(
+			v.unfiled.map((d) => [d.key, d.date, d.count, d.scenes.map((s) => s.id)]),
+			[
+				['412-3-6', '6 March, Year 412', '2 scenes', [10, 11]],
+				['413--', '413', '1 scene', [12]],
+				['undated', 'Undated', '1 scene', [13]],
+			],
+		)
+	})
+
+	test('each row is what the same scene gives under Scenes: its dot and Summarize', () => {
+		const same = sc(20, { summaryStatus: 'failed' })
+		const v = view({ scenes: [same], unfiledDays: [{ date: null, label: '', scenes: [same, sc(21, { name: null })] }] })
+		assert.deepEqual(v.unfiled[0]!.scenes[0], v.scenes[0])
+		assert.equal(v.unfiled[0]!.scenes[0]!.canSummarize, true)
+		assert.equal(v.unfiled[0]!.scenes[0]!.statusLabel, 'The summary failed')
+		assert.equal(v.unfiled[0]!.scenes[1]!.name, 'Untitled scene')
+	})
+
+	test('a day with no scenes is dropped; an older host’s answer gives none', () => {
+		assert.deepEqual(
+			view({ unfiledDays: [{ date: null, label: '', scenes: [] }, days[1]!] }).unfiled.map((d) => d.key),
+			['413--'],
+		)
+		assert.deepEqual(chronicleView(answer(), CHRONICLE_DEFAULTS, OWNER, t).unfiled, [])
+	})
+
+	test('drawn while loading, with no lorebook or owner-only: nothing', () => {
+		assert.deepEqual(chronicleView(null, CHRONICLE_DEFAULTS, OWNER, t).unfiled, [])
+		assert.deepEqual(view({ lorebookId: null }).unfiled, [])
+		assert.deepEqual(view({ ownerOnly: true }).unfiled, [])
+	})
+
+	test('filled when no history entry is current', () => {
+		const v = view({ current: null, scenes: [] })
+		assert.equal(v.now, null)
+		assert.equal(v.unfiled.length, 3)
+	})
+})
+
+describe('🚧 ★S6-1: Compile per day', () => {
+	const sc = (id: number): HistorySceneV1 => ({
+		id,
+		name: `Scene ${id}`,
+		lineCount: 3,
+		order: id,
+		summarized: false,
+		graphed: false,
+	})
+	const dated = { year: 412, month: 3, day: 6 }
+	const days = [
+		{ date: dated, label: '6 March, Year 412', scenes: [sc(10)] },
+		{ date: null, label: '', scenes: [sc(13)] },
+	]
+	const view = (viewer: ViewerV1, over: Partial<HistoryEntriesV1> = {}) =>
+		chronicleView(answer({ unfiledDays: days, ...over }), CHRONICLE_DEFAULTS, viewer, t)
+
+	test('the owner’s day carries its own date, the word Compile and the day’s title', () => {
+		const v = view(OWNER)
+		assert.deepEqual(v.unfiled[0]!.compile, {
+			date: dated,
+			label: 'Compile',
+			title:
+				"Compile this day's scenes into the history entry of 6 March, Year 412, making it if there is none",
+		})
+		assert.deepEqual(v.unfiled[1]!.compile, {
+			date: null,
+			label: 'Compile',
+			title: 'Compile the undated scenes into the newest dated history entry, making one if there is none',
+		})
+	})
+
+	test('a guest sees the days without a Compile; owner-only has no days', () => {
+		assert.deepEqual(
+			view(GUEST).unfiled.map((d) => d.compile),
+			[null, null],
+		)
+		assert.deepEqual(view(OWNER, { ownerOnly: true }).unfiled, [])
+	})
+
+	test('the request is core’s to ask and rides the session’s API', () => {
+		assert.equal(WIDGET_REQUEST_ASKERS['compile-history-entry'], 'core')
+		assert.equal(WIDGET_REQUEST_APIS['compile-history-entry'], 'session')
+	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('a Chronicle with no lorebook draws nothing (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('chronicle', () => answer({ lorebookId: null }))
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="chronicle.root"]'), 'the root still mounts')
+		assert.equal(view.query('[data-widget-part~="chronicle.empty"]') === null, true)
+		assert.equal((view.root.textContent ?? '').trim(), '')
+	} finally {
+		await view.unmount()
+	}
 })

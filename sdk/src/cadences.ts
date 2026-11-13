@@ -13,7 +13,7 @@
  * (`core:cadence/every-n-turns@1`) and **options** declared as fields, so a
  * registration states it as `{ id, options }` (a `CadenceRef`): addressable,
  * serializable, validated by the same field declarations an administrator's
- * settings use (§11-3). Core's ten are evaluated natively by the host
+ * settings use (§11-3). Core's eleven are evaluated natively by the host
  * (`evaluate: 'host'`); a plugin's cadence is a script of kind
  * `core:script:cadence/due@1`, run in the sandbox.
  *
@@ -59,6 +59,7 @@ import {
 	packageEventById,
 	type EventDef,
 	type SessionEventDecl,
+	type TurnSeatChange,
 } from './events.js'
 import {
 	advanceStoryTime,
@@ -583,7 +584,7 @@ function scheduleAtFindings(raw: unknown, clock: 'system' | 'story', at: string)
 	return out
 }
 
-// ── Core's ten (PLAN-layering D2) ───────────────────────────────────────────
+// ── Core's eleven (PLAN-layering D2) ───────────────────────────────────────────
 
 const HOST = 'host' as const
 
@@ -617,6 +618,20 @@ export const AFTER_EACH_TURN = defineCadence({
 	options: {},
 	wakesOn: [TURN_ENDED_EVENT],
 	carries: ['session', 'message', 'speaker'],
+	evaluate: HOST,
+})
+/** @experimental */
+export const EVERY_N_ROUNDS = defineCadence({
+	id: 'core:cadence/every-n-rounds@1',
+	i18n: {
+		name: { en: 'Every few rounds' },
+		description: { en: 'Runs after every so many rounds of the session.' },
+	},
+	options: {
+		n: { type: 'integer', min: 1, max: 1000, default: 2, label: { en: 'Every how many rounds' } },
+	},
+	wakesOn: [ROUND_ENDED_EVENT],
+	carries: ['session'],
 	evaluate: HOST,
 })
 /** @experimental */
@@ -766,6 +781,7 @@ export const SCHEDULE = defineCadence({
 /** Core's cadences, by name. @experimental */
 export const coreCadences = Object.freeze({
 	everyNTurns: EVERY_N_TURNS,
+	everyNRounds: EVERY_N_ROUNDS,
 	afterEachTurn: AFTER_EACH_TURN,
 	afterEachRound: AFTER_EACH_ROUND,
 	afterEachScene: AFTER_EACH_SCENE,
@@ -935,6 +951,9 @@ const freezeRef = (id: string, options: Record<string, unknown>): CadenceRef => 
 /** Every `n` turns — the 5th, the 10th, … @experimental */
 export const everyNTurns = (o: { n: number }): CadenceRef =>
 	freezeRef(EVERY_N_TURNS.id, { n: o?.n })
+/** Every `n` rounds — the 2nd, the 4th, … @experimental */
+export const everyNRounds = (o: { n: number }): CadenceRef =>
+	freezeRef(EVERY_N_ROUNDS.id, { n: o?.n })
 /** After every turn. @experimental */
 export const afterEachTurn = (): CadenceRef => freezeRef(AFTER_EACH_TURN.id, {})
 /** After every round — the "wait for everyone". @experimental */
@@ -1245,6 +1264,13 @@ export function cadenceDue(
 				? { due: true, state }
 				: no(state, `turn ${m.turn} is not a multiple of ${n}`)
 		}
+		case EVERY_N_ROUNDS.id: {
+			if (m.event !== ROUND_ENDED_EVENT) break
+			const n = isWhole(o.n) && o.n >= 1 ? o.n : 2
+			return m.round >= 1 && m.round % n === 0
+				? { due: true, state }
+				: no(state, `round ${m.round} is not a multiple of ${n}`)
+		}
 		case AFTER_EACH_TURN.id:
 		case AFTER_EACH_ROUND.id:
 		case AFTER_EACH_SCENE.id:
@@ -1467,6 +1493,8 @@ export interface RoutineCause {
 	turnsBy?: Readonly<Record<string, number>>
 	/** 🚧 `round-ended`: who spoke in the round, in order of first turn (R52). */
 	speakers?: readonly string[]
+	/** 🚧 `turn-ended`, when the genre declares `shape.turnSeatChanges: true`: the seats that changed since the previous turn (`TurnSeatChange`). */
+	turnSeatChanges?: readonly TurnSeatChange[]
 	actor?: string
 	castMember?: string
 	subject?: string

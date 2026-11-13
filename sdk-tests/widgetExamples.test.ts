@@ -20,7 +20,6 @@ import {
 	type ActionsV1,
 	type AttendanceV1,
 	type MessageV1,
-	type SessionPersonaV1,
 	type SessionStateV1,
 	type WidgetAction,
 	type WidgetScope,
@@ -120,7 +119,7 @@ test('Log search: filters the channel, pages older lines on a press, and restore
 		await view.settle()
 		assert.deepEqual(shown(), ['Tobin: We reach the mill.', 'Mira: The mill wheel turns.', 'Mira: The mill is dark.'])
 		// The last page has no cursor: nothing older to load.
-		assert.equal(view.query('button'), null)
+		assert.equal(view.query('button') === null, true)
 		assert.deepEqual(view.requested, [
 			{ kind: 'messages', params: { channel: 'main', limit: 50 } },
 			{ kind: 'messages', params: { channel: 'main', cursor: 'c1', limit: 50 } },
@@ -153,20 +152,8 @@ const STATE: SessionStateV1 = {
 	],
 	owners: [
 		{ key: 'world', kind: 'session', id: 3, label: 'World', configs: { [MOOD]: { of: ['calm', 'tense'] } } },
-		{ key: 'mira', kind: 'session_cast', id: 11, label: 'Mira', configs: { [HP]: { min: 0, max: 13 } } },
+		{ key: 'mira', kind: 'session_cast', id: 11, label: 'Mira', mine: true, configs: { [HP]: { min: 0, max: 13 } } },
 	],
-}
-const MIRA: SessionPersonaV1 = {
-	ref: 'character:7',
-	characterId: 7,
-	isPersona: true,
-	mine: true,
-	name: 'Mira',
-	face: null,
-	sprite: null,
-	spriteSets: [],
-	spriteSet: null,
-	canChangeSpriteSet: false,
 }
 const ROLL: WidgetAction = {
 	key: 'roll',
@@ -201,7 +188,7 @@ test('Mood dial: a refused scope is drawn as not granted, never as loading', asy
 	const view = await mountDial([])
 	try {
 		assert.ok(view.query('[data-widget-part~="acme.widget-examples:mood-dial.not-granted"]'))
-		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.loading"]'), null)
+		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.loading"]') === null, true)
 	} finally {
 		await view.unmount()
 	}
@@ -211,9 +198,9 @@ test('Mood dial: granted but not posted yet is loading; posted, it lists the own
 	const view = await mountDial(READ_ONLY)
 	try {
 		assert.ok(view.query('[data-widget-part~="acme.widget-examples:mood-dial.loading"]'))
-		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.not-granted"]'), null)
-		await view.push('scoped', { session_state: STATE, persona: [MIRA] })
-		// The viewer's persona owns HP; the world's Mood is not Mira's.
+		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.not-granted"]') === null, true)
+		await view.push('scoped', { session_state: STATE })
+		// The viewer's own owner (`mine`) owns HP; the world's Mood is not Mira's.
 		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.owner"]')?.textContent, 'Mira')
 		assert.deepEqual(
 			view.queryAll('li[data-widget-part~="acme.widget-examples:mood-dial.slot"]').map((li) => li.getAttribute('data-slot')),
@@ -221,10 +208,10 @@ test('Mood dial: granted but not posted yet is loading; posted, it lists the own
 		)
 		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.value"]')?.textContent, '12')
 		// No write grant: no buttons, and it says so.
-		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.plus"]'), null)
+		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.plus"]') === null, true)
 		assert.ok(view.query('[data-widget-part~="acme.widget-examples:mood-dial.read-only"]'))
-		// Without a persona the world's stats are drawn.
-		await view.push('scoped', { session_state: STATE, persona: [] })
+		// With no owner of the viewer's, the world's stats are drawn.
+		await view.push('scoped', { session_state: { ...STATE, owners: STATE.owners.map((o) => ({ ...o, mine: undefined })) } })
 		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.owner"]')?.textContent, 'World')
 		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.value"]')?.textContent, 'calm')
 	} finally {
@@ -239,13 +226,13 @@ test('Mood dial: set-attribute-value is refused without the write grant and allo
 })
 
 test('Mood dial: with the write grant a press nudges the stat (clamped), an action is pressed by identity, and a revoked write hides the buttons', async () => {
-	const view = await mountDial(ALL, { scoped: { session_state: STATE, persona: [MIRA] } })
+	const view = await mountDial(ALL, { scoped: { session_state: STATE } })
 	try {
 		await view.click('[data-widget-part~="acme.widget-examples:mood-dial.plus"]')
 		await view.settle()
 		// The write answers nothing; the new value arrives as a push, as on the page.
 		const at13 = { ...STATE, resolved: { ...STATE.resolved, cast: { mira: { 'core:hp': 13 } } } }
-		await view.push('scoped', { session_state: at13, persona: [MIRA] })
+		await view.push('scoped', { session_state: at13 })
 		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.value"]')?.textContent, '13')
 		await view.click('[data-widget-part~="acme.widget-examples:mood-dial.plus"]') // the ceiling (13) holds it
 		await view.settle()
@@ -257,13 +244,13 @@ test('Mood dial: with the write grant a press nudges the stat (clamped), an acti
 			{ owner: { kind: 'session_cast', id: 11 }, slotId: HP, value: 13 },
 			{ owner: { kind: 'session_cast', id: 11 }, slotId: HP, value: 12 },
 		])
-		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.failed"]'), null)
+		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.failed"]') === null, true)
 
 		await view.click('[data-widget-part~="acme.widget-examples:mood-dial.action"]')
 		assert.deepEqual(view.invoked, [{ key: 'acme.dice#roll' }])
 
 		await view.setGrants(READ_ONLY)
-		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.plus"]'), null)
+		assert.equal(view.query('[data-widget-part~="acme.widget-examples:mood-dial.plus"]') === null, true)
 		assert.ok(view.query('[data-widget-part~="acme.widget-examples:mood-dial.read-only"]'))
 		assert.deepEqual(view.refused, [])
 		assert.deepEqual(view.errors, [])

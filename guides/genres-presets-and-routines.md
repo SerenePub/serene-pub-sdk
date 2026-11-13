@@ -131,9 +131,11 @@ const lighthouse = genre('acme.coast:genre/lighthouse', {
 })
 ```
 
-Rules that lack one play that part in words; the rating says so, and nothing is locked. A genre
-that names `slots`, `sheets` or `customAttributes` is refused: what your own pipelines keep for
-their tools belongs in your annex fields.
+Rules that lack one play that part in words; the rating says so, and nothing is locked. 🚧 Say
+which time your genre keeps with `keepsTime` (`'story'`, `'real'` or `'none'`), and ruleset fit
+weighs the rules' `countsTime` against it. A genre that names `slots`, `sheets` or
+`customAttributes` is refused: what your own pipelines keep for their tools belongs in your annex
+fields.
 
 ## Routines and cadences
 
@@ -150,6 +152,7 @@ Core's cadences:
 | `afterEachTurn()` | after every turn, once what it set off has settled |
 | `everyNTurns({ n })` | every `n` turns |
 | `afterEachRound()` | once every active speaker has had a turn: whoever the turn order seats or prepares, and every person who spoke |
+| `everyNRounds({ n })` 🚧 | every `n` rounds |
 | `afterEachScene()` | when a scene closes |
 | `whenIdle({ minutes })` | once, after the session has been quiet that long (a multiple of 5) |
 | `onEvent(event, { where })` | when the event happens, optionally only where a condition holds |
@@ -225,6 +228,26 @@ import { characterReachesOutSpec } from '@serene-pub/core-catalog'
 register(afterEachDay(), characterReachesOutSpec({ speaker: 'character:7', brief: 'Write the player a short note about your day.' }))
 ```
 
+### A pass over the seats that changed
+
+A genre that declares `shape.turnSeatChanges: true` gets, on every `turn-ended` and on a routine's `cause`, the seats that were added, removed or changed since the previous turn of that lane (`TurnSeatChange`: `ref`, `seatKind`, `castMemberId`, `change`). Off unless the genre opts in; with it on, the list is empty when nothing changed. A plugin never parses `ref`: it passes it on.
+
+<!-- prelude:
+import { afterEachTurn, genre, register, type RoutineCause, type SpecDocument } from '@serene-pub/sdk'
+declare const welcomeNewcomers: SpecDocument
+declare const cause: RoutineCause
+-->
+```ts
+// In the genre: opt in.
+genre('my.pack:genre/tavern', { name: 'Tavern', family: 'tavern', shape: { turnSeatChanges: true } })
+
+// In its defaults: one firing per turn, none skipped (a skipped firing would lose that turn's list).
+register(afterEachTurn(), welcomeNewcomers, { allowStacking: true })
+
+// In a script: read the list typed.
+const joined = (cause.turnSeatChanges ?? []).filter((s) => s.change === 'added').map((s) => s.ref)
+```
+
 ### Allow stacking
 
 **Off by default.** With it off, a firing that finds the same routine already **waiting** is
@@ -265,6 +288,10 @@ run.fired // [4, 9]: turns 5 and 10
 
 An action is a person's press and may read the newest lines, because the person is vouching; an event is a scene that closed, complete by construction; a routine keeps up in the background and must stay out of the newest lines.
 
+### What a summarizer writes
+
+A summarizer writes a scene, held for review: its save is previewed and a person applies it. A person's Compile then files the day's scenes under that day's one history entry. See [Story events: scenes first](writing-lore-from-a-pipeline.md#story-events-scenes-first).
+
 ### How old a line must be: minAge
 
 `minAge` is a count of lines: 20, the routine default, keeps the 20 newest lines of a lane out of a routine's `sources`; actions and events default to 0.
@@ -297,6 +324,46 @@ suggestion never reaches further back than the last look.
 The answer is a scene cue of its own kind, `judged` (`JUDGED_SCENE_TRIGGER`), its reason the model's few words,
 written through `core:outlet/propose-scene-cue@1`. From there the session's scene setting decides, as for any cue:
 Suggested asks (*New scene?*), Automatic starts the scene. A sweep on Review always asks (`ask: true`).
+
+### Scenes: a routine, a couple of rounds late
+
+Core no longer watches each message for scene boundaries. A genre that wants them handled registers a routine for
+it, from `@serene-pub/core-catalog`:
+
+```ts
+register(everyNRounds({ n: 2 }), sceneBoundariesSpec())
+```
+
+The spec (`core:spec/scene-boundaries`, 🚧) runs code only, no model. Its query `core:query/scene-boundaries@1` 🚧
+reads the lines at least `depth` rounds old (default 2) and returns `{ at, trigger, reason }[]`: the line each
+boundary trigger fired at, which trigger, and its words. Each one goes through `core:outlet/propose-scene-cue@1`
+with its `trigger` (🚧 optional in-port; absent means `judged`), and the session's scene mode decides: Automatic
+begins the scene, Suggested asks, Manual does nothing. Core places nothing by itself, and a preset drops the
+registration like any routine (Story's Minimal does). A person's *Start scene here* and *End scene here* stay
+immediate.
+
+### Scenes: a routine that summarizes them
+
+A genre that wants its finished scenes summarized by itself registers a second routine from
+`@serene-pub/core-catalog`:
+
+```ts
+register(everyNRounds({ n: 2 }), sceneSummariesSpec(), { minAge: 0 })
+```
+
+The spec (`core:spec/scene-summaries`, 🚧) calls no model itself. Its query `core:query/scene-summary-due@1` 🚧
+returns the oldest scene on `main` that ended at least `depth` rounds ago (default 6) and that nobody has decided
+about: a summary a person saved, a discarded review, a failed run, and one being written or waiting for review are
+never taken. It hands that scene to `core:outlet/summarize-finished-scene@1` 🚧, which starts the genre's own
+scene summarizer, the one a person's *Summarize* runs. The routine's mode decides what happens to the result: Full
+saves the summary (and the scene's name, only while it still has its automatic one) with `summary_origin =
+'routine'`, which is not yet the record (Back can go into the scene, and nothing settles) until a person saves it;
+Review waits for the person, as a summary they started does; Off runs nothing. Story's Minimal preset drops the
+registration like any routine. The age guard is the query's `depth`, so the registration's `minAge` is 0.
+
+A step's `expose.purpose` is the line the routines list prints for a routine. It is allowed on any step of a
+pipeline that calls no model at all, so a code-only routine can say what it does; in a pipeline that calls a model
+(counting swap options) it is still refused on a step that is not a model call. `build()` and `validate()` check it.
 
 ## A turn, end to end
 
@@ -368,6 +435,22 @@ loadout, a prompt or a template declared `reach: 'owner'` is refused. A setting 
 change once the session exists is `fixedAtStart: true`: it is asked on the start form when the
 owner may set it, taken from the layers otherwise, and read-only afterwards. See
 [Where values come from](where-values-come-from.md) for the whole cascade.
+
+How far a session's owner and its players may change **sheets and items by hand** is read the
+same way: a genre opts in by placing a shared field under the key core reads in its
+`shape.fields` (with its own default), or pins the value silently in its `settings`.
+`OWNER_SHEET_LATITUDE_FIELD` (`ownerSheetLatitude`) and `PLAYER_SHEET_LATITUDE_FIELD`
+(`playerSheetLatitude`) take `as-ruled · no-edits · all-own · all-any`;
+`OWNER_ITEM_MOVES_FIELD` (`ownerItemMoves`) and `PLAYER_ITEM_MOVES_FIELD` (`playerItemMoves`),
+a permission of their own for giving, dropping and picking up, take
+`follow-sheet · no-moves · own-items · any-items`, so a strict table can let players hand items
+over while their sheets stay locked. At `as-ruled` each attribute's `changedBy` decides; the other
+levels set it aside, but never pass a stat locked for everyone or a value its earshot keeps from
+the person. A genre that says nothing plays `as-ruled` for both roles, and a watcher never
+changes anything. `KEEP_EVERY_TURN_FIELD` (`keepEveryTurn`, labelled Honour mode) keeps every
+turn: nobody deletes the latest turn. These limit a person's hand only, never a pipeline or a
+run; the host judges each hand edit with `sheetLatitudeAllows`. `HONOR_MODE_FIELD` (`honorMode`)
+is deprecated in their favour.
 
 ## A preset for someone else's genre
 

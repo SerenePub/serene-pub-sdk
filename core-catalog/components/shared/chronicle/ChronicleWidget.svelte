@@ -32,6 +32,10 @@
 	 * scene with no summary yet. While a scene is open it asks again when a
 	 * line arrives, so its line count keeps up.
 	 *
+	 * 🚧 ★S2-1b: under Now, **Not yet compiled** — the session's scenes no
+	 * history entry holds yet, by day (*Undated* last), each row the same as a
+	 * Scenes row; 🚧 ★S6-1 each day's **Compile** (`compile-history-entry`).
+	 *
 	 * The markup carries no look (STYLE-GUIDE §6.16): its elements carry
 	 * `chronicle.*` widget parts; a scene's colour rides on its swatch's
 	 * `data-swatch`, an entry that says nothing yet on `data-blank`. Earlier
@@ -39,13 +43,14 @@
 	 * note's Advanced does.
 	 */
 	import { untrack } from "svelte"
-	import type { HistoryEntriesV1, WidgetRequests } from "@serene-pub/sdk/component"
+	import type { HistoryEntriesV1, StoryTime, WidgetRequests } from "@serene-pub/sdk/component"
 	import {
 		chronicleClockDraft,
 		chronicleClockFromDraft,
 		chronicleView,
 		readChronicleSettings,
-		type ChronicleClockDraft
+		type ChronicleClockDraft,
+		type ChronicleSceneView
 	} from "@serene-pub/core-catalog/chronicle"
 	import { useWidgetContext } from "../context"
 
@@ -172,6 +177,11 @@
 		if (done) ask()
 	}
 
+	/** 🚧 ★S6-1: compile one day's scenes not yet compiled (null = Undated); the run shows in the activity list. */
+	async function compileDay(date: StoryTime | null) {
+		await press("compile", "compile-history-entry", { date })
+	}
+
 	// ── the clock ────────────────────────────────────────────────────────────
 	let moving = $state(false)
 	let draft = $state<ChronicleClockDraft>(chronicleClockDraft(null))
@@ -239,10 +249,63 @@
 	}
 </script>
 
+{#snippet sceneRow(s: ChronicleSceneView)}
+	<li
+		data-widget-part="chronicle.scene row"
+		data-scene-id={s.id}
+		data-open={s.open ? "" : undefined}
+	>
+		<button
+			type="button"
+			data-widget-part="chronicle.scene-open"
+			title={t("Open in lorebook")}
+			onclick={() => openScene(s.id)}
+		>
+			<span data-widget-part="chronicle.scene-swatch" data-swatch={s.swatch}></span>
+			<span data-widget-part="chronicle.scene-name">{s.name}</span>
+			<span data-widget-part="chronicle.scene-span">{s.span}</span>
+			<span
+				data-widget-part="chronicle.scene-status"
+				data-status={s.status}
+				role="img"
+				aria-label={s.statusLabel}
+				title={s.statusLabel}
+			></span>
+		</button>
+		{#if s.canSummarize}
+			<button
+				type="button"
+				data-widget-part="chronicle.scene-summarize"
+				title={t("Summarize this scene in the background")}
+				disabled={!!busy}
+				onclick={() => summarizeScenes([s.id])}
+			>
+				{t("Summarize")}
+			</button>
+		{:else if s.canReview}
+			<!-- 🚧 §15 G8: the run finished; its review opens in the host. -->
+			<button
+				type="button"
+				data-widget-part="chronicle.scene-summarize chronicle.scene-review"
+				title={t("Its summary is ready: open the review to apply or discard it")}
+				disabled={!!busy}
+				onclick={() => press("review", "summarize", { kind: "scene", sceneId: s.id })}
+			>
+				{t("Ready to review")}
+			</button>
+		{:else if s.status === "running"}
+			<!-- The run in words where its Summarize was, as the conversation's
+			     divider says it: the dot alone is too small to notice. -->
+			<span data-widget-part="chronicle.scene-running" role="status">{s.statusLabel}</span>
+		{/if}
+		{#if s.writtenFrom}
+			<p data-widget-part="chronicle.scene-written-from">{s.writtenFrom}</p>
+		{/if}
+	</li>
+{/snippet}
+
 <div data-widget-part="chronicle.root" data-widget="chronicle" data-state={view.state}>
-	{#if view.state === "no-book"}
-		<p data-widget-part="chronicle.empty empty">{view.empty}</p>
-	{:else}
+	{#if view.state !== "no-book"}
 		{#if alert}
 			<p data-widget-part="chronicle.alert" role="alert">{alert}</p>
 		{/if}
@@ -364,9 +427,10 @@
 					{#if open.cast.length}
 						<ul data-widget-part="chronicle.cast list" aria-label={t("Proposed cast")}>
 							{#each open.cast as member, i (i)}
-								<li data-widget-part="chronicle.cast-member chip" title={member.evidence}>
+								<!-- Why they're proposed is the name's tooltip, in words (2026-11-06);
+								     never printed beside the name. -->
+								<li data-widget-part="chronicle.cast-member chip" title={member.evidence || undefined}>
 									{member.name}
-									<span data-widget-part="chronicle.cast-evidence">{member.evidence}</span>
 								</li>
 							{/each}
 						</ul>
@@ -411,8 +475,6 @@
 						</span>
 						<span data-widget-part="chronicle.entry-scenes">{view.now.scenes}</span>
 					</div>
-				{:else}
-					<p data-widget-part="chronicle.empty empty">{view.nowEmpty}</p>
 				{/if}
 				<div data-widget-part="chronicle.toolbar toolbar">
 					<button
@@ -443,58 +505,9 @@
 					{#if view.scenes.length}
 						<ul data-widget-part="chronicle.scene-list list">
 							{#each view.scenes as s (s.id)}
-								<li
-									data-widget-part="chronicle.scene row"
-									data-scene-id={s.id}
-									data-open={s.open ? "" : undefined}
-								>
-									<button
-										type="button"
-										data-widget-part="chronicle.scene-open"
-										title={t("Open in lorebook")}
-										onclick={() => openScene(s.id)}
-									>
-										<span data-widget-part="chronicle.scene-swatch" data-swatch={s.swatch}></span>
-										<span data-widget-part="chronicle.scene-name">{s.name}</span>
-										<span data-widget-part="chronicle.scene-span">{s.span}</span>
-										<span
-											data-widget-part="chronicle.scene-status"
-											data-status={s.status}
-											role="img"
-											aria-label={s.statusLabel}
-											title={s.statusLabel}
-										></span>
-									</button>
-									{#if s.canSummarize}
-										<button
-											type="button"
-											data-widget-part="chronicle.scene-summarize"
-											title={t("Summarize this scene in the background")}
-											disabled={!!busy}
-											onclick={() => summarizeScenes([s.id])}
-										>
-											{t("Summarize")}
-										</button>
-									{:else if s.canReview}
-										<!-- 🚧 §15 G8: the run finished; its review opens in the host. -->
-										<button
-											type="button"
-											data-widget-part="chronicle.scene-summarize chronicle.scene-review"
-											title={t("Its summary is ready: open the review to apply or discard it")}
-											disabled={!!busy}
-											onclick={() => press("review", "summarize", { kind: "scene", sceneId: s.id })}
-										>
-											{t("Ready to review")}
-										</button>
-									{/if}
-									{#if s.writtenFrom}
-										<p data-widget-part="chronicle.scene-written-from">{s.writtenFrom}</p>
-									{/if}
-								</li>
+								{@render sceneRow(s)}
 							{/each}
 						</ul>
-					{:else}
-						<p data-widget-part="chronicle.empty empty">{view.scenesEmpty}</p>
 					{/if}
 					{#if view.canSummarize || view.extend || view.summarizeAll}
 						<div data-widget-part="chronicle.scene-actions toolbar">
@@ -536,6 +549,35 @@
 							{/if}
 						</div>
 					{/if}
+				</section>
+			{/if}
+
+			{#if view.unfiled.length}
+				<section data-widget-part="chronicle.unfiled" aria-labelledby="{uid}-unfiled">
+					<h3 id="{uid}-unfiled" data-widget-part="chronicle.heading label">{t("Not yet compiled")}</h3>
+					{#each view.unfiled as day (day.key)}
+						<div data-widget-part="chronicle.unfiled-day" role="group" aria-label={day.date}>
+							<div data-widget-part="chronicle.unfiled-day-head">
+								<span data-widget-part="chronicle.unfiled-date">{day.date}</span>
+								<span data-widget-part="chronicle.unfiled-count">{day.count}</span>
+								{#if day.compile}
+									<button
+										type="button"
+										data-widget-part="chronicle.unfiled-compile"
+										title={day.compile.title}
+										disabled={!!busy}
+										onclick={() => compileDay(day.compile!.date)}
+									>
+										<sp-icon name="wand" size="14"></sp-icon>
+										{day.compile.label}
+									</button>
+								{/if}
+							</div>
+							<ul data-widget-part="chronicle.scene-list list">
+								{#each day.scenes as s (s.id)}{@render sceneRow(s)}{/each}
+							</ul>
+						</div>
+					{/each}
 				</section>
 			{/if}
 

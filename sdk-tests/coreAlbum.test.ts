@@ -18,6 +18,10 @@ import {
 	readAlbumSettings,
 } from '../core-catalog/src/shared/ui/album/index.js'
 import { CORE_COMPONENTS, CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 let nextPart = 1
 const image = (
@@ -276,4 +280,40 @@ describe('the lightbox request', () => {
 			'Open generated image Image',
 		)
 	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('an empty Album draws nothing (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('album')
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="album.root"]'), 'the root still mounts')
+		assert.equal(view.query('[data-widget-part~="album.empty"]') === null, true)
+		assert.equal((view.root.textContent ?? '').trim(), '')
+	} finally {
+		await view.unmount()
+	}
+})
+
+test('an empty Backdrop draws no sentence, only its owner button (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('backdrop')
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="backdrop.root"]'), 'the root still mounts')
+		assert.equal(view.query('[data-widget-part~="backdrop.empty"]') === null, true)
+		assert.equal((view.root.textContent ?? '').trim(), 'Change')
+	} finally {
+		await view.unmount()
+	}
 })

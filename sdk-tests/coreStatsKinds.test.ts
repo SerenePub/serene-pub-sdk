@@ -7,7 +7,7 @@
  * several lines — what an owner holds zone by zone (a list, a fan), and the
  * host's place and time in a **Where and when** row of their own; a genre's
  * tool state only where a copy shows it. A hint the widget does not know is
- * the kind's default. Rules that declare no attributes say so. A holder
+ * the kind's default. Rules that declare no attributes say nothing. A holder
  * switches an optional attribute from the sheet too: ONE `set-attribute-carry`.
  *
  * Mounted from source, as `coreStatsTies` mounts it.
@@ -231,7 +231,7 @@ describe('the Stats widget draws every kind from the rules (RF fix 8)', () => {
 		}
 	})
 
-	test("rules that declare no attributes (Freeform, From scratch) say so — the place, the clock and ⏳ what someone carries still drawn", async () => {
+	test("rules that declare no attributes (Freeform, From scratch) say nothing — the place, the clock and ⏳ what someone carries still drawn", async () => {
 		// ⏳ What someone carries, kept by the host as a list (Story, the Lair): never one of the rules' attributes.
 		const carried = slot('inventory', 'list', { hostState: 'carried', appliesTo: ['cast', 'world', 'location'] })
 		const freeform = state({
@@ -244,7 +244,8 @@ describe('the Stats widget draws every kind from the rules (RF fix 8)', () => {
 		})
 		const mine = await mount(freeform)
 		try {
-			assert.equal(text(mine.query('[data-widget-part~="stats.card-note"][data-declares-none]')), "This session's rules declare no attributes.")
+			assert.equal(mine.query('[data-widget-part~="stats.card-note"]'), null, 'no placeholder sentence')
+			assert.doesNotMatch(mine.root.textContent ?? '', /declare no attributes/)
 			assert.match(text(mine.query(`[data-widget-part~="stats.carried"] ${row('inventory')}`)) ?? '', /Rusty key/)
 			assert.equal(mine.queryAll(`[data-widget-part~="stats.card-body"]`).length, 0, 'no attribute is drawn')
 		} finally {

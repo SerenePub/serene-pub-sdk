@@ -109,19 +109,16 @@
 		<p data-widget-part="attendance.alert" role="alert">{refusal}</p>
 	{/if}
 
-	<section data-widget-part="attendance.group" data-group="here" aria-label={t("Here")}>
-		<h3 data-widget-part="attendance.group-head">{t("Here")}</h3>
-		{#if view.here.length}
+	{#if view.here.length}
+		<section data-widget-part="attendance.group" data-group="here" aria-label={t("Here")}>
+			<h3 data-widget-part="attendance.group-head">{t("Here")}</h3>
 			<ul data-widget-part="attendance.list list">
 				{#each view.here as person (person.key)}
 					{@render personRow(person, "here")}
 				{/each}
 			</ul>
-		{/if}
-		{#if view.alone}
-			<p data-widget-part="attendance.empty empty" role="status">{view.alone}</p>
-		{/if}
-	</section>
+		</section>
+	{/if}
 
 	{#if view.away.length}
 		<section data-widget-part="attendance.group" data-group="away" aria-label={t("Away")}>

@@ -169,6 +169,20 @@ describe("a genre's omitWidgets and layouts", () => {
 		assert.throws(() => widget({ id: 'bus', title: 'Bus', component: 'bus', maxInstances: 0 }), /maxInstances: a positive whole number/)
 		assert.throws(() => widget({ id: 'bus', title: 'Bus', component: 'bus', maxInstances: 1.5 }), /maxInstances/)
 	})
+
+	test('a widget may state how its panel is sized and weighed; each field is checked', () => {
+		const base = { id: 'bus', title: 'Bus', component: 'bus' }
+		assert.deepEqual(widget({ ...base, panel: { height: 'fit', priority: 'high' } }).panel, { height: 'fit', priority: 'high' })
+		assert.deepEqual(widget({ ...base, panel: {} }).panel, {})
+		assert.equal(widget(base).panel, undefined)
+		assert.throws(() => widget({ ...base, panel: 'fit' as never }), /widget 'bus' panel: \{ height\?, priority\? \} — an object/)
+		assert.throws(() => widget({ ...base, panel: [] as never }), /widget 'bus' panel: \{ height\?, priority\? \} — an object/)
+		assert.throws(() => widget({ ...base, panel: { height: 'tall' as never } }), /widget 'bus' panel\.height: 'fit' or 'fill'/)
+		assert.throws(
+			() => widget({ ...base, panel: { priority: 'urgent' as never } }),
+			/widget 'bus' panel\.priority: 'high', 'normal' or 'low'/,
+		)
+	})
 })
 
 describe('the packager', () => {
@@ -280,6 +294,46 @@ describe('the packager', () => {
 			right: [{ key: 'p4', tabs: ['messages#sanctum'], pinned: false }],
 		})
 		assert.deepEqual(Object.keys(out!.preset.widgetSettings ?? {}), ['r71k.pkg:map#north'])
+		// The genre's own declaration is untouched.
+		assert.deepEqual(g.layouts?.[0]?.preset.panels?.left[0]?.tabs, ['stats', 'map#north'])
+	})
+	test('namespaces a version 2 panels slot too: tabs and open tabs, keys, heights, priorities and the look untouched', () => {
+		const board = widget({ id: 'board', title: 'Board', component: 'board' })
+		const map = widget({ id: 'map', title: 'Map', component: 'map' })
+		const g = genre('r71k.pkg:genre/q', {
+			name: 'Q',
+			family: 'test',
+			layouts: [
+				layout({
+					slug: 'default',
+					name: 'Q',
+					preset: {
+						panels: {
+							version: 2,
+							left: [{ key: 'p3', tabs: ['stats', 'map#north'], open: 'map#north', priority: 'low', title: 'Atlas' }],
+							middle: [
+								{ key: 'p2', tabs: ['map'], height: 'fit', priority: 'high' },
+								{ key: 'p1', tabs: ['messages', 'board'], open: 'board', height: { share: 3 } },
+							],
+							right: [{ key: 'p4', tabs: ['messages#sanctum'] }],
+							gap: 'tight',
+						},
+					},
+				}),
+			],
+		})
+		const e = { slug: 'r71k.pkg', widgets: [board, map], genres: [g] } as unknown as Parameters<typeof genreLayouts>[0]
+		const [out] = genreLayouts(e)
+		assert.deepEqual(out!.preset.panels, {
+			version: 2,
+			left: [{ key: 'p3', tabs: ['stats', 'r71k.pkg:map#north'], open: 'r71k.pkg:map#north', priority: 'low', title: 'Atlas' }],
+			middle: [
+				{ key: 'p2', tabs: ['r71k.pkg:map'], height: 'fit', priority: 'high' },
+				{ key: 'p1', tabs: ['messages', 'r71k.pkg:board'], open: 'r71k.pkg:board', height: { share: 3 } },
+			],
+			right: [{ key: 'p4', tabs: ['messages#sanctum'] }],
+			gap: 'tight',
+		})
 		// The genre's own declaration is untouched.
 		assert.deepEqual(g.layouts?.[0]?.preset.panels?.left[0]?.tabs, ['stats', 'map#north'])
 	})

@@ -7,19 +7,32 @@
  * T6 moves this into `@serene-pub/core-catalog` with the specs; today it is
  * the in-repo half of that package.
  */
-import { genre, layout, NUMBER_ATTRIBUTE_KINDS, sessionEvents, type UsesExpectation } from "@serene-pub/sdk"
+import {
+	genre,
+	ITEM_MOVE_LATITUDES,
+	layout,
+	NUMBER_ATTRIBUTE_KINDS,
+	SHEET_LATITUDES,
+	sessionEvents,
+	type ItemMoveLatitude,
+	type SheetLatitude,
+	type UsesExpectation
+} from "@serene-pub/sdk"
 import {
 	DUNGEON_CRAWLER_LAYOUT,
+	GUIDE_LAYOUT,
 	LAIR_LAYOUT,
 	LAIR_PARTY_LAYOUT,
 	STORY_LAYOUT,
-	STORY_WORLD_LAYOUT
+	STORY_WORLD_LAYOUT,
+	STORY_VISUAL_NOVEL_LAYOUT
 } from "./layouts.js"
 import type { FieldDecl } from "@serene-pub/sdk"
 import {
 	DUNGEON_CRAWLER_GENRE_ID,
 	DUNGEON_CRAWLER_NARRATOR_KEY,
 	DUNGEON_CRAWLER_PLANNER_KEY,
+	DUNGEON_CRAWLER_SUMMARIZE_SCENE_SPEC_ID,
 	PARLEY_CHANNEL,
 	TRAVELOGUE_CHANNEL
 } from "../genres/dungeon-crawler/names.js"
@@ -32,6 +45,7 @@ import {
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
 	STORY_SUMMARIZE_SCENE_SPEC_ID
 } from "../shared/summarize/sceneIds.js"
+import { ROUND_WORTH_FIELD, ROUND_WORTH_KEY } from "../shared/roundTick.js"
 import { SPEECH_FIELDS } from "../shared/speechFields.js"
 import { TABLE_CHANNEL_DECL } from "../shared/ui/conversation/tableChannel.js"
 
@@ -68,6 +82,8 @@ export const AUTO_ADVANCE_FIELD: FieldDecl = {
 	// the same control, in the words the form renderer already speaks.
 	type: "enum",
 	label: { en: "Auto-advance" },
+	group: "Turns",
+	reach: "owner",
 	members: [
 		{ key: "off", label: { en: "Off" } },
 		{ key: "next", label: { en: "Next turn" } },
@@ -90,6 +106,8 @@ export const AUTO_ADVANCE_FIELD: FieldDecl = {
 export const TURN_MODE_FIELD: FieldDecl = {
 	type: "enum",
 	label: { en: "Who speaks next is decided by" },
+	group: "Turns",
+	reach: "owner",
 	members: [
 		{ key: "rules", label: { en: "The turn order rules" } },
 		{ key: "model", label: { en: "The model" } }
@@ -122,6 +140,8 @@ export const TURN_MODE_FIELD: FieldDecl = {
 export const CHARACTER_DETAIL_FIELD: FieldDecl = {
 	type: "enum",
 	label: { en: "Character detail" },
+	group: "Writing",
+	reach: "owner",
 	members: [
 		{ key: "full", label: { en: "Everything" } },
 		{ key: "brief", label: { en: "Name and description" } },
@@ -165,6 +185,8 @@ export const CHARACTER_DETAIL_FIELD: FieldDecl = {
 export const AUTHORS_NOTE_FIELD: FieldDecl = {
 	type: "object",
 	label: { en: "Author's note" },
+	group: "Writing",
+	reach: "owner",
 	description: {
 		en: "Your own note to the model for this session — what is true now, or where the story should go. It is placed right before the reply unless you move it, every reply or every few."
 	},
@@ -225,6 +247,7 @@ export const AUTHORS_NOTE_FIELD: FieldDecl = {
 export const SIDE_CAST_FIELD: FieldDecl = {
 	type: "boolean",
 	label: { en: "Let others speak up" },
+	group: "Turns",
 	description: {
 		en: "After everyone has had their turn, one more character may speak up on their own before it is yours again. Each is another model call."
 	},
@@ -233,23 +256,44 @@ export const SIDE_CAST_FIELD: FieldDecl = {
 }
 
 /**
- * 🚧 **Narrator asides** (2026-10-20, the voices group's other half): after
- * everyone has had their turn, the narrator may add a line of its own before
- * it is the person's again. A genre setting read by the turn-order spec, as
- * `SIDE_CAST_FIELD` is. Off by default.
+ * 🚧 **Narrator's turn** (the label was *Narrator asides* until 2026-11-04, ★T-2;
+ * the key `narratorInterjections` stays) (2026-10-20; reshaped 2026-11-04, playtest ruling
+ * item 7): the cadence of the narrator's own turn — after the cast, every N
+ * rounds, counted from the narrator's last line on `main`. Under Next turn its
+ * turn waits for a Continue, never a second reply. A genre setting read by the
+ * turn-order spec, as `SIDE_CAST_FIELD` is. Off by default. A stored `true`
+ * (before 2026-11-04) reads as every round, `false` as off — read by
+ * `UNPROMPTED_MODES_SCRIPT`, no migration.
  * @experimental
  */
 export const NARRATOR_INTERJECTIONS_FIELD: FieldDecl = {
-	type: "boolean",
-	label: { en: "Narrator asides" },
+	type: "enum",
+	label: { en: "Narrator's turn" },
+	group: "Turns",
 	description: {
-		en: "After everyone has had their turn, the narrator may add a line of its own before it is yours again. Each is another model call."
+		en: "How often the narrator takes a turn of its own, after everyone else's. Each is another model call."
 	},
-	default: false,
+	of: ["off", "every-round", "every-2nd-round", "every-3rd-round"],
+	members: [
+		{ key: "off", label: { en: "Off" } },
+		{ key: "every-round", label: { en: "Every round" } },
+		{ key: "every-2nd-round", label: { en: "Every 2nd round" } },
+		{ key: "every-3rd-round", label: { en: "Every 3rd round" } }
+	],
+	default: "off",
 	reach: "owner"
 }
 
 /**
+ * ⏳ **Deprecated 2026-11-05** (owner ruling plan §25 ★6): Honour mode moved to
+ * `KEEP_EVERY_TURN_FIELD` (_Keep every turn_) under the key `keepEveryTurn`, its meaning flipped
+ * (on = keep every turn); its sheet half is sheet latitude
+ * (`PLAYER_SHEET_LATITUDE_FIELD`). The app's data mapping reads a stored
+ * `honorMode` once (sessions, preset settings, import files, plugin presets)
+ * and drops it. No genre declares it (the Dungeon Crawler stopped 2026-11-05);
+ * it stays exported for that mapping and so packages compile, and removing it
+ * is the owner's call.
+ *
  * 🚧 **Honour mode** (owner ruling 2026-10-15) — a key core reads, the way it
  * reads `autoAdvance`, so any genre opts in by placing this object under
  * `honorMode` in its `fields` (PLAN-genres-seams S6, 2026-10-23; the Dungeon
@@ -262,15 +306,169 @@ export const NARRATOR_INTERJECTIONS_FIELD: FieldDecl = {
  * and the pipeline is untouched (`assertSessionOwner`, app `state/write.ts`;
  * the key read by `app/server/sessions/settings.ts`).
  * @experimental
+ * @deprecated — declare KEEP_EVERY_TURN_FIELD under `keepEveryTurn`.
  */
 export const HONOR_MODE_FIELD: FieldDecl = {
 	type: "boolean",
 	label: { en: "Honour mode" },
+	group: "Players",
+	reach: "owner",
 	// 🚧 RF fix 5 (owner ruling 2026-10-23): deleting needs a deletion
 	// pipeline, which no core genre registers — so the delete half reads
 	// "where deleting is on"; Back and Forward are the table's either way.
 	description: { en: "Lets players edit their own sheets by hand, and the host delete the latest turn where deleting is on. Off: neither." },
 	default: false
+}
+
+/** The sheet-latitude levels as a person reads them (owner-accepted words, plan §25 ★8). */
+const SHEET_LATITUDE_LABELS: Record<SheetLatitude, string> = {
+	"as-ruled": "As the rules say",
+	"no-edits": "No editing by hand",
+	"all-own": "Everything on their own characters",
+	"all-any": "Everything on anyone's"
+}
+
+/** The item-move levels as a person reads them (owner-accepted words, plan §25 ★8). */
+const ITEM_MOVE_LABELS: Record<ItemMoveLatitude, string> = {
+	"follow-sheet": "Follow sheet editing",
+	"no-moves": "No moving by hand",
+	"own-items": "Their own items",
+	"any-items": "Anyone's"
+}
+
+/**
+ * 🚧 **Session owner sheet latitude** (owner ruling 2026-11-05, plan §25 ★1):
+ * how much the session owner may change by hand on the sheets — the levels are
+ * `SHEET_LATITUDES`. A key core reads, the way it reads `autoAdvance`: a genre
+ * opts in by placing this object under `ownerSheetLatitude` in its
+ * `shape.fields` with its own `default`, or pins the value silently in its
+ * `settings` (the cascade, R32). The host's write gate judges each hand edit
+ * with the SDK's `sheetLatitudeAllows` (app `state/handEdits.ts`).
+ *
+ * ⚠ Not `changedBy` (an attribute's own word for who may change it — the judge
+ * reads it); not a slot lock (`configs[slot].lock` — the judge reads it); not
+ * `reach` (who sees a setting); not earshot (which prompts read a value).
+ * Pipelines and runs are never judged by it: it limits a person's hand only.
+ * @experimental
+ */
+export const OWNER_SHEET_LATITUDE_FIELD: FieldDecl = {
+	type: "enum",
+	label: { en: "Session owner edits sheets" },
+	group: "Players",
+	reach: "owner",
+	members: SHEET_LATITUDES.map((key) => ({ key, label: { en: SHEET_LATITUDE_LABELS[key] } })),
+	default: "as-ruled",
+	description: {
+		en: "How much the session owner may change by hand on the sheets. The world, the places and the people nobody plays count as theirs."
+	}
+}
+
+/**
+ * 🚧 **Player sheet latitude** (owner ruling 2026-11-05, plan §25 ★1): how much
+ * players may change by hand on the sheets — the levels are `SHEET_LATITUDES`.
+ * A key core reads, the way it reads `autoAdvance`: a genre opts in by placing
+ * this object under `playerSheetLatitude` in its `shape.fields` with its own
+ * `default`, or pins the value silently in its `settings` (the cascade, R32).
+ * The host's write gate judges each hand edit with the SDK's
+ * `sheetLatitudeAllows` (app `state/handEdits.ts`). Their own are the characters they
+ * play; watchers never change a sheet.
+ *
+ * ⚠ Not `changedBy`, not a slot lock, not `reach`, not earshot (see
+ * `OWNER_SHEET_LATITUDE_FIELD`); not the item moves (`PLAYER_ITEM_MOVES_FIELD`
+ * — their own permission).
+ * @experimental
+ */
+export const PLAYER_SHEET_LATITUDE_FIELD: FieldDecl = {
+	type: "enum",
+	label: { en: "Players edit sheets" },
+	group: "Players",
+	reach: "owner",
+	members: SHEET_LATITUDES.map((key) => ({ key, label: { en: SHEET_LATITUDE_LABELS[key] } })),
+	default: "as-ruled",
+	description: {
+		en: "How much players may change by hand on the sheets. Their own are the characters they play; watchers never change them."
+	}
+}
+
+/**
+ * 🚧 **Session owner item moves** (owner ruling 2026-11-05, plan §25 ★7): moves
+ * are their own permission — whether the session owner gives, drops and picks
+ * up items by hand, and whose; the levels are `ITEM_MOVE_LATITUDES`. A key core
+ * reads: a genre opts in by placing this object under `ownerItemMoves` in its
+ * `shape.fields` with its own `default`, or pins it silently in its `settings`
+ * (the cascade, R32). The host's write gate judges each side of a move with the
+ * SDK's `sheetLatitudeAllows` (app `state/handEdits.ts`); `follow-sheet` judges each
+ * side as a `set` under `OWNER_SHEET_LATITUDE_FIELD`.
+ *
+ * ⚠ Not `changedBy`, not a slot lock, not `reach`, not earshot (see
+ * `OWNER_SHEET_LATITUDE_FIELD`).
+ * @experimental
+ */
+export const OWNER_ITEM_MOVES_FIELD: FieldDecl = {
+	type: "enum",
+	label: { en: "Session owner moves items" },
+	group: "Players",
+	reach: "owner",
+	members: ITEM_MOVE_LATITUDES.map((key) => ({ key, label: { en: ITEM_MOVE_LABELS[key] } })),
+	default: "follow-sheet",
+	description: {
+		en: "Whether the session owner gives, drops and picks up items by hand, and whose."
+	}
+}
+
+/**
+ * 🚧 **Player item moves** (owner ruling 2026-11-05, plan §25 ★7): whether
+ * players give, drop and pick up items by hand, and whose — a separate control
+ * from sheet editing, so a strict table can let players hand items over while
+ * their sheets stay locked; the levels are `ITEM_MOVE_LATITUDES`. A key core
+ * reads: a genre opts in by placing this object under `playerItemMoves` in its
+ * `shape.fields` with its own `default`, or pins it silently in its `settings`
+ * (the cascade, R32). The host's write gate judges each side of a move with the
+ * SDK's `sheetLatitudeAllows` (app `state/handEdits.ts`); `follow-sheet` judges each
+ * side as a `set` under `PLAYER_SHEET_LATITUDE_FIELD`.
+ *
+ * ⚠ Not `changedBy`, not a slot lock, not `reach`, not earshot (see
+ * `OWNER_SHEET_LATITUDE_FIELD`).
+ * @experimental
+ */
+export const PLAYER_ITEM_MOVES_FIELD: FieldDecl = {
+	type: "enum",
+	label: { en: "Players move items" },
+	group: "Players",
+	reach: "owner",
+	members: ITEM_MOVE_LATITUDES.map((key) => ({ key, label: { en: ITEM_MOVE_LABELS[key] } })),
+	default: "follow-sheet",
+	description: {
+		en: "Whether players give, drop and pick up items by hand, and whose, so a table can let them hand items over while their sheets stay locked."
+	}
+}
+
+/**
+ * 🚧 **Keep every turn** (owner rulings 2026-11-05, plan §25 ★6 and ★sl-4: the
+ * key and the label both renamed from Honour mode): ON = nobody deletes the latest turn
+ * (retake from the latest instead); Back/Forward and the retake are untouched.
+ * A key core reads, the way it reads `autoAdvance`: a genre opts in by placing
+ * this object under `keepEveryTurn` in its `shape.fields` with its own
+ * `default`, or pins it silently in its `settings` (the cascade, R32). Read by
+ * the app's `turnDeleteVerdict`. Off: the host may delete the latest turn
+ * where deleting is on. The Dungeon Crawler declares it, on by default.
+ *
+ * It replaces `HONOR_MODE_FIELD` (`honorMode`, meaning flipped) and no longer
+ * says anything about sheets: that is sheet latitude now
+ * (`PLAYER_SHEET_LATITUDE_FIELD`).
+ *
+ * ⚠ Not a sheet permission, not Back/Forward, not the retake.
+ * @experimental
+ */
+export const KEEP_EVERY_TURN_FIELD: FieldDecl = {
+	type: "boolean",
+	label: { en: "Keep every turn" },
+	group: "Players",
+	reach: "owner",
+	description: {
+		en: "Every turn is kept: nobody deletes the latest turn — retake it instead. Off: the host may delete the latest turn where deleting is on."
+	},
+	default: true
 }
 
 /**
@@ -288,6 +486,8 @@ export const HONOR_MODE_FIELD: FieldDecl = {
 export const SHOW_OUTCOMES_FIELD: FieldDecl = {
 	type: "boolean",
 	label: { en: "Show outcomes" },
+	group: "Checks",
+	reach: "owner",
 	description: {
 		en: "On, the party read how each check came out, numbers and all, as it landed. Off, the results still show in the story, but the party read only how things went, never the numbers."
 	},
@@ -339,6 +539,13 @@ const INVENTORY = expectation("inventory", "somewhere to keep what they carry", 
 export const storyGenre = genre(STORY_GENRE_ID, {
 	name: { en: "Story" },
 	family: "story",
+	keepsTime: "story",
+	/**
+	 * 🚧 The session owner changes anything on anyone's sheet by hand, the
+	 * world and places too (owner ruling 2026-11-05, plan §25 ★2): pinned,
+	 * no control. Players keep core's _As the rules say_.
+	 */
+	settings: { ownerSheetLatitude: "all-any" },
 	description: {
 		en: "Roleplay and adventure in one: bring characters and personas in any mix — or none — and tell a story together. The world can keep itself as you play."
 	},
@@ -394,7 +601,10 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 		 * world's `location`. A scene is named `Scene N · <place>` and *the
 		 * place changed* fires when the party move.
 		 */
-		scenes: { place: { stateKey: "location" } },
+		/** Begins scenes by itself through the scenes routine (owner 2026-11-12); a session's own setting still wins. */
+		scenes: { mode: "automatic", place: { stateKey: "location" }, first: true, castRefresh: true },
+		/** Back takes one message per press in Story (owner 2026-11-04, playtest §0-A); the Lair and the Crawler keep the turn. */
+		history: { settle: "on-commit", back: "message" },
 		/** The session settings form's own sections (§4.11): declared, never automatic. */
 		scenario: true,
 		tags: true,
@@ -411,6 +621,7 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 			turnMode: TURN_MODE_FIELD,
 			characterDetail: CHARACTER_DETAIL_FIELD,
 			authorsNote: AUTHORS_NOTE_FIELD,
+			[ROUND_WORTH_KEY]: ROUND_WORTH_FIELD,
 			tone: {
 				type: "enum",
 				label: { en: "Tone" },
@@ -473,13 +684,20 @@ export const storyGenre = genre(STORY_GENRE_ID, {
 		[sessionEvents.formAddressed]: {}
 	},
 	/**
-	 * The layouts this genre ships (R71): Chat's — the conversation, and the
-	 * Author's note tucked in the right rail — first and by default;
-	 * Adventure's world arrangement beside it, for a story that keeps sheets.
+	 * The layouts this genre ships (R71): the common layout (R5, ★5) first
+	 * and by default; the World arrangement beside it, kept (D15), for a
+	 * story that keeps sheets; and the **Visual novel** (★4): the story one
+	 * line at a time over the scene.
 	 */
 	layouts: [
 		layout({ slug: "default", name: { en: "Story" }, preset: STORY_LAYOUT }),
-		layout({ slug: "world", name: { en: "World" }, preset: STORY_WORLD_LAYOUT })
+		layout({ slug: "world", name: { en: "World" }, preset: STORY_WORLD_LAYOUT }),
+		layout({
+			slug: "visual-novel",
+			name: { en: "Visual novel" },
+			description: { en: "The scene fills the screen and the story reads one line at a time in a box at its foot; the whole log is a tab beside it." },
+			preset: STORY_VISUAL_NOVEL_LAYOUT
+		})
 	],
 	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
 	summarize: { scene: STORY_SUMMARIZE_SCENE_SPEC_ID }
@@ -539,6 +757,7 @@ export const CHAT_TOOL_KINDS = Object.freeze([
 export const chatGenre = genre(CHAT_GENRE_ID, {
 	name: { en: "Chat" },
 	family: "assistant",
+	keepsTime: "real",
 	description: {
 		en: "The model as itself — a plain assistant, no characters or story. Add tools to let it search, read your lorebooks and make images."
 	},
@@ -575,6 +794,8 @@ export const chatGenre = genre(CHAT_GENRE_ID, {
 			tools: {
 				type: "string[]",
 				label: { en: "Tools" },
+				group: "Tools",
+				reach: "owner",
 				description: {
 					en: "What the Assistant may use while it answers. Each tool it uses is another model call; none means one call a turn."
 				},
@@ -684,6 +905,7 @@ export const GUIDE_MASCOT_GREETING =
 export const guideGenre = genre(GUIDE_GENRE_ID, {
 	name: { en: "Guide" },
 	family: "assistant",
+	keepsTime: "real",
 	/**
 	 * 🚧 Solo (R2 ruling 3, 2026-10-19): never a group session — one
 	 * person's questions about the app, so guests, invites and lanes are
@@ -779,6 +1001,8 @@ export const guideGenre = genre(GUIDE_GENRE_ID, {
 	},
 	/** The author's note is Story's alone (Chat's until 2026-10-19; owner ruling 2026-10-02, AN1). */
 	omitWidgets: [coreWidgets.authorsNote],
+	/** The Guide's layout (★5, 2026-11-05): Messages, Turn line and Composer, nothing else. */
+	layouts: [layout({ slug: "default", name: { en: "Guide" }, preset: GUIDE_LAYOUT })],
 	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
 	summarize: { scene: GUIDE_SUMMARIZE_SCENE_SPEC_ID }
 })
@@ -950,7 +1174,14 @@ export const LAIR_CASTELLAN_GREETING = [
 export const lairGenre = genre(LAIR_GENRE_ID, {
 	name: { en: "Lair" },
 	family: "adventure",
+	keepsTime: "story",
 	members: "group",
+	/**
+	 * 🚧 The session owner changes anything on anyone's sheet by hand, the
+	 * world and places too (owner ruling 2026-11-05, plan §25 ★2): pinned,
+	 * no control. Players keep core's _As the rules say_.
+	 */
+	settings: { ownerSheetLatitude: "all-any" },
 	/**
 	 * 🚧 What the Lair uses of a ruleset (D8, PROPOSAL §6): nothing it cannot
 	 * run without — its plan, voices and books work in words — and it plays
@@ -1067,12 +1298,15 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 		 * 🚧 Where the story is (live scenes §15 G2): the room the party stand
 		 * in, the world's `location`. *The place changes* follows it.
 		 */
-		scenes: { place: { stateKey: "location" } },
+		/** Begins scenes by itself through the scenes routine (owner 2026-11-12); a session's own setting still wins. */
+		scenes: { mode: "automatic", place: { stateKey: "location" } },
 		// No turn-order swaps: the plan decides who speaks.
 		fields: {
 			tone: {
 				type: "enum",
 				label: { en: "Tone" },
+				group: "Lair",
+				reach: "owner",
 				description: {
 					en: "How the Castellan narrates, and how the party carry themselves."
 				},
@@ -1086,6 +1320,7 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 				default: "grounded",
 				quick: true
 			},
+			[ROUND_WORTH_KEY]: { ...ROUND_WORTH_FIELD, group: "Lair" },
 			/**
 			 * 🚧 **The rooms layer** (PROPOSAL §3, §11; R10): on, the party
 			 * knock at a room nobody built and the GM builds and files rooms;
@@ -1096,6 +1331,8 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 			roomsLayer: {
 				type: "boolean",
 				label: { en: "Rooms" },
+				group: "Lair",
+				reach: "owner",
 				description: {
 					en: "Build the dungeon room by room: when the party reach a room nobody has built, the turn stops and asks you to describe it. Off, the dungeon lives in your words alone."
 				},
@@ -1112,6 +1349,8 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 			sanctumSteers: {
 				type: "boolean",
 				label: { en: "Sanctum talk steers the story" },
+				group: "Lair",
+				reach: "owner",
 				description: {
 					en: "When on, what you and the Castellan discuss since the last turn shapes the next one. When off, the Sanctum is for brainstorming: only Nudge, a filed room, and Narrate pressed in the Sanctum reach the story."
 				},
@@ -1131,6 +1370,8 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 			askBeforeRolling: {
 				type: "boolean",
 				label: { en: "Ask me before each check" },
+				group: "Checks",
+				reach: "owner",
 				description: {
 					en: "When the rules call for a check, the Oracle asks you which check and how hard before it is decided, and the party wait for your answer. Off, risky moments are told in words, unless Decide checks at once is on."
 				},
@@ -1147,6 +1388,8 @@ export const lairGenre = genre(LAIR_GENRE_ID, {
 			autoRoll: {
 				type: "boolean",
 				label: { en: "Decide checks at once" },
+				group: "Checks",
+				reach: "owner",
 				description: {
 					en: "When the rules decide, every check the plan calls for is decided at once, against the rules' usual difficulty, without asking you first."
 				},
@@ -1302,7 +1545,15 @@ export const DUNGEON_CRAWLER_NARRATOR_SYSTEM_PROMPT = [
 export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 	name: { en: "Dungeon Crawler" },
 	family: "adventure",
+	keepsTime: "story",
 	members: "group",
+	/**
+	 * 🚧 The session owner changes sheets as the rules say (owner ruling
+	 * 2026-11-05, plan §25): pinned, no control. Players' levels are fields
+	 * (`shape.fields`).
+	 */
+	// Owner 2026-11-05 (★ed-2): the host can always fix a mistake by hand; players stay locked.
+	settings: { ownerSheetLatitude: "all-any" },
 	/**
 	 * 🚧 What the Dungeon Crawler uses of a ruleset (PLAN-genre-restructure
 	 * §11), confirmed against its delta grammar (`story.ts`,
@@ -1384,9 +1635,23 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 		 * is generated and kept in the annex (★A).
 		 *
 		 * `lore: true` (2026-10-17): the world now lives in the session's
-		 * notes (the phantom lorebook), so the loop writes lore. No scenes.
+		 * notes (the phantom lorebook), so the loop writes lore.
+		 *
+		 * `scenes: true` (owner ruling 2026-11-10, scenes first): a day's
+		 * scenes compile into its one history entry; the crawl writes no
+		 * history itself.
+		 *
+		 * `seats: true` (owner ruling 2026-11-10, ★4): a companion's death
+		 * benches their seat and a story revival brings them back, through
+		 * `set-seat-bench@1`, tied to the turn.
 		 */
-		writes: { lore: true, scenes: false },
+		writes: { lore: true, scenes: true, seats: true },
+		/**
+		 * The crawl begins scenes by itself through the scenes routine (owner
+		 * 2026-11-12; a session's own setting still wins). *Time action* stays
+		 * off because each round moves the clock; *day crossed* stays on.
+		 */
+		scenes: { mode: "automatic", triggers: { timeAction: false } },
 		composer: "text",
 		voice: "narrator",
 		turnControls: {
@@ -1434,9 +1699,17 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 		],
 		/** No card greetings: the Planner opens the session on the Planner channel. */
 		greeting: { enabled: false },
+		/**
+		 * 🚧 Hand edits and turns (owner rulings 2026-11-05, plan §25): players
+		 * change no sheet by hand by default but hand their own items over;
+		 * every turn is kept by default. Each a shared field core reads; the
+		 * session owner's level is pinned below (`settings`). `honorMode` is
+		 * gone: a stored one is mapped once by the app (★6).
+		 */
 		fields: {
-			/** 🚧 **Honour mode** (owner ruling 2026-10-15): the shared field (`HONOR_MODE_FIELD`), a key core reads. */
-			honorMode: HONOR_MODE_FIELD
+			playerSheetLatitude: { ...PLAYER_SHEET_LATITUDE_FIELD, default: "no-edits" },
+			playerItemMoves: { ...PLAYER_ITEM_MOVES_FIELD, default: "own-items" },
+			keepEveryTurn: KEEP_EVERY_TURN_FIELD
 		},
 	},
 	// 🚧 No slots, no sheet (RF fix 8): the session's rules bring a hero's
@@ -1494,6 +1767,8 @@ export const dungeonCrawlerGenre = genre(DUNGEON_CRAWLER_GENRE_ID, {
 		coreWidgets.places,
 		coreWidgets.loreEntries
 	],
+	/** 🚧 The spec this genre's scenes are summarized with (live scenes §13). */
+	summarize: { scene: DUNGEON_CRAWLER_SUMMARIZE_SCENE_SPEC_ID },
 	layouts: [
 		layout({ slug: "default", name: { en: "Dungeon Crawler" }, preset: DUNGEON_CRAWLER_LAYOUT })
 	]

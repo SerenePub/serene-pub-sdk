@@ -58,11 +58,28 @@ describe('step label and step purpose', () => {
 		assert.notEqual(contentHash(compile(reply(undefined, { purpose: 'Writes the scene.' }))), plain)
 	})
 
-	test('a purpose on a step that calls no model is refused at construction, with the fix', () => {
+	test('a purpose on a step that calls no model is refused at build() in a spec that calls a model, with the fix', () => {
 		assert.throws(
 			() => reply({ purpose: 'Builds the prompt.' }),
 			/node 'prompt': expose\.purpose says what a model call is for, but core:task\/assemble@2 calls no model — put the purpose on the oracle that does, or give this step a label instead/,
 		)
+	})
+
+	test('a spec that calls no model accepts a purpose on a step that calls none (build and validate())', () => {
+		const doc = compile(
+			spec('test:spec/no-model', { version: '1.0.0' })
+				.inlet('input', C.userMessage.v1())
+				.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }), {
+					expose: { purpose: 'Reads the history.' } as never,
+				})
+				.task('prompt', ($) => C.assemble.v2({ messages: $.history.messages }), {
+					expose: { purpose: 'Builds the prompt.' } as never,
+				})
+				.build(),
+		)
+		assert.equal(exposeOf(doc, 'history')?.purpose, 'Reads the history.')
+		assert.equal(exposeOf(doc, 'prompt')?.purpose, 'Builds the prompt.')
+		assert.equal(validate(doc).filter((f) => f.law === 'step purpose').length, 0)
 	})
 
 	test('an empty label is refused at construction (R-20)', () => {
@@ -76,6 +93,33 @@ describe('step label and step purpose', () => {
 		assert.equal(found[0]!.nodeKey, 'prompt')
 		assert.equal(found[0]!.severity, 'error')
 		assert.match(found[0]!.fix ?? '', /oracle whose model this step feeds/)
+	})
+
+	test('validate() allows a purpose in a stored document that calls no model', () => {
+		const doc = marked(compile(reply()), 'prompt', { purpose: 'Builds the prompt.' })
+		const noModel: SpecDocument = {
+			...doc,
+			nodes: doc.nodes.filter((n) => n.key !== 'generate' && n.key !== 'save'),
+		}
+		assert.equal(validate(noModel).filter((f) => f.law === 'step purpose').length, 0)
+	})
+
+	test('validate() still refuses a purpose when the only model call is a swap option', () => {
+		// The pin `generate` is not a model call here (an assemble stands in), but its swap list seats one.
+		const base = compile(reply())
+		const doc: SpecDocument = {
+			...base,
+			nodes: base.nodes
+				.filter((n) => n.key !== 'generate')
+				.map((n) =>
+					n.key === 'prompt'
+						? { ...n, expose: { purpose: 'Builds the prompt.', session: true, swaps: ['core:oracle/generate-text@1'] } as never }
+						: n,
+				),
+		}
+		const found = validate(doc).filter((f) => f.law === 'step purpose')
+		assert.equal(found.length, 1)
+		assert.equal(found[0]!.nodeKey, 'prompt')
 	})
 
 	test('validate() refuses a label that is not display text (R-20)', () => {

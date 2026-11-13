@@ -537,10 +537,10 @@ describe('the Lair genre declares the reverse crawl, rewritten (R1–R13)', () =
 		const SPEECH = ['sessionLanguage', 'speechNarratorVoice', 'speechReadAloud', 'speechTemplate']
 		assert.deepEqual(Object.keys(all).filter((k) => SPEECH.includes(k)).sort(), SPEECH)
 		const f = Object.fromEntries(Object.entries(all).filter(([k]) => !SPEECH.includes(k)))
-		assert.deepEqual(Object.keys(f).sort(), ['askBeforeRolling', 'autoRoll', 'roomsLayer', 'sanctumSteers', 'showDice', 'tone'])
+		assert.deepEqual(Object.keys(f).sort(), ['askBeforeRolling', 'autoRoll', 'roomsLayer', 'roundWorth', 'sanctumSteers', 'showDice', 'tone'])
 		assert.deepEqual(
 			Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.default])),
-			{ tone: 'grounded', roomsLayer: true, sanctumSteers: true, askBeforeRolling: true, autoRoll: false, showDice: true },
+			{ tone: 'grounded', roundWorth: 5, roomsLayer: true, sanctumSteers: true, askBeforeRolling: true, autoRoll: false, showDice: true },
 		)
 		// Every one the owner's (a genre field's default reach), none model plumbing — the speech four too.
 		for (const [k, v] of Object.entries(all)) assert.notEqual(v.reach, 'admin', k)
@@ -572,13 +572,34 @@ describe('the Lair genre declares the reverse crawl, rewritten (R1–R13)', () =
 		assert.equal(gm!.preset, LAIR_LAYOUT)
 		assert.equal(gm!.forGuests, undefined)
 		// 🚧 lair fix 2: no copy claims the Sanctum, so the story shows it as a tab.
-		assert.deepEqual(drawnWidgetIds(gm!.preset), ['messages', 'stats', 'places', 'annex#castellan'])
-		assert.deepEqual(gm!.preset.widgetSettings?.messages, { otherTabsComposer: 'minimal' })
+		assert.deepEqual(drawnWidgetIds(gm!.preset), [
+			'messages',
+			'turn-line',
+			'composer',
+			'stats',
+			'scene-portraits#character',
+			'places',
+			'annex#castellan',
+			'scene-portraits#persona',
+		])
+		// The single-line pill is the Composer's setting now (R8), not the log's.
+		assert.equal(gm!.preset.widgetSettings?.messages, undefined)
+		assert.deepEqual(gm!.preset.widgetSettings?.composer, { otherTabsComposer: 'minimal' })
 		assert.equal(party!.slug, 'party')
 		assert.equal(party!.preset, LAIR_PARTY_LAYOUT)
 		// 🚧 L5: what a guest's first open copies (D6).
 		assert.equal(party!.forGuests, true)
-		assert.deepEqual(drawnWidgetIds(party!.preset), ['messages', 'stats', 'places', 'turn-order', 'attendance'])
+		assert.deepEqual(drawnWidgetIds(party!.preset), [
+			'messages',
+			'turn-line',
+			'composer',
+			'stats',
+			'scene-portraits#character',
+			'places',
+			'turn-order',
+			'attendance',
+			'scene-portraits#persona',
+		])
 		// The Party panel: Turn order and Who's here as its tabs, where the GM's Sanctum sits.
 		const partyPanel = party!.preset.panels!.right.find((p) => p.title === 'Party')
 		assert.deepEqual(partyPanel?.tabs, ['turn-order', 'attendance'])
@@ -756,7 +777,12 @@ const PUBLISHED: Record<string, string> = {
 	// RF fix 2 (2026-10-23): the genre shape it carries offers the lorebook, never requires it ('required' retired). (was '1cb73ccca537ee')
 	// Moved 2026-10-25 (pr-6 C3): the Sanctum declares `lore: 'aside'` (pass 9 S1). (was '1a7932ed813f14')
 	// Moved 2026-10-28 (speech build, lane D; pinned by lane V): the genre shape it carries declares the four speech fields. Proven: those four removed hash back to the old pin. (was 'd927ed6661005')
-	'core:spec/lair-create': '3b5ac8f6f9ab1',
+	// Moved 2026-11-04 (M2e lane D): `group`/`reach` keys on the Lair's fields. (was '3b5ac8f6f9ab1')
+	// Moved 2026-11-04 (m2e-F-D, ★M2e-D-2): the genre field-group headings Reply → Writing and the Lair's Story → Lair; only the `group` strings. (was '94639a590b82b')
+	// Moved 2026-11-05 (lane ed, B1): the create spec's `meta.genre` carries the genre's `settings` (owner sheet latitude); the app's specHashes pin moved the same day. (was 'a5f9511302c15')
+	// Moved 2026-11-11: the Lair declares the round worth.
+	// Moved 2026-11-12: the Lair declares `scenes.mode: 'automatic'`.
+	'core:spec/lair-create': '13ccac77f5b4ce',
 	// Genres GM (2026-10-23): *Deciding the checks* as the status (G0, S7). (was '18ab1e1e72aac4')
 	// Repair 1 (2026-10-23): its `ruleset-resolve` step(s) name the params slot — the `emits` switch is read. (was '5cbe8f5325b1b')
 	// RF fix 2 (2026-10-23): the voice's reminder lands from the first line — its `prompt` step's trigger is 0. (was 'ee12352ed2052')
@@ -920,6 +946,9 @@ describe("the Lair's defaults: registrations, routines, presets (D7)", () => {
 		])
 		assert.deepEqual(routinesOf(effectiveOf('lair-rules')), {
 			'after-each-round→lair-keeper': 'review',
+			// The scenes routine (2026-11-12): registered by the Lair's defaults, in every preset.
+			'every-n-rounds→scene-boundaries': 'full',
+			'every-n-rounds→scene-summaries': 'full',
 			'on-event→lair-scratchpad': 'full',
 			'on-event→lair-file-current-room': 'off',
 		})
@@ -972,7 +1001,7 @@ describe("the Lair's defaults: registrations, routines, presets (D7)", () => {
 			'core:spec/speak-message#read-aloud',
 			'core:spec/speak-message#say-it-as',
 		])
-		assert.deepEqual(routinesOf(eff), { 'after-each-round→lair-keeper': 'off', 'on-event→lair-scratchpad': 'full' })
+		assert.deepEqual(routinesOf(eff), { 'after-each-round→lair-keeper': 'off', 'every-n-rounds→scene-boundaries': 'full', 'every-n-rounds→scene-summaries': 'full', 'on-event→lair-scratchpad': 'full' })
 	})
 
 	test('The rules decide: scripts, locked — no ruleset locked (★F, ruled 2026-10-23); Decide checks at once off on the form', () => {

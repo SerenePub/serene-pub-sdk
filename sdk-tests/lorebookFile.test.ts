@@ -28,4 +28,22 @@ describe('lorebookFileFindings', () => {
 		assert.match(lorebookFileFindings(book(many))[0]!, /too many entries/)
 		assert.match(lorebookFileFindings(JSON.stringify({ name: 'n'.repeat(LOREBOOK_FILE_LIMITS.maxNameChars + 1), entries: [] }))[0]!, /name is/)
 	})
+	test("a book's rules: an id string and a semver, shape only", () => {
+		const rules = (serenepub: unknown) => book([{ keys: ['a'], content: 'x' }], { extensions: { serenepub } })
+		const inCard = (serenepub: unknown) =>
+			JSON.stringify({ data: { character_book: { entries: [{ keys: ['a'], content: 'x' }], extensions: { serenepub } } } })
+		for (const wrap of [rules, inCard]) {
+			assert.deepEqual(lorebookFileFindings(wrap({ primaryRuleset: 'core:ruleset/vis-itineris@1' })), [])
+			assert.deepEqual(lorebookFileFindings(wrap({ primaryRuleset: 'core:ruleset/vis-itineris@1', rulesetVersion: '1.2.0' })), [])
+			assert.deepEqual(lorebookFileFindings(wrap({ primaryRuleset: 'acme:ruleset/none' })), [])
+			assert.deepEqual(lorebookFileFindings(wrap({})), [])
+			assert.match(lorebookFileFindings(wrap({ primaryRuleset: 3 }))[0]!, /primaryRuleset must be a ruleset id/)
+			assert.match(lorebookFileFindings(wrap({ primaryRuleset: '' }))[0]!, /primaryRuleset must be a ruleset id/)
+			assert.match(
+				lorebookFileFindings(wrap({ primaryRuleset: 'core:ruleset/freeform@1', rulesetVersion: 'one' }))[0]!,
+				/rulesetVersion 'one' isn't a version like 1\.2\.0/
+			)
+			assert.match(lorebookFileFindings(wrap({ rulesetVersion: '1.2.0' }))[0]!, /names a rulesetVersion but no primaryRuleset/)
+		}
+	})
 })

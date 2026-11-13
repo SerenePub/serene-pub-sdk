@@ -22,8 +22,10 @@
  *    2026-10-23, GM: G1's crib made them inert);
  *  - **it describes no new places** (`placesOnMove` off): the rooms are the
  *    GM's — the knock, *Build room*, *File as a room*;
- *  - **it moves no clock** (`time` off): the Lair gets no model-driven time
- *    (lane F, ★3) — the story clock is the GM's.
+ *  - it judges no time (`time` off: lane F ★3, no model-driven time in the
+ *    Lair); it moves the clock only when its *Move the clock* is switched on
+ *    and it names a move. The round tick (`core:spec/round-tick`) moves the
+ *    round worth, in every Lair preset (owner 2026-11-11).
  *
  * Was the `keep` junction at the tail of `core:spec/lair-respond` and each
  * character turn's own books. It reads only the session, so it fits any

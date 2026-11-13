@@ -26,8 +26,8 @@
  *    max, `state.configs` — the number its bar is drawn to), and
  *    one **taken out** is back on their feet (`fate` → `alive`); the dead
  *    stay dead;
- *  - the crawl's clock moves on by the rest's length — the rest the rules
- *    raised, else their longest (`core:slot/crawl-time@1`); 🚧 rules that keep
+ *  - the session's story clock moves on by the rest's length — the rest the
+ *    rules raised, else their longest (`advance-story-clock@1`); 🚧 rules that keep
  *    no rest say none, and the night is told without its length;
  *  - 🚧 every spent spell slot comes back (`spell-slots` pieces, `used` 0);
  *    at a table playing spell points (P2-4) the night's `advance` refills
@@ -71,10 +71,11 @@ export const DUNGEON_CRAWLER_AFTER_REST_VERSION = '1.0.0'
 
 /**
  * `core:script/dungeon-crawler-rest`: what a night's rest changes. Handed
- * `{ session, state, ruleset, cause? }` — `cause` the event that woke the
- * routine (its `values.rest`, the rest the rules raised). Returns `{ changes,
- * owners, deltas, progress, elapsed, line, journal }` (`elapsed` null where
- * the rules keep no rest).
+ * `{ session, state, ruleset, cast, cause? }` — `cause` the event that woke the
+ * routine (its `values.rest`, the rest the rules raised), `cast` the session's
+ * cast read (it carries the story time). Returns `{ changes, owners, deltas,
+ * progress, elapsed, clock, line, journal }` (`elapsed` null where the rules
+ * keep no rest; `clock` the minutes the session's story clock moves, else null).
  * @experimental
  */
 export const DUNGEON_CRAWLER_REST_SCRIPT = storySeed(
@@ -102,7 +103,7 @@ if (v.cause !== undefined && v.cause !== null) {
 	var restedBy = text(raisedBy.owner) || text(own(own(v.cause).values).owner) || text(own(v.cause).owner);
 	for (var rb = 0; rb < seats.length; rb++)
 		if (seats[rb].ref === restedBy && seats[rb].user != null && doc.ownerUserId != null && Number(seats[rb].user) !== Number(doc.ownerUserId))
-			return { changes: [], owners: [], deltas: null, elapsed: null, progress: null, line: null, journal: null };
+			return { changes: [], owners: [], deltas: null, elapsed: null, progress: null, clock: null, line: null, journal: null };
 }
 var changes = [];
 var healed = [];
@@ -116,9 +117,10 @@ for (var i = 0; i < seats.length; i++) {
 	if (s.tally) changes.push({ owner: s.ref, slot: SL.deathSaves, value: "" });
 	if (mended) healed.push(s.name);
 }
-var was = text(own(state.world)["crawl-time"]) || ${JSON.stringify(DUNGEON_CRAWLER_EPOCH)};
+// The session's story now, as the cast read carries it (2026-11-10): the
+// story clock moves by the night through \`advance-story-clock@1\`.
+var was = storyNowClock(own(own(v.cast).storyTime).now) || ${JSON.stringify(DUNGEON_CRAWLER_EPOCH)};
 var now = minutes > 0 ? addMinutes(was, minutes) || was : was;
-if (now !== was) changes.push({ owner: "world", slot: SL.clock, value: now });
 var hadFates = JSON.stringify([progress.fates || null, progress.deathSaves || null]);
 keepFates(progress, seats, changes);
 // 🚧 Nobody is dying after a night's rest (★7): the death-save tallies go.
@@ -133,7 +135,7 @@ var deltas = [];
 var byId = own(own(state.cast).byId);
 for (var si = 0; si < seats.length; si++) {
 	if (seats[si].fate === "dead") continue;
-	var slots = own(byId[stateKeyOf(seats[si].ref)])["crawl-spell-slots"];
+	var slots = own(byId[stateKeyOf(seats[si].ref, byId)])["crawl-spell-slots"];
 	slots = Array.isArray(slots) ? slots : [];
 	for (var sp = 0; sp < slots.length; sp++) {
 		var piece = own(slots[sp]);
@@ -150,6 +152,8 @@ return {
 	deltas: deltas.length ? deltas : null,
 	// The night's time, for the handler's advance — none where the rules keep no rest.
 	elapsed: minutes > 0 ? { minutes: minutes } : null,
+	// The minutes the session's story clock moves by.
+	clock: now !== was ? Math.round(minutes) : null,
 	// The round script's mirror of who is out, when the rest changed it.
 	progress: JSON.stringify([progress.fates || null, progress.deathSaves || null]) !== hadFates ? progress : null,
 	line: "The party rests" + (minutes > 0 ? " for " + restWords(minutes) : "") + "." + (healed.length ? " " + healed.join(", ") + (healed.length === 1 ? " recovers." : " recover.") : "") + (now !== was ? " It is now " + clockLabel(now) + "." : ""),
@@ -164,6 +168,7 @@ interface Rested {
 	readonly owners: unknown
 	readonly deltas: unknown
 	readonly elapsed: unknown
+	readonly clock: unknown
 	readonly progress: unknown
 	readonly line: unknown
 	readonly journal: unknown
@@ -189,6 +194,8 @@ const restBody = <B extends Chain>(head: B, w: Wiring, applied: NodeLater, routi
 			state: $.state.state,
 			// 🚧 The session's ruleset (S4): how long its rest takes.
 			ruleset: $.input.ruleset,
+			// The session's story time rides on the cast read (2026-11-10).
+			cast: $.cast.main,
 			// The routine's moment: the rest the rules raised (`rest-taken`'s payload).
 			...(routine ? { cause: $.input.cause } : {}),
 		}),
@@ -239,7 +246,7 @@ const restBody = <B extends Chain>(head: B, w: Wiring, applied: NodeLater, routi
 								worldRow: $.write.messageId,
 								params: slot.params(),
 							}),
-						{ expose: { label: 'Heal, and move the clock' } },
+						{ expose: { label: 'Heal the party' } },
 					),
 			)
 			/**
@@ -269,6 +276,25 @@ const restBody = <B extends Chain>(head: B, w: Wiring, applied: NodeLater, routi
 							...(routine ? { event: $.input.cause } : {}),
 						}),
 					{ expose: { label: 'Pass the night under the rules' } },
+				),
+			)
+			/**
+			 * The session's story clock moves by the night (2026-11-10: the crawl
+			 * keeps no clock of its own). A move the story cannot take moves
+			 * nothing (`onRefusal: 'skip'`).
+			 */
+			.when('clock', { path: (v: Rested) => v.clock, truthy: true }, (c: any) =>
+				jsonPart(c, w, 'minutes', ($: any) => $.rest.main, 'clock', "The night's minutes").outlet(
+					'advance',
+					($: any) =>
+						C.advanceStoryClock.v1({
+							by: $.minutes.main,
+							unit: 'minutes',
+							cause: 'action',
+							onRefusal: 'skip',
+							params: slot.params(),
+						}),
+					{ expose: { label: 'Move the story clock by the night' } },
 				),
 			)
 			/** The journal's line for the rest, on the folio — as a round's is (`journal.ts`). */
@@ -359,6 +385,8 @@ export const dungeonCrawlerRestSpec = () => {
 	})
 		.inlet('input', C.userMessage.v1(), { suits: [] })
 		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
+		/** The session's cast: it carries the story time the night starts from. */
+		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
 		/** Story's newest line: the one the rest's table row belongs to. */
 		.query(
 			'head',
@@ -374,7 +402,7 @@ export const dungeonCrawlerRestSpec = () => {
  * 🚧 **After a rest** — the routine on `core:event/rest-taken@1` (S3): when the
  * session's rules' Rest has been taken (the rules action Rest), the night's
  * effects that are the crawl's own — the party healed and back on their
- * feet, the death-save tallies gone, the spell slots back, the clock moved
+ * feet, the death-save tallies gone, the spell slots back, the story clock moved
  * by the rest the rules raised, the night under the rules, and the journal's
  * line. The rules' own restoring is theirs (`core:function/rest@1`).
  * @experimental
@@ -390,6 +418,8 @@ export const dungeonCrawlerAfterRestSpec = () => {
 		/** A routine (D2): the session, and the rest the rules raised (`cause`). */
 		.inlet('input', C.routine.v1(), { suits: [coreEvents.restTaken] })
 		.query('state', ($) => C.sessionState.v1({ scope: $.input.sessionScope }))
+		/** The session's cast: it carries the story time the night starts from. */
+		.query('cast', ($) => C.sessionCast.v1({ scope: $.input.sessionScope }))
 		/** Story's newest line: the one the rest's table row belongs to. */
 		.query(
 			'head',

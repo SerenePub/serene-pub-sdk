@@ -1522,7 +1522,9 @@ export const pickSprite = pin(
 				 * The sprite set to choose within, when the spec knows it.
 				 * Absent — every core spec — the set is decided from the
 				 * speaker, in one order: the session's override, then the cast
-				 * member's set, then the card's default set. A name the card
+				 * member's set, then the card's default set — the card being
+				 * the cascade's (the member's own sets per its configuration,
+				 * else the card active on the timeline). A name the card
 				 * has no set by falls to the default set and says so on
 				 * `choices`, never silently.
 				 */
@@ -1535,6 +1537,10 @@ export const pickSprite = pin(
 				/**
 				 * What the speaker could show, and how the set was decided
 				 * (`decidedBy`, `missing`) — for the receipt, never for the line.
+				 * 🚧 `castMemberId` names the speaker; the card the art comes
+				 * from cascades (the member's own sets per its configuration,
+				 * else the card active on the timeline), ⏳ `characterId`
+				 * (removed in S5) null when the member's own sets draw.
 				 */
 				choices: S.spriteChoices,
 			},

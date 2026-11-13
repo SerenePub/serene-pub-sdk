@@ -468,6 +468,10 @@ export type StatsView =
 	| (StatsViewBase & { status: 'nothing-shown'; castScope: 'scene' | 'all' })
 	| (StatsViewBase & { status: 'shown'; groups: StatsGroup[] })
 
+/** A cast owner: a seated member (🚧 `seated_member`; ⏳ `session_cast`, a card) or a card-less player seat. */
+const isCastOwner = (o: SessionStateOwnerV1): boolean =>
+	o.kind === 'session_cast' || o.kind === 'seated_member' || o.kind === 'player_seat'
+
 /**
  * 🚧 The viewer's own cast owner (`owners: mine`): the one the host marks
  * theirs (`mine` — their player seat, or the card their persona voices),
@@ -477,7 +481,7 @@ export type StatsView =
  */
 export function mineOf(
 	state: SessionStateV1,
-	cast: readonly SessionStateOwnerV1[] = state.owners.filter((o) => o.kind === 'session_cast' || o.kind === 'player_seat'),
+	cast: readonly SessionStateOwnerV1[] = state.owners.filter(isCastOwner),
 ): SessionStateOwnerV1 | null {
 	return (
 		cast.find((o) => (o as SessionStateOwnerV1 & { mine?: boolean }).mine === true) ??
@@ -529,7 +533,7 @@ export function statsView(
 		!!(o.slots.length || o.where.length || o.tools.length || o.carried.length || o.zones.length || tieRowsOf(o.owner).length)
 	const world = state.owners.find((o) => o.kind === 'session' && o.key === 'world') ?? null
 	// A card-less player seat (`player_seat`) is a cast member with no card: its values ride in `resolved.cast` too.
-	const cast = state.owners.filter((o) => o.kind === 'session_cast' || o.kind === 'player_seat')
+	const cast = state.owners.filter(isCastOwner)
 	const places = state.owners.filter((o) => o.kind === 'session_location')
 	/** The world's own stats — only with one to show. */
 	const worldShown = (): StatsShownOwner[] =>
@@ -543,7 +547,9 @@ export function statsView(
 			.map(as('places', (o) => show(o).filter((s) => s.value !== undefined)))
 			.filter(drawsSomething)
 	const picked = (o: SessionStateOwnerV1) =>
-		read.pickOwners.includes(o.label.toLowerCase()) || read.pickOwners.includes(o.key.toLowerCase())
+		read.pickOwners.includes(o.label.toLowerCase()) ||
+		read.pickOwners.includes(o.key.toLowerCase()) ||
+		(o.ref != null && read.pickOwners.includes(o.ref.toLowerCase()))
 
 	let groups: StatsGroup[]
 	switch (read.owners) {
@@ -653,6 +659,20 @@ export const slotLockOf = (config: Record<string, unknown> | undefined): SlotLoc
 export const slotLocked = (config: Record<string, unknown> | undefined): boolean => slotLockOf(config) !== 'none'
 
 /**
+ * 🚧 Why the viewer may not change this slot **by hand** here, as the host
+ * says it (`SessionStateOwnerV1.handLocked`, plan §25): the sentence, or
+ * `undefined` when nothing hand-locks it. A widget draws a hand-locked slot
+ * without edit controls and shows the sentence — the cause is the lock's
+ * title (P1). Not {@link slotLockOf}: that is what the owner set on the slot;
+ * this is what the viewer's level (and the rules) leave them.
+ * @experimental
+ */
+export const handLockOf = (owner: SessionStateOwnerV1, slotId: string): string | undefined => {
+	const sentence = owner.handLocked?.[slotId]
+	return typeof sentence === 'string' && sentence.length > 0 ? sentence : undefined
+}
+
+/**
  * 🚧 The repertoires a piece list is drawn against: the section's own map
  * when the host sends one there (C10: one copy, not one per owner), else
  * the owner row's.
@@ -675,16 +695,17 @@ export function repertoiresFor(
  * or cast member, or a place ("Drop at …"). `direct` when the viewer may
  * write both sides: the host gives it at once. Otherwise it is an **offer**
  * the receiver accepts or declines (`give-piece`, {@link SessionStateV1}'s
- * `offers`) — only ever to a person: a place the viewer may not write has
- * nobody to accept, and is not offered. Nothing is offered from a sheet the
- * viewer may not change.
+ * `offers`) — only ever to a person. Moves are their own permission (plan
+ * §25, ★7): a **place** is always a target and always `direct` — a drop is
+ * the giver's side only, nobody there to accept. Nothing is offered from a
+ * sheet the viewer may not change.
  * @experimental
  */
 export interface GiveTarget {
 	owner: SessionStateOwnerV1
 	/** A place: the piece is put down there, not handed over. */
 	place: boolean
-	/** The viewer may write both sides, so the give lands at once; else it is an offer. */
+	/** The viewer may write the receiving side (a place: always), so the give lands at once; else it is an offer. */
 	direct: boolean
 }
 
@@ -694,7 +715,9 @@ export interface GiveTarget {
  * character or puts it down at a place — never to a cast member nobody
  * plays: a companion keeps no sheet a gift could land on, and is handed
  * things in the story (owner ruling ★4; the host refuses it the same way,
- * `state/give.ts`). @experimental
+ * `state/give.ts`). The giving side asks only `editable` and the slot lock —
+ * not {@link handLockOf}: a hand-locked sheet still hands its own items over.
+ * @experimental
  */
 export function giveTargets(state: SessionStateV1, from: SessionStateOwnerV1, slotId: string): GiveTarget[] {
 	if (from.editable === false || slotLocked(from.configs[slotId])) return []
@@ -704,8 +727,11 @@ export function giveTargets(state: SessionStateV1, from: SessionStateOwnerV1, sl
 		if (!Object.hasOwn(owner.configs, slotId)) continue
 		const place = owner.kind === 'session_location'
 		if (!place && from.seat === true && owner.seat !== true) continue
-		const direct = owner.editable !== false && !slotLocked(owner.configs[slotId])
-		if (place && !direct) continue
+		// 🚧 Moved 2026-11-05 (lane ed, plan §25): a drop is the giver's side only, so a
+		// place is `direct` whatever its own lock or edit state; a person is `direct`
+		// only where the viewer may write their slot — a stat hand-locked on the
+		// receiving side makes it an offer, never a refusal.
+		const direct = place || (owner.editable !== false && !slotLocked(owner.configs[slotId]) && !handLockOf(owner, slotId))
 		out.push({ owner, place, direct })
 	}
 	return [...out.filter((t) => !t.place), ...out.filter((t) => t.place)]
@@ -740,7 +766,7 @@ export function plainRefusal(message: string, t: (source: string) => string = (s
 	const internal =
 		!said ||
 		/[a-z][\w-]*:[a-z][\w-]*\/[\w.-]+(@\d+)?/i.test(said) ||
-		/\b(session_cast|player_seat|session_location|slotId|ownerKind|owner kind|undefined|NaN|TypeError|Error:|SQL|constraint|\bat\s+\S+\s+\()/.test(said) ||
+		/\b(session_cast|seated_member|seated-member|player_seat|session_location|slotId|ownerKind|owner kind|undefined|NaN|TypeError|Error:|SQL|constraint|\bat\s+\S+\s+\()/.test(said) ||
 		/\b[a-z]+_[a-z_]+\b/.test(said)
 	return internal ? { text: t("You can't change this right now."), detail: said || null } : { text: said, detail: null }
 }

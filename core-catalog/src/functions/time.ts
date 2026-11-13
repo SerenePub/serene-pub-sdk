@@ -128,6 +128,7 @@ export const scheduledFunction = defineFunction("core:function/scheduled@1", {
 	name: { en: "At a set story time" },
 	meaning: { en: "When the story clock reaches a set moment — the festival at dawn on the third — it happens." },
 	kind: "time",
+	countsTime: "story",
 	adds: { events: [{ id: SCHEDULED_EVENT, name: { en: "A scheduled moment was reached" } }] },
 	prose: "Some things happen at a set time, whatever anyone is doing; when the moment comes, it comes.",
 	form: {
@@ -162,6 +163,7 @@ export const deadlineFunction = defineFunction("core:function/deadline@1", {
 	name: { en: "A deadline" },
 	meaning: { en: "Something must be done by a set time — the ransom gathered by the new moon — or the chance is gone." },
 	kind: "time",
+	countsTime: "story",
 	bindings: { goal: { to: "attribute", kinds: NUMBER_ATTRIBUTE_KINDS, label: { en: "Must reach" } } },
 	adds: { events: [{ id: DEADLINE_EVENT, name: { en: "A deadline passed" }, description: { en: "The story clock passed a deadline with its goal unmet." } }] },
 	prose: "{{goal}} has to reach its mark in time; once the time is past, it is too late.",

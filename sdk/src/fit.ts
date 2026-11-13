@@ -24,7 +24,7 @@ import type { GenreDecl } from './genres.js'
 import { normaliseConventions, rulesetDecides, type RulesetDecl } from './rulesets.js'
 import { checkMethodKind } from './checkMethods.js'
 import { rulesetAttributeKinds, rulesetSections, rulesetZoneTypes } from './rulesetSections.js'
-import { functionProvides } from './functions.js'
+import { functionProvides, resolveFunctionRef } from './functions.js'
 
 /** The six ratings, worst first. @experimental */
 export const RULESET_RATINGS = ['incompatible', 'poor', 'ok', 'good', 'great', 'perfect'] as const
@@ -286,9 +286,25 @@ export interface RulesetFit {
 	readonly inWords: readonly FitRow[]
 	/** What the ruleset provides that the genre never exercises — shown neutrally, never a penalty. */
 	readonly unused: readonly string[]
+	/** 🚧 The times its rules count on that the genre does not keep — a rating and a sentence, never a refusal (genres expect, never lock). Absent when none. */
+	readonly timeUnmet?: readonly ('story' | 'real')[]
 }
 
 const PROSE_FALLBACK_VERBS: ReadonlySet<string> = new Set(['modify', 'set', 'adjustDegree', 'harm', 'heal', 'cure', 'consume'])
+
+/** Which times a ruleset's functions count on: each declaration's `countsTime`, and core's recurring function set to an hour or a day (a clock move). */
+function timeNeedOf(ruleset: RulesetDecl | null | undefined): { story: boolean; real: boolean } {
+	const need = { story: false, real: false }
+	if (!ruleset) return need
+	for (const ref of rulesetSections(ruleset).functions ?? []) {
+		const t = resolveFunctionRef(ref).decl?.countsTime
+		if (t === 'story' || t === 'both') need.story = true
+		if (t === 'real' || t === 'both') need.real = true
+		const every = (ref.options as { every?: unknown } | undefined)?.every
+		if (ref.ref === 'core:function/recurring@1' && (every === 'hour' || every === 'day')) need.story = true
+	}
+	return need
+}
 
 /**
  * Cross-examine a genre's uses against a ruleset's provides.
@@ -301,9 +317,10 @@ const PROSE_FALLBACK_VERBS: ReadonlySet<string> = new Set(['modify', 'set', 'adj
  *  · Poor    — more than half of the uses by words
  *  · Incompatible — any use missing with no words fallback
  * A genre with no `uses` fits every ruleset Great (it asks for nothing).
+ * A genre that declares `keepsTime` lowers a better-than-Poor rating to Poor when the ruleset's functions count on a time the genre does not keep (`countsTime`), and says so; `timeUnmet` names it.
  * @experimental
  */
-export function rulesetFit(genre: Pick<GenreDecl, 'uses'> | null | undefined, ruleset: RulesetDecl | null | undefined): RulesetFit {
+export function rulesetFit(genre: Pick<GenreDecl, 'uses' | 'keepsTime'> | null | undefined, ruleset: RulesetDecl | null | undefined): RulesetFit {
 	const uses = genre?.uses as GenreUses | undefined
 	const p = rulesetProvides(ruleset)
 	const rows: FitRow[] = []
@@ -368,6 +385,28 @@ export function rulesetFit(genre: Pick<GenreDecl, 'uses'> | null | undefined, ru
 				: rating === 'great'
 					? `this genre asks for nothing in particular`
 					: `${words.map(name).join(', ')} — told in words`
+	const keeps = genre?.keepsTime
+	if (keeps) {
+		const need = timeNeedOf(ruleset)
+		const timeUnmet: ('story' | 'real')[] = []
+		if (need.story && keeps !== 'story') timeUnmet.push('story')
+		if (need.real && keeps !== 'real') timeUnmet.push('real')
+		if (timeUnmet.length) {
+			const lowered: RulesetRating = rating === 'incompatible' ? rating : 'poor'
+			const timeReason = timeUnmet[0] === 'story'
+				? `its rules count story time, and this genre ${keeps === 'real' ? 'runs on real time' : 'keeps no clock'}: they would never move`
+				: `its rules count real time, and this genre ${keeps === 'story' ? 'keeps a story clock' : 'keeps no clock'}: they would move with the hours outside the story`
+			return {
+				rating: lowered,
+				group: ratingGroupOf(lowered),
+				reason: rating === 'incompatible' ? reason : timeReason,
+				rows,
+				unused,
+				inWords,
+				timeUnmet,
+			}
+		}
+	}
 	return { rating, group: ratingGroupOf(rating), reason, rows, unused, inWords }
 }
 

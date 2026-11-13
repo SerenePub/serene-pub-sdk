@@ -5,8 +5,8 @@
  * reply is being written — and the composer's one-line note while rewound,
  * with Forward beside it for the owner; a member shown the note alone. Since
  * polish parity L1 (2026-10-24) the two presses are the session header's,
- * which reads the same `rewindStripState`; the widget draws no strip of its
- * own, only the note, from the dossier's `rewind` alone: the genre pins
+ * which reads the same `rewindStripState`; the composer widget draws no strip
+ * of its own, only the note, from the dossier's `rewind` alone: the genre pins
  * nothing.
  */
 import { test } from 'node:test'
@@ -79,11 +79,13 @@ async function mount(opts: {
 	rewind: ConversationDossierV1['rewind']
 	isOwner?: boolean
 	generating?: boolean
-	settings?: Record<string, unknown>
+	/** The channel the Messages copy this composer follows shows (R8); none: the story. */
+	target?: string
 }) {
+	const dossier = dossierWith(opts.rewind, opts.isOwner ?? true)
 	return mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/shared/messages/messages.ts',
+		entry: 'components/shared/composer/composer.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -93,10 +95,14 @@ async function mount(opts: {
 				row(1, 'user', 'Hello there'),
 				row(2, 'assistant', 'Hi.', opts.generating ? { isGenerating: true } : {}),
 			],
-			settings: opts.settings ?? {},
+			settings: {},
 			actions: { message: { primary: [], overflow: [] } },
 			viewer: { userId: 1, isAdmin: false, isGuest: opts.isOwner === false },
-			scoped: { session_full: dossierWith(opts.rewind, opts.isOwner ?? true) },
+			scoped: {
+				session_full: opts.target
+					? { ...dossier, composer: { ...dossier.composer, target: { instance: 'messages#side', channel: opts.target, label: opts.target } } }
+					: dossier,
+			},
 		},
 	})
 }
@@ -132,14 +138,14 @@ test('the strip state: the host’s reasons, the owner rule, a reply being writt
 	assert.equal(turnsAheadText(1), '1 turn ahead')
 })
 
-test('the widget draws no strip — Back and Forward are the header’s — and no note with nothing ahead', { timeout: 120_000 }, async () => {
+test('the composer draws no strip — Back and Forward are the header’s — and no note with nothing ahead', { timeout: 120_000 }, async () => {
 	const view = await mount({ rewind: { ahead: 0, back: null, forward: 'There is nothing ahead to bring back.' } })
 	try {
 		assert.deepEqual(view.refused, [])
-		assert.equal(view.query(part('messages.rewind')), null)
-		assert.equal(view.query(part('messages.rewind-back')), null)
-		assert.equal(view.query(part('messages.rewind-forward')), null)
-		assert.equal(view.query(part('messages.rewind-replace')), null, 'no note while nothing is ahead')
+		assert.equal(view.query(part('messages.rewind')) === null, true)
+		assert.equal(view.query(part('messages.rewind-back')) === null, true)
+		assert.equal(view.query(part('messages.rewind-forward')) === null, true)
+		assert.equal(view.query(part('messages.rewind-replace')) === null, true, 'no note while nothing is ahead')
 	} finally {
 		await view.unmount()
 	}
@@ -179,10 +185,10 @@ test('while a reply is being written the note’s Forward is grey and says why',
 test('a member: no strip, and the note without Forward', { timeout: 120_000 }, async () => {
 	const view = await mount({ rewind: { ahead: 1, back: null, forward: null }, isOwner: false })
 	try {
-		assert.equal(view.query(part('messages.rewind')), null)
+		assert.equal(view.query(part('messages.rewind')) === null, true)
 		const note = view.query(part('messages.rewind-replace'))!
 		assert.equal(textOf(note.querySelector(part('messages.rewind-replace-text'))), '1 turn ahead will be replaced if you write now.')
-		assert.equal(note.querySelector(part('messages.rewind-replace-forward')), null)
+		assert.equal(note.querySelector(part('messages.rewind-replace-forward')) === null, true)
 	} finally {
 		await view.unmount()
 	}
@@ -196,10 +202,46 @@ test('a host that sends no rewind state draws no strip and no note; a copy pinne
 	} finally {
 		await bare.unmount()
 	}
-	const pinned = await mount({ rewind: { ahead: 1, back: null, forward: null }, settings: { channel: 'sanctum' } })
+	const pinned = await mount({ rewind: { ahead: 1, back: null, forward: null }, target: 'sanctum' })
 	try {
 		assert.equal(pinned.query(part('messages.rewind')), null)
 	} finally {
 		await pinned.unmount()
 	}
+})
+
+test('Back says what it takes, in words; only an enabled Back has them, Forward never', () => {
+	const state = (backTakes: { count: number; names: string[] } | undefined, over: Partial<Parameters<typeof rewindStripState>[0]> = {}) =>
+		rewindStripState({ rewind: { ahead: 0, back: null, forward: null, backTakes }, isOwner: true, generating: false, story: true, ...over })
+	assert.equal(state({ count: 0, names: [] }).back.takes, 'your line')
+	assert.equal(state({ count: 1, names: ['Ash'] }).back.takes, 'your line and 1 reply (Ash)')
+	assert.equal(state({ count: 3, names: ['Ash', 'Birch', 'Narrator'] }).back.takes, 'your line and 3 replies (Ash, Birch, Narrator)')
+	assert.equal(state({ count: 2, names: [] }).back.takes, 'your line and 2 replies')
+	assert.equal(state({ count: 2.9, names: [] }).back.takes, 'your line and 2 replies')
+	assert.equal(state({ count: -4, names: ['Ash'] }).back.takes, 'your line')
+	assert.equal(state({ count: 2, names: ['Ash'] }).forward.takes, undefined)
+	assert.deepEqual(state(undefined).back, { disabled: false })
+	const greyed = { count: 2, names: ['Ash'] }
+	assert.equal(state(greyed, { isOwner: false }).back.takes, undefined)
+	assert.equal(state(greyed, { generating: true }).back.takes, undefined)
+	const refused = rewindStripState({ rewind: { ahead: 0, back: 'Nothing to take back.', forward: null, backTakes: greyed }, isOwner: true, generating: false, story: true })
+	assert.equal(refused.back.takes, undefined)
+	assert.equal(refused.back.disabled, true)
+})
+
+test('Back’s words at a table and in Story: person lines counted, the newest message named', () => {
+	const takes = (backTakes: NonNullable<Parameters<typeof rewindStripState>[0]['rewind']>['backTakes']) =>
+		rewindStripState({ rewind: { ahead: 0, back: null, forward: null, backTakes }, isOwner: true, generating: false, story: true }).back.takes
+	assert.equal(takes({ count: 3, names: ['Ash', 'Birch'], personLines: 2 }), '2 lines and 3 replies (Ash, Birch)')
+	assert.equal(takes({ count: 0, names: [], personLines: 2 }), '2 lines')
+	assert.equal(takes({ count: 3, names: ['Ash', 'Birch'], personLines: 1 }), 'your line and 3 replies (Ash, Birch)')
+	assert.equal(takes({ count: 1, names: ['Ash'], personLines: 2.9 }), '2 lines and 1 reply (Ash)')
+	assert.equal(takes({ count: 0, names: [], personLines: -3 }), 'your line')
+	const msg = (author: string | null, yours: boolean, filed: number) => ({ count: 0, names: [], newestMessage: { author, yours, filed } })
+	assert.equal(takes(msg('Ash', false, 0)), 'the newest message (Ash)')
+	assert.equal(takes(msg('Ash', false, 1)), 'the newest message (Ash) and 1 line filed on it')
+	assert.equal(takes(msg(null, false, 2)), 'the newest message and 2 lines filed on it')
+	assert.equal(takes(msg('Wren', true, 0)), 'your line')
+	assert.equal(takes(msg('Wren', true, 1)), 'your line and 1 line filed on it')
+	assert.equal(takes(msg('Ash', false, -2)), 'the newest message (Ash)')
 })

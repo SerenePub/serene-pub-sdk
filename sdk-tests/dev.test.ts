@@ -55,6 +55,19 @@ const pipeline = (id: string) =>
 		)
 		.build()
 
+/**
+ * The same pipeline after a developer deleted its model call: built through
+ * the builder, as an edit is. Cutting nodes off a built spec would leave the
+ * prompt step holding the connection the builder supplied for a model call
+ * that is no longer there.
+ */
+const pipelineWithoutGenerate = (id: string) =>
+	spec(id, { version: '1.0.0' })
+		.inlet('input', C.userMessage.v1())
+		.query('history', ($) => C.sessionHistory.v1({ scope: $.input.sessionScope }))
+		.task('prompt', () => C.assemble.v2())
+		.build()
+
 const ext = (over: Partial<Parameters<typeof defineExtension>[0]> = {}) =>
 	defineExtension({
 		slug: 'dev.demo',
@@ -141,8 +154,7 @@ describe('109 · dev overlay and hot reload', () => {
 
 	test('a pipeline edit waits for the run using it, and says which one', () => {
 		const a = devOverlay(ext(), '/src/index.ts', 1)
-		const edited = pipeline('dev.demo:turn')
-		edited.nodes = edited.nodes.slice(0, 3)
+		const edited = pipelineWithoutGenerate('dev.demo:turn')
 		const b = devOverlay(ext({ pipelines: [edited] }), '/src/index.ts', 2)
 
 		const plan = reloadPlan(a, b, [{ runId: 'run:7', specId: 'dev.demo:turn', typeIds: [] }])
@@ -158,8 +170,7 @@ describe('109 · dev overlay and hot reload', () => {
 
 	test('the same edit applies immediately when nothing is running', () => {
 		const a = devOverlay(ext(), '/src/index.ts', 1)
-		const edited = pipeline('dev.demo:turn')
-		edited.nodes = edited.nodes.slice(0, 3)
+		const edited = pipelineWithoutGenerate('dev.demo:turn')
 		const b = devOverlay(ext({ pipelines: [edited] }), '/src/index.ts', 2)
 		const plan = reloadPlan(a, b, [])
 		assert.equal(plan.deferred.length, 0)

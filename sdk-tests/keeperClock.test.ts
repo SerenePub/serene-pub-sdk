@@ -100,7 +100,8 @@ describe("the model's clock", () => {
 
 	test('every core clock move says why it moves, and every one skips a story with no clock', async () => {
 		const causes: Record<string, Array<[string, string | undefined]>> = {
-			'core:spec/story-respond': [['tick', 'skip']],
+			// The reply moves no clock since 2026-11-11 (the reply tick is gone; the round tick moves it).
+			'core:spec/story-respond': [],
 			'core:spec/story-reckoning': [['keeper', 'skip']],
 			'core:spec/story-advance-time': [['action', 'skip']],
 			'core:spec/story-rest': [['keeper', 'skip']],

@@ -310,6 +310,11 @@ const nightly = eventListener(SCHEDULED_WORK_PATH.instead, async (e, ctx) => {
   different value under one of its names, say so on that step, and the setting then offers your
   variable's layouts: `.task('prompt', ($) => C.assemble.v2({ … }), { renders: { characterLore:
   varRankedLore } })`.
+- 🚧 **Earlier scenes.** To give a story voice the summaries of scenes whose lines left its prompt,
+  wire `C.earlierScenes.v1({ scope, budget, params })` into Assemble's `earlierScenes` port and
+  place `{{{earlierScenes}}}` in your template (the shipped Default does, after `{{{history}}}`).
+  Assemble decides which scenes show from the lines it keeps (only scenes that lost a line to the
+  cut, newest first within the query's `share` of the window) and counts the block in its cut.
 
 The [API reference](https://serenepub.com/docs/sdk/api/index) on the Serene Pub website lists
 every export with its stability: `@public` is stable for SDK 1.0, and `@experimental` may still

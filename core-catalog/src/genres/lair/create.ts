@@ -48,6 +48,8 @@ export const lairCreateSpec = () =>
 				family: lairGenre.family,
 				description: lairGenre.description,
 				shape: lairGenre.shape,
+				// 🚧 ed B1 (2026-11-05): the genre's pinned settings ride the row (sheet latitude pins).
+				settings: lairGenre.settings,
 				events: lairGenre.events as Record<
 					string,
 					{ required?: boolean; open?: boolean }

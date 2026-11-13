@@ -1,50 +1,57 @@
 {
 	"core:genre/story": {
 		"panels": {
-			"version": 1,
+			"version": 2,
 			"left": [
 				{
-					"key": "p3",
+					"key": "p5",
 					"tabs": [
 						"chronicle"
-					],
-					"pinned": false
+					]
 				},
 				{
-					"key": "p4",
+					"key": "p6",
 					"tabs": [
 						"lore-entries"
-					],
-					"pinned": false
+					]
 				}
 			],
-			"middle": {
-				"above": [
-					{
-						"key": "p2",
-						"tabs": [
-							"stats#world"
-						],
-						"height": "fit"
-					}
-				],
-				"primary": {
+			"middle": [
+				{
 					"key": "p1",
+					"tabs": [
+						"stats#world"
+					],
+					"height": "fit"
+				},
+				{
+					"key": "p2",
 					"tabs": [
 						"messages"
 					]
 				},
-				"below": []
-			},
+				{
+					"key": "p3",
+					"tabs": [
+						"turn-line"
+					]
+				},
+				{
+					"key": "p4",
+					"tabs": [
+						"composer"
+					]
+				}
+			],
 			"right": [
 				{
-					"key": "p5",
+					"key": "p7",
 					"tabs": [
 						"scene-portraits"
 					]
 				},
 				{
-					"key": "p6",
+					"key": "p8",
 					"tabs": [
 						"stats"
 					]
@@ -67,49 +74,65 @@
 	},
 	"core:genre/lair": {
 		"panels": {
-			"version": 1,
+			"version": 2,
 			"left": [
 				{
-					"key": "p2",
+					"key": "p4",
 					"tabs": [
 						"stats"
 					]
+				},
+				{
+					"key": "p5",
+					"tabs": [
+						"scene-portraits#character"
+					],
+					"height": "fit"
 				}
 			],
-			"middle": {
-				"above": [],
-				"primary": {
+			"middle": [
+				{
 					"key": "p1",
 					"tabs": [
 						"messages"
 					]
 				},
-				"below": []
-			},
-			"right": [
+				{
+					"key": "p2",
+					"tabs": [
+						"turn-line"
+					]
+				},
 				{
 					"key": "p3",
 					"tabs": [
-						"places"
-					],
-					"height": {
-						"share": 3
-					}
+						"composer"
+					]
+				}
+			],
+			"right": [
+				{
+					"key": "p6",
+					"tabs": [
+						"places",
+						"annex#castellan"
+					]
 				},
 				{
-					"key": "p4",
+					"key": "p7",
 					"tabs": [
-						"annex#castellan"
+						"scene-portraits#persona"
 					],
-					"height": {
-						"share": 2
-					}
+					"height": "fit"
 				}
 			]
 		},
 		"widgetSettings": {
-			"messages": {
+			"composer": {
 				"otherTabsComposer": "minimal"
+			},
+			"stats": {
+				"title": "Party"
 			},
 			"places": {
 				"view": "list",
@@ -118,6 +141,85 @@
 			"annex#castellan": {
 				"key": "core.castellan-scratchpad",
 				"title": "Castellan's scratchpad"
+			},
+			"scene-portraits#character": {
+				"who": "recent",
+				"whoKind": "characters",
+				"recentTurns": 1,
+				"arrangement": "stage",
+				"face": "sprite",
+				"title": "Last character"
+			},
+			"scene-portraits#persona": {
+				"who": "recent",
+				"whoKind": "personas",
+				"recentTurns": 1,
+				"arrangement": "stage",
+				"face": "sprite",
+				"title": "Last persona"
+			}
+		}
+	},
+	"core:genre/story#visual-novel": {
+		"panels": {
+			"version": 2,
+			"left": [],
+			"middle": [
+				{
+					"key": "p1",
+					"tabs": [
+						"scene-portraits"
+					]
+				},
+				{
+					"key": "p2",
+					"tabs": [
+						"dialogue-box",
+						"messages",
+						"stats#characters"
+					],
+					"height": {
+						"share": 4
+					}
+				},
+				{
+					"key": "p3",
+					"tabs": [
+						"turn-line"
+					]
+				},
+				{
+					"key": "p4",
+					"tabs": [
+						"composer"
+					]
+				}
+			],
+			"right": [],
+			"backing": "glass",
+			"behind": "backdrop"
+		},
+		"widgetSettings": {
+			"scene-portraits": {
+				"who": "recent",
+				"recentTurns": 2,
+				"face": "sprite",
+				"arrangement": "stage",
+				"speakerFocus": true
+			},
+			"messages": {
+				"title": "Log"
+			},
+			"stats#characters": {
+				"owners": "cast",
+				"castScope": "all",
+				"arrangement": "faces",
+				"title": "Characters"
+			}
+		},
+		"widgetStyles": {
+			"scene-portraits": {
+				"slug": "scene-portraits:open-stage"
 			}
 		}
 	}

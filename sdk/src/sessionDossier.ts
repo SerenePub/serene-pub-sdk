@@ -32,6 +32,7 @@
 
 import type { StoryCalendar, StoryTime } from './storyTime.js'
 import type { SceneSummaryMode } from './sceneSettings.js'
+import type { ParticipantRef } from './participants.js'
 
 /** A participant as a line names them: display name, reference, face. @experimental */
 export interface ConversationSpeakerV1 {
@@ -142,6 +143,10 @@ export interface ConversationSceneV1 {
 	 * back to who spoke in its loaded lines (lane E).
 	 */
 	cast?: ConversationSceneCastV1[]
+	/** 🚧 Why the scene began by itself, in its scene cue's words (`the day changed`); absent for a scene a person started. */
+	openedBecause?: string
+	/** 🚧 While it is open and its genre keeps its cast up to date from its lines: what does it and how to stop it, as one sentence. Absent otherwise. */
+	castCause?: string
 }
 
 /**
@@ -181,8 +186,23 @@ export interface ConversationSceneCueV1 {
 
 /** The cast, as far as answering a form needs it (`canAnswerForm`). @experimental */
 export interface ConversationCastV1 {
-	sessionPersonas: Array<{ personaId: number | null; persona: { userId: number | null } | null }>
-	sessionCharacters: Array<{ characterId: number | null }>
+	/**
+	 * Each row also carries 🚧 `ref` (the seat's participant reference, as the
+	 * host fills it) and 🚧 `castMemberId` (the seat's cast member). Both
+	 * host-filled, absent from a host that predates them.
+	 */
+	sessionPersonas: Array<{
+		personaId: number | null
+		persona: { userId: number | null } | null
+		ref?: ParticipantRef
+		castMemberId?: number | null
+	}>
+	/** Each row also carries 🚧 `ref` and 🚧 `castMemberId`, as `sessionPersonas` rows do. */
+	sessionCharacters: Array<{
+		characterId: number | null
+		ref?: ParticipantRef
+		castMemberId?: number | null
+	}>
 }
 
 /**
@@ -348,6 +368,14 @@ export interface SessionDossierV1 {
 	 */
 	settledThrough?: number | null
 	/**
+	 * 🚧 The id of the newest loaded row the viewing user wrote; names only the viewer's own row.
+	 * Null: the viewer has written none of the loaded rows. Absent: a host that predates it.
+	 * A widget that holds its reader's place reads it to catch the reader up when they send
+	 * (PLAN-visual-novel-layout §1.2). The Dialogue box jumps to it only when it is one of
+	 * its own (main channel) rows.
+	 */
+	ownNewestMessageId?: number | null
+	/**
 	 * The session's mode is not installed: the log is read-only.
 	 * @ruling 19 §6
 	 */
@@ -374,6 +402,15 @@ export interface ConversationRewindV1 {
 	back: string | null
 	/** Why Forward is refused now, or null when it may be pressed. */
 	forward: string | null
+	/** 🚧 What Back would take now (playtest item 6): the rows besides the person's line, and the names on them, each once. Absent: the host did not say, or the count went stale. */
+	backTakes?: {
+		count: number
+		names: string[]
+		/** 🚧 The person lines the turn holds; present only at a table (2 or more). */
+		personLines?: number
+		/** 🚧 The one message Back takes, present only when the genre takes one message per press: its author, whether it is the owner's own line, and how many lines are filed on it. */
+		newestMessage?: { author: string | null; yours: boolean; filed: number }
+	}
 }
 
 /** One proposed change, described. @experimental */
@@ -462,6 +499,24 @@ export interface ConversationComposerV1 {
 	playerLabel?: string
 	/** A guest with no persona: the composer offers to add one instead. */
 	addPersona: boolean
+	/**
+	 * 🚧 The Messages copy this composer (or turn line) follows, resolved by the
+	 * host (PLAN-session-layout-simplify D7): the nearest panel above in its
+	 * zone whose open tab is a Messages copy, else the nearest in its zone, else
+	 * the layout's first. Absent: the first writable channel. @experimental
+	 */
+	target?: {
+		instance: string
+		channel: string
+		label: string
+		lineWidth?: 'column' | 'full' | 'comfortable'
+		presentation?: 'rows' | 'folio'
+	}
+	/**
+	 * 🚧 Set while the target's panel shows a non-Messages tab: the composer
+	 * keeps writing to this channel and says *Writing to ‹label›*. @experimental
+	 */
+	writingTo?: { channel: string; label: string }
 	/**
 	 * 🚧 A guest who plays, in a genre of player seats (one with a player
 	 * label: the Lair), with no seat yet: the story's composer offers a

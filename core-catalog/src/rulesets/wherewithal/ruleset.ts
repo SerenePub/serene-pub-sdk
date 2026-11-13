@@ -44,7 +44,8 @@ export const WHEREWITHAL_RULESET: RulesetProps = Object.freeze({
 		en: "Wherewithal — no dice. Nerve, favour and provisions are spent to carry a risk, mettle is weighed in a contest, and the people someone is bound to steady them or cost them. Written for Serene Pub."
 	},
 	voice: WHEREWITHAL_VOICE,
-	attributes: [...WHEREWITHAL_OWN_SLOTS.map((s) => ({ id: slotSlug(s.id), slot: s.id })), { id: slotSlug(moodSlot.id), slot: moodSlot.id, borrowed: true as const, tags: ["mood"] }],
+	// 🚧 Owner ruling 2026-11-05 (plan §25): Nerve, Favour and Provisions are changed by the rules; Mood stays free.
+	attributes: [...WHEREWITHAL_OWN_SLOTS.map((s) => ({ id: slotSlug(s.id), slot: s.id, changedBy: ["rules" as const] })), { id: slotSlug(moodSlot.id), slot: moodSlot.id, borrowed: true as const, tags: ["mood"] }],
 	functions: [
 		// The table's judgement is the default way; a check named as its way is that way's use.
 		wayRef("judgement", M.judgement!),

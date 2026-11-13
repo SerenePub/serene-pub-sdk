@@ -111,6 +111,9 @@ import {
 	illustrateSceneSpec,
 } from './genres/story/illustrateScene.js'
 import { STORY_ADVANCE_TIME_SPEC_ID, storyAdvanceTimeSpec } from './genres/story/advanceTime.js'
+import { ROUND_TICK_SPEC_ID, roundTickSpec } from './shared/roundTick.js'
+import { SCENE_BOUNDARIES_SPEC_ID, sceneBoundariesSpec } from './shared/sceneBoundaries.js'
+import { SCENE_SUMMARIES_SPEC_ID, sceneSummariesSpec } from './shared/sceneSummaries.js'
 import { GRAPH_BUILD_SPEC_ID, graphBuildSpec } from './shared/graphBuild.js'
 import { SUMMARIZE_WORLD_SPEC_ID, summarizeWorldSpec } from './shared/summarize/world.js'
 import { SUMMARIZE_CHARACTER_SPEC_ID, summarizeCharacterSpec } from './shared/summarize/character.js'
@@ -124,6 +127,8 @@ import {
 import { storySummarizeSceneSpec } from './genres/story/summarizeScene.js'
 import { guideSummarizeSceneSpec } from './genres/guide/summarizeScene.js'
 import { lairSummarizeSceneSpec } from './genres/lair/summarizeScene.js'
+import { DUNGEON_CRAWLER_SUMMARIZE_SCENE_SPEC_ID } from './genres/dungeon-crawler/names.js'
+import { dungeonCrawlerSummarizeSceneSpec } from './genres/dungeon-crawler/summarizeScene.js'
 
 export * from './registry/genres.js'
 /** 🚧 What the host keeps for core's genres beside the rules' attributes (RF fix 8): registered on import. */
@@ -226,6 +231,9 @@ export * from './shared/portrait.js'
 export * from './shared/describeLikeness.js'
 export { fileLore, rememberNote } from './shared/lore.js'
 export * from './shared/timePasses.js'
+export * from './shared/roundTick.js'
+export * from './shared/sceneBoundaries.js'
+export * from './shared/sceneSummaries.js'
 export * from './shared/toolLoop.js'
 export * from './shared/graphBuild.js'
 export * from './shared/summarize/index.js'
@@ -273,7 +281,7 @@ export const CORE_SPECS: CoreSpec[] = [
 	{ slug: STORY_REST_SPEC_ID, name: 'Rest', build: storyRestSpec },
 	// 🚧 GM 2026-10-23 (G1 ★5, S3): Story's own effect after the rules' Rest — the clock moves by it.
 	{ slug: STORY_AFTER_REST_SPEC_ID, name: 'After a rest', build: storyAfterRestSpec },
-	/** The worked form (R-15 *Forms*; U5d): the narrator asks, the cast answers. */
+	/** The worked form (R-15 *Forms*; U5d): the narrator asks, the cast answers. Retired from Story's defaults 2026-11-04 (owner §0-F); kept published, unregistered. */
 	{ slug: STORY_ASK_SPEC_ID, name: 'Ask', build: storyAskSpec },
 	{ slug: STORY_ANSWER_SPEC_ID, name: 'Answer', build: storyAnswerSpec },
 	/**
@@ -402,6 +410,11 @@ export const CORE_SPECS: CoreSpec[] = [
 	 * the Lair's with its rewrite, 2026-10-21).
 	 */
 	{ slug: STORY_ADVANCE_TIME_SPEC_ID, name: 'Time passes', build: storyAdvanceTimeSpec },
+	/** 🚧 Each round moves the story clock (PLAN-sensible-engine §2.11, owner 2026-11-11): Story's and the Lair's, no model. */
+	{ slug: ROUND_TICK_SPEC_ID, name: 'Each round moves the clock', build: roundTickSpec },
+	/** 🚧 The scenes routine (owner 2026-11-12): Story's, the Lair's and the Dungeon Crawler's, every 2 rounds, no model. */
+	{ slug: SCENE_BOUNDARIES_SPEC_ID, name: 'Find where scenes begin', build: sceneBoundariesSpec },
+	{ slug: SCENE_SUMMARIES_SPEC_ID, name: 'Summarize finished scenes', build: sceneSummariesSpec },
 	/**
 	 * 🚧 Draw a card's sprites from its likeness (image generation I5) — a
 	 * card action from the Sprites tab, bound to no genre and no session.
@@ -458,6 +471,7 @@ export const CORE_SPECS: CoreSpec[] = [
 	{ slug: STORY_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: storySummarizeSceneSpec },
 	{ slug: GUIDE_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: guideSummarizeSceneSpec },
 	{ slug: LAIR_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: lairSummarizeSceneSpec },
+	{ slug: DUNGEON_CRAWLER_SUMMARIZE_SCENE_SPEC_ID, name: 'Summarize scene', build: dungeonCrawlerSummarizeSceneSpec },
 	{
 		slug: GRAPH_BUILD_SPEC_ID,
 		name: 'Build the story graph',

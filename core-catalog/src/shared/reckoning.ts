@@ -161,29 +161,36 @@ function num(x, d) { var n = Number(x); return x !== null && x !== "" && isFinit
 function ucSlotName(id) { return String(id).replace(/^core:slot\\//, "").replace(/@\\d+$/, ""); }
 var NOT_FOR_DELTAS = [];
 ${DELTA_OF_JS}
-function stateKeyOf(ref) {
-	var r = String(ref);
-	var m = /^player-seat:(\\d+)$/.exec(r);
-	if (m) return "player_seat:" + m[1];
-	var c = /^character:(\\d+)$/.exec(r);
-	return c ? c[1] : r;
+// The state.cast.byId key a participant reference reads under: the entry
+// whose host-filled \`ref\` is this ref (look up, never parse). ⏳ A host
+// before S3 fills no \`ref\`: then today's card-form key — only when the entry
+// under it carries no \`ref\` of its own (card and member ids share one range).
+function stateKeyOf(ref, byId) {
+	var r = String(ref), b = byId && typeof byId === "object" ? byId : {};
+	for (var k in b) { var e = b[k]; if (e && typeof e === "object" && e.ref === r) return k; }
+	var m = /^player-seat:(\\d+)$/.exec(r), c = /^character:(\\d+)$/.exec(r);
+	var key = m ? "player_seat:" + m[1] : c ? c[1] : r;
+	var at = b[key];
+	return at && typeof at === "object" && at.ref !== undefined ? r : key;
 }
-// Everyone seated and switched on: { ref, name, plays } — a persona seat
-// is somebody a person plays.
+// A seat's participant ref: the host's, else ⏳ today's card form.
+function seatRefOr(s, today) { return typeof s.ref === "string" && s.ref ? s.ref : today; }
+// Everyone seated and switched on: { ref, name, plays, castMemberId } — a
+// persona seat is somebody a person plays.
 function peopleOf(doc) {
 	var cast = own(own(doc).cast), out = [];
 	var cs = Array.isArray(cast.sessionCharacters) ? cast.sessionCharacters : [];
 	for (var i = 0; i < cs.length; i++) {
 		var s = own(cs[i]), ch = own(s.character);
 		if (s.enabled === false || s.removedAt || ch.id === undefined) continue;
-		out.push({ ref: "character:" + ch.id, name: text(ch.name), plays: false });
+		out.push({ ref: seatRefOr(s, "character:" + ch.id), name: text(ch.name), plays: false, castMemberId: s.castMemberId });
 	}
 	var ps = Array.isArray(cast.sessionPersonas) ? cast.sessionPersonas : [];
 	for (var j = 0; j < ps.length; j++) {
 		var p = own(ps[j]), pe = p.persona ? own(p.persona) : null;
 		if (p.enabled === false || p.removedAt) continue;
-		if (pe && pe.id !== undefined) out.push({ ref: "character:" + pe.id, name: text(pe.name), plays: true });
-		else if (p.seatId !== undefined) out.push({ ref: "player-seat:" + p.seatId, name: text(p.seatName) || "a player", plays: true });
+		if (pe && pe.id !== undefined) out.push({ ref: seatRefOr(p, "character:" + pe.id), name: text(pe.name), plays: true, castMemberId: p.castMemberId });
+		else if (p.seatId !== undefined) out.push({ ref: seatRefOr(p, "player-seat:" + p.seatId), name: text(p.seatName) || "a player", plays: true, castMemberId: p.castMemberId });
 	}
 	return out;
 }
@@ -297,7 +304,10 @@ lines.push("The world [world]: " + (world || "nothing tracked yet") + ".");
 var byId = own(own(state.cast).byId);
 for (var i = 0; i < people.length; i++) {
 	var p = people[i];
-	var sheet = bagLine(heard(own(byId[stateKeyOf(p.ref)])));
+	// The identity the host fills on an entry is not part of the sheet.
+	var held0 = heard(own(byId[stateKeyOf(p.ref, byId)])), shown = {};
+	for (var hk in held0) if (hk !== "ref" && hk !== "castMemberId" && hk !== "cardId") shown[hk] = held0[hk];
+	var sheet = bagLine(shown);
 	lines.push("- " + (p.name || "someone") + " [" + p.ref + "]" + (p.plays ? " (played by a person)" : "") + ": " + (sheet || "nothing tracked yet") + ".");
 }
 var owners = ["session:" + text(doc.sessionId)];
@@ -439,7 +449,7 @@ function changeOf(raw) {
 }
 function dutyOf(c) { return c.entryType && rules.condition(c.entryType) ? "conditions" : "attributes"; }
 function nowOf(owner, word) {
-	var bag = owner === "world" ? own(state.world) : own(own(own(state.cast).byId)[stateKeyOf(owner)]);
+	var bag = owner === "world" ? own(state.world) : own(own(own(state.cast).byId)[stateKeyOf(owner, own(own(state.cast).byId))]);
 	return bag[word];
 }
 // The session's lorebook items, by name (phase 3b): a thing one names is an

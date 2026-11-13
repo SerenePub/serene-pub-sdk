@@ -44,9 +44,10 @@ import {
 /**
  * 🚧 **Minimal** — the roleplay Chat's preset until 2026-10-19 (the app's
  * migration re-keys `core-chat-default` to it, so a migrated Chat session is
- * born of it): one call a turn, nothing changes unless the person changes
- * it, and a story may start with nobody in it. Story's defaults with the
- * three routines dropped, the reply not reading the scene (it adds to the
+ * born of it): one call a turn; the clock moves on a few minutes each
+ * round (the round tick, the session's round worth) and nothing else changes
+ * unless the person changes it, and a story may start with nobody in it.
+ * Story's defaults with the five routines dropped (the reckoning, the sweep, the pictures, the scenes routine and the scene summaries routine), the reply not reading the scene (it adds to the
  * prompt; *Read the lorebook* stays on — it costs no call, and a migrated
  * session read its lorebook into every reply), and — with no reckoning to
  * follow — a press's changes held for the person to accept (R55).
@@ -57,8 +58,8 @@ const storyMinimalPreset = (): PresetInput => {
 		slug: "story-minimal",
 		genre: storyGenre,
 		label: "Minimal",
-		description: "Just the story: one model call a turn, and nothing changes unless you change it.",
-		drop: [r.reckoning, r.sweep, r.illustrate],
+		description: "Just the story: one model call a turn. The clock moves on a few minutes each round; nothing else changes unless you change it.",
+		drop: [r.reckoning, r.sweep, r.illustrate, r.scenes, r.sceneSummaries],
 		change: [{ of: r.reply, values: { reading: { params: { scene: false } } } }],
 		callsPerTurn: 1,
 		cast: { characters: 0, personas: 0 },
@@ -158,7 +159,8 @@ const guideDefaultPreset = (): PresetInput => ({
  * Build room, File as a room, the knock's answer and filing the current room
  * dropped — R10), and the keeper is Off (one call a turn besides the voices;
  * switched on, it keeps the books in words, its ruleset path closed by the
- * rigour). ⏳ The Places panel stays in the layout: a preset names no
+ * rigour). The round tick (*Each round moves the clock*) moves the clock, the
+ * keeper on or off (owner 2026-11-11). ⏳ The Places panel stays in the layout: a preset names no
  * layout yet.
  */
 const lairWordsOnlyPreset = (): PresetInput => {

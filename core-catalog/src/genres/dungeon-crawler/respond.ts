@@ -76,8 +76,10 @@ export const dungeonCrawlerRespondSpec = () => {
 	/**
 	 * 🚧 The world, as the session's own lorebook holds it (PLAN-rulesets §26,
 	 * `lore.ts`): its places with their ways out, and its people — what both
-	 * branches read. The fallen and the Journal folio are the story turn's
-	 * own reads (`story.ts`): the Planner's talk never needed them (AUDIT C7).
+	 * branches read. The Journal folio is the story turn's own read
+	 * (`story.ts`): the Planner's talk never needed it (AUDIT C7). The fallen
+	 * are no listing at all: they are the crawl's own `progress.fallen`
+	 * (`death.ts`), and `peopleOf` leaves out lore anchored to a fallen member.
 	 * A session whose lorebook holds nothing yet reads an empty world.
 	 */
 	w.params.push(['places', { entryTypes: [DUNGEON_CRAWLER_ENTRY_TYPES.place], withLinks: true }])

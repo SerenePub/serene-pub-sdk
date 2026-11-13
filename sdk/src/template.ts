@@ -11,6 +11,7 @@
 
 import type { I18n, SlotDecl } from './descriptors.js'
 import type { FieldDecl } from './settings.js'
+import type { VariableLayoutOffer } from './variableLayouts.js'
 
 /** @experimental */
 export interface TemplateRef {
@@ -228,6 +229,17 @@ export interface VarField {
 	 * answer for a dropped key and a null one.
 	 */
 	optional?: boolean
+	/**
+	 * 🚧 Root only: the variable whose **variable layout** writes this key out
+	 * (`core:var/characters@1`) — the key `rendersAt` maps to it. Only such a
+	 * key may be named by the `layout` helper (Handlebars) or filter (Liquid),
+	 * and its layouts are the ones that variable offers. Set by the host on the
+	 * scope it checks against (`laidOutScope`); absent on plain data — a port's
+	 * output, a prompt field, an annex key — which never has a layout.
+	 * ⚠ Not the variable's own `scope` (what its layout reads), and ignored on
+	 * a nested field.
+	 */
+	laidOutBy?: string
 }
 
 /**
@@ -293,9 +305,19 @@ export interface TemplateFinding {
  * - `unknown-name` — a root the scope does not have.
  * - `unknown-path` — a field the declared type contradicts.
  * - `unknown-helper` — a Handlebars helper nobody registered.
+ * - 🚧 `layout-argument` — a `layout` call that does not name a laid-out key
+ *   and a quoted layout reference (`{{{layout characters "core/json@1"}}}`).
+ * - 🚧 `unknown-layout` — a layout reference that is malformed, or that the
+ *   key's variable does not offer.
  * @experimental
  */
-export type TemplateFindingKind = 'syntax' | 'unknown-name' | 'unknown-path' | 'unknown-helper'
+export type TemplateFindingKind =
+	| 'syntax'
+	| 'unknown-name'
+	| 'unknown-path'
+	| 'unknown-helper'
+	| 'layout-argument'
+	| 'unknown-layout'
 
 /**
  * What a host's engines register, as names — the checker's input
@@ -324,6 +346,15 @@ export interface TemplateCheckOptions {
 	 * undeclared. Non-empty: name and path findings are warnings.
 	 */
 	untyped?: readonly string[]
+	/**
+	 * 🚧 The layouts each laid-out variable offers, by variable id — what a
+	 * `layout` call may name for a key whose root carries `laidOutBy`. A
+	 * reference its variable does not offer is an error. Absent (no host in
+	 * view, as in the packager): a reference can't be checked, and is a
+	 * warning. ⚠ Not a preset's `variableLayouts` (the one layout a preset
+	 * chooses per variable).
+	 */
+	variableLayoutOffers?: Readonly<Record<string, readonly VariableLayoutOffer[]>>
 }
 
 /** @experimental */

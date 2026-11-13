@@ -1,7 +1,7 @@
 /**
  * 🚧 **The sweep** — `core:spec/story-sweep`, a **routine** (PLAN-layering
  * §4, R5, R37; 2026-10-20): every few turns, ONE batched JSON call looks back
- * over the story and files what is worth keeping — a summary, new lore and
+ * over the story and files what is worth keeping — new lore and
  * people, how the characters stand, the world as it now stands, the places
  * used, the goals. Each lands through the writes core already has: written
  * on **Full**, held for review on **Review** (the routine's mode).

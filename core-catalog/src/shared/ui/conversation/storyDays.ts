@@ -26,6 +26,15 @@ export function storyDayText(day: StoryDayLike, calendar?: StoryCalendar | null)
 	return formatStoryTime(t, calendar ?? null)
 }
 
+/**
+ * One story moment, spelled whole through `calendar` (null: free-form) — the
+ * SDK's `formatStoryTime`, re-exported for components, which may not import
+ * the bare SDK: a message's time on hover (2026-11-06). @experimental
+ */
+export function storyTimeText(time: StoryTime, calendar?: StoryCalendar | null): string {
+	return formatStoryTime(time, calendar ?? null)
+}
+
 /** The spelling `sceneMarks` takes as its `dayLabel`, for one calendar. @experimental */
 export const storyDayLabelIn =
 	(calendar?: StoryCalendar | null) =>

@@ -29,8 +29,18 @@
 		proposals: ConversationProposalV1[]
 		/** Shown in the Review panel, where a row is not under its message. */
 		showAnchor?: boolean
+		/**
+		 * The widget that draws this copy, when it is not Messages (the Turn
+		 * line): every part also carries `<alias>.<name>`, beside its
+		 * `messages.<name>`. Unset: the log's copy, unchanged.
+		 */
+		alias?: string
 	}
-	let { proposals, showAnchor = false }: Props = $props()
+	let { proposals, showAnchor = false, alias }: Props = $props()
+
+	/** `messages.<name>` for each name, and `<alias>.<name>` beside it when an alias is set. */
+	const parts = (...names: string[]): string =>
+		names.map((n) => (alias ? `messages.${n} ${alias}.${n}` : `messages.${n}`)).join(" ")
 
 	const conv = useConversation()
 	const t = useT()
@@ -43,14 +53,14 @@
 {#each proposals as row (row.id)}
 	{#if row.status === "superseded"}
 		<div
-			data-widget-part="messages.proposal"
+			data-widget-part={parts("proposal")}
 			data-proposal-id={row.id}
 			data-superseded="true"
 		>
 			<sp-icon name="history" size="11"></sp-icon>
-			<span data-widget-part="messages.proposal-text">
+			<span data-widget-part={parts("proposal-text")}>
 				{describe(row)}
-				<span data-widget-part="messages.proposal-note">
+				<span data-widget-part={parts("proposal-note")}>
 					· {t("Superseded — {slot} changed since this was proposed").replace(
 						"{slot}",
 						movedName(row)
@@ -59,64 +69,64 @@
 			</span>
 		</div>
 	{:else if row.offer?.yours}
-		<div data-widget-part="messages.proposal" data-proposal-id={row.id} data-offer="yours">
+		<div data-widget-part={parts("proposal")} data-proposal-id={row.id} data-offer="yours">
 			<sp-icon name="hourglass" size="11"></sp-icon>
-			<span data-widget-part="messages.proposal-text">
+			<span data-widget-part={parts("proposal-text")}>
 				{t("Offered to {to} — waiting for their answer").replace("{to}", row.offer.to)}
-				<span data-widget-part="messages.proposal-note">· {describe(row)}</span>
+				<span data-widget-part={parts("proposal-note")}>· {describe(row)}</span>
 			</span>
 			<button
-				data-widget-part="messages.proposal-decide messages.proposal-reject"
+				data-widget-part={parts("proposal-decide", "proposal-reject")}
 				onclick={() => decide(row.id, false)}
 			>
 				{t("Withdraw")}
 			</button>
 		</div>
 	{:else if row.offer}
-		<div data-widget-part="messages.proposal" data-proposal-id={row.id} data-offer="to-you">
+		<div data-widget-part={parts("proposal")} data-proposal-id={row.id} data-offer="to-you">
 			<sp-icon name="hand-helping" size="11"></sp-icon>
-			<span data-widget-part="messages.proposal-text">
+			<span data-widget-part={parts("proposal-text")}>
 				{describe(row)}
 				{#if showAnchor && row.messageId != null}
-					<span data-widget-part="messages.proposal-anchor">on message {row.messageId}</span>
+					<span data-widget-part={parts("proposal-anchor")}>on message {row.messageId}</span>
 				{/if}
 			</span>
-			<span data-widget-part="messages.proposal-note" title={t("Offered by {from}").replace("{from}", row.offer.from)}>
+			<span data-widget-part={parts("proposal-note")} title={t("Offered by {from}").replace("{from}", row.offer.from)}>
 				{t("offered")}
 			</span>
 			<button
-				data-widget-part="messages.proposal-decide messages.proposal-accept"
+				data-widget-part={parts("proposal-decide", "proposal-accept")}
 				onclick={() => decide(row.id, true)}
 			>
 				{t("Accept")}
 			</button>
 			<button
-				data-widget-part="messages.proposal-decide messages.proposal-reject"
+				data-widget-part={parts("proposal-decide", "proposal-reject")}
 				onclick={() => decide(row.id, false)}
 			>
 				{t("Decline")}
 			</button>
 		</div>
 	{:else}
-		<div data-widget-part="messages.proposal" data-proposal-id={row.id}>
+		<div data-widget-part={parts("proposal")} data-proposal-id={row.id}>
 			<sp-icon name="sparkles" size="11"></sp-icon>
-			<span data-widget-part="messages.proposal-text">
+			<span data-widget-part={parts("proposal-text")}>
 				{describe(row)}
 				{#if showAnchor && row.messageId != null}
-					<span data-widget-part="messages.proposal-anchor">on message {row.messageId}</span>
+					<span data-widget-part={parts("proposal-anchor")}>on message {row.messageId}</span>
 				{/if}
 			</span>
-			<span data-widget-part="messages.proposal-note" title="Proposed by {row.proposedBy || 'a run'}">
+			<span data-widget-part={parts("proposal-note")} title="Proposed by {row.proposedBy || 'a run'}">
 				proposed
 			</span>
 			<button
-				data-widget-part="messages.proposal-decide messages.proposal-accept"
+				data-widget-part={parts("proposal-decide", "proposal-accept")}
 				onclick={() => decide(row.id, true)}
 			>
 				Accept
 			</button>
 			<button
-				data-widget-part="messages.proposal-decide messages.proposal-reject"
+				data-widget-part={parts("proposal-decide", "proposal-reject")}
 				onclick={() => decide(row.id, false)}
 			>
 				Reject

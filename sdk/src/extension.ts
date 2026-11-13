@@ -699,6 +699,19 @@ export interface ExtensionDecl {
 	 */
 	provides?: { lorebooks?: readonly string[] }
 	/**
+	 * 🚧 The applet card the Apps view, Home and the launcher show for this package (M2d).
+	 * `poster` is the picture, shown 16:9 and cropped (1280×720 recommended; no aspect
+	 * check); `logo` an optional small square mark over the poster's lower-left; `blurb`
+	 * one short descriptive line, at most 160 characters. `poster` and `logo` are
+	 * package-relative paths under the declared `assets.dir` (as `provides.lorebooks`),
+	 * served at `/plugin-assets/<id>/<version>/<path>`. `serene-pub check` refuses a path
+	 * outside `assets.dir` (`E_APPLET_CARD_OUTSIDE_ASSETS`), a missing file
+	 * (`E_APPLET_CARD_MISSING`), a blurb over 160 characters (`E_APPLET_CARD_BLURB_LONG`)
+	 * and a card on a package with no applet genre (`E_APPLET_CARD_WITHOUT_APPLET`).
+	 * @experimental (M2d)
+	 */
+	appletCard?: { poster?: string; logo?: string; blurb?: I18n }
+	/**
 	 * 🚧 Rulesets shipped in the package, as ruleset documents (M0,
 	 * SHAPES L4 Declaration): install and upgrade publish each as a `rulesets`
 	 * row — `origin: 'plugin'`, the plugin's slug its owner, the document's

@@ -3,6 +3,7 @@ export * from './candidates.js'
 // Display text (R-20): the one `I18n` type, `i18nFindings` every publish door
 // runs, and `i18nText` every reader resolves through.
 export * from './i18n.js'
+export * from './appletCard.js'
 // One verdict per law (01 §13): `defineVerdict` / `verdicts()` and the five
 // verdicts whose judges read only leaf vocabulary — the effects line and form
 // staleness are declared in `messageBlocks.ts`, beside the primitives they
@@ -48,6 +49,10 @@ export * from './templateIds.js'
 // `loadout-ref` value a node's `loadout` slot holds, and `prefers`.
 export * from './loadouts.js'
 export * from './variables.js'
+// 🚧 Variable layouts by reference (PLAN-variable-layouts-2026-11-10): the
+// `<owner>/<slug>@<major>` a template, a preset and the pub name a layout by,
+// and `variableLayout()`, the typed seed a plugin ships one with.
+export * from './variableLayouts.js'
 // Bands as template variables (typed templates P2): a source declares the
 // bands it publishes; `rendersAt` is what a node's variables slot renders.
 export * from './bands.js'
@@ -83,6 +88,8 @@ export * from './rulesetDocument.js'
 // ruleset laws a shipped catalogue keeps (2026-10-22).
 export * from './rulesetTemplates.js'
 export * from './rulesetSections.js'
+// 🚧 Sheet latitude — how far each role may change sheets and move items by hand, and the one judge (2026-11-05).
+export * from './sheetLatitude.js'
 export * from './functions.js'
 export * from './ties.js'
 // 🚧 A declared shape as the JSON Schema a model answers against, and the one
@@ -195,6 +202,8 @@ export * from './channels.js'
 // Participant references — the audience grammar and the inlet's speaker
 // (R-15, R-18 (3)); `Portrayal` is the resolver's answer the receipt pins.
 export * from './participants.js'
+// 🚧 The character profile and the cast member as a session reads them (cv-sdk).
+export * from './characterProfile.js'
 // Turn order as state (PLAN-turn-order §4.2): the candidate, entry and order
 // documents, `EMPTY_TURN_ORDER` and `readTurnOrder`. After participants
 // because a candidate's `ref` is a participant reference.

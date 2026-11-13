@@ -50,6 +50,7 @@
  */
 
 import type { EngineId } from './engines.js'
+import { VARIABLE_LAYOUT_SLUG } from './variableLayouts.js'
 
 /**
  * The grammar, mirroring the attribute slot id's exactly one kind segment over.
@@ -139,6 +140,12 @@ export interface TemplateSeed {
 	body: string | Record<string, string>
 	/** The human title. Defaults to the id's name segment where absent. */
 	label?: string
+	/**
+	 * 🚧 `variables` only: the slug of this layout's reference
+	 * `<owner>/<slug>@<major>`, whose owner and major are the id's. Kebab-case.
+	 * Absent, the reference's slug is the id's name segment.
+	 */
+	slug?: string
 }
 
 /**
@@ -235,6 +242,19 @@ export function templateSeedProblems(t: TemplateSeed, owner: string): string[] {
 			`template '${t.id}' has kind '${(t as { kind?: unknown }).kind}'. ` +
 				`A shipped template fills a 'prompts', 'template' or 'variables' slot.`,
 		)
+	}
+
+	if (t.slug !== undefined) {
+		if (t.kind === 'prompts' || t.kind === 'template')
+			problems.push(
+				`template '${t.id}' is ${t.kind === 'prompts' ? 'a prompts row' : 'a context template'} and declares a slug — ` +
+					`only a variable layout has a layout reference; drop 'slug'.`,
+			)
+		else if (typeof t.slug !== 'string' || !VARIABLE_LAYOUT_SLUG.test(t.slug))
+			problems.push(
+				`template '${t.id}' has slug '${String(t.slug)}', which is not kebab-case — lowercase ` +
+					`letters and digits joined by '-' (titled-json).`,
+			)
 	}
 
 	return problems

@@ -9,7 +9,7 @@ import { dungeonCrawlerGenre } from '../../registry/genres.js'
 import { DUNGEON_CRAWLER_ANNEX_KEYS as K, DUNGEON_CRAWLER_PLANNER_KEY, DUNGEON_CRAWLER_STORY_CHANNEL, PARLEY_CHANNEL } from './names.js'
 import { DUNGEON_CRAWLER_LANES_SCRIPT } from './scripts.js'
 import { applyWiring, jsonPart, scriptStep, textPart, wiring, type Plus, type ReadOn, type Wiring } from './calls.js'
-import { crawlTimeSlot, difficultySlot, goalModeSlot } from '../../registry/slots.js'
+import { difficultySlot, goalModeSlot } from '../../registry/slots.js'
 
 /** @experimental */
 export const DUNGEON_CRAWLER_CREATE_SPEC_ID = 'core:spec/dungeon-crawler-create'
@@ -37,9 +37,9 @@ export const DUNGEON_CRAWLER_STORY_WAITING = 'Make your character on the Planner
 export const DUNGEON_CRAWLER_STORY_WAITING_FOR_WORLD = 'Your character is ready: the story starts once the world is built.'
 
 /**
- * 🚧 Where the genre's own clock starts (★C): day one of year one, at eight in
- * the morning. A story time with no calendar behind it — free-form, as the
- * shape allows.
+ * 🚧 Day one of year one, at eight in the morning. No longer written (create
+ * starts the session's story clock at 08:00 instead, 2026-11-10): the
+ * fallback a turn reads when the session has no story now.
  * @experimental
  */
 export const DUNGEON_CRAWLER_EPOCH = '1-01-01 08:00'
@@ -189,11 +189,14 @@ interface Lane {
  * on). It writes, in order:
  *
  *  - the table's rules on the world, through state so a retake could undo
- *    them like any write: difficulty *fair*, goal *shared*, and the crawl's
- *    clock at its epoch (`DUNGEON_CRAWLER_EPOCH`) — the interview moves the
- *    first two. Whether numbers and dice count is the session's rigour (How
+ *    them like any write: difficulty *fair* and goal *shared* — the
+ *    interview moves both. Whether numbers and dice count is the session's rigour (How
  *    strict, set at creation), never asked again (walk 6, 2026-10-17); an
  *    older session's `stat-mode` stays readable and is read by nothing;
+ *  - the session's story clock set to 08:00 on its first day, through
+ *    `core:outlet/advance-story-clock@1` (a story with no clock yet starts at
+ *    Year 1, day 1; a refused move moves nothing and the create still
+ *    finishes);
  *  - the genre's annex keys, blank (`progress`, `journal`, the Planner's
  *    notes) — a literal, so the keys it writes are named. The world itself
  *    is not here: it is the session's own lorebook, made by genesis's first
@@ -214,6 +217,8 @@ export const dungeonCrawlerCreateSpec = () => {
 			family: dungeonCrawlerGenre.family,
 			description: dungeonCrawlerGenre.description,
 			shape: dungeonCrawlerGenre.shape,
+			// 🚧 ed B1 (2026-11-05): the genre's pinned settings ride the row (sheet latitude pins).
+			settings: dungeonCrawlerGenre.settings,
 			events: dungeonCrawlerGenre.events as Record<string, { required?: boolean; open?: boolean }>,
 			playerLabel: dungeonCrawlerGenre.playerLabel,
 			envoys: dungeonCrawlerGenre.envoys,
@@ -228,7 +233,6 @@ export const dungeonCrawlerCreateSpec = () => {
 				changes: [
 					{ owner: 'world', slot: difficultySlot.id, value: 'fair' },
 					{ owner: 'world', slot: goalModeSlot.id, value: 'shared' },
-					{ owner: 'world', slot: crawlTimeSlot.id, value: DUNGEON_CRAWLER_EPOCH },
 				] as any,
 				scope: $.input.sessionScope,
 				base: $.state.version,
@@ -241,6 +245,17 @@ export const dungeonCrawlerCreateSpec = () => {
 				base: $.state.version,
 				params: slot.params(),
 			}),
+		)
+		.outlet(
+			'clock',
+			() =>
+				C.advanceStoryClock.v1({
+					to: { hour: 8, day: 'today' },
+					cause: 'action',
+					onRefusal: 'skip',
+					params: slot.params(),
+				}),
+			{ expose: { label: 'Start the story clock at 08:00' } },
 		)
 		.outlet(
 			'blank',

@@ -363,8 +363,12 @@ describe("core's declarations did not move (hash proof)", () => {
 		// borrowed mood says `mood`; Freeform declares no attributes (its borrowed mood retired). Proven:
 		// with exactly those put back, the three hash to the pins before ('75f4c4c69cd43155' ·
 		// '20b8591e6c8eef16' · '4a07f5304b800211'). Recomputed after the final build.
-		assert.equal(digest(rulesetDocumentOf(cat.visItinerisRuleset)), '17daa8bfe5339da9')
-		assert.equal(digest(rulesetDocumentOf(cat.wherewithalRuleset)), '92e2067a5a7b7c41')
+		// 🚧 Moved 2026-11-05 (lane sl, owner ruling plan §24/§25 ★5): the rules' own marks — every Vis
+		// Itineris attribute `changedBy: ['rules']`; Wherewithal's three pools the same, its mood free.
+		// Only `changedBy` moved them (`catalogueParity` strips it and reads the rest as before).
+		// (was '17daa8bfe5339da9', '92e2067a5a7b7c41')
+		assert.equal(digest(rulesetDocumentOf(cat.visItinerisRuleset)), '5b60022a0df4ccc4')
+		assert.equal(digest(rulesetDocumentOf(cat.wherewithalRuleset)), '62fd24f3d650ea2e')
 		assert.equal(digest(rulesetDocumentOf(cat.freeformRuleset)), '37aa7a652994c13e')
 		// Moved 2026-10-23: the dice templates rebuilt in the sections (lane A2), and a declaration in
 		// sections no longer says empty ⏳ `stats` / `repertoires` (its read-back is unenumerated,

@@ -1,11 +1,166 @@
 # Storage
 
-A plugin can keep two kinds of data, and they answer different needs:
+A story keeps its data in three homes. Pick one by what the data is:
 
-- **Files**: your plugin's own files. Only your own code reads them, so this is where hidden
-  state lives: an opponent's fleet, the answer the player must guess.
-- **Annex fields**: small values kept in the session itself, which your widgets can save and
-  read back and which the people in the session may see: the last roll, a note, a toggle.
+- **Messages**: what was said and what happened. Lines, the parts of a message, recorded events,
+  attachments.
+- **The annex**: your genre's or plugin's own working memory. A plan, a counter, a toggle, the
+  last roll: small values under your owner name, each key declared as an
+  [annex field](#a-value-a-widget-saves-annex-fields). It has two scopes: `session`, this
+  playthrough (the default), and `lorebook`, the world's, which every session of the book shares
+  ([The lorebook annex](#the-lorebook-annex)).
+- **The lorebook**: everything about the world. Entries, the cast, places, scenes, history, the
+  story clock, links, and **stats** (a stat is a typed fact about the world, a person or a place).
+  Every session has a lorebook: the one it reads, and its own book (**Session notes** on screen),
+  where it keeps what it may not write to the one it reads.
+
+Two more homes sit outside the story and never follow it:
+
+- **Your plugin's files**: for hidden state only, which only your own code reads. An opponent's
+  fleet, the answer the player must guess. Core cannot see inside a file, so nothing the story
+  does takes one back: anything the story should take back does not belong there.
+- **The user annex**: small documents your plugin keeps for one person, which follow them into
+  every session. A profile, their saved worlds, their own settings
+  ([Per person: the user annex](#per-person-the-user-annex)).
+
+How a pipeline reaches the three story homes:
+
+| home | a pipeline reads it with | a pipeline writes it with | core types | you own |
+|---|---|---|---|---|
+| Messages | `session-history@1` · `history-attachments@1` · `vector-search@1` | `create-message@1` · `update-message@1` · `hide-message@1` · `record-event@1` | the row, core's metadata keys, events, the anchor | a part's `data`, a recorded event's payload |
+| Annex | `session-annex@1` · `lorebook-annex@1` | `set-session-annex@1` · `set-annex-field@1` · `set-lorebook-annex@1` · `set-lorebook-annex-field@1` | owner namespacing, audiences, the annex field declaration | the owner document's value |
+| Lorebook | `lorebook-entries@1` · `world-lore@1` · `session-cast@1` · `session-state@1` · `lorebook-state@1` | `create-lore-entry@1` · `update-lore-entry@1` · `link-lore-entries@1` · `graph-proposal@1` · `note-scene@1` · `advance-story-clock@1` · `set-state@1` | the entry type, links, cast member, scene, provenance, anchor | `content`, and `fields` as the entry type declares them |
+
+Core types the envelope and the identity; the author owns the value.
+
+### What happens to each home
+
+What the story does to each home today. A **turn's write** is one a pipeline made while the
+turn ran: it is anchored to the turn's message.
+
+| | Messages | Annex, `session` scope | Annex, `lorebook` scope | Lorebook | Your files | User annex |
+|---|---|---|---|---|---|---|
+| **A turn is replaced** (a swipe, a regenerate, a run that failed) | the reply is replaced, in place | taken, except a field marked `keepOnRetell: true`, which stays | taken | taken, with the scenes the turn began or ended and its scene notes; the round's clock tick stays | untouched | untouched |
+| **A turn leaves** (Back, a delete) | Back takes the message out of the story; it is deleted once something new is written. A delete deletes it | taken, `keepOnRetell` fields too | taken | taken, with the scenes the turn began or ended and the round's clock tick | untouched | untouched |
+| **Forward** | returns | returns | returns | returns | — | — |
+| **Branch** | copied, up to and including the fork | copied, as it stood at the fork | the book's, not copied | the own book is copied as it stood at the fork, its links included (a ruleset's ties are not), and an entry filed under a member of the lorebook keeps that member; the lorebook the session reads is shared, not copied | not copied | the person's |
+| **Next chapter** | not carried: the new session starts with *Chapter begins.* | only the fields marked `nextChapter: true`, of the new session's genre | the book's | the same lorebook (an own book that was the session's whole lorebook becomes a shared lorebook first); only the stats marked `nextChapter: true` are carried | not carried | the person's |
+| **Session deleted** | deleted | deleted | stays on the book; a value in the own book goes with it | the own book is deleted, unless a branch still reads it; what the session wrote to the lorebook it reads stays | stays: your plugin cleans up | stays |
+| **Reaches other sessions** | never | never | every session of the book, when the write lands on the book | a write that lands on the lorebook the session reads reaches every session reading it, at once; one in the own book reaches none (a session whose scenes end by themselves keeps a turn's new entries, places, history days and links there too, until they are applied), and a change to an existing entry stays in the own book until the owner applies it | your plugin's choice | every session of that person |
+| **Who sees it** | the people on its channel (on a channel with lanes, that lane's), and the model through a prompt | the field's `see` audience; your pipelines read all of it | the field's `see` audience, in every session of the book | the readers of the book; the own book, only the session's owner and guests | only your own handlers | that person's handlers and applet |
+
+**Where a lorebook write lands.** A turn's write to an entry, a link, a room or a
+`lorebook`-scope annex field lands on the lorebook the session reads only when the session's owner
+owns that book, the book's lorebook write mode is **Full**, and the session's scenes do not end by
+themselves. Otherwise (**Review changes**, **Off**, a book someone else owns, or a session whose
+scenes end by themselves) a new entry, room, history day or link lands in the session's own book.
+A session's scenes end by themselves when it runs the *Find where scenes begin* routine (not
+switched Off) and its scene mode is **Automatic**; the results of `create-lore-entry`,
+`update-lore-entry` and `link-lore-entries` then carry `route: "own-book"` and the own book's
+`lorebookId`, whatever the write mode. Such a session's notes reach the lorebook only by **Apply**:
+by itself when a scene closes (and when a waiting summary is saved, and at Close out) if the owner
+owns the lorebook and its write mode is **Full**, otherwise by the lorebook owner's press. For
+such a session a summary written with `sources` no longer moves the settle line; Apply does. A
+branch session riding its parent's line gets its own line at its first Apply, inside the Apply. Two kinds follow other
+rules. A stat value about the world lands on the lorebook whenever the session's owner owns it,
+where **Review changes** holds it as a proposal and **Off** skips it; on a book someone else owns,
+it is kept in the own book. Scenes and summaries are refused under **Off**, even when the own book
+is the session's whole lorebook. A genre that keeps its lorebook as reference (`writes.lore` off)
+refuses entry and lorebook-annex writes.
+
+A turn's change to an **existing entry** of the lorebook the session reads is the exception to the
+first rule: whatever the write mode (**Full** too), it is kept in the own book as a *held
+amendment* (a row of `entry_amendments` with `base` set, naming the entry), and reaches the
+lorebook only when it is applied. Until then only that session (and a branch cut at or after the
+turn) reads it. A change to an entry of the own book, and a new entry, are written as above.
+
+**The own-book route.** A session that reads a lorebook it may not write to (**Review changes** or
+**Off**, or a book someone else owns), or whose scenes end by themselves, writes into its own book and reads the two together, the own
+book first:
+
+- `create-lore-entry`'s `match` looks in the own book first, and only when it has no hit there in
+  the lorebook's entries as the session reads them; a hit there is a held change to that entry, not
+  a duplicate. Two hits refuse within one book, never across the two. `bind` takes a member of the
+  lorebook's cast as well as the own book's, and a new place's Exits line links over both books.
+- **A link may join the two books.** The row is stored in the own book, and each end may be an own
+  book entry, an entry of the lorebook or a member of its cast (`link-lore-entries`, `links`). A link
+  either book already holds is not written again (`written: false`); a ruleset's tie copies never
+  count. An id in neither book is refused. Under **Full** for a session whose scenes do not end by themselves, and for a session whose
+  lorebook is its own book alone, both ends still live in one book.
+- **History days are the own book's**: one per date, the date checked against the lorebook's
+  calendar, never a held change to the lorebook's day.
+- The session reads its own book where it reads the lorebook: its names vocabulary (under **Full**
+  too, when it keeps notes), its graph's links, and the story date its prompt and these writes work from. Stats, the
+  timeline and cast versions are dated by the lorebook alone.
+- A turn owns what it wrote there: a swipe, a regenerate, Back and a delete take the turn's
+  entries, history days, paragraphs and links, and Forward and a failed re-tell put them back. A
+  press-started run anchors its entries, new days and links to the session's newest message; a
+  paragraph onto an existing day has no anchor.
+- **Apply** moves a link whose ends are both the lorebook's to the lorebook on the session's line;
+  merges a day whose date the lorebook holds onto the lorebook's day (a paragraph after what it
+  holds, everything the own day dated re-dated to the lorebook's day); and drops a link the lorebook
+  already says. A take-back returns a link, and a merged day while its paragraph is still the day's
+  last.
+
+**Apply** is the one door from a session into a lorebook it overlays. The lorebook's owner presses
+it, or it happens by itself: when the session's owner owns the lorebook and the write mode in force
+for the lorebook is **Full** (a branch session too), a scene's close applies what the
+session held up to the end of that scene (unless that scene's summary is being written or waits
+for review: then saving it applies them, and a discarded or failed summary releases them), and
+Close out applies the rest (what its own closing stretch wrote waits for that stretch's
+summaries). Nothing applies by itself while a turn is taken back and Forward is still possible.
+A change the lorebook already reads is dropped, not applied; a field
+the lorebook changed since stays held as a conflict. Every Apply files one `lore_imprints` batch
+(`origin: 'apply'`, a `cause` naming the press or the automatic cause), so the owner can take the
+whole Apply back while nothing stands on what it applied. Applying sets the line Back stops at,
+through the newest turn whose change it applied and never past a turn whose change is still held;
+taking an Apply back does not move that line back.
+
+The exceptions to the table:
+
+- **Back does five things to a lorebook write**, by how it was stored. In the own book it is
+  always taken back, even when someone edited it since. On the lorebook the session reads, a field
+  (an entry's, a tie's words, a member's state, a room or a way between rooms, a `lorebook`-scope
+  annex field) is taken back only while it still holds exactly what the turn wrote; otherwise it
+  stays, and the entry says it was written by a reply that was since replaced, with **Revert** and
+  **Keep** for the book's owner. A
+  **stat value on the session owner's own lorebook** is the book's, and is not taken back. A cast
+  member's story write (a new version of the member) is taken back. And a write that names its
+  `sources`, like an applied summary, sets the line Back stops at: Back, a swipe and a regenerate
+  at or before it are refused with *This part of the story is in the lorebook now.*
+- **A held amendment goes with its turn until Apply.** Back, a swipe, a regenerate and a delete of
+  the turn take it back; Forward puts it back. After an Apply it is the lorebook's, and none of
+  them takes it: the Apply settled the story through its turn.
+- **Two things stay on a replaced turn.** The round's clock tick (cause `tick`) stays, because the
+  new reply keeps the same message and does not end the round again; Back and a delete take it,
+  and the next line that closes the round moves it once. A scene boundary at a replaced or deleted line that later lines already sit in
+  stays where it is. And an annex field
+  declared `keepOnRetell: true` keeps its value, for a genre that tells a turn again from what it
+  decided; it goes when the turn leaves. Everything else the turn wrote goes, on a swipe, a
+  regenerate, Back and a delete alike: stats, clock moves, scene boundaries and notes, who holds
+  what, lorebook writes, cast versions, and seat benches. A failed swipe puts back what the swipe
+  took. A **draw** from a deck goes with its turn too: a swipe, a regenerate, Back and a delete
+  put the cards back, and Forward deals them again. When two turns drew from one deck and the
+  earlier is taken, the earlier turn's cards stay spent, because the later cards were dealt from
+  where the earlier draw left the deck. Taking the later turn afterwards puts the deck where it
+  stood before both.
+- **A press-started run anchors to the newest message.** A run a person started with a press, one
+  that opens no message of its own, anchors its `session`-scope annex writes to the session's
+  newest message, so Back past that message takes them. A value a person sets through an annex
+  field's own action (`<owner>:annex#<key>`, the Annex widget) is that person's edit and stands. A
+  lorebook row a press files on its own (*File as a room*) has no anchor and stays.
+- **Seat benches go with the turn.** A seat a replaced turn benched or brought back is put back
+  with it. A genre that keeps its plan files the plan's seat changes again when it tells the turn
+  again.
+- **Stats are recorded onto the lorebook when a person ends a scene.** When a person captures or
+  ends a scene, or a close-out files its closing scene, core records the session's stats as they
+  stand, onto the lorebook the session reads when an entry would land there (as above), else into
+  the own book. These rows belong to no turn, so no Back takes them. Deleting a session records them once more onto the lorebook it reads, under **Full** or
+  **Review changes**, when the session's owner owns that book.
+- **A branch reads the lorebook it shares by story date.** Its dated history stops at the fork's
+  story date, and its stats and cast versions at the fork message, but a row with no date that the
+  first session adds later (a character, a place, a world entry) reaches the branch too. A
+  `lorebook`-scope annex value kept in the own book is not copied to the branch.
 
 ## Your plugin's own files
 
@@ -258,6 +413,11 @@ export const lastRoll = (ctx: ComponentContext) =>
   widget presses with `annexFieldAction(slug, key)`, and core writes the value. A field without
   `act` is written only by your pipelines, with core's `set-session-annex` step.
 - **`genre`** limits the field to one genre's sessions: `annexField({ …, genre: myGenre })`.
+- **`keepOnRetell: true`** (🚧) keeps the value when the turn that wrote it is replaced (a swipe, a
+  regenerate, a failed run): a replacement skips that key's changes. Back and a delete still take
+  them, so it goes when the turn leaves. A failed re-tell keeps none of its own values. Use it when your
+  genre tells a turn again from what it decided. `session` scope only; it is not a cast member's
+  *retold* field.
 
 Your `annexFields` list is the whole of your package's annex: a `set-session-annex` step of yours
 may write only keys declared there, and every value is checked against its shape when it is
@@ -360,18 +520,6 @@ async function saveWorld(ctx: PluginHandlerContext, name: string, turns: number)
 - **In a test**, give the harness an annex: `pluginHandlerContext({ pluginId, userAnnex:
   memoryUserAnnex({ profile: 'hi' }) })`. Without `userAnnex`, `ctx.annex('user')` rejects as if
   nobody were signed in.
-
-## The three storages
-
-Where a session's data lives:
-
-| storage | a pipeline reads it with | a pipeline writes it with | core types | you own |
-|---|---|---|---|---|
-| Annex | `session-annex@1` | `set-session-annex@1` · `set-annex-field@1` | owner namespacing, audiences, the annex field declaration | the owner document's value |
-| Messages | `session-history@1` · `history-attachments@1` · `vector-search@1` | `create-message@1` · `update-message@1` · `hide-message@1` · `record-event@1` | the row, core's metadata keys, events, the anchor | a part's `data`, a recorded event's payload |
-| Lorebook | `lorebook-entries@1` · `world-lore@1` · `session-cast@1` | `create-lore-entry@1` · `update-lore-entry@1` · `link-lore-entries@1` · `graph-proposal@1` | the entry type, links, cast member, scene, provenance, anchor | `content`, and `fields` as the entry type declares them |
-
-Core types the envelope and the identity; the author owns the value.
 
 ## Testing against the real sandbox
 

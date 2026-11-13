@@ -552,9 +552,10 @@ export const fateSlot = defineAttributeSlot("core:slot/fate@1", {
 })
 
 /**
- * 🚧 The crawl's own time (★C): a story time on the world, advanced by the
- * Planner on a rest or a journey. Not the **story clock** — that one walks
- * the lorebook's calendar, and this genre has no lorebook.
+ * ⏳ Retired from writes (2026-11-10): the crawl's time was its own clock on
+ * the world; it is now the session's story clock (`advance-story-clock@1`).
+ * Not the story clock. Still registered so the rows older sessions wrote
+ * display.
  * @experimental
  */
 export const crawlTimeSlot = defineAttributeSlot("core:slot/crawl-time@1", {

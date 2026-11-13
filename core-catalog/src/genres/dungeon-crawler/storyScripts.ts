@@ -38,8 +38,8 @@ export const DUNGEON_CRAWLER_DELTA_OPS = Object.freeze(['add', 'spend', 'set', '
  * retired 2026-10-23: what a level brings is the session's rules', the
  * books' `levelHp`);
  * `sinceReply(msgs)` — this round's declarations; `fatesAfter` /
- * `keepFates` — who is out of the round; the clock (`addMinutes`,
- * `clockLabel`); `hooks` — the open leads; the exit model
+ * `keepFates` — who is out of the round; the clock (`storyNowClock`,
+ * `addMinutes`, `clockLabel`); `hooks` — the open leads; the exit model
  * (`DUNGEON_CRAWLER_EXITS_JS`); and `checkPlan(raw)` — the Planner's answer
  * normalised, or `null` when it is unusable (no `narratorBrief`), its deltas
  * read from the session's rules' grammar (`asDelta`, S1) into the handler's.
@@ -89,7 +89,7 @@ function keepFates(progress, seats, changes) {
 var MONTH_DAYS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 function pad(n) { return n < 10 ? "0" + n : String(n); }
 function addMinutes(clock, minutes) {
-	var m = /^(-?\\d+)-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2}))?$/.exec(text(clock));
+	var m = /^(-?\\d+)-(\\d+)-(\\d+)(?:[ T](\\d{1,2}):(\\d{2}))?$/.exec(text(clock));
 	if (!m || !(minutes > 0)) return text(clock) || null;
 	var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
 	var t = (m[4] ? Number(m[4]) : 0) * 60 + (m[5] ? Number(m[5]) : 0) + Math.round(minutes);
@@ -98,11 +98,22 @@ function addMinutes(clock, minutes) {
 	while (d > MONTH_DAYS[(mo - 1) % 12]) { d -= MONTH_DAYS[(mo - 1) % 12]; mo++; if (mo > 12) { mo = 1; y++; } }
 	return y + "-" + pad(mo) + "-" + pad(d) + " " + pad(Math.floor(t / 60)) + ":" + pad(t % 60);
 }
-// The crawl's clock as the table reads it: the day counted from the
-// adventure's first (\`DUNGEON_CRAWLER_EPOCH\` is day 1), and the time —
-// "Day 3, 16:30". Stored as the story-time line; said this way.
+// The session's story now, as the cast read carries it (2026-11-10), as the
+// clock line the helpers here read: "<year>-<MM>-<DD>[ HH:MM]" from
+// { year, month?, day?, hour?, minute? } — month and day default to 1, the
+// time only when hour is a number; empty when there is no numeric year.
+function storyNowClock(now) {
+	var n = own(now);
+	if (typeof n.year !== "number") return "";
+	var out = n.year + "-" + pad(typeof n.month === "number" ? n.month : 1) + "-" + pad(typeof n.day === "number" ? n.day : 1);
+	if (typeof n.hour === "number") out += " " + pad(n.hour) + ":" + pad(typeof n.minute === "number" ? n.minute : 0);
+	return out;
+}
+// The story clock as the table reads it: "Day N" counts from the story's
+// first day (\`DUNGEON_CRAWLER_EPOCH\` is day 1), and the time — "Day 3,
+// 16:30". The clock is the session's story clock (2026-11-10); said this way.
 function clockLabel(clock) {
-	var m = /^(-?\\d+)-(\\d{1,2})-(\\d{1,2})(?:[ T](\\d{1,2}):(\\d{2}))?$/.exec(text(clock));
+	var m = /^(-?\\d+)-(\\d+)-(\\d+)(?:[ T](\\d{1,2}):(\\d{2}))?$/.exec(text(clock));
 	if (!m) return text(clock);
 	var y = Number(m[1]), mo = Number(m[2]), day = Number(m[3]) + (y - 1) * 365;
 	for (var i = 0; i < mo - 1; i++) day += MONTH_DAYS[i % 12];
@@ -154,11 +165,19 @@ function checkPlan(raw) {
 		var sec = own(rs[s]);
 		if (text(sec.seat) && text(sec.text)) secrets.push({ seat: text(sec.seat), text: text(sec.text) });
 	}
+	// 🚧 Companions the story killed or revived this round (bench-L3, owner
+	// ★4 2026-11-10); absent in old answers, so \`[]\`.
+	function names(l) {
+		var o = [], r = Array.isArray(l) ? l : [];
+		for (var k = 0; k < r.length && o.length < 4; k++) if (typeof r[k] === "string" && text(r[k])) o.push(text(r[k]));
+		return o;
+	}
 	return {
 		deltas: deltas,
 		world: { rooms: roomsOf(w.rooms, 6), npcs: npcs, leads: hooks(w.leads, raw.roundSummary), goalProgress: text(w.goalProgress) || "none", notes: text(w.notes) },
 		clock: { minutes: clamp(Math.round(num(raw.clock && raw.clock.minutes, 10)), 0, 4320) },
-		narratorBrief: brief, roundSummary: text(raw.roundSummary), secrets: secrets
+		narratorBrief: brief, roundSummary: text(raw.roundSummary), secrets: secrets,
+		fallenCompanions: names(raw.fallenCompanions), revivedCompanions: names(raw.revivedCompanions)
 	};
 }
 `

@@ -17,7 +17,9 @@
 	import SpokenLine from "./SpokenLine.svelte"
 	import { isSpeaking, readAloudOf, spokenAudioItem, spokenOf, spokenPendingOf, spokenPlaybackOf } from "./spokenLine"
 	import { useWidgetContext } from "../context"
-	import { isDiceLine, staleOf } from "@serene-pub/core-catalog/conversation"
+	import { isDiceLine, staleOf, storyDayText, storyTimeText } from "@serene-pub/core-catalog/conversation"
+	import { formatStoryTimeAs, storyTimePartsOf } from "@serene-pub/core-catalog/session-state"
+	import { messageStoryTime, type StoryTimeSpelling } from "./sceneMarks"
 	import { untrack } from "svelte"
 	import { useConversation } from "./conversation.svelte"
 	import type { MessageV1, WidgetAction } from "@serene-pub/sdk/component"
@@ -32,12 +34,6 @@
 		msg: MessageV1
 		index: number
 		isLastMessage: boolean
-		/**
-		 * The scene this message belongs to, when it belongs to one — the log
-		 * reads it off its scene map. The row also carries the scene's colour
-		 * as `--sp-scene`, which the badge below inherits.
-		 */
-		sceneName?: string | null
 		/**
 		 * Folio (PLAN-core-widgets §3.7): the line is a paragraph of one
 		 * block of prose. Only its content is drawn — no avatar, identity
@@ -54,9 +50,11 @@
 		 * of 15" counted every channel's rows). Absent: every row the log holds.
 		 */
 		place?: { n: number; of: number }
+		/** 🚧 Dialogue box only: passed to the spoken line (`SpokenLine`'s `atReadingPlace`). Messages never sets it. */
+		atReadingPlace?: boolean
 	}
 
-	let { msg, index, isLastMessage, sceneName = null, folio = false, place }: Props = $props()
+	let { msg, index, isLastMessage, folio = false, place, atReadingPlace = false }: Props = $props()
 
 	const conv = useConversation()
 	const line = $derived(conv.line(msg.id))
@@ -161,6 +159,22 @@
 		displayName.trim().charAt(0).toUpperCase() || "?"
 	)
 	const isGreeting = $derived(!!msg.metadata?.isGreeting)
+
+	/** The narrator's own turn: `every` rounds when the host stamped it, else 0. */
+	const turnCauseEvery = $derived.by(() => {
+		const cause = msg.metadata?.turnCause
+		return cause?.via === "unprompted" && Number.isInteger(cause.every) && cause.every > 0
+			? cause.every
+			: 0
+	})
+	const causeText = $derived.by(() => {
+		const n = turnCauseEvery
+		if (n === 1) return "Narrator's turn (every round)"
+		const tens = n % 100
+		const suffix =
+			tens >= 11 && tens <= 13 ? "th" : ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th"
+		return `Narrator's turn (every ${n}${suffix} round)`
+	})
 	/**
 	 * 🚧 A **table line**: the table's own line — a Dungeon Crawler roll line
 	 * — said in no voice. Drawn as its content alone, as a folio paragraph
@@ -252,6 +266,7 @@
 			msg,
 			isLastMessage,
 			canControl: canRerun,
+			refOfMember: conv.refOfMember,
 			...verdictOf(listed)
 		})
 	})
@@ -308,24 +323,52 @@
 	const DAY_ONLY = /^\d{4}-\d{2}-\d{2}$/
 
 	/**
-	 * The clock beside the name, in the reader's own locale. `createdAt` is a
+	 * The line's real time, in the reader's own locale. `createdAt` is a
 	 * day-precision `date` column on this row (20 §5), so a value with no time
 	 * of day in it reads `updatedAt`, which is a timestamp.
 	 */
-	const messageTime = $derived.by(() => {
+	const realAt = $derived.by((): Date | null => {
 		const created: unknown = msg.createdAt
 		const stamp =
 			typeof created === "string" && DAY_ONLY.test(created)
 				? (msg.updatedAt ?? created)
 				: (created ?? msg.updatedAt)
-		if (!stamp) return ""
+		if (!stamp) return null
 		const at =
 			stamp instanceof Date ? stamp : new Date(stamp as string | number)
-		if (Number.isNaN(at.getTime())) return ""
-		return at.toLocaleTimeString([], {
-			hour: "numeric",
-			minute: "2-digit"
-		})
+		return Number.isNaN(at.getTime()) ? null : at
+	})
+
+	/**
+	 * 🚧 The line's time in the story, when it has one: the stamp the row was
+	 * written with, through the book's calendar (the dossier's
+	 * `storyCalendar`) and the copy's `timeFormat`. Null on an unstamped row,
+	 * which keeps its real time.
+	 */
+	const storyTime = $derived.by(() => {
+		const calendar = conv.dossier?.storyCalendar ?? null
+		const format = (widget?.current.settings.v1 as Record<string, unknown> | undefined)
+			?.timeFormat
+		const spell: StoryTimeSpelling = {
+			full: (t) => storyTimeText(t, calendar),
+			as: (t, f) => formatStoryTimeAs(storyTimePartsOf(t, calendar), f),
+			day: (t) => storyDayText(t, calendar)
+		}
+		return messageStoryTime(msg, spell, typeof format === "string" ? format : null)
+	})
+
+	/** The clock beside the name: the story's time, else the real one. */
+	const messageTime = $derived(
+		storyTime?.text ??
+			realAt?.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) ??
+			""
+	)
+
+	/** The hover: the story time with when it was written, else the full real time. */
+	const messageTimeTitle = $derived.by(() => {
+		const real = realAt?.toLocaleString([], { dateStyle: "medium", timeStyle: "short" })
+		if (storyTime) return real ? `${storyTime.full} · written ${real}` : storyTime.full
+		return real
 	})
 
 	/**
@@ -643,15 +686,31 @@
 					<span data-widget-part="messages.message-badge-text">Hidden from the story</span>
 				</span>
 			{/if}
-			{#if sceneName}
-				<!-- Colour comes from `--sp-scene` on the row this message
-				     sits in, so the badge and the pack's scene bar are the
-				     same colour by construction. -->
-				<span data-widget-part="messages.message-badge messages.message-badge-scene">
-					<sp-icon name="film" size="14"></sp-icon>
-					<span data-widget-part="messages.message-badge-label">In scene:</span>
-					<span data-widget-part="messages.message-badge-text">{sceneName}</span>
-				</span>
+			{#if turnCauseEvery}
+				<!-- The narrator's own turn (P1): the line says why it was written
+				     unasked. The press opens the turn picker, which holds the
+				     setting — and is the owner's alone (owner 2026-11-04: "the press
+				     is theirs only if they may change the setting"); a member sees
+				     the words, not a button. -->
+				{#if conv.dossier?.isOwner}
+					<button
+						type="button"
+						data-widget-part="messages.message-badge messages.message-badge-cause"
+						title={`The narrator takes a turn of its own ${causeText.replace(/^Narrator's turn \(|\)$/g, "")}; press to change how often.`}
+						onclick={() => void conv.request("pick-turn", {})}
+					>
+						<sp-icon name="book-open-text" size="14"></sp-icon>
+						<span data-widget-part="messages.message-badge-text">{causeText}</span>
+					</button>
+				{:else}
+					<span
+						data-widget-part="messages.message-badge messages.message-badge-cause"
+						title={`The narrator takes a turn of its own ${causeText.replace(/^Narrator's turn \(|\)$/g, "")}; the session's owner changes how often.`}
+					>
+						<sp-icon name="book-open-text" size="14"></sp-icon>
+						<span data-widget-part="messages.message-badge-text">{causeText}</span>
+					</span>
+				{/if}
 			{/if}
 			<!-- The line's vectors against the active embedding model: nothing
 			     at all while that is hidden (the common case); which it is
@@ -717,7 +776,11 @@
 			{@render editButtons()}
 		{:else}
 			{#if messageTime}
-				<span data-widget-part="messages.message-time">{messageTime}</span>
+				<span
+					data-widget-part="messages.message-time"
+					data-story-time={storyTime ? "" : undefined}
+					title={messageTimeTitle}>{messageTime}</span
+				>
 			{/if}
 
 			{#if showSwipes}
@@ -1202,6 +1265,7 @@
 			menuAt={conv.speech.menuAt(msg.id)}
 			onPlayback={(paused) => conv.speech.heard(msg.id, "line", paused)}
 			{isLastMessage}
+			{atReadingPlace}
 			readAloud={readAloudOf(conv.dossier)}
 			spokenPlayback={spokenPlaybackOf(conv.dossier)}
 			speakerFace={line.speaker.face}

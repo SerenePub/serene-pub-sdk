@@ -290,6 +290,12 @@ export interface FunctionProps {
 	rollsDice?: true
 	/** 🚧 The function this one was forked from, by id (`forkFunction`). */
 	forkedFrom?: FunctionId
+	/**
+	 * 🚧 Which time the function counts on — the story clock (`'story'`), real
+	 * elapsed time (`'real'`), or both; left out, it counts on neither. Ruleset
+	 * fit reads it (`rulesetFit`). Content, inside the hash — not display text.
+	 */
+	countsTime?: 'story' | 'real' | 'both'
 }
 
 /** 🚧 A declared function module: its props and its id. @experimental */
@@ -504,7 +510,7 @@ function schemaFindings(schema: unknown, at: string, reason: string): string[] {
  * `missing-prose` · `bad-function-binding` · `bad-phase` · `bad-schema` ·
  * `bad-form` · `bad-body` · `body-without-phases` · `phases-without-body` ·
  * `bad-emits` · `bad-invokable` · `bad-adds` (with the attribute, outcome
- * and zone type reasons inside) · `bad-tags` · `bad-chance` · `bad-fork`.
+ * and zone type reasons inside) · `bad-tags` · `bad-chance` · `bad-fork` · `bad-counts-time`.
  * @experimental
  */
 export function functionFindings(id: string, props: FunctionProps): string[] {
@@ -607,6 +613,8 @@ export function functionFindings(id: string, props: FunctionProps): string[] {
 	if (props.rollsDice === true && props.chance !== true) out.push(finding('bad-chance', `${at} rolls dice and does not say chance. Dice are chance — say chance: true too.`))
 	if (props.forkedFrom !== undefined && !isFunctionId(props.forkedFrom))
 		out.push(finding('bad-fork', `${at}.forkedFrom is the id of the function it was forked from — 'core:function/die-target@1'.`))
+	if (props.countsTime !== undefined && props.countsTime !== 'story' && props.countsTime !== 'real' && props.countsTime !== 'both')
+		out.push(finding('bad-counts-time', `${at}.countsTime is 'story', 'real' or 'both', or left out — not ${JSON.stringify(props.countsTime)}.`))
 	return out
 }
 

@@ -94,7 +94,15 @@ const slot = (key: string, extra: Record<string, unknown> = {}) => ({
 
 /** A Dungeon Crawler sheet: two seats, each with weapons and features; old string rows beside them. */
 const sheet = (
-	over: { annMine?: boolean; strangerMine?: boolean; strangerEditable?: boolean; offers?: SessionStateV1['offers'] } = {},
+	over: {
+		annMine?: boolean
+		strangerMine?: boolean
+		strangerEditable?: boolean
+		/** 🚧 (lane ed, plan §25) The host's `handLocked`: per slot id, why the viewer may not change it by hand. */
+		annHandLocked?: Record<string, string>
+		strangerHandLocked?: Record<string, string>
+		offers?: SessionStateV1['offers']
+	} = {},
 ): SessionStateV1 =>
 	({
 		sessionId: 1,
@@ -127,6 +135,7 @@ const sheet = (
 				label: 'Ann',
 				seat: true,
 				...(over.annMine ? { mine: true } : {}),
+				...(over.annHandLocked ? { handLocked: over.annHandLocked } : {}),
 				configs: {
 					[id('abilities')]: {},
 					[id('inventory')]: {},
@@ -144,6 +153,7 @@ const sheet = (
 				seat: true,
 				...(over.strangerMine ? { mine: true } : {}),
 				...(over.strangerEditable === false ? { editable: false } : {}),
+				...(over.strangerHandLocked ? { handLocked: over.strangerHandLocked } : {}),
 				configs: { [id('weapons')]: { repertoire: WEAPONS }, [id('consumables')]: { repertoire: `${VIS}#consumables` } },
 				repertoires: { [WEAPONS]: REPERTOIRES[WEAPONS], [`${VIS}#consumables`]: REPERTOIRES[`${VIS}#consumables`] },
 			},
@@ -328,6 +338,35 @@ describe('Give to… (session-state, owner ruling ★4)', () => {
 		)
 	})
 
+	// 🚧 Moved 2026-11-05 (lane ed, plan §25): moves are their own permission. A drop is the
+	// giver's side only, so a place is always a direct target; a person whose slot is
+	// hand-locked for the viewer is an offer; and a hand-locked giver still gives.
+	test('a place is always a direct target; a hand-locked receiver is an offer; a hand-locked giver still gives', () => {
+		const locked = 'You may not change this by hand in this session.'
+		const state = sheet({ annMine: true, strangerHandLocked: { [id('consumables')]: locked }, annHandLocked: { [id('consumables')]: locked } })
+		state.owners.push({
+			key: 'session_location:5',
+			kind: 'session_location',
+			id: 5,
+			label: 'Cellar',
+			editable: false,
+			configs: { [id('consumables')]: { lock: 'people' } },
+		} as never)
+		const ann = state.owners.find((o) => o.key === 'player_seat:1')!
+		assert.deepEqual(
+			giveTargets(state, ann, id('consumables')).map((t) => [t.owner.label, t.direct, t.place]),
+			[
+				['Stranger', false, false],
+				['Cellar', true, true],
+			],
+		)
+		// Not the slot it is hand-locked on: the other stat's receiver is direct again.
+		assert.deepEqual(
+			giveTargets(state, ann, id('weapons')).map((t) => [t.owner.label, t.direct]),
+			[['Stranger', true]],
+		)
+	})
+
 	test('offers are read per sheet: offered to it, and offered from it', () => {
 		const offer = {
 			proposalId: 4,
@@ -493,8 +532,11 @@ describe("core's Stats component on a ruleset's sheet", { timeout: 180_000 }, ()
 		}
 	})
 
-	test('🚧 Honour turned on mid-session: the open piece gains Edit, Give to… and Remove at the next push (Q1-7)', async () => {
-		const view = await mount(sheet({ strangerMine: true, strangerEditable: false }), { owners: 'mine' })
+	// Moved 2026-11-05 (lane ed, plan §25): was "Honour turned on mid-session", driven by the
+	// owner's `editable`; the same flow is now a hand lock lifted — the host's `handLocked`.
+	test('🚧 a hand lock lifted mid-session: the open piece gains Edit and Remove at the next push (Q1-7)', async () => {
+		const locked = 'Players do not edit sheets by hand in this session.'
+		const view = await mount(sheet({ strangerMine: true, strangerHandLocked: { [id('weapons')]: locked } }), { owners: 'mine' })
 		try {
 			const weapons = `[data-slot-id="${id('weapons')}"]`
 			await view.dispatch(`${weapons} [data-widget-part~="piece-card.detail"]`, 'open-change', { open: true })
@@ -503,6 +545,46 @@ describe("core's Stats component on a ruleset's sheet", { timeout: 180_000 }, ()
 			await view.dispatch(`${weapons} [data-widget-part~="piece-card.detail"]`, 'open-change', { open: true })
 			assert.equal(view.queryAll(`${weapons} [data-widget-part~="piece-card.edit"]`).length, 1)
 			assert.equal(view.queryAll(`${weapons} [data-widget-part~="piece-card.remove"]`).length, 1)
+		} finally {
+			await view.unmount()
+		}
+	})
+
+	// 🚧 (lane ed, plan §25) A hand-locked stat: the lock, titled with the host's sentence (the cause),
+	// no Edit, no Remove, no Add; its pieces still read.
+	test('a hand-locked stat shows its lock with the host\'s sentence and no edit controls', async () => {
+		const locked = 'Players do not edit sheets by hand in this session.'
+		const view = await mount(sheet({ strangerMine: true, strangerHandLocked: { [id('weapons')]: locked } }), { owners: 'mine' })
+		try {
+			const weapons = `[data-slot-id="${id('weapons')}"]`
+			const lock = view.query(`${weapons} [data-widget-part~="stat-slot.lock"]`)
+			assert.equal(lock?.getAttribute('title'), locked)
+			assert.equal(view.query(weapons)?.hasAttribute('data-locked'), true)
+			assert.equal(view.queryAll(`${weapons} [data-widget-part~="piece-card.add"]`).length, 0)
+			await view.dispatch(`${weapons} [data-widget-part~="piece-card.detail"]`, 'open-change', { open: true })
+			assert.equal(view.queryAll(`${weapons} [data-widget-part~="piece-card.edit"]`).length, 0)
+			assert.equal(view.queryAll(`${weapons} [data-widget-part~="piece-card.remove"]`).length, 0)
+		} finally {
+			await view.unmount()
+		}
+	})
+
+	// 🚧 (lane ed, plan §25) Moves are their own permission: a hand-locked inventory still hands its items over.
+	test('a hand-locked inventory still offers Give to…, without Edit or Remove', async () => {
+		const locked = 'Players do not edit sheets by hand in this session.'
+		const view = await mount(sheet({ annMine: true, annHandLocked: { [id('consumables')]: locked } }), { owners: 'mine' })
+		try {
+			const consumables = `[data-slot-id="${id('consumables')}"]`
+			assert.equal(view.query(`${consumables} [data-widget-part~="stat-slot.lock"]`)?.getAttribute('title'), locked)
+			await view.dispatch(`${consumables} [data-widget-part~="piece-card.detail"]`, 'open-change', { open: true })
+			const panel = `${consumables} [data-widget-part~="piece-card.detail-panel"]`
+			assert.equal(view.queryAll(`${panel} [data-widget-part~="piece-card.edit"]`).length, 0)
+			assert.equal(view.queryAll(`${panel} [data-widget-part~="piece-card.remove"]`).length, 0)
+			assert.equal(view.queryAll(`${panel} [data-widget-part~="piece-card.give"]`).length, 1)
+			const targets = view.queryAll(`${panel} [data-widget-part~="piece-card.give-target"]`).map((t) => [t.getAttribute('data-owner-key'), t.getAttribute('data-give')])
+			assert.deepEqual(targets, [['player_seat:2', 'direct']])
+			await view.dispatch(`${panel} [data-widget-part~="piece-card.give"]`, 'select', { value: 'give:player_seat:2' })
+			assert.ok(view.requested.find((r) => r.kind === 'give-piece'), 'give-piece was asked')
 		} finally {
 			await view.unmount()
 		}

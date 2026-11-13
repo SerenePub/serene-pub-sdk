@@ -15,6 +15,12 @@
 	 * another player's sheet, a derived or retired stat, a locked one — is
 	 * drawn as plain words (spans, never disabled buttons), its bar a meter.
 	 * A locked slot (`config.lock`, `slotLocked`) also shows a small lock.
+	 * 🚧 So does a **hand-locked** one (`handLocked`, plan §25): the host's
+	 * sentence for why this viewer may not change it by hand, shown as the
+	 * lock's title in place of "Locked: only the story changes this" (which
+	 * stays for a slot lock with no sentence). A hand-locked list of pieces
+	 * still hands its items over (**Give to…**): moves are their own
+	 * permission.
 	 *
 	 * Every edit here is the USER's, which is the one writer with authority: it
 	 * applies at once (`set-attribute-value`) rather than waiting at the review
@@ -104,6 +110,8 @@
 		timeFormat?: string | null
 		/** 🚧 Not the viewer's to write (another player's seat): drawn, never edited. */
 		readonly?: boolean
+		/** 🚧 The host's sentence for why this slot is not the viewer's to change by hand here (`handLockOf`): drawn with a lock and no edit controls. */
+		handLocked?: string
 		/** 🚧 The repertoires in force, for a list of pieces (`PieceList`). */
 		repertoires?: SessionStateOwnerV1["repertoires"]
 		/** 🚧 Where a piece of this list may be given (`giveTargets`). */
@@ -122,6 +130,7 @@
 		trail,
 		timeFormat = null,
 		readonly = false,
+		handLocked,
 		repertoires,
 		targets,
 		ongive
@@ -158,7 +167,7 @@
 	let holdsPieces = $derived(kind === "list" && slotHoldsPieces(config))
 	let locked = $derived(slotLocked(config))
 	let canPick = $derived(!!findEntries && slotTakesLoreRefs(config))
-	let writable = $derived(!readonly && !locked && slotWritable(slot))
+	let writable = $derived(!readonly && !locked && !handLocked && slotWritable(slot))
 	let shown = $derived(shownValueText(slot, value, t, null, timeFormat))
 	/**
 	 * 🚧 A list of word items — a thing and what it is, "Chain shirt — A shirt
@@ -305,7 +314,7 @@
 	data-shown-as={drawing}
 	data-retired={slot.retired ? "" : undefined}
 	data-stacked={holdsPieces && density === "full" ? "" : undefined}
-	data-locked={locked ? "" : undefined}
+	data-locked={locked || handLocked ? "" : undefined}
 >
 	<span data-widget-part="stat-slot.label label" title={slot.description ?? slot.label}>
 		{slot.label}
@@ -317,7 +326,11 @@
 		{:else if kind === "derived"}
 			<sp-icon name="sigma" size="10"></sp-icon>
 		{/if}
-		{#if locked}
+		{#if handLocked}
+			<span data-widget-part="stat-slot.lock" title={handLocked}>
+				<sp-icon name="lock" size="10" label={handLocked}></sp-icon>
+			</span>
+		{:else if locked}
 			<span data-widget-part="stat-slot.lock" title={t("Locked: only the story changes this")}>
 				<sp-icon name="lock" size="10" label={t("locked")}></sp-icon>
 			</span>
@@ -331,12 +344,12 @@
 				{config}
 				{value}
 				{t}
-				writable={!readonly && slotWritable(slot)}
+				writable={!readonly && !handLocked && slotWritable(slot)}
 				{locked}
 				{density}
 				onset={write}
 				{repertoires}
-				{targets}
+				targets={!readonly && slotWritable(slot) ? targets : []}
 				{ongive}
 			/>
 		{:else if !writable}

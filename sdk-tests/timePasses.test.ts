@@ -107,19 +107,15 @@ describe('Time passes… — every genre, no model', () => {
 	})
 })
 
-describe("Story's reply tick (the roleplay Chat's)", () => {
-	test('a session setting, off by default (By 0), gating Advance story clock behind a junction', () => {
+describe("Story's reply moves no clock", () => {
+	// The reply tick was removed on 2026-11-11: a round's move is the round tick's.
+	test('no clock step and no Advance story clock on the reply', () => {
 		const doc = storyRespondSpec() as any
-		const tick = doc.nodes.find((n: any) => n.key === 'tick')
-		assert.equal(tick.definitionId, 'core:task/clock-step')
-		assert.equal(tick.expose?.session, true)
-		assert.deepEqual(tick.expose?.label, 'Each reply advances the clock by')
-		assert.ok(doc.nodes.some((n: any) => n.key === 'clock.moves.advance' && n.definitionId === 'core:outlet/advance-story-clock' && n.clauseId))
-		const by = (getDefinition('core:task/clock-step@1')!.slots as any).params.schema.by
-		assert.equal(by.default, 0, 'off unless the session sets it')
-		// 🚧 No lock (PLAN-layering D3, 2026-10-20): Story's defaults register it on message-respond.
+		assert.ok(!doc.nodes.some((n: any) => n.key === 'tick'))
+		assert.ok(!doc.nodes.some((n: any) => n.definitionId === 'core:outlet/advance-story-clock'))
 		assert.equal(doc.input, undefined)
 		assert.deepEqual(doc.suits, ['core:event/message-respond@1'])
 		void storyGenre
+		void getDefinition
 	})
 })

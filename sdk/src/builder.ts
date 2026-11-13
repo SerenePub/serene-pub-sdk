@@ -23,9 +23,10 @@ import {
 	type PortDecl,
 	type OutPortsOf,
 	type Descriptor,
+	getDefinition,
 } from './descriptors.js'
 import { makeScope, ITEM, type Scope } from './scope.js'
-import { isDataRef, isSlotRef, slot, type DataRef } from './refs.js'
+import { collectDataRefs, isDataRef, isSlotRef, slot, type DataRef } from './refs.js'
 import type { LoadoutId, LoadoutRef, Prefers } from './loadouts.js'
 import type { SessionShape } from './descriptors.js'
 import type { TemplateValue } from './engines.js'
@@ -223,10 +224,13 @@ export interface BuiltNode {
 	 *    its legend among Advanced settings. Wins over the step status and the
 	 *    node definition's name. Any node may carry one.
 	 *  · `purpose` — **the step purpose**: one or two plain sentences under
-	 *    that group's heading, saying what this model call is for. Only on a
-	 *    model call — an oracle whose definition declares a `connection` slot
-	 *    (`isModelCall`); no other step heads a group, so a purpose anywhere
-	 *    else would never be read.
+	 *    that group's heading, saying what this model call is for. On a spec
+	 *    that calls no model at all it may sit on any step (the routines list
+	 *    prints the first one a routine's steps declare); on a spec that calls
+	 *    a model — a node whose definition declares a `connection` slot
+	 *    (`isModelCall`), or one a node's `expose.swaps` lists — only on a model
+	 *    call, because no other step heads a group. `build()` and `validate()`
+	 *    refuse the rest.
 	 *
 	 * Display text, hashed with the document like `status`: a spec that
 	 * sets neither hashes as it always did.
@@ -501,7 +505,7 @@ export interface NodeOpts {
 		status?: I18n
 		/** The step label: this step's name in settings — see `BuiltNode.expose`. */
 		label?: I18n
-		/** The step purpose: what this model call is for, under its settings heading — see `BuiltNode.expose`. */
+		/** The step purpose: what this step is for, under its settings heading — see `BuiltNode.expose` for where it is allowed. */
 		purpose?: I18n
 		/**
 		 * 🚧 **The prompt choice's reach** (R54, 2026-10-21): `'owner'` offers
@@ -584,8 +588,6 @@ function exposeOf(
 		const bad = i18nFindings(expose[field], `node '${key}': expose.${field}`)
 		if (bad.length) throw new Error(bad[0])
 	}
-	if (expose.purpose !== undefined && !isModelCall(pinned))
-		throw new Error(stepPurposeRefusal(key, pinned.id))
 	if (expose.promptReach !== undefined) {
 		if (expose.promptReach !== 'owner')
 			throw new Error(`node '${key}': expose.promptReach is 'owner' or absent — an administrator's choice is the default`)
@@ -622,7 +624,24 @@ export function isModelCall(def: { kind: string; slots?: Readonly<Record<string,
 	return def.kind === 'oracle' && Object.values(def.slots ?? {}).some((s) => s.kind === 'connection')
 }
 
-/** The one sentence a misplaced step purpose is refused with, at construction and at `validate()`. @internal */
+/**
+ * Whether a spec **calls a model at all**: any node whose definition `isModelCall`, or any definition
+ * a node lists in `expose.swaps` that does (a swap can seat a model call). A definition the registry
+ * does not know counts as none. Decides where a step purpose is allowed: on any step of a spec that
+ * calls no model, and only on a model call in one that does.
+ * @internal
+ */
+export function specCallsModel(
+	nodes: readonly { definitionId: string; definitionVersion: number; expose?: { swaps?: readonly string[] } }[],
+): boolean {
+	const calls = (id: string) => {
+		const def = getDefinition(id)
+		return def !== undefined && isModelCall(def)
+	}
+	return nodes.some((n) => calls(`${n.definitionId}@${n.definitionVersion}`) || (n.expose?.swaps ?? []).some(calls))
+}
+
+/** The one sentence a misplaced step purpose is refused with, at `build()` and at `validate()`. @internal */
 export const stepPurposeRefusal = (key: string, definitionId: string): string =>
 	`node '${key}': expose.purpose says what a model call is for, but ${definitionId} calls no model — ` +
 	`put the purpose on the oracle that does, or give this step a label instead`
@@ -1796,6 +1815,14 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}, A extends 
 	}
 
 	build(): BuiltSpecWithActions<A> {
+		// A step purpose is allowed on any step of a spec that calls no model, and only on a model
+		// call in one that does: a rule over the whole spec, so it is checked here, not per node.
+		if (this.spec.nodes.some((n) => n.expose?.purpose !== undefined) && specCallsModel(this.spec.nodes))
+			for (const n of this.spec.nodes) {
+				if (n.expose?.purpose === undefined) continue
+				const def = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
+				if (def && !isModelCall(def)) throw new Error(stepPurposeRefusal(n.key, def.id))
+			}
 		// 🚧 A pipeline mounted by registrations (the suits form) offers its
 		// actions where a registration includes them, so they carry no genre
 		// (D3). A spec that said nothing at its inlet still needs the lock.
@@ -1807,6 +1834,7 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}, A extends 
 					`register the action (register(spec.actions.${orphan.key}, spec)) and declare the inlet with ` +
 					`{ suits: [ … ] }, or ⏳ lock it: .inlet(key, node, { genre, event })`,
 			)
+		supplyPromptStepWiring(this.spec)
 		// The handles, beside the document and never in it: non-enumerable,
 		// so nothing that serializes, hashes or compares a spec sees them.
 		Object.defineProperty(this.spec, 'actions', {
@@ -1816,6 +1844,30 @@ export class SpecBuilder<Nodes extends Record<string, PortDecl> = {}, A extends 
 			writable: false,
 		})
 		return this.spec as BuiltSpecWithActions<A>
+	}
+}
+
+/**
+ * Writes the wiring an `assemble@2` that feeds a model call leaves out:
+ * `template` becomes `slot.template()` and `connection` becomes
+ * `slot.connectionOf(<the model call it feeds>)`. A key the spec states is
+ * kept; only `undefined` ones are filled, so a second call changes nothing.
+ * Mirrors `validate()`'s `assemble wiring` law, over the built nodes (no
+ * edges yet): the model call is the first oracle, in node order, whose config
+ * reads this assemble's output and which `isModelCall`.
+ */
+function supplyPromptStepWiring(spec: BuiltSpec): void {
+	for (const assemble of spec.nodes) {
+		if (assemble.definitionId !== 'core:task/assemble' || assemble.definitionVersion !== 2) continue
+		const modelCall = spec.nodes.find((n) => {
+			if (n.kind !== 'oracle') return false
+			if (!collectDataRefs(n.config).some(({ ref }) => ref.node === assemble.key)) return false
+			const d = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
+			return d !== undefined && isModelCall(d)
+		})
+		if (!modelCall) continue
+		if (assemble.config.template === undefined) assemble.config.template = slot.template()
+		if (assemble.config.connection === undefined) assemble.config.connection = slot.connectionOf(modelCall.key)
 	}
 }
 

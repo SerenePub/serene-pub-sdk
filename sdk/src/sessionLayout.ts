@@ -7,28 +7,27 @@
  *
  * ## The shape in one paragraph
  *
- * Its **arrangement** is `panels` ({@link PanelLayoutV1}): three zones of
- * **panels**, a panel being a box that holds widgets as tabs — the thing a
- * person drags, pins and sees. A side zone is panels top to bottom, each
- * docked or in the rail; the middle is the `primary` panel (the conversation's,
- * which fills) with panels `above` and `below` it. When `panels` is present it
- * is the whole truth.
+ * Its **arrangement** is `panels` ({@link PanelLayoutV2}): three plain
+ * stacks — `left`, `middle`, `right` — of **panels**, a panel being a box
+ * that holds widgets as tabs, the thing a person drags and sees. There is no
+ * pin: every panel is open. A panel may state a `priority` (`low` gives way
+ * first when a zone runs short; absent is its open widget's declaration), and
+ * the layout's look — `backing`, `opacity`, `gap`, `behind`, `behindDim` — sits inside `panels` too.
+ * When `panels` is present it is the whole truth.
  *
- * ⏳ Before panels, the arrangement was three slots, three views of one
- * placement — `zoneLayout` (the side zones' membership, pin and width
- * ladder), `widgetGrid` (each widget's zone, order, size and anchors) and
- * `arrangedGrid` (per zone, whole cells and each widget's box). 0.6 is in
- * users' hands and plugin manifests carry them, so they are still typed and
- * still read — by {@link panelsFromSlots} only — and are dropped at the 0.7
- * squash, with it. `zoneLayout`'s width `rules` are the one part still read
- * directly: they are a side's width ladder ({@link zoneRungAt}), not where
- * anything is placed.
+ * ⏳ Version 1 panels (the middle as `above` / `primary` / `below`, a pin per
+ * panel) and, before them, three slots — `zoneLayout`, `widgetGrid` and
+ * `arrangedGrid`, three views of one placement — are still typed and still
+ * read: 0.6 is in users' hands and plugin manifests carry them. The old slots
+ * become version 1 by {@link panelsFromSlots}, and version 1 becomes version 2
+ * by {@link panelsV2Of} — the ONE converter every reader reuses. The slots
+ * are dropped at the 0.7 squash, with `panelsFromSlots`.
  *
  * What the screen DRAWS is one reading: {@link resolveDrawn} (→
- * {@link DrawnLayout}) reads {@link panelsOf}, drops retired widgets, gives
- * every panel one pin ({@link pinnedOf}: absent means docked) and walks each
- * side's width ladder ({@link zoneRungAt}). The id readers that ask "is it
- * drawn" ({@link drawnWidgetIds}, {@link primaryPlaced}) are that answer.
+ * {@link DrawnLayout}) reads {@link panelsOf}, drops retired widgets, and
+ * gives every panel a height and a priority (its own, else its widget's
+ * declaration). The id readers that ask "is it drawn"
+ * ({@link drawnWidgetIds}, {@link primaryPlaced}) are that answer.
  *
  * A named layout adds `widgetSettings` and `widgetStyles` (per-instance values
  * and style pins), so one blob is the portable layout. A session keeps those
@@ -45,14 +44,15 @@
  * everything about the widget (its declaration, its style rows) is read
  * through {@link widgetOfInstance}.
  *
- * ## The one normaliser, and what is deliberately not here
+ * ## The converters, and what is deliberately not here
  *
- * The ONE normaliser the SDK owns is {@link panelsFromSlots}: the old slots
- * read as panels. It is here rather than in the app because four readers need
- * the same answer — the packager's compiler, plugin manifests in the wild
+ * The SDK owns two converters, and no other: {@link panelsFromSlots} (the old
+ * slots read as version 1 panels) and {@link panelsV2Of} (version 1, or the
+ * slots, read as version 2). They are here rather than in the app because
+ * four readers need the same answer — the packager's compiler, plugin manifests in the wild
  * (which ship the old slots and keep working with no manifest change), the
  * goldens, and the app's boot pass that writes `panels` onto stored rows — and
- * two converters would be two answers. Every other normaliser, the renderer
+ * two answers to one conversion would be a bug. Every other normaliser, the renderer
  * and all measurement are the app's, which reads a stored blob it did not
  * write and must repair rather than refuse. This module types the format,
  * reads the ids out of it, and checks a layout a package SHIPS
@@ -140,9 +140,11 @@ export function isWidgetInstanceId(id: unknown): id is string {
  * an arrangement may still carry one — all three are stored verbatim and
  * nothing rewrites them — so every reader drops it.
  *
- * `composer` is one because the conversation is ONE widget: the log and the
- * field are one thing to arrange, and the field's shape is a setting on
- * `messages` rather than a widget beside it.
+ * `composer` is NOT one: it is a widget again — the owner's R8, 2026-11-05,
+ * "Split the messages, composer and activity status/turn select into three
+ * widgets", which supersedes NOMENCLATURE §23's 2026-09-16 "composer (the
+ * widget) — Merged into messages". Only the ⏳ old slots still never draw
+ * one ({@link LEGACY_SLOT_DROPPED}).
  *
  * `inventory` is one because core's Inventory widget was removed (2026-09-25)
  * for now, with no replacement. Adventure and Lair shipped it, so layouts and
@@ -154,7 +156,28 @@ export function isWidgetInstanceId(id: unknown): id is string {
  * @experimental
  * @ruling R79
  */
-export const RETIRED_WIDGET_IDS: ReadonlySet<string> = new Set(['composer', 'inventory'])
+export const RETIRED_WIDGET_IDS: ReadonlySet<string> = new Set(['inventory'])
+
+/**
+ * ⏳ Widget ids the OLD-SLOT path drops, so a slot-era blob never revives a
+ * composer: before the split (2026-11-05) the field was `messages`' own, and
+ * a slot that names `composer` meant nothing. Read ONLY by {@link panelsFromSlots}'s
+ * conversion — nowhere else; a `panels` layout places `composer` freely.
+ * @experimental
+ */
+export const LEGACY_SLOT_DROPPED: ReadonlySet<string> = new Set(['composer'])
+
+/**
+ * 🚧 The ids of the two widgets the conversation splits into, for a copy of
+ * `messages`: `messages` → `composer`, `turn-line`; `messages#x` →
+ * `composer#x`, `turn-line#x`. Pure.
+ * @experimental
+ */
+export function conversationSplitIds(instanceId: string): { composer: string; turnLine: string } {
+	const name = instanceNameOf(instanceId)
+	const at = name === null ? '' : `${INSTANCE_NAME_SEPARATOR}${name}`
+	return { composer: `composer${at}`, turnLine: `turn-line${at}` }
+}
 
 // ── Widget id aliases ───────────────────────────────────────────────────────
 
@@ -450,6 +473,7 @@ export interface PanelV1 {
 	/**
 	 * ABSENT MEANS DOCKED ({@link pinnedOf}); `false` is in the rail, and the
 	 * only value written. Refused on a middle panel: the middle never pins.
+	 * @deprecated ⏳ removed at 0.7 (owner's call) — version 2 has no pin.
 	 */
 	pinned?: false
 	/** A side or strip panel's height; absent is `fill`. */
@@ -465,6 +489,7 @@ export type PanelZoneV1 = PanelV1[]
  * The middle: the `primary` panel (it fills), with panels `above` and `below`
  * it, each top to bottom.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — version 2's middle is one list.
  */
 export interface PanelMiddleV1 {
 	above: PanelV1[]
@@ -490,13 +515,110 @@ export interface PanelLayoutV1 {
 }
 
 /**
+ * 🚧 How much a panel claims when a zone runs short: `low` gives way first,
+ * then `normal`; `high` last.
+ * @experimental
+ */
+export type PanelPriority = 'high' | 'normal' | 'low'
+
+/**
+ * 🚧 What a panel is backed by: a `card`, `glass` (translucent), or `none`.
+ * @experimental
+ */
+export type PanelBacking = 'card' | 'glass' | 'none'
+
+/**
+ * 🚧 The space between panels in a zone.
+ * @experimental
+ */
+export type PanelGap = 'tight' | 'comfortable' | 'spacious'
+
+/**
+ * 🚧 A {@link PanelGap} in px.
+ * @experimental
+ */
+export const PANEL_GAP_PX: Readonly<Record<PanelGap, number>> = Object.freeze({ tight: 4, comfortable: 12, spacious: 24 })
+
+/**
+ * 🚧 The layout's look: what backs a panel, how opaque, and the gap between
+ * panels.
+ * @experimental
+ */
+export interface PanelLook {
+	backing: PanelBacking
+	/** Percent, 0–100. */
+	opacity: number
+	gap: PanelGap
+	/** 🚧 What shows behind the panels: the person's own background (absent, `'background'`) or the session's backdrop. */
+	behind?: 'background' | 'backdrop'
+	/** 🚧 Percent, 0–100, darkening the backdrop behind the panels; absent is 0. */
+	behindDim?: number
+}
+
+/**
+ * 🚧 The look a layout that states none has.
+ * @experimental
+ */
+export const DEFAULT_PANEL_LOOK: Readonly<PanelLook> = Object.freeze({ backing: 'card', opacity: 100, gap: 'comfortable', behind: 'background', behindDim: 0 })
+
+/**
+ * 🚧 A **panel** in version 2: a box in a zone that holds widgets as tabs.
+ * There is no pin — every panel is open.
+ * @experimental
+ */
+export interface PanelV2 {
+	/** Stable within one layout; `p` + a counter. Never an instance id. */
+	key: string
+	/** Widget instance ids, in tab order. */
+	tabs: string[]
+	/** The tab last shown; absent is `tabs[0]`. */
+	open?: string
+	/** The panel's height; absent is the open tab's declaration (`WidgetDecl.panel.height`), else `fill`. */
+	height?: PanelHeightV1
+	/**
+	 * Absent = the open tab's widget declaration (`WidgetDecl.panel.priority`),
+	 * else `'normal'`. When a zone runs short, `low` gives way first, then
+	 * `normal`.
+	 */
+	priority?: PanelPriority
+	/** A person's name for the panel, shown only when it holds two or more tabs. */
+	title?: string
+}
+
+/**
+ * 🚧 The `panels` slot in version 2 — the arrangement: three plain stacks of
+ * panels, top to bottom, no pin, and the layout's look beside them. The
+ * middle is never empty. `opacity` is a percent, 0–100; an absent look value
+ * is {@link DEFAULT_PANEL_LOOK}'s.
+ * @experimental
+ */
+export interface PanelLayoutV2 {
+	version: 2
+	left: PanelV2[]
+	middle: PanelV2[]
+	right: PanelV2[]
+	backing?: PanelBacking
+	opacity?: number
+	gap?: PanelGap
+	/** 🚧 What shows behind the panels: the person's own background (absent, `'background'`) or the session's backdrop. */
+	behind?: 'background' | 'backdrop'
+	/** 🚧 Percent, 0–100, darkening the backdrop behind the panels; absent is 0. */
+	behindDim?: number
+}
+
+/**
  * The **session layout**. Every slot is optional: a layout says what it
  * arranges and nothing else.
  * @experimental
  */
 export interface SessionLayoutV1 {
-	/** The arrangement ({@link PanelLayoutV1}). When present it is the whole truth. */
-	panels?: PanelLayoutV1
+	/**
+	 * The arrangement. When present it is the whole truth. Version 2
+	 * ({@link PanelLayoutV2}) is what is written; version 1
+	 * ({@link PanelLayoutV1}) stays readable, converted on read by
+	 * {@link panelsV2Of}.
+	 */
+	panels?: PanelLayoutV1 | PanelLayoutV2
 	/** ⏳ Read only by {@link panelsFromSlots} (and its `rules`, a side's width ladder); dropped at the 0.7 squash. */
 	zoneLayout?: ZoneLayoutV1
 	/** ⏳ Read only by {@link panelsFromSlots}; dropped at the 0.7 squash. */
@@ -588,6 +710,10 @@ function slotWidgetIds(layout: SessionLayoutV1): string[] {
 /** Is this instance a copy of a retired widget? No reader draws one. */
 const retired = (instanceId: string): boolean => RETIRED_WIDGET_IDS.has(widgetOfInstance(instanceId))
 
+/** Does the OLD-SLOT path drop this instance — retired, or a {@link LEGACY_SLOT_DROPPED} widget? Read only by `convertSlots`. */
+const slotDropped = (instanceId: string): boolean =>
+	retired(instanceId) || LEGACY_SLOT_DROPPED.has(widgetOfInstance(instanceId))
+
 // ── panelsFromSlots: the old slots, read as panels ──────────────────────────
 
 /** What {@link panelsFromSlots} may be told beyond the layout. @experimental */
@@ -673,7 +799,7 @@ function convertSlots(layout: unknown, opts: PanelsFromSlotsOptions = {}): { pan
 	const seen = new Set<string>()
 	/** Admit an instance once, in the old reading order — middle, left, right, strips — never a retired one. */
 	const admit = (id: string): boolean => {
-		if (retired(id) || seen.has(id)) return false
+		if (slotDropped(id) || seen.has(id)) return false
 		seen.add(id)
 		return true
 	}
@@ -717,7 +843,7 @@ function convertSlots(layout: unknown, opts: PanelsFromSlotsOptions = {}): { pan
 	const side = (edge: 'left' | 'right'): PanelDraft[] => {
 		const frame = frameIn(doc, edge)
 		let items: SlotItem[]
-		if (frame && frame.items.some((i) => !retired(i.id))) items = frame.items.map(fromArranged)
+		if (frame && frame.items.some((i) => !slotDropped(i.id))) items = frame.items.map(fromArranged)
 		else {
 			items = []
 			defs
@@ -827,7 +953,7 @@ function convertSlots(layout: unknown, opts: PanelsFromSlotsOptions = {}): { pan
  *
  * Every instance is admitted once, where the old readers drew it first —
  * middle, left, right, strips — and a copy of a retired widget never
- * ({@link RETIRED_WIDGET_IDS}). An aliased id ({@link WIDGET_ID_ALIASES})
+ * ({@link RETIRED_WIDGET_IDS}), nor of a {@link LEGACY_SLOT_DROPPED} one. An aliased id ({@link WIDGET_ID_ALIASES})
  * stays the id as placed, the key its settings and style pin live under.
  * Keys run `p1…pn` in discovery order: the primary, above, below, left, right.
  * @experimental
@@ -836,44 +962,257 @@ export function panelsFromSlots(layout: SessionLayoutV1, opts?: PanelsFromSlotsO
 	return convertSlots(layout, opts).panels
 }
 
-/** Is this a stored `panels` slot a reader can walk? (Not a validation: {@link validateSessionLayout} is.) */
-function storedPanels(layout: unknown): PanelLayoutV1 | null {
+/** Is this a stored `panels` slot a reader can walk — version 2, or a version 1 with its primary? (Not a validation: {@link validateSessionLayout} is.) */
+function storedPanels(layout: unknown): PanelLayoutV1 | PanelLayoutV2 | null {
 	if (!isObj(layout)) return null
 	const p = layout.panels
+	if (isObj(p) && p.version === 2) return p as unknown as PanelLayoutV2
 	return isObj(p) && p.version === 1 && isObj(p.middle) && isObj(p.middle.primary) ? (p as unknown as PanelLayoutV1) : null
 }
 
-/** {@link panelsOf}, and whether its primary is the converter's floor. */
-function panelsWithFloor(layout: unknown, opts?: PanelsFromSlotsOptions): { panels: PanelLayoutV1; floor: boolean } {
-	const stored = storedPanels(layout)
-	return stored ? { panels: stored, floor: false } : convertSlots(layout, opts)
+/** A stored zone's panels, defensively: the objects of a list. */
+const panelList = (x: unknown): PanelV2[] => (Array.isArray(x) ? x.filter((p): p is PanelV2 => isObj(p)) : [])
+
+// ── panelsV2Of: version 1 and the old slots, read as version 2 ──────────────
+
+/** What {@link panelsV2Of} may be told beyond the layout. @experimental */
+export interface PanelsV2Options extends PanelsFromSlotsOptions {
+	/** Per-instance settings to read and plan moves over; absent = the layout's own `widgetSettings`. */
+	widgetSettings?: Readonly<Record<string, Readonly<Record<string, unknown>>>>
+	/** Style pins (any value: a pin or a style id) keyed by instance id; absent = the layout's own `widgetStyles`. */
+	widgetStyles?: Readonly<Record<string, unknown>>
 }
 
 /**
- * The layout's panels: `layout.panels` when it has them — returned as
- * stored, the whole truth — else {@link panelsFromSlots}. What every reader
- * reads.
+ * 🚧 One setting the split of `messages` moves or drops: `{ from, to, key,
+ * value }` moves `key` of instance `from` onto instance `to` (the composer or
+ * turn line made for it); `{ drop, key }` removes `key` from instance `drop`
+ * (a key the widget no longer has).
  * @experimental
  */
-export function panelsOf(layout: SessionLayoutV1, opts?: PanelsFromSlotsOptions): PanelLayoutV1 {
-	return panelsWithFloor(layout, opts).panels
+export type PanelSettingsMove =
+	| { from: string; to: string; key: string; value: unknown }
+	| { drop: string; key: string }
+
+/**
+ * 🚧 {@link panelsV2Of}'s answer: the panels, the settings the split moves or
+ * drops, and the style pins the new widgets copy.
+ * @experimental
+ */
+export interface PanelsV2Conversion {
+	panels: PanelLayoutV2
+	settingsMoves: PanelSettingsMove[]
+	styleCopies: Array<{ from: string; to: string }>
 }
 
-/** A stored zone's panels, defensively: the objects of a list. */
-const panelList = (x: unknown): PanelV1[] => (Array.isArray(x) ? x.filter((p): p is PanelV1 => isObj(p)) : [])
+/** A property of an object, when it is an own one. */
+const ownOf = (o: unknown, key: string): unknown => (isObj(o) && Object.hasOwn(o, key) ? o[key] : undefined)
 
-/** Every panel's tabs, as written, in reading order — middle (above, primary, below), left, right — the floor's left out. */
-function panelTabs(layout: unknown, zones: readonly ZoneId[] = ZONE_IDS): string[] {
-	const { panels, floor } = panelsWithFloor(layout)
-	const out: string[] = []
-	const take = (p: PanelV1) => out.push(...strings(p.tabs))
-	if (zones.includes('middle')) {
-		panelList(panels.middle.above).forEach(take)
-		if (!floor) take(panels.middle.primary)
-		panelList(panels.middle.below).forEach(take)
+/** Settings keys of a copy of `messages` that the split moves to its composer. */
+const COMPOSER_KEYS = ['composer', 'otherTabsComposer', 'showActions'] as const
+/** The keys of a copy of `messages` the split drops, after `nextUp`. */
+const DROPPED_KEYS = ['composerPosition', 'showComposer', 'showMessages', 'showNudge'] as const
+
+/** A stored panel rebuilt as a version 2 panel: only what version 2 has. */
+function flattenPanel(panel: object): PanelV2 {
+	const p = panel as Record<string, unknown>
+	return {
+		key: typeof p.key === 'string' ? p.key : '',
+		tabs: strings(p.tabs),
+		...(p.open !== undefined ? { open: p.open as string } : {}),
+		...(p.height !== undefined ? { height: p.height as PanelHeightV1 } : {}),
+		...(p.title !== undefined ? { title: p.title as string } : {}),
 	}
-	if (zones.includes('left')) panelList(panels.left).forEach(take)
-	if (zones.includes('right')) panelList(panels.right).forEach(take)
+}
+
+/** {@link panelsV2Of}, and the keys of the panels the converter's floor made (none for a stored layout). */
+function convertToV2(layout: unknown, opts: PanelsV2Options = {}): PanelsV2Conversion & { floorKeys: ReadonlySet<string> } {
+	const doc: SessionLayoutV1 = isObj(layout) ? (layout as SessionLayoutV1) : {}
+	const stored = doc.panels
+	if (isObj(stored) && stored.version === 2)
+		return { panels: stored as unknown as PanelLayoutV2, settingsMoves: [], styleCopies: [], floorKeys: new Set() }
+
+	// The version 1 source: a stored one, else the old slots.
+	let source: PanelLayoutV1
+	let floor = false
+	const v1 = storedPanels(doc)
+	if (v1 && v1.version === 1) source = v1
+	else {
+		const converted = convertSlots(doc, opts)
+		source = converted.panels
+		floor = converted.floor
+	}
+
+	// Flatten: left, the middle top to bottom, right. Version 1 predates the
+	// split of Messages, so a `composer` written into one is slot-era too: it is
+	// dropped like the old slots drop it (LEGACY_SLOT_DROPPED), and a panel left
+	// with no tabs goes — it never blocks the split below.
+	const mid = source.middle
+	const unretired = (p: PanelV2): PanelV2 => {
+		const tabs = p.tabs.filter((id) => !LEGACY_SLOT_DROPPED.has(widgetOfInstance(id)))
+		if (tabs.length === p.tabs.length) return p
+		const { open, ...rest } = p
+		return { ...rest, tabs, ...(open !== undefined && tabs.includes(open) ? { open } : {}) }
+	}
+	const list = (v: unknown) => panelList(v).map(flattenPanel).map(unretired).filter((p) => p.tabs.length > 0)
+	const primary = unretired(flattenPanel(mid.primary))
+	const zones: Record<ZoneId, PanelV2[]> = {
+		left: list(source.left),
+		middle: [...list(mid.above), ...(primary.tabs.length > 0 ? [primary] : []), ...list(mid.below)],
+		right: list(source.right),
+	}
+	const floorPanels = new Set<PanelV2>(floor ? [primary] : [])
+	// Settings and style pins LAYER, per instance: the layout's own, then the
+	// caller's (stored rows) over them — a key the caller passes wins; a key only
+	// the layout carries still counts. Callers apply each move to whichever store
+	// holds that key.
+	const layered = (own: unknown, over: unknown): Record<string, unknown> | undefined => {
+		if (!isObj(own) && !isObj(over)) return undefined
+		const out: Record<string, unknown> = {}
+		for (const src of [own, over])
+			if (isObj(src))
+				for (const [id, v] of Object.entries(src))
+					out[id] = isObj(v) && isObj(out[id]) ? { ...(out[id] as object), ...v } : v
+		return out
+	}
+	const S = layered(doc.widgetSettings, opts.widgetSettings)
+	const T = layered(doc.widgetStyles, opts.widgetStyles)
+	const settingOf = (id: string, key: string): unknown => ownOf(ownOf(S, id), key)
+
+	// The composer and turn line, once per composing copy of Messages.
+	const order = ['middle', 'left', 'right'] as const
+	const placed = new Set(order.flatMap((z) => zones[z].flatMap((p) => p.tabs)))
+	const composed = new Map<string, string>()
+	const turned = new Map<string, string>()
+	const styled: Array<{ from: string; to: string }> = []
+	const made = new Set<PanelV2>()
+	if (![...placed].some((id) => isInstanceOf(id, 'composer'))) {
+		for (const z of order) {
+			const next: PanelV2[] = []
+			for (const panel of zones[z]) {
+				const m = panel.tabs.find(
+					(id) => isInstanceOf(id, CONVERSATION) && settingOf(id, 'showComposer') !== false,
+				)
+				if (m === undefined) {
+					next.push(panel)
+					continue
+				}
+				const { composer, turnLine } = conversationSplitIds(m)
+				const nextUp = settingOf(m, 'nextUp')
+				const nextUpIs = nextUp === 'head' || nextUp === 'list' || nextUp === 'hidden' ? nextUp : settingOf(m, 'showNudge') === false ? 'hidden' : 'head'
+				const pair: PanelV2[] = []
+				if (nextUpIs !== 'hidden' && !placed.has(turnLine)) {
+					pair.push({ key: '', tabs: [turnLine], height: 'fit' })
+					turned.set(m, turnLine)
+					styled.push({ from: m, to: turnLine })
+				}
+				if (!placed.has(composer)) {
+					pair.push({ key: '', tabs: [composer], height: 'fit' })
+					composed.set(m, composer)
+					styled.push({ from: m, to: composer })
+				}
+				pair.forEach((p) => made.add(p))
+				if (floorPanels.has(panel)) pair.forEach((p) => floorPanels.add(p))
+				if (settingOf(m, 'composerPosition') === 'top') next.push(...pair, panel)
+				else next.push(panel, ...pair)
+			}
+			zones[z] = next
+		}
+	}
+
+	// Keys for the new panels continue the counter, in final array order.
+	let n = 0
+	for (const z of order)
+		for (const p of zones[z]) {
+			const at = /^p(\d+)$/.exec(p.key)
+			if (at) n = Math.max(n, Number(at[1]))
+		}
+	for (const z of order) for (const p of zones[z]) if (made.has(p)) p.key = `p${++n}`
+	const floorKeys = new Set([...floorPanels].map((p) => p.key))
+
+	// Settings the split moves or drops, in the order they are found.
+	const settingsMoves: PanelSettingsMove[] = []
+	if (isObj(S))
+		for (const [id, values] of Object.entries(S)) {
+			if (!isObj(values)) continue
+			const has = (k: string) => Object.hasOwn(values, k)
+			if (isInstanceOf(id, CONVERSATION)) {
+				for (const key of COMPOSER_KEYS)
+					if (has(key)) {
+						const to = composed.get(id)
+						settingsMoves.push(to ? { from: id, to, key, value: values[key] } : { drop: id, key })
+					}
+				if (has('nextUp')) {
+					const to = turned.get(id)
+					settingsMoves.push(to ? { from: id, to, key: 'nextUp', value: values.nextUp } : { drop: id, key: 'nextUp' })
+				}
+				for (const key of DROPPED_KEYS) if (has(key)) settingsMoves.push({ drop: id, key })
+			}
+			if (has('hostCard')) settingsMoves.push({ drop: id, key: 'hostCard' })
+			if (isInstanceOf(id, CONVERSATION) && has('backingMode')) settingsMoves.push({ drop: id, key: 'backingMode' })
+		}
+
+	// Style pins the new widgets take from the Messages copy they came from.
+	const present = (id: string) => ownOf(T, id) !== undefined && ownOf(T, id) !== null
+	const styleCopies = styled.filter(({ from, to }) => present(from) && !present(to))
+
+	return { panels: { version: 2, left: zones.left, middle: zones.middle, right: zones.right }, settingsMoves, styleCopies, floorKeys }
+}
+
+/**
+ * 🚧 The layout's arrangement as {@link PanelLayoutV2} — the ONE converter,
+ * with {@link panelsFromSlots} (old slots → version 1): every reader reuses
+ * it, and the app's boot pass writes its answer. Pure, deterministic, total
+ * and non-mutating.
+ *
+ * A stored version 2 is returned as it is (the same object), with nothing to
+ * move. Otherwise the source is a stored version 1, else
+ * {@link panelsFromSlots}; it is flattened — left, the middle as `above`,
+ * `primary`, `below`, right — each panel keeping `key`, `tabs`, `open`,
+ * `height` and `title` and dropping the pin.
+ *
+ * **The split.** Before it, the log, the field and the turn line were one
+ * widget. For each panel's first tab that is a copy of `messages` with its
+ * composer showing (`showComposer` not `false`), a turn-line panel (unless
+ * `nextUp` reads as `hidden`, the legacy `showNudge: false` included) and a
+ * composer panel — `height: 'fit'` — are inserted right after it, or before
+ * it when `composerPosition` is `'top'`; their ids are
+ * {@link conversationSplitIds}. A layout that already places a `composer`
+ * gets nothing. New keys continue the `p<n>` counter.
+ *
+ * `settingsMoves` lists what the split does to the stored settings (a key to
+ * move onto the new instance, or to drop) and `styleCopies` the style pins
+ * the new instances copy; the CALLER applies both. No look is written.
+ * @experimental
+ */
+export function panelsV2Of(layout: SessionLayoutV1, opts?: PanelsV2Options): PanelsV2Conversion {
+	const { floorKeys: _floorKeys, ...conversion } = convertToV2(layout, opts)
+	return conversion
+}
+
+/** {@link panelsV2Of}'s panels, and the keys of the converter's floor panels. */
+function panelsWithFloor(layout: unknown, opts?: PanelsV2Options): { panels: PanelLayoutV2; floorKeys: ReadonlySet<string> } {
+	const { panels, floorKeys } = convertToV2(layout, opts)
+	return { panels, floorKeys }
+}
+
+/**
+ * The layout's panels as version 2: {@link panelsV2Of}'s `panels` — a stored
+ * version 2 as it is, anything else converted. What every reader reads.
+ * ⚠ Its return type changed with version 2 (was {@link PanelLayoutV1}).
+ * @experimental
+ */
+export function panelsOf(layout: SessionLayoutV1, opts?: PanelsV2Options): PanelLayoutV2 {
+	return panelsV2Of(layout, opts).panels
+}
+
+/** Every panel's tabs, as written, in reading order — middle, left, right — the floor's left out. */
+function panelTabs(layout: unknown, zones: readonly ZoneId[] = ZONE_IDS): string[] {
+	const { panels, floorKeys } = panelsWithFloor(layout)
+	const out: string[] = []
+	for (const z of ['middle', 'left', 'right'] as const)
+		if (zones.includes(z))
+			for (const p of panelList(panels[z])) if (!floorKeys.has(p.key)) out.push(...strings(p.tabs))
 	return out
 }
 
@@ -881,7 +1220,7 @@ function panelTabs(layout: unknown, zones: readonly ZoneId[] = ZONE_IDS): string
 
 /**
  * Every widget instance id the layout NAMES, each once: its panels' tabs in
- * reading order — and, while it has no `panels`, then whatever the ⏳ old
+ * reading order (middle, left, right) — and, while it has no `panels`, then whatever the ⏳ old
  * slots name that the conversion did not keep (a retired widget, an entry an
  * arrangement shadows). What a check reads when the question is "does this
  * layout mention it at all" (a genre's omitted widgets). The floor's
@@ -895,8 +1234,8 @@ export function layoutWidgetIds(layout: SessionLayoutV1): string[] {
 }
 
 /**
- * The widget instance ids the MIDDLE's panels hold — above, the primary,
- * below — each once. The floor's conversation is not held.
+ * The widget instance ids the MIDDLE's panels hold, top to bottom, each
+ * once. The floor's conversation is not held.
  * @experimental
  */
 export function middleWidgetIds(layout: SessionLayoutV1): string[] {
@@ -911,6 +1250,7 @@ export function middleWidgetIds(layout: SessionLayoutV1): string[] {
  * then refines a `rail`: pinned (absent or `true`) stays a docked rail, and
  * `pinned: false` is an icon strip. A strip is a `row` unless a rule hides it.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — {@link resolveDrawn} no longer walks a ladder.
  */
 export interface ZoneRung {
 	mode: NonNullable<LayoutZoneRule['mode']>
@@ -931,6 +1271,7 @@ export interface ZoneRung {
  * the stage's 696px measure fit a 1216px session box (a 1280 window):
  * 248 + 248 + 2×8 + 696 = 1208. At 264 they needed 1240 and both sides tucked.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — no reader walks a width ladder now.
  */
 export const DEFAULT_SIDE_RULES: Readonly<Record<'left' | 'right', readonly LayoutZoneRule[]>> = {
 	right: [
@@ -950,7 +1291,11 @@ export const DEFAULT_SIDE_RULES: Readonly<Record<'left' | 'right', readonly Layo
 	],
 }
 
-/** The width ladder a strip walks when it declares none: always a row. @experimental */
+/**
+ * The width ladder a strip walks when it declares none: always a row.
+ * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — no reader walks a width ladder now.
+ */
 export const DEFAULT_STRIP_RULES: readonly LayoutZoneRule[] = [{ min: 0, mode: 'row' }]
 
 /**
@@ -960,6 +1305,7 @@ export const DEFAULT_STRIP_RULES: readonly LayoutZoneRule[] = [{ min: 0, mode: '
  * describes. The one walk: the page's rails, the editor's simulator and
  * {@link resolveDrawn} all read a ladder through it.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — {@link resolveDrawn} no longer walks a ladder.
  */
 export function zoneRungAt(def: LayoutZoneDef, inline: number): ZoneRung {
 	const strip = def.kind === 'strip'
@@ -991,6 +1337,7 @@ export function zoneRungAt(def: LayoutZoneDef, inline: number): ZoneRung {
  * envelope's `layout.v1.pinned`, which a host tells a widget about its own
  * box.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — version 2 has no pin; still read by {@link panelsFromSlots}.
  */
 export function pinnedOf(placement: { pinned?: unknown } | null | undefined): boolean {
 	return placement?.pinned !== false
@@ -1012,7 +1359,10 @@ export interface DrawnInstance {
 	 * its stored settings and style pin live under.
 	 */
 	impliedSettings?: Readonly<Record<string, unknown>>
-	/** Its panel's pin, by the one rule ({@link pinnedOf}). Every instance has exactly one. */
+	/**
+	 * Always `true`: version 2 has no pin.
+	 * @deprecated ⏳ removed at 0.7 (owner's call)
+	 */
 	pinned: boolean
 }
 
@@ -1021,23 +1371,36 @@ export interface DrawnInstance {
  * @experimental
  */
 export interface DrawnPanel {
-	/** The panel's key ({@link PanelV1.key}). */
+	/** The panel's key ({@link PanelV2.key}). */
 	key: string
-	/** Its tabs, in order: what it draws. Never empty, except a stored primary whose every tab is retired. */
+	/** Its tabs, in order: what it draws. Never empty, except the floor's. */
 	tabs: DrawnInstance[]
 	/** The instance id of the tab shown: its `open` when that is one of its tabs, else the first. */
 	open: string
-	/** Docked (`true`) or in the rail, by the one rule ({@link pinnedOf}). A middle panel is always docked. */
+	/**
+	 * Always `true`: version 2 has no pin.
+	 * @deprecated ⏳ removed at 0.7 (owner's call)
+	 */
 	pinned: boolean
-	/** Its height; absent or unreadable is `fill`. */
+	/**
+	 * Its height: the stored one when readable, else the open tab's
+	 * declaration (`WidgetDecl.panel.height`), else `fill`.
+	 */
 	height: PanelHeightV1
+	/**
+	 * 🚧 Its priority: the stored one when valid, else the open tab's
+	 * declaration (`WidgetDecl.panel.priority`), else `'normal'`. When a zone
+	 * runs short, `low` gives way first, then `normal`.
+	 */
+	priority: PanelPriority
 	/** A person's name for it, when it has one. */
 	title?: string
 	/**
 	 * The converter's floor: the layout placed no conversation in its middle
 	 * (and no `panels`), so the primary is `messages` by
-	 * {@link panelsFromSlots}'s rule. A renderer draws it; the id readers do
-	 * not count it — the layout did not place it.
+	 * {@link panelsFromSlots}'s rule — and the turn line and composer made for
+	 * it are floor panels too. A renderer draws it; the id readers do not
+	 * count it — the layout did not place it.
 	 */
 	floor?: true
 }
@@ -1052,34 +1415,31 @@ export interface DrawnZone {
 	/** A side zone's edge. */
 	side?: 'left' | 'right'
 	/**
-	 * ⏳ A side: the key of the first `zoneLayout` zone drawn on it — whose
-	 * width `rules` are the side's ladder — or null when the layout declares
-	 * none there.
+	 * No longer set: the key of the first `zoneLayout` zone drawn on a side.
+	 * @deprecated ⏳ removed at 0.7 (owner's call)
 	 */
 	zoneKey?: string | null
 	/**
-	 * A side: docked when any of its panels is — a side whose every panel is
-	 * in the rail takes rail width ({@link zoneRungAt}'s `icons`). With no
-	 * panels, its ⏳ `zoneLayout` zone's pin (true when it declares none). The
-	 * middle is always pinned.
+	 * Always `true`: version 2 has no pin.
+	 * @deprecated ⏳ removed at 0.7 (owner's call)
 	 */
 	pinned: boolean
 	/**
-	 * A side: its width ladder at the box's inline size ({@link zoneRungAt};
-	 * the first zone's rules, else the side's default ladder), refined by the
-	 * side's `pinned`.
+	 * No longer set: a side's width ladder at the box's inline size.
+	 * @deprecated ⏳ removed at 0.7 (owner's call)
 	 */
 	rung?: ZoneRung
-	/** Its panels in reading order (the middle: above, the primary, below). */
+	/** Its panels in reading order, top to bottom. */
 	panels: DrawnPanel[]
 	/** Every tab of its panels, in reading order — the floor's left out. */
 	instances: DrawnInstance[]
 }
 
 /**
- * The middle as a layout draws it: a zone whose panels are `above`, the
- * `primary` and `below`.
+ * The middle as version 1's layout drew it: a zone whose panels are `above`,
+ * the `primary` and `below`. {@link resolveDrawn} no longer answers one.
  * @experimental
+ * @deprecated ⏳ removed at 0.7 (owner's call) — the middle is a {@link DrawnZone} now.
  */
 export interface DrawnMiddle extends DrawnZone {
 	zone: 'middle'
@@ -1097,8 +1457,10 @@ export interface DrawnMiddle extends DrawnZone {
  */
 export interface DrawnLayout {
 	left: DrawnZone
-	middle: DrawnMiddle
+	middle: DrawnZone
 	right: DrawnZone
+	/** 🚧 The layout's look, read: a stored version 2's, else {@link DEFAULT_PANEL_LOOK}'s; `gapPx` is the gap in px. */
+	look: Required<PanelLook> & { gapPx: number }
 }
 
 /** An instance's widget, read through the aliases, and the settings an alias implies. */
@@ -1107,39 +1469,62 @@ function widgetFacts(instanceId: string): Pick<DrawnInstance, 'widgetId' | 'impl
 	return r.aliasedFrom ? { widgetId: r.widgetId, impliedSettings: r.impliedSettings } : { widgetId: r.widgetId }
 }
 
-/** A stored height, read: `fit`, `fill` or a whole share of 1–12; anything else is `fill`. */
-function heightOf(x: unknown): PanelHeightV1 {
+/** A stored height, read: `fit`, `fill` or a whole share of 1–12; anything else is absent. */
+function validHeight(x: unknown): PanelHeightV1 | undefined {
 	if (x === 'fit' || x === 'fill') return x
 	if (isObj(x) && isInt(x.share) && x.share >= 1 && x.share <= 12) return { share: x.share }
-	return 'fill'
+	return undefined
+}
+
+const isPriority = (x: unknown): x is PanelPriority => x === 'high' || x === 'normal' || x === 'low'
+const isBacking = (x: unknown): x is PanelBacking => x === 'card' || x === 'glass' || x === 'none'
+const isGap = (x: unknown): x is PanelGap => x === 'tight' || x === 'comfortable' || x === 'spacious'
+
+/** What {@link resolveDrawn} may be told beyond the layout. @experimental */
+export interface ResolveDrawnOptions {
+	/** Widget declarations by the id the layout names them — for a panel's default priority and height. */
+	widgets?: readonly Pick<WidgetDecl, 'id' | 'panel'>[]
+}
+
+/** The layout's look as a stored version 2 states it, else the default. */
+function lookOf(layout: unknown): Required<PanelLook> & { gapPx: number } {
+	const p = isObj(layout) && isObj(layout.panels) && layout.panels.version === 2 ? layout.panels : {}
+	const gap = isGap(p.gap) ? p.gap : DEFAULT_PANEL_LOOK.gap
+	return {
+		backing: isBacking(p.backing) ? p.backing : DEFAULT_PANEL_LOOK.backing,
+		opacity: typeof p.opacity === 'number' && Number.isFinite(p.opacity) ? Math.min(100, Math.max(0, p.opacity)) : DEFAULT_PANEL_LOOK.opacity,
+		gap,
+		behind: p.behind === 'backdrop' ? 'backdrop' : 'background',
+		behindDim: typeof p.behindDim === 'number' && Number.isFinite(p.behindDim) ? Math.min(100, Math.max(0, p.behindDim)) : 0,
+		gapPx: PANEL_GAP_PX[gap],
+	}
 }
 
 /**
- * What a session layout draws at a session box of `box.inline` px: per zone,
- * its panels in reading order, each with its tabs, the tab shown, one pin and
- * a height. Pure and total — any value reads; what it cannot read places
- * nothing.
+ * What a session layout draws: per zone, its panels top to bottom, each with
+ * its tabs, the tab shown, a height and a priority — and the layout's look.
+ * Pure and total — any value reads; what it cannot read places nothing.
  *
- * It reads {@link panelsOf}: the layout's `panels`, else the ⏳ old slots
- * through {@link panelsFromSlots}. A tab that is a copy of a retired widget
- * ({@link RETIRED_WIDGET_IDS}) is not drawn, a panel left with no tab is not
- * drawn (the primary always is), and an instance is drawn once, in its first
- * panel in reading order — the middle (above, primary, below), left, right.
- * An aliased id ({@link WIDGET_ID_ALIASES}) is drawn as the widget it became,
- * under the id it was placed by, with the settings it implies.
+ * It reads {@link panelsOf}: the layout's `panels` (version 1 converted), else
+ * the ⏳ old slots through {@link panelsFromSlots}. A tab that is a copy of a
+ * retired widget ({@link RETIRED_WIDGET_IDS}) is not drawn, a panel left with
+ * no tab is not drawn, and an instance is drawn once, in its first panel in
+ * reading order — middle, left, right. An aliased id
+ * ({@link WIDGET_ID_ALIASES}) is drawn as the widget it became, under the id
+ * it was placed by, with the settings it implies.
  *
- * A side's `rung` is its width ladder: the first `zoneLayout` zone's `rules`
- * there, else the default ladder for the side ({@link zoneRungAt}), its
- * `rail` refined by the side's pin — an icon strip when every panel is in the
- * rail.
- *
- * The box's `block` size is not read today: no rung is a height.
+ * A panel's `height` is its stored one, else its open tab's declaration
+ * (`opts.widgets`, `panel.height`), else `fill`; its `priority` likewise
+ * (`panel.priority`, else `'normal'`). There is no pin: every `pinned` is
+ * `true`, and no width ladder is walked, so `box` is not read.
  * @experimental
  */
-export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; block?: number }): DrawnLayout {
+export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; block?: number }, opts: ResolveDrawnOptions = {}): DrawnLayout {
 	const doc: SessionLayoutV1 = isObj(layout) ? layout : {}
-	const inline = typeof box?.inline === 'number' && Number.isFinite(box.inline) ? box.inline : 0
-	const { panels, floor } = panelsWithFloor(doc)
+	const { panels, floorKeys } = panelsWithFloor(doc)
+	const decls = new Map<string, Pick<WidgetDecl, 'id' | 'panel'>>()
+	for (const w of (Array.isArray(opts?.widgets) ? opts.widgets : []) as readonly unknown[])
+		if (isObj(w) && typeof w.id === 'string') decls.set(w.id, w as unknown as Pick<WidgetDecl, 'id' | 'panel'>)
 	const seen = new Set<string>()
 	/** Admit an instance once, in reading order, never a retired one. */
 	const admit = (id: string): boolean => {
@@ -1147,60 +1532,41 @@ export function resolveDrawn(layout: SessionLayoutV1, box: { inline: number; blo
 		seen.add(id)
 		return true
 	}
-	const draw = (p: PanelV1, pinned: boolean): DrawnPanel => {
+	const draw = (p: PanelV2): DrawnPanel => {
 		const tabs = strings(p.tabs)
 			.filter((id) => id && admit(id))
-			.map((id): DrawnInstance => ({ instanceId: id, ...widgetFacts(id), pinned }))
+			.map((id): DrawnInstance => ({ instanceId: id, ...widgetFacts(id), pinned: true }))
 		const open = typeof p.open === 'string' && tabs.some((t) => t.instanceId === p.open) ? p.open : (tabs[0]?.instanceId ?? '')
+		const decl = decls.get(tabs.find((t) => t.instanceId === open)?.widgetId ?? '')?.panel
+		const declHeight = isObj(decl) && (decl.height === 'fit' || decl.height === 'fill') ? decl.height : undefined
+		const declPriority = isObj(decl) && isPriority(decl.priority) ? decl.priority : undefined
 		return {
 			key: typeof p.key === 'string' ? p.key : '',
 			tabs,
 			open,
-			pinned,
-			height: heightOf(p.height),
+			pinned: true,
+			height: validHeight(p.height) ?? declHeight ?? 'fill',
+			priority: isPriority(p.priority) ? p.priority : (declPriority ?? 'normal'),
 			...(typeof p.title === 'string' ? { title: p.title } : {}),
+			...(floorKeys.has(p.key) ? { floor: true as const } : {}),
 		}
 	}
-	const drawn = (list: DrawnPanel[]) => list.filter((p) => p.tabs.length > 0)
-
-	// The middle: never pinned out.
-	const above = drawn(panelList(panels.middle.above).map((p) => draw(p, true)))
-	const primary: DrawnPanel = { ...draw(panels.middle.primary, true), ...(floor ? { floor: true as const } : {}) }
-	const below = drawn(panelList(panels.middle.below).map((p) => draw(p, true)))
-	const middlePanels = [...above, primary, ...below]
-	const middle: DrawnMiddle = {
-		zone: 'middle',
-		kind: 'middle',
-		pinned: true,
-		panels: middlePanels,
-		instances: middlePanels.filter((p) => !p.floor).flatMap((p) => p.tabs),
-		above,
-		primary,
-		below,
-	}
-
-	// The sides.
-	const defs = zoneEntries(doc)
-	const side = (edge: 'left' | 'right'): DrawnZone => {
-		const own = drawn(panelList(panels[edge]).map((p) => draw(p, pinnedOf(p))))
-		const zone = defs.find(([, d]) => d.kind !== 'strip' && zoneDrawnAt(d) === edge)
-		const def = zone?.[1] as LayoutZoneDef | undefined
-		const pinned = own.length ? own.some((p) => p.pinned) : def ? pinnedOf(def) : true
-		const rung = zoneRungAt({ ...(def ?? { kind: 'side', side: edge, widgets: [] }), pinned }, inline)
+	const zone = (z: ZoneId): DrawnZone => {
+		const own = panelList(panels[z]).map(draw).filter((p) => p.tabs.length > 0)
 		return {
-			zone: edge,
-			kind: 'side',
-			side: edge,
-			zoneKey: zone?.[0] ?? null,
-			pinned,
-			rung,
+			zone: z,
+			kind: z === 'middle' ? 'middle' : 'side',
+			...(z === 'middle' ? {} : { side: z }),
+			pinned: true,
 			panels: own,
-			instances: own.flatMap((p) => p.tabs),
+			instances: own.filter((p) => !p.floor).flatMap((p) => p.tabs),
 		}
 	}
-	const left = side('left')
-	const right = side('right')
-	return { left, middle, right }
+	// Reading order is middle, left, right: the draw order decides who keeps a repeated id.
+	const middle = zone('middle')
+	const left = zone('left')
+	const right = zone('right')
+	return { left, middle, right, look: lookOf(doc) }
 }
 
 /** Every instance a drawn layout draws, in its reading order: middle, left, right — the floor's left out. @experimental */
@@ -1209,8 +1575,8 @@ export function drawnInstances(drawn: DrawnLayout): DrawnInstance[] {
 }
 
 /**
- * Every widget instance id the layout DRAWS, in reading order — the middle
- * (above, primary, below), left, right: {@link resolveDrawn}'s answer as ids.
+ * Every widget instance id the layout DRAWS, in reading order — the middle,
+ * left, right: {@link resolveDrawn}'s answer as ids.
  * A retired widget is never drawn, and the floor's conversation is not the
  * layout's.
  * @experimental
@@ -1287,12 +1653,18 @@ function isAnchor(x: unknown): boolean {
  * the verdict lists every problem rather than the first.
  *
  * **Errors** (the layout is refused):
- * - `panels` of the wrong shape: `{ version: 1, left, middle: { above,
- *   primary, below }, right }`; a panel with a key no other panel has, at
- *   least one tab (the primary included), `open` one of its tabs, `height`
- *   `fit`, `fill` or `{ share }` (an integer 1–12), and `pinned` absent or
- *   `false` — refused on a middle panel, which never pins; an instance id
- *   in two panels, or twice in one;
+ * - `panels` of the wrong shape: `{ version: 2, left, middle, right,
+ *   backing?, opacity?, gap? }`, each zone a list of panels top to bottom
+ *   and the middle never empty; version 1's `{ version: 1, left, middle: {
+ *   above, primary, below }, right }` is still checked (and warned about);
+ *   any other version is refused. A panel has a key no other panel has, at
+ *   least one tab, `open` one of its tabs, `height` `fit`, `fill` or `{ share }`
+ *   (an integer 1–12); in version 2 `priority` is `high`, `normal` or `low`
+ *   and `pinned` is refused (there is no pin), `backing` is `card`, `glass`
+ *   or `none`, `opacity` a number from 0 to 100, `gap` `tight`,
+ *   `comfortable` or `spacious`, `behind` `background` or `backdrop`,
+ *   `behindDim` a number from 0 to 100; in version 1 `pinned` is absent or `false`,
+ *   refused on a middle panel. An instance id in two panels, or twice in one;
  * - an ⏳ old slot of the wrong shape: `zoneLayout` and `widgetGrid` are `version: 1`;
  *   a grid entry and an arrangement name a zone, `left`, `middle` or
  *   `right`; a `zoneLayout` zone is keyed by where the page draws it — a
@@ -1312,6 +1684,10 @@ function isAnchor(x: unknown): boolean {
  *
  * **Warnings** (the layout draws, not as written):
  * - a key that is not a slot (readers ignore it) and a retired widget;
+ * - `panels-v1:` — version 1 panels are converted on read ({@link panelsV2Of});
+ *   ship version 2;
+ * - in the old slots, a placed copy of a {@link LEGACY_SLOT_DROPPED} widget (a
+ *   slot-era composer): the slots never draw it;
  * - `panels` that place no copy of the conversation: the session draws one
  *   by the primary floor — unless the genre withholds it, which the genre's
  *   own checks judge (a layout carries no roles);
@@ -1519,8 +1895,12 @@ export function validateSessionLayout(
 	const panelPlaced = new Map<string, { zone: string; where: string }>()
 	if (pl !== undefined) {
 		const keys = new Set<string>()
+		const v2 = isObj(pl) && pl.version === 2
 		const panel = (p: unknown, zone: ZoneId, at: string, middle: boolean) => {
-			if (!isObj(p)) return errors.push(`${at}: a panel is an object — { key, tabs, open?, pinned?, height?, title? }`)
+			if (!isObj(p))
+				return errors.push(
+					`${at}: a panel is an object — { key, tabs, open?, ${v2 ? 'priority?' : 'pinned?'}, height?, title? }`,
+				)
 			if (typeof p.key !== 'string' || !p.key) errors.push(`${at}.key: a non-empty string`)
 			else if (keys.has(p.key)) errors.push(`${at}.key: '${p.key}' keys two panels — a key names one`)
 			else keys.add(p.key)
@@ -1536,9 +1916,11 @@ export function validateSessionLayout(
 			if (p.open !== undefined && !(typeof p.open === 'string' && Array.isArray(p.tabs) && p.tabs.includes(p.open)))
 				errors.push(`${at}.open: one of its tabs`)
 			if (p.pinned !== undefined) {
-				if (middle) errors.push(`${at}.pinned: a middle panel never pins — leave it out`)
+				if (v2) errors.push(`${at}.pinned: there is no pin in version 2 — every panel is open; leave it out`)
+				else if (middle) errors.push(`${at}.pinned: a middle panel never pins — leave it out`)
 				else if (p.pinned !== false) errors.push(`${at}.pinned: absent (docked) or false (in the rail)`)
 			}
+			if (v2 && p.priority !== undefined && !isPriority(p.priority)) errors.push(`${at}.priority: 'high', 'normal' or 'low'`)
 			const h = p.height
 			if (h !== undefined && h !== 'fit' && h !== 'fill' && !(isObj(h) && isInt(h.share) && h.share >= 1 && h.share <= 12))
 				errors.push(`${at}.height: 'fit', 'fill' or { share } — a whole number of twelfths, 1 to 12`)
@@ -1548,9 +1930,30 @@ export function validateSessionLayout(
 			if (!Array.isArray(x)) return errors.push(`${at}: a list of panels, top to bottom`)
 			x.forEach((p, n) => panel(p, zone, `${at}[${n}]`, middle))
 		}
-		if (!isObj(pl) || pl.version !== 1)
-			errors.push('panels: { version: 1, left: [ … ], middle: { above: [ … ], primary: { … }, below: [ … ] }, right: [ … ] }')
-		else {
+		if (!isObj(pl) || (pl.version !== 1 && pl.version !== 2))
+			errors.push(
+				'panels: { version: 2, left: [ … ], middle: [ … ], right: [ … ], backing?, opacity?, gap? } — or version 1, ' +
+					'{ version: 1, left: [ … ], middle: { above: [ … ], primary: { … }, below: [ … ] }, right: [ … ] }',
+			)
+		else if (pl.version === 2) {
+			if (![pl.left, pl.middle, pl.right].every(Array.isArray))
+				errors.push('panels: { version: 2, left: [ … ], middle: [ … ], right: [ … ], backing?, opacity?, gap? }')
+			if (isObj(pl.middle) || 'above' in pl || 'primary' in pl || 'below' in pl)
+				errors.push("panels.middle: one list of panels, top to bottom — above / primary / below are version 1's")
+			if (!isObj(pl.middle)) list(pl.middle, 'middle', 'panels.middle', true)
+			if (Array.isArray(pl.middle) && pl.middle.length === 0)
+				errors.push('panels.middle: the middle is never empty — at least one panel')
+			list(pl.left, 'left', 'panels.left', false)
+			list(pl.right, 'right', 'panels.right', false)
+			if (pl.backing !== undefined && !isBacking(pl.backing)) errors.push("panels.backing: 'card', 'glass' or 'none'")
+			if (pl.opacity !== undefined && !(typeof pl.opacity === 'number' && Number.isFinite(pl.opacity) && pl.opacity >= 0 && pl.opacity <= 100))
+				errors.push('panels.opacity: a number from 0 to 100')
+			if (pl.gap !== undefined && !isGap(pl.gap)) errors.push("panels.gap: 'tight', 'comfortable' or 'spacious'")
+			if (pl.behind !== undefined && pl.behind !== 'background' && pl.behind !== 'backdrop') errors.push("panels.behind: 'background' or 'backdrop'")
+			if (pl.behindDim !== undefined && !(typeof pl.behindDim === 'number' && Number.isFinite(pl.behindDim) && pl.behindDim >= 0 && pl.behindDim <= 100))
+				errors.push('panels.behindDim: a number from 0 to 100')
+		} else {
+			warnings.push('panels-v1: version 1 panels are converted on read (panelsV2Of) — ship { version: 2, … }')
 			const mid = pl.middle
 			if (!isObj(mid)) errors.push('panels.middle: { above: [ … ], primary: { key, tabs }, below: [ … ] }')
 			else {
@@ -1560,11 +1963,11 @@ export function validateSessionLayout(
 			}
 			list(pl.left, 'left', 'panels.left', false)
 			list(pl.right, 'right', 'panels.right', false)
-			if (![...panelPlaced.keys()].some((id) => isInstanceOf(id, CONVERSATION) && !retired(id)))
-				warnings.push(
-					`panels place no copy of the conversation ('${CONVERSATION}') — a session draws one anyway (the primary floor), unless its genre withholds it for a role: 'primary' widget`,
-				)
 		}
+		if (isObj(pl) && (pl.version === 1 || pl.version === 2) && ![...panelPlaced.keys()].some((id) => isInstanceOf(id, CONVERSATION) && !retired(id)))
+			warnings.push(
+				`panels place no copy of the conversation ('${CONVERSATION}') — a session draws one anyway (the primary floor), unless its genre withholds it for a role: 'primary' widget`,
+			)
 	}
 
 	// Warnings: what draws, but not as written.
@@ -1578,6 +1981,10 @@ export function validateSessionLayout(
 	for (const [id, { zone }] of placed) {
 		if (RETIRED_WIDGET_IDS.has(widgetOfInstance(id))) {
 			warnings.push(`'${id}' names a retired widget — no reader draws it`)
+			continue
+		}
+		if (!storedPanels(layout) && LEGACY_SLOT_DROPPED.has(widgetOfInstance(id))) {
+			warnings.push(`'${id}' is a slot-era composer — the old slots never draw it; place the Composer in panels`)
 			continue
 		}
 		if (drawn.has(id)) continue

@@ -26,7 +26,7 @@
 	 * only through its verbs and requests.
 	 */
 	import type { StatusText } from "@serene-pub/sdk/component"
-	import type { NextUp } from "./MessagesWidget.svelte"
+	import type { NextUp } from "../turn-line/settings"
 	import NextCharacterBlock from "./NextCharacterBlock.svelte"
 	import StateProposalList from "./StateProposalList.svelte"
 	import { useConversation } from "./conversation.svelte"
@@ -142,9 +142,9 @@
 
 <!-- The turn line's parts (`messages.turn-line*`, STYLE-GUIDE §6.16): no
      look here; the default widget stylesheet draws them. -->
-<div data-widget-part="messages.turn-line" data-turn-state={turnState ?? undefined}>
+<div data-widget-part="messages.turn-line turn-line.turn-line" data-turn-state={turnState ?? undefined}>
 	{#if status || hasLinks}
-		<div data-widget-part="messages.turn-line-run">
+		<div data-widget-part="messages.turn-line-run turn-line.run">
 			{#if hasLinks}
 				<!-- `sp-popover` (§3.5): the pill is the trigger; its panel holds
 				     the links, which is all a narrow box shows of them. -->
@@ -157,47 +157,47 @@
 					<button
 						slot="trigger"
 						type="button"
-						data-widget-part="messages.turn-line-status"
+						data-widget-part="messages.turn-line-status turn-line.status"
 						data-turn-state={turnState ?? undefined}
 						title={status || reviewLabel}
 					>
-						<span data-widget-part="messages.turn-line-status-text">{status || reviewLabel}</span>
-						<sp-icon name="chevron-up" size="12" data-widget-part="messages.turn-line-status-more"></sp-icon>
+						<span data-widget-part="messages.turn-line-status-text turn-line.status-text">{status || reviewLabel}</span>
+						<sp-icon name="chevron-up" size="12" data-widget-part="messages.turn-line-status-more turn-line.status-more"></sp-icon>
 					</button>
-					<div data-widget-part="messages.turn-line-panel">
+					<div data-widget-part="messages.turn-line-panel turn-line.panel">
 						{#if toDecide.length}
-							<header data-widget-part="messages.ledger-review-title">
+							<header data-widget-part="messages.ledger-review-title turn-line.ledger-review-title">
 								<sp-icon name="clipboard-check" size="14"></sp-icon>
 								<span>Waiting for you</span>
 							</header>
-							<p data-widget-part="messages.ledger-review-note">{decideNote}</p>
-							<StateProposalList proposals={toDecide} showAnchor />
+							<p data-widget-part="messages.ledger-review-note turn-line.ledger-review-note">{decideNote}</p>
+							<StateProposalList proposals={toDecide} showAnchor alias="turn-line" />
 						{/if}
 						{#if ownOffers.length}
-							<header data-widget-part="messages.ledger-review-title">
+							<header data-widget-part="messages.ledger-review-title turn-line.ledger-review-title">
 								<sp-icon name="hourglass" size="14"></sp-icon>
 								<span>{ownOffers.length === 1 ? "Your offer" : "Your offers"}</span>
 							</header>
-							<p data-widget-part="messages.ledger-review-note">
+							<p data-widget-part="messages.ledger-review-note turn-line.ledger-review-note">
 								Nothing moves until it is accepted. You can take an offer back.
 							</p>
-							<StateProposalList proposals={ownOffers} />
+							<StateProposalList proposals={ownOffers} alias="turn-line" />
 						{/if}
 					</div>
 				</sp-popover>
 			{:else}
-				<span data-widget-part="messages.turn-line-status" data-turn-state={turnState ?? undefined} title={status}>
-					<span data-widget-part="messages.turn-line-status-text">{status}</span>
+				<span data-widget-part="messages.turn-line-status turn-line.status" data-turn-state={turnState ?? undefined} title={status}>
+					<span data-widget-part="messages.turn-line-status-text turn-line.status-text">{status}</span>
 				</span>
 			{/if}
 			{#if hasSideLinks}
 				<!-- The same link, beside the pill where the box has room. Not
 				     when the pill already says it (no status): one Review per
 				     screen, never two side by side. -->
-				<span data-widget-part="messages.turn-line-links">
+				<span data-widget-part="messages.turn-line-links turn-line.links">
 					<button
 						type="button"
-						data-widget-part="messages.turn-line-review"
+						data-widget-part="messages.turn-line-review turn-line.review"
 						onclick={() => (panelOpen = true)}
 					>
 						<sp-icon name="clipboard-check" size="12"></sp-icon>
@@ -208,15 +208,15 @@
 		</div>
 	{/if}
 	{#if showNext && dossier}
-		<div data-widget-part="messages.turn-line-next messages.next-up">
+		<div data-widget-part="messages.turn-line-next turn-line.next messages.next-up turn-line.next-up">
 			<!-- Who else is writing (the page's view): a pill, when someone is. -->
-			<span data-widget-part="messages.turn-line-typing"><sp-host-view name="session-banners"></sp-host-view></span>
+			<span data-widget-part="messages.turn-line-typing turn-line.typing"><sp-host-view name="session-banners"></sp-host-view></span>
 			{#if turnState === "live"}
 				<!-- 🚧 Live with the composer's own Stop right under it: nothing here. -->
 				{#if !composerStops}
 					<button
 						type="button"
-						data-widget-part="messages.turn-line-stop"
+						data-widget-part="messages.turn-line-stop turn-line.stop"
 						title="Stop"
 						aria-label="Stop generating"
 						onclick={() => conv.invoke("stop")}
@@ -228,7 +228,7 @@
 			{:else if turnState === "failed" && replyIsLast && reply}
 				<button
 					type="button"
-					data-widget-part="messages.turn-line-retry"
+					data-widget-part="messages.turn-line-retry turn-line.retry"
 					title="Write this reply again"
 					onclick={() => conv.invoke("retry", reply)}
 				>
@@ -241,7 +241,11 @@
 					candidates={dossier.turn.candidates}
 					mode={nextUp}
 					shouldShow={dossier.turn.show && conv.edit.id === null}
-					avatarFor={(ref) => (ref.startsWith("character:") ? ref : undefined)}
+					avatarFor={(ref) =>
+						// 🚧 `seated-member:` resolves to a face as `character:` does. Not `player-seat:`: the page's
+						// `sp-avatar` lookup has no face for it, and a ref returned here draws the blank avatar
+						// where a card-less seat draws nothing today.
+						ref.startsWith("character:") || ref.startsWith("seated-member:") ? ref : undefined}
 					canChooseSomeoneElse={dossier.turn.canChoose}
 					viewerUserId={conv.ctx.viewer.v1.userId}
 					waitingFor={dossier.turn.waitingFor ?? []}
@@ -252,6 +256,6 @@
 			{/if}
 		</div>
 	{:else}
-		<span data-widget-part="messages.turn-line-typing"><sp-host-view name="session-banners"></sp-host-view></span>
+		<span data-widget-part="messages.turn-line-typing turn-line.typing"><sp-host-view name="session-banners"></sp-host-view></span>
 	{/if}
 </div>

@@ -275,7 +275,7 @@ function keepHero() { heroes[who] = hero; world.heroes = heroes; plan.world = wo
 function said(words) { var t0 = text(words); if (t0) plan.echo = /[.!?…]$/.test(t0) ? t0 : t0 + "."; }
 // 🚧 The seat's character is dead (by its fate row): the next name is a NEW
 // character, on a new seat (P3-1).
-var seatFate = seatRef ? text(own(own(own(state.cast).byId)[stateKeyOf(seatRef)]).fate) : "";
+var seatFate = seatRef ? text(own(own(own(state.cast).byId)[stateKeyOf(seatRef, own(own(state.cast).byId))]).fate) : "";
 // 🚧 A seat with a card is named by it (P3-6, the walk's #26): the name
 // question is not asked of a persona — unless that character is the one
 // who died, and a new one is being made.
@@ -391,7 +391,7 @@ if (WORLD_QUESTIONS.indexOf(referent) >= 0 && !isOwner && choice !== JUST_PLAY) 
 	plan.sheetBrief = sheetBrief(hero.told ? "told" : "surprise");
 } else if (referent === Q.newCharacter) {
 	// The fate row decides, never the form still standing in the lane.
-	var fateNow = seatRef ? text(own(own(own(state.cast).byId)[stateKeyOf(seatRef)]).fate) : "";
+	var fateNow = seatRef ? text(own(own(own(state.cast).byId)[stateKeyOf(seatRef, own(own(state.cast).byId))]).fate) : "";
 	if (seatRef && fateNow !== "dead") plan.refusal = (name || "Your character") + " is alive and still in the story: there is no new character to make.";
 	else { said(label); ask("A new face, then. What is your new character called?", [nameBlock(who)]); }
 } else if (referent === STANDING_Q) {
@@ -554,14 +554,14 @@ var pointsConfig = null;
 if (rulesNow.casting === "points" && rulesNow.pointsSlot) {
 	var pool = kitSpellPoints(kitKey);
 	changes.push({ slot: rulesNow.pointsSlot, value: pool });
-	var poolNow = sheetRef ? own(own(own(state).configs)[stateKeyOf(sheetRef)])[rulesNow.pointsSlot] : null;
+	var poolNow = sheetRef ? own(own(own(state).configs)[stateKeyOf(sheetRef, own(own(own(state).cast).byId))])[rulesNow.pointsSlot] : null;
 	if (!poolNow || poolNow.max !== pool) pointsConfig = { max: pool };
 }
 if (justPlay && cls) changes.push({ slot: SL.characterClass, value: cls });
 var kitOut = null;
 var drop = [];
 if (sheetRef) {
-	var heldBag = own(own(own(state).cast).byId)[stateKeyOf(sheetRef)] || {};
+	var heldBag = own(own(own(state).cast).byId)[stateKeyOf(sheetRef, own(own(own(state).cast).byId))] || {};
 	for (var rk in HELD) {
 		var heldList = Array.isArray(heldBag[rk]) ? heldBag[rk] : [];
 		for (var hi = 0; hi < heldList.length; hi++) {
@@ -776,7 +776,6 @@ return {
 	placements: placements.length ? placements : null,
 	places: writes.places.length ? writes.places : null,
 	people: writes.people.length ? writes.people : null,
-	fallen: null,
 	startedLanes: started.length ? started : null,
 	startedLine: "The story has started: open the Story tab and say what you do."
 };

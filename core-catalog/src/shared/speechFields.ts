@@ -33,6 +33,7 @@ export const READ_ALOUD_MODES = ["off", "make", "play"] as const
 export const SPEECH_READ_ALOUD_FIELD: FieldDecl = {
 	type: "enum",
 	label: { en: "Read replies aloud" },
+	group: "Speech",
 	description: {
 		en: "Whether each reply is spoken. Making audio is another call to a speech service per reply."
 	},
@@ -50,6 +51,7 @@ export const SPEECH_READ_ALOUD_FIELD: FieldDecl = {
 export const SPEECH_TEMPLATE_FIELD: FieldDecl = {
 	type: "enum",
 	label: { en: "What is read" },
+	group: "Speech",
 	description: {
 		en: "Which part of each reply is spoken. Unset uses the pipeline's own line template (the whole line, as shipped)."
 	},
@@ -78,6 +80,7 @@ export const SPEECH_TEMPLATE_FIELD: FieldDecl = {
 export const SPEECH_NARRATOR_VOICE_FIELD: FieldDecl = {
 	type: "string",
 	label: { en: "Narrator voice" },
+	group: "Speech",
 	description: {
 		en: "The voice that reads narration, by its voicebank name. Empty uses the pub's default voice."
 	},
@@ -89,6 +92,7 @@ export const SPEECH_NARRATOR_VOICE_FIELD: FieldDecl = {
 export const SESSION_LANGUAGE_FIELD: FieldDecl = {
 	type: "string",
 	label: { en: "Language" },
+	group: "Speech",
 	description: {
 		en: "The language this session is spoken in, as a two-letter code such as en or fr. Empty uses the pub's default."
 	},

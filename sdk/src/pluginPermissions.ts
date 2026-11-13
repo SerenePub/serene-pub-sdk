@@ -148,7 +148,7 @@ export function renderPluginPermissionsGuide(): string {
 			`- Handed: ${code(keys).join(', ')}.`,
 			`- ${keys.includes('storage') ? "Storage: your plugin's own files, when it asks for storage (`permissions.storage`)." : 'No storage.'}`,
 			`- ${keys.includes('package') ? "Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`)." : 'No package files.'}`,
-			`- ${keys.includes('annex') ? "The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject." : "No saved data (`ctx.annex`) — a task is pure."}`,
+			`- ${keys.includes('annex') ? "The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject." : "No saved data (`ctx.annex`) — a task is pure."}`,
 			`- ${keys.includes('fetch') ? 'Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.' : 'No network.'}`,
 			'',
 		)

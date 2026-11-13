@@ -10,7 +10,7 @@
  * door's.
  */
 
-import { envoySlugOfRef, senderRefOf } from '@serene-pub/sdk'
+import { envoySlugOfRef, senderRefOf, type ParticipantRef } from '@serene-pub/sdk'
 
 /** The message venue's per-row facts, as `item.<field>`. @experimental */
 export interface ItemValues {
@@ -59,7 +59,7 @@ export interface ItemValues {
 	speaker: string | null
 	/**
 	 * A character's line (R11): a reply (`role` is not `user`) whose
-	 * `speaker` is `character:<id>` — a cast member the story voices, never
+	 * `speaker` is `character:<id>` (🚧 or `seated-member:<id>`) — a cast member the story voices, never
 	 * the person's own line, even written as a persona, never an envoy's,
 	 * never the pipeline's own voice. Its own field because the predicate
 	 * grammar states one condition and never an *or* (`predicates.ts`):
@@ -81,6 +81,8 @@ export interface ItemRow {
 	characterId?: number | null
 	/** The persona a person wrote the row as, when they held one. */
 	personaId?: number | null
+	/** 🚧 The speaker's cast member, as the host fills it; read through the cast lookup (`refOfMember`). */
+	castMemberId?: number | null
 	metadata?: {
 		isGreeting?: boolean
 		swipes?: { currentIdx: number | null; history: string[] }
@@ -93,20 +95,48 @@ export interface ItemRow {
  * Who spoke a row, as a participant reference — see `ItemValues.speaker`.
  * An envoy's reference wins (an envoy has no character row to name), then
  * the persona a person wrote as, then the speaking character, then 🚧 the
- * card-less player seat a person wrote from.
+ * card-less player seat a person wrote from. 🚧 `refOfMember` (a cast member
+ * id → that seat's `ref`, from the `characters.v1` entry whose `castMemberId`
+ * matches) names a row's speaker by its cast member, asking for a player seat
+ * when a person sent the row and a character seat otherwise; absent or a miss, ⏳ the
+ * card form above (removed in S5).
  * @experimental
  */
-export function itemSpeakerOf(row: Pick<ItemRow, 'characterId' | 'personaId' | 'metadata'>): string | null {
+export function itemSpeakerOf(
+	row: Pick<ItemRow, 'characterId' | 'personaId' | 'castMemberId' | 'metadata'>,
+	refOfMember?: (
+		castMemberId: number,
+		/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+		seatKind?: 'character-seat' | 'player-seat',
+	) => ParticipantRef | null | undefined,
+): string | null {
 	const envoy = envoySlugOfRef(row.metadata?.speaker)
 	if (envoy) return `envoy:${envoy}`
+	if (row.castMemberId != null && refOfMember) {
+		// A row a person sent from a seat asks for a player seat; any other row, a character seat.
+		const ref = refOfMember(
+			row.castMemberId,
+			senderRefOf(row) ? 'player-seat' : 'character-seat',
+		)
+		if (ref) return ref
+	}
 	if (row.personaId == null && row.characterId != null) return `character:${row.characterId}`
-	return senderRefOf(row)
+	return senderRefOf(row, refOfMember)
 }
 
 /** The `item` document for one message — pure, the same on both sides. @experimental */
 export function itemValuesOf(
 	row: ItemRow,
-	facts: { isNewest: boolean; mine: boolean },
+	facts: {
+		isNewest: boolean
+		mine: boolean
+		/** 🚧 The cast lookup, as {@link itemSpeakerOf}'s. */
+		refOfMember?: (
+			castMemberId: number,
+			/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+			seatKind?: 'character-seat' | 'player-seat',
+		) => ParticipantRef | null | undefined
+	},
 ): ItemValues {
 	const greeting = row.metadata?.isGreeting === true
 	const swipes = row.metadata?.swipes
@@ -114,7 +144,7 @@ export function itemValuesOf(
 	const len = swipes?.history?.length ?? 0
 	const hasNext = typeof idx === 'number' && idx < len - 1
 	const role = row.role ?? ''
-	const speaker = itemSpeakerOf(row)
+	const speaker = itemSpeakerOf(row, facts.refOfMember)
 	return {
 		id: row.id,
 		isNewest: facts.isNewest,
@@ -126,6 +156,6 @@ export function itemValuesOf(
 		greeting,
 		channel: row.channel || 'main',
 		speaker,
-		characterLine: role !== 'user' && !!speaker?.startsWith('character:'),
+		characterLine: role !== 'user' && !!(speaker?.startsWith('character:') || speaker?.startsWith('seated-member:')),
 	}
 }

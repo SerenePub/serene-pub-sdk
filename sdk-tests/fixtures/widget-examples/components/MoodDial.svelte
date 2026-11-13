@@ -3,18 +3,16 @@
 	import { actionIdentity } from '@serene-pub/sdk/component'
 	import type { SessionStateSlotV1, SlotConfig } from '@serene-pub/sdk'
 
-	// Declared `scopes: ['session:state', 'session:state:write', 'persona']`:
+	// Declared `scopes: ['session:state', 'session:state:write']`:
 	// an admin grants each apart, so draw what was granted, not what was asked.
 	let { ctx }: { ctx: ComponentContext } = $props()
 
 	const section = $derived(ctx.scope('session:state'))
-	const persona = $derived(ctx.scope('persona')?.[0])
-	// The viewer's persona's stats when it has any, else the world's. A cast
-	// owner names no character, so the persona is matched by its label.
+	// The viewer's own stats when they have any, else the world's. The host
+	// marks the viewer's own owner `mine`; never match one by kind or key.
 	const owner = $derived.by(() => {
 		const owners = section?.owners ?? []
-		const mine = persona && owners.find((o) => o.kind === 'session_cast' && o.label === persona.name)
-		return mine ?? owners.find((o) => o.kind === 'session')
+		return owners.find((o) => o.mine) ?? owners.find((o) => o.kind === 'session')
 	})
 	const values = $derived(
 		!section || !owner ? {} : owner.kind === 'session' ? section.resolved.world : (section.resolved.cast[owner.key] ?? {}),

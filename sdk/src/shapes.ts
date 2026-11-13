@@ -417,7 +417,12 @@ export const S = {
 	turnEntries: defineShape({ id: 'core:shape/turn-entries@1' }),
 	/**
 	 * **Sprite choices**: what a line's speaker can show
-	 * — `{ characterId, set, defaultSet, labels, last, recent, decidedBy }`.
+	 * — `{ castMemberId, characterId, set, defaultSet, labels, last, recent, decidedBy }`.
+	 * 🚧 `castMemberId` (the speaker's cast member) is the identity; the card
+	 * the art comes from **cascades**: the member's own sprite sets per its
+	 * configuration, else the card active on the timeline (the dated card at
+	 * the reading). ⏳ `characterId` (removed in S5) is that card, null when
+	 * the member's own sets draw.
 	 * `set` is the sprite set in force for the line (a session override, the
 	 * cast member's amendment, or the card's default — `decidedBy` says
 	 * which); `labels` are that set's sprite labels with an image; `last` is

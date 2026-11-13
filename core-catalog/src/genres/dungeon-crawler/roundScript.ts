@@ -11,7 +11,8 @@
  *    one of them has **declared** — has a visible line on Story since the
  *    Story's newest reply (`selection.sentSinceReply.main`, the host's
  *    reading of the rows: the seat's `player-seat:<id>`, or `character:<id>`
- *    for a seat with a card). The hand-marked `round` annex key is gone
+ *    for a seat with a card — ⏳ a line stamped with the card still counts
+ *    after the seat's `ref` changes form, until S5). The hand-marked `round` annex key is gone
  *    (AUDIT C7): nothing ever wrote it but its own reset;
  *
  *  ⚠ **Why the rows, not the annex** (multiplayer lane, 2026-10-15): a
@@ -80,11 +81,23 @@ var state = ctx && ctx.state && typeof ctx.state === "object" ? ctx.state : null
 var byId = state && state.cast && state.cast.byId ? state.cast.byId : null;
 var progress = core[${JSON.stringify(DUNGEON_CRAWLER_ANNEX_KEYS.progress)}] || core[${JSON.stringify(DUNGEON_CRAWLER_ANNEX_KEYS.legacyWorld)}] || {};
 var mirror = (progress.fates && typeof progress.fates === "object") ? progress.fates : {};
-function refOf(s) { return s.persona && s.persona.id != null ? "character:" + s.persona.id : "player-seat:" + s.seatId; }
+// The seat's participant ref: the host's, else ⏳ today's card form.
+function refOf(s) { return typeof s.ref === "string" && s.ref ? s.ref : s.persona && s.persona.id != null ? "character:" + s.persona.id : "player-seat:" + s.seatId; }
+// The state.cast.byId key a participant reference reads under: the entry
+// whose host-filled \`ref\` is this ref (look up, never parse). ⏳ A host
+// before S3 fills no \`ref\`: then today's card-form key — only when the entry
+// under it carries no \`ref\` of its own (card and member ids share one range).
+function stateKeyOf(ref, byId) {
+	var r = String(ref), b = byId && typeof byId === "object" ? byId : {};
+	for (var k in b) { var e = b[k]; if (e && typeof e === "object" && e.ref === r) return k; }
+	var m = /^player-seat:(\\d+)$/.exec(r), c = /^character:(\\d+)$/.exec(r);
+	var key = m ? "player_seat:" + m[1] : c ? c[1] : r;
+	var at = b[key];
+	return at && typeof at === "object" && at.ref !== undefined ? r : key;
+}
 function fateOf(s) {
 	if (byId) {
-		var key = s.persona && s.persona.id != null ? String(s.persona.id) : "player_seat:" + s.seatId;
-		var row = byId[key];
+		var row = byId[stateKeyOf(refOf(s), byId)];
 		return row && typeof row.fate === "string" ? row.fate : "alive";
 	}
 	return mirror[refOf(s)];
@@ -105,7 +118,7 @@ function made(s) {
 	return !!h && (h.made === true || (h.backstory !== undefined && String(h.name || "").trim() !== ""));
 }
 var named = ((doc.cast && doc.cast.sessionPersonas) || []).filter(function (s) {
-	if (!s || s.removedAt) return false;
+	if (!s || s.removedAt || s.enabled === false) return false;
 	var name = s.seatName || (s.persona && s.persona.name) || "";
 	return String(name).trim() !== "" && made(s);
 });
@@ -116,6 +129,11 @@ var seats = named.filter(function (s) {
 function hasDeclared(s) {
 	var user = userOfSeat(s);
 	if (user != null && declared.indexOf("user:" + user) >= 0) return true;
+	if (typeof s.ref === "string" && s.ref) {
+		if (declared.indexOf(s.ref) >= 0) return true;
+		// ⏳ A line stamped before the flip, with the card: still counts until S5.
+		return !!s.persona && s.persona.id != null && declared.indexOf("character:" + s.persona.id) >= 0;
+	}
 	if (s.persona && s.persona.id != null && declared.indexOf("character:" + s.persona.id) >= 0) return true;
 	return declared.indexOf("player-seat:" + s.seatId) >= 0;
 }

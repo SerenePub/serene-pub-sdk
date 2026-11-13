@@ -9,6 +9,7 @@
 	import type { ComponentContext } from "@serene-pub/sdk/component"
 	import { WIDGET_CONTEXT_KEY } from "@serene-pub/core-catalog/widgets"
 	import AuthorsNoteWidget from "./AuthorsNoteWidget.svelte"
+	import WidgetBoundary from "../../../shared/WidgetBoundary.svelte"
 	import { widgetRefFromComponent } from "../../../shared/widgetRef.svelte"
 
 	let { ctx }: { ctx: ComponentContext } = $props()
@@ -23,4 +24,4 @@
 	)
 </script>
 
-<AuthorsNoteWidget />
+<WidgetBoundary {ctx}><AuthorsNoteWidget /></WidgetBoundary>

@@ -220,11 +220,11 @@ test("core's scene portraits (W6): a pinned instance reads as a stage of chosen 
 		// The next page, on asking.
 		await view.click('[data-widget-part~="scene-portraits.chooser-more"]')
 		assert.equal(view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]').length, 3)
-		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-more"]'), null)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-more"]') === null, true)
 		// The chosen one pressed again changes nothing: the chooser just closes.
 		const asked = view.requested.length
 		await view.click(view.queryAll('[data-widget-part~="scene-portraits.chooser-tile"]')[1]!)
-		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]') === null, true)
 		assert.equal(view.requested.length, asked)
 		// Another tile chooses it (F2): the chooser closes at once.
 		await view.click('button[aria-label="Choose an image for Ada"]')
@@ -237,7 +237,7 @@ test("core's scene portraits (W6): a pinned instance reads as a stage of chosen 
 			kind: 'set-chosen-image',
 			params: { characterRef: 'character:3', mediaRef: 'u-3' },
 		})
-		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]') === null, true)
 		// The settings come back: the face shows it.
 		await view.push('settings', { source: 'pinned', bars: true, pickMembers: ['Ada', 'Wee', 'Bo'], chosenImages: ['character:3=u-3'] })
 		assert.equal(view.query('[data-scene-member="character:3"] img')?.getAttribute('src'), face(9))
@@ -250,10 +250,10 @@ test("core's scene portraits (W6): a pinned instance reads as a stage of chosen 
 		})
 		await view.push('settings', { source: 'pinned', bars: true, pickMembers: ['Ada', 'Wee', 'Bo'], chosenImages: [] })
 		await view.click('button[aria-label="Choose an image for Ada"]')
-		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-clear"]'), null)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser-clear"]') === null, true)
 		// Closing goes back to the faces; nothing asked to clear a pin or to view.
 		await view.click('[data-widget-part~="scene-portraits.chooser-close"]')
-		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]'), null)
+		assert.equal(view.query('[data-widget-part~="scene-portraits.chooser"]') === null, true)
 		assert.equal(view.requested.some((r) => r.kind === 'clear-scene-image' || r.kind === 'view-image'), false)
 	} finally {
 		await view.unmount()
@@ -271,16 +271,16 @@ test("core's scene portraits (W6): whoever spoke last, ranked; a row; nobody yet
 		assert.deepEqual(view.queryAll('[data-scene-member]').map((n) => n.getAttribute('data-scene-member')), ['character:4'])
 		assert.equal(text(view.query('[data-widget-part~="scene-portraits.recent-rank"]')), '1')
 		await view.push('scoped', { characters: characters() })
-		assert.equal(
-			text(view.query('[data-widget-part~="scene-portraits.empty"]')),
-			'Nobody has spoken yet. Faces show up here as the cast speaks.',
-		)
+		// Nobody has spoken: nothing is drawn (owner R10), no sentence.
+		assert.equal(view.query('[data-widget-part~="scene-portraits.empty"]') === null, true)
+		assert.equal(view.queryAll('[data-scene-member]').length, 0)
+		assert.doesNotMatch(view.root.textContent ?? '', /Nobody has spoken yet/)
 	} finally {
 		await view.unmount()
 	}
 })
 
-test("core's scene portraits: before the characters section arrives, no who says nothing is here", { timeout: 120_000 }, async () => {
+test("core's scene portraits: before the characters section arrives, no who draws nothing", { timeout: 120_000 }, async () => {
 	for (const settings of [{ who: 'pick', pickMembers: ['Ada'] }, { who: 'scene' }, { who: 'recent' }]) {
 		const source = settings.who
 		const view = await mountComponent({
@@ -298,9 +298,9 @@ test("core's scene portraits: before the characters section arrives, no who says
 			assert.deepEqual(view.refused, [])
 			assert.equal(view.query('[data-widget-part~="scene-portraits.empty"]') === null, true, source)
 			assert.equal(view.queryAll('img').length, 0, source)
-			// Once it arrives, the widget draws it (nobody has spoken: recent says so).
+			// Once it arrives, the widget draws it (nobody has spoken: recent draws nothing).
 			await view.push('scoped', { characters: characters() })
-			if (source === 'recent') assert.ok(view.query('[data-widget-part~="scene-portraits.empty"]'), source)
+			if (source === 'recent') assert.equal(view.query('[data-widget-part~="scene-portraits.empty"]') === null, true, source)
 			else assert.equal(view.queryAll('img').length > 0, true, source)
 		} finally {
 			await view.unmount()
@@ -326,7 +326,7 @@ test("a clone of scene portraits in a box not granted `characters` says so — n
 		assert.deepEqual(view.refused, [])
 		// Granted at runtime: the notice goes, and the section, once posted, draws.
 		await view.setGrants(['characters'])
-		assert.equal(view.query('[data-scope-not-granted]'), null)
+		assert.equal(view.query('[data-scope-not-granted]') === null, true)
 		await view.push('scoped', { characters: characters() })
 		assert.ok(view.queryAll('[data-scene-member]').length > 0)
 	} finally {

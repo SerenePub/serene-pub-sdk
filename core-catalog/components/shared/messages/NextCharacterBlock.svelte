@@ -38,7 +38,7 @@
 	 * person's style keeps matching: the markup carries no look; the default
 	 * widget stylesheet draws it, keyed on the new names.
 	 */
-	import type { NextUp } from "./MessagesWidget.svelte"
+	import type { NextUp } from "../turn-line/settings"
 	import { useConversation } from "./conversation.svelte"
 
 	type Entry = { ref: string | null; channel?: unknown; [k: string]: unknown }
@@ -133,49 +133,49 @@
 
 {#if !here.length && waitingWords}
 	<!-- 🚧 The round waits on others, the viewer's say made (Q3-3). -->
-	<div data-widget-part="messages.turn-line-waiting messages.next-up-waiting" data-waiting-for="">
+	<div data-widget-part="messages.turn-line-waiting turn-line.waiting messages.next-up-waiting turn-line.next-up-waiting" data-waiting-for="">
 		<sp-icon name="hourglass" size="14"></sp-icon>
-		<span data-widget-part="messages.turn-line-text messages.next-up-text">{waitingWords}</span>
+		<span data-widget-part="messages.turn-line-text turn-line.text messages.next-up-text turn-line.next-up-text">{waitingWords}</span>
 	</div>
 {:else if shouldShow && !order.length && candidates.length}
-	<div data-widget-part="messages.turn-line-waiting messages.next-up-waiting">
-		<span data-widget-part="messages.turn-line-text messages.next-up-text">
+	<div data-widget-part="messages.turn-line-waiting turn-line.waiting messages.next-up-waiting turn-line.next-up-waiting">
+		<span data-widget-part="messages.turn-line-text turn-line.text messages.next-up-text turn-line.next-up-text">
 			Waiting for a message — or pick who speaks next
 		</span>
-		<button type="button" data-widget-part="messages.turn-line-pick messages.next-up-pick" onclick={onSomeoneElse}>
+		<button type="button" data-widget-part="messages.turn-line-pick turn-line.pick messages.next-up-pick turn-line.next-up-pick" onclick={onSomeoneElse}>
 			<sp-icon name="users" size="14"></sp-icon>
 			<span>Pick</span>
 		</button>
 	</div>
 {:else if shouldShow && head}
 	<!-- One line: who is up, and what you can do about it. -->
-	<div data-widget-part="messages.turn-line-head messages.next-up-head">
-		<div data-widget-part="messages.turn-line-due messages.next-up-line">
+	<div data-widget-part="messages.turn-line-head turn-line.head messages.next-up-head turn-line.next-up-head">
+		<div data-widget-part="messages.turn-line-due turn-line.due messages.next-up-line turn-line.next-up-line">
 			{#if face}
 				<sp-avatar ref={head.ref} size="sm"></sp-avatar>
 			{:else if head.ref === null}
-				<sp-icon name="book-open-text" size="18" data-widget-part="messages.turn-line-narrator messages.next-up-narrator"></sp-icon>
+				<sp-icon name="book-open-text" size="18" data-widget-part="messages.turn-line-narrator turn-line.narrator messages.next-up-narrator turn-line.next-up-narrator"></sp-icon>
 			{/if}
-			<span data-widget-part="messages.turn-line-text messages.next-up-text">
+			<span data-widget-part="messages.turn-line-text turn-line.text messages.next-up-text turn-line.next-up-text">
 				{line}
 			</span>
-			<div data-widget-part="messages.turn-line-controls messages.next-up-controls">
+			<div data-widget-part="messages.turn-line-controls turn-line.controls messages.next-up-controls turn-line.next-up-controls">
 				{#if canChooseSomeoneElse}
 					<button
 						type="button"
-						data-widget-part="messages.turn-line-pick messages.next-up-pick"
+						data-widget-part="messages.turn-line-pick turn-line.pick messages.next-up-pick turn-line.next-up-pick"
 						onclick={onSomeoneElse}
 						title="Someone else"
 						aria-label="Pick someone else to continue"
 					>
 						<sp-icon name="users" size="14"></sp-icon>
-						<span data-widget-part="messages.turn-line-pick-label messages.next-up-pick-label">Someone else</span>
+						<span data-widget-part="messages.turn-line-pick-label turn-line.pick-label messages.next-up-pick-label turn-line.next-up-pick-label">Someone else</span>
 					</button>
 				{/if}
 				{#if !headIsPerson}
 					<button
 						type="button"
-						data-widget-part="messages.turn-line-continue messages.next-up-continue"
+						data-widget-part="messages.turn-line-continue turn-line.continue messages.next-up-continue turn-line.next-up-continue"
 						onclick={() => onContinue(channel)}
 						title="Continue"
 						aria-label="Continue with {headName}"
@@ -187,7 +187,7 @@
 					<!-- 🚧 D5: the owner's Continue moves past the waiting player. -->
 					<button
 						type="button"
-						data-widget-part="messages.turn-line-continue messages.next-up-continue"
+						data-widget-part="messages.turn-line-continue turn-line.continue messages.next-up-continue turn-line.next-up-continue"
 						data-skips=""
 						onclick={() => onContinue(channel)}
 						title="Move past {headName}: the next turn goes ahead without them"
@@ -200,12 +200,12 @@
 			</div>
 		</div>
 		{#if ownerSkips}
-			<p data-widget-part="messages.turn-line-skip">
+			<p data-widget-part="messages.turn-line-skip turn-line.skip">
 				Continue moves past {headName}: their turn is skipped this round.
 			</p>
 		{/if}
 		{#if after.length}
-			<p data-widget-part="messages.turn-line-after messages.next-up-after">
+			<p data-widget-part="messages.turn-line-after turn-line.after messages.next-up-after turn-line.next-up-after">
 				Then {after.map((e) => nameOf(e.ref)).join(", ")}
 			</p>
 		{/if}

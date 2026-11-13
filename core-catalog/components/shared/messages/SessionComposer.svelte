@@ -296,6 +296,13 @@
 		c?.personas.find((p) => p.personaId === c?.personaId) ?? null
 	)
 	const personaCount = $derived(c?.personas.length ?? 0)
+	/**
+	 * A persona's avatar reference: the `ref` its conversation cast row carries
+	 * (🚧 the seat's); ⏳ `character:<personaId>` for a host that fills none.
+	 */
+	const personaRefOf = (personaId: number): string =>
+		conv.dossier?.cast?.sessionPersonas?.find((p) => p?.personaId === personaId && p.ref)?.ref ??
+		`character:${personaId}`
 
 	const tabs = $derived(c?.tabs ?? [])
 	let turnControls = $derived(tabs.find((t) => t.view === TURN_CONTROLS_VIEW))
@@ -395,7 +402,10 @@
 		if (argument === null) setField("")
 		paletteDismissed = null
 		paletteHighlight = -1
-		conv.invoke(actionIdentity(action), undefined, undefined, argument ?? undefined)
+		// A bare name still carries its argument slot, empty: the host fires
+		// an action whose text is optional without any, and opens the collect
+		// modal only for one that requires it (or asks who hears it).
+		conv.invoke(actionIdentity(action), undefined, undefined, argument ?? "")
 	}
 	/**
 	 * The draft as a whole slash name and its argument (S2), when it has one:
@@ -593,7 +603,7 @@
      not an interaction of its own (natively; a remote hears no keys). -->
 <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 <div
-	data-widget-part="messages.composer"
+	data-widget-part="messages.composer composer.composer"
 	data-composer-skin={composerSkin}
 	data-closed={closed ? "" : undefined}
 	hidden={conv.edit.id !== null}
@@ -604,18 +614,18 @@
 	{#if takeSeatHere}
 		<!-- 🚧 A guest's seat (Lair rewrite D5): name the character you'll
 		     play, or bring a persona. Their lines are that character's turns. -->
-		<div data-widget-part="messages.join" data-join="seat">
-			<div data-widget-part="messages.join-text">
-				<sp-icon name="armchair" size="48" data-widget-part="messages.join-icon"></sp-icon>
-				<h3 data-widget-part="messages.join-title">Take a seat</h3>
-				<p data-widget-part="messages.join-note">
+		<div data-widget-part="messages.join composer.join" data-join="seat">
+			<div data-widget-part="messages.join-text composer.join-text">
+				<sp-icon name="armchair" size="48" data-widget-part="messages.join-icon composer.join-icon"></sp-icon>
+				<h3 data-widget-part="messages.join-title composer.join-title">Take a seat</h3>
+				<p data-widget-part="messages.join-note composer.join-note">
 					Name the character you'll play. What you write is their turn.
 				</p>
 			</div>
-			<div data-widget-part="messages.join-seat">
+			<div data-widget-part="messages.join-seat composer.join-seat">
 				<input
 					type="text"
-					data-widget-part="messages.join-name"
+					data-widget-part="messages.join-name composer.join-name"
 					aria-label="Your character's name"
 					placeholder="Your character's name"
 					value={seatName}
@@ -629,7 +639,7 @@
 				/>
 				<button
 					type="button"
-					data-widget-part="messages.join-button"
+					data-widget-part="messages.join-button composer.join-button"
 					disabled={!seatName.trim()}
 					onclick={() => void takeSeat()}
 				>
@@ -638,11 +648,11 @@
 				</button>
 			</div>
 			{#if seatRefusal}
-				<p data-widget-part="messages.join-refusal" role="alert">{seatRefusal}</p>
+				<p data-widget-part="messages.join-refusal composer.join-refusal" role="alert">{seatRefusal}</p>
 			{/if}
 			<button
 				type="button"
-				data-widget-part="messages.join-alternative"
+				data-widget-part="messages.join-alternative composer.join-alternative"
 				onclick={() => void conv.request("add-persona", {})}
 			>
 				Play one of your personas instead
@@ -652,16 +662,16 @@
 		<!-- Guests without a persona get the one thing they can do here —
 		     unless the genre closed this composer: its waiting reason wins
 		     (2026-10-16). -->
-		<div data-widget-part="messages.join">
-			<div data-widget-part="messages.join-text">
-				<sp-icon name="user-plus" size="48" data-widget-part="messages.join-icon"></sp-icon>
-				<h3 data-widget-part="messages.join-title">Join the conversation</h3>
-				<p data-widget-part="messages.join-note">
+		<div data-widget-part="messages.join composer.join">
+			<div data-widget-part="messages.join-text composer.join-text">
+				<sp-icon name="user-plus" size="48" data-widget-part="messages.join-icon composer.join-icon"></sp-icon>
+				<h3 data-widget-part="messages.join-title composer.join-title">Join the conversation</h3>
+				<p data-widget-part="messages.join-note composer.join-note">
 					Add a persona to this session to send messages.
 				</p>
 			</div>
 			<button
-				data-widget-part="messages.join-button"
+				data-widget-part="messages.join-button composer.join-button"
 				onclick={() => void conv.request("add-persona", {})}
 			>
 				<sp-icon name="user-plus" size="20"></sp-icon>
@@ -678,10 +688,10 @@
 		     is the footer's (polish parity L1, 2026-10-24: the composer is one
 		     row at rest — persona · Actions · attach · preview · more · Send). -->
 		{#if actionsLabelShown && actionsOpen}
-		<div data-widget-part="messages.composer-disclosure">
+		<div data-widget-part="messages.composer-disclosure composer.disclosure">
 			<div
 				id={actionsId}
-				data-widget-part="messages.composer-actions-row"
+				data-widget-part="messages.composer-actions-row composer.actions-row"
 				role="group"
 				aria-label="Session actions"
 			>
@@ -691,7 +701,7 @@
 				     draw their chips straight into this row (the row lays out
 				     `sp-host-view`'s children as its own), so they wrap, space
 				     and look as one set. -->
-				<div data-widget-part="messages.composer-actions messages.composer-chips">
+				<div data-widget-part="messages.composer-actions composer.actions messages.composer-chips composer.chips">
 					{#if turnControls}
 						<!-- This composer's channel's turn controls (S1): a copy pinned to the
 						     Sanctum draws the Sanctum's listing. -->
@@ -725,7 +735,7 @@
 							<button
 								slot="trigger"
 								type="button"
-								data-widget-part="messages.composer-more-actions"
+								data-widget-part="messages.composer-more-actions composer.more-actions"
 								title={overflowNew.length
 									? `More actions (${overflowNew.length} new)`
 									: "More actions"}
@@ -736,7 +746,7 @@
 								<sp-icon name="ellipsis" size="14"></sp-icon>
 								More
 								{#if overflowNew.length}
-									<span data-widget-part="messages.composer-new-dot" aria-hidden="true"></span>
+									<span data-widget-part="messages.composer-new-dot composer.new-dot" aria-hidden="true"></span>
 								{/if}
 							</button>
 							{#each overflowActions as a (actionIdentity(a))}
@@ -752,18 +762,18 @@
 								<sp-menu-item
 									value={actionIdentity(a)}
 									disabled={row.disabled || !!closed}
-									data-widget-part="messages.composer-overflow-item"
+									data-widget-part="messages.composer-overflow-item composer.overflow-item"
 								>
 									<sp-icon name={iconName} size="12"></sp-icon>
 									<span title={a.description}>
 										{a.name}
-										<span data-widget-part="messages.composer-overflow-slash">/{a.slash}</span>
+										<span data-widget-part="messages.composer-overflow-slash composer.overflow-slash">/{a.slash}</span>
 										{#if row.reason}
-											<span data-widget-part="messages.composer-overflow-note">{row.reason}</span>
+											<span data-widget-part="messages.composer-overflow-note composer.overflow-note">{row.reason}</span>
 										{/if}
 									</span>
 									{#if a.isNew || overflowNewOnOpen.has(actionIdentity(a))}
-										<span data-widget-part="messages.composer-new">New</span>
+										<span data-widget-part="messages.composer-new composer.new">New</span>
 									{/if}
 								</sp-menu-item>
 							{/each}
@@ -779,7 +789,7 @@
 		     Off where the host offers no attachments, so a paste of text is
 		     the field's as ever. -->
 		<sp-drop-zone
-			data-widget-part="messages.composer-drop"
+			data-widget-part="messages.composer-drop composer.drop"
 			label="Drop to attach"
 			disabled={!offersAttachments}
 			onfiles={(e: CustomEvent<{ files: File[] }>) => {
@@ -790,12 +800,12 @@
 				void attachFiles(e.detail.files)
 			}}
 		>
-		<div data-widget-part="messages.composer-card">
+		<div data-widget-part="messages.composer-card composer.card">
 			{#if usageRatio !== null}
 				<!-- The draft's share of the context window, read along the card's
 				     top edge rather than as a number, so it costs no row. -->
 				<div
-					data-widget-part="messages.composer-meter"
+					data-widget-part="messages.composer-meter composer.meter"
 					role="progressbar"
 					aria-label="Context window used"
 					aria-valuemin={0}
@@ -803,23 +813,23 @@
 					aria-valuenow={Math.round(usageRatio * 100)}
 				>
 					<div
-						data-widget-part="messages.composer-meter-fill"
+						data-widget-part="messages.composer-meter-fill composer.meter-fill"
 						data-high={usageRatio > 0.9 ? "" : undefined}
 						style="--sp-fill: {(usageRatio * 100).toFixed(1)}%"
 					></div>
 				</div>
 			{/if}
 
-			<div data-widget-part="messages.composer-body">
+			<div data-widget-part="messages.composer-body composer.body">
 				{#if activePane}
-					<div data-widget-part="messages.composer-pane-head">
-						<span data-widget-part="messages.composer-pane-title">
+					<div data-widget-part="messages.composer-pane-head composer.pane-head">
+						<span data-widget-part="messages.composer-pane-title composer.pane-title">
 							{activePane.title}
 						</span>
 						{#if !hideCompose}
 							<button
 								type="button"
-								data-widget-part="messages.composer-back"
+								data-widget-part="messages.composer-back composer.back"
 								onclick={backToCompose}
 							>
 								<sp-icon name="arrow-left" size="14"></sp-icon>
@@ -832,7 +842,7 @@
 					</div>
 				{:else if previewOpen}
 					<div
-						data-widget-part="messages.composer-preview"
+						data-widget-part="messages.composer-preview composer.preview"
 						role="region"
 						aria-label="Message preview"
 					>
@@ -846,7 +856,7 @@
 						     completes the name. -->
 						<ul
 							id={paletteId}
-							data-widget-part="messages.composer-palette"
+							data-widget-part="messages.composer-palette composer.palette"
 							role="listbox"
 							aria-label="Slash commands"
 						>
@@ -864,11 +874,11 @@
 									role="option"
 									aria-selected={i === paletteHighlight}
 									aria-disabled={rowState.disabled}
-									data-widget-part="messages.composer-palette-row"
+									data-widget-part="messages.composer-palette-row composer.palette-row"
 								>
 									<button
 										type="button"
-										data-widget-part="messages.composer-palette-button"
+										data-widget-part="messages.composer-palette-button composer.palette-button"
 										tabindex="-1"
 										disabled={rowState.disabled}
 										onmousedown={(e) => e.preventDefault()}
@@ -876,17 +886,17 @@
 										onclick={() => invokePalette(a)}
 									>
 										<sp-icon name={iconName} size="14"></sp-icon>
-										<span data-widget-part="messages.composer-palette-slash">/{a.slash}</span>
+										<span data-widget-part="messages.composer-palette-slash composer.palette-slash">/{a.slash}</span>
 										{#if argHint}
 											<!-- The argument it takes (S2): `/nudge <direction…>`. -->
-											<span data-widget-part="messages.composer-palette-argument">{argHint}</span>
+											<span data-widget-part="messages.composer-palette-argument composer.palette-argument">{argHint}</span>
 										{/if}
-										<span data-widget-part="messages.composer-palette-label">{a.name}</span>
+										<span data-widget-part="messages.composer-palette-label composer.palette-label">{a.name}</span>
 										{#if a.isNew || paletteNewOnOpen.has(actionIdentity(a))}
-											<span data-widget-part="messages.composer-new">New</span>
+											<span data-widget-part="messages.composer-new composer.new">New</span>
 										{/if}
 										{#if rowState.reason}
-											<span data-widget-part="messages.composer-palette-note">{rowState.reason}</span>
+											<span data-widget-part="messages.composer-palette-note composer.palette-note">{rowState.reason}</span>
 										{/if}
 									</button>
 								</li>
@@ -897,7 +907,7 @@
 					     host element; the field itself is its child `textarea`. -->
 					<!-- svelte-ignore a11y_aria_activedescendant_has_tabindex -->
 					<sp-composer-field
-						data-widget-part="messages.composer-field"
+						data-widget-part="messages.composer-field composer.field"
 						rows="1"
 						label="Write a message"
 						{placeholder}
@@ -927,16 +937,16 @@
 			{#if offersAttachments && (tray.length || refusedHere.length)}
 				<!-- The tray: this line's attachments, uploading, ready or
 				     refused. A row of tiles that scrolls sideways on a phone. -->
-				<ul data-widget-part="messages.composer-tray" aria-label="Attachments">
+				<ul data-widget-part="messages.composer-tray composer.tray" aria-label="Attachments">
 					{#each tray as t (t.id)}
 						<li
-							data-widget-part="messages.composer-tray-item"
+							data-widget-part="messages.composer-tray-item composer.tray-item"
 							data-status={t.status}
 							data-kind={t.kind ?? undefined}
 						>
 							{#if t.thumbSrc}
 								<img
-									data-widget-part="messages.composer-tray-thumb"
+									data-widget-part="messages.composer-tray-thumb composer.tray-thumb"
 									src={t.thumbSrc}
 									alt=""
 									loading="lazy"
@@ -944,7 +954,7 @@
 								/>
 							{:else}
 								<sp-icon
-									data-widget-part="messages.composer-tray-icon"
+									data-widget-part="messages.composer-tray-icon composer.tray-icon"
 									name={t.kind === "image"
 										? "image"
 										: t.kind === "audio"
@@ -955,11 +965,11 @@
 									size="20"
 								></sp-icon>
 							{/if}
-							<span data-widget-part="messages.composer-tray-name" title={t.filename}>{t.filename}</span>
+							<span data-widget-part="messages.composer-tray-name composer.tray-name" title={t.filename}>{t.filename}</span>
 							{#if t.status === "ready" && t.kind === "audio" && t.previewSrc}
 								<!-- 🚧 O11: play an attached sound before sending it. -->
 								<audio
-									data-widget-part="messages.composer-tray-audio"
+									data-widget-part="messages.composer-tray-audio composer.tray-audio"
 									controls
 									preload="none"
 									src={t.previewSrc}
@@ -968,7 +978,7 @@
 							{/if}
 							{#if t.status === "uploading"}
 								<span
-									data-widget-part="messages.composer-tray-progress"
+									data-widget-part="messages.composer-tray-progress composer.tray-progress"
 									role="progressbar"
 									aria-label="Uploading {t.filename}"
 									aria-valuemin={0}
@@ -977,11 +987,11 @@
 									style="--sp-fill: {progressOf(t)}%"
 								></span>
 							{:else if t.status === "refused"}
-								<span data-widget-part="messages.composer-tray-refusal">{t.refusal ?? "Not attached."}</span>
+								<span data-widget-part="messages.composer-tray-refusal composer.tray-refusal">{t.refusal ?? "Not attached."}</span>
 							{/if}
 							<button
 								type="button"
-								data-widget-part="messages.composer-tray-remove"
+								data-widget-part="messages.composer-tray-remove composer.tray-remove"
 								aria-label="Remove {t.filename}"
 								title="Remove"
 								onclick={() => removeTrayItem(t)}
@@ -991,15 +1001,15 @@
 						</li>
 					{/each}
 					{#each refusedHere as r (r.key)}
-						<li data-widget-part="messages.composer-tray-item" data-status="refused">
-							<sp-icon data-widget-part="messages.composer-tray-icon" name="ban" size="20"></sp-icon>
-							<span data-widget-part="messages.composer-tray-name" title={r.filename}>{r.filename}</span>
-							<span data-widget-part="messages.composer-tray-refusal">{r.reason}</span>
+						<li data-widget-part="messages.composer-tray-item composer.tray-item" data-status="refused">
+							<sp-icon data-widget-part="messages.composer-tray-icon composer.tray-icon" name="ban" size="20"></sp-icon>
+							<span data-widget-part="messages.composer-tray-name composer.tray-name" title={r.filename}>{r.filename}</span>
+							<span data-widget-part="messages.composer-tray-refusal composer.tray-refusal">{r.reason}</span>
 						</li>
 					{/each}
 				</ul>
 			{/if}
-			<div data-widget-part="messages.composer-footer">
+			<div data-widget-part="messages.composer-footer composer.footer">
 				<!-- 🚧 Which channel this line lands on is the widget's channel tabs
 				     now (lair fix 2, `messages.channel-tabs` above the log): the
 				     composer writes on the tab shown. -->
@@ -1011,39 +1021,39 @@
 							open={personaSwitcherOpen}
 							onopen-change={(e: CustomEvent<{ open: boolean }>) => (personaSwitcherOpen = e.detail.open)}
 						>
-							<button slot="trigger" type="button" data-widget-part="messages.composer-persona"
+							<button slot="trigger" type="button" data-widget-part="messages.composer-persona composer.persona"
 								title="Switch persona"
 								aria-label="Switch persona (currently {activePersona.name})">
-								<sp-avatar ref={`character:${activePersona.personaId}`} size="sm"></sp-avatar>
-								<span data-widget-part="messages.composer-persona-name">
+								<sp-avatar ref={personaRefOf(activePersona.personaId)} size="sm"></sp-avatar>
+								<span data-widget-part="messages.composer-persona-name composer.persona-name">
 									{activePersona.name}
 								</span>
 								<sp-icon name="chevron-down" size="14"></sp-icon>
 							</button>
-							<div data-widget-part="messages.composer-persona-menu">
-								<p data-widget-part="messages.composer-persona-menu-title">
+							<div data-widget-part="messages.composer-persona-menu composer.persona-menu">
+								<p data-widget-part="messages.composer-persona-menu-title composer.persona-menu-title">
 									Write as
 								</p>
 								{#each c?.personas ?? [] as p (p.personaId)}
 									<button
 										type="button"
-										data-widget-part="messages.composer-persona-option"
+										data-widget-part="messages.composer-persona-option composer.persona-option"
 										aria-current={p.personaId === c?.personaId ? "true" : undefined}
 										onclick={() => {
 											void conv.request("switch-persona", { personaId: p.personaId })
 											personaSwitcherOpen = false
 										}}
 									>
-										<sp-avatar ref={`character:${p.personaId}`} size="sm"></sp-avatar>
-										<span data-widget-part="messages.composer-persona-option-name">{p.name}</span>
+										<sp-avatar ref={personaRefOf(p.personaId)} size="sm"></sp-avatar>
+										<span data-widget-part="messages.composer-persona-option-name composer.persona-option-name">{p.name}</span>
 									</button>
 								{/each}
 							</div>
 						</sp-popover>
 					{:else}
-						<span data-widget-part="messages.composer-persona">
-							<sp-avatar ref={`character:${activePersona.personaId}`} size="sm"></sp-avatar>
-							<span data-widget-part="messages.composer-persona-name">
+						<span data-widget-part="messages.composer-persona composer.persona">
+							<sp-avatar ref={personaRefOf(activePersona.personaId)} size="sm"></sp-avatar>
+							<span data-widget-part="messages.composer-persona-name composer.persona-name">
 								{activePersona.name}
 							</span>
 						</span>
@@ -1056,21 +1066,21 @@
 					     Escape, never because focus left it. -->
 					<button
 						type="button"
-						data-widget-part="messages.composer-actions-toggle"
+						data-widget-part="messages.composer-actions-toggle composer.actions-toggle"
 						aria-expanded={actionsOpen}
 						aria-controls={actionsId}
 						onclick={() => (actionsOpen = !actionsOpen)}
 					>
 						<span>Actions</span>
-						<sp-icon name="chevron-down" size="12" data-widget-part="messages.composer-actions-chevron"></sp-icon>
+						<sp-icon name="chevron-down" size="12" data-widget-part="messages.composer-actions-chevron composer.actions-chevron"></sp-icon>
 					</button>
 				{/if}
 
-				<div data-widget-part="messages.composer-footer-end">
+				<div data-widget-part="messages.composer-footer-end composer.footer-end">
 					{#if ragVisible}
 						<!-- The retrieval notice (the page's view): a line the first
 						     time a session shows it, an icon here after that. -->
-						<span data-widget-part="messages.composer-notice">
+						<span data-widget-part="messages.composer-notice composer.notice">
 							<sp-host-view name="retrieval-notice"></sp-host-view>
 						</span>
 					{/if}
@@ -1079,14 +1089,14 @@
 						     reads. Its body is our own button; the picker is the
 						     page's (`sp-file-picker`). -->
 						<sp-file-picker
-							data-widget-part="messages.composer-attach"
+							data-widget-part="messages.composer-attach composer.attach"
 							accept={pickerAccept || undefined}
 							multiple={true}
 							onfiles={(e: CustomEvent<{ files: File[] }>) => void attachFiles(e.detail.files)}
 						>
 							<button
 								type="button"
-								data-widget-part="messages.composer-attach-button messages.composer-icon-button"
+								data-widget-part="messages.composer-attach-button composer.attach-button messages.composer-icon-button composer.icon-button"
 								title={readersLine ? `Attach files. ${readersLine}` : "Attach files"}
 								aria-label="Attach files"
 							>
@@ -1097,7 +1107,7 @@
 					{#if !hideCompose}
 						<button
 							type="button"
-							data-widget-part="messages.composer-preview-toggle messages.composer-icon-button"
+							data-widget-part="messages.composer-preview-toggle composer.preview-toggle messages.composer-icon-button composer.icon-button"
 							aria-pressed={previewOpen}
 							title="Preview"
 							aria-label="Preview the formatted draft"
@@ -1117,22 +1127,22 @@
 							open={moreMenuOpen}
 							onopen-change={(e: CustomEvent<{ open: boolean }>) => (moreMenuOpen = e.detail.open)}
 						>
-							<button slot="trigger" type="button" data-widget-part="messages.composer-more messages.composer-icon-button"
+							<button slot="trigger" type="button" data-widget-part="messages.composer-more composer.more messages.composer-icon-button composer.icon-button"
 								data-active={activePane ? "" : undefined}
 								title="More"
 								aria-label="More">
 								<sp-icon name="ellipsis-vertical" size="16"></sp-icon>
 							</button>
-							<div data-widget-part="messages.composer-panes">
-										<header data-widget-part="messages.composer-panes-title">
+							<div data-widget-part="messages.composer-panes composer.panes">
+										<header data-widget-part="messages.composer-panes-title composer.panes-title">
 											<sp-icon name="ellipsis-vertical" size="16"></sp-icon>
 											<p>More</p>
 										</header>
-										<div data-widget-part="messages.composer-panes-list">
+										<div data-widget-part="messages.composer-panes-list composer.panes-list">
 											{#each morePanes as pane (pane.view)}
 												<button
 													type="button"
-													data-widget-part="messages.composer-pane-option"
+													data-widget-part="messages.composer-pane-option composer.pane-option"
 													data-current={activePaneValue === pane.view ? "" : undefined}
 													onclick={() =>
 														openPane(pane.view)}
@@ -1144,7 +1154,7 @@
 											{#if readersOffered}
 												<button
 													type="button"
-													data-widget-part="messages.composer-pane-option messages.composer-readers-button"
+													data-widget-part="messages.composer-pane-option composer.pane-option messages.composer-readers-button composer.readers-button"
 													onclick={openReaders}
 												>
 													<sp-icon name="paperclip" size="12"></sp-icon>
@@ -1160,7 +1170,7 @@
 						{#if isGenerating}
 							<button
 								type="button"
-								data-widget-part="messages.composer-stop"
+								data-widget-part="messages.composer-stop composer.stop"
 								title="Stop"
 								aria-label="Stop generating"
 								onclick={() => conv.invoke("stop")}
@@ -1172,7 +1182,7 @@
 							<!-- Someone due next (`data-someone-due`): Send steps back. -->
 							<button
 								type="button"
-								data-widget-part="messages.composer-send"
+								data-widget-part="messages.composer-send composer.send"
 								data-someone-due={sendTonal ? "" : undefined}
 								disabled={!!closed || (!draft.trim() && !hasAttachments)}
 								title={closed ? composerClosedPlaceholder(closed) : "Send"}
@@ -1191,7 +1201,7 @@
 
 		{#if offersAttachments}
 			<!-- Attachments said aloud: "cat.png attached", a refusal, a removal. -->
-			<p data-widget-part="messages.composer-announce" aria-live="polite">{announcement}</p>
+			<p data-widget-part="messages.composer-announce composer.announce" aria-live="polite">{announcement}</p>
 		{/if}
 		{#if readersOffered}
 			<!-- What this reply can read (§3.2; note 41): out of the composer's
@@ -1205,26 +1215,26 @@
 				onopen-change={(e: CustomEvent<{ open: boolean }>) => (readersOpen = e.detail.open)}
 			>
 				<span slot="title">What can be attached</span>
-				<div data-widget-part="messages.composer-readers">
-					<p data-widget-part="messages.composer-readers-line">{readersLine}</p>
-					<ul data-widget-part="messages.composer-readers-kinds" aria-label="Kinds of file">
+				<div data-widget-part="messages.composer-readers composer.readers">
+					<p data-widget-part="messages.composer-readers-line composer.readers-line">{readersLine}</p>
+					<ul data-widget-part="messages.composer-readers-kinds composer.readers-kinds" aria-label="Kinds of file">
 						<!-- Every kind the host answered for (O1: a kind with no
 						     row is not offered, and not listed). -->
 						{#each ATTACHMENT_KINDS_V1.filter((k) => !readers || readers.kinds[k]) as k (k)}
 							{@const v = readers?.kinds[k]}
-							<li data-widget-part="messages.composer-readers-kind" data-allowed={v?.allowed ? "" : undefined}>
+							<li data-widget-part="messages.composer-readers-kind composer.readers-kind" data-allowed={v?.allowed ? "" : undefined}>
 								<strong>{KIND_NAME[k]}</strong>
 								<span>({KIND_FORMATS[k]})</span>
 								{#if v?.allowed}
 									<span> — can be attached</span>
 								{:else}
-									<span data-widget-part="messages.composer-readers-reason"> — can't be attached. {v?.reason ?? ""}</span>
+									<span data-widget-part="messages.composer-readers-reason composer.readers-reason"> — can't be attached. {v?.reason ?? ""}</span>
 								{/if}
 							</li>
 						{/each}
 					</ul>
 					{#if readerLines.length}
-						<ul data-widget-part="messages.composer-readers-calls" aria-label="Each model call">
+						<ul data-widget-part="messages.composer-readers-calls composer.readers-calls" aria-label="Each model call">
 							{#each readerLines as line (line)}
 								<li>{line}</li>
 							{/each}
@@ -1234,13 +1244,13 @@
 			</sp-dialog>
 		{/if}
 		{#if sendWaiting && uploading}
-			<p data-widget-part="messages.composer-hint" aria-live="polite">{uploading} Sends when done.</p>
+			<p data-widget-part="messages.composer-hint composer.hint" aria-live="polite">{uploading} Sends when done.</p>
 		{/if}
 
 		{#if contextExceeded}
 			<p
 				id={warningId}
-				data-widget-part="messages.composer-warning"
+				data-widget-part="messages.composer-warning composer.warning"
 				role="alert"
 			>
 				This draft pushes the prompt past the context limit. Older turns
@@ -1252,41 +1262,41 @@
 			<!-- While the palette is open Enter does not send: it runs the
 			     row it would pick (the same derivation the key handler reads),
 			     or — a bare `/` with nothing highlighted — only highlights. -->
-			<p data-widget-part="messages.composer-hint" aria-live="polite">
-				<kbd data-widget-part="messages.composer-key">Enter</kbd>
+			<p data-widget-part="messages.composer-hint composer.hint" aria-live="polite">
+				<kbd data-widget-part="messages.composer-key composer.key">Enter</kbd>
 				{#if paletteEnterPick}
 					runs /{paletteEnterPick.slash}
 				{:else}
 					highlights the first ·
-					<kbd data-widget-part="messages.composer-key">↑</kbd>
-					<kbd data-widget-part="messages.composer-key">↓</kbd>
+					<kbd data-widget-part="messages.composer-key composer.key">↑</kbd>
+					<kbd data-widget-part="messages.composer-key composer.key">↓</kbd>
 					to choose
 				{/if}
 				·
-				<kbd data-widget-part="messages.composer-key">Esc</kbd>
+				<kbd data-widget-part="messages.composer-key composer.key">Esc</kbd>
 				closes.
 			</p>
 		{:else if slashCommand}
 			<!-- A whole slash name and its argument (S2): what Enter (or Send)
 			     will do with it — or why it will not. -->
 			<p
-				data-widget-part="messages.composer-hint"
+				data-widget-part="messages.composer-hint composer.hint"
 				data-refused={slashRefusal ? "" : undefined}
 				aria-live="polite"
 			>
 				{#if slashRefusal}
 					{slashRefusal}.
 				{:else}
-					<kbd data-widget-part="messages.composer-key">{submitOnEnter ? "Enter" : "Send"}</kbd>
+					<kbd data-widget-part="messages.composer-key composer.key">{submitOnEnter ? "Enter" : "Send"}</kbd>
 					runs /{slashCommand.action.slash} with your text.
 				{/if}
 			</p>
 		{:else if hintVisible && submitOnEnter}
-			<p data-widget-part="messages.composer-hint">
-				<kbd data-widget-part="messages.composer-key">Enter</kbd>
+			<p data-widget-part="messages.composer-hint composer.hint">
+				<kbd data-widget-part="messages.composer-key composer.key">Enter</kbd>
 				sends.
-				<kbd data-widget-part="messages.composer-key">Shift</kbd>
-				<kbd data-widget-part="messages.composer-key">Enter</kbd>
+				<kbd data-widget-part="messages.composer-key composer.key">Shift</kbd>
+				<kbd data-widget-part="messages.composer-key composer.key">Enter</kbd>
 				for a new line.
 			</p>
 		{/if}

@@ -51,6 +51,7 @@ import {
 import { probeSampleFor, type NodeHandler, type SwapEvidence } from './packages.js'
 import type { Descriptor } from '@serene-pub/sdk'
 import { swapFitFinding } from '@serene-pub/sdk'
+import { declaredNodeParams } from '@serene-pub/sdk'
 import { rulesetCatalogueFindings, type RulesetDecl, type RulesetTemplate } from '@serene-pub/sdk'
 import { probeBinding, probeCtxFor } from '@serene-pub/sdk/testing'
 
@@ -2209,6 +2210,24 @@ export const REQUIREMENTS: Requirement[] = [
 			must(!failures.length, failures.join('\n'))
 		},
 	},
+	{
+		id: 'C40',
+		law: 'scenes first (owner ruling 2026-11-10)',
+		title: 'no pipeline a catalogue ships writes a history entry directly — history is compiled from scenes',
+		consequence:
+			'A pipeline that files history itself goes around scenes and Compile: its entries land beside the day’s one entry, and a person never reviews them as a scene.',
+		async check(host, fx, report) {
+			const shipped = await host.shipped?.()
+			if (!shipped)
+				return report.skip('the host declares no catalogue — supply `shipped()` for its history writes to be judged')
+			if (!shipped.pipelines?.length)
+				return report.skip(
+					'the catalogue ships no pipelines — supply `shipped().pipelines` for its history writes to be judged',
+				)
+			const failures = shipped.pipelines.flatMap((d) => historyWriteFindings(d))
+			must(!failures.length, failures.join('\n'))
+		},
+	},
 ]
 
 // ── C39: lore writes ────────────────────────────────────────────────────────
@@ -2222,26 +2241,13 @@ const LORE_WRITES = [
 ]
 const SPAN_READS = ['core:query/summarize-source', 'core:query/graph-scenes']
 
-/** The param values a document declares for `nodeKey` — its default presets' `params` rows, over the node's own. */
-function declaredParams(d: SpecDocument, nodeKey: string): Record<string, unknown> {
-	const out: Record<string, unknown> = {}
-	const own = d.nodes.find((n) => n.key === nodeKey)?.config?.params
-	if (own && typeof own === 'object') Object.assign(out, own)
-	for (const p of d.presets ?? [])
-		if (p.default)
-			for (const v of p.values)
-				if (v.nodeKey === nodeKey && v.slot === 'params' && v.value && typeof v.value === 'object')
-					Object.assign(out, v.value)
-	return out
-}
-
 /** C39's judgement of one shipped document. */
 function loreWriteFindings(d: SpecDocument): string[] {
 	const out: string[] = []
 	const reads = d.nodes.some((n) => SPAN_READS.includes(n.definitionId))
 	for (const n of d.nodes) {
 		if (n.definitionId === LORE_CREATE) {
-			const t = declaredParams(d, n.key).entryType
+			const t = declaredNodeParams(d, n.key).entryType
 			if (t === undefined || t === null || t === '')
 				out.push(`${d.id} ${n.key}: files lore without naming its entry type.`)
 		}
@@ -2251,6 +2257,27 @@ function loreWriteFindings(d: SpecDocument): string[] {
 				d.edges.some((e) => e.to === n.key && (e.toPort === 'sources' || e.toPort.startsWith('sources.')))
 			if (!wired) out.push(`${d.id} ${n.key}: writes lore from a span of the story without sources.`)
 		}
+	}
+	return out
+}
+
+// ── C40: history writes ─────────────────────────────────────────────────────
+
+/**
+ * C40's judgement of one shipped document: a `create-lore-entry` whose entry type is
+ * `core:entry/history` (the packager's `W_WRITES_HISTORY` predicate). A pipeline with a
+ * `summarize-request` inlet is exempt: its save is previewed.
+ */
+function historyWriteFindings(d: SpecDocument): string[] {
+	if (d.nodes.some((n) => n.definitionId === 'core:inlet/summarize-request')) return []
+	const out: string[] = []
+	for (const n of d.nodes) {
+		if (n.definitionId !== 'core:outlet/create-lore-entry') continue
+		const t = declaredNodeParams(d, n.key).entryType
+		if (typeof t === 'string' && t.replace(/@\d+$/, '') === 'core:entry/history')
+			out.push(
+				`${d.id} ${n.key}: writes a history entry directly — put the event in a scene (note-scene@1 or a story line); Compile files it under the day's entry.`,
+			)
 	}
 	return out
 }

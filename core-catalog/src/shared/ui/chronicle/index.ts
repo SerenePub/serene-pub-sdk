@@ -28,6 +28,10 @@
  * *Summarize*, and *Summarize all (N)*. Under the summary mode `never` no
  * Summarize is offered anywhere.
  *
+ * 🚧 ★S2-1b (owner, 2026-11-04): the answer also carries the session's scenes
+ * not yet compiled, by day (`unfiledDays`), which the view draws as *Not yet
+ * compiled* under Now.
+ *
  * Every sentence is English source handed through the widget's `t`, so the
  * same words speak the viewer's language natively or in a worker.
  *
@@ -271,6 +275,15 @@ export interface ChronicleView {
 	earlierHead: string | null
 	/** The entries past `earlierCount`, in words; null when none were cut. */
 	earlierMore: string | null
+	/** 🚧 ★S2-1b: *Not yet compiled* under Now — the session's scenes no history entry holds, by day (*Undated* last). */
+	unfiled: Array<{
+		key: string
+		date: string
+		count: string
+		scenes: ChronicleSceneView[]
+		/** 🚧 ★S6-1: the day's **Compile** (`compile-history-entry` with this `date`); null unless the viewer may write. */
+		compile: { date: StoryTime | null; label: string; title: string } | null
+	}>
 }
 
 const count = (n: number, one: string, many: string, t: ChronicleT) =>
@@ -333,6 +346,7 @@ export function chronicleView(
 		earlier: [],
 		earlierHead: null,
 		earlierMore: null,
+		unfiled: [],
 	}
 	if (!result) return none
 	if (result.lorebookId === null)
@@ -402,6 +416,23 @@ export function chronicleView(
 						: null,
 			}
 		: null
+	const sceneView = (s: HistorySceneV1): ChronicleSceneView => {
+		const status = chronicleSummaryStatus(s)
+		const isOpen = open?.id === s.id
+		return {
+			id: s.id,
+			name: s.name?.trim() || t('Untitled scene'),
+			span: count(s.lineCount, '1 line', '{n} lines', t),
+			swatch: swatchOf(s.order),
+			summarized: s.summarized,
+			status,
+			statusLabel: t(CHRONICLE_SUMMARY_STATUS_LABELS[status]),
+			open: isOpen,
+			canSummarize: summarizes && !isOpen && (status === 'none' || status === 'failed'),
+			canReview: canWrite && status === 'review',
+			writtenFrom: s.loreSources?.throughLabel?.trim() ? t('Written from the story up to {label}').replace('{label}', s.loreSources.throughLabel.trim()) : null,
+		}
+	}
 	const unsummarized = Math.max(0, result.unsummarizedScenes ?? 0)
 	return {
 		...none,
@@ -411,25 +442,7 @@ export function chronicleView(
 		now,
 		nowEmpty: now ? null : t('No history entries yet. Open the lorebook to write the first.'),
 		openScene,
-		scenes: now
-			? result.scenes.map((s) => {
-					const status = chronicleSummaryStatus(s)
-					const isOpen = open?.id === s.id
-					return {
-						id: s.id,
-						name: s.name?.trim() || t('Untitled scene'),
-						span: count(s.lineCount, '1 line', '{n} lines', t),
-						swatch: swatchOf(s.order),
-						summarized: s.summarized,
-						status,
-						statusLabel: t(CHRONICLE_SUMMARY_STATUS_LABELS[status]),
-						open: isOpen,
-						canSummarize: summarizes && !isOpen && (status === 'none' || status === 'failed'),
-						canReview: canWrite && status === 'review',
-						writtenFrom: s.loreSources?.throughLabel?.trim() ? t('Written from the story up to {label}').replace('{label}', s.loreSources.throughLabel.trim()) : null,
-					}
-				})
-			: [],
+		scenes: now ? result.scenes.map(sceneView) : [],
 		canSummarize: canWrite && result.opensScenes,
 		summarizeAll:
 			summarizes && unsummarized > 0
@@ -466,6 +479,31 @@ export function chronicleView(
 		earlierHead: result.earlierTotal
 			? t('Earlier ({n})').replace('{n}', String(result.earlierTotal))
 			: null,
+		unfiled: (result.unfiledDays ?? [])
+			.filter((d) => d.scenes.length)
+			.map((d) => {
+				const date = d.label || (d.date ? String(d.date.year) : t('Undated'))
+				return {
+					key: d.date ? `${d.date.year}-${d.date.month ?? ''}-${d.date.day ?? ''}` : 'undated',
+					date,
+					count: count(d.scenes.length, '1 scene', '{n} scenes', t),
+					scenes: d.scenes.map(sceneView),
+					compile: canWrite
+						? {
+								date: d.date,
+								label: t('Compile'),
+								title:
+									d.date === null
+										? t(
+												'Compile the undated scenes into the newest dated history entry, making one if there is none',
+											)
+										: t(
+												"Compile this day's scenes into the history entry of {date}, making it if there is none",
+											).replace('{date}', date),
+							}
+						: null,
+				}
+			}),
 		earlierMore: cut
 			? count(cut, '1 more in the lorebook', '{n} more in the lorebook', t)
 			: null,

@@ -97,12 +97,14 @@ describe('where a loadout may be named', () => {
 describe("core's set", () => {
 	// O12 (2026-10-21): + Transcription (`audio->text`) and Spoken reply
 	// (`text->text+audio`), both defaults of their transforms, both unfilled.
-	test('thirteen declarations, every one clean, seven defaults', () => {
-		assert.equal(CORE_LOADOUTS.length, 13)
+	// 2026-11-10: + Vision (`text+image->text`), the default of its transform —
+	// owner ruling: a dedicated loadout for work where a picture is mandatory.
+	test('fourteen declarations, every one clean, eight defaults', () => {
+		assert.equal(CORE_LOADOUTS.length, 14)
 		for (const d of CORE_LOADOUTS) assert.deepEqual(loadoutDeclProblems(d, 'core'), [], d.id)
 		assert.deepEqual(
 			CORE_LOADOUTS.filter((d) => d.defaultFor).map((d) => d.transform).sort(),
-			['audio->text', 'text->audio', 'text->embedding', 'text->entities', 'text->image', 'text->text', 'text->text+audio'],
+			['audio->text', 'text+image->text', 'text->audio', 'text->embedding', 'text->entities', 'text->image', 'text->text', 'text->text+audio'],
 		)
 	})
 

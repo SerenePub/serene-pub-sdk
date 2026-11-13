@@ -9,6 +9,8 @@
  * `readLibraryDraft` takes every such block out of the text (what the person reads, and what is saved), and reads
  * the LAST one: `make` names its kind and `draft` its parsed JSON. No block, an unknown kind, or JSON that does not
  * parse → `make: ''` and no `draft` (the blocks are still taken out). Pure; what `core:task/read-library-draft@1` runs.
+ * It is also the Guide reply's cleanup step: draft blocks out, and a line that is exactly `See: /docs/<path>` (optionally in
+ * backticks, optionally a trailing `.`) turned into a markdown link the message renderer draws.
  * ⚠ Not a tool call (`parse-tool-call@1`) and not `parse-json@1` (which reads a whole reply as JSON).
  * @experimental
  */
@@ -25,6 +27,7 @@ export interface LibraryDraftRead {
 }
 
 const BLOCK = /<!--\s*draft:([a-z-]+)\s*([\s\S]*?)-->/g
+const SEE_LINE = /^See: ?`?(\/docs\/[^\s`]+?)`?\.?[ \t]*$/gm
 
 /** @experimental */
 export function readLibraryDraft(text: unknown): LibraryDraftRead {
@@ -35,7 +38,10 @@ export function readLibraryDraft(text: unknown): LibraryDraftRead {
 	// draft anyone can read, and it must not be saved into the message.
 	const closed = s.replace(BLOCK, '')
 	const open = closed.search(/<!--\s*draft:/)
-	const stripped = (open >= 0 ? closed.slice(0, open) : closed).replace(/\n{3,}/g, '\n\n').trimEnd()
+	const stripped = (open >= 0 ? closed.slice(0, open) : closed)
+		.replace(/\n{3,}/g, '\n\n')
+		.trimEnd()
+		.replace(SEE_LINE, 'See: [$1]($1)')
 	if (!last || (last.kind !== 'character' && last.kind !== 'lorebook')) return { text: stripped, make: '' }
 	try {
 		const draft = JSON.parse(last.body.trim()) as unknown

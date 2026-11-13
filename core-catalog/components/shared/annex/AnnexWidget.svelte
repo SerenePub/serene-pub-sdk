@@ -144,7 +144,7 @@
 				</dl>
 			{/if}
 		</div>
-	{:else}
+	{:else if view.state === "hidden" || view.state === "pick"}
 		<div data-widget-part="annex.empty empty" role="status">
 			<sp-icon name="clipboard-list" size="20"></sp-icon>
 			<span>{view.empty}</span>

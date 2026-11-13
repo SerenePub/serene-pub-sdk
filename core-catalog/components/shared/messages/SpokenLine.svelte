@@ -16,7 +16,8 @@
 	 * - **Autoplay** is the `autoplay` attribute (core's alone), decided ONCE
 	 *   per audio part: under *Make and play*, the NEWEST line's audio, spoken
 	 *   since this page opened and still fresh — never an older line, never
-	 *   on page load. A browser that refuses a sound nobody asked for leaves
+	 *   on page load. A Dialogue box's shown line may too (`atReadingPlace`).
+	 *   A browser that refuses a sound nobody asked for leaves
 	 *   the player waiting; its own play button is right there.
 	 * - **The playhead** arrives as the host `audio` events (1.7: `play`,
 	 *   `pause`, `ended`, `timeupdate` with `{ currentTime, duration, paused }`,
@@ -79,6 +80,13 @@
 		onPlayback?: (paused: boolean) => void
 		/** The ⋮ › Speech player's playhead while it is the one playing this line: the caption and glyph follow it too. */
 		menuAt?: Playback | null
+		/**
+		 * 🚧 Dialogue box only (PLAN-visual-novel-layout §1.3): this line has just
+		 * become the box's reading place, so its audio may play on its own as the
+		 * newest line's does — under Make and play and playback `auto`, once,
+		 * spoken since this page opened — newest or not, fresh or not.
+		 */
+		atReadingPlace?: boolean
 	}
 	let {
 		spoken,
@@ -97,6 +105,7 @@
 		take = 0,
 		onPlayback,
 		menuAt = null,
+		atReadingPlace = false,
 	}: Props = $props()
 
 	/** Parts already auto-played this page life, so a re-render never plays twice. */
@@ -109,10 +118,10 @@
 		const yes =
 			spokenPlayback === 'auto' &&
 			readAloud === 'play' &&
-			isLastMessage &&
+			(isLastMessage || atReadingPlace) &&
 			!played.has(id) &&
 			!!spoken &&
-			isFresh(spoken) &&
+			(isFresh(spoken) || atReadingPlace) &&
 			spokenSinceLoad(spoken)
 		decided.set(id, yes)
 		if (yes) played.add(id)

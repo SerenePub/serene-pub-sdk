@@ -79,7 +79,7 @@ const dossierWith = (composer: Partial<ConversationDossierV1['composer']> = {}):
 const mount = (d: ConversationDossierV1) =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/shared/messages/messages.ts',
+		entry: 'components/shared/composer/composer.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,

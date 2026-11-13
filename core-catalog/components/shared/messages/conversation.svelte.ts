@@ -2,8 +2,9 @@
  * The conversation widget's own model (C0b): what its parts read, derived
  * from the widget context alone, and what they do, through its verbs alone.
  *
- * `MessagesWidget` creates one and provides it; the log, each message, its
- * controls and the composer read it (`useConversation`) instead of taking the
+ * `MessagesWidget` creates one and provides it (so do the Composer and Turn
+ * line, each its own: they share no state, only the host's dossier); the log,
+ * each message, its controls and the composer read it (`useConversation`) instead of taking the
  * page's callbacks as props. So the widget's state — which line is being
  * edited, whose menu is open, what is selected for a summary — is the
  * widget's, and every effect is an `invoke` (core's verbs, a contributed
@@ -28,8 +29,12 @@ import {
 } from "@serene-pub/core-catalog/conversation"
 import { setStatusTextResolver, statusTextIn } from "@serene-pub/core-catalog/conversation"
 import type { RequestDeclineCode, StatusText } from "@serene-pub/sdk/component"
+import { composerTargetOf } from "../composer/target"
 import { boundaryOffer, laneOf, markedRun, type BoundaryOffer, type SceneMarkRow } from "./sceneMarks"
 import { interleaveByAnchor, interleaveMode, interleaveSlug, isInterleavedRow, rowKindOf, rowKindsOf, rowsByKind } from "./interleave"
+
+/** A seat's participant reference, as the conversation cast carries it. */
+type SeatRef = NonNullable<ConversationDossierV1["cast"]["sessionPersonas"][number]["ref"]>
 
 const KEY = Symbol("sp-conversation")
 
@@ -61,7 +66,27 @@ export function isUnmountDecline(e: unknown): boolean {
 	return /\bunmounted\b/.test(message)
 }
 
-export function createConversation(widget: WidgetContextRef) {
+/** What differs between the Messages copy and the widgets beside it (owner R8 2026-11-05). */
+export interface ConversationOptions {
+	/**
+	 * Composer and Turn line only: the lane is the one the target Messages copy
+	 * shows (`dossier.composer.target.channel`), not a choice of this mount's
+	 * own, and `lane.set` does nothing. Without a target, or without this
+	 * option, the lane is the first writable channel as ever.
+	 */
+	followTarget?: boolean
+	/**
+	 * 🚧 Dialogue box only (PLAN-visual-novel-layout §6 answer 1): no selection
+	 * for a summary — `select.start` does nothing and a row's menu leaves out
+	 * *Select for summary* — since the selection bar, the only way out of a
+	 * selection, is MessagesWidget's (2026-11-05 D7).
+	 */
+	noSelection?: boolean
+}
+
+export function createConversation(widget: WidgetContextRef, options: ConversationOptions = {}) {
+	const followTarget = !!options.followTarget
+	const noSelection = !!options.noSelection
 	const ctx = () => widget.current
 	const warn = (what: string) => (e: unknown) => {
 		if (isUnmountDecline(e)) return
@@ -264,6 +289,23 @@ export function createConversation(widget: WidgetContextRef) {
 			)
 		},
 
+		/**
+		 * 🚧 The cast lookup: a cast member id → that seat's `ref`, off the
+		 * conversation cast row (either list) whose `castMemberId` matches; null on
+		 * a miss or a host that fills none (⏳ the card form is then read). The
+		 * optional `seatKind` prefers a seat of that kind (`'character-seat'` looks
+		 * in the character seats first; `'player-seat'` or none, the player seats
+		 * first) and falls back to the other, so it changes identity only.
+		 */
+		refOfMember(castMemberId: number, seatKind?: "character-seat" | "player-seat"): SeatRef | null {
+			const cast = dossier?.cast
+			const players = cast?.sessionPersonas ?? []
+			const characters = cast?.sessionCharacters ?? []
+			for (const row of seatKind === "character-seat" ? [...characters, ...players] : [...players, ...characters])
+				if (row?.castMemberId === castMemberId && row.ref) return row.ref
+			return null
+		},
+
 		// ── verbs ────────────────────────────────────────────────────────────
 		invoke,
 		/** A reply swiped: to the newer alternative (right) or the older (left). */
@@ -389,6 +431,8 @@ export function createConversation(widget: WidgetContextRef) {
 		 */
 		lane: {
 			get current() {
+				const followed = followTarget ? composerTargetOf(dossier).target : null
+				if (followed) return canonicalListedChannel(followed.channel)
 				if (!channels) return lane
 				// A listed lane is written and compared in its canonical form
 				// (`parley:1` is the row stored `parley`); the no-lane marker is
@@ -399,6 +443,7 @@ export function createConversation(widget: WidgetContextRef) {
 				return canonicalListedChannel(pick)
 			},
 			set(next: string) {
+				if (followTarget) return
 				lane = next || "main"
 			}
 		},
@@ -627,7 +672,12 @@ export function createConversation(widget: WidgetContextRef) {
 			get ids() {
 				return selected
 			},
+			/** Whether this copy offers selecting lines for a summary; false only for a Dialogue box. */
+			get offered() {
+				return !noSelection
+			},
 			start(subject?: Subject) {
+				if (noSelection) return
 				selecting = true
 				selected.clear()
 				if (subject) selected.add(subject.id)

@@ -58,6 +58,8 @@ export const DUNGEON_CRAWLER_GENRE_FIELDS = Object.freeze([hpSlot.id, levelSlot.
  * minutes, the Narrator's brief, the round's summary and the secrets. Who
  * stands at death's door is not the Planner's to say (AUDIT A7): every seat
  * the turn leaves at 0 health stands there, and no other.
+ * 🚧 \`fallenCompanions\` / \`revivedCompanions\` (bench-L3, owner ★4 2026-11-10): the
+ * companions the story killed or brought back this round, by name.
  * @experimental
  */
 export const DUNGEON_CRAWLER_TURN_FRAME = Object.freeze({
@@ -99,8 +101,10 @@ export const DUNGEON_CRAWLER_TURN_FRAME = Object.freeze({
 		narratorBrief: { type: 'string' },
 		roundSummary: { type: 'string' },
 		secrets: DUNGEON_CRAWLER_SECRETS_SCHEMA,
+		fallenCompanions: { type: 'array', maxItems: 4, items: { type: 'string' } },
+		revivedCompanions: { type: 'array', maxItems: 4, items: { type: 'string' } },
 	},
-	required: ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets'],
+	required: ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets', 'fallenCompanions', 'revivedCompanions'],
 	additionalProperties: false,
 })
 

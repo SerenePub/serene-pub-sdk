@@ -34,7 +34,7 @@ import { boundaryTriggerFindings } from './sceneSettings.js'
 import { templateLawFindings, type TemplateChecking } from './templateFit.js'
 import { isSlotRef, type SlotRef } from './refs.js'
 import { assignable, isStreaming, JSON_SHAPE } from './shapes.js'
-import { isModelCall, stepPurposeRefusal } from './builder.js'
+import { isModelCall, specCallsModel, stepPurposeRefusal } from './builder.js'
 import {
 	capabilityLabel,
 	FEATURES,
@@ -1273,13 +1273,13 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
 
 	// ── assemble wiring — a prompt is assembled for the model call it feeds ───
 	// `assemble@2` reads its `template` slot and the connection it renders for
-	// only when the spec wires them: unwired, the run halts on a real instance
-	// ("assemble has no template"), and once the template is wired a chat
-	// wire-mode connection is handed a prompt with no messages. Neither shows
-	// on a fixture host, so it is said here, where the author is (F3 docs
-	// gate, stalls 12 and 14). A warning, not an error: a host saves documents
-	// its own tests and older plugins built bare, and the run's own halt is
-	// the error.
+	// only when the document wires them: unwired, the run halts on a real
+	// instance ("assemble has no template"), and once the template is wired a
+	// chat wire-mode connection is handed a prompt with no messages. Neither
+	// shows on a fixture host. The builder's `build()` now supplies both, so
+	// this warns on a document that did not come through the builder: hand
+	// written, an older plugin's, or a host's own tests. A warning, not an
+	// error: the run's own halt is the error.
 	for (const n of doc.nodes) {
 		if (n.definitionId !== 'core:task/assemble' || n.definitionVersion !== 2) continue
 		// A wired port, not the spine's implicit `main` hand-off.
@@ -1352,8 +1352,10 @@ export function validate(doc: SpecDocument, options: ValidateOptions = {}): Find
  *  · **an oracle** — only an oracle has a model's tokens to stream.
  *
  * A step status, step label and step purpose are display text, and a
- * step purpose sits only on a model call — an oracle whose definition declares
- * a `connection` slot (`isModelCall`; law `step purpose`, 2026-09-30).
+ * step purpose sits on any step of a document that calls no model at all; in
+ * one that calls a model (a node, or a swap a node lists, whose definition
+ * declares a `connection` slot — `isModelCall`) it sits only on a model call
+ * (law `step purpose`, 2026-09-30; widened 2026-11-12).
  * @internal
  * @ruling lair pass B3/B18, owner D6 and D5 (2026-09-27), W2 (2026-09-27), R-20
  */
@@ -1440,6 +1442,8 @@ export function streamingStepFindings(doc: SpecDocument): Finding[] {
 		label: "write the step's name as the settings show it — a string ('Planner') or a locale map with 'en'",
 		purpose: "write what this model call is for, in one or two plain sentences — a string or a locale map with 'en'",
 	} as const
+	// A purpose is allowed on any step of a document that calls no model at all, and only on a model call in one that does.
+	const callsAModel = specCallsModel(doc.nodes)
 	for (const n of doc.nodes) {
 		for (const field of ['status', 'label', 'purpose'] as const) {
 			const text = n.expose?.[field]
@@ -1447,7 +1451,7 @@ export function streamingStepFindings(doc: SpecDocument): Finding[] {
 			for (const message of i18nFindings(text, `'${n.key}' expose.${field}`))
 				f.push({ law: 'R-20', severity: 'error', nodeKey: n.key, message, fix: FIX[field] })
 		}
-		if (n.expose?.purpose === undefined) continue
+		if (n.expose?.purpose === undefined || !callsAModel) continue
 		const def = getDefinition(`${n.definitionId}@${n.definitionVersion}`)
 		if (def && !isModelCall(def))
 			f.push({

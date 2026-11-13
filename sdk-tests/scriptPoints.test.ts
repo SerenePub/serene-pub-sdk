@@ -190,8 +190,10 @@ describe('R-11 · the executor hands the applier the point’s own list', () => 
 // `applyChainsAt` and `ctx.scripts.apply` now both go through `applyAtSeam`.
 // Pinned: the site each origin is handed (now carrying `at`) and the records
 // each lands on the receipt are what they were; the per-origin behaviour the
-// plan keeps — port path absorbs an engine throw, interior path lets it reach
-// the binding — and the new `outcome.halt` (D4) halting the run.
+// plan kept, and the new `outcome.halt` (D4) halting the run. The per-origin
+// difference (port absorbs an engine throw, interior lets it reach the
+// binding) is gone as of 2026-11-11 (review row C7): both origins absorb and
+// record; a halt still propagates.
 
 describe('D2 · one read path, per-origin behaviour kept', () => {
 	const hooked = pin(
@@ -345,16 +347,26 @@ describe('D2 · one read path, per-origin behaviour kept', () => {
 		assert.equal(node.output.main, 'hi')
 	})
 
-	test('interior path: an applier throw reaches the binding (no absorption)', async () => {
+	test('interior path: an applier throw is absorbed into an (engine) err record and the value passes through', async () => {
 		const receipt: any = await go(async (site, _chain, value) => {
 			if (site.origin === 'binding') throw new Error('point engine down')
 			return { value, applications: [] }
 		})
-		assert.equal(receipt.outcome, 'err')
+		assert.equal(receipt.outcome, 'ok')
 		const node = receipt.nodes.find((n: any) => n.nodeKey === 'draft')
-		assert.equal(node.result, 'err')
-		assert.equal(node.reason, 'point engine down')
-		assert.equal(node.scripts, undefined)
+		assert.equal(node.result, 'ok')
+		assert.deepEqual(node.scripts, [
+			{
+				scriptId: -1,
+				name: '(engine)',
+				scriptKind: '',
+				phase: 'before',
+				appliedBy: 'binding',
+				result: 'err',
+				reason: 'point engine down',
+			},
+		])
+		assert.equal(node.output.main, 'hi')
 	})
 
 	test('outcome.halt at an in: seam halts the run before the binding, with its reason', async () => {

@@ -40,3 +40,5 @@ export {
 	composerClosedOn,
 	composerClosedPlaceholder,
 } from '@serene-pub/sdk'
+// 🚧 The Dialogue box's reading place (PLAN-visual-novel-layout §1.2).
+export * from './readingPlace.js'

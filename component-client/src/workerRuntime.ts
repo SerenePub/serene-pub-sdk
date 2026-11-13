@@ -557,6 +557,22 @@ export function startComponentWorker(host: ComponentWorkerHost): (message: HostT
 	const mounts = new Map<string, Mounted>()
 	const send = host.post
 
+	// An error nobody caught belongs to no one mount: said, non-fatally, to
+	// every live one. Not prevented: the console keeps its own report.
+	if (typeof globalThis.addEventListener === 'function') {
+		const sayToAll = (error: unknown) => {
+			const message = messageOf(error)
+			for (const mountId of [...mounts.keys()]) send({ k: 'error', mountId, message })
+		}
+		globalThis.addEventListener('error', (e) => {
+			const ev = e as { error?: unknown; message?: unknown }
+			sayToAll(ev.error ?? ev.message)
+		})
+		globalThis.addEventListener('unhandledrejection', (e) =>
+			sayToAll((e as { reason?: unknown }).reason),
+		)
+	}
+
 	async function mount(mountId: string, entry: string, port: ComponentPort) {
 		const fns = new Map<number, (...a: unknown[]) => unknown>()
 		// One handle per function: Remote DOM re-sends a listener with every

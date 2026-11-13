@@ -137,6 +137,10 @@ function clause(f: TemplateFinding): string {
 			return `it does not parse (${f.message})`
 		case 'unknown-helper':
 			return `it calls \`${f.name}\`, which is not a helper here`
+		case 'layout-argument':
+			return `a \`layout\` call there doesn't name a variable with layouts and a quoted layout reference`
+		case 'unknown-layout':
+			return `it names the layout "${written}", which isn't a layout of that variable here`
 		default:
 			return `it uses \`${written}\`, which nothing supplies here`
 	}

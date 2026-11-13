@@ -76,7 +76,8 @@ test("the story turn: books, resolve, the Planner (retried once), apply, death's
 		'channel.story.replay.deltas.apply',
 		'channel.story.lorePlaces.new.place.item.write',
 		'channel.story.lorePeople.new.person.item.write',
-		'channel.story.loreFallen.new.cairn.item.write',
+		'channel.story.deaths.deceased.member.item.write',
+		'channel.story.time.clock.advance',
 		'channel.story.filed.kept.write',
 		'channel.story.save',
 		'channel.story.after.journal.line.item.write',
@@ -123,13 +124,26 @@ test("the story turn: books, resolve, the Planner (retried once), apply, death's
 	assert.equal(raise.definitionId, 'core:outlet/set-stat-config')
 	assert.match(JSON.stringify(raise.config.worldRow), /channel\.story\.placeholder/)
 	assert.ok(at('channel.story.raise.levels.seat.item.write') < at('channel.story.sheet.changed.apply'))
-	// The world, in the session's own lorebook: places with their links, people, cairns.
+	// The world, in the session's own lorebook: places with their links, people.
 	assert.equal(node('channel.story.lorePlaces.new.place.item.write').definitionId, 'core:outlet/create-lore-entry')
 	assert.deepEqual(params['channel.story.lorePlaces.new.place.item.write'], { entryType: 'core:entry/location' })
 	assert.deepEqual(params['channel.story.lorePeople.new.person.item.write'], { entryType: 'core:entry/character-lore' })
-	assert.deepEqual(params['channel.story.loreFallen.new.cairn.item.write'], { entryType: 'core:entry/history' })
+	// 🚧 A death writes no lore (owner ruling 2026-11-10): the cast member is marked deceased, and no history entry is written.
+	assert.equal(node('channel.story.deaths.deceased.member.item.write').definitionId, 'core:outlet/update-cast-member')
+	assert.ok(!keys.some((k: string) => /loreFallen|\.fallen\b/.test(k)))
+	assert.ok(!doc.nodes.some((n: any) => n.definitionId === 'core:outlet/create-lore-entry' && JSON.stringify(params[n.key] ?? {}).includes('core:entry/history')))
 	assert.match(JSON.stringify(node('channel.story.lorePlaces.new.place.item.write').config.links), /lorePlaces\.new\.place\.item\.links/)
 	assert.ok(at('channel.story.lorePlaces.new.place.item.write') < at('channel.story.lorePeople.new.person.item.write'))
+	// 2026-11-10: the crawl keeps no clock of its own; the session's story clock moves by the turn's minutes, wired from the ledger.
+	const clockOf = (d: any) => d.nodes.filter((n: any) => n.definitionId === 'core:outlet/advance-story-clock')
+	assert.equal(clockOf(doc).length, 1)
+	const moves = node('channel.story.time.clock.advance')
+	assert.deepEqual([moves.config.unit, moves.config.cause, moves.config.onRefusal], ['minutes', 'action', 'skip'])
+	assert.match(JSON.stringify(moves.config.by), /channel\.story\.time\.clock\.minutes/)
+	assert.match(JSON.stringify(doc.nodes.find((n: any) => n.key === 'channel.story.time.clock.minutes').config), /ledger/)
+	// The books read the session's story time off the cast read.
+	assert.ok(doc.nodes.some((n: any) => n.definitionId === 'core:query/session-cast'))
+	assert.match(JSON.stringify(node('channel.story.books').config), /cast/)
 	// The bookkeeping, not the world: one annex write of `progress` and the journal.
 	assert.match(JSON.stringify(node('channel.story.filed.kept.write').config), /dungeon-crawler-progress/)
 	assert.doesNotMatch(JSON.stringify(doc.nodes.map((n: any) => n.config)), /dungeon-crawler-world/)
@@ -137,8 +151,8 @@ test("the story turn: books, resolve, the Planner (retried once), apply, death's
 	assert.deepEqual(params.story, { channel: 'main', limit: 30, tableLines: false })
 	assert.deepEqual(params.places, { entryTypes: ['core:entry/location'], withLinks: true })
 	assert.deepEqual(params.people, { entryTypes: ['core:entry/character-lore'] })
-	// The fallen and the Journal folio are the story turn's own reads: the Planner's talk never needed them (AUDIT C7).
-	assert.deepEqual(params['channel.story.fallen'], { entryTypes: ['core:entry/history'] })
+	// The Journal folio is the story turn's own read: the Planner's talk never needed it (AUDIT C7). The fallen are no listing: `progress.fallen`.
+	assert.equal(params['channel.story.fallen'], undefined)
 	assert.deepEqual(params['channel.story.log'], { channel: 'travelogue', limit: cat.DUNGEON_CRAWLER_CRIB_ROUNDS })
 	assert.equal(params.fallen, undefined)
 	assert.ok(!doc.nodes.some((n: any) => n.key === 'channel.parley.fallen' || n.key === 'channel.parley.log'))
@@ -191,7 +205,8 @@ test("🚧 the Planner's grammar (S1): the session's rules' reply schema, the ge
 	for (const k of ['', 'attack.melee', 'skill.athletics', 'save.dexterity']) assert.ok(checks.includes(k), k)
 	assert.ok(!checks.includes('strength-mod'))
 	// Who stands at death's door is not the Planner's to say (AUDIT A7): every seat the turn leaves at 0 rolls.
-	assert.deepEqual(turn.required, ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets'])
+	// Moved 2026-11-11 (bench-L3): + 'fallenCompanions', 'revivedCompanions' (was '... roundSummary, secrets').
+	assert.deepEqual(turn.required, ['deltas', 'world', 'clock', 'narratorBrief', 'roundSummary', 'secrets', 'fallenCompanions', 'revivedCompanions'])
 	assert.equal(turn.properties.deathsDoor, undefined)
 	// A place carries its ways out, their kinds and standings the rules' exit entry type's, every member required.
 	const room = turn.properties.world.properties.rooms.items
@@ -248,6 +263,18 @@ test('Rest and the goal: an action each, no model call on Rest, one on a new goa
 	const logged = rest.nodes.find((n: any) => n.key === 'rested.logged.write')
 	assert.match(JSON.stringify(logged.config), /travelogue/)
 	assert.match(JSON.stringify(logged.config.tableLine), /rested\.logged\.anchor/)
+	// 2026-11-10: both rest specs read the cast (the story time) and move the session's story clock by the night.
+	const afterRest = specById(cat.DUNGEON_CRAWLER_AFTER_REST_SPEC_ID)
+	for (const d of [rest, afterRest]) {
+		assert.ok(d.nodes.some((n: any) => n.definitionId === 'core:query/session-cast'))
+		assert.match(JSON.stringify(d.nodes.find((n: any) => n.key === 'rest').config), /cast/)
+		assert.ok(!d.nodes.some((n: any) => JSON.stringify(n.config).includes('crawl-time')))
+		const clocks = d.nodes.filter((n: any) => n.definitionId === 'core:outlet/advance-story-clock')
+		assert.equal(clocks.length, 1)
+		assert.equal(clocks[0].key, 'rested.clock.advance')
+		assert.deepEqual([clocks[0].config.unit, clocks[0].config.cause, clocks[0].config.onRefusal], ['minutes', 'action', 'skip'])
+		assert.match(JSON.stringify(clocks[0].config.by), /rested\.clock\.minutes/)
+	}
 	assert.doesNotMatch(JSON.stringify(rest.nodes.map((n: any) => n.config)), /dungeon-crawler-world/)
 	const goal = specById(cat.DUNGEON_CRAWLER_GOAL_SPEC_ID)
 	assert.equal(`${goal.id}#${goal.contributes.actions[0].key}`, cat.DUNGEON_CRAWLER_GOAL_ACTION)
@@ -293,7 +320,7 @@ const session = (annex: Record<string, unknown> = {}) => ({
 	sessionId: 7,
 	ownerUserId: 1,
 	guests: [],
-	cast: { sessionPersonas: [{ seatId: 4, seatUserId: 1, seatName: 'Mira', persona: null, removedAt: null }], characters: [] },
+	cast: { sessionPersonas: [{ seatId: 4, seatUserId: 1, seatName: 'Mira', persona: null, removedAt: null }], sessionCharacters: [] },
 	// Core's lane register, as the settings document carries it (owner ruling 2026-10-17).
 	channelLanes: { [cat.PARLEY_CHANNEL]: { 'user:1': 'parley' } },
 	annex: { core: { ...annex } },
@@ -323,7 +350,6 @@ const PLACES = {
 	],
 }
 const PEOPLE = { entries: [{ id: 60, name: 'Moss', content: 'A ferryman.' }] }
-const FALLEN = { entries: [{ id: 70, name: null, content: 'Here lies Bram, who fell in the Hall.' }] }
 const LOG = [
 	{ id: 5, role: 'assistant', content: 'The party came to the gate.', channel: 'travelogue' },
 	{ id: 6, role: 'assistant', content: 'Mira found a bell rope.', channel: 'travelogue' },
@@ -359,7 +385,7 @@ const PLAN = {
 
 const books = (annex: Record<string, unknown> = { [K.progress]: PROGRESS }, messageId?: number, seat?: Record<string, unknown>, ruleset: unknown = VI_IN) =>
 	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
-		session: session(annex), state: state(seat), story, messageId, places: PLACES, people: PEOPLE, fallen: FALLEN, log: LOG, ruleset,
+		session: session(annex), state: state(seat), story, messageId, places: PLACES, people: PEOPLE, log: LOG, ruleset,
 	})
 
 test('books: the world from the lorebook, the story so far from the journal, the owners and actions the handler reads', () => {
@@ -372,7 +398,8 @@ test('books: the world from the lorebook, the story so far from the journal, the
 	// The places, each with its entry for a delta to name, and its ways out.
 	assert.match(b.crib, /- The Sunken Gate \[location:50\]: Wet stone\. Ways out: The Hall\./)
 	assert.match(b.crib, /People:\n- Moss: A ferryman\./)
-	assert.match(b.crib, /The fallen: Here lies Bram/)
+	// The fallen are the crawl's own, not a listing; this crawl has none yet.
+	assert.doesNotMatch(b.crib, /The fallen/)
 	assert.match(b.crib, /The story so far, oldest first:\n- The party came to the gate\.\n- Mira found a bell rope\./)
 	// Whose rules are read: the session, the live seat, the place it stands in.
 	assert.deepEqual(b.owners, ['session:7', 'player-seat:4', 'location:50'])
@@ -382,7 +409,20 @@ test('books: the world from the lorebook, the story so far from the journal, the
 		session: session({ [K.progress]: PROGRESS }), state: state({ 'standing-order': 'follow' }), story: story.slice(0, 1), places: PLACES,
 	})
 	assert.deepEqual(quiet.actions, [{ owner: 'player-seat:4', text: 'follow' }])
+	// 2026-11-10: the crawl's time is the session's story now; none yet, the crawl's epoch — an old `crawl-time` is never read.
 	assert.equal(b.clockBase, '1-01-01 08:00')
+	assert.match(b.brief, /Time: Day 1, 08:00\./)
+	const now = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
+		session: session({ [K.progress]: PROGRESS }), state: state(undefined, { 'crawl-time': '1-02-09 12:00' }), story, places: PLACES,
+		cast: { storyTime: { now: { year: 1, month: 1, day: 3, hour: 16, minute: 30 } } },
+	})
+	assert.equal(now.clockBase, '1-01-03 16:30')
+	assert.match(now.brief, /Time: Day 3, 16:30\./)
+	const old = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
+		session: session({ [K.progress]: PROGRESS }), state: state(undefined, { 'crawl-time': '1-02-09 12:00' }), story, places: PLACES,
+		cast: { storyTime: { now: null } },
+	})
+	assert.equal(old.clockBase, '1-01-01 08:00')
 	// No lorebook of its own yet: an empty world, and still a turn.
 	const bare = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: session({ [K.progress]: PROGRESS }), state: state(), story })
 	assert.doesNotMatch(bare.crib, /Places:/)
@@ -564,7 +604,7 @@ test("death's door: a seat the rules left at 0 rolls; fair kills, gentle takes o
 	assert.deepEqual(calm.deaths, [])
 	assert.equal(calm.line, null)
 
-	// The books: fate dead, health 0, a cairn for the lorebook, an arrival, the player's lane offered a new character.
+	// The books: fate dead, health 0, the cast member marked deceased (no lore), an arrival, the player's lane offered a new character.
 	const ledger = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, {
 		session: session({ [K.progress]: PROGRESS }), books: b, turn, door: dead, applied: struck, after, row: 20,
 	})
@@ -572,7 +612,12 @@ test("death's door: a seat the rules left at 0 rolls; fair kills, gentle takes o
 		ledger.changes.filter((c: any) => c.owner === 'player-seat:4').map((c: any) => [c.slot, c.value]),
 		[['core:slot/fate@1', 'dead']],
 	)
-	assert.deepEqual(ledger.fallen, [{ name: 'Mira', content: 'Here lies Mira, Ranger, level 1, who fell in The Sunken Gate.' }])
+	// 🚧 No lore (2026-11-10): the cast change, the lasting list, and no `fallen` write.
+	assert.deepEqual(ledger.deceased, [{ member: 'player-seat:4', changes: { nodeState: 'deceased' } }])
+	assert.equal('fallen' in ledger, false)
+	assert.deepEqual(ledger.progress.fallen, [{ name: 'Mira', where: 'The Sunken Gate', seat: 'player-seat:4', castMemberId: null }])
+	assert.match(ledger.laneLines[0].text, /I'm sorry\. The story goes on without them\. When you're ready/)
+	assert.match(ledger.narrator.outcomes, /Name Mira's death plainly, in a sentence of its own/)
 	assert.equal(ledger.progress.arrivals[0].who, 'user:1')
 	assert.equal(ledger.laneLines[0].lane, 'parley')
 	assert.equal(ledger.laneLines[0].blocks[0].referent, cat.DUNGEON_CRAWLER_QUESTIONS.newCharacter)
@@ -587,7 +632,8 @@ test("death's door: a seat the rules left at 0 rolls; fair kills, gentle takes o
 	})
 	assert.deepEqual(saved.changes.filter((c: any) => c.slot === 'core:slot/hp@1').map((c: any) => c.value), [1])
 	assert.equal(saved.progress.fates, undefined)
-	assert.equal(saved.fallen, null)
+	assert.equal(saved.deceased, null)
+	assert.equal(saved.progress.fallen, undefined)
 	// 🚧 Its fall rule rides on the books, from the session's ruleset (★I): its die, its door.
 	assert.deepEqual(b.fall.door, cat.VIS_ITINERIS_AT_ZERO_HEALTH_RULE.door)
 	assert.match(dead.line, /: d20 \d+ vs DC 10 — dead/)
@@ -607,7 +653,7 @@ test("🚧 death's door under rules with no fall rule (★I): nothing rolled, no
 		})
 		assert.deepEqual(ledger.changes.filter((c: any) => c.owner === 'player-seat:4' && c.slot === 'core:slot/fate@1').map((c: any) => c.value), ['taken-out'])
 		assert.match(ledger.narrator.outcomes, /Mira fell: down and out of the fight, alive/)
-		assert.equal(ledger.fallen, null)
+		assert.equal(ledger.deceased, null)
 	}
 })
 
@@ -620,7 +666,10 @@ test('ledger: the clock, the world for the lorebook, the journal, the telling a 
 		session: session({ [K.progress]: PROGRESS }), books: b, turn, door: d, applied: ap, after: state(), row: 30,
 	})
 	// The genre's own fields only: the clock. The deltas were the handler's.
-	assert.deepEqual(out.changes, [{ owner: 'world', slot: 'core:slot/crawl-time@1', value: '1-01-01 09:30' }])
+	// 2026-11-10: the clock is the session's story clock — no crawl-time change; the minutes ride on `clock`.
+	assert.equal(out.changes, null)
+	assert.equal(out.clock, 90)
+	assert.equal(out.progress.lastTelling.clock, 90)
 	// New places, each carrying the ways out to places that exist by then; known people skipped.
 	assert.deepEqual(out.places, [
 		{ name: 'The Stair', content: 'Steps into the dark.', links: [{ to: 'The Hall', linkType: 'leads to', reverseLinkType: 'leads to' }] },
@@ -645,9 +694,10 @@ test('ledger: the clock, the world for the lorebook, the journal, the telling a 
 	// No snapshot: only the telling a swipe of this row re-tells.
 	assert.deepEqual(Object.keys(out.progress).sort(), ['built', 'goal', 'heroes', 'lastTelling', 'shape'])
 	// The deltas a swipe files again: those that need no roll (the check stays as it fell).
+	// Moved 2026-11-11 (bench-L3): + companionFates (was absent).
 	assert.deepEqual(out.progress.lastTelling, {
 		row: 30, brief: 'Mira tries the wall.', outcomes: out.narrator.outcomes,
-		changes: out.changes, raises: null, replay: turn.deltas.filter((d: any) => d.op !== 'use'),
+		changes: out.changes, raises: null, replay: turn.deltas.filter((d: any) => d.op !== 'use'), deceased: null, companionFates: null, clock: 90,
 	})
 	assert.deepEqual(out.progress.lastTelling.replay.map((d: any) => d.op), ['spend'])
 
@@ -662,6 +712,9 @@ test('ledger: the clock, the world for the lorebook, the journal, the telling a 
 	const again = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: session(filed), books: swiped, row: 30 })
 	// A swipe takes back what the turn wrote at its row: filed again, the dice not rolled twice.
 	assert.deepEqual(again.changes, out.changes)
+	// A swipe took the move back with the row: the redo files it again, once.
+	assert.equal(swiped.told.clock, 90)
+	assert.equal(again.clock, 90)
 	assert.deepEqual(again.replay, out.progress.lastTelling.replay)
 	assert.equal(again.progress, null)
 	assert.equal(again.places, null)
@@ -781,14 +834,17 @@ test('goal reached: the Narrator closes the arc, the owner is asked; carry on, n
 test("rest: full health (the seat's own max), the taken-out back up, eight hours, a journal line", () => {
 	const out = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
 		session: session({ [K.progress]: { ...PROGRESS, fates: { 'player-seat:4': 'taken-out' } } }),
-		state: state({ hp: 0, fate: 'taken-out' }, { 'crawl-time': '1-01-31 20:00' }),
+		state: state({ hp: 0, fate: 'taken-out' }),
+		cast: { storyTime: { now: { year: 1, month: 1, day: 31, hour: 20, minute: 0 } } },
 		ruleset: VI_IN,
 	})
 	assert.deepEqual(out.changes, [
 		{ owner: 'player-seat:4', slot: 'core:slot/hp@1', value: 20 },
 		{ owner: 'player-seat:4', slot: 'core:slot/fate@1', value: 'alive' },
-		{ owner: 'world', slot: 'core:slot/crawl-time@1', value: '1-02-01 04:00' },
 	])
+	// 2026-11-10: the session's story clock moves by the night, not the crawl's own slot.
+	assert.equal(out.clock, VI_IN.rests[0]!.minutes)
+	assert.match(out.line, /It is now Day 32, 04:00\./)
 	// Back in the round: the mirror the round script reads, emptied.
 	assert.deepEqual(out.progress.fates, {})
 	assert.match(out.line, /Mira recovers/)
@@ -798,14 +854,17 @@ test("rest: full health (the seat's own max), the taken-out back up, eight hours
 	assert.match(out.line, /^The party rests for eight hours\./)
 	// 🚧 After the rules' Rest (S3): the rest they raised, by its id.
 	const short = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
-		session: session({ [K.progress]: PROGRESS }), state: state({}, { 'crawl-time': '1-01-31 20:00' }), ruleset: VI_IN,
+		session: session({ [K.progress]: PROGRESS }), state: state(), ruleset: VI_IN,
+		cast: { storyTime: { now: { year: 1, month: 1, day: 31, hour: 20, minute: 0 } } },
 		cause: { values: { owner: 'player-seat:4', rest: 'short' } },
 	})
 	assert.deepEqual(short.elapsed, { minutes: 60 })
+	assert.equal(short.clock, 60)
+	assert.equal(short.journal, 'The party rests. Day 31, 20:00 → Day 31, 21:00.')
 	// 🚧 Another player's seat resting under the rules: theirs alone — the party's night is the owner's to call.
 	const guestSeat = { seatId: 5, seatUserId: 9, seatName: 'Bo', persona: null, removedAt: null }
 	const theirs = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, {
-		session: { ...session({ [K.progress]: PROGRESS }), cast: { sessionPersonas: [session().cast.sessionPersonas[0], guestSeat], characters: [] } },
+		session: { ...session({ [K.progress]: PROGRESS }), cast: { sessionPersonas: [session().cast.sessionPersonas[0], guestSeat], sessionCharacters: [] } },
 		state: state(), ruleset: VI_IN, cause: { values: { owner: 'player-seat:5', rest: 'long' } },
 	})
 	assert.deepEqual([theirs.line, theirs.journal, theirs.elapsed, theirs.changes], [null, null, null, []])
@@ -813,6 +872,7 @@ test("rest: full health (the seat's own max), the taken-out back up, eight hours
 	for (const rs of [rulesetIn('core:ruleset/wherewithal@1'), rulesetIn('core:ruleset/freeform@1', 'prose')]) {
 		const night = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, { session: session({ [K.progress]: PROGRESS }), state: state(), ruleset: rs })
 		assert.equal(night.elapsed, null)
+		assert.equal(night.clock, null)
 		assert.ok(!night.changes.some((c: any) => c.slot === 'core:slot/crawl-time@1'))
 		assert.match(night.line, /^The party rests\./)
 		assert.equal(night.journal, 'The party rests.')
@@ -822,7 +882,7 @@ test("rest: full health (the seat's own max), the taken-out back up, eight hours
 		state: state({ hp: 0, fate: 'dead' }),
 		ruleset: VI_IN,
 	})
-	assert.equal(dead.changes.length, 1)
+	assert.equal(dead.changes.length, 0)
 	// The dead stay dead, and out of the round: the mirror is unchanged, nothing to keep.
 	assert.equal(dead.progress, null)
 	const hardy = runScript(cat.DUNGEON_CRAWLER_REST_SCRIPT, { session: session({ [K.progress]: PROGRESS }), state: state({ hp: 3 }, {}, 26) })
@@ -986,4 +1046,72 @@ test('the prompts: the Narrator never writes a roll line; the Planner summarises
 	assert.match(fields(cat.DUNGEON_CRAWLER_PROMPT_KEYS.turn).systemPrompt, /roundSummary: what is NEW this round, in one past-tense sentence/)
 	assert.doesNotMatch(fields(cat.DUNGEON_CRAWLER_PROMPT_KEYS.sheet).systemPrompt, /- abilities:|- gear:/)
 	assert.doesNotMatch(fields(cat.DUNGEON_CRAWLER_PROMPT_KEYS.edits).systemPrompt, /- abilities:|- gear:/)
+})
+
+/** A death's books: the Fair table's dead seat, `row` the Narrator's row; `member` the seat's cast member (none: the seat ref stands in). */
+const deathBooks = (member?: number, annex: Record<string, unknown> = { [K.progress]: PROGRESS }) => {
+	const sess = session(annex)
+	if (member != null) (sess.cast.sessionPersonas[0] as any).castMemberId = member
+	const b = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: sess, state: state(), story, places: PLACES, people: PEOPLE, log: LOG, ruleset: VI_IN })
+	const turn = { plan: runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: { ...PLAN, deltas: [] } }).plan }
+	const after = state({ hp: 0 })
+	const ap = applied([])
+	const door = runScript(cat.DUNGEON_CRAWLER_DOOR_SCRIPT, { session: sess, books: b, turn, applied: ap, after }, [4])
+	const run = (books: unknown, progress: Record<string, unknown>, row = 20) =>
+		runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: session({ [K.progress]: progress }), books, turn, door, applied: ap, after, row })
+	return { sess, b, turn, door, after, run }
+}
+
+test('🚧 a death marks the seat\'s cast member deceased and keeps the fallen, writing no lore (owner ruling 2026-11-10)', () => {
+	const { b, run } = deathBooks(31)
+	const ledger = run(b, PROGRESS)
+	assert.deepEqual(ledger.deceased, [{ member: 'seated-member:31', changes: { nodeState: 'deceased' } }])
+	assert.equal('fallen' in ledger, false)
+	assert.deepEqual(ledger.progress.fallen, [{ name: 'Mira', where: 'The Sunken Gate', seat: 'player-seat:4', castMemberId: 31 }])
+	assert.deepEqual(ledger.progress.lastTelling.deceased, ledger.deceased)
+})
+
+test('🚧 progress.fallen lasts: the arrival is spent, the fallen stays', () => {
+	const { b, run } = deathBooks(31)
+	const first = run(b, PROGRESS)
+	assert.equal(first.progress.arrivals.length, 1)
+	// The newcomer is made under a new name; each later round counts the arrival down until it is gone.
+	let progress: Record<string, any> = { ...first.progress, heroes: { 'user:1': { name: 'Tarn', made: true } } }
+	for (let round = 0; round < 4; round++) {
+		const later = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
+			session: session({ [K.progress]: progress }), state: state({ hp: 12 }), story, places: PLACES, people: PEOPLE, log: LOG, ruleset: VI_IN,
+		})
+		const turn = runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { books: later, first: runScript(cat.DUNGEON_CRAWLER_PLAN_SCRIPT, { json: PLAN }) })
+		const ap = applied([])
+		const d = runScript(cat.DUNGEON_CRAWLER_DOOR_SCRIPT, { session: session(), books: later, turn, applied: ap, after: state() })
+		const out = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: session({ [K.progress]: progress }), books: later, turn, door: d, applied: ap, after: state(), row: 40 + round })
+		progress = out.progress
+	}
+	assert.deepEqual(progress.arrivals, [])
+	assert.deepEqual(progress.fallen, [{ name: 'Mira', where: 'The Sunken Gate', seat: 'player-seat:4', castMemberId: 31 }])
+})
+
+test('🚧 a swipe of a death files the cast change again once, and appends nothing', () => {
+	const { b, run, sess } = deathBooks(31)
+	const first = run(b, PROGRESS)
+	const filed = { [K.progress]: first.progress }
+	const swiped = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
+		session: session(filed), state: state(), story: [...story, { id: 20, role: 'assistant', content: 'Mira falls.' }], messageId: 20, places: PLACES, people: PEOPLE, log: LOG, ruleset: VI_IN,
+	})
+	assert.equal(swiped.redo, true)
+	assert.deepEqual(swiped.told.deceased, first.deceased)
+	const again = runScript(cat.DUNGEON_CRAWLER_LEDGER_SCRIPT, { session: sess, books: swiped, row: 20 })
+	assert.deepEqual(again.deceased, first.deceased)
+	assert.equal(again.progress, null)
+	assert.equal('fallen' in again, false)
+})
+
+test('🚧 the crib reads progress.fallen, and the people listing leaves out a fallen member\'s own lore', () => {
+	const progress = { ...PROGRESS, fallen: [{ name: 'Bram', where: 'the Hall', seat: 'player-seat:9', castMemberId: 31 }] }
+	const people = { entries: [...PEOPLE.entries, { id: 61, name: 'Bram', content: 'Here lies Bram.', lorebookBindingId: 31 }, { id: 62, name: 'Ila', content: 'A priestess.', lorebookBindingId: null }] }
+	const b = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: session({ [K.progress]: progress }), state: state(), story, places: PLACES, people, log: LOG, ruleset: VI_IN })
+	assert.match(b.crib, /The fallen: Bram fell in the Hall\./)
+	assert.deepEqual(b.people.map((p: any) => p.name), ['Moss', 'Ila'])
+	assert.match(b.crib, /People:\n- Moss: A ferryman\.\n- Ila: A priestess\./)
+	assert.doesNotMatch(b.crib, /Here lies Bram/)
 })

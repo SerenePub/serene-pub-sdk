@@ -111,6 +111,18 @@ export interface AnnexFieldDecl {
 	readonly scope?: 'session' | 'lorebook' | 'user'
 	/** 🚧 The value follows the player into the next chapter (M0, F5): a `next-chapter` session copies it. */
 	readonly nextChapter?: true
+	/**
+	 * 🚧 The value stays when the turn that wrote it is replaced — a swipe, a
+	 * regenerate, a failed run — and goes when the turn leaves (Back, delete).
+	 * For a genre that tells a turn again from what it decided: its plan is not
+	 * written again, so it must not be taken back. Absent means it goes with the
+	 * turn either way. `session` scope only: only a session's annex is taken back
+	 * with a turn.
+	 * @experimental
+	 * ⚠ Not a cast member's _retold_ field (NOMENCLATURE §8 **retold** — a card
+	 * field told in the member's own words); a near-neighbour word.
+	 */
+	readonly keepOnRetell?: true
 	/** What a listing calls the action. Default: the key. */
 	readonly label?: I18n
 	readonly description?: I18n
@@ -128,6 +140,8 @@ export type AnnexFieldInput = {
 	scope?: 'session' | 'lorebook' | 'user'
 	/** 🚧 The value follows the player into the next chapter — {@link AnnexFieldDecl.nextChapter}. */
 	nextChapter?: true
+	/** 🚧 The value stays when its turn is replaced — {@link AnnexFieldDecl.keepOnRetell}. */
+	keepOnRetell?: true
 	label?: I18n
 	description?: I18n
 }
@@ -185,6 +199,8 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
 			out.push(`${where}.genre: a user-scoped field is not bound to a genre — a person's documents follow them across sessions`)
 		if (f.nextChapter !== undefined)
 			out.push(`${where}.nextChapter: a user-scoped field is not part of a session, so nothing follows into a chapter`)
+		if (f.keepOnRetell !== undefined)
+			out.push(`${where}.keepOnRetell: a user-scoped field is not taken back with a turn, so there is nothing to keep — only a session-scope field can keep its value`)
 	}
 	if (f.act !== undefined && f.scope !== 'user') {
 		if (!Array.isArray(f.act) || !f.act.length)
@@ -207,6 +223,10 @@ export function annexFieldFindings(raw: unknown, at = 'annexFields'): string[] {
 			`${where}.scope: 'session' (the session annex, the default), 'lorebook' (the lorebook annex) or 'user' (the user annex) — ` +
 				`'${String(f.scope)}' is neither`,
 		)
+	if (f.scope === 'lorebook' && f.keepOnRetell !== undefined)
+		out.push(`${where}.keepOnRetell: a session-scope field only — a lorebook-scope field's change is a lorebook write, and goes back with its turn as every lorebook write does`)
+	if (f.keepOnRetell !== undefined && (f.keepOnRetell as unknown) !== true)
+		out.push(`${where}.keepOnRetell: true or absent — the value stays when its turn is told again`)
 	if (f.nextChapter !== undefined && (f.nextChapter as unknown) !== true)
 		out.push(`${where}.nextChapter: true or absent — the value follows the player into the next chapter`)
 	out.push(...i18nFindings(f.label as I18n | undefined, `${where}.label`))
@@ -234,6 +254,7 @@ export function annexField<const D extends AnnexFieldInput>(
 		...(d.genre !== undefined ? { genre: typeof d.genre === 'string' ? d.genre : d.genre.id } : {}),
 		...(d.scope !== undefined ? { scope: d.scope } : {}),
 		...(d.nextChapter !== undefined ? { nextChapter: d.nextChapter } : {}),
+		...(d.keepOnRetell !== undefined ? { keepOnRetell: d.keepOnRetell } : {}),
 		...(d.label !== undefined ? { label: d.label } : {}),
 		...(d.description !== undefined ? { description: d.description } : {}),
 	})

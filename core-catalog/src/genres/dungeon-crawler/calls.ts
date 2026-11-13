@@ -52,6 +52,8 @@ export { BRIEF_TURN_TEMPLATE as DUNGEON_CRAWLER_BRIEF_TEMPLATE } from '../../sha
  * line, or after the Narrator's own on a round nobody spoke in — and a
  * strict chat model answered nothing, every turn. The seed is the
  * transcript's `-2` row (`process-messages@1`), drawn last by its id.
+ * 🚧 The system block also holds `{{earlierScenes}}` after the scenario, empty
+ * (and so absent) until the session has finished scenes that left the prompt.
  * @experimental
  */
 export const DUNGEON_CRAWLER_NARRATE_TEMPLATE = `{{#systemBlock}}
@@ -69,6 +71,9 @@ export const DUNGEON_CRAWLER_NARRATE_TEMPLATE = `{{#systemBlock}}
 
 {{#if scenario}}
 {{{scenario}}}
+{{/if}}
+{{#if earlierScenes}}
+{{{earlierScenes}}}
 {{/if}}
 {{/systemBlock}}
 

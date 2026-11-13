@@ -56,6 +56,10 @@ const PLAIN_ENGLISH = new Set([
 	'door', 'address',
 	// A verb in English ("build writes the manifest"); the canon's is the key `SessionShape.writes`.
 	'writes',
+	// The zone switch's Left (§9, 2026-11-05) and the inspector's phone Back: in a guide, "left as written", "fall back".
+	'left', 'back',
+	// The layout look's key `behind` (§9, 2026-11-11, PLAN-visual-novel-layout): in a guide, "the handlers behind them".
+	'behind',
 ])
 
 /** Code, HTML comments and link targets out; link text kept, and marked as linked. */

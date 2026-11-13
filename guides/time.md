@@ -1,8 +1,7 @@
 # Time
 
 A session can keep its own **story clock**: the moment the story has reached, which has nothing to
-do with the time on the wall. It moves when a person says so (*Time passes…*), when a reply takes a
-tick, or when a pipeline of yours moves it. Everything on this page is about what your genre,
+do with the time on the wall. It moves when a person says so (*Time passes…*), when a round ends, or when a pipeline of yours moves it. Everything on this page is about what your genre,
 ruleset or routine can do with it. The calendar the clock counts in belongs to the lorebook: months,
 weekdays, eras, and now the parts of a day and the seasons.
 
@@ -162,6 +161,55 @@ gives a cast member a [`schedule` field](rulesets.md#a-weekly-routine-the-schedu
 The schedule is read as the zones hold it now: a zone has no date of its own, so a past hour is
 placed by today's schedule, not the one the member kept then. `main` and `at`, the presences, are
 unchanged.
+
+## How long a round is worth
+
+🚧 A genre that wants its clock to move each round says how far in one field, the **round worth**:
+how many story minutes a round is worth. `ROUND_WORTH_FIELD` (`@serene-pub/core-catalog`) is an
+integer, labelled *Minutes each round moves the clock*, from 0 to 1440, 5 by default, 0 meaning
+off, and set by the owner in the session's settings. A genre opts in by placing it in its `fields`
+under `[ROUND_WORTH_KEY]` (`'roundWorth'`). The settings form is the only writer.
+
+`core:query/round-worth@1` reads it. Its in-port is the session's `scope`; its out-ports are
+**`minutes`** (a whole number, 0 or more), **`step`** (`{ by: minutes, unit: 'minutes' }`, exactly
+what `core:task/clock-step@1`'s `step` in-port takes) and **`main`** (`{ minutes, step }`). It
+answers 0 when the genre has not placed the field (it has not opted in) or the session set 0. It
+never reads or moves the clock and does not say whether one is set, so gate on
+`core:query/cast-presences@1`'s `at`: a story with no clock is never started by a round.
+
+```ts nocheck a step inside an event pipeline's builder chain, with placeholder wiring
+c
+	.query('worth', ($) => C.roundWorth.v1({ scope: $.event.sessionScope }))
+	.task('tick', ($) => C.clockStep.v1({ step: $.worth.step, params: slot.params() }))
+	.junction('clock', { on: ($) => $.tick.moves }, (j) =>
+		j.when('moves', { truthy: true }, (m) =>
+			m
+				.query('present', ($) => C.castPresences.v1({ scope: $.event.sessionScope }))
+				.junction('clocked', { on: ($) => $.present.at }, (k) =>
+					k.when('at', { truthy: true }, (d) =>
+						d.outlet('advance', ($) =>
+							C.advanceStoryClock.v1({
+								by: $.tick.by,
+								unit: $.tick.unit,
+								cause: 'tick',
+								onRefusal: 'skip',
+								params: slot.params(),
+							}),
+						),
+					),
+				),
+		),
+	)
+```
+
+`cause: 'tick'` says the move is a fixed step: it is never a time action a new scene begins at.
+
+Core has one reader. The round tick (`core:spec/round-tick`, on `core:event/round-ended@1`) is
+Story's and the Lair's one owner of the clock: both register it in their genre defaults, under every
+preset. The Lair's keeper (`core:spec/lair-keeper`) judges no time unless its *Move the clock* is
+switched on and it names a move; that judged move stays opt-in, and happens beside the tick's. The
+Dungeon Crawler reads neither: its turn's Planner names each round's minutes. ⚠ That is not the
+round worth; it is the time one round took, judged.
 
 ## Not yet built
 

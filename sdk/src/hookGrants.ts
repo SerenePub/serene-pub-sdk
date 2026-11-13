@@ -68,6 +68,16 @@ export interface HookCtxGrants {
  *    person's saved documents (🚧 M2b); no network.
  *  - **oracle** — storage, package and fetch. The one kind that calls out, which is what
  *    `effects: 'external'` names.
+ *
+ * The table says what a kind's `ctx` CARRIES, never whether a member works on a
+ * given call. The applet group — `ctx.annex('user')` and `ctx.storage.user` — is
+ * present on every kind above that has `annex` / `storage` and, per call, works
+ * only while the host's frame-origin cause names the calling plugin: its own
+ * mounted frame's request, or a person's press in it, caused the call (owner
+ * 2026-11-04). An event or lifecycle hook, the schedule tick and a routine,
+ * cadence or schedule run carry none, so those members reject there with one
+ * sentence ("<thing> is only available while the app is open.") — present and
+ * refusing, never absent, like `ctx.storage.user` with no acting person.
  * @ruling F11, F32
  */
 const GRANTS: Record<HookCtxKind, HookCtxGrants> = {

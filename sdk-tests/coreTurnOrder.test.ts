@@ -23,6 +23,10 @@ import {
 	turnStrategyName,
 } from '../core-catalog/src/shared/ui/turn-order/index.js'
 import { CORE_COMPONENTS, CORE_WIDGETS, coreWidgets } from '../core-catalog/src/index.js'
+import { resolve } from 'node:path'
+import { mountComponent } from '../cli/src/testing.js'
+
+const CORE_CATALOG = resolve(import.meta.dirname, '..', 'core-catalog')
 
 const en = (s: string) => s
 const OWNER: ViewerV1 = { userId: 1, isAdmin: false, isGuest: false }
@@ -348,4 +352,29 @@ describe('the view', () => {
 		const carry = view({ actions: { extra: { primary: [action('advance')], overflow: [] } } })
 		assert.equal(carry.continueTurn.enabled, true)
 	})
+})
+
+/** Mount a core widget from source with nothing to show (owner R10, 2026-11-05: an empty widget draws no placeholder text). */
+async function mountEmpty(slug: string, requests?: (kind: string) => unknown, settings: Record<string, unknown> = {}) {
+	return mountComponent({
+		root: CORE_CATALOG,
+		entry: `components/shared/${slug}/${slug}.ts`,
+		owner: 'core',
+		timeoutMs: 60_000,
+		context: { session: { id: 1, name: 'Proof' }, settings, viewer: { userId: 1, isAdmin: false, isGuest: false } },
+		...(requests ? { requests: requests as never } : {}),
+	})
+}
+
+test('an empty Turn order draws no sentence, only its greyed controls (owner R10)', { timeout: 120_000 }, async () => {
+	const view = await mountEmpty('turn-order')
+	try {
+		await view.settle()
+		assert.ok(view.query('[data-widget-part~="turn-order.root"]'), 'the root still mounts')
+		assert.equal(view.query('[data-widget-part~="turn-order.empty"]') === null, true)
+		assert.equal(view.query('[data-widget-part~="turn-order.head"]') === null, true)
+		assert.equal((view.root.textContent ?? '').replace(/\s+/g, ' ').trim(), 'Pick who speaks Continue')
+	} finally {
+		await view.unmount()
+	}
 })

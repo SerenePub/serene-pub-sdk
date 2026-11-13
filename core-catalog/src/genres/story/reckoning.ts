@@ -40,4 +40,7 @@ export const storyReckoningSpec = () =>
 		// The routine's name (`CORE_SPECS`) titles its duties card (S7).
 		dutiesTitle: 'Note what changed',
 		terms: STORY_RECKON_TERMS,
+		// *Move the clock* ships off (owner 2026-11-11: one default owner moves the clock; Story's is the
+		// round tick); a session may switch it on, and then the routine's judgment moves the clock too.
+		duties: { time: false },
 	})

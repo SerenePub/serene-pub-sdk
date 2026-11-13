@@ -101,7 +101,7 @@ const dossierWith = (composer: Partial<ConversationDossierV1['composer']> = {}):
 const mount = (d: ConversationDossierV1) =>
 	mountComponent({
 		root: CORE_CATALOG,
-		entry: 'components/shared/messages/messages.ts',
+		entry: 'components/shared/composer/composer.ts',
 		owner: 'core',
 		coreConversation: true,
 		timeoutMs: 60_000,
@@ -142,7 +142,7 @@ test('More › What can be attached opens a dialog of what the reply reads; a ki
 		// Nothing about readers in the composer's body (note 41): it lives in
 		// a dialog, closed until More's item opens it — no session panes needed.
 		const card = parts(view, 'messages.composer-card')[0]!
-		assert.equal(card.querySelector('[data-widget-part~="messages.composer-readers"]'), null)
+		assert.equal(card.querySelector('[data-widget-part~="messages.composer-readers"]') === null, true)
 		const dialog = view.query('sp-dialog')!
 		assert.equal(dialog.getAttribute('label'), 'What can be attached')
 		assert.equal(dialog.hasAttribute('open'), false)

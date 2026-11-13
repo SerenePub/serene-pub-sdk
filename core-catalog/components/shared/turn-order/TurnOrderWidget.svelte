@@ -104,12 +104,7 @@
 		<p data-widget-part="turn-order.alert" role="alert">{refusal}</p>
 	{/if}
 
-	{#if view.status === "empty"}
-		<div data-widget-part="turn-order.empty empty" role="status">
-			<sp-icon name="list-ordered" size="20"></sp-icon>
-			<span>{view.empty}</span>
-		</div>
-	{:else}
+	{#if view.status !== "empty"}
 		<p data-widget-part="turn-order.head" role="status">
 			{#if view.headFace}
 				<img data-widget-part="turn-order.face" src={view.headFace} alt="" />

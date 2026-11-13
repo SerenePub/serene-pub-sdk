@@ -1,6 +1,10 @@
 /**
  * Story's **Ask** action (Adventure's until 2026-10-19): the narrator asks, the cast answers (`answer.ts`).
  * The genre's actions are introduced in `index.ts`.
+ *
+ * Retired from Story 2026-11-04 (owner §0-F): Story no longer registers it, so it is on no quick
+ * row, no `/ask` and no composer chip. Still published so stored references resolve and an
+ * administrator may register it; Answer stays registered for choices blocks already in sessions.
  */
 
 import { compile, slot, spec, sessionEvents } from '@serene-pub/sdk'

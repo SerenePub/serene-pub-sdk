@@ -146,8 +146,16 @@ describe('Vis Itineris and Wherewithal, rebuilt in the sections, read as they di
 			const b = rulesetSections({ ...before, id })
 			// 🚧 RF fix 8 (2026-10-23): its borrowed attributes say their tags — what a genre plays best with is found by.
 			const untagged = (list: typeof a.attributes) => (list ?? []).map((x) => (SINCE_FIX8_TAGS[x.id] ? (({ tags: _t, ...rest }) => rest)(x) : x))
-			assert.deepEqual(untagged(a.attributes), b.attributes, 'attributes')
+			// 🚧 Owner ruling 2026-11-05 (plan §24/§25 ★5): the rules' own marks — Vis Itineris: every attribute is changed by the rules;
+			// Wherewithal: its three pools are, Mood stays free. Said apart; nothing else about the attributes moved.
+			const unmarked = (list: typeof a.attributes) =>
+				untagged(list).map(({ changedBy: _c, ...rest }: { changedBy?: unknown }) => rest)
+			assert.deepEqual(unmarked(a.attributes), b.attributes, 'attributes')
 			for (const x of a.attributes ?? []) if (SINCE_FIX8_TAGS[x.id]) assert.deepEqual(x.tags, SINCE_FIX8_TAGS[x.id], x.id)
+			for (const x of a.attributes ?? []) {
+				const free = id === cat.WHEREWITHAL_RULESET_ID && x.id === 'mood'
+				assert.deepEqual(x.changedBy, free ? undefined : ['rules'], `${x.id} changedBy`)
+			}
 			for (const k of ['entryTypes', 'zoneTypes', 'outcomes', 'time', 'library', 'options'] as const) assert.deepEqual(a[k], b[k], k)
 			// 🚧 lane G3 (2026-10-23, S3, ★I): Vis Itineris references core's rest and fall rule — rules
 			// the shape before the sections never said (the crawl played them from its own constants).

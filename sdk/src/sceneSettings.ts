@@ -128,6 +128,10 @@ export interface SceneSettingsDecl {
 	summary?: SceneSummaryMode
 	/** 🚧 The genre's alone (`ScenePlaceDecl`): refused on a session's override. */
 	place?: ScenePlaceDecl
+	/** 🚧 The genre's alone (owner 2026-11-04, playtest item 2): a first scene opens at a new session's first story line — a cue under Suggested, a placement under Automatic, nothing under Manual. Absent = off (P1). */
+	first?: boolean
+	/** 🚧 The genre's alone (owner 2026-11-04, playtest item 21): the open scene's cast follows its lines while it is open; the line names its cause; Scenes › Manual stops it. Absent = off (P1). */
+	castRefresh?: boolean
 }
 
 /** Scene settings resolved: every key stated. `length` and `pause` are null when off. @experimental */
@@ -218,10 +222,13 @@ export function sceneSettingsFindings(
 		]
 	const out: string[] = []
 	for (const key of Object.keys(raw))
-		if (key === 'place' && layer === 'session')
-			out.push(`${at}.place: the place is the genre's to name (its shape.scenes.place) — a session cannot set it`)
-		else if (key !== 'mode' && key !== 'triggers' && key !== 'summary' && key !== 'place')
-			out.push(`${at}.${key}: not a scene setting — the keys are mode, triggers, summary${layer === 'genre' ? ' and place' : ''}`)
+		if ((key === 'place' || key === 'first' || key === 'castRefresh') && layer === 'session')
+			out.push(`${at}.${key}: the ${key === 'place' ? 'place' : key} is the genre's to name (its shape.scenes.${key}) — a session cannot set it`)
+		else if (key !== 'mode' && key !== 'triggers' && key !== 'summary' && key !== 'place' && key !== 'first' && key !== 'castRefresh')
+			out.push(`${at}.${key}: not a scene setting — the keys are mode, triggers, summary${layer === 'genre' ? ', place, first and castRefresh' : ''}`)
+	for (const key of ['first', 'castRefresh'] as const)
+		if (raw[key] !== undefined && typeof raw[key] !== 'boolean')
+			out.push(`${at}.${key}: true or false — not ${JSON.stringify(raw[key])}`)
 	if (raw.mode !== undefined && !(SCENE_MODES as readonly unknown[]).includes(raw.mode))
 		out.push(`${at}.mode: one of ${SCENE_MODES.join(', ')} — not ${JSON.stringify(raw.mode)}`)
 	if (raw.summary !== undefined && !(SCENE_SUMMARY_MODES as readonly unknown[]).includes(raw.summary))

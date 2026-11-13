@@ -143,6 +143,12 @@ export interface TurnHistoryMessage {
 	role: string
 	characterId?: number | null
 	personaId?: number | null
+	/**
+	 * 🚧 The speaker's cast member (the host's `cast_member_id` on the row).
+	 * Read through the cast lookup (`refOfMember`) when one is given; absent,
+	 * the card form is read (⏳ until S5 of the seat-cast programme).
+	 */
+	castMemberId?: number | null
 	isHidden?: boolean | null
 	isNarratorResponse?: boolean | null
 	/**
@@ -165,14 +171,37 @@ const speakerRefOf = (m: Pick<TurnHistoryMessage, 'speaker' | 'metadata'>): unkn
  * carries; null for a row from neither. The one reading of a sender —
  * the row that opens a round (`spokenRefsSince`) is read by it.
  *
+ * 🚧 `refOfMember` is the cast lookup: a cast member id → the seat's `ref`, as
+ * the cast entry whose `castMemberId` matches carries it. When the row has a
+ * `castMemberId` and the lookup returns a ref, that ref is the sender; it
+ * changes **identity only**, never whether a row is a sender (an assistant row
+ * never becomes one). Without the lookup the card form is read (⏳ until S5 of
+ * the seat-cast programme). A sender is always a player seat's line, so the
+ * lookup is asked for a `'player-seat'`.
+ *
  * @experimental 🚧 provisional with the turn-order vocabulary.
  */
 export function senderRefOf(
-	m: Pick<TurnHistoryMessage, 'personaId' | 'speaker' | 'metadata'>,
-): `character:${number}` | `player-seat:${number}` | null {
-	if (m.personaId != null) return `character:${m.personaId}`
-	const ref = speakerRefOf(m)
-	return typeof ref === 'string' && /^player-seat:[1-9][0-9]*$/.test(ref) ? (ref as `player-seat:${number}`) : null
+	m: Pick<TurnHistoryMessage, 'personaId' | 'castMemberId' | 'speaker' | 'metadata'>,
+	refOfMember?: (
+		castMemberId: number,
+		/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+		seatKind?: 'character-seat' | 'player-seat',
+	) => ParticipantRef | null | undefined,
+): ParticipantRef | null {
+	const today = ((): ParticipantRef | null => {
+		if (m.personaId != null) return `character:${m.personaId}`
+		const ref = speakerRefOf(m)
+		return typeof ref === 'string' && /^player-seat:[1-9][0-9]*$/.test(ref)
+			? (ref as `player-seat:${number}`)
+			: null
+	})()
+	if (!today) return null
+	if (m.castMemberId != null && refOfMember) {
+		const ref = refOfMember(m.castMemberId, 'player-seat')
+		if (ref) return ref
+	}
+	return today
 }
 
 /**
@@ -195,7 +224,8 @@ const lastUserIndex = (turns: readonly TurnHistoryMessage[]): number => {
 
 /**
  * Which participants have already spoken since the person last did, as
- * references (`character:<id>`, `player-seat:<id>`, `envoy:<slug>`).
+ * references (`character:<id>`, 🚧 `seated-member:<id>`, `player-seat:<id>`,
+ * `envoy:<slug>`).
  *
  * Three readings, one per kind, each the fact that kind leaves in the
  * history: a character's id on a reply row, an envoy's reference on a reply
@@ -205,21 +235,41 @@ const lastUserIndex = (turns: readonly TurnHistoryMessage[]): number => {
  * envoy's reply marks no character. Before any user row the whole history is
  * one round, so a greeting counts as its character's turn.
  *
+ * 🚧 `refOfMember` is the cast lookup: a cast member id → the seat's `ref`, as
+ * the cast entry whose `castMemberId` matches carries it. A row with a
+ * `castMemberId` the lookup answers is read as that ref (a card-less member's
+ * reply too); otherwise the card form is read (⏳ until S5 of the seat-cast
+ * programme). It changes identity only, never whether a row counts. Without
+ * it the answer is as it was. A reply row asks the lookup for a `'character-seat'`,
+ * the opening person's row for a `'player-seat'`.
+ *
  * @experimental 🚧 provisional with the turn-order vocabulary.
  * @ruling PLAN-turn-order §4.4
  */
-export function spokenRefsSince(messages: readonly (TurnHistoryMessage | null | undefined)[]): Set<string> {
+export function spokenRefsSince(
+	messages: readonly (TurnHistoryMessage | null | undefined)[],
+	refOfMember?: (
+		castMemberId: number,
+		/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+		seatKind?: 'character-seat' | 'player-seat',
+	) => ParticipantRef | null | undefined,
+): Set<string> {
 	const turns = countedTurns(messages)
 	const at = lastUserIndex(turns)
 	const out = new Set<string>()
 	for (let i = at + 1; i < turns.length; i++) {
 		const m = turns[i]!
 		if (m.role !== 'assistant') continue
-		if (m.characterId != null) out.add(`character:${m.characterId}`)
+		const memberRef =
+			m.castMemberId != null && refOfMember
+				? refOfMember(m.castMemberId, 'character-seat')
+				: null
+		if (memberRef) out.add(memberRef)
+		else if (m.characterId != null) out.add(`character:${m.characterId}`)
 		const ref = speakerRefOf(m)
 		if (typeof ref === 'string' && ref.startsWith('envoy:')) out.add(ref)
 	}
-	const sender = at >= 0 ? senderRefOf(turns[at]!) : null
+	const sender = at >= 0 ? senderRefOf(turns[at]!, refOfMember) : null
 	if (sender) out.add(sender)
 	return out
 }
@@ -234,13 +284,22 @@ export function spokenRefsSince(messages: readonly (TurnHistoryMessage | null | 
  * This is the rule `core:task/turn-round-robin@1` runs, and the fallback a
  * plugin's own strategy should use rather than carry a copy of it.
  *
+ * 🚧 `refOfMember` is the cast lookup, passed through to `spokenRefsSince`
+ * (see there, with its seat-kind hint); without it the card form is read (⏳ until
+ * S5 of the seat-cast programme).
+ *
  * @experimental 🚧 provisional with the turn-order vocabulary.
  * @ruling PLAN-turn-order §4.4
  */
 export function roundRobinOrder(
 	candidates: readonly TurnCandidateV1[],
 	messages: readonly (TurnHistoryMessage | null | undefined)[],
+	refOfMember?: (
+		castMemberId: number,
+		/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+		seatKind?: 'character-seat' | 'player-seat',
+	) => ParticipantRef | null | undefined,
 ): TurnEntryV1[] {
-	const spoken = spokenRefsSince(messages)
+	const spoken = spokenRefsSince(messages, refOfMember)
 	return candidates.filter((c) => !spoken.has(c.ref)).map((c) => ({ ref: c.ref, via: 'strategy' }))
 }

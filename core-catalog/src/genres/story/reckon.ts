@@ -23,8 +23,8 @@
  *    the Lair's keeper builds on too; this file re-exports them.
  *  - **the sweep** — ONE batched JSON call every few turns, when any of its
  *    duties is on: its prompt asks only for what the duties on write, and
- *    each answer lands through the writes core already has — a history entry
- *    for the summary, lore, people and places as lorebook entries (Full:
+ *    each answer lands through the writes core already has — lore, people
+ *    and places as lorebook entries (Full:
  *    written; Review: held at the write's review gate), the world's state as
  *    changes (applied or proposed), the goals as the session's note, how the
  *    characters stand as a graph proposal.
@@ -65,8 +65,8 @@ import {
 	type ReckonTerms,
 } from '../../shared/reckoning.js'
 import type { SweepDue } from './sweep.js'
-import { fileLore, rememberNote } from '../../shared/lore.js'
-import { characterLoreEntryType, historyEntryType, locationEntryType, worldLoreEntryType } from '../../registry/entries.js'
+import { fileLore } from '../../shared/lore.js'
+import { characterLoreEntryType, locationEntryType, worldLoreEntryType } from '../../registry/entries.js'
 
 // 🚧 The reckoning's grammar, scripts and branch are every reckoning's (`shared/reckoning.ts`,
 // 2026-10-23, PLAN-genres-seams S5: the Lair's keeper is the same graph); re-exported from their old home.
@@ -89,7 +89,7 @@ const NAMED = {
 
 /**
  * 🚧 The sweep's answer — one member per sweep duty, each empty when its
- * duty is off or nothing changed: the story so far (`summary`), new lore,
+ * duty is off or nothing changed: new lore,
  * new people (`cast`), the world's state, how the characters stand
  * (`relationships`), the places used (`scenes`), the running goals and whether
  * the story moved on to a new scene (`sceneMovedOn`: `{ moved, line, reason }`, the line numbered in the crib).
@@ -98,7 +98,6 @@ const NAMED = {
 export const STORY_SWEEP_SCHEMA = {
 	type: 'object',
 	properties: {
-		summary: NAMED,
 		lore: { type: 'array', maxItems: 6, items: NAMED },
 		cast: { type: 'array', maxItems: 4, items: NAMED },
 		worldState: {
@@ -125,7 +124,7 @@ export const STORY_SWEEP_SCHEMA = {
 		goals: { type: 'string' },
 		sceneMovedOn: { type: 'object', properties: { moved: { type: 'boolean' }, line: { type: 'integer' }, reason: { type: 'string' } }, required: ['moved', 'line', 'reason'], additionalProperties: false },
 	},
-	required: ['summary', 'lore', 'cast', 'worldState', 'relationships', 'scenes', 'goals', 'sceneMovedOn'],
+	required: ['lore', 'cast', 'worldState', 'relationships', 'scenes', 'goals', 'sceneMovedOn'],
 	additionalProperties: false,
 } as const
 
@@ -154,7 +153,6 @@ var people = peopleOf(doc), names = [];
 for (var i = 0; i < people.length; i++) if (people[i].name) names.push(people[i].name);
 var world = bagLine(own(state.world));
 var asks = [];
-if (modeOf(modes, "summary") !== "off") asks.push("summary: what happened since the last summary, as a history entry — { name: a short title, content: a few plain sentences }");
 if (modeOf(modes, "lore") !== "off") asks.push("lore: facts about the world the story established that are worth remembering — places' histories, customs, objects — each { name, content }");
 if (modeOf(modes, "cast") !== "off") asks.push("cast: people the story introduced who are not seated (" + (names.length ? "seated: " + names.join(", ") : "nobody is seated") + "), each { name, content: who they are, in a sentence or two }");
 // 🚧 RF fix 8: the world's values are the session's own — the host's place and whatever the rules keep on the world — never a list the genre spells.
@@ -169,10 +167,12 @@ var check = own(v.check), sceneLines = [];
 if (modeOf(modes, "scene-moved-on") !== "off" && check.due === true && Array.isArray(check.lines) && check.lines.length) {
 	var byId = {}, hist = Array.isArray(v.history) ? v.history : [], named = {};
 	for (var h = 0; h < hist.length; h++) { var hr = own(hist[h]); if (hr.id !== undefined) byId[String(hr.id)] = hr; }
-	for (var q = 0; q < people.length; q++) named[people[q].ref] = people[q].name;
+	var member = {}, byMember = false;
+	for (var q = 0; q < people.length; q++) { named[people[q].ref] = people[q].name; if (people[q].castMemberId != null) { member[people[q].castMemberId] = people[q].name; byMember = true; } }
 	for (var n = 0; n < check.lines.length; n++) {
 		var row = byId[String(check.lines[n])];
-		var who = row ? (named["character:" + text(row.characterId)] || named["character:" + text(row.personaId)] || (row.role === "user" ? "A player" : "The narrator")) : "";
+		// A line the host stamped with its cast member is named by it alone when the seats carry theirs (a card id may now be somebody else's); ⏳ else by its card.
+		var who = row ? ((row.castMemberId != null && byMember ? member[row.castMemberId] : named["character:" + text(row.characterId)] || named["character:" + text(row.personaId)]) || (row.role === "user" ? "A player" : "The narrator")) : "";
 		var said = row ? text(row.content).split("\\n").join(" ").slice(0, 160) : "(not in view)";
 		sceneLines.push("[" + (n + 1) + "] " + (who ? who + ": " : "") + said);
 	}
@@ -190,8 +190,7 @@ return {
  * 🚧 `core:script/story-sweep`: the sweep's answer, sorted by duty and mode.
  * Handed `{ json, modes, check }`. Each list lands under `<member>Full` or
  * `<member>Review` by its duty's mode — absent when the duty is off or the
- * answer empty — so a junction reads which write runs: `summaryFull`,
- * `summaryReview` (one `{ name, content }`), `loreFull` · `loreReview`,
+ * answer empty — so a junction reads which write runs: `loreFull` · `loreReview`,
  * `castFull` · `castReview`, `scenesFull` · `scenesReview` (lists),
  * `worldFull` · `worldReview` (changes on the world: `{ owner: 'world',
  * slot, value }`), `goals` (text — a note, so Review writes it too) and
@@ -214,7 +213,6 @@ function put(member, task, value) {
 	if (m === "off" || !value || (Array.isArray(value) && !value.length)) return;
 	out[member + (m === "full" ? "Full" : "Review")] = value;
 }
-put("summary", "summary", named(j.summary));
 put("lore", "lore", namedList(j.lore, 6));
 put("cast", "cast", namedList(j.cast, 4));
 put("scenes", "scenes", namedList(j.scenes, 4));
@@ -357,8 +355,6 @@ export const STORY_SCRIPTS: readonly CoreScriptSeed[] = Object.freeze([
  * empty; `goals` and `relationships` either way; `sceneCueFull` / `sceneCueReview` by the duty's mode. @internal
  */
 interface Swept {
-	readonly summaryFull: unknown
-	readonly summaryReview: unknown
 	readonly loreFull: unknown
 	readonly loreReview: unknown
 	readonly castFull: unknown
@@ -471,7 +467,7 @@ export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<Swee
 			// Not the routine's name, which titles its duties card (S7): two steps of one group never share a heading.
 			label: 'File what is worth keeping',
 			purpose:
-				'Every few turns, looks back over the story and files what is worth keeping: a summary, new lore and people, the world as it now stands.',
+				'Every few turns, looks back over the story and files what is worth keeping: new lore and people, the world as it now stands.',
 		},
 	})
 	const sorted = scriptStep(asked, w, 'swept', STORY_SWEEP_SCRIPT.seedKey, ($) => ({
@@ -479,43 +475,7 @@ export const sweepBranch = (s: SweepDue, w: Wiring, review: NodeOn[]): Plus<Swee
 		modes: $.duties.modes,
 		check: $.duties.sceneCheck,
 	}), 'What the sweep found, sorted', 'Looking back over the story')
-	/** The summary — one history entry. */
-	const summarized = sorted.junction('summary', { on: ($) => $.swept.main }, (j) => {
-		const arm = (b: BranchOf<typeof j, 'full' | 'review'>, mode: 'full' | 'review') => {
-			const member = mode === 'full' ? 'summaryFull' : 'summaryReview'
-			const rv = (s: string) => (mode === 'review' ? `${s} (for review)` : s)
-			return rememberNote(
-				textPart(
-					textPart(
-						jsonPart(b, w, 'doc', ($) => $.sweep.due.swept.main, member, rv('The summary, as written')),
-						w,
-						'name',
-						($) => $.doc.main,
-						'name',
-						rv("The summary's title"),
-					),
-					w,
-					'content',
-					($) => $.doc.main,
-					'content',
-					rv('The summary'),
-				),
-				w,
-				{
-					key: 'write',
-					name: ($) => $.name.text,
-					content: ($) => $.content.text,
-					entryType: historyEntryType,
-					review: mode === 'review' ? review : undefined,
-					expose: { label: mode === 'full' ? 'File the summary' : 'Hold the summary for review' },
-				},
-			)
-		}
-		return j
-			.when('full', { path: (v: Swept) => v.summaryFull, truthy: true }, (b) => arm(b, 'full'))
-			.when('review', { path: (v: Swept) => v.summaryReview, truthy: true }, (b) => arm(b, 'review'))
-	})
-	const lored = entryWrites(summarized, w, review, 'lore', worldLoreEntryType, 'lore entry', 6)
+	const lored = entryWrites(sorted, w, review, 'lore', worldLoreEntryType, 'lore entry', 6)
 	const peopled = entryWrites(lored, w, review, 'cast', characterLoreEntryType, 'person', 4)
 	const placed = entryWrites(peopled, w, review, 'scenes', locationEntryType, 'location', 4)
 	/** The world's state — changes on the world, applied on Full, proposed on Review. */

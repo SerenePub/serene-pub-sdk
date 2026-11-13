@@ -184,6 +184,8 @@ export const characterLoreEntryType = describeEntryType({
 /**
  * History — dated entries recording earlier events.
  *
+ * **Written by Compile from scenes** (2026-11-10). A person's Compile files a day's scenes under that day's one history entry — one per date on each line. A pipeline puts events into scenes (`core:outlet/note-scene@1`, or a story line); a direct history write through `create-lore-entry@1` is the second choice and files onto its day's entry, appending a paragraph.
+ *
  * Two absences are the declaration, not an oversight:
  *
  *  - **no `priority`.** History has never had the column, and the semantic

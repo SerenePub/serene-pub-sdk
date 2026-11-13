@@ -186,6 +186,8 @@ test('a divider where each scene begins and a day mark where the story day turns
 			rowsDrawn.map((r) => r.getAttribute('data-scene')),
 			['1', '1', null, '2', '2'],
 		)
+		// A line inside a scene wears no scene badge; its scene is the row's colour.
+		assert.equal(view.queryAll('[data-widget-part~="messages.message-badge-scene"]').length, 0)
 	} finally {
 		await view.unmount()
 	}
@@ -286,7 +288,7 @@ test('Start and End scene here ask the host; a refusal is said under the line', 
 		const said = view.query('li[data-widget-part~="messages.scene-refusal"]')
 		assert.match(said?.textContent ?? '', /overlap Scene 2/)
 		await view.click(said!.querySelector('[data-widget-part~="messages.scene-refusal-dismiss"]')!)
-		assert.equal(view.query('li[data-widget-part~="messages.scene-refusal"]'), null)
+		assert.equal(view.query('li[data-widget-part~="messages.scene-refusal"]') === null, true)
 	} finally {
 		await view.unmount()
 	}
@@ -351,7 +353,7 @@ test('selecting lines, Mark as scene comes first: the run becomes one closed liv
 			view.requested.filter((r) => r.kind.startsWith('scene-')),
 			[{ kind: 'scene-open', params: { messageId: 2, channel: 'main', closeAt: 4 } }],
 		)
-		assert.equal(view.query('[data-widget-part~="messages.selection-bar"]'), null, 'the selection ends')
+		assert.equal(view.query('[data-widget-part~="messages.selection-bar"]') === null, true, 'the selection ends')
 	} finally {
 		await view.unmount()
 	}
@@ -545,5 +547,40 @@ test('a divider moves its start: dragged between lines, or a line up or down fro
 		assert.deepEqual(lastAsk(later), { kind: 'scene-move', params: { sceneId: 2, closedAt: null } })
 	} finally {
 		await later.unmount()
+	}
+})
+
+test('🚧 a divider says why its scene began by itself and what keeps its cast up to date (S-4)', { timeout: 120_000 }, async () => {
+	const cause = 'Story keeps the open scene\'s cast up to date from its lines. Set How scenes begin to Manual to stop it.'
+	const caused = [
+		scene({
+			id: 1,
+			name: 'The inn',
+			openedAtMessageId: 1,
+			closedAtMessageId: 2,
+			selectedMessageIds: [1, 2],
+			openedAt: { year: 1, month: 3, day: 5 },
+			cast: [{ ref: 'character:3', name: 'Mira', face: null }],
+			openedBecause: 'the day changed',
+			castCause: cause,
+		} as Partial<Scene> & { id: number }),
+	]
+	const view = await mount(dossier({ scenes: caused }))
+	try {
+		const inn = '[data-widget-part~="messages.scene-divider"][data-scene="1"]'
+		assert.equal(view.query(`${inn} [data-widget-part~="messages.scene-cause"]`)?.textContent?.trim(), 'Began by itself: the day changed')
+		assert.equal(view.query(`${inn} [data-widget-part~="messages.scene-faces"]`)?.getAttribute('title'), `Who speaks in it: Mira\n${cause}`)
+		assert.ok((view.query(`${inn} [data-widget-part~="messages.scene-facts"]`)?.getAttribute('title') ?? '').endsWith(`\n${cause}`))
+	} finally {
+		await view.unmount()
+	}
+	const plain = await mount(dossier({ scenes: [scene({ ...scenes[0]!, id: 1, cast: [{ ref: 'character:3', name: 'Mira', face: null }] } as Partial<Scene> & { id: number })] }))
+	try {
+		const inn = '[data-widget-part~="messages.scene-divider"][data-scene="1"]'
+		assert.equal(plain.query(`${inn} [data-widget-part~="messages.scene-cause"]`) === null, true)
+		assert.equal(plain.query(`${inn} [data-widget-part~="messages.scene-faces"]`)?.getAttribute('title'), 'Who speaks in it: Mira')
+		assert.equal(plain.query(`${inn} [data-widget-part~="messages.scene-facts"]`)?.getAttribute('title'), `${plain.query(`${inn} [data-widget-part~="messages.scene-facts"]`)?.textContent?.trim()} · Mira`)
+	} finally {
+		await plain.unmount()
 	}
 })

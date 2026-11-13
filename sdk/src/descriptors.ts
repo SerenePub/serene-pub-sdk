@@ -778,6 +778,12 @@ export function assertSessionWrites(shape: SessionShape | undefined, who: string
 					`explicit true allows the write.`,
 			)
 	}
+	if (writes.seats !== undefined && typeof writes.seats !== 'boolean')
+		throw new Error(
+			`${who} declares writes.seats ${JSON.stringify(writes.seats)}. ` +
+				`It is a boolean or absent — absent means off, and only an explicit true ` +
+				`allows a pipeline to bench a seat or bring one back.`,
+		)
 	const bad = SESSION_WRITES.filter(
 		(w) => writes[w] !== undefined && typeof writes[w] !== 'boolean',
 	)
@@ -989,6 +995,12 @@ export type SessionCreationMode = (typeof SESSION_CREATION_MODES)[number]
  */
 export interface SessionShape {
 	/**
+	 * 🚧 Forms (owner 2026-11-04, playtest item 21): `modelAnswers` — the AI answers a form put to a
+	 * participant it portrays. Absent = off in core (P1): the form waits for a person, and a routed
+	 * answer spec gets a halted receipt saying the genre does not opt in.
+	 */
+	forms?: { modelAnswers?: boolean }
+	/**
 	 * The character system: toggles, ordering, pickers, cast rows.
 	 *
 	 * 🚧 `hint` (2026-10-18): what the new-session form says of this genre's
@@ -1020,6 +1032,39 @@ export interface SessionShape {
 	 * (`lorebookShapeFindings`, `lorebook-required-retired`).
 	 */
 	lorebook?: 'optional' | 'required'
+	/**
+	 * 🚧 **Cast from lorebook** — at session create, the lorebook attached to
+	 * the new session seats the book's own people, card or not, as the
+	 * session's characters (character seats), in the book's order (never
+	 * someone drawn with a persona card; for a provided book, all of its
+	 * people). `field` names a declared
+	 * `boolean` field of this shape that switches it per session; absent =
+	 * always for this genre. At create only — never on a later attach or
+	 * update. Off unless a genre declares it (P1); the person still sees who
+	 * is in it on the start form's confirm.
+	 *
+	 * Not `characters: { min }` (a bound on how many the person picks), not a
+	 * cast binding (the book's member ↔ card link), and not the start form's
+	 * character picker. Needs `lorebook` and a `characters` capability that
+	 * allows seats, or `genre()` refuses it.
+	 *
+	 * ⚠ With `characters: { min: N > 0 }` the start form's shape check runs
+	 * before seating and counts only the person's own picks, so a person who
+	 * picks nobody is refused even when the book would fill the seats
+	 * (★m3b-D-2; owner 2026-11-05: left as is). Declare `min: 0` when the
+	 * book is meant to fill the seats.
+	 * @experimental
+	 */
+	castFromLorebook?: { field?: string }
+	/**
+	 * 🚧 **Seat changes on each turn** (owner 2026-11-09, "Yes, a read genres opt into"): `true`
+	 * puts `turnSeatChanges` (`TurnSeatChange[]`) on `turn-ended` and on a routine's `cause` — the
+	 * seats added, removed or changed since the previous turn of that lane. Absent = off in core
+	 * (P1): the payload carries nothing. A pass over them is an ordinary registration, e.g.
+	 * `register(afterEachTurn(), pass, { allowStacking: true })`.
+	 * @experimental
+	 */
+	turnSeatChanges?: boolean
 	/** What the send surface is. `none` for purely trigger-driven modes. */
 	composer?: 'text' | 'none'
 	/** Whose name the seed line carries (16's seedName rule, declared). */
@@ -1148,8 +1193,16 @@ export interface SessionShape {
 		/** May a session of this genre open scenes? */
 		scenes?: boolean
 		/**
+		 * 🚧 May this genre's pipelines bench a seat or bring one back
+		 * (`core:outlet/set-seat-bench@1`)? **Absent = off**, unlike `lore` and
+		 * `scenes`: seat status is something a genre asks to manage. A person's
+		 * own bench and drag are never gated by it.
+		 * @experimental
+		 */
+		seats?: boolean
+		/**
 		 * The library writes a genre opts into — making or changing characters,
-		 * making lorebooks and reading them into sessions. **Absent = all off**
+		 * making lorebooks. **Absent = all off**
 		 * (unlike `lore` and `scenes`): a library write is something a genre
 		 * asks for. Declaring it only lets the genre's pipelines try: the
 		 * person's rights and their library write mode (Full, Review, Off)
@@ -1158,9 +1211,12 @@ export interface SessionShape {
 		library?: {
 			/** May a pipeline of this genre make or change characters? */
 			characters?: boolean
-			/** May a pipeline of this genre make lorebooks, or read one into the session? */
+			/** May a pipeline of this genre make lorebooks? */
 			lorebooks?: boolean
-			/** May a pipeline of this genre read a lorebook into a session other than its own? */
+			/**
+			 * ⏳ Read by nothing since `attach-lorebook@1` was removed in 0.6;
+			 * it stays declared because it is a published name.
+			 */
 			sessions?: boolean
 		}
 	}
@@ -2837,6 +2893,28 @@ export function widgetDeclsFindings(raw: unknown, where: string): string[] {
 			out.push(`${at}.component: a component's slug`)
 	})
 	return out
+}
+
+/**
+ * 🚧 Node definitions that were published and are now removed, by id without
+ * the `@N` pin, each with the sentence a stored pipeline naming one fails with.
+ * @internal
+ */
+export const REMOVED_NODE_DEFINITIONS: Readonly<Record<string, string>> = {
+	'core:outlet/attach-lorebook':
+		"Reading a lorebook into a session was removed in 0.6: a session keeps the lorebook it started with. Write into the session's lorebook instead, or start a new session with that lorebook.",
+}
+
+/**
+ * 🚧 The sentence for a removed node definition (id with or without `@N`), or null when it is not removed.
+ * @internal
+ */
+export function removedNodeDefinitionSentence(definitionId: string): string | null {
+	const at = definitionId.indexOf('@')
+	const bare = at < 0 ? definitionId : definitionId.slice(0, at)
+	return Object.prototype.hasOwnProperty.call(REMOVED_NODE_DEFINITIONS, bare)
+		? REMOVED_NODE_DEFINITIONS[bare]!
+		: null
 }
 
 /** @experimental */

@@ -213,3 +213,34 @@ describe('the rule is exported, because the instance has to apply it again', () 
 		assert.ok(problems.length >= 3, problems.join(' | '))
 	})
 })
+
+describe('a variable layout may carry a slug', () => {
+	const layout = (over: Partial<TemplateSeed> = {}): TemplateSeed => ({
+		id: `${SLUG}:template/characters-prose@1`,
+		kind: 'variables',
+		variableId: 'core:var/characters@1',
+		engine: 'core:template/handlebars@1',
+		body: '{{characters}}',
+		...over,
+	})
+
+	test('accepted on a variables row', () => {
+		assert.deepEqual(templateSeedProblems(layout({ slug: 'prose' }), SLUG), [])
+	})
+	test('refused on a prompts row and a context template', () => {
+		assert.match(templateSeedProblems(prompt({ slug: 'prose' }), SLUG).join(' '), /slug/)
+		const ctx: TemplateSeed = {
+			id: `${SLUG}:template/ctx@1`,
+			kind: 'template',
+			nodeDefinitionId: 'core:task/build-template-context',
+			engine: 'core:template/handlebars@1',
+			body: 'x',
+			slug: 'prose',
+		}
+		assert.match(templateSeedProblems(ctx, SLUG).join(' '), /slug/)
+	})
+	test('refused when malformed', () => {
+		for (const bad of ['Prose', 'a_b', '', 4 as never])
+			assert.match(templateSeedProblems(layout({ slug: bad }), SLUG).join(' '), /not kebab-case/)
+	})
+})

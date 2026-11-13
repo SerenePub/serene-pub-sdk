@@ -39,7 +39,7 @@
  * file. Read `nextCursor` and hand it back; never parse it.
  */
 
-import { FRAME_PROTOCOL, SAVE_STATE_MAX_BYTES, type FrameHostMessage, type FramePoint, type HostFrameMessage } from '@serene-pub/sdk'
+import { FRAME_PROTOCOL, SAVE_STATE_MAX_BYTES, type FrameHostMessage, type FramePoint, type HostFrameMessage, type FrontEndMount } from '@serene-pub/sdk'
 
 /** The rows the host pages over — the fixtures, as the stage holds them. */
 export type FrameRow = Record<string, unknown>
@@ -64,10 +64,14 @@ export const FRAME_PAGE_MAX = 200
 export const FRAME_STATE_MAX_BYTES = SAVE_STATE_MAX_BYTES
 
 /** `init`, as a protocol-2 host sends it. */
-export const initMessage = (surface: FramePoint): Extract<HostFrameMessage, { t: 'init' }> => ({
+export const initMessage = (
+	surface: FramePoint,
+	mount?: FrontEndMount,
+): Extract<HostFrameMessage, { t: 'init' }> => ({
 	t: 'init',
 	protocol: FRAME_PROTOCOL,
 	surface,
+	...(mount ? { mount } : {}),
 })
 
 // ── Saved view state ────────────────────────────────────────────────────────

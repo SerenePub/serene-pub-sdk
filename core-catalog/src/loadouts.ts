@@ -16,6 +16,7 @@ export const CORE_LOADOUT = {
 	toolCalling: 'core:loadout/tool-calling@1',
 	extraction: 'core:loadout/extraction@1',
 	scenePrompt: 'core:loadout/scene-prompt@1',
+	vision: 'core:loadout/vision@1',
 	images: 'core:loadout/images@1',
 	portrait: 'core:loadout/portrait@1',
 	sprites: 'core:loadout/sprites@1',
@@ -41,7 +42,7 @@ export const CORE_LOADOUTS: ReadonlyArray<LoadoutDecl & { id: CoreLoadoutId; def
 		name: 'Reply',
 		description: 'Writes replies in sessions and answers forms. The model most people pick first.',
 		transform: 'text->text',
-		sampling: 'sampling-default',
+		sampling: 'sampling-reply',
 		defaultFor: true,
 	},
 	{
@@ -66,6 +67,22 @@ export const CORE_LOADOUTS: ReadonlyArray<LoadoutDecl & { id: CoreLoadoutId; def
 		description: "Writes the picture description for Scene. Short answers at low temperature.",
 		transform: 'text->text',
 		sampling: 'sampling-extraction',
+	},
+	{
+		// Owner ruling 2026-11-10: a dedicated loadout for the work where a
+		// picture is MANDATORY input (Describe from image, a caption). Reply
+		// reads pictures natively when its own model sees — that needs no
+		// loadout — and an unfilled Vision falls back to Reply's pair exactly
+		// when that pair sees (core decides; `capabilityDefaults.ts`). Until
+		// this row existed a fresh install could not fill the job at all.
+		id: CORE_LOADOUT.vision,
+		name: 'Vision',
+		description:
+			'Reads a picture and answers in words: the likeness helper, a caption. ' +
+			'Unfilled, it runs on Reply when that model sees pictures.',
+		transform: 'text+image->text',
+		sampling: 'sampling-extraction',
+		defaultFor: true,
 	},
 	{
 		id: CORE_LOADOUT.images,

@@ -92,6 +92,8 @@ describe('the header and its findings', () => {
 		has(f({ adds: { events: [{ id: 'nope', name: 'Nope' }] } }), 'bad-adds')
 		has(f({ rollsDice: true }), 'bad-chance')
 		has(f({ forkedFrom: 'restore' }), 'bad-fork')
+		has(f({ countsTime: 'sometimes' as never }), 'bad-counts-time')
+		for (const t of ['story', 'real', 'both'] as const) assert.deepEqual(f({ countsTime: t }), [])
 		// A reserved core id declared as another kind.
 		has(f({}, CORE_FUNCTION_IDS.dieTarget), 'reserved-kind')
 	})

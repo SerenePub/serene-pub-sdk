@@ -662,6 +662,55 @@ export const setSeatName = pin(
 )
 
 /**
+ * 🚧 **Bench a seat, or bring it back** (owner ruling 2026-11-10: a seat's
+ * status is managed by the genre, never by core on its own). Benched, a seat
+ * stays in the session and leaves the turns; brought back, it takes its turns
+ * again.
+ *
+ * Opt-in: a genre declares `writes.seats: true` (absent is off). Without it
+ * the host refuses, in words.
+ *
+ * Tied to the turn: the bench is recorded against the run's turn message.
+ * Back and a retake put the seat back as it was, Forward does it again, and a
+ * person's later bench or drag wins (the undo only puts back a seat still as
+ * this port left it). With no turn message (a person's action) the write is
+ * not tied to a turn.
+ *
+ * A seat already in the asked state is a no-op. Envoys and removed seats are
+ * refused. `seat` / `seats` give the seat's reference, as `set-seat-name@1`
+ * does.
+ *
+ * `seat` is `seated-member:<id>`, `player-seat:<id>` or `character:<id>`, and
+ * `benched` is `true` to bench or `false` to bring back; both are JSON, as
+ * `setSeatName.retire` and `setComposerState.open` are. `@1` evolves in place.
+ * @experimental
+ */
+export const setSeatBench = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/set-seat-bench@1',
+		i18n: { name: { en: 'Bench or bring back a seat' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		// Approve or refuse: which seat, and which way, are the write itself (R-15).
+		review: { fields: [] },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				/** The seat: `seated-member:<id>`, `player-seat:<id>` or `character:<id>`. */
+				seat: S.json,
+				/** `true` benches the seat, `false` brings it back. */
+				benched: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				seat: S.participantRef,
+				seats: S.participantRefs,
+			},
+		},
+	}),
+)
+
+/**
  * 🚧 **Open or close the composer** on a channel lane (owner ruling
  * 2026-10-15): the genre's switch for whether a person may write there. The
  * state is the session row's (`sessions.composer_states`, SDK
@@ -747,6 +796,8 @@ export interface ProposedSceneCue {
  * no longer hold or `at` is not one of its lines. Never held at the review gate: a cue's review
  * is the chip.
  *
+ * 🚧 An optional `trigger` in-port names the boundary trigger the scene cue is for (absent or blank: `judged`); the scenes routine passes the one that fired at `at`.
+ *
  * ⚠ Not a scene write (a person's *Start scene here*) and not a state proposal.
  * @experimental
  * @ruling R-i (2026-10-24)
@@ -787,12 +838,92 @@ export const proposeSceneCue = pin(
 				channel: S.text,
 				/** Why, in the model's few words — the chip's reason ("the party left the inn"). */
 				reason: S.text,
+				/**
+				 * 🚧 The boundary trigger the scene cue is for. Absent or blank: `judged` (the judged scene check's, as before).
+				 * The scenes routine (`core:spec/scene-boundaries`) passes the boundary trigger that fired at `at`; a scene cue already at
+				 * that line for that boundary trigger (a time action's marker) is the one offered or placed.
+				 */
+				trigger: S.text,
 			},
 			out: {
 				main: S.writeResult,
 				/** A `ProposedSceneCue`. */
 				cue: S.json,
 			},
+		},
+	}),
+)
+
+/**
+ * 🚧 **Summarize a finished scene** — the scene summaries routine's outlet
+ * (every name here is provisional): starts the session genre's **own** scene
+ * summarizer (its summarize-scene pipeline, never a second prompt) for one
+ * finished scene, in the background, and returns at once: the summary's model
+ * calls are never awaited by the routine's run.
+ *
+ * Under the routine's **Full** the result is saved by itself (the summary, and
+ * the model's name only while the scene still has its automatic name; the known
+ * cast stored at the scene's close is left as it is) and marked as saved by the
+ * routine; a summary saved this way never settles the story. Under **Review**
+ * it waits for a person in the review window, as a pressed *Summarize* does.
+ * Its model calls queue as a routine's, after people's replies. The host half
+ * is the app's.
+ *
+ * ⚠ Not `scenes:process` (a person's press) and not *Compile to Entry*.
+ * @experimental
+ */
+export const summarizeFinishedScene = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/summarize-finished-scene@1',
+		i18n: { name: { en: 'Summarize a finished scene' } },
+		effects: 'write',
+		reviewDefault: 'off',
+		timeoutMs: 5000,
+		ports: {
+			in: {
+				/** The scene to summarize: a scene id, as `core:query/scene-summary-due@1` names it. Absent or null: nothing is due, and nothing starts. */
+				scene: S.json,
+				/** The routine inlet's `routine` port (the firing): its `mode` decides what the summary becomes. */
+				routine: S.json,
+			},
+			out: { main: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * 🚧 **Note it in the scene** (★S4, owner 2026-11-10): adds a note to a scene — a fact that
+ * isn't a story line (a death, a treaty, a clock jump). Notes reach the scene's summary and
+ * Compile. Never writes history or messages. Refused when the genre writes no scenes, when the
+ * scene is another session's, or when no scene is open.
+ *
+ * Scenes first: a pipeline puts story events into scenes — this outlet, or a story line through
+ * `create-message@1` — and a person's Compile files a day's scenes under that day's one history
+ * entry. A history write through `create-lore-entry@1` is the second choice.
+ *
+ * `text` is required. `scene` names a scene by id; absent, the note goes to the run's lane's open
+ * scene. `sources` (optional) are the messages the note was written from, the shape the lore
+ * writes take. "The genre writes no scenes" is `writes.scenes: false`. The host half is the app's.
+ * @experimental
+ * @ruling ★S4 (2026-11-10)
+ */
+export const noteScene = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/note-scene@1',
+		i18n: { name: { en: 'Note it in the scene' } },
+		effects: 'write',
+		review: { fields: ['text'] },
+		timeoutMs: 10000,
+		ports: {
+			in: {
+				/** The note, a sentence or two. Required. */
+				text: S.text,
+				/** A scene id. Optional; absent, the run's lane's open scene. `json`, as `propose-scene-cue@1`'s `at` is. */
+				scene: S.json,
+				/** 🚧 The messages the note was written from — as the lore writes take them. Optional. */
+				sources: S.loreSources,
+			},
+			out: { main: S.writeResult },
 		},
 	}),
 )
@@ -1239,6 +1370,12 @@ export const showSprite = pin(
  * it carries the card's visibility and stays out of the card's gallery like
  * every sprite. Refused unless the run's person owns the card or is an admin.
  *
+ * On a run pressed on a **cast member** the host files the pictures as the
+ * member's own sprites (the files become the member's lorebook owner's, the
+ * lorebook as provenance) and ignores nothing silently: a wired `characterId`
+ * must be empty on such a run. Refused unless the run's person may edit the
+ * member's lorebook. The card rule above stays as written.
+ *
  * Causes `core:event/sprites-attached@1` when at least one row was written.
  * About a card, not a session: it writes no session row.
  * @experimental
@@ -1290,6 +1427,12 @@ export const attachSprite = pin(
  * `offered` is `[{ mediaId, key }]`, one per picture placed, with the series
  * key it was drawn for (`null` for surplus the host kept unkeyed). Refused
  * unless the run's person owns the card or is an admin.
+ *
+ * On a run pressed on a **cast member** the host files the pictures as the
+ * member's own gallery pictures (the files become the member's lorebook
+ * owner's, the lorebook as provenance) and ignores nothing silently: a wired
+ * `characterId` must be empty on such a run. Refused unless the run's person
+ * may edit the member's lorebook. The card rule above stays as written.
  *
  * Causes `core:event/media-offered@1` when at least one picture was placed.
  * About a card, not a session: it writes no session row.
@@ -1426,7 +1569,7 @@ export const advanceStoryClock = pin(
 				 * 🚧 **Why the clock moves** (live scenes §15 G4, 2026-10-13),
 				 * a literal: `'action'` — a person's press (*Time passes…*);
 				 * `'keeper'` — the state-keeper's move under Trust the
-				 * narrator; `'tick'` — a reply's fixed tick. An action's and
+				 * narrator; `'tick'` — a fixed step, a round's. An action's and
 				 * the keeper's move are **time actions** the boundary watcher
 				 * may begin a new scene at; a tick never is. Unwired reads as
 				 * `'action'`.
@@ -1601,20 +1744,26 @@ export const attachAudio = pin(
  * written that *which kind of entry comes from the pipeline that ran*. It did
  * not: it wrote world lore whatever ran, because nothing on this declaration
  * could say otherwise. `entryType` is that sentence made true — a declared
- * entry type id (`core:entry/world-lore`, `core:entry/history`,
- * `core:entry/location`), bare, the way `core:query/lorebook-entries@1` spells
+ * entry type id (`core:entry/world-lore`, `core:entry/location`), bare, the way `core:query/lorebook-entries@1` spells
  * them; the version is the row's own column.
  *
  * A **param** and not an in-port, because the kind of thing a pipeline writes
- * is a fact about the pipeline rather than about the turn — a summarizer
- * writes history every time it runs, a room-builder writes locations every
- * time — and a param is what a preset can set per session without the spec
+ * is a fact about the pipeline rather than about the turn — a room-builder
+ * writes locations every time it runs — and a param is what a preset can set per session without the spec
  * being rewired. An unknown id is refused at the commit with a sentence
  * naming the declared types, never coerced to world lore: a typo that silently
  * files rooms as world lore is the defect this replaces.
  *
  * Default world lore, the agnostic shape, so every spec written before this
  * keeps doing exactly what it did.
+ *
+ * ## History is compiled, not written (2026-11-10)
+ *
+ * History is compiled, not written. Put events into scenes (`note-scene@1`, or a story line); a person's Compile files them under the day's one entry. A history write here is the second choice: it files onto its day's entry (the session's story day when no date is given), appending a paragraph. The packager warns `W_WRITES_HISTORY` on such a write; a `summarize-request@1` spec is exempt, its save being previewed.
+ *
+ * ## Where the write lands
+ *
+ * For a session whose scenes end by themselves (it runs the *Find where scenes begin* routine, not switched Off, and its scene mode is Automatic) a new entry, a room or a history day is written to the session's own book **whatever the lorebook's write mode (Full too)**, and the result carries `route: "own-book"` and the own book's `lorebookId`. A history write there files onto the day's one entry of the own book, merged onto the lorebook's day at Apply. Any other session writes as before: to the lorebook under Full, to its own book under Review changes, Off or a book someone else owns.
  *
  * ## `links`, or a second write
  *
@@ -1680,7 +1829,7 @@ export const createLoreEntry = pin(
 						quick: true,
 						label: { en: 'Kind of entry' },
 						description:
-							'Which kind of lorebook entry this pipeline writes — world lore, history, a location. Leave it as world lore for anything that is simply about the world.',
+							'Which kind of lorebook entry this pipeline writes — world lore or a location. Leave it as world lore for anything that is simply about the world.',
 					},
 				},
 			},
@@ -1703,7 +1852,7 @@ export const createLoreEntry = pin(
 				/**
 				 * 🚧 The messages this write was written from. Pass it when the write is a
 				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
-				 * session's settle line moves to the newest of them.
+				 * session's settle line moves to the newest of them (not for a session whose scenes end by themselves: its write waits in the own book and Apply settles).
 				 */
 				sources: S.loreSources,
 				/** 🚧 A `LoreMatch` — how to find the entry this would otherwise create. */
@@ -1739,8 +1888,16 @@ export const createLoreEntry = pin(
  *
  * How the change lands is the host's: on the session's line, the way the
  * lorebook's own editor writes an edit there (an amendment where the line
- * amends). ⚠ It causes no event yet (🚧): `lore-entry-created` means a new
+ * amends). A change to an entry of the lorebook the session reads is kept in the
+ * session's own book as a held change whatever the lorebook's write mode (**Full**
+ * too), and reaches the lorebook only when it is applied; a change to an entry of the own
+ * book is written there, and the result of a session whose scenes end by themselves
+ * carries `route: "own-book"` and the own book's `lorebookId`. `entry` names an entry the session reads, in the lorebook or
+ * in its own book.
+ * ⚠ It causes no event yet (🚧): `lore-entry-created` means a new
  * row, and a subscriber that needs edits waits for one of its own.
+ *
+ * 🚧 A history entry's re-date (its `year`, `month` or `day` fields) is checked as a person's re-date is: refused, with a sentence, onto a date its line already has a history entry for, or onto a day the line shares with its parent (change that day as an amendment instead).
  * @internal
  */
 export const updateLoreEntry = pin(
@@ -1767,7 +1924,7 @@ export const updateLoreEntry = pin(
 				/**
 				 * 🚧 The messages this write was written from. Pass it when the write is a
 				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
-				 * session's settle line moves to the newest of them.
+				 * session's settle line moves to the newest of them (not for a session whose scenes end by themselves: its write waits in the own book and Apply settles).
 				 */
 				sources: S.loreSources,
 			},
@@ -1800,10 +1957,22 @@ export const updateLoreEntry = pin(
  * entries answer to — the second never picks one, because picking would link
  * the wrong room silently and a duplicate name is the author's to resolve.
  *
- * One lorebook, both ends. An edge whose ends live in two books belongs to
- * neither and the row carries one `lorebook_id`, so a cross-book link is
- * refused rather than repaired — the same rule the socket handlers hold, held
- * again here because a pipeline does not come through them.
+ * One lorebook, both ends — except on the own-book route. An edge whose ends
+ * live in two books belongs to neither and the row carries one `lorebook_id`, so
+ * where the write lands in the lorebook the session reads (**Full** for a session
+ * whose scenes do not end by themselves, or a session whose lorebook is its own book alone) a cross-book link is refused rather than
+ * repaired — the same rule the socket handlers hold, held again here because a
+ * pipeline does not come through them. A session that reads a lorebook it may not
+ * write (**Review changes**, **Off**, or a book someone else owns), or whose scenes
+ * end by themselves (the result then carries `route: "own-book"` and the own
+ * book's `lorebookId`, whatever the write mode), keeps the row in
+ * its own book, and an end may be an entry of the own book or an entry of the
+ * lorebook as the session reads it (entries only, never a cast member): an id is
+ * found in the own book, else in the lorebook; a name is looked up in the own book
+ * first, and only when none answers there in the lorebook (two answers refuse
+ * within one book, never across). A link either book already holds is not written
+ * again (`written: false`); an id in neither book is refused. The row is the
+ * session's own: it reaches no other session until applied.
  *
  * ## After a create
  *
@@ -1915,7 +2084,7 @@ export const linkLoreEntries = pin(
 				/**
 				 * 🚧 The messages this write was written from. Pass it when the write is a
 				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
-				 * session's settle line moves to the newest of them.
+				 * session's settle line moves to the newest of them (not for a session whose scenes end by themselves: its write waits in the own book and Apply settles).
 				 */
 				sources: S.loreSources,
 			},
@@ -1931,6 +2100,11 @@ export const linkLoreEntries = pin(
  * more → REFUSED, the refusal naming every candidate (`'<name>' (entry <id>)`), retry with `entryId`.
  * `name` and `key` match within this write's own `entryType` (R-h's `{ type, name }` is that pair);
  * case and surrounding space ignored. `key` matches an entry whose trigger keys include it.
+ * On the own-book route (a session that reads a lorebook it may not write, or whose scenes end
+ * by themselves) the own book is
+ * looked in first, and only with no hit there the lorebook's entries as the session reads
+ * them; a hit there is a held change to that entry, not a duplicate. Two or more refuse
+ * within one book, never across the two.
  * ⚠ Not an entry's `matchMode` (how its keys are matched in retrieval).
  * @experimental
  */
@@ -2018,7 +2192,7 @@ export const graphProposal = pin(
 				/**
 				 * 🚧 The messages this write was written from. Pass it when the write is a
 				 * summary of the story; leave it off when it is a change in it (pass 6). Present, the write is committed: the
-				 * session's settle line moves to the newest of them.
+				 * session's settle line moves to the newest of them (not for a session whose scenes end by themselves: its write waits in the own book and Apply settles).
 				 */
 				sources: S.loreSources,
 			},
@@ -2063,12 +2237,16 @@ export const createCharacter = pin(
  * Change a character: edit the text fields of a character the acting person
  * may write to.
  *
- * Takes `characterId` and `changes` — an object of the card's text fields
- * (name, description, personality, scenario, first_mes, mes_example). Writes
- * those fields on that character, and nothing else; the fields it replaced are
- * kept so Back can restore them. The app judges the person (write rights on
- * the character) and their library write mode (Full, Review or Off); a genre
- * must declare `writes.library.characters`.
+ * Takes `characterId` and `changes` — an object of character profile names:
+ * `name`, `description`, `personality`, `scenario`, `greetings` (`{ text,
+ * groupOnly? }[]` — the whole list, replacing the card's) and
+ * `exampleDialogues` (`string[]`). The change writes the card's **current
+ * version**, those fields and nothing else; the fields it replaced are kept so
+ * Back can restore them. `first_mes` and `mes_example` are no longer accepted
+ * (owner 2026-11-05: new names now, old removed); any other key is refused.
+ * The app judges the person (write rights on the character) and their library
+ * write mode (Full, Review or Off); a genre must declare
+ * `writes.library.characters`.
  * @internal
  */
 export const updateCharacter = pin(
@@ -2082,6 +2260,58 @@ export const updateCharacter = pin(
 		ports: {
 			in: { characterId: S.json, changes: S.json },
 			out: { main: S.writeResult, characterId: S.writeResult },
+		},
+	}),
+)
+
+/**
+ * 🚧 Change a cast member of the session — one or more fields of their
+ * character profile.
+ *
+ * `member` is `seated-member:<castMemberId>`, `player-seat:<seatId>` or a cast
+ * member id, as `core:query/cast-member@1` takes it. `changes` is an object of
+ * character profile fields (`CHARACTER_PROFILE_FIELDS`), each a new value in
+ * the field's own shape or `{ follow: true }` (read that field from the
+ * member's card again; refused for a card-less member). Other keys are
+ * refused, never dropped.
+ *
+ * 🚧 `changes` may also carry `nodeState` — one of `CAST_STATE_WORDS` (`active`, `deceased`, `missing`, `departed`; SDK `ties.ts`) — and `nodeVisibility` — `normal`, `legendary` or `hidden` — beside the profile fields: the member's state and visibility on the graph. Checked against those words (another word is refused, never dropped), and dated at the session's story time and tied to the turn like the profile fields.
+ *
+ * How it lands is the host's: one story write — a cast version dated at the
+ * session's story time and tied to the turn, so Back takes it with the turn; a
+ * second change in the same turn and moment updates that version (coalesces).
+ * The genre's `writes.lore` and the session's lore write mode decide where:
+ * the book's line, or under Review / Off the session's own notes (an overlay
+ * of the member).
+ *
+ * A genre must place it: the Dungeon Crawler places it to mark the fallen
+ * deceased (2026-11-10). ⚠ It causes no event yet
+ * (🚧). `castVersionId` is the cast version written.
+ * @experimental
+ */
+export const updateCastMember = pin(
+	describeOutletDefinition({
+		id: 'core:outlet/update-cast-member@1',
+		i18n: { name: { en: 'Change a cast member' } },
+		effects: 'write',
+		/**
+		 * What the change says may be retyped; which member it changes may not
+		 * — that is the run's identity, the rule `update-lore-entry@1` states.
+		 */
+		review: { fields: ['changes'] },
+		timeoutMs: 10000,
+		ports: {
+			in: {
+				/** The member to change: `seated-member:<id>`, `player-seat:<id>`, or a cast member id. */
+				member: S.json,
+				/** `{ [profile field]: value | { follow: true } }`, plus `nodeState` / `nodeVisibility` (see above). */
+				changes: S.json,
+			},
+			out: {
+				main: S.writeResult,
+				/** The cast version written. */
+				castVersionId: S.writeResult,
+			},
 		},
 	}),
 )
@@ -2108,32 +2338,6 @@ export const createLorebook = pin(
 		ports: {
 			in: { lorebook: S.json },
 			out: { main: S.writeResult, lorebookId: S.writeResult },
-		},
-	}),
-)
-
-/**
- * Read a lorebook into a session: attach an existing lorebook to a session.
- *
- * Takes `lorebookId` and, optionally, `sessionId` (absent: the run's own
- * session). Writes the session's lorebook; what it replaced is kept so Back
- * can restore it. The app judges the person (read rights on the book and write
- * rights on the session) and their library write mode (Full, Review or Off).
- * A genre must declare `writes.library.lorebooks`, and
- * `writes.library.sessions` to name a session other than the run's.
- * @internal
- */
-export const attachLorebook = pin(
-	describeOutletDefinition({
-		id: 'core:outlet/attach-lorebook@1',
-		i18n: { name: { en: 'Read a lorebook into a session' } },
-		effects: 'write',
-		/** R-15: a reference, not a value to retype: a reviewer who disagrees refuses the write. */
-		review: { fields: [] },
-		timeoutMs: 10000,
-		ports: {
-			in: { lorebookId: S.json, sessionId: S.json },
-			out: { main: S.writeResult },
 		},
 	}),
 )

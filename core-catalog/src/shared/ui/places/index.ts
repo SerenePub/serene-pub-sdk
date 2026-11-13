@@ -27,6 +27,7 @@
  */
 import {
 	isSlotLoreRef,
+	type ParticipantRef,
 	type PlaceLinkV1,
 	type PlaceV1,
 	type SessionPlacesV1,
@@ -96,7 +97,8 @@ export function readPlacesSettings(raw: Record<string, unknown> | undefined): Pl
 
 /** A face drawn on a place: a cast member who stands there. @experimental */
 export interface PlacesFace {
-	ref: `character:${number}`
+	/** The cast member's `ref`, as the state owner carries it. */
+	ref: ParticipantRef
 	name: string
 }
 
@@ -152,13 +154,13 @@ export function placesPresence(
 			: null
 	const world = state.owners.find((o) => o.kind === 'session' && o.key === 'world')
 	for (const owner of state.owners) {
-		if (owner.kind !== 'session_cast') continue
+		if (owner.kind !== 'session_cast' && owner.kind !== 'seated_member') continue
 		const placeId = at(owner)
 		if (placeId == null) continue
-		present.set(placeId, [
-			...(present.get(placeId) ?? []),
-			{ ref: `character:${owner.id}`, name: owner.label },
-		])
+		// The owner's own `ref`; ⏳ built from the owner's id only for a host before S3 (removed in S5).
+		const ref: ParticipantRef =
+			owner.ref ?? (owner.kind === 'seated_member' ? `seated-member:${owner.id}` : `character:${owner.id}`)
+		present.set(placeId, [...(present.get(placeId) ?? []), { ref, name: owner.label }])
 	}
 	return { here: world ? at(world) : null, present }
 }

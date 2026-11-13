@@ -347,7 +347,7 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
 		fields: {
-			batch: "You are a scene archivist capturing what happened in a discrete story moment from a roleplay exchange. You write a tight narrative summary — past tense, plain prose — that captures the key beats, actions, and emotional turning points. No invention, no embellishment."
+			batch: "You are a scene archivist capturing what happened in a discrete story moment from a roleplay exchange. You write a tight narrative summary — past tense, plain prose — that captures the key beats — deaths, departures and arrivals among them — actions, and emotional turning points. No invention, no embellishment."
 		}
 	},
 	{
@@ -357,7 +357,7 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 			// 🚧 The genre-owned summarize-scene specs merge and name with
 			// the scene row too (live scenes §13): only drafting reads the
 			// rendered transcript, so only drafting needs a row of its own.
-			"core:spec/summarize-scene", "core:spec/summarize-history", "core:spec/story-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene"
+			"core:spec/summarize-scene", "core:spec/summarize-history", "core:spec/story-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene", "core:spec/dungeon-crawler-summarize-scene"
 		],
 		seedKey: "pipeline-prompt:core:oracle/summarize-synth:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
@@ -372,7 +372,7 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 			// 🚧 The genre-owned summarize-scene specs merge and name with
 			// the scene row too (live scenes §13): only drafting reads the
 			// rendered transcript, so only drafting needs a row of its own.
-			"core:spec/summarize-scene", "core:spec/summarize-history", "core:spec/story-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene"
+			"core:spec/summarize-scene", "core:spec/summarize-history", "core:spec/story-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/lair-summarize-scene", "core:spec/dungeon-crawler-summarize-scene"
 		],
 		seedKey: "pipeline-prompt:core:oracle/name-entry:prompts:summarize-scene-default",
 		name: "Default Scene Summarization",
@@ -392,12 +392,12 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 		nodeType: "core:oracle/summarize-batch",
 		slot: "prompts",
 		defaultForSpecs: [
-			"core:spec/story-summarize-scene", "core:spec/guide-summarize-scene"
+			"core:spec/story-summarize-scene", "core:spec/guide-summarize-scene", "core:spec/dungeon-crawler-summarize-scene"
 		],
 		seedKey: "pipeline-prompt:core:oracle/summarize-batch:prompts:summarize-scene-transcript",
 		name: "Scene Summarization (transcript)",
 		fields: {
-			batch: "You are a scene archivist capturing what happened in one stretch of a roleplay. Below is that stretch as a transcript, one line per message, headed by what is known about the scene. Write a tight narrative summary — past tense, plain prose — of its key beats, actions and emotional turning points. A line marked as an aside was said outside the story: use it to understand the story, never report it as something that happened. No invention, no embellishment.\n\nThe transcript:\n{{batch}}"
+			batch: "You are a scene archivist capturing what happened in one stretch of a roleplay. Below is that stretch as a transcript, one line per message, headed by what is known about the scene. Write a tight narrative summary — past tense, plain prose — of its key beats — deaths, departures and arrivals among them — actions, and emotional turning points. A line marked as an aside was said outside the story: use it to understand the story, never report it as something that happened. No invention, no embellishment.\n\nThe transcript:\n{{batch}}"
 		}
 	},
 	{
@@ -1201,6 +1201,26 @@ export const CORE_PROMPTS: CorePromptSeed[] = [
 				"You keep an assistant's notes about the person it talks with. You never answer the person: every few turns you read the conversation and note what is worth remembering next time. Nobody reads this answer but the notes.\n\nAnswer with one JSON object and nothing else: notes, a list of { name, content }. Never invent what the person did not say.",
 			postHistoryInstructions:
 				"{{turnDirection}}\n\nRemember: one JSON object, and nothing around it."
+		}
+	},
+	/**
+	 * 🚧 The Scene **caption** (owner ruling 2026-11-08): the one sentence a
+	 * Scene picture is posted with. The scene prompt row (`build-narrator-
+	 * context` pool, above) is a picture model's tag line; this is a person's
+	 * sentence about the same moment, on the assemble pool the caption's own
+	 * `assemble` reads. Both Scene specs start on it.
+	 */
+	{
+		nodeType: "core:task/assemble",
+		slot: "prompts",
+		createdForSpec: "core:spec/story-illustrate-scene",
+		defaultForSpecs: ["core:spec/story-illustrate-scene", "core:spec/story-illustrate-new-scene"],
+		seedKey: "pipeline-prompt:core:task/assemble:prompts:scene-caption",
+		name: "Scene caption",
+		fields: {
+			system:
+				"You caption a picture of the latest moment of a story. Read the conversation up to its last line and write ONE sentence, in the story's own voice and tense, saying what the picture shows: where, who (by name, as the story names them) and what is happening. No tags, no list, no quotes, no explanation — one plain sentence and nothing else.",
+			postHistory: "One sentence of prose about this moment, and nothing else."
 		}
 	},
 	{

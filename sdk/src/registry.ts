@@ -31,6 +31,7 @@
  */
 
 import { pluginRuleRef } from './pluginRuleRef.js'
+import { removedNodeDefinitionSentence } from './descriptors.js'
 import {
 	definitionPolicy,
 	scriptPointsOf,
@@ -405,14 +406,17 @@ export function checkInstall(input: InstallInput): InstallFinding[] {
 			// 2. A pin that resolves to nothing.
 			if (!entry && !declared.has(pin)) {
 				const known = latest.get(n.definitionId)
+				const removed = removedNodeDefinitionSentence(n.definitionId)
 				findings.push({
 					severity: 'error',
 					code: 'E_UNKNOWN_TYPE',
 					where: `${doc.id} · ${n.key}`,
 					message: `pins ${pin}, which this pub does not have`,
-					fix: known
-						? `this pub has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
-						: `no version of ${n.definitionId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`,
+					fix:
+						removed ??
+						(known
+							? `this pub has ${n.definitionId}@${known}. Pins are frozen on purpose, so the plugin has to be rebuilt against this release rather than silently re-pinned here.`
+							: `no version of ${n.definitionId} is registered. It comes from another plugin — install that one first, or the pipeline has a dependency its manifest does not declare.`),
 				})
 				continue
 			}

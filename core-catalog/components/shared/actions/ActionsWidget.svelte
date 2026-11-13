@@ -76,43 +76,36 @@
 		<p data-widget-part="actions.alert" role="alert">{refusal}</p>
 	{/if}
 
-	{#if view.empty}
-		<div data-widget-part="actions.empty empty" role="status">
-			<sp-icon name="mouse-pointer-click" size="20"></sp-icon>
-			<span>{view.empty}</span>
+	{#each view.groups as group (group.key)}
+		<div
+			data-widget-part="actions.group"
+			data-group={group.key}
+			role="group"
+			aria-labelledby={`actions-${uid}-${group.key}`}
+		>
+			<p data-widget-part="actions.group-head" id={`actions-${uid}-${group.key}`}>{group.title}</p>
+			{#each group.buttons as button (button.identity)}
+				<button
+					type="button"
+					data-widget-part="actions.button"
+					data-identity={button.identity}
+					data-new={button.isNew ? "" : undefined}
+					aria-disabled={button.disabled ? "true" : undefined}
+					aria-describedby={button.reason ? `actions-${uid}-reason-${idOf(button.identity)}` : undefined}
+					title={button.title}
+					onclick={() => press(button)}
+				>
+					<sp-icon name={button.icon} size="16"></sp-icon>
+					<span>{button.name}</span>
+					{#if button.reason}
+						<span
+							data-widget-part="actions.reason"
+							id={`actions-${uid}-reason-${idOf(button.identity)}`}
+							aria-hidden="true">{button.reason}</span
+						>
+					{/if}
+				</button>
+			{/each}
 		</div>
-	{:else}
-		{#each view.groups as group (group.key)}
-			<div
-				data-widget-part="actions.group"
-				data-group={group.key}
-				role="group"
-				aria-labelledby={`actions-${uid}-${group.key}`}
-			>
-				<p data-widget-part="actions.group-head" id={`actions-${uid}-${group.key}`}>{group.title}</p>
-				{#each group.buttons as button (button.identity)}
-					<button
-						type="button"
-						data-widget-part="actions.button"
-						data-identity={button.identity}
-						data-new={button.isNew ? "" : undefined}
-						aria-disabled={button.disabled ? "true" : undefined}
-						aria-describedby={button.reason ? `actions-${uid}-reason-${idOf(button.identity)}` : undefined}
-						title={button.title}
-						onclick={() => press(button)}
-					>
-						<sp-icon name={button.icon} size="16"></sp-icon>
-						<span>{button.name}</span>
-						{#if button.reason}
-							<span
-								data-widget-part="actions.reason"
-								id={`actions-${uid}-reason-${idOf(button.identity)}`}
-								aria-hidden="true">{button.reason}</span
-							>
-						{/if}
-					</button>
-				{/each}
-			</div>
-		{/each}
-	{/if}
+	{/each}
 </div>

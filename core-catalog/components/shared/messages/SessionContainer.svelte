@@ -430,7 +430,7 @@
 		onreach-start={loadOlder}
 	>
 	<!-- The region spans the panel; the rows (the stage, `messages.stage`)
-	     take a centred measure under Line width: Column (the default) or
+	     take a centred measure under Line width: Column or
 	     Comfortable, or its full width under Full. -->
 	<!-- Folio (PLAN-core-widgets §3.7) adds `messages.folio` to the stage: the
 	     lines read as one block of prose, and every rule keyed on it (the
@@ -669,7 +669,7 @@
 						{/if}
 						<!-- The message row. It carries the scene's colour as
 						     `--sp-scene`, which the style pack draws the scene's
-						     edge with and the message's own scene badge inherits.
+						     edge with.
 
 						     Opacity-only fade, no height/transform — autoscroll
 						     reads scrollHeight synchronously on insert, so an
@@ -732,14 +732,10 @@
 									</div>
 								</div>
 							{:else}
-								<!-- The scene's name rides each of its lines but the
-								     first: that one sits right under (newest-first,
-								     over) the divider that names it (polish parity L1). -->
 								<SessionMessage
 									{msg}
 									{index}
 									{isLastMessage}
-									sceneName={at && !marks.dividers.has(msg.id) ? at.name : null}
 									{folio}
 									place={lanePlaces.get(msg.id)}
 								/>

@@ -19,7 +19,7 @@ export * from './advanceTime.js'
 
 /**
  * The actions Story took over from Adventure (2026-10-19): Look, Rest, Ask
- * and its Answer — each a small pipeline a player fires from the composer,
+ * and its Answer (Ask retired from Story's defaults 2026-11-04, owner §0-F; Answer stays) — each a small pipeline a player fires from the composer,
  * each contributing its own button; the genre's defaults register each one
  * (`../defaults.ts`). Adventure's own reply (planner, voices, keeper) and its
  * Time passes were retired: Story's reply is Chat's one-call reply, and the

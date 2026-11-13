@@ -1,6 +1,6 @@
 {
 	"name": "@serene-pub/core-catalog",
-	"version": "0.6.0-pr-7",
+	"version": "0.6.0-pr-8",
 	"description": "The genres, pipelines, hook declarations and core components Serene Pub ships. Serene Pub seeds from it at boot, conformance uses it as fixtures, and plugin authors import it for typed references.",
 	"license": "Apache-2.0",
 	"homepage": "https://github.com/SerenePub/serene-pub-sdk/tree/main/core-catalog#readme",
@@ -122,6 +122,10 @@
 			"types": "./dist/shared/ui/attendance/index.d.ts",
 			"import": "./dist/shared/ui/attendance/index.js"
 		},
+		"./session-runs": {
+			"types": "./dist/shared/ui/session-runs/index.d.ts",
+			"import": "./dist/shared/ui/session-runs/index.js"
+		},
 		"./loadouts": {
 			"types": "./dist/loadouts.d.ts",
 			"import": "./dist/loadouts.js"
@@ -130,9 +134,9 @@
 		"./package.json": "./package.json"
 	},
 	"peerDependencies": {
-		"@serene-pub/component-client": "^0.6.0-pr-7",
-		"@serene-pub/contracts": "^0.6.0-pr-7",
-		"@serene-pub/sdk": "^0.6.0-pr-7",
+		"@serene-pub/component-client": "^0.6.0-pr-8",
+		"@serene-pub/contracts": "^0.6.0-pr-8",
+		"@serene-pub/sdk": "^0.6.0-pr-8",
 		"svelte": ">=5"
 	},
 	"peerDependenciesMeta": {
@@ -148,10 +152,10 @@
 		"check": "svelte-check --workspace components --tsconfig ./tsconfig.json --threshold error"
 	},
 	"devDependencies": {
-		"@serene-pub/cli": "0.6.0-pr-7",
-		"@serene-pub/component-client": "0.6.0-pr-7",
-		"@serene-pub/contracts": "0.6.0-pr-7",
-		"@serene-pub/sdk": "0.6.0-pr-7",
+		"@serene-pub/cli": "0.6.0-pr-8",
+		"@serene-pub/component-client": "0.6.0-pr-8",
+		"@serene-pub/contracts": "0.6.0-pr-8",
+		"@serene-pub/sdk": "0.6.0-pr-8",
 		"svelte": "^5.56.0",
 		"svelte-check": "^4.7.6",
 		"typescript": "~5.9.0"

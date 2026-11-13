@@ -43,6 +43,7 @@
 
 import type { TurnOrderV1 } from './turnOrder.js'
 import type { SessionDossierV1 } from './sessionDossier.js'
+import type { ParticipantRef } from './participants.js'
 import type { SlotAppliesTo, SlotType, SlotValue } from './attributes.js'
 import type { FieldDecl } from './settings.js'
 import type { StatusText, WidgetActionReason } from './status.js'
@@ -104,9 +105,14 @@ export interface LayoutV1 {
 	}
 	/** The width class of this widget's own box. */
 	tier: WidgetTier
-	/** Guaranteed-visible: placed in the grid, not collapsible/closable away. */
+	/**
+	 * ⏳ Always true since panels v2 (2026-11-05): every panel is open. Kept on
+	 * the wire until 0.7.
+	 */
 	pinned: boolean
+	/** ⏳ Always false since panels v2 (2026-11-05); kept on the wire until 0.7. */
 	collapsed: boolean
+	/** ⏳ Always false since panels v2 (2026-11-05); kept on the wire until 0.7. */
 	drawered: boolean
 	/**
 	 * Decoration the HOST is painting, so the widget suppresses its own and
@@ -118,15 +124,15 @@ export interface LayoutV1 {
 		titleBar: boolean
 		padding: boolean
 		/**
-		 * @experimental Is the host drawing its **card** around this widget —
-		 * a surface, a border and (outside a tab group) a title bar?
+		 * @experimental Is the host drawing a **backing** behind this widget's
+		 * panel — is the panel's backing not `none`?
 		 *
-		 * Off by default for a widget placed in a zone: it sits flush in its
-		 * cell and its own style decides whether it has a surface. On when the
-		 * person turned on the widget's **Card** setting (`hostCard`), and
-		 * always on while the widget is momentarily opened over the session (a
-		 * pop-over, a flyout, the phone's panel sheet). When it is on,
-		 * `background` and `wrapper` are true as well.
+		 * The backing is drawn on the panel, once, whatever it holds (the
+		 * layout's look, `PanelLayoutV2.backing`); there is no per-widget
+		 * card setting any more (`hostCard` is retired). A widget opened over
+		 * the session — a pop-over, a flyout, the phone's panel sheet — keeps
+		 * the host card. When it is on, `background` and `wrapper` are true
+		 * as well.
 		 *
 		 * The page also marks the widget's box `data-sp-card="on"` or `"off"`,
 		 * so a stylesheet can key off the same fact without reading this.
@@ -265,6 +271,14 @@ export interface MessageV1 {
 	characterId?: number | null
 	/** The speaking persona, when one spoke. */
 	personaId?: number | null
+	/**
+	 * 🚧 The speaker's **cast member** (the host's `cast_member_id`): the
+	 * member behind `characterId` / `personaId`. Host-filled; absent from a
+	 * host that predates it, null on a row no cast member spoke. A reader
+	 * resolves the speaker's `ref` through the `characters.v1` entry whose
+	 * `castMemberId` matches, falling back to the card.
+	 */
+	castMemberId?: number | null
 	/** True for a narrator turn: no character, no persona, `role: assistant`. */
 	isNarratorResponse?: boolean
 	/** The row's kind, where a host distinguishes several. */
@@ -287,7 +301,8 @@ export interface MessageV1 {
 	 * the row was written (its own clock, else its line's present), as the
 	 * five stored columns. All null or absent on a row written before stamps,
 	 * or in a session with no dated story. What the conversation's **day
-	 * marks** read.
+	 * marks** read, and the row's time: a stamped row shows its story time, an
+	 * unstamped one its real time.
 	 * @ruling PROPOSAL-live-scenes §6, §8
 	 */
 	storyClockYear?: number | null
@@ -495,6 +510,14 @@ export interface MessageMetadataV1 {
 	 * speaker's face or name.
 	 */
 	tableLine?: boolean
+	/**
+	 * 🚧 Why the line was written without anyone asking (★T-1, 2026-11-04):
+	 * the narrator's own turn, which the session's *Narrator's turn* setting
+	 * gives it every `every` rounds. Stamped by the host at the write, never
+	 * by a pipeline; absent on every other line. Drawn as the
+	 * `messages.message-badge-cause` badge.
+	 */
+	turnCause?: { via: 'unprompted'; every: number }
 	[k: string]: unknown
 }
 
@@ -521,6 +544,8 @@ export interface ViewerV1 {
 	isAdmin: boolean
 	/** A guest seat: may read, may not write. */
 	isGuest: boolean
+	/** 🚧 The viewer's own advanced controls switch (a preference, never a permission). Absent means shown. */
+	advancedControls?: boolean
 }
 
 /**
@@ -540,11 +565,12 @@ export interface AttendeeV1 {
 	/** The session's owner, or a guest the owner added. */
 	role: 'owner' | 'guest'
 	/**
-	 * The personas this person writes as in this session — `character:<id>`,
-	 * the grammar of `characters.v1` refs, so a widget granted `characters`
-	 * finds their faces. Empty when they write as none.
+	 * The personas this person writes as in this session — each seat's `ref`
+	 * as `characters.v1` carries it, so a widget granted `characters` finds
+	 * their faces. Empty when they write as none. Widened to
+	 * `ParticipantRef[]` (seat-cast S3): match on it, never parse an id out.
 	 */
-	personaRefs: `character:${number}`[]
+	personaRefs: ParticipantRef[]
 	/** One of their personas pinged *typing* within the last few seconds. */
 	typing: boolean
 	/**
@@ -761,7 +787,13 @@ export interface SessionStateOfferV1 {
 export interface SessionResolvedStateV1 {
 	/** The world's values. */
 	world: Record<string, unknown>
-	/** Each cast member's values — a card-less player seat's too — by owner key (`SessionStateOwnerV1.key`). */
+	/**
+	 * Each cast member's values — a player seat's too — by owner key
+	 * (`SessionStateOwnerV1.key`, opaque: `player_seat:<id>`, 🚧
+	 * `seated_member:<id>` from the flip, ⏳ the card id before it). Look an
+	 * entry up through its owner (its `key`, found by `ref` or `castMemberId`),
+	 * never by building or parsing a key.
+	 */
 	cast: Record<string, Record<string, unknown>>
 	/**
 	 * 🚧 Each location's values, by owner key (`SessionStateOwnerV1.key`, a
@@ -863,18 +895,38 @@ export interface SessionStateSlotV1 {
 
 /**
  * An owner a session's values belong to — the world (`kind: 'session'`), a
- * cast member (`session_cast`, whose `id` is the card), 🚧 a player seat
- * that voices no card (`player_seat`, whose `id` is the seat — participant
- * reference `player-seat:<id>`; a seat with a card is that card's `session_cast`)
- * or 🚧 a location (`session_location`, whose `id` is the location's lore
+ * cast member's character seat (🚧 `seated_member`, whose `id` is the cast
+ * member id; ⏳ `session_cast`, whose `id` is the card, only before the flip
+ * and removed in S5), 🚧 a player seat, carded or not, from the flip
+ * (`player_seat`, whose `id` is the seat — participant reference
+ * `player-seat:<id>`; e.g. a person voicing card 12 from seat 3 owns
+ * `{ kind: 'player_seat', id: 3 }`, not card 12's values) or 🚧 a location (`session_location`, whose `id` is the location's lore
  * entry) — keyed exactly as `resolved` keys it. `key` is the lookup; `kind`
- * and `id` are what `set-attribute-value` names.
+ * and `id` are what `set-attribute-value` names. The `key` is **opaque**
+ * (`player_seat:<id>`, 🚧 `seated_member:<id>` from the flip, ⏳ the card id
+ * before it): find an owner by its host-filled `ref` or `castMemberId`, or
+ * read its `key` off the owner — never build or parse a key.
  * @experimental
  */
 export interface SessionStateOwnerV1 extends OwnerRefV1 {
-	/** `world`, the cast member's or player seat's key in `resolved.cast`, or the location's in `resolved.locations`. */
+	/**
+	 * `world`, the cast member's or player seat's key in `resolved.cast`, or
+	 * the location's in `resolved.locations`. Opaque: read it off the owner,
+	 * never build or parse it (it changes form at the flip).
+	 */
 	key: string
 	label: string
+	/**
+	 * 🚧 A cast owner's seat reference, as the host fills it: match on it,
+	 * never build it. Absent on the world and a place, and from a host that
+	 * predates it.
+	 */
+	ref?: ParticipantRef
+	/**
+	 * 🚧 A cast owner's cast member (`lorebook_bindings.id`); null or absent
+	 * for the world and a place. Host-filled.
+	 */
+	castMemberId?: number | null
 	/**
 	 * 🚧 Whether the viewer may write this owner's values. `false` on a
 	 * player seat that is not the viewer's (only its player and the
@@ -891,6 +943,13 @@ export interface SessionStateOwnerV1 extends OwnerRefV1 {
 	 * the host's. Absent on every other owner. @experimental
 	 */
 	mine?: boolean
+	/**
+	 * 🚧 Present only on an AI character seat the viewer seated: `true` while
+	 * the viewer is showing that seat's hidden stats (`show-hidden-stats`),
+	 * `false` while they may. Absent everywhere else, and from a host that
+	 * predates it. @experimental
+	 */
+	showingHiddenStats?: boolean
 	/**
 	 * 🚧 True on an owner that is a **player seat** (2026-10-18): a card-less
 	 * one (`player_seat`), or a card seated as one (a persona played as a
@@ -923,6 +982,16 @@ export interface SessionStateOwnerV1 extends OwnerRefV1 {
 	 * edit controls, and the host refuses a write with its own sentence.
 	 */
 	configs: Record<string, Record<string, unknown>>
+	/**
+	 * 🚧 **Hand-locked stats** (owner ruling 2026-11-05, plan §25 ★1): per slot id, the sentence the
+	 * viewer reads for why they may not change that value by hand here — the cause shown (P1). A
+	 * widget draws a slot listed here without edit controls and shows the sentence. Worked out by the
+	 * host with `sheetLatitudeAllows`. ⚠ Not the slot lock (`configs[slot].lock`, which says what the
+	 * owner set) and not `editable` (the whole owner). Absent: nothing is hand-locked for the viewer,
+	 * or a host that predates it.
+	 * @experimental
+	 */
+	handLocked?: Record<string, string>
 	/**
 	 * 🚧 Each repertoire a list stat of this owner holds (`config.repertoire`),
 	 * by address — its name and its piece shape, so a widget labels a piece's
@@ -1044,13 +1113,15 @@ export interface SessionStateDerivedV1 {
  * 🚧 **An owner, named** — the one shape every widget request that names
  * whose stats uses (`set-attribute-value`, `stat-trail`, `set-owner-face`):
  * the session itself (the world), a cast member, a player seat or a place,
- * by the row's own id. The same four kinds the state read keys its owners
- * by, so a widget hands back exactly what it was given. One shape, not a
+ * by the row's own id. The same kinds the state read keys its owners
+ * by, so a widget hands back exactly what it was given. 🚧 `seated_member`
+ * is a cast member, its `id` the cast member id (`lorebook_bindings.id`);
+ * ⏳ `session_cast` (its `id` the card) is removed in S5. One shape, not a
  * union repeated per request (2026-10-17).
  * @experimental
  */
 export interface OwnerRefV1 {
-	kind: 'session' | 'session_cast' | 'player_seat' | 'session_location'
+	kind: 'session' | 'session_cast' | 'seated_member' | 'player_seat' | 'session_location'
 	id: number
 }
 
@@ -1081,6 +1152,13 @@ export interface SessionCharactersV1 {
 	 */
 	members: SessionCharacterV1[]
 	/**
+	 * 🚧 Who wrote the line the page shows — the line a reading widget's reader is on
+	 * (`show-line`), or the newest visible line when none is shown: that member's `ref`.
+	 * Null when the line is nobody's in `members` (narration, a person with no persona) or
+	 * there is none. Absent: a host that predates it. Scene Portraits' speaker focus reads it.
+	 */
+	speakerRef?: string | null
+	/**
 	 * ⏳ The portraits pinned beside the conversation, one per side; null for
 	 * an empty side. The composer's **Pinned images** pane that set them is
 	 * gone: a Scene Portraits instance's **chosen images**
@@ -1096,8 +1174,8 @@ export interface SessionCharactersV1 {
 /**
  * One cast member, **cascaded cast over card**: the character card's
  * fields overlaid by the cast member's, and **the cast member wins wherever
- * both speak** — its name, its face, its sprite set. The card owns the art;
- * the cast member picks the set. The host merges; a widget reads the merged
+ * both speak** — its name, its face, its sprite set. The card owns the art
+ * unless the member carries its own; the cast member picks the set. The host merges; a widget reads the merged
  * value and never resolves the cascade itself.
  *
  * The host also resolves every URL and the current sprite, so a widget draws
@@ -1107,12 +1185,26 @@ export interface SessionCharactersV1 {
  */
 export interface SessionCharacterV1 {
 	/**
-	 * `character:<id>` — a persona's too: a persona is a character row
-	 * (`isPersona` says which), so its reference is the same grammar
-	 * (`TurnCandidateV1.ref` reads it the same way).
+	 * The seat's reference, as the host fills it: today `character:<cardId>`
+	 * ⏳, 🚧 `seated-member:<castMemberId>` once the flip lands. A persona's
+	 * too: a persona is a character row (`isPersona` says which), so its
+	 * reference is the same grammar (`TurnCandidateV1.ref` reads it the same
+	 * way). A widget matches on it and never builds it.
 	 */
-	ref: `character:${number}`
+	ref: ParticipantRef
+	/** ⏳ Removed in S5 — read `cardId` / `castMemberId`. */
 	characterId: number
+	/**
+	 * 🚧 The seat's cast member (`lorebook_bindings.id`). Host-filled; absent
+	 * from a host that predates it.
+	 */
+	castMemberId?: number | null
+	/**
+	 * 🚧 The member's active card on the timeline (the dated card at the
+	 * session's reading); null when the member is card-less. Host-filled;
+	 * absent from a host that predates it.
+	 */
+	cardId?: number | null
 	/** A persona — a person's own character — rather than one of the cast. */
 	isPersona: boolean
 	/**
@@ -1126,8 +1218,9 @@ export interface SessionCharacterV1 {
 	/** The member's avatar, resolved (a same-origin media URL); null when there is none. */
 	face: string | null
 	/**
-	 * The member's CURRENT sprite — the one on the newest line it spoke, in
-	 * `spriteSet` — resolved; null when the card has no sprites.
+	 * The member's CURRENT sprite — the one on the newest line it spoke (🚧 at or
+	 * before the line the page shows, when a widget holds its reader's place:
+	 * `show-line`), in `spriteSet` — resolved; null when the card has no sprites.
 	 */
 	sprite: string | null
 	/** The card's sprite sets, by name, in the card's order. */
@@ -1151,7 +1244,9 @@ export interface SessionCharacterV1 {
 	canChangeSpriteSet: boolean
 	/**
 	 * 🚧 When this member last spoke (ms since the epoch): its newest visible
-	 * line on the session's line; null when it has spoken none. What a
+	 * line on the session's line — while a widget holds its reader's place behind
+	 * the newest row (`show-line`), its newest at or before the line shown, as
+	 * `sprite` follows it; null when it has spoken none. What a
 	 * widget ranks "who spoke last" by without reading the log.
 	 * Optional (additive): absent reads as null.
 	 * @ruling W6
@@ -1200,7 +1295,7 @@ export interface SessionSceneImageV1 {
 	 * image, so it is matched by face; null for an image pinned from anywhere
 	 * else.
 	 */
-	ref: `character:${number}` | null
+	ref: ParticipantRef | null
 }
 
 // ─── The one table of scoped sections (🚧; C5 L3) ───────────────────────────
@@ -1444,6 +1539,12 @@ export interface MenuResult {
  */
 export type FileSaveAnswer = string | { bytes: string; name?: string; mime?: string }
 
+/** 🚧 (M3b) The longest `persona.name` a `create-session` request may carry, in characters after trimming; the host refuses longer in words. */
+export const CREATE_SESSION_PERSONA_NAME_MAX = 80
+
+/** 🚧 (M3b) The longest `persona.description` a `create-session` request may carry, in characters after trimming; the host refuses longer in words. */
+export const CREATE_SESSION_PERSONA_DESCRIPTION_MAX = 2000
+
 /**
  * 🚧 What a widget may ASK the host for — by kind, with its params and
  * what comes back. A request is not a grant: the host may decline, and the
@@ -1463,6 +1564,18 @@ export interface WidgetRequests {
 	 * it.
 	 */
 	'routine-log': { params: { limit?: number; since?: number }; result: RoutineLogV1 }
+	/**
+	 * 🚧 **Runs** (owner 2026-11-06): this session's pipeline runs, newest
+	 * first — for administrators only; the host refuses anyone else (the
+	 * request is not a grant). `limit` is a wish the host clamps (1–100, 25
+	 * by default).
+	 */
+	'session-runs': { params: { limit?: number }; result: SessionRunsV1 }
+	/**
+	 * 🚧 The steps of one of the session's runs, in order — administrators'
+	 * only, like `session-runs`; the host refuses anyone else.
+	 */
+	'session-run-steps': { params: { runId: string }; result: SessionRunStepsV1 }
 	/**
 	 * One page of the session's lines, for this widget's own window — never
 	 * the conversation's, so two paging widgets never take each other's
@@ -1781,7 +1894,8 @@ export interface WidgetRequests {
 	/**
 	 * 🚧 Core's Scene Portraits: a page of one
 	 * session member's **gallery** — the character's own images, in the
-	 * gallery's order, sprites left out — each by `ref` (the image's stable
+	 * gallery's order, sprites left out (a card-less member's gallery is the
+	 * member's own pictures) — each by `ref` (the image's stable
 	 * id, what a **chosen image** stores) with its `src` resolved by the
 	 * host. `cursor` is the last page's `nextCursor`; none is the first page,
 	 * and no `nextCursor` is the last. Only a member of `characters.v1` may be
@@ -1790,7 +1904,22 @@ export interface WidgetRequests {
 	 * @ruling PLAN-core-widgets W6
 	 */
 	'character-images': {
-		params: { characterId: number; cursor?: string }
+		params: {
+			/**
+			 * The member's card (`SessionCharacterV1.cardId`) when it has one;
+			 * else name it by `castMemberId`. Exactly one of the two — the host
+			 * refuses both or neither in words ("Name a character or a cast
+			 * member, not both.").
+			 */
+			characterId?: number | null
+			/**
+			 * 🚧 The member by its cast member id (host-filled on
+			 * `SessionCharactersV1.members`) when it has no card; exactly one
+			 * of this and `characterId`.
+			 */
+			castMemberId?: number | null
+			cursor?: string
+		}
 		result: { images: Array<{ ref: string; src: string; caption?: string }>; nextCursor?: string }
 	}
 	/**
@@ -1861,6 +1990,44 @@ export interface WidgetRequests {
 	 */
 	'set-authors-note': { params: { note: AuthorsNoteValueV1 }; result: AuthorsNoteV1 }
 	/**
+	 * 🚧 Core's Author's note widget (PLAN-session-layout-simplify D13,
+	 * 2026-11-05): the session's **scenario** as it reads now, and whether the
+	 * viewer may change it (the session's owner). Asked whether or not the
+	 * genre offers an author's note: every session has a scenario. The page
+	 * names its own session.
+	 */
+	'session-scenario': { params: Record<string, never>; result: { scenario: string; canEdit: boolean } }
+	/**
+	 * 🚧 Core's Author's note widget: save the session's scenario, whole. The
+	 * session's owner only — the server judges it, through the session's own
+	 * update. Resolves with the scenario as it now reads.
+	 */
+	'set-session-scenario': { params: { scenario: string }; result: { scenario: string; canEdit: boolean } }
+	/**
+	 * 🚧 Core's Messages widget tells its host which channel it shows
+	 * (PLAN-session-layout-simplify D7, 2026-11-05): sent on mount and on
+	 * every change of the shown channel tab — the lane, in its canonical form
+	 * (`main`, `sanctum`, `parley:2`). The host keeps it per instance, so a
+	 * Composer and a Turn line in the same zone write to and speak about the
+	 * channel this copy shows, and keep the last one while another panel tab
+	 * is shown. Core's only.
+	 */
+	'show-channel': { params: { channel: string }; result: void }
+	/**
+	 * 🚧 A core widget that holds its reader's place (the **Dialogue box**) tells
+	 * its host which line the reader is on (PLAN-visual-novel-layout §1.2): sent
+	 * when its **reading place** changes — the place's message id while lines
+	 * wait behind it, `null` once the reader is at the newest row. The widget
+	 * also sends its first value when it mounts; nothing is sent when it
+	 * unmounts, so the page drops the line itself once its layout holds no
+	 * such widget. Never per streamed chunk; the same value is never
+	 * sent twice in a row. The page keeps it as client-only state, and the scene
+	 * follows it (`SessionCharactersV1.speakerRef`, the
+	 * current sprites). Core's only. (Owner 2026-11-11: that widget is a widget
+	 * of its own, not Messages.)
+	 */
+	'show-line': { params: { messageId: number | null }; result: void }
+	/**
 	 * 🚧 Core's Chronicle: where the
 	 * session stands in its story and what its lorebook has recorded of it —
 	 * its story clock, the history entry it reads now with this session's
@@ -1910,6 +2077,19 @@ export interface WidgetRequests {
 	 * @ruling PROPOSAL-live-scenes §5, §7 (2026-10-13)
 	 */
 	'summarize-scenes': { params: { sceneIds?: number[] }; result: { started: number } }
+	/**
+	 * 🚧 Core's Chronicle: compile the session's line's scenes not yet
+	 * compiled of one day (`date`; null is *Undated*, the scenes opened
+	 * with no story clock) into the history entry of that date, which the
+	 * host makes when the line has none — the lorebook's *Not yet
+	 * compiled* **Compile**, with no window: the run and its review arrive
+	 * in the activity list as any compile's do. Takes every scene of that
+	 * day on the line that no entry holds, other sessions' too. The
+	 * lorebook's owner only. Resolves once the compile has started;
+	 * refused in words.
+	 * @ruling ★S6-1 (owner, 2026-11-04)
+	 */
+	'compile-history-entry': { params: { date: StoryTime | null }; result: void }
 	/**
 	 * 🚧 Decide a **scene cue** — Suggested mode's *New scene?* chip at a
 	 * line (`SessionDossierV1.sceneCues`). `accept` opens a scene at the
@@ -1962,15 +2142,22 @@ export interface WidgetRequests {
 	}
 	/**
 	 * 🚧 Core's Scene Portraits: set the
-	 * **chosen image** this widget shows for one member (`character:<id>`),
-	 * by its image ref (what `character-images` answered as `ref`); `null`
+	 * **chosen image** this widget shows for one member, by its image ref
+	 * (what `character-images` answered as `ref`); `null`
 	 * takes it away, so the face falls back to the avatar. Written into the
 	 * asking widget's own settings (`chosenImages`), as the viewer's own
 	 * values; the new settings arrive as the widget's `settings` section,
 	 * never in the reply. Only a member of `characters.v1` may be named.
+	 * 🚧 `memberRef` names the member by its cast member
+	 * (`seated-member:<castMemberId>`, ★S3-8); ⏳ `characterRef`
+	 * (`character:<id>`) is accepted until S5. Name one of the two; both
+	 * optional only while the old name lives (S5 makes `memberRef` required).
 	 * @ruling F2 (2026-10-11), W6 ruling 1
 	 */
-	'set-chosen-image': { params: { characterRef: string; mediaRef: string | null }; result: void }
+	'set-chosen-image': {
+		params: { memberRef?: `seated-member:${string}`; characterRef?: string; mediaRef: string | null }
+		result: void
+	}
 	/**
 	 * 🚧 Core's Backdrop widget: set the session's **backdrop** to one image,
 	 * by its image ref (what `character-images` answered as `ref`, a file's
@@ -1990,6 +2177,15 @@ export interface WidgetRequests {
 	 * The new face arrives on the next `session_state` push.
 	 */
 	'set-owner-face': { params: { owner: OwnerRefV1; mediaRef: string | null }; result: void }
+	/**
+	 * 🚧 Core's Stats (*Show hidden stats*): switch on or off the viewer showing the hidden stats of
+	 * an AI character seat they seated. Off by default
+	 * and not kept across visits; it changes only this viewer's view — the AI
+	 * still plays the seat. The host re-reads the session's state; the values
+	 * arrive on the next `session_state` push. Refused for an owner the viewer
+	 * did not seat.
+	 */
+	'show-hidden-stats': { params: { owner: OwnerRefV1; on: boolean }; result: void }
 	/**
 	 * 🚧 Core's Backdrop widget's *From this session*: a page of the
 	 * pictures generated in this session — the Album's `generated` source
@@ -2051,8 +2247,17 @@ export interface WidgetRequests {
 	// ─── 🚧 M2b, navigation requests (plan §5 b3, §9): each opens the APP's own UI, and nothing happens until the person
 	// presses there. `open-session` / `open-sessions` are the `ui` API's; `create-session` / `delete-session` the `applet`
 	// API's (ruled 2026-10-31). Declared now; a host answers them from M2c ("not available yet" until then).
-	/** 🚧 Open the app's start form for one of the package's own genres, prefilled with `fields`; the person presses Start. */
-	'create-session': { params: { genre: string; fields?: Record<string, unknown>; lorebookId?: number }; result: void }
+	/**
+	 * 🚧 Open the app's start form for one of the package's own genres, prefilled with `fields`; the person presses Start.
+	 *
+	 * `persona` 🚧 (M3b) is the player the start form offers as a NEW persona — the person may pick an existing one instead.
+	 * Serene Pub creates the card on the person's Start, as their own; nothing is created without that press. `name` is at
+	 * most `CREATE_SESSION_PERSONA_NAME_MAX` and `description` at most `CREATE_SESSION_PERSONA_DESCRIPTION_MAX` characters.
+	 */
+	'create-session': {
+		params: { genre: string; fields?: Record<string, unknown>; lorebookId?: number; persona?: { name: string; description?: string } }
+		result: void
+	}
 	/** 🚧 Open a session the person can already open. */
 	'open-session': { params: { sessionId: number }; result: void }
 	/** 🚧 Open the Sessions list, filtered to one of the package's own genres (or all of them). */
@@ -2183,6 +2388,8 @@ export interface ChannelLaneV1 {
 		role: string
 		characterId?: number | null
 		personaId?: number | null
+		/** 🚧 The speaker's cast member, as {@link MessageV1.castMemberId}. Host-filled. */
+		castMemberId?: number | null
 	}
 }
 
@@ -2413,6 +2620,22 @@ export interface HistoryEntriesV1 {
 	summaryMode?: SceneSummaryMode
 	/** 🚧 This session's closed scenes whose summary has not run, or failed — **Summarize all (N)**. */
 	unsummarizedScenes?: number
+	/**
+	 * 🚧 ★S2-1b (owner, 2026-11-04): this session's scenes on its line that no
+	 * history entry holds yet — **Not yet compiled** — by day in story order,
+	 * *Undated* last: the lorebook History lens's own grouping, read for this
+	 * session. Absent on a host that predates it; empty when none wait.
+	 * ⚠ Not `ungraphedScenes` (a count of scenes the graph has not read) and
+	 * not `scenes` (the ones filed under `current`).
+	 */
+	unfiledDays?: Array<{
+		/** The day; null = the scenes opened with no story clock (*Undated*). */
+		date: StoryTime | null
+		/** The day as the page spells it through the book's calendar; empty when undated. */
+		label: string
+		/** This session's scenes of that day not yet compiled, in id order. */
+		scenes: HistorySceneV1[]
+	}>
 }
 
 /**
@@ -2519,6 +2742,73 @@ export interface RoutineLogV1 {
 }
 
 /**
+ * 🚧 One run of a pipeline in this session, as the Runs widget lists it
+ * (owner 2026-11-06).
+ * @experimental
+ */
+export interface SessionRunV1 {
+	runId: string
+	/** The pipeline's slug. */
+	pipeline: string
+	outcome: 'ok' | 'halt' | 'err' | 'cancelled'
+	/** Which family of registration started it — `event` · `action` · `routine`; null when none did. */
+	triggerFamily: string | null
+	/** That registration's derived key (`message-respond→story-respond`); null when none. */
+	registrationKey: string | null
+	/** The receipt's trigger source: `input` · `event` · `hook` · `ui` · `schedule`. */
+	triggerSource: string
+	/** Whose run it is (an administrator sees every user's runs). */
+	userId: number | null
+	username: string | null
+	/** Epoch ms. */
+	startedAt: number
+	endedAt: number
+	elapsedMs: number
+	tokens: number
+	/** Where it stopped, when it did not finish. */
+	haltNodeKey: string | null
+	haltReason: string | null
+	isPreview: boolean
+	/** The run that started this one, and how deep below the first it stands (0 = a run nothing else started). */
+	parentRunId: string | null
+	depth: number
+	/** The line whose prompt the Prompt door opens — set only when the host can show it (context debugging on, the line loaded, its prompt recorded); else null and no Prompt button. */
+	promptMessageId: number | null
+}
+
+/**
+ * 🚧 What `session-runs` answers: the session's runs, newest first.
+ * @experimental
+ */
+export interface SessionRunsV1 {
+	runs: SessionRunV1[]
+}
+
+/**
+ * 🚧 One step of a run, as `session-run-steps` answers it.
+ * @experimental
+ */
+export interface SessionRunStepV1 {
+	seq: number
+	/** The step's node key (`generate`, or `lore [2]` for a loop's iteration). */
+	key: string
+	kind: string
+	/** The receipt's word for how the step ended (`ok`, `halt`, `skip`, `error`…). */
+	result: string
+	reason: string | null
+	elapsedMs: number
+	tokens: number | null
+}
+
+/**
+ * 🚧 What `session-run-steps` answers.
+ * @experimental
+ */
+export interface SessionRunStepsV1 {
+	steps: SessionRunStepV1[]
+}
+
+/**
  * 🚧 Who a host answers a request kind for — its **askers**:
  *
  *  - `'any'` — any widget's, core's or a plugin's. The host still applies
@@ -2617,6 +2907,12 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'set-entry-marks': 'core',
 	'authors-note': 'core',
 	'set-authors-note': 'core',
+	'session-scenario': 'core',
+	'set-session-scenario': 'core',
+	// 🚧 The Messages widget's shown channel, for the Composer and Turn line beside it.
+	'show-channel': 'core',
+	// 🚧 A reading widget's place, for the scene beside it.
+	'show-line': 'core',
 	// 🚧 Chronicle (W3): reading the session's history is reading its lore;
 	// moving its clock, starting an entry and the graph review act as the viewer.
 	'history-entries': Object.freeze({ scope: 'lore' as const }),
@@ -2624,6 +2920,7 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'start-history-entry': 'core',
 	'extend-graph': 'core',
 	'summarize-scenes': 'core',
+	'compile-history-entry': 'core',
 	'decide-scene-cue': 'core',
 	// 🚧 Places (W4): reading the session's places is reading its lore.
 	'session-places': Object.freeze({ scope: 'lore' as const }),
@@ -2637,10 +2934,13 @@ export const WIDGET_REQUEST_ASKERS: { readonly [K in WidgetRequestKind]: WidgetR
 	'set-backdrop': 'core',
 	// 🚧 Stats (2026-10-17): a seat's portrait is session state — core's only.
 	'set-owner-face': 'core',
+	'show-hidden-stats': 'core',
 	// 🚧 Backdrop (D3, 2026-10-12): the session's generated pictures, for its chooser — core's only.
 	'session-images': 'core',
 	// 🚧 While you were away (A7, R23; lane 7): what the session's routines did — core's only for now.
 	'routine-log': 'core',
+	'session-runs': 'core',
+	'session-run-steps': 'core',
 	// 🚧 M0 (SHAPES L12 Seams): a file in, to the plugin's handler; a file out, as a download.
 	'file-pick': 'any',
 	'file-save': 'any',
@@ -2735,11 +3035,17 @@ export const WIDGET_REQUEST_APIS = Object.freeze({
 	'set-entry-marks': 'session',
 	'authors-note': 'session',
 	'set-authors-note': 'session',
+	'session-scenario': 'session',
+	'set-session-scenario': 'session',
+	'show-channel': 'session',
+	// 🚧 A reading widget's place, for the scene beside it.
+	'show-line': 'session',
 	'history-entries': 'session',
 	'set-story-clock': 'session',
 	'start-history-entry': 'session',
 	'extend-graph': 'session',
 	'summarize-scenes': 'session',
+	'compile-history-entry': 'session',
 	'decide-scene-cue': 'session',
 	'session-places': 'session',
 	'channel-lanes': 'session',
@@ -2747,8 +3053,11 @@ export const WIDGET_REQUEST_APIS = Object.freeze({
 	'set-chosen-image': 'session',
 	'set-backdrop': 'session',
 	'set-owner-face': 'session',
+	'show-hidden-stats': 'session',
 	'session-images': 'session',
 	'routine-log': 'session',
+	'session-runs': 'session',
+	'session-run-steps': 'session',
 	'file-pick': 'ui',
 	'file-save': 'ui',
 	'session-fullscreen': 'ui',
@@ -2979,7 +3288,14 @@ export interface WidgetInvokeArgs {
 	 * to an action that collects text, as if the collect modal had — and
 	 * refuses the press, firing nothing, when the action collects none. An
 	 * action that also collects recipients still opens its modal, prefilled.
-	 * @ruling lair pass S2
+	 *
+	 * An EMPTY string is a command typed in full with nothing after it
+	 * (`/narrator`): the press names the action and offers no text, so the
+	 * host fires an action whose text is optional (or that collects none)
+	 * at once, and opens the collect modal only for one that requires text.
+	 * Absent, the press came from a chip or a menu and a collecting action
+	 * opens its modal as before.
+	 * @ruling lair pass S2; slash presses fire (owner, 2026-11-04)
 	 */
 	text?: string
 }

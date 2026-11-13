@@ -594,9 +594,12 @@ export function advanceStoryTime(
 	const spelled = formatStoryTime(start, calendar)
 	const out: StoryTime = { ...start }
 
-	const stepDays = (days: number): string | null => {
+	const stepDays = (days: number, past: 'midnight' | 'days'): string | null => {
 		if (days === 0) return null
-		if (!has(out.month) || !has(out.day)) return `The clock stands at ${spelled}, with no day to count days from.`
+		if (!has(out.month) || !has(out.day))
+			return past === 'midnight'
+				? `The clock has no date at ${spelled}, so it can't run past midnight.`
+				: `The clock has no day at ${spelled}, so it can't count days.`
 		if (calendar) {
 			const moved = storyTimeOfDayIndex(storyDayIndex(out, calendar)! + days, calendar)
 			out.year = moved.year
@@ -616,8 +619,8 @@ export function advanceStoryTime(
 			(has(out.hour) ? out.hour : 0) * 60 + (has(out.minute) ? out.minute : 0) + by * (unit === 'hours' ? 60 : 1)
 		out.hour = floorDiv(mod(total, 1440), 60)
 		out.minute = mod(total, 60)
-		problem = stepDays(floorDiv(total, 1440))
-	} else if (unit === 'days') problem = stepDays(by)
+		problem = stepDays(floorDiv(total, 1440), 'midnight')
+	} else if (unit === 'days') problem = stepDays(by, 'days')
 	else if (unit === 'months') {
 		if (!has(out.month)) return { problem: `The clock stands at ${spelled}, with no month to count months from.` }
 		if (calendar) {

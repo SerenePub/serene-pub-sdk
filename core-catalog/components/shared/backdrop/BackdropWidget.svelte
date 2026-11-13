@@ -36,7 +36,6 @@
 	 */
 	import { untrack } from "svelte"
 	import {
-		BACKDROP_EMPTY,
 		BACKDROP_ILLUSTRATE_PAYLOAD,
 		backdropOf,
 		illustrateActionOf,
@@ -87,11 +86,11 @@
 	}
 
 	let choosing = $state(false)
-	/** Whose gallery the chooser shows, by character id. */
-	let memberId = $state<number | null>(null)
-	let galleries = $state<Record<number, GalleryPages>>({})
+	/** Whose gallery the chooser shows, by the member's `ref`. */
+	let memberId = $state<string | null>(null)
+	let galleries = $state<Record<string, GalleryPages>>({})
 	/** Members whose next page is on its way — not state: nothing draws it. */
-	const asking = new Set<number>()
+	const asking = new Set<string>()
 
 	const isImage = (v: unknown): v is GalleryImage =>
 		!!v &&
@@ -99,15 +98,27 @@
 		typeof (v as GalleryImage).ref === "string" &&
 		typeof (v as GalleryImage).src === "string"
 
-	async function nextPage(characterId: number): Promise<void> {
-		const held = untrack(() => galleries[characterId])
-		if (asking.has(characterId) || held?.done) return
-		asking.add(characterId)
+	/** Who `character-images` is asked about: the card when the member has one, else its cast member. */
+	const nameOf = (m: {
+		cardId?: number | null
+		castMemberId?: number | null
+		characterId: number
+	}): { characterId: number } | { castMemberId: number } =>
+		m.cardId === null && m.castMemberId != null
+			? { castMemberId: m.castMemberId }
+			: { characterId: m.cardId ?? m.characterId }
+
+	async function nextPage(key: string): Promise<void> {
+		const m = untrack(() => members.find((x) => x.ref === key))
+		if (!m) return
+		const held = untrack(() => galleries[key])
+		if (asking.has(key) || held?.done) return
+		asking.add(key)
 		const keep = held?.images ?? []
 		let pages: GalleryPages
 		try {
 			const res = (await w?.current.request("character-images", {
-				characterId,
+				...nameOf(m),
 				...(held?.next ? { cursor: held.next } : {})
 			})) as { images?: unknown[]; nextCursor?: string } | undefined
 			const images = (Array.isArray(res?.images) ? res.images : []).filter(isImage)
@@ -116,9 +127,9 @@
 		} catch (e) {
 			pages = { images: keep, next: null, done: true, error: messageOf(e) }
 		} finally {
-			asking.delete(characterId)
+			asking.delete(key)
 		}
-		galleries = { ...untrack(() => galleries), [characterId]: pages }
+		galleries = { ...untrack(() => galleries), [key]: pages }
 	}
 
 	/* ── From this session: its generated pictures, by `session-images` ── */
@@ -148,7 +159,7 @@
 		sessionPages = pages
 	}
 
-	function pickMember(id: number) {
+	function pickMember(id: string) {
 		memberId = id
 		if (!untrack(() => galleries[id])) void nextPage(id)
 	}
@@ -156,14 +167,14 @@
 	function openChooser() {
 		choosing = true
 		error = null
-		const first = untrack(() => memberId ?? members[0]?.characterId ?? null)
+		const first = untrack(() => memberId ?? (members[0] ? members[0].ref : null))
 		if (first !== null) pickMember(first)
 		// Asked afresh each time: a Scene may have drawn one since.
 		sessionPages = null
 		void nextSessionPage()
 	}
 
-	const member = $derived(members.find((m) => m.characterId === memberId) ?? null)
+	const member = $derived(members.find((m) => m.ref === memberId) ?? null)
 	const pages = $derived(memberId !== null ? galleries[memberId] : undefined)
 
 	/** Draw the scene as the backdrop: the Scene action, placement `backdrop`. */
@@ -242,9 +253,9 @@
 					{#each members as m (m.ref)}
 						<button
 							type="button"
-							aria-pressed={m.characterId === memberId}
+							aria-pressed={m.ref === memberId}
 							data-widget-part="backdrop.member"
-							onclick={() => pickMember(m.characterId)}
+							onclick={() => pickMember(m.ref)}
 						>
 							{m.name}
 						</button>
@@ -312,11 +323,6 @@
 				{/if}
 			</section>
 		</section>
-	{:else if !backdrop}
-		<div data-widget-part="backdrop.empty empty" role="status">
-			<sp-icon name="mountain-snow" size="20"></sp-icon>
-			<span>{t(BACKDROP_EMPTY)}</span>
-		</div>
 	{/if}
 
 	{#if mayChange && !choosing}

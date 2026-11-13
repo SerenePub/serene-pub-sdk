@@ -20,6 +20,10 @@
  * - **unknown-path** — a field the declared type positively contradicts
  *   (`characters.nmae`, a field read straight off a list).
  * - **unknown-helper** — a Handlebars helper nobody registered.
+ * - **layout-argument** — a `layout` call that does not name a variable in
+ *   scope that a variable layout writes out, and a layout reference in quotes.
+ * - **unknown-layout** — a layout reference that is malformed, or that the
+ *   variable does not offer (checked only when the host supplies offers).
  *
  * Conservative by construction: an `'any'` root, a record's author-chosen
  * key, a dynamic lookup (`lookup`, `a[k]`) and a subexpression's result are
@@ -34,7 +38,7 @@
  */
 
 import Handlebars from 'handlebars'
-import { Liquid, Tag, Hash, analyzeSync } from 'liquidjs'
+import { Liquid, Tag, Hash, Value, TokenKind, analyzeSync, toValueSync } from 'liquidjs'
 import type { Context, Emitter, TagToken, Template, TopLevelToken } from 'liquidjs'
 import { handlebars as handlebarsEngine, liquid as liquidEngine } from './engines.js'
 import {
@@ -48,6 +52,7 @@ import {
 	type HandlebarsReach,
 } from './handlebarsReach.js'
 import { resolvePath } from './template.js'
+import { VARIABLE_LAYOUT_HELPER, parseVariableLayoutReference } from './variableLayouts.js'
 import type {
 	PathResolution,
 	TemplateCheckOptions,
@@ -124,7 +129,13 @@ export function checkTemplateSourceReport(
 		return { checked: true, findings: [syntaxFinding(err, lines)] }
 	}
 
-	const sink = new FindingSink(scope, options.untyped ?? [], lines)
+	const sink = new FindingSink(
+		scope,
+		options.untyped ?? [],
+		lines,
+		isHandlebars ? 'handlebars' : 'liquid',
+		options.variableLayoutOffers,
+	)
 	try {
 		if (isHandlebars) walkHandlebars(parsed as HbsProgram, scope, helperSet(options), sink)
 		else walkLiquid(parsed as Template[], src, scope, sink)
@@ -148,6 +159,16 @@ function lineStarts(src: string): number[] {
 /** 1-based line, 1-based column → 0-based offset. */
 const offsetOf = (lines: number[], line: number, column: number) =>
 	(lines[line - 1] ?? 0) + column - 1
+
+/** 0-based offset → 1-based line and column. */
+function positionAtOffset(lines: number[], offset: number) {
+	let line = 1
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i]! <= offset) line = i + 1
+		else break
+	}
+	return { line, column: offset - lines[line - 1]! + 1 }
+}
 
 /**
  * Read a line and column off whatever the engine threw — the engine's own
@@ -195,6 +216,40 @@ interface Span {
 	end: number
 }
 
+/** Where a finding points: 1-based line and column, 0-based offsets. */
+interface At extends Span {
+	line: number
+	column: number
+}
+
+const LAYOUT_EXAMPLE = 'core/json@1'
+
+/** The sentences a `layout` call is refused with, by engine. */
+const LAYOUT_WORDS = {
+	handlebars: {
+		shape: 'layout takes a variable in scope and a quoted layout reference: {{{layout characters "core/json@1"}}}.',
+		shapeFix: 'write {{{layout characters "core/json@1"}}}',
+		reference:
+			'layout\'s second argument is a layout reference in quotes, such as "core/json@1" — a path or a subexpression can\'t be checked, or laid out before the template runs.',
+		referenceFix: 'write the layout reference in quotes: "core/json@1"',
+		plain: (key: string) => `{{{${key}}}}`,
+	},
+	liquid: {
+		shape: 'layout comes straight after the variable\'s name: {{ characters | layout: "core/json@1" }}.',
+		shapeFix: 'write {{ characters | layout: "core/json@1" }}',
+		reference:
+			'layout takes exactly one argument, a layout reference in quotes, such as "core/json@1" — a path or a keyword argument can\'t be checked, or laid out before the template runs.',
+		referenceFix: 'write the layout reference in quotes: layout: "core/json@1"',
+		plain: (key: string) => `{{ ${key} }}`,
+	},
+} as const
+
+/** The variable whose layout writes this declaration out, when one does. */
+const laidOutByOf = (decl: VarDecl | undefined): string | undefined =>
+	decl && decl !== 'any' && !Array.isArray(decl) && typeof decl.laidOutBy === 'string'
+		? decl.laidOutBy
+		: undefined
+
 class FindingSink {
 	readonly findings: TemplateFinding[] = []
 	private readonly seen = new Set<string>()
@@ -203,6 +258,8 @@ class FindingSink {
 		private readonly scope: TemplateScope,
 		private readonly untyped: readonly string[],
 		readonly lines: number[],
+		private readonly engine: 'handlebars' | 'liquid' = 'handlebars',
+		private readonly offers?: TemplateCheckOptions['variableLayoutOffers'],
 	) {}
 
 	private get nameSeverity(): TemplateFinding['severity'] {
@@ -326,6 +383,101 @@ class FindingSink {
 	get scopeNames() {
 		return Object.keys(this.scope)
 	}
+
+	/** A `layout` call written wrongly: which argument, and the sentence that says how. */
+	layoutArgument(kind: 'shape' | 'reference', at: At, tag?: Span) {
+		const words = LAYOUT_WORDS[this.engine]
+		this.push({
+			kind: 'layout-argument',
+			severity: 'error',
+			name: VARIABLE_LAYOUT_HELPER,
+			message: kind === 'shape' ? words.shape : words.reference,
+			fix: kind === 'shape' ? words.shapeFix : words.referenceFix,
+			...at,
+			...(tag ? { tag } : {}),
+		})
+	}
+
+	/**
+	 * Judge a well-formed `layout` call: the key, then the reference. One
+	 * judgement for both engines. `keyReported` is true when the ordinary walk
+	 * already says the key is missing (an unknown name), so it is not said twice.
+	 */
+	layoutCall(
+		key: string,
+		keyAt: At,
+		reference: string,
+		referenceAt: At,
+		keyReported: boolean,
+		tag?: Span,
+	) {
+		const laidBy = laidOutByOf(this.scope[key])
+		if (laidBy === undefined) {
+			if (keyReported) return
+			const laidKeys = Object.keys(this.scope).filter((k) => laidOutByOf(this.scope[k]))
+			const suggestion = nearestName(key, laidKeys)
+			this.push({
+				kind: 'layout-argument',
+				severity: 'error',
+				name: key,
+				path: key,
+				message:
+					`"${key}" is not written out by a variable layout, so it has no layout to name. ` +
+					`Write ${LAYOUT_WORDS[this.engine].plain(key)}.` +
+					(suggestion ? ` Did you mean "${suggestion}"?` : ''),
+				fix: suggestion
+					? `use "${suggestion}"`
+					: laidKeys.length
+						? `variables with layouts here: ${laidKeys.join(', ')}`
+						: 'no variable here has layouts — drop the layout call',
+				available: laidKeys,
+				...(suggestion ? { suggestion } : {}),
+				...keyAt,
+				...(tag ? { tag } : {}),
+			})
+			return
+		}
+		const refs = (this.offers?.[laidBy] ?? []).map((o) => o.reference)
+		const base = { name: reference, path: reference, ...referenceAt, ...(tag ? { tag } : {}) }
+		if (!parseVariableLayoutReference(reference)) {
+			const suggestion = this.offers ? nearestName(reference, refs) : undefined
+			this.push({
+				kind: 'unknown-layout',
+				severity: 'error',
+				message:
+					`"${reference}" isn't a layout reference — write <owner>/<slug>@<major>, such as "${LAYOUT_EXAMPLE}".` +
+					(suggestion ? ` Did you mean "${suggestion}"?` : ''),
+				fix: suggestion
+					? `use "${suggestion}"`
+					: `write <owner>/<slug>@<major>, such as "${refs[0] ?? LAYOUT_EXAMPLE}"`,
+				...(this.offers ? { available: refs } : {}),
+				...(suggestion ? { suggestion } : {}),
+				...base,
+			})
+		} else if (this.offers) {
+			if (refs.includes(reference)) return
+			const suggestion = nearestName(reference, refs)
+			this.push({
+				kind: 'unknown-layout',
+				severity: 'error',
+				message:
+					`"${reference}" isn't a layout of ${key}.` +
+					(suggestion ? ` Did you mean "${suggestion}"?` : ''),
+				fix: suggestion
+					? `use "${suggestion}"`
+					: refs.length
+						? `layouts here: ${refs.join(', ')}`
+						: `${key} offers no layouts here`,
+				available: refs,
+				...(suggestion ? { suggestion } : {}),
+				...base,
+			})
+		}
+		// No offers (the packager, or any check with no host in view): a
+		// well-formed reference passes silently. The host always supplies
+		// offers at save, select and in the editor, so a warning here would
+		// fire on every reference a plugin writes and say nothing new.
+	}
 }
 
 // ── Handlebars ──────────────────────────────────────────────────────────────
@@ -349,7 +501,11 @@ interface HbsPath extends HbsNode {
 interface HbsCall extends HbsNode {
 	path: HbsNode
 	params?: HbsNode[]
-	hash?: { pairs?: { value: HbsNode }[] }
+	hash?: { pairs?: { value: HbsNode; loc?: HbsLoc }[] }
+}
+interface HbsString extends HbsNode {
+	type: 'StringLiteral'
+	value: string
 }
 interface HbsBlock extends HbsCall {
 	program?: HbsProgram
@@ -387,6 +543,7 @@ function walkHandlebars(
 	scope: TemplateScope,
 	helpers: Set<string>,
 	sink: FindingSink,
+	layoutCalls?: VariableLayoutCall[],
 ) {
 	const knownHelpers = [...helpers].sort()
 	const lines = sink.lines
@@ -397,6 +554,16 @@ function walkHandlebars(
 					end: offsetOf(lines, loc.end.line, loc.end.column + 1),
 				}
 			: undefined
+
+	const atOf = (loc: HbsLoc | undefined): At => {
+		const s = spanOf(loc)
+		return {
+			line: loc?.start.line ?? 1,
+			column: (loc?.start.column ?? 0) + 1,
+			start: s?.start ?? 0,
+			end: s?.end ?? 0,
+		}
+	}
 
 	const ref = (node: HbsNode | undefined, reach: HandlebarsReach, tag: Span | undefined) => {
 		if (!node) return
@@ -420,9 +587,54 @@ function walkHandlebars(
 		for (const pair of node.hash?.pairs ?? []) ref(pair.value, reach, tag)
 	}
 
+	/** `{{{layout characters "core/json@1"}}}` — in a mustache, a subexpression or (wrongly) a block. */
+	const layoutCall = (
+		node: HbsCall,
+		reach: HandlebarsReach,
+		tag: Span | undefined,
+		block: boolean,
+	) => {
+		const params = node.params ?? []
+		const pairs = node.hash?.pairs ?? []
+		const [first, second] = params
+		const key = simpleName(first)
+		let bad: At | undefined
+		let which: 'shape' | 'reference' = 'shape'
+		if (block || params.length !== 2 || pairs.length)
+			bad = atOf(pairs.length && params.length === 2 ? pairs[0]!.loc : node.path.loc)
+		else if (key === undefined) bad = atOf(first!.loc)
+		else if (second!.type !== 'StringLiteral') {
+			bad = atOf(second!.loc)
+			which = 'reference'
+		}
+		if (bad) {
+			sink.layoutArgument(which, bad, tag)
+			args(node, reach, tag)
+			return
+		}
+		const reference = (second as HbsString).value
+		ref(first, reach, tag)
+		layoutCalls?.push({ key: key!, reference })
+		const r = resolveHandlebarsPath(readPath(first as HbsPath), reach, scope)
+		const quote = atOf(second!.loc)
+		sink.layoutCall(
+			key!,
+			atOf(first!.loc),
+			reference,
+			{
+				...positionAtOffset(lines, quote.start + 1),
+				start: quote.start + 1,
+				end: quote.start + 1 + reference.length,
+			},
+			r.kind === 'unknown-root',
+			tag,
+		)
+	}
+
 	/** A helper invocation — `(eq a b)`, `{{pad x 2}}`: the name is a helper, the rest are values. */
 	const call = (node: HbsCall, reach: HandlebarsReach, tag: Span | undefined) => {
 		const name = simpleName(node.path)
+		if (name === VARIABLE_LAYOUT_HELPER) return layoutCall(node, reach, tag, false)
 		if (name !== undefined && !helpers.has(name))
 			sink.unknownHelper(
 				name,
@@ -444,6 +656,8 @@ function walkHandlebars(
 		switch (node.type) {
 			case 'MustacheStatement': {
 				const m = node as HbsCall
+				if (simpleName(m.path) === VARIABLE_LAYOUT_HELPER)
+					return layoutCall(m, reach, tag, false)
 				if (m.params?.length || m.hash?.pairs?.length) return call(m, reach, tag)
 				// `{{log}}`-style: a bare name that IS a helper is a call, not a read.
 				const name = simpleName(m.path)
@@ -454,15 +668,18 @@ function walkHandlebars(
 				const b = node as HbsBlock
 				// `{{#foo}}` is always an invocation, never a variable.
 				const name = simpleName(b.path)
-				if (name !== undefined && !helpers.has(name))
-					sink.unknownHelper(
-						name,
-						knownHelpers,
-						b.path.loc?.start.line ?? 1,
-						(b.path.loc?.start.column ?? 0) + 1,
-						tag,
-					)
-				args(b, reach, tag)
+				if (name === VARIABLE_LAYOUT_HELPER) layoutCall(b, reach, tag, true)
+				else {
+					if (name !== undefined && !helpers.has(name))
+						sink.unknownHelper(
+							name,
+							knownHelpers,
+							b.path.loc?.start.line ?? 1,
+							(b.path.loc?.start.column ?? 0) + 1,
+							tag,
+						)
+					args(b, reach, tag)
+				}
 				const helper = name ?? ''
 				const first = b.params?.[0]
 				const target: VarDecl | undefined =
@@ -601,6 +818,8 @@ function makeLiquid(o: LiquidOptions): Liquid {
 	for (const name of o.blockTags ?? []) liquid.registerTag(name, blockTag() as never)
 	// Parse only: a filter need exist, not work.
 	for (const name of o.filters ?? []) liquid.registerFilter(name, (v: unknown) => v)
+	// `layout` is always known: the checker judges the call itself.
+	liquid.registerFilter(VARIABLE_LAYOUT_HELPER, (v: unknown) => v)
 	return liquid
 }
 
@@ -655,6 +874,21 @@ function walkLiquid(templates: Template[], src: string, scope: TemplateScope, si
 	// the conservative line. Loop items are therefore unchecked.
 	const analysis = analyzeSync(templates, { partials: false })
 	const lines = sink.lines
+	for (const { value, tag } of liquidValues(templates))
+		value.filters.forEach((filter, index) => {
+			if (filter.name !== VARIABLE_LAYOUT_HELPER) return
+			const call = liquidLayoutCall(value, index, lines)
+			if ('bad' in call) return sink.layoutArgument(call.bad, call.at, tag)
+			const key = call.key
+			sink.layoutCall(
+				key,
+				call.keyAt,
+				call.reference,
+				call.referenceAt,
+				scope[key] === undefined && key in analysis.globals,
+				tag,
+			)
+		})
 	for (const [root, uses] of Object.entries(analysis.globals))
 		for (const use of uses) {
 			const { row, col } = use.location
@@ -675,4 +909,129 @@ function walkLiquid(templates: Template[], src: string, scope: TemplateScope, si
 			const r = resolveLiquidPath(decl, segs, root)
 			if (!r.ok) sink.badPath(r, root, written, row, col)
 		}
+}
+
+/** A tag or output's `{{ … }}`/`{% … %}` span. */
+const tokenSpan = (t: Template): Span | undefined => {
+	const token = (t as unknown as { token?: { begin: number; end: number } }).token
+	return token ? { start: token.begin, end: token.end } : undefined
+}
+
+/**
+ * Every filtered value a template writes — `{{ … }}` output and tag arguments
+ * such as `{% assign x = … %}` — in source order, nested blocks included. The
+ * walk liquidjs's own `analyzeSync` makes: `arguments()`, then `children()`.
+ */
+function liquidValues(templates: Template[]): { value: Value; tag: Span | undefined }[] {
+	const out: { value: Value; tag: Span | undefined }[] = []
+	const visit = (t: Template) => {
+		const tag = tokenSpan(t)
+		const impl = t as unknown as {
+			arguments?: () => Iterable<unknown>
+			children?: (partials: boolean, sync: boolean) => unknown
+		}
+		if (impl.arguments)
+			for (const arg of impl.arguments())
+				if (arg instanceof Value) out.push({ value: arg, tag })
+		if (impl.children)
+			for (const child of (toValueSync(impl.children(false, true)) as Template[]) ?? [])
+				visit(child)
+	}
+	for (const t of templates) visit(t)
+	return out
+}
+
+type LiquidLayoutCall =
+	| { bad: 'shape' | 'reference'; at: At }
+	| { key: string; keyAt: At; reference: string; referenceAt: At }
+
+/** Judge the shape of the `layout` filter at `index` in `value`. One judgement for the check and the listing. */
+function liquidLayoutCall(value: Value, index: number, lines: number[]): LiquidLayoutCall {
+	const filter = value.filters[index]!
+	const token = (filter as unknown as { token: unknown }).token as { begin: number; end: number }
+	const atOffsets = (start: number, end: number): At => ({
+		...positionAtOffset(lines, start),
+		start,
+		end,
+	})
+	const filterAt = atOffsets(token.begin, token.end)
+	const postfix = value.initial.postfix as unknown as {
+		kind: number
+		begin: number
+		end: number
+		getText(): string
+	}[]
+	const initial = postfix.length === 1 ? postfix[0]! : undefined
+	const key = initial?.getText()
+	if (
+		index !== 0 ||
+		initial?.kind !== TokenKind.PropertyAccess ||
+		!key ||
+		!/^[A-Za-z_][\w-]*$/.test(key)
+	)
+		return { bad: 'shape', at: filterAt }
+	const args = filter.args as unknown[]
+	if (args.length !== 1) return { bad: 'shape', at: filterAt }
+	const arg = args[0] as { kind: number; begin: number; end: number; content?: string }
+	if (Array.isArray(arg) || arg.kind !== TokenKind.Quoted || typeof arg.content !== 'string') {
+		const t = (Array.isArray(arg) ? arg[1] : arg) as { begin: number; end: number } | undefined
+		return {
+			bad: 'reference',
+			at: t ? atOffsets(t.begin, t.end) : filterAt,
+		}
+	}
+	return {
+		key,
+		keyAt: atOffsets(initial.begin, initial.end),
+		reference: arg.content,
+		referenceAt: atOffsets(arg.begin + 1, arg.begin + 1 + arg.content.length),
+	}
+}
+
+/** One `layout` call in a source, as the render pre-pass reads it. @experimental */
+export interface VariableLayoutCall {
+	/** The variable's name as written: `characters`. */
+	key: string
+	/** The layout reference as written, grammatical or not: `core/json@1`. */
+	reference: string
+}
+
+/**
+ * Every `layout` call in `src`, in source order, duplicates kept, calls inside
+ * blocks included. A call is listed when its key is a simple root name and its
+ * reference a string literal — whether or not the reference is well-formed or
+ * offered, because the render pre-pass must see every call it will meet and
+ * the check is what refuses. A call written wrongly (a path for a key, a
+ * reference that is not a literal, the wrong number of arguments, a Liquid
+ * `layout` that is not the first filter) is not listed. Same parser and walk
+ * as {@link checkTemplateSource}. A source that does not parse, or an engine
+ * this checker does not read, lists nothing.
+ * @experimental
+ */
+export function variableLayoutCalls(
+	engine: string,
+	src: string,
+	options: TemplateCheckOptions = {},
+): VariableLayoutCall[] {
+	if (!canCheckTemplateEngine(engine)) return []
+	const calls: VariableLayoutCall[] = []
+	const lines = lineStarts(src)
+	try {
+		if (engine === handlebarsEngine.id) {
+			const ast = Handlebars.parse(src) as unknown as HbsProgram
+			const sink = new FindingSink({}, [], lines)
+			walkHandlebars(ast, {}, helperSet(options), sink, calls)
+		} else {
+			const templates = liquidFor(options).parse(src)
+			for (const { value } of liquidValues(templates))
+				value.filters.forEach((filter, index) => {
+					if (filter.name !== VARIABLE_LAYOUT_HELPER) return
+					const call = liquidLayoutCall(value, index, lines)
+					if (!('bad' in call)) calls.push({ key: call.key, reference: call.reference })
+				})
+		}
+	} catch {
+		return []
+	}
+	return calls
 }

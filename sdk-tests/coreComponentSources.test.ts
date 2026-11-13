@@ -28,15 +28,15 @@ const SLUGS = CORE_COMPONENTS.map((c) => c.slug)
 const CLONEABLE = SLUGS.filter((s) => !CORE_VIEW_ONLY_COMPONENTS.includes(s))
 const HASH = 'a'.repeat(64)
 
-test('CORE_COMPONENTS validates, and names every core widget component — messages view-only', () => {
+test('CORE_COMPONENTS validates, and names every core widget component — the conversation’s four view-only', () => {
 	assert.deepEqual(componentFindings(CORE_COMPONENTS), [])
 	assert.deepEqual(
 		[...SLUGS].sort(),
 		[...new Set(CORE_WIDGETS.map((w) => w.component).filter((c): c is string => !!c))].sort(),
 	)
 	assert.ok(CORE_COMPONENTS.every((c) => c.__decl === 'component' && c.framework === 'svelte' && !c.basedOn))
-	assert.deepEqual([...CORE_VIEW_ONLY_COMPONENTS], ['messages'])
-	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance', 'routine-log'])
+	assert.deepEqual([...CORE_VIEW_ONLY_COMPONENTS], ['messages', 'composer', 'turn-line', 'dialogue-box'])
+	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance', 'routine-log', 'session-runs'])
 })
 
 test("a clone's basedOn carries the upstream's sourceHash — optional, and SHA-256 hex when given", () => {
@@ -159,6 +159,7 @@ test('the import list grew additively by exactly the component kit — and nothi
 		'@serene-pub/core-catalog/places',
 		'@serene-pub/core-catalog/attendance',
 		'@serene-pub/core-catalog/backdrop',
+		'@serene-pub/core-catalog/session-runs',
 	]
 	assert.deepEqual(COMPONENT_IMPORTS.slice(5), kit)
 	for (const s of kit) assert.equal(componentImportFinding(s), undefined, s)
@@ -212,7 +213,7 @@ describe('every core component compiles in-app from its source.json', { timeout:
  */
 describe('the cloneable five, built in-app from source.json, behave as shipped', { timeout: 900_000 }, async () => {
 	process.env.SP_CORE_COMPONENT_BUILD = 'in-app'
-	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance', 'routine-log'])
+	assert.deepEqual(CLONEABLE, ['stats', 'lore-entries', 'scene-portraits', 'authors-note', 'turn-order', 'actions', 'annex', 'album', 'backdrop', 'chronicle', 'places', 'attendance', 'routine-log', 'session-runs'])
 	await import('./coreStateWidgets.test.js')
 	await import('./coreLoreEntriesComponent.test.js')
 	await import('./coreScenePortraitsComponent.test.js')

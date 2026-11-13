@@ -179,11 +179,14 @@ describe('resolveDrawn through the alias', () => {
 		assert.deepEqual(
 			every.map((i) => [i.instanceId, i.widgetId, i.impliedSettings ?? null]),
 			// The top strip is the first panel above the conversation, then the
-			// grid's middle entry ordered before it; the right column last.
+			// grid's middle entry ordered before it; the conversion's turn line
+			// and composer follow the conversation; the right column last.
 			[
 				['world-state#3', 'stats', IMPLIED],
 				['world-state', 'stats', IMPLIED],
 				['messages', 'messages', null],
+				['turn-line', 'turn-line', null],
+				['composer', 'composer', null],
 				['world-state#2', 'stats', IMPLIED],
 			],
 		)
@@ -191,17 +194,29 @@ describe('resolveDrawn through the alias', () => {
 			'world-state#3',
 			'world-state',
 			'messages',
+			'turn-line',
+			'composer',
 			'world-state#2',
 		])
 	})
 })
 
 describe("core's shipped layouts", () => {
+	/** Every tab a layout's `panels` places, whichever version it is stored as. */
+	const placed = (layout: SessionLayoutV1): string[] => {
+		const p = layout.panels as unknown as Record<string, unknown>
+		const zones = [p.left, p.right, ...(Array.isArray(p.middle) ? [p.middle] : [(p.middle as { above: unknown[] }).above, [(p.middle as { primary: unknown }).primary], (p.middle as { below: unknown[] }).below])]
+		return zones.flatMap((z) => (z as { tabs: string[] }[]).flatMap((panel) => panel.tabs))
+	}
 	test('place the world as stats#world by name, never the alias', () => {
-		for (const layout of [STORY_WORLD_LAYOUT, LAIR_LAYOUT])
+		for (const layout of [STORY_WORLD_LAYOUT, LAIR_LAYOUT]) {
 			assert.equal(drawnWidgetIds(layout).includes('world-state'), false)
-		const strip = resolveDrawn(STORY_WORLD_LAYOUT, { inline: 1300 }).middle.instances[0]!
-		assert.equal(strip.instanceId, 'stats#world')
+			assert.equal(placed(layout).includes('world-state'), false)
+		}
+		assert.ok(placed(STORY_WORLD_LAYOUT).includes('stats#world'), 'the world strip is placed by name')
+		const drawn = resolveDrawn(STORY_WORLD_LAYOUT, { inline: 1300 })
+		const strip = drawnInstances(drawn).find((i) => i.instanceId === 'stats#world')!
+		assert.ok(strip, 'and drawn under that name')
 		assert.equal(strip.widgetId, 'stats')
 		assert.equal('impliedSettings' in strip, false)
 		assert.deepEqual(STORY_WORLD_LAYOUT.widgetSettings?.['stats#world'], IMPLIED)

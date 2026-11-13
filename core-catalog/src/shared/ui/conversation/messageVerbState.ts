@@ -40,6 +40,8 @@ export interface VerbMessage {
 	characterId?: number | null
 	/** The persona the row was written as — read so `item.speaker` is answered the same on both sides (R11). */
 	personaId?: number | null
+	/** 🚧 The speaker's cast member, as the host fills it — read through `VerbContext.refOfMember`. */
+	castMemberId?: number | null
 	isNarratorResponse?: boolean | null
 	content?: string | null
 	role?: string | null
@@ -107,6 +109,16 @@ export interface VerbContext {
 	reason?: string
 	/** The `item.*` predicates, judged here against this message. */
 	itemPredicates?: ReadonlyArray<EnabledWhen>
+	/**
+	 * 🚧 The cast lookup: a cast member id → that seat's `ref`, from the
+	 * conversation cast row whose `castMemberId` matches. Absent or a miss, ⏳ the
+	 * card form is read (removed in S5).
+	 */
+	refOfMember?: (
+		castMemberId: number,
+		/** Which kind of seat the caller means; the lookup prefers a seat of that kind and falls back to any seat of the member. */
+		seatKind?: 'character-seat' | 'player-seat',
+	) => ParticipantRef | null | undefined
 }
 
 /** @experimental */
@@ -198,7 +210,7 @@ const off = (...conditions: Array<[holds: boolean, reason: string | undefined]>)
 export function enabledWhenState(
 	ctx: Pick<
 		VerbContext,
-		'msg' | 'isLastMessage' | 'canControl' | 'enabled' | 'reason' | 'itemPredicates'
+		'msg' | 'isLastMessage' | 'canControl' | 'enabled' | 'reason' | 'itemPredicates' | 'refOfMember'
 	>,
 	opts: { statusText?: typeof statusText } = {},
 ): [holds: boolean, reason: string | undefined] {
@@ -214,9 +226,10 @@ export function enabledWhenState(
 				channel: ctx.msg.channel,
 				characterId: ctx.msg.characterId,
 				personaId: ctx.msg.personaId,
+				castMemberId: ctx.msg.castMemberId,
 				metadata: ctx.msg.metadata,
 			},
-			{ isNewest: ctx.isLastMessage, mine: ctx.canControl },
+			{ isNewest: ctx.isLastMessage, mine: ctx.canControl, refOfMember: ctx.refOfMember },
 		),
 	}
 	const heard = enablementVerdict.judge({ preds: ctx.itemPredicates, doc })

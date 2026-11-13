@@ -24,7 +24,6 @@
 	 */
 	import { SvelteSet } from "svelte/reactivity"
 	import {
-		ALBUM_EMPTY,
 		ALBUM_ORIGIN_NAMES,
 		albumItems,
 		albumOpenLabel,
@@ -132,12 +131,7 @@
 		<p data-widget-part="album.alert" role="alert">{refusal}</p>
 	{/if}
 
-	{#if !items.length}
-		<div data-widget-part="album.empty empty" role="status">
-			<sp-icon name="book-image" size="20"></sp-icon>
-			<span>{t(ALBUM_EMPTY[settings.source])}</span>
-		</div>
-	{:else}
+	{#if items.length}
 		<p data-widget-part="album.toolbar toolbar">{count}</p>
 		{#if latest}
 			{#if lead}

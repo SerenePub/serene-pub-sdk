@@ -83,9 +83,10 @@ export const DUNGEON_CRAWLER_SLOT_DEFAULTS: Readonly<Record<string, unknown>> = 
  *
  *  - `own` (a plain object's shallow copy, never an array's), `copy`, `text`
  *    (a string or a number, trimmed), `num`, `clamp`, `list`;
- *  - `userOf(seat)` · `seatRefOf(seat)` · `stateKeyOf(ref)` — THE seat
- *    reference, its `session-state@1` key and its player;
- *  - `liveSeats(doc)` (every seat not removed, named or not), `seatOf(doc,
+ *  - `userOf(seat)` · `seatRefOf(seat)` · `stateKeyOf(ref, byId)` — THE seat
+ *    reference (the host's `ref`), the `session-state@1` key it reads under
+ *    (the entry whose `ref` it is) and its player;
+ *  - `liveSeats(doc)` (every seat in play — not removed and not benched — named or not), `seatOf(doc,
  *    user)`, `seatNameOf(seat)`, `seatsOf(doc, state)` (every live, named seat
  *    with its sheet), `sheetOf(entry)`, `maxHpOf`, `healthText`;
  *  - `tablePeople(doc)` (the owner, the guests, the seats' players, by user
@@ -95,7 +96,7 @@ export const DUNGEON_CRAWLER_SLOT_DEFAULTS: Readonly<Record<string, unknown>> = 
  *    `keepsHeroes(progress)`, `goalKeptSecret(state, journal, core)`,
  *    `laneOf(doc, user)`, `laneWho(doc, lane)` (whose lane);
  *  - the session's own lorebook as listed: `entriesOf`, `placesOf`,
- *    `peopleOf`, `fallenOf`; the Journal folio: `logOf`;
+ *    `peopleOf`, `fallenOf` (the crawl's `progress.fallen`, not a listing); the Journal folio: `logOf`;
  *  - `cribLines(...)` — the Planner's crib, one builder for its three readers;
  *  - `dropUnchanged(changes, state, ownerFor)` — no change that changes nothing;
  *  - 🚧 `rulesetOf(ruleset)` — the inlet's `ruleset` read (lane G3,
@@ -183,19 +184,25 @@ function userOf(seat) {
 	if (seat.seatUserId != null) return Number(seat.seatUserId);
 	return seat.persona && seat.persona.userId != null ? Number(seat.persona.userId) : null;
 }
-function seatRefOf(seat) { return seat.persona ? "character:" + seat.persona.id : "player-seat:" + seat.seatId; }
-function stateKeyOf(ref) {
-	var r = String(ref);
-	var m = /^player-seat:(\\d+)$/.exec(r);
-	if (m) return "player_seat:" + m[1];
-	var c = /^character:(\\d+)$/.exec(r);
-	return c ? c[1] : r;
+// The seat's participant ref: the host's, else ⏳ today's card form.
+function seatRefOf(seat) { return typeof seat.ref === "string" && seat.ref ? seat.ref : seat.persona ? "character:" + seat.persona.id : "player-seat:" + seat.seatId; }
+// The state.cast.byId key a participant reference reads under: the entry
+// whose host-filled \`ref\` is this ref (look up, never parse). ⏳ A host
+// before S3 fills no \`ref\`: then today's card-form key — only when the entry
+// under it carries no \`ref\` of its own (card and member ids share one range).
+function stateKeyOf(ref, byId) {
+	var r = String(ref), b = byId && typeof byId === "object" ? byId : {};
+	for (var k in b) { var e = b[k]; if (e && typeof e === "object" && e.ref === r) return k; }
+	var m = /^player-seat:(\\d+)$/.exec(r), c = /^character:(\\d+)$/.exec(r);
+	var key = m ? "player_seat:" + m[1] : c ? c[1] : r;
+	var at = b[key];
+	return at && typeof at === "object" && at.ref !== undefined ? r : key;
 }
 function seatNameOf(seat) { return seat ? text(seat.seatName) || text(seat.persona && seat.persona.name) : ""; }
 function liveSeats(d) {
 	var seats = (own(d).cast && own(d).cast.sessionPersonas) || [];
 	var out = [];
-	for (var i = 0; i < seats.length; i++) if (seats[i] && !seats[i].removedAt) out.push(seats[i]);
+	for (var i = 0; i < seats.length; i++) if (seats[i] && !seats[i].removedAt && seats[i].enabled !== false) out.push(seats[i]);
 	return out;
 }
 // A person's own seat: the card-less one first, else their first.
@@ -238,7 +245,7 @@ function sheetOf(e) {
 // A seat's full health: the hp slot's max in force for that owner
 // (\`state.configs\`, the bar's own number), or null when none is known.
 function maxHpOf(state, ref) {
-	var c = own(own(own(state).configs)[stateKeyOf(ref)])[SL.hp];
+	var c = own(own(own(state).configs)[stateKeyOf(ref, own(own(own(state).cast).byId))])[SL.hp];
 	return c && typeof c.max === "number" ? c.max : null;
 }
 // ", health 9/15" — the max only when one is known.
@@ -272,27 +279,41 @@ function seatsOf(d, state) {
 		var name = seatNameOf(s);
 		if (!name) continue;
 		var ref = seatRefOf(s);
-		var sheet = sheetOf(byId[stateKeyOf(ref)]);
+		var sheet = sheetOf(byId[stateKeyOf(ref, byId)]);
 		sheet.ref = ref; sheet.name = name; sheet.user = userOf(s); sheet.maxHp = maxHpOf(state, ref);
+		sheet.castMemberId = s.castMemberId;
 		out.push(sheet);
 	}
 	return out;
 }
 // 🚧 The companions (P3-9, owner ruling 2026-10-18): the session's cast
 // characters that are no player's seat — narrative only at this table:
-// voiced by the Narrator, no sheet kept, never seated. \`[{ ref, name }]\`.
+// voiced by the Narrator, no sheet kept, never seated. \`[{ ref, name, castMemberId }]\`.
+// Lead ruling 2026-11-11 (bench-L3): read \`cast.sessionCharacters\`, the host's
+// real document shape (the old \`cast.characters\` never existed there, so no
+// companion was ever seen). Removed rows are skipped; a benched row
+// (\`enabled === false\`) is not travelling, so it is left out here and found
+// again for revival through \`progress.fallen\`.
 function companionsOf(d) {
-	var cast = own(own(d).cast).characters;
+	var cast = own(own(d).cast).sessionCharacters;
 	cast = Array.isArray(cast) ? cast : [];
-	var seatRefs = {};
+	var seatRefs = {}, seatMembers = {};
 	var ss = liveSeats(d);
-	for (var i = 0; i < ss.length; i++) seatRefs[seatRefOf(ss[i])] = true;
+	for (var i = 0; i < ss.length; i++) {
+		seatRefs[seatRefOf(ss[i])] = true;
+		if (ss[i].castMemberId != null) seatMembers[ss[i].castMemberId] = true;
+	}
 	var out = [];
 	for (var c = 0; c < cast.length; c++) {
-		var ch = cast[c];
-		if (!ch || ch.id == null || !text(ch.name)) continue;
-		if (seatRefs["character:" + ch.id]) continue;
-		out.push({ ref: "character:" + ch.id, name: text(ch.name) });
+		var row = cast[c];
+		if (!row || row.removedAt || row.enabled === false) continue;
+		var ch = own(row.character);
+		var name = text(ch.name);
+		if (!name) continue;
+		var cref = typeof row.ref === "string" && row.ref ? row.ref : ch.id != null ? "character:" + ch.id : "";
+		if (!cref) continue;
+		if (seatRefs[cref] || (row.castMemberId != null && seatMembers[row.castMemberId])) continue;
+		out.push({ ref: cref, name: name, castMemberId: row.castMemberId != null ? row.castMemberId : null });
 	}
 	return out;
 }
@@ -394,7 +415,8 @@ function armourClassLine(bag) {
 // checked against. \`rules\` is \`rulesetOf\`'s (P2-3, P2-4): armour class
 // where numbers count on the kits' ruleset, the pool at a points table.
 function sheetLine(state, ref, name, rules) {
-	var bag = own(own(own(own(state).cast).byId)[stateKeyOf(ref)]);
+	var byId0 = own(own(own(state).cast).byId);
+	var bag = own(byId0[stateKeyOf(ref, byId0)]);
 	var sh = sheetOf(bag);
 	var parts = [];
 	var rl = rules && typeof rules === "object" ? rules : rulesetOf(null);
@@ -421,7 +443,7 @@ function sheetLine(state, ref, name, rules) {
 	// seat whose pool is none casts nothing, and is said nothing of.
 	var poolKey = rl.casting === "points" ? ucSlotName(rl.pointsSlot) : "";
 	if (poolKey && bag[poolKey] !== undefined) {
-		var poolMax = own(own(own(own(state).configs)[stateKeyOf(ref)])[rl.pointsSlot]).max;
+		var poolMax = own(own(own(own(state).configs)[stateKeyOf(ref, byId0)])[rl.pointsSlot]).max;
 		var ownMax = typeof poolMax === "number" && poolMax !== rl.pointsCeiling ? poolMax : null;
 		if (ownMax !== 0) parts.push("spell points " + num(bag[poolKey], 0) + (ownMax !== null ? " of " + ownMax : "") + " left");
 	}
@@ -494,16 +516,34 @@ function waysOutOf(state, placeId) {
 	}
 	return out;
 }
-function peopleOf(listing) {
+// \`fallen\` (optional): the crawl's \`progress.fallen\`. A row bound to a
+// fallen member's cast member (\`lorebookBindingId\`: a cast member id IS a
+// lorebook binding id) is that hero's own lore (an old cairn, now character
+// lore bound to the member), not somebody the party may meet; unbound rows
+// (every NPC the crawl writes) stay.
+function peopleOf(listing, fallen) {
 	var rows = entriesOf(listing);
+	var gone = {};
+	var fl = Array.isArray(fallen) ? fallen : [];
+	for (var f = 0; f < fl.length; f++) if (fl[f] && fl[f].castMemberId != null) gone[fl[f].castMemberId] = true;
 	var out = [];
-	for (var i = 0; i < rows.length; i++) if (rows[i] && text(rows[i].name)) out.push({ id: num(rows[i].id, null), name: text(rows[i].name), description: text(rows[i].content) });
+	for (var i = 0; i < rows.length; i++) {
+		if (!rows[i] || !text(rows[i].name)) continue;
+		if (rows[i].lorebookBindingId != null && gone[rows[i].lorebookBindingId]) continue;
+		out.push({ id: num(rows[i].id, null), name: text(rows[i].name), description: text(rows[i].content) });
+	}
 	return out;
 }
-function fallenOf(listing) {
-	var rows = entriesOf(listing);
+// The fallen, as the crawl keeps them (\`progress.fallen\`: { name, where, seat,
+// castMemberId }), in a line each — never read off the lorebook.
+function fallenOf(list) {
+	var items = Array.isArray(list) ? list : [];
 	var out = [];
-	for (var i = 0; i < rows.length; i++) if (rows[i] && text(rows[i].content)) out.push(text(rows[i].content));
+	for (var i = 0; i < items.length; i++) {
+		var it = own(items[i]);
+		if (!text(it.name)) continue;
+		out.push(text(it.name) + (text(it.where) ? " fell in " + text(it.where) : " fell") + ".");
+	}
 	return out;
 }
 // The Journal folio's newest lines, oldest first — the story so far.
@@ -519,7 +559,7 @@ function logOf(rows, max) {
 	return out.slice(Math.max(0, out.length - max));
 }
 // ── The Planner's crib: one builder, three readers (the story turn, its
-// talk, a new goal). \`o\`: { state, places, people, fallen, log, detail } —
+// talk, a new goal). \`o\`: { state, places, people, log, detail } —
 // \`detail\` lists each place with its reference and ways out (the story
 // turn); without it places and people are names. ⚠ The Planner's alone:
 // the goal and the notes are secrets the Narrator never reads.
@@ -529,7 +569,7 @@ function cribLines(progress, journal, o) {
 	if (progress.shape) lines.push("The adventure is " + (progress.shape === "open-world" ? "an open world." : "a dungeon."));
 	if (text(progress.goal)) lines.push("The goal: " + text(progress.goal) + (goalKeptSecret(o.state, journal) ? " (secret: the players do not know it)" : "") +
 		(progress.goalDone ? " (reached; the party carries on without one)" : progress.goalReached ? " (reached)" : ""));
-	var places = placesOf(o.places), people = peopleOf(o.people);
+	var places = placesOf(o.places), people = peopleOf(o.people, progress.fallen);
 	if (o.detail) {
 		if (places.length) {
 			var rl = [];
@@ -558,7 +598,9 @@ function cribLines(progress, journal, o) {
 	var leads = list(own(journal).leads, 6);
 	if (leads.length) lines.push("Open leads: " + leads.join("; ") + ".");
 	if (text(core[KEYS.planningNotes])) lines.push("Your notes: " + text(core[KEYS.planningNotes]));
-	var fallen = fallenOf(o.fallen);
+	// The story turn's crib alone (\`detail\`), as when the fallen were a listing
+	// only it read (AUDIT C7): the Planner's talk and a new goal never listed them.
+	var fallen = o.detail ? fallenOf(progress.fallen) : [];
 	if (fallen.length) lines.push("The fallen: " + fallen.join(" "));
 	var log = Array.isArray(o.log) ? o.log : [];
 	if (log.length) lines.push("The story so far, oldest first:\\n- " + log.join("\\n- "));
@@ -644,7 +686,7 @@ function ucText(x) {
 }
 function ucNow(state, owner, slot) {
 	var st = own(state);
-	var bag = owner === "world" ? st.world : st.cast && st.cast.byId && owner ? st.cast.byId[stateKeyOf(owner)] : null;
+	var bag = owner === "world" ? st.world : st.cast && st.cast.byId && owner ? st.cast.byId[stateKeyOf(owner, st.cast.byId)] : null;
 	var val = bag && typeof bag === "object" ? bag[ucSlotName(slot)] : undefined;
 	if (val === undefined || val === null || val === "" || (Array.isArray(val) && !val.length)) val = UC_DEFAULTS[slot];
 	return val === undefined ? null : val;

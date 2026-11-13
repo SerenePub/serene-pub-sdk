@@ -720,7 +720,9 @@ export const CORE_EVENTS = {
 	 * `core:outlet/attach-sprite@1` (the Sprite set fill). About a CARD, not a session: no session row is written, and the
 	 * payload names the character, the sprite set, each sprite label with the
 	 * sprite row it gained (`attached: [{ label, spriteId }]`) and the labels
-	 * that came back with no picture (`missing`).
+	 * that came back with no picture (`missing`). The payload also carries
+	 * 🚧 `castMemberId` — set when the pictures went to a cast member, and
+	 * then `characterId` is null.
 	 * @ruling DESIGN-image-generation §6.3
 	 */
 	spritesAttached: defineEvent({
@@ -733,7 +735,7 @@ export const CORE_EVENTS = {
 		causedBy: ['core:outlet/attach-sprite'],
 		payload: S.json,
 		description:
-			"Pictures were filed as a card's sprites. The payload carries the character, the sprite set, each sprite label with the sprite it gained, and the labels that came back empty.",
+			"Pictures were filed as a card's sprites. The payload carries the character, the sprite set, each sprite label with the sprite it gained, and the labels that came back empty. When the pictures went to a cast member, `castMemberId` names it and `characterId` is null.",
 	}),
 	/**
 	 * 🚧 Pictures were offered to a card's **gallery** by
@@ -741,6 +743,8 @@ export const CORE_EVENTS = {
 	 * About a CARD, not a session: no session row is written, and the payload
 	 * names the character and each picture placed (`offered: [{ mediaId,
 	 * key }]`). Nothing was chosen: the avatar and likeness are untouched.
+	 * The payload also carries 🚧 `castMemberId` — set when the pictures went
+	 * to a cast member, and then `characterId` is null.
 	 * @ruling DESIGN-image-generation §6.2
 	 */
 	mediaOffered: defineEvent({
@@ -753,7 +757,7 @@ export const CORE_EVENTS = {
 		causedBy: ['core:outlet/offer-media'],
 		payload: S.json,
 		description:
-			"Pictures were added to a card's gallery to choose from. The payload carries the character and each picture placed, with the series key it was drawn for.",
+			"Pictures were added to a card's gallery to choose from. The payload carries the character and each picture placed, with the series key it was drawn for. When the pictures went to a cast member, `castMemberId` names it and `characterId` is null.",
 	}),
 	/**
 	 * Not a write's event: the marker the `sessionChanges` list ends with when
@@ -1445,6 +1449,8 @@ export interface SessionChangePayload {
 	turnsBy?: Record<string, number>
 	/** 🚧 `round-ended`: who spoke in the round, in order of first turn — `narrator` for the pipeline's own voice (R52). */
 	speakers?: string[]
+	/** 🚧 `turn-ended`, when the genre declares `shape.turnSeatChanges: true`: the seats added, removed or changed since the previous turn of this lane; empty when none. */
+	turnSeatChanges?: TurnSeatChange[]
 	/** 🚧 `scene-opened` · `scene-closed`: the scene. */
 	sceneId?: number
 	/** 🚧 `story-clock-moved`: where the story clock stood and where it stands now (`StoryTime`). */
@@ -1458,9 +1464,31 @@ export interface SessionChangePayload {
 }
 
 /**
+ * 🚧 One seat that changed since the previous turn of its lane, as `turn-ended` carries it in
+ * `turnSeatChanges` when the session's genre declares `shape.turnSeatChanges: true` (owner 2026-11-09).
+ * The host builds it from the seat writer's announcements (`member-added`, `member-removed`,
+ * `cast-changed`), netted per seat: a seat that joined and left inside the turn is absent.
+ * ⚠ Not `CastChangePayload` (one event as it happened), and not the host's own `SeatChange`
+ * (what one seat-writer call did).
+ * @experimental
+ */
+export interface TurnSeatChange {
+	/** The seat as a participant reference in member form (`seated-member:<id>`, `player-seat:<id>`): pass it on, never parse it. */
+	ref: string
+	/** Which kind of seat it is: a character seat or a player seat. */
+	seatKind: 'character' | 'player'
+	/** The cast member in the seat; null when the seat names none. */
+	castMemberId: number | null
+	/** `added`: the seat joined; `removed`: it left; `changed`: it stayed but was switched on or off, or who portrays it moved (a reorder is not a change). */
+	change: 'added' | 'removed' | 'changed'
+}
+
+/**
  * The payload of `core:event/cast-changed@1` (`core:shape/cast-change@1`):
  * one seated participant's row moved. `ref` is the participant reference
- * (`character:<id>` · `persona:<id>` · `envoy:<slug>`); `change` says which
+ * of the seat: ⏳ `character:<id>` (a seat by its card, until the flip),
+ * 🚧 `seated-member:<id>` (by its cast member), `player-seat:<id>` or
+ * `envoy:<slug>`; `change` says which
  * column, open so a host may name one this release does not. `'enabled'` is
  * the seat switched on or off (`value` is the new boolean; renamed from
  * `'active'` 2026-09-28).
@@ -1477,7 +1505,7 @@ export interface CastChangePayload {
 	at: number
 	cause?: EventCause
 	lineage?: RunLineage
-	/** character:<id> | persona:<id> | envoy:<slug> */
+	/** The seat's participant reference: ⏳ character:<id> | 🚧 seated-member:<id> | player-seat:<id> | envoy:<slug> */
 	ref: string
 	change: 'enabled' | 'position' | 'portrayal' | 'added' | 'removed' | (string & {})
 	value?: unknown

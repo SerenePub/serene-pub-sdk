@@ -104,8 +104,8 @@ describe('the Stats widget draws ties (screen 2)', () => {
 		try {
 			const row = '[data-widget-part~="stats.tie"][data-tie-towards="player-seat:1"]'
 			assert.ok(view.query(row))
-			assert.equal(view.query(`${row} [data-widget-part~="stats.tie-show"]`), null)
-			assert.equal(view.query(`${row} [data-widget-part~="stats.tie-number"]`), null)
+			assert.equal(view.query(`${row} [data-widget-part~="stats.tie-show"]`) === null, true)
+			assert.equal(view.query(`${row} [data-widget-part~="stats.tie-number"]`) === null, true)
 			assert.equal(text(view.query(`${row} [data-widget-part~="stats.tie-other-words"]`)), 'wary · affection 2 of 10')
 			assert.equal(text(view.query(`${row} [data-widget-part~="stats.tie-other-note"]`)), 'Wren showed their side.')
 		} finally {

@@ -27,6 +27,8 @@ export interface RewindPressState {
 	disabled: boolean
 	/** Why, when it is grey. */
 	reason?: string
+	/** Back's alone, when it may be pressed: what it takes, in words — "your line and 3 replies (Ash, Birch)" · "2 lines and 3 replies (Ash, Birch)" · "the newest message (Ash)". */
+	takes?: string
 }
 
 /** What the strip and the composer's note draw. @experimental */
@@ -50,6 +52,23 @@ export interface RewindStripState {
 /** "1 turn ahead" · "2 turns ahead". @experimental */
 export const turnsAheadText = (n: number): string => (n > 0 ? `${n} ${n === 1 ? 'turn' : 'turns'} ahead` : '')
 
+/** "your line and 3 replies (Ash, Birch)" · "2 lines and 3 replies (Ash, Birch)" · "2 lines" · "the newest message (Ash)" · "the newest message (Ash) and 1 line filed on it" · "your line". */
+const backTakesText = (t: NonNullable<ConversationRewindV1['backTakes']>): string => {
+	const whole = (v: number | undefined): number => Math.max(0, Math.trunc(v ?? 0) || 0)
+	const m = t.newestMessage
+	if (m) {
+		const filed = whole(m.filed)
+		const head = m.yours ? 'your line' : `the newest message${m.author ? ` (${m.author})` : ''}`
+		return filed > 0 ? `${head} and ${filed} ${filed === 1 ? 'line' : 'lines'} filed on it` : head
+	}
+	const lines = whole(t.personLines)
+	const head = lines >= 2 ? `${lines} lines` : 'your line'
+	const n = whole(t.count)
+	if (n === 0) return head
+	const names = t.names.length ? ` (${t.names.join(', ')})` : ''
+	return `${head} and ${n} ${n === 1 ? 'reply' : 'replies'}${names}`
+}
+
 /**
  * The strip's state. `story`: this copy shows the story's lane (the primary
  * log, or one pinned to `main`) — Back and Forward act there alone.
@@ -71,9 +90,11 @@ export function rewindStripState(input: {
 				: (serverReason ?? undefined)
 		return reason ? { disabled: true, reason } : { disabled: false }
 	}
+	const back = press(r?.back)
+	if (!back.disabled && r?.backTakes) back.takes = backTakesText(r.backTakes)
 	return {
 		shown: !!r && input.story && input.isOwner,
-		back: press(r?.back),
+		back,
 		forward: press(r?.forward),
 		ahead,
 		aheadText: turnsAheadText(ahead),

@@ -74,7 +74,10 @@ describe('advance — by a declared calendar', () => {
 	})
 
 	test('refused when the clock lacks the part the unit counts', () => {
-		assert.match(advanceStoryTime({ year: 3 }, 1, 'days', THAW).problem!, /no day/)
+		assert.equal(
+			advanceStoryTime({ year: 3 }, 1, 'days', THAW).problem,
+			"The clock has no day at Year 3, so it can't count days.",
+		)
 		assert.match(advanceStoryTime({ year: 3 }, 1, 'months', THAW).problem!, /no month/)
 	})
 
@@ -119,7 +122,14 @@ describe('advance — free-form, the smallest-part rule', () => {
 	test('refused when it would land before day or month 1, or carry with no day', () => {
 		assert.ok(advanceStoryTime({ year: 3, month: 1, day: 2 }, -2, 'days').problem)
 		assert.ok(advanceStoryTime({ year: 3, month: 1 }, -1, 'months').problem)
-		assert.match(advanceStoryTime({ year: 3, hour: 23, minute: 0 }, 2, 'hours').problem!, /no day/)
+		assert.equal(
+			advanceStoryTime({ year: 3, hour: 23, minute: 0 }, 2, 'hours').problem,
+			"The clock has no date at Year 3, 23:00, so it can't run past midnight.",
+		)
+		assert.equal(
+			advanceStoryTime({ year: 1, hour: 23, minute: 0 }, 1, 'hours').problem,
+			"The clock has no date at Year 1, 23:00, so it can't run past midnight.",
+		)
 		// Within the day is fine with no day at all.
 		assert.deepEqual(advanceStoryTime({ year: 3, hour: 20, minute: 0 }, 2, 'hours'), {
 			time: { year: 3, hour: 22, minute: 0 },

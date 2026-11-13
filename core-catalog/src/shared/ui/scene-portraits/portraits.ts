@@ -35,6 +35,15 @@ export type ScenePortraitsSource = 'pinned' | 'scene'
 export type ScenePortraitsWho = 'scene' | 'recent' | 'pick'
 
 /**
+ * 🚧 WHAT KIND of member `scene` and `recent` show (lay-B D13, 2026-11-05):
+ * `both` — the characters and, with `persona`, the viewer's own persona, as
+ * it has always been; `characters` — no persona at all; `personas` — every
+ * visible persona that spoke, any player's. `pick` ignores it.
+ * @experimental
+ */
+export type ScenePortraitsWhoKind = 'characters' | 'personas' | 'both'
+
+/**
  * WHICH picture each face shows (W6): `avatar` — the character's picture;
  * `sprite` — its current sprite, the one on the newest line it spoke
  * (DESIGN-sprites §7), else its avatar; `chosen` — the **chosen image**
@@ -57,16 +66,21 @@ export interface ScenePortraitsSettings {
 	who: ScenePortraitsWho
 	/** With `who: recent`: how many of the latest speakers, 1–20. */
 	recentTurns: number
-	/** With `who: pick`: one member per line — a name as the session shows it, or a `character:<id>`. */
+	/** With `who: pick`: one member per line — a name as the session shows it, or a `seated-member:<id>` 🚧 (⏳ `character:<id>` is still read until S5). */
 	pickMembers: string[]
+	/** 🚧 With `who: scene` or `recent`: characters, personas or both (D13). */
+	whoKind: ScenePortraitsWhoKind
 	face: ScenePortraitsFace
 	/**
 	 * With `face: chosen`: each member's **chosen image**, one
-	 * `character:<id>=<image ref>` pair per entry (the settings language has
-	 * no map). The first pair for a member wins.
+	 * `seated-member:<id>=<image ref>` pair per entry 🚧 (⏳ `character:<id>=`
+	 * is still read until S5; the settings language has no map). The first
+	 * pair for a member wins.
 	 */
 	chosenImages: string[]
 	arrangement: ScenePortraitsArrangement
+	/** 🚧 Dim every face but the one who wrote the line shown (`characters.v1.speakerRef`); off by default. */
+	speakerFocus: boolean
 	/** Put the viewer's own persona beside the cast (`scene` and `recent`). */
 	persona: boolean
 	/**
@@ -100,9 +114,11 @@ export const SCENE_PORTRAITS_DEFAULTS: ScenePortraitsSettings = Object.freeze({
 	who: 'scene',
 	recentTurns: 3,
 	pickMembers: Object.freeze([]) as unknown as string[],
+	whoKind: 'both',
 	face: 'sprite',
 	chosenImages: Object.freeze([]) as unknown as string[],
 	arrangement: 'grid',
+	speakerFocus: false,
 	persona: false,
 	playerSeats: false,
 	metPeople: false,
@@ -114,6 +130,7 @@ export const SCENE_PORTRAITS_DEFAULTS: ScenePortraitsSettings = Object.freeze({
 export const SCENE_PORTRAITS_RECENT_MAX = 20
 
 const WHO: readonly ScenePortraitsWho[] = ['scene', 'recent', 'pick']
+const WHO_KIND: readonly ScenePortraitsWhoKind[] = ['characters', 'personas', 'both']
 const FACE: readonly ScenePortraitsFace[] = ['avatar', 'sprite', 'chosen']
 const ARRANGEMENT: readonly ScenePortraitsArrangement[] = ['row', 'grid', 'column', 'stage']
 const BARS_FOR: readonly ScenePortraitsBarsFor[] = ['everyone', 'seats']
@@ -150,6 +167,7 @@ export function readScenePortraitsSettings(
 		who: oneOf(WHO, v.who) ? v.who : pinned ? 'pick' : d.who,
 		recentTurns: n >= 1 && n <= SCENE_PORTRAITS_RECENT_MAX ? n : d.recentTurns,
 		pickMembers: lines(v.pickMembers),
+		whoKind: oneOf(WHO_KIND, v.whoKind) ? v.whoKind : d.whoKind,
 		face: oneOf(FACE, v.face)
 			? v.face
 			: pinned
@@ -163,6 +181,7 @@ export function readScenePortraitsSettings(
 			: pinned
 				? 'stage'
 				: d.arrangement,
+		speakerFocus: typeof v.speakerFocus === 'boolean' ? v.speakerFocus : d.speakerFocus,
 		persona: typeof v.persona === 'boolean' ? v.persona : d.persona,
 		playerSeats: typeof v.playerSeats === 'boolean' ? v.playerSeats : d.playerSeats,
 		metPeople: typeof v.metPeople === 'boolean' ? v.metPeople : d.metPeople,
@@ -173,13 +192,13 @@ export function readScenePortraitsSettings(
 
 /* ── chosen images ────────────────────────────────────────────────────── */
 
-/** One `chosenImages` entry: `character:<id>=<image ref>`. @experimental */
+/** One `chosenImages` entry: `seated-member:<id>=<image ref>` 🚧 (⏳ `character:<id>=<image ref>` is still read). @experimental */
 export const chosenImagePair = (member: string, image: string): string => `${member}=${image}`
 
 /**
- * Each member's chosen image ref, by member ref (`character:<id>`), from
- * the `chosenImages` entries — the first entry for a member wins, and an
- * entry that is not `character:<id>=<ref>` is skipped.
+ * Each member's chosen image ref, by member ref (🚧 `seated-member:<id>`;
+ * ⏳ `character:<id>`, rekeyed in S4), from the `chosenImages` entries — the
+ * first entry for a member wins, and an entry keyed any other way is skipped.
  * @experimental
  */
 export function chosenImagesOf(entries: readonly string[]): Map<string, string> {
@@ -189,7 +208,7 @@ export function chosenImagesOf(entries: readonly string[]): Map<string, string> 
 		if (at < 0) continue
 		const member = entry.slice(0, at).trim()
 		const image = entry.slice(at + 1).trim()
-		if (!/^character:\d+$/.test(member) || !image || out.has(member)) continue
+		if (!/^(?:character|seated-member):\d+$/.test(member) || !image || out.has(member)) continue
 		out.set(member, image)
 	}
 	return out
@@ -216,9 +235,13 @@ export function withChosenImage(
 
 /**
  * The members the widget shows, in the order it draws them (`who`), before
- * the arrangement cuts a stage to two. Never a benched character. A
- * persona appears in `scene` and `recent` only as the viewer's own (`mine`,
- * R77) and only with `persona` on; `pick` shows whomever it names.
+ * the arrangement cuts a stage to two. Never a benched character. With
+ * `whoKind: both` (the default) a persona appears in `scene` and `recent` only
+ * as the viewer's own (`mine`, R77) and only with `persona` on; `characters`
+ * shows no persona even then; `personas` (🚧 D13) shows every visible persona
+ * of any player — under `scene` only those that have spoken, under `recent`
+ * ranked as ever — and ignores `persona`. `pick` shows whomever it names and
+ * ignores `whoKind`. `sceneFiguresOf` is untouched by `whoKind`.
  * @experimental
  */
 export function scenePortraitMembersOf(
@@ -231,23 +254,43 @@ export function scenePortraitMembersOf(
 		for (const line of settings.pickMembers) {
 			const wanted = line.toLowerCase()
 			for (const m of members)
-				if ((m.ref === line || m.name.trim().toLowerCase() === wanted) && !out.includes(m))
+				if (
+					(m.ref === line ||
+						// 🚧 A member named by its cast member, whatever form its own `ref` takes yet.
+						(m.castMemberId != null && line === `seated-member:${m.castMemberId}`) ||
+						// ⏳ A line naming the card (`character:<cardId>`), until S5.
+						(m.cardId != null && line === `character:${m.cardId}`) ||
+						m.name.trim().toLowerCase() === wanted) &&
+					!out.includes(m)
+				)
 					out.push(m)
 		}
 		return out
 	}
+	if (settings.whoKind === 'personas') {
+		const personas = members.filter((m) => m.isPersona)
+		if (settings.who === 'scene') return personas.filter((m) => m.lastSpokeAt != null)
+		return rankRecent(personas, settings.recentTurns)
+	}
 	const cast = members.filter((m) => !m.isPersona)
 	// 🚧 With every player seat shown (`sceneFiguresOf`), the viewer's own is one of them.
 	const seatsShown = settings.playerSeats && settings.who === 'scene'
-	const mine = settings.persona && !seatsShown ? members.find((m) => m.isPersona && m.mine) : undefined
+	const mine =
+		settings.whoKind !== 'characters' && settings.persona && !seatsShown
+			? members.find((m) => m.isPersona && m.mine)
+			: undefined
 	const shown = mine ? [...cast, mine] : cast
 	if (settings.who === 'scene') return shown
-	// recent: whoever spoke last first; a member that has spoken nothing is not recent.
+	return rankRecent(shown, settings.recentTurns)
+}
+
+/** recent: whoever spoke last first; a member that has spoken nothing is not recent. */
+function rankRecent(shown: SessionCharacterV1[], limit: number): SessionCharacterV1[] {
 	return shown
 		.map((m, at) => ({ m, at, when: m.lastSpokeAt ?? null }))
 		.filter((x): x is { m: SessionCharacterV1; at: number; when: number } => x.when !== null)
 		.sort((a, b) => b.when - a.when || a.at - b.at)
-		.slice(0, settings.recentTurns)
+		.slice(0, limit)
 		.map((x) => x.m)
 }
 
@@ -261,7 +304,7 @@ export function scenePortraitMembersOf(
  * @experimental
  */
 export interface SceneFigure {
-	/** The owner's state key (`player_seat:4`, `12`), or `met:<entryId>` for a person met. */
+	/** The owner's state key — opaque, never built or parsed: read it off the owner (`player_seat:4`, 🚧 `seated_member:7` from the flip, ⏳ the card id `12` before it) — or `met:<entryId>` for a person met. */
 	key: string
 	kind: 'player-seat' | 'met'
 	name: string
@@ -291,7 +334,9 @@ export function sceneFiguresOf(
 	const taken = (name: string) => drawn.some((n) => sameName(n, name)) || out.some((f) => sameName(f.name, name))
 	if (settings.playerSeats) {
 		const seated = state.owners.filter(
-			(o) => (o.kind === 'session_cast' || o.kind === 'player_seat') && (o.seat === true || o.kind === 'player_seat'),
+			(o) =>
+				(o.kind === 'session_cast' || o.kind === 'seated_member' || o.kind === 'player_seat') &&
+				(o.seat === true || o.kind === 'player_seat'),
 		)
 		for (const o of [...seated.filter((o) => o.mine), ...seated.filter((o) => !o.mine)])
 			if (!taken(o.label))
@@ -306,9 +351,14 @@ export function sceneFiguresOf(
 
 /** One face the widget draws. @experimental */
 export interface ScenePortrait {
-	/** `character:<id>` — a persona's too. */
+	/** The member's `ref` — a persona's too. */
 	key: SessionCharacterV1['ref']
+	/** ⏳ The card id, removed in S5 — read `cardId` / `castMemberId`. */
 	characterId: number
+	/** 🚧 The seat's cast member, when the host fills it; null otherwise. */
+	castMemberId: number | null
+	/** 🚧 The member's active card, when the host fills it; null otherwise (a card-less member, or a host before S3). */
+	cardId: number | null
 	isPersona: boolean
 	name: string
 	/**
@@ -332,19 +382,45 @@ export interface ScenePortrait {
 	 * server's rule), sprites are shown, and there is more than one set.
 	 */
 	offersSpriteSets: boolean
+	/** 🚧 This member wrote the line the page shows: `characters.v1.speakerRef` is its `ref`. */
+	speaking: boolean
 }
 
 /**
- * The state owner a cast member's values are filed under, by character id —
- * the cast owner whose id is the character's. Null when the session has no
- * state for it.
+ * The state owner a cast member's values are filed under. 🚧 With `member`
+ * (its `ref` and/or `castMemberId`, as `characters.v1` fills them) the cast
+ * owner carrying the same `ref` or `castMemberId` — a `player_seat` owner
+ * only by its `ref` (a member that holds a character seat and a player seat
+ * shares one `castMemberId`, so matching a player seat by it would hand the
+ * character the seat's stats); ⏳ else, the cast owner
+ * whose id is the card's `characterId` — and only an owner that carries no
+ * `ref` of its own, since a card id and a cast member id share one range and
+ * an owner that names itself is somebody. Null when the session has no state
+ * for it.
  * @experimental
  */
 export function stateOwnerKeyOf(
 	state: SessionStateV1 | undefined,
 	characterId: number,
+	member?: { ref?: string | null; castMemberId?: number | null },
 ): string | null {
-	return state?.owners.find((o) => o.kind === 'session_cast' && o.id === characterId)?.key ?? null
+	const owners = state?.owners ?? []
+	if (member) {
+		const { ref, castMemberId } = member
+		const hit = owners.find(
+			(o) =>
+				(ref != null &&
+					o.ref === ref &&
+					(o.kind === 'session_cast' ||
+						o.kind === 'seated_member' ||
+						o.kind === 'player_seat')) ||
+				(castMemberId != null &&
+					o.castMemberId === castMemberId &&
+					(o.kind === 'session_cast' || o.kind === 'seated_member')),
+		)
+		if (hit) return hit.key
+	}
+	return owners.find((o) => o.kind === 'session_cast' && o.ref == null && o.id === characterId)?.key ?? null
 }
 
 /**
@@ -367,12 +443,20 @@ export function scenePortraitsOf(
 		return {
 			key: m.ref,
 			characterId: m.characterId,
+			castMemberId: m.castMemberId ?? null,
+			cardId: m.cardId ?? null,
 			isPersona: m.isPersona,
 			name: m.name,
 			src: sprite ?? m.face,
-			chosenRef: chosen?.get(m.ref) ?? null,
+			// The line under the member's `ref`; 🚧 else under its cast member (S4 rekeys stored lines).
+			chosenRef:
+				chosen?.get(m.ref) ??
+				(m.castMemberId != null ? chosen?.get(`seated-member:${m.castMemberId}`) : undefined) ??
+				// ⏳ A line stored before the flip, under the card (`character:<cardId>`); until S5.
+				(m.cardId != null ? chosen?.get(`character:${m.cardId}`) : undefined) ??
+				null,
 			rank: settings.who === 'recent' ? at + 1 : null,
-			ownerKey: m.isPersona ? null : stateOwnerKeyOf(state, m.characterId),
+			ownerKey: m.isPersona ? null : stateOwnerKeyOf(state, m.characterId, m),
 			spriteSets: m.isPersona ? [] : m.spriteSets,
 			spriteSetOverride: m.isPersona ? null : (m.spriteSetOverride ?? null),
 			offersSpriteSets:
@@ -380,6 +464,7 @@ export function scenePortraitsOf(
 				settings.face === 'sprite' &&
 				m.canChangeSpriteSet &&
 				m.spriteSets.length > 1,
+			speaking: typeof characters?.speakerRef === 'string' && characters.speakerRef !== '' && characters.speakerRef === m.ref,
 		}
 	})
 }
@@ -420,10 +505,20 @@ export function pinnedPortraitsOf(
 	return (['left', 'right'] as const).map((side) => {
 		const pin = characters?.sceneImages[side] ?? null
 		const id = characterIdOf(pin?.ref)
+		// The owner carrying the pin's `ref` first; ⏳ the card parsed out of it only for an owner with no `ref`.
+		const byRef = pin?.ref
+			? state?.owners.find(
+					(o) =>
+						(o.kind === 'session_cast' ||
+							o.kind === 'seated_member' ||
+							o.kind === 'player_seat') &&
+						o.ref === pin.ref,
+				)
+			: undefined
 		return {
 			side,
 			src: pin?.src ?? null,
-			ownerKey: id == null ? null : stateOwnerKeyOf(state, id),
+			ownerKey: byRef?.key ?? (id == null ? null : stateOwnerKeyOf(state, id)),
 		}
 	})
 }

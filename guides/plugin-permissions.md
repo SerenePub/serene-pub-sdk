@@ -31,7 +31,7 @@ A node that reads. Yours reads your plugin's own storage; Serene Pub's data reac
 - Handed: `random`, `now`, `log`, `storage`, `package`, `annex`, `signal`.
 - Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`).
-- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject.
+- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject.
 - No network.
 
 ## Kind: oracle
@@ -41,7 +41,7 @@ The one node kind that calls out: the network, through the hosts your plugin dec
 - Handed: `random`, `now`, `log`, `storage`, `package`, `annex`, `fetch`, `signal`.
 - Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`).
-- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject.
+- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject.
 - Network: only the hosts your plugin declares (`permissions.network.hosts`) and an admin left allowed.
 
 ## Kind: outlet
@@ -51,7 +51,7 @@ A node that writes. Yours declares `effects: 'emit'`: it writes your own storage
 - Handed: `random`, `now`, `log`, `storage`, `package`, `annex`, `signal`.
 - Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`).
-- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject.
+- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject.
 - No network.
 
 ## Kind: chain-link
@@ -71,7 +71,7 @@ An event listener: runs when a session event happens.
 - Handed: `random`, `now`, `log`, `storage`, `package`, `annex`, `signal`.
 - Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`).
-- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject.
+- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject.
 - No network.
 
 ## Kind: lifecycle
@@ -81,7 +81,7 @@ A lifecycle callback: runs at startup, enable, disable, update, uninstall or shu
 - Handed: `random`, `now`, `log`, `storage`, `package`, `annex`, `signal`.
 - Storage: your plugin's own files, when it asks for storage (`permissions.storage`).
 - Package files: read-only, the files your plugin ships under `assets: { dir }` (`ctx.package.read`).
-- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and a person is acting for the call; otherwise its methods reject.
+- The person's saved data: `ctx.annex('user')`, when your plugin holds `applet:annex:user` and your own applet is open (a person's request or press in its mounted frame caused the call); an event or lifecycle hook, the schedule tick and a routine run find it closed, and its methods reject.
 - No network.
 
 ## Permission groups

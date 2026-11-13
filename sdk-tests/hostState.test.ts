@@ -61,7 +61,8 @@ describe('host state', () => {
 		assert.ok(!hostStateFor(cat.dungeonCrawlerGenre).some((d) => d.slot === 'core:slot/inventory@1'), 'the crawl carries the rules’ pieces, never the list')
 		assert.deepEqual(hostStateFor('core:genre/chat'), [])
 		const crawl = hostStateFor(cat.dungeonCrawlerGenre)
-		assert.equal(crawl.find((d) => d.slot === 'core:slot/crawl-time@1')?.role, 'time')
+		assert.ok(!crawl.some((d) => d.role === 'time'), 'the crawl’s time is the session’s story clock since 2026-11-10')
+		assert.equal(cat.crawlTimeSlot.id, 'core:slot/crawl-time@1', 'the slot stays registered so older rows display')
 		assert.ok(!crawl.some((d) => d.slot === 'core:slot/hp@1'), 'health is the rules’, never the host’s')
 	})
 

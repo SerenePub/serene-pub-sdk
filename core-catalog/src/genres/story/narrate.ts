@@ -313,6 +313,15 @@ export const narrateSpec = () =>
 					params: slot.params(),
 				}),
 			)
+			// 🚧 The summaries of earlier scenes whose lines left the window;
+			// `prompt` decides which show and fits them.
+			.query('earlierScenes', ($) =>
+				C.earlierScenes.v1({
+					scope: $.input.sessionScope,
+					budget: $.contextBudget.available,
+					params: slot.params(),
+				}),
+			)
 			// 🚧 The files those rows show (PLAN-composer-attachments §3.5).
 			.query('attachments', ($) =>
 				C.historyAttachments.v1({
@@ -588,6 +597,7 @@ export const narrateSpec = () =>
 					// allocation on the receipt describes the window this
 					// prompt is going to. It read 0 while nothing supplied it.
 					budget: $.contextBudget.available,
+					earlierScenes: $.earlierScenes.main,
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),

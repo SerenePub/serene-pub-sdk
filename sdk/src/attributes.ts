@@ -712,8 +712,8 @@ export interface AttributeSlotProps {
 	appliesTo: readonly SlotAppliesTo[]
 	/**
 	 * 🚧 **What its values survive** (M0, SHAPES F1): `session` — they
-	 * die with the session (its session layer: `session`, `session_cast`,
-	 * `player_seat`, `session_location`); `world` — they live on the book,
+	 * die with the session (its session layer: `session`, 🚧 `seated_member`, ⏳
+	 * `session_cast`, `player_seat`, `session_location`); `world` — they live on the book,
 	 * dated on its timeline (`lorebook`, `cast_member`, `location`). Absent:
 	 * `session`. A ruleset attribute's `scope` lands here. The player's own
 	 * (`owner: 'player'` on a ruleset attribute) is a `cast` slot read on the
@@ -1972,7 +1972,7 @@ export function applyListOp(
  * Whether a slot may attach to this kind of owner.
  *
  * The owner *kinds* the host stores (`card`, `cast_member`, `lorebook`,
- * `session`, `session_cast`, `location`, `session_location`) collapse to the
+ * `session`, 🚧 `seated_member`, ⏳ `session_cast`, `location`, `session_location`) collapse to the
  * three a declaration talks about: a lorebook and a session are the **world**,
  * a location entry and its session layer are a **location**, everything that
  * is somebody is the **cast**. A declaration should not have to know the

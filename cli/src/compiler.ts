@@ -26,11 +26,12 @@
  * every reader it has reads that.
  */
 
-import type { AnnexFieldDecl, Extension, Descriptor, I18n, PanelV1, RulesetDocument, SessionLayoutV1, SettingsSchema, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
+import type { AnnexFieldDecl, Extension, FieldDecl, Descriptor, I18n, RulesetDocument, SessionLayoutV1, SettingsSchema, VariableDecl, WidgetDecl } from '@serene-pub/sdk'
 import type { SpecDocument } from '@serene-pub/sdk'
 import {
 	compile,
 	declarationFindings,
+	appletCardFindings,
 	i18nFindings,
 	isI18n,
 	listShapes,
@@ -63,7 +64,7 @@ import type {
 } from '@serene-pub/sdk'
 import type { ManifestInput } from './sandbox.js'
 import { summarizeDefinition, type DefinitionSummary } from './codegen.js'
-import { pluginRuleRef, permissionGroupsRef, LIFECYCLE_MOMENTS, parseRulesetId, rulesetDocumentFindings, settingsSchemaFindings, lorebookFileFindings } from '@serene-pub/sdk'
+import { declaredNodeParams, pluginRuleRef, permissionGroupsRef, LIFECYCLE_MOMENTS, parseRulesetId, rulesetDocumentFindings, settingsSchemaFindings, undescribedSettingParts, lorebookFileFindings } from '@serene-pub/sdk'
 import { hookBindingsFor, type HookDeclLike } from './pluginHooks.js'
 
 // ── Findings ────────────────────────────────────────────────────────────────
@@ -340,6 +341,8 @@ export interface Manifest {
 	assets?: { dir: string }
 	/** 🚧 Lorebook files the app imports for this package (M2c), package-relative paths under `assets.dir`. Omitted when none. @experimental */
 	provides?: { lorebooks: string[] }
+	/** 🚧 The applet card (M2d): `poster` / `logo` package-relative paths under `assets.dir`, `blurb` one line of at most 160 characters. Omitted when none. @experimental */
+	appletCard?: { poster?: string; logo?: string; blurb?: I18n }
 	/** 🚧 Ruleset documents this package ships, published as rows at install (M0). Omitted when none. @experimental */
 	rulesets?: RulesetDocument[]
 	/** 🚧 Actions outside a session, by name; `handler` is a query/outlet definition id of this package (M0). Omitted when none. @experimental */
@@ -1184,6 +1187,11 @@ export interface CompileInput {
 	 * `frameDocuments` — nothing in this file touches a filesystem.
 	 */
 	providedFiles?: Array<{ path: string; text?: string }>
+	/**
+	 * 🚧 (M2d) The `appletCard` picture paths (`poster`, `logo`) that exist in the
+	 * package — existence only, the files are binary and never read here.
+	 */
+	appletCardFiles?: string[]
 }
 
 /**
@@ -1389,6 +1397,14 @@ export function compilePlugin(input: CompileInput): CompileResult {
 					add('E_PROVIDES_INVALID', `provided lorebook '${path}': ${f.slice(0, 3).join(' ')}${f.length > 3 ? ` (and ${f.length - 3} more)` : ''}`, `fix the file so Lorebooks › Import takes it — export it from Serene Pub rather than writing it by hand`)
 			}
 		}
+		// 🚧 (M2d) The applet card: pictures under assets.dir and present, a short blurb, an applet to show it for.
+		for (const f of appletCardFindings(
+			e.appletCard,
+			e.assets?.dir,
+			(path) => (input.appletCardFiles ?? []).includes(path),
+			(e.genres ?? []).some((g) => (g.shape as { applet?: unknown } | undefined)?.applet === true),
+		))
+			add(f.code, f.message, f.fix)
 		for (const doc of e.rulesets ?? []) {
 			const id = String((doc as { id?: unknown })?.id)
 			const owner = parseRulesetId(id)?.owner
@@ -1625,6 +1641,26 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		}
 	}
 
+	// Scenes first (owner, 2026-11-10): a pipeline that files a history entry directly is warned —
+	// history is compiled from scenes. A summarize-request pipeline is exempt: its save is previewed.
+	for (const d of documents) {
+		if (d.nodes.some((n) => n.definitionId === 'core:inlet/summarize-request')) continue
+		for (const n of d.nodes) {
+			if (n.definitionId !== 'core:outlet/create-lore-entry') continue
+			const t = declaredNodeParams(d, n.key).entryType
+			if (typeof t !== 'string' || t.replace(/@\d+$/, '') !== 'core:entry/history') continue
+			const at = locate(input.sources, d.id)
+			findings.push({
+				severity: 'warning',
+				file: at.file,
+				line: at.line,
+				code: 'W_WRITES_HISTORY',
+				message: `pipeline '${d.id}' node '${n.key}' writes history entries directly — history is compiled from scenes`,
+				fix: `write the event as a scene note (note-scene@1) or a story line; Compile files it under the day's entry`,
+			})
+		}
+	}
+
 	// What the package declares rather than implements (D-1). `defineExtension`
 	// already refused these where the author is; repeated here because the
 	// evaluated extension may have been built against an older SDK, exactly as the
@@ -1745,6 +1781,34 @@ export function compilePlugin(input: CompileInput): CompileResult {
 				`set the genre's shape.view to '${e.slug}' and declare surfaces: { 'session-view': { entry, title } } — ` +
 				`the title is the row's name under Apps — or drop applet: true`,
 		})
+	}
+	// 🚧 P5: a setting a non-admin can see, without its purpose (`description`), group and — for a genre
+	// field — reach, lands under Advanced. A warning only; nothing here moves a field.
+	const undescribed = (id: string, what: string, missing: string[]) => {
+		const at = locate(input.sources, id)
+		findings.push({
+			severity: 'warning',
+			file: at.file,
+			line: at.line,
+			code: 'W_SETTING_UNDESCRIBED',
+			message: `${what} has no ${missing.join(' or ')} — a user-facing setting without purpose, group and reach lands under Advanced`,
+			fix:
+				`add ${missing
+					.map((m) => (m === 'description' ? "description: { en: '…' } (one sentence of purpose)" : m === 'group' ? "group: '…'" : "reach: 'owner' | 'admin'"))
+					.join(', ')}`,
+		})
+	}
+	for (const g of e.genres ?? []) {
+		const fields = (g.shape as { fields?: Record<string, FieldDecl> } | undefined)?.fields ?? {}
+		for (const [key, f] of Object.entries(fields)) {
+			const missing = undescribedSettingParts(f)
+			if (missing.length) undescribed(g.id, `genre '${g.id}' field '${key}'`, missing)
+		}
+	}
+	for (const [key, f] of Object.entries((e.settings?.schema ?? {}) as Record<string, FieldDecl>)) {
+		if (f?.scope !== 'user') continue
+		const missing = undescribedSettingParts(f, { reach: false })
+		if (missing.length) undescribed(key, `plugin setting '${key}'`, missing)
 	}
 	// A shipped layout that draws, but not as written: an id placed and never
 	// drawn, two items on one cell, a widget over its `maxInstances`. Warned
@@ -1976,6 +2040,7 @@ export function compilePlugin(input: CompileInput): CompileResult {
 		// M0: each omitted when not declared, so the manifest is byte-for-byte as before.
 		...(e.assets ? { assets: { dir: e.assets.dir ?? 'assets' } } : {}),
 		...(e.provides?.lorebooks?.length ? { provides: { lorebooks: [...e.provides.lorebooks] } } : {}),
+		...(e.appletCard ? { appletCard: { ...e.appletCard } } : {}),
 		...(e.rulesets?.length ? { rulesets: [...e.rulesets] } : {}),
 		...(e.pluginActions && Object.keys(e.pluginActions).length ? { pluginActions: e.pluginActions } : {}),
 	}
@@ -1998,7 +2063,8 @@ export function compilePlugin(input: CompileInput): CompileResult {
  * A widget instance id is namespaced in its WIDGET half only: `map#north`
  * becomes `acme:map#north`, and a copy of core's widget (`messages#sanctum`)
  * is left alone. Every place a layout names an instance is rewritten the same
- * way — the `panels` slot's tabs and each panel's `open` tab, the ⏳ old
+ * way — the `panels` slot's tabs and each panel's `open` tab (version 1 and
+ * version 2 alike), the ⏳ old
  * slots (the zone lists, the grid, the arranged items and the tab-group ids
  * built from them; manifests in the wild still carry them), and the
  * `widgetSettings` and `widgetStyles` keys — so the id stays one string
@@ -2024,12 +2090,19 @@ export function genreLayouts(e: Extension): NonNullable<Manifest['layouts']> {
 	const namespaced = (layout: SessionLayoutV1): SessionLayoutV1 => {
 		const out: SessionLayoutV1 = { ...layout }
 		// Every tab is a widget instance id, and so is the tab a panel has open.
-		const panel = (p: PanelV1): PanelV1 => ({
+		const panel = <P extends { tabs: string[]; open?: string }>(p: P): P => ({
 			...p,
 			tabs: p.tabs.map(q),
 			...(p.open !== undefined ? { open: q(p.open) } : {}),
 		})
-		if (layout.panels)
+		if (layout.panels?.version === 2)
+			out.panels = {
+				...layout.panels,
+				left: layout.panels.left.map(panel),
+				middle: layout.panels.middle.map(panel),
+				right: layout.panels.right.map(panel),
+			}
+		else if (layout.panels)
 			out.panels = {
 				...layout.panels,
 				left: layout.panels.left.map(panel),

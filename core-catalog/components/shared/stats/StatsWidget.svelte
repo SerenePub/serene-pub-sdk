@@ -23,7 +23,11 @@
 	 * the viewer last looked (a value fingerprint, `ownerSheetHash`) — over
 	 * ONE sheet. The viewer's own seat is first and chosen; which chip is
 	 * chosen, and what each sheet looked like when last seen, is the viewer's
-	 * own saved view state (`saveState`), never the layout's.
+	 * own saved view state (`saveState`), never the layout's. The sheet is
+	 * the **Characters** sheet (lay-B D13, 2026-11-05; owner ruling R5): a
+	 * portrait column (`stats.sheet-portrait` — the face, the name, the
+	 * role) then the blocks as sections (`stats.sheet-sections`); the
+	 * stylesheet lays the columns out (`data-sheet`).
 	 *
 	 * 🚧 **The sheet head's face** (§12): a cast member's or a seat's face is
 	 * a button opening the portrait picker — Choose (the pictures made in
@@ -67,6 +71,13 @@
 	 * optional attributes on and off here too (`stats.carries`,
 	 * `set-attribute-carry`). Rules that declare no attributes say so.
 	 *
+	 * 🚧 **Show hidden stats** (`stats.hidden-stats`, `show-hidden-stats`): on an AI
+	 * character seat the viewer seated, a switch that shows them what only
+	 * that character knows — its holder-only values — on their screen only.
+	 * Off by default and not kept across visits; the AI still plays the seat.
+	 * Drawn only when the owner carries `showingHiddenStats` (the host's word that
+	 * the viewer may).
+	 *
 	 * The markup carries no look: each element names what it is in
 	 * `data-widget-part` (`stats.card card`, `stats.faces`, …), the
 	 * arrangement rides on `data-arrangement`, whose on `data-owners`, a lone
@@ -80,6 +91,7 @@
 		derivedRowsOf,
 		facesOwners,
 		giveTargets,
+		handLockOf,
 		offersOf,
 		ownerSheetHash,
 		plainRefusal,
@@ -139,28 +151,6 @@
 	const OWNER_ICON: Record<StatsOwnerGroup, string> = { world: "globe", cast: "user-round", places: "map-pin" }
 	const groupLabel = (kind: StatsOwnerGroup) =>
 		kind === "world" ? t("World") : kind === "cast" ? t("Cast") : t("Places")
-
-	/** What `nothing-shown` says, by whose stats the widget draws. */
-	function nothingShown(): string {
-		switch (view.owners) {
-			case "world":
-				return t("This session's world declares no stats to show here.")
-			case "places":
-				return t("No place has a stat in play yet.")
-			case "all":
-				return t("Nothing in this session has a stat in play yet.")
-			case "pick":
-				return t("Nothing in this session matches the names in this widget's settings.")
-			case "mine":
-				return t("You have no character in this session yet. Once you play one, its sheet shows here.")
-			case "seats":
-				return t("Nobody has a character in this session yet. Each player's sheet shows here once it is made.")
-			default:
-				return t(
-					"No one in the cast has a stat in play yet. Set one on a cast member's page, or let the story change one."
-				)
-		}
-	}
 
 	const write = (owner: SessionStateOwnerV1, slotId: string) => (next: SlotWriteValue) => writer.set(owner, slotId, next)
 
@@ -223,6 +213,16 @@
 			await widget?.current.request("set-attribute-carry", { owner: { kind: owner.kind, id: owner.id }, slotId: row.slotId, carries })
 		} catch (e) {
 			carryError = { ...carryError, [key]: plainRefusal(e instanceof Error ? e.message : String(e ?? ""), t).text }
+		}
+	}
+	/** 🚧 Show hidden stats refused, by owner key: said under its switch. */
+	let hiddenStatsError = $state<Record<string, string>>({})
+	async function setShowHiddenStats(owner: SessionStateOwnerV1, on: boolean) {
+		hiddenStatsError = { ...hiddenStatsError, [owner.key]: "" }
+		try {
+			await widget?.current.request("show-hidden-stats", { owner: { kind: owner.kind, id: owner.id }, on })
+		} catch (e) {
+			hiddenStatsError = { ...hiddenStatsError, [owner.key]: plainRefusal(e instanceof Error ? e.message : String(e ?? ""), t).text }
 		}
 	}
 	/** The session's story clock, in words — the world's _when_. */
@@ -350,7 +350,7 @@
 		src: string
 		caption?: string
 	}
-	const hasFace = (o: SessionStateOwnerV1) => o.kind === "session_cast" || o.kind === "player_seat"
+	const hasFace = (o: SessionStateOwnerV1) => o.kind === "session_cast" || o.kind === "seated_member" || o.kind === "player_seat"
 	const initialOf = (label: string) => label.trim().charAt(0).toUpperCase() || "?"
 	/** Whose picker is open, by owner key. */
 	let faceFor = $state<string | null>(null)
@@ -591,6 +591,7 @@
 			{findEntries}
 			timeFormat={read.timeFormat}
 			readonly={shown.owner.editable === false}
+			handLocked={handLockOf(shown.owner, one.slot.slotId)}
 			repertoires={repertoiresFor(section, shown.owner)}
 			targets={targetsFor(shown.owner, one.slot.slotId)}
 			ongive={give(shown.owner, one.slot)}
@@ -651,9 +652,10 @@
      its name and words as chips, this side's numbers as bars where the viewer
      may see them, the other person's side as words (its numbers once shown),
      and the holder's switch that shows this side's numbers to others. -->
-{#snippet tiesBlock(owner: SessionStateOwnerV1)}
+{#snippet tiesBlock(owner: SessionStateOwnerV1, headed: boolean = false)}
 	{@const ties = tieRowsOf(owner)}
 	{#if ties.length}
+		{#if headed}<p data-widget-part="stats.ties-head label">{t("Ties")}</p>{/if}
 		<ul data-widget-part="stats.ties list" aria-label={t("Ties")}>
 			{#each ties as tie (`${tie.entryType}|${tie.towards}`)}
 				{@const key = tieKey(owner, tie)}
@@ -721,6 +723,7 @@
 					{findEntries}
 					timeFormat={read.timeFormat}
 					readonly={shown.owner.editable === false}
+					handLocked={handLockOf(shown.owner, one.slot.slotId)}
 					onset={write(shown.owner, one.slot.slotId)}
 				/>
 			{/each}
@@ -749,6 +752,7 @@
 					{findEntries}
 					timeFormat={read.timeFormat}
 					readonly={shown.owner.editable === false}
+					handLocked={handLockOf(shown.owner, one.slot.slotId)}
 					repertoires={repertoiresFor(section, shown.owner)}
 					targets={targetsFor(shown.owner, one.slot.slotId)}
 					ongive={give(shown.owner, one.slot)}
@@ -781,6 +785,7 @@
 					{findEntries}
 					timeFormat={read.timeFormat}
 					readonly={shown.owner.editable === false}
+					handLocked={handLockOf(shown.owner, one.slot.slotId)}
 					repertoires={repertoiresFor(section, shown.owner)}
 					targets={targetsFor(shown.owner, one.slot.slotId)}
 					ongive={give(shown.owner, one.slot)}
@@ -839,6 +844,39 @@
 	{/if}
 {/snippet}
 
+<!-- 🚧 Show hidden stats: the seater's switch on their own AI seat's sheet. Drawn only
+     where the host says the viewer may (`showingHiddenStats` is a boolean). -->
+{#snippet hiddenStatsBlock(owner: SessionStateOwnerV1)}
+	{#if typeof owner.showingHiddenStats === "boolean"}
+		<section data-widget-part="stats.hidden-stats" aria-label={t("Show hidden stats")}>
+			<label data-widget-part="stats.hidden-stats-switch">
+				<input type="checkbox" role="switch" checked={owner.showingHiddenStats} onchange={(e) => void setShowHiddenStats(owner, e.currentTarget.checked)} />
+				<span>{t("Show hidden stats")}</span>
+			</label>
+			<p data-widget-part="stats.hidden-stats-help">{t("Stats only {name} knows, on your screen only. The AI still plays {name}.").replaceAll("{name}", owner.label)}</p>
+			{#if hiddenStatsError[owner.key]}<p data-widget-part="stats.hidden-stats-error" role="alert">{hiddenStatsError[owner.key]}</p>{/if}
+		</section>
+	{/if}
+{/snippet}
+
+<!-- The blocks of one owner's sheet, in the order a card draws them. A faces
+     sheet (`sheet`) sets the ties under a visible head. -->
+{#snippet sheetBlocks(shown: StatsShownOwner, sheet: boolean)}
+	{@render offersBlock(shown.owner)}
+	{@render whereBlock(shown, view.density)}
+	{#if shown.slots.length}
+		<div data-widget-part="stats.card-body list" data-density={view.density}>
+			{@render slotsOf(shown, view.density)}
+		</div>
+	{/if}
+	{@render toolsBlock(shown, view.density)}
+	{@render carriedBlock(shown, view.density)}
+	{@render zonesBlock(shown.zones)}
+	{@render tiesBlock(shown.owner, sheet)}
+	{@render carriesBlock(shown.owner)}
+	{@render hiddenStatsBlock(shown.owner)}
+{/snippet}
+
 {#snippet cardOf(shown: StatsShownOwner)}
 	<section
 		data-widget-part="stats.card card"
@@ -850,25 +888,29 @@
 			{@render faceOf(shown.owner, shown.group)}
 			<span data-widget-part="stats.card-name">{shown.owner.label}</span>
 		</header>
-		{@render offersBlock(shown.owner)}
-		{@render whereBlock(shown, view.density)}
-		{#if shown.slots.length}
-			<div data-widget-part="stats.card-body list" data-density={view.density}>
-				{@render slotsOf(shown, view.density)}
-			</div>
-		{:else if !view.declaresAttributes && shown.group !== "places"}
-			<!-- 🚧 RF fix 8: words only — the session's rules keep no attributes (Freeform, From scratch). -->
-			<p data-widget-part="stats.card-note" data-declares-none>{t("This session's rules declare no attributes.")}</p>
-		{:else if !tieRowsOf(shown.owner).length && !shown.zones.length && !shown.where.length && !shown.tools.length && !shown.carried.length}
-			<p data-widget-part="stats.card-note">
-				{shown.group === "cast" ? t("No stats to show for this member.") : t("No stats to show here.")}
-			</p>
-		{/if}
-		{@render toolsBlock(shown, view.density)}
-		{@render carriedBlock(shown, view.density)}
-		{@render zonesBlock(shown.zones)}
-		{@render tiesBlock(shown.owner)}
-		{@render carriesBlock(shown.owner)}
+		{@render sheetBlocks(shown, false)}
+	</section>
+{/snippet}
+
+<!-- 🚧 A faces sheet (lay-B D13, 2026-11-05; owner ruling R5: "like an rpg
+     character management screen"): two columns in markup order — the owner's
+     portrait, name and role, then its blocks as sections. The card's own head
+     is not drawn here: the portrait column replaces it. -->
+{#snippet sheetOf(shown: StatsShownOwner)}
+	<section
+		data-widget-part="stats.card card"
+		data-owner-key={shown.owner.key}
+		data-owner-group={shown.group}
+		aria-label={shown.owner.label}
+	>
+		<div data-widget-part="stats.sheet-portrait">
+			{@render faceOf(shown.owner, shown.group)}
+			<span data-widget-part="stats.sheet-name">{shown.owner.mine ? t("{name} (you)").replace("{name}", shown.owner.label) : shown.owner.label}</span>
+			<span data-widget-part="stats.sheet-role">{groupLabel(shown.group)}</span>
+		</div>
+		<div data-widget-part="stats.sheet-sections">
+			{@render sheetBlocks(shown, true)}
+		</div>
 	</section>
 {/snippet}
 
@@ -920,32 +962,22 @@
 			</span>
 		</div>
 	{:else if view.status === "loading"}
-		<div data-widget-part="stats.empty empty" role="status">
-			<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
-			<span>
-				{worldOnly
-					? t("Loading the world's stats…")
-					: view.owners === "cast"
-						? t("Loading the cast's stats…")
-						: t("Loading the session's stats…")}
-			</span>
-		</div>
+		<!-- Loading draws nothing. -->
 	{:else if view.status === "failed"}
 		<!-- The first read was refused: the alert above is the whole story. -->
-	{:else if view.status === "none-declared"}
-		<div data-widget-part="stats.empty empty">
-			<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
-			<span>
-				{read.emptyState
-					? t(read.emptyState)
-					: t("This session's rules declare no attributes.")}
-			</span>
-		</div>
-	{:else if view.status === "nothing-shown"}
-		<div data-widget-part="stats.empty empty">
-			<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
-			<span>{read.emptyState ? t(read.emptyState) : nothingShown()}</span>
-		</div>
+	{:else if view.status === "none-declared" || view.status === "nothing-shown"}
+		{#if read.emptyState}
+			<div data-widget-part="stats.empty empty">
+				<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
+				<span>{t(read.emptyState)}</span>
+			</div>
+		{:else if view.status === "nothing-shown" && view.owners === "pick"}
+			<!-- The names the reader picked in settings match nobody: a cause they can act on. -->
+			<div data-widget-part="stats.empty empty">
+				<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
+				<span>{t("Nothing in this session matches the names in this widget's settings.")}</span>
+			</div>
+		{/if}
 	{:else if view.status === "shown" && view.arrangement === "faces"}
 		{#if faceList.length > 1 || ownless}
 			<div data-widget-part="stats.faces" role="tablist" aria-label={t("Whose sheet")}>
@@ -974,13 +1006,13 @@
 			</div>
 		{/if}
 		{#if faceShown}
-			<div data-widget-part="stats.faces-sheet" role={faceList.length > 1 || ownless ? "tabpanel" : undefined}>
-				{@render cardOf(faceShown)}
+			<div data-widget-part="stats.faces-sheet" data-sheet="" role={faceList.length > 1 || ownless ? "tabpanel" : undefined}>
+				{@render sheetOf(faceShown)}
 			</div>
-		{:else if ownless}
+		{:else if ownless && read.emptyState}
 			<div data-widget-part="stats.empty empty">
 				<sp-icon name={emptyIcon} size={emptyIconSize}></sp-icon>
-				<span>{read.emptyState ? t(read.emptyState) : t("Your sheet appears once your character is made.")}</span>
+				<span>{t(read.emptyState)}</span>
 			</div>
 		{/if}
 	{:else if view.status === "shown"}

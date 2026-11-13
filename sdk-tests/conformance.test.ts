@@ -610,6 +610,7 @@ const GENRE_SUMMARIZE_SCENES = [
 	STORY_SUMMARIZE_SCENE_SPEC_ID,
 	GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 	LAIR_SUMMARIZE_SCENE_SPEC_ID,
+	'core:spec/dungeon-crawler-summarize-scene',
 ]
 
 const fixtures: Fixtures = {
@@ -1628,7 +1629,7 @@ test('95e · C30 fails on a host that carries the renderer, and on one that drop
 
 test('C34 · every core genre’s summarize-scene passes, and the kit fails a render that drops message ids', async () => {
 	const c34 = async (host: HostUnderTest, fx: Fixtures) => (await conform(host, fx, { only: ['C34'] }))[0]!
-	assert.equal(fixtures.summarizeScenes!().length, 3, 'story, guide and lair each ship one (Chat, the assistant, summarizes with core\'s default)')
+	assert.equal(fixtures.summarizeScenes!().length, 4, 'story, guide, lair and the dungeon crawler each ship one (Chat, the assistant, summarizes with core\'s default)')
 	const own = await c34(sdk, fixtures)
 	assert.equal(own.pass, true, own.error)
 	assert.equal(own.skipped, undefined)
@@ -1748,6 +1749,50 @@ test('C39 · core’s catalogue', async () => {
 	const r = (await conform(sdk, fixtures, { only: ['C39'] }))[0]!
 	assert.equal(r.pass, true, r.error)
 	assert.equal(r.skipped, undefined, `C39 skipped on core's catalogue: ${r.skipped?.join('; ')}`)
+})
+
+test('C40 · a pipeline that files a history entry fails naming it; a summarize-request one is exempt; no pipelines skips', async () => {
+	const result = async (host: HostUnderTest) => (await conform(host, fixtures, { only: ['C40'] }))[0]!
+	const node = (key: string, definitionId: string, config: Record<string, unknown> = {}) => ({
+		key,
+		kind: 'outlet',
+		definitionId,
+		definitionVersion: 1,
+		config,
+		position: 0,
+	})
+	const doc = (id: string, nodes: any[], entryType: string) =>
+		({
+			schemaVersion: 1,
+			id,
+			version: '1.0.0',
+			includes: [],
+			presets: [{ slug: 'default', default: true, label: { en: 'Default' }, values: [{ nodeKey: 'file', slot: 'params', value: { entryType } }] }],
+			nodes,
+			edges: [],
+			clauses: [],
+		}) as any
+	const shipped = (await sdk.shipped!()) as any
+	const write = node('file', 'core:outlet/create-lore-entry')
+	const direct = doc('test:spec/direct', [write], 'core:entry/history@1')
+	const bad = await result({ ...sdk, shipped: () => ({ ...shipped, pipelines: [direct] }) })
+	assert.equal(bad.pass, false)
+	assert.match(bad.error!, /test:spec\/direct file: writes a history entry directly/)
+	const exempt = doc('test:spec/exempt', [write, node('in', 'core:inlet/summarize-request')], 'core:entry/history@1')
+	const fine = await result({ ...sdk, shipped: () => ({ ...shipped, pipelines: [exempt] }) })
+	assert.equal(fine.pass, true, fine.error)
+	const world = doc('test:spec/world', [write], 'core:entry/world-lore')
+	const other = await result({ ...sdk, shipped: () => ({ ...shipped, pipelines: [world] }) })
+	assert.equal(other.pass, true, other.error)
+	const none = await result({ ...sdk, shipped: () => ({ genres: shipped.genres, presets: [] }) })
+	assert.equal(none.pass, true)
+	assert.match(none.skipped!.join(' '), /shipped\(\)\.pipelines/)
+})
+
+test('C40 · core’s catalogue', async () => {
+	const r = (await conform(sdk, fixtures, { only: ['C40'] }))[0]!
+	assert.equal(r.pass, true, r.error)
+	assert.equal(r.skipped, undefined, `C40 skipped on core's catalogue: ${r.skipped?.join('; ')}`)
 })
 
 test('C35–C37 · the layering laws: core’s catalogue passes, and a catalogue that breaks each fails in words', async () => {

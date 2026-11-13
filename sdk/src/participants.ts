@@ -16,7 +16,8 @@
  * | `admin`             | Any administrator acting in the session.                                                                 |
  * | `participant`       | Any member of the session — owner or guest.                                                              |
  * | `user:<id>`         | One person, by user id.                                                                                  |
- * | `character:<id>`    | One library character, by row id — a cast member, or a member's own persona.                             |
+ * | `character:<id>`    | One library character, by row id — a cast member, or a member's own persona. ⏳ A seat by its card; removed in S5 of the seat-cast programme. |
+ * | `seated-member:<id>` | 🚧 One seated **cast member**, by cast member id (the host's `lorebook_bindings.id`) — the seat-cast programme's reference for a seat. |
  * | `player-seat:<id>`  | 🚧 A player seat that voices **no card**, by seat id — a player character made up in the session.       |
  * | `envoy:<slug>`      | A speaker the genre (or a contributed action) brings with it — `envoy:mascot`, `envoy:chariot.dice-tray.master`. |
  * | `item`              | The **per-message ownership rule**: whoever the message belongs to, decided at the venue, never resolvable ahead of a message. |
@@ -78,12 +79,18 @@ export type ParticipantRole = (typeof PARTICIPANT_ROLES)[number]
  * the id half is a string here and the host reads it at its seam. A
  * `player-seat:` id is the host's player seat row (`session_personas.id`). An envoy
  * slug is `[A-Za-z0-9]` followed by any of `[A-Za-z0-9._-]`.
+ *
+ * 🚧 `seated-member:<id>` is a seated **cast member**, by its cast member id
+ * (the host's `lorebook_bindings.id`) — the seat-cast programme's reference
+ * for a seat. ⏳ `character:<id>` (a seat by its card) is removed in S5 of the
+ * seat-cast programme.
  * @experimental
  */
 export type ParticipantRef =
 	| ParticipantRole
 	| `user:${string}`
 	| `character:${string}`
+	| `seated-member:${string}`
 	| `player-seat:${string}`
 	| `envoy:${string}`
 
@@ -92,6 +99,7 @@ export type ParsedParticipantRef =
 	| { kind: ParticipantRole }
 	| { kind: 'user'; id: string }
 	| { kind: 'character'; id: string }
+	| { kind: 'seated-member'; id: string }
 	| { kind: 'player-seat'; id: string }
 	| { kind: 'envoy'; slug: string }
 
@@ -156,8 +164,8 @@ export function audienceHolds(
 
 /**
  * Does the model's context hold any of these references? The prompt
- * built for `speaker` — a `character:` or `envoy:` reference, when there is
- * one — may carry what everyone may see (`participant`), what the model may
+ * built for `speaker` — a `character:`, `seated-member:` or `envoy:` reference,
+ * when there is one — may carry what everyone may see (`participant`), what the model may
  * (`ai`), and what that speaker may. `[]` holds for nobody.
  * @internal
  * @ruling R57
@@ -254,13 +262,14 @@ export function parseParticipantRef(raw: unknown): ParsedParticipantRef {
 	if (cut === -1)
 		throw new Error(
 			`'${raw}' is not a participant reference — expected one of ${PARTICIPANT_ROLES.join(', ')}, ` +
-				`or user:<id>, character:<id>, player-seat:<id>, envoy:<slug>`,
+				`or user:<id>, character:<id>, seated-member:<id>, player-seat:<id>, envoy:<slug>`,
 		)
 	const kind = text.slice(0, cut)
 	const rest = text.slice(cut + 1)
 	switch (kind) {
 		case 'user':
 		case 'character':
+		case 'seated-member':
 		case 'player-seat':
 			if (!ID.test(rest))
 				throw new Error(
@@ -276,7 +285,7 @@ export function parseParticipantRef(raw: unknown): ParsedParticipantRef {
 			return { kind, slug: rest }
 		default:
 			throw new Error(
-				`'${raw}' is not a participant reference — '${kind}:' is not a kind (user, character, player-seat, envoy)`,
+				`'${raw}' is not a participant reference — '${kind}:' is not a kind (user, character, seated-member, player-seat, envoy)`,
 			)
 	}
 }
@@ -288,6 +297,8 @@ export function formatParticipantRef(parsed: ParsedParticipantRef): ParticipantR
 			return `user:${parsed.id}`
 		case 'character':
 			return `character:${parsed.id}`
+		case 'seated-member':
+			return `seated-member:${parsed.id}`
 		case 'player-seat':
 			return `player-seat:${parsed.id}`
 		case 'envoy':
@@ -370,9 +381,12 @@ export function envoySlugOfRef(ref: unknown): string | null {
  * settings document (`SessionSettingsV1`, sessionSettings.ts) and the
  * `cast` in-port of `core:task/turn-pool@1`.
  *
- * Declared from the existing read and **adding no fields**: the character
+ * Declared from the existing read: the character
  * and persona rows go out raw with the seat's `position`, `removedAt` and
- * `enabled` riding along (the host retrieves, it does not choose), `envoys` is the
+ * `enabled` riding along (the host retrieves, it does not choose). 🚧 S3 of the
+ * seat-cast programme adds the host-filled identity (`ref`, `castMemberId`,
+ * `cardId`) on each seat row; a reader matches on it and never builds it.
+ * `envoys` is the
  * seated envoys `entities/envoys.ts seatedEnvoys` returns (each with `slug`,
  * `position`, `speaks`, `removedAt`), and the rest is what the prompt path
  * already reads. Every row is open: the host's character row has more
@@ -383,7 +397,12 @@ export function envoySlugOfRef(ref: unknown): string | null {
  * @experimental
  */
 export interface SessionCastV1 {
-	/** Character seats: the library row under `character`, plus the seat's own columns. */
+	/**
+	 * Character seats: the library row under `character`, plus the seat's own columns.
+	 * `character` is card-shaped but has no `id` or `userId` for a card-less
+	 * seat; read `ref` and `castMemberId`. `seatedByUserId` is the person who
+	 * seated it and acts for it.
+	 */
 	sessionCharacters: Array<{
 		character: {
 			id: number
@@ -405,6 +424,20 @@ export interface SessionCastV1 {
 		removedAt: Date | string | null
 		/** Attached by the host from `lorebook_bindings`, not a cast column. */
 		absorbedAliases: string[]
+		/**
+		 * 🚧 The seat's participant reference, as the host fills it: from the flip
+		 * a character seat is `seated-member:<castMemberId>` (⏳ `character:<cardId>`
+		 * while it stores no member) and a player seat, carded or not,
+		 * `player-seat:<seatId>`; before it the card form. A reader matches on it
+		 * and never builds it.
+		 */
+		ref?: ParticipantRef
+		/** 🚧 The seat's cast member (the host's `lorebook_bindings.id`); null while the seat has none. */
+		castMemberId?: number | null
+		/** 🚧 The member's active card on the timeline; null when card-less. */
+		cardId?: number | null
+		/** 🚧 The person who seated this member and acts for it; null on a row from before it. */
+		seatedByUserId?: number | null
 		[k: string]: unknown
 	}>
 	/**
@@ -428,11 +461,23 @@ export interface SessionCastV1 {
 		seatName: string | null
 		/** 🚧 Who sits in the seat; null on a row from before it (read the card's owner). */
 		seatUserId: number | null
-		/** Always true — a persona seat has no switch — said so one filter serves both lists. */
+		/** 🚧 The seat is in play: false = benched (owner 2026-11-10). Every seat is here, benched or not; a reader that must not see a benched one — a turn pool, a names list — filters on this (the table's column is `is_active`). */
 		enabled: boolean
 		position: number | null
 		removedAt: Date | string | null
 		absorbedAliases: string[]
+		/**
+		 * 🚧 The seat's participant reference, as the host fills it: from the flip
+		 * a character seat is `seated-member:<castMemberId>` (⏳ `character:<cardId>`
+		 * while it stores no member) and a player seat, carded or not,
+		 * `player-seat:<seatId>`; before it the card form. A reader matches on it
+		 * and never builds it.
+		 */
+		ref?: ParticipantRef
+		/** 🚧 The seat's cast member (the host's `lorebook_bindings.id`); null while the seat has none. */
+		castMemberId?: number | null
+		/** 🚧 The member's active card on the timeline; null when card-less. */
+		cardId?: number | null
 		[k: string]: unknown
 	}>
 	/** The seated envoys, live and departed, in seat order — each its declaration joined to the seat. */
@@ -452,6 +497,8 @@ export interface SessionCastV1 {
 	isGroup: boolean
 	/** Whose turn this run is, from the scope; null when the trigger named nobody. */
 	currentCharacterId: number | null
+	/** 🚧 The member speaking a card-less seat's turn, from the scope; set only when `currentCharacterId` is null. */
+	currentCastMemberId?: number | null
 	/** The declared voice of the turn's channel, when the trigger named one and the genre shapes channels. */
 	turnChannelVoice?: 'character' | 'narrator' | 'none'
 	/**

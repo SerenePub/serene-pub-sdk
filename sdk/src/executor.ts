@@ -7,7 +7,7 @@
  */
 
 import { JUNCTION_CLAUSE_PORTS, envoyConfigKeysOf, type SpecDocument, type DocNode } from './document.js'
-import { AMBIENT_SCRIPT_EXTRAS, getDefinition, opensLiveRow, seamsOf, type Kind, type Seam } from './descriptors.js'
+import { AMBIENT_SCRIPT_EXTRAS, getDefinition, opensLiveRow, removedNodeDefinitionSentence, seamsOf, type Kind, type Seam } from './descriptors.js'
 import type { SeamAddress } from './scripts.js'
 import { packageEventById } from './events.js'
 import { collectDataRefs, isSlotRef, type SlotRef } from './refs.js'
@@ -1510,7 +1510,14 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 		iterationCount?: number,
 	): Promise<Result> => {
 		const d = getDefinition(`${node.definitionId}@${node.definitionVersion}`)
-		if (!d) return err(`unknown type ${node.definitionId}@${node.definitionVersion}`)
+		if (!d) {
+			const removed = removedNodeDefinitionSentence(node.definitionId)
+			return err(
+				removed
+					? `${node.key}: ${removed}`
+					: `unknown type ${node.definitionId}@${node.definitionVersion}`,
+			)
+		}
 		// Declared, not bound (plans/29 R-2). `validate()` refuses the document;
 		// this is the same refusal for a document that reached the executor by
 		// another door — a stored version older than the flag — so it halts on
@@ -1952,8 +1959,23 @@ export async function run(doc: SpecDocument, opts: RunOptions): Promise<Receipt>
 							`Declared: ${declared.map((sp) => sp.at).join(', ')}. ` +
 							`Points are part of the hashed contract — declare it on the descriptor.`,
 					)
-				// No try/catch: an applier throw reaches the binding that asked.
-				const outcome = await applyAtSeam(known, value, 'binding')
+				// An applier throw is absorbed and recorded, as at a port seam (18 S2;
+				// the `ScriptChainApplier` contract); only a halt reaches the binding.
+				let outcome: Awaited<ReturnType<typeof applyAtSeam>>
+				try {
+					outcome = await applyAtSeam(known, value, 'binding')
+				} catch (e) {
+					;(nr.scripts ??= []).push({
+						scriptId: -1,
+						name: '(engine)',
+						scriptKind: '',
+						phase: 'before',
+						appliedBy: 'binding',
+						result: 'err',
+						reason: (e as Error).message,
+					})
+					return value
+				}
 				if (outcome.halt) {
 					interiorHalt ??= outcome.halt.reason
 					throw new ScriptSeamHalt(outcome.halt.reason)

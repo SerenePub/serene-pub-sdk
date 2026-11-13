@@ -13,8 +13,14 @@
  *   it): the viewer's, or not theirs. In the cast and nobody's presence: the
  *   AI's, so nobody clicks. Neither: nobody portrays them, and the **owner**
  *   may answer (W4; `docs/sessions.md`, *forms*).
- * - 🚧 `player-seat:<id>` — a card-less player seat: the viewer's when they sit in it
- *   (its `userId`); nobody else's.
+ * - 🚧 `seated-member:<id>` — a seated cast member, read as `character:<id>`
+ *   is, but against the seat rows' own `ref` (or their `castMemberId`); a row
+ *   that carries a `ref` is never matched by its card id (a card id and a cast
+ *   member id share one range and may be different people).
+ * - 🚧 `player-seat:<id>` — a player seat, **with a card or without**: the
+ *   viewer's when they sit in it (its `userId`, else its persona's); nobody
+ *   else's. (A seat with a card is answerable by its own `player-seat:<id>` as
+ *   well as by its card; ★27-3.)
  * - `envoy:<slug>` — the AI's, always.
  * - `user:<id>` · `owner` · `admin` · `participant` · `run-owner` — the
  *   viewer is, or is not, that person.
@@ -47,8 +53,18 @@ export interface FormSession {
 		userId?: number | null
 		personaId?: number | null
 		persona?: { userId?: number | null } | null
+		/** 🚧 The seat's participant reference, as the host fills it; absent from a host before S3. */
+		ref?: string | null
+		/** 🚧 The seat's cast member, as the host fills it. */
+		castMemberId?: number | null
 	} | null> | null
-	sessionCharacters?: Array<{ characterId?: number | null } | null> | null
+	sessionCharacters?: Array<{
+		characterId?: number | null
+		/** 🚧 The member's participant reference, as the host fills it. */
+		ref?: string | null
+		/** 🚧 The member's cast member, as the host fills it. */
+		castMemberId?: number | null
+	} | null> | null
 }
 
 /** A block's `answered` stamp, as the host writes it. @experimental */
@@ -78,21 +94,34 @@ export function canAnswerForm(
 	const kind = cut === -1 ? addressee : addressee.slice(0, cut)
 	const rest = cut === -1 ? '' : addressee.slice(cut + 1)
 	switch (kind) {
-		case 'character': {
+		case 'character':
+		case 'seated-member': {
 			const id = rowId(rest)
 			if (id === null) return viewer.isOwner
-			const presence = (session?.sessionPersonas ?? []).find((p) => p?.personaId === id)
+			// A row that carries its own `ref` is matched by it (and, for
+			// `seated-member:`, by its `castMemberId`) and never by a card id; ⏳ a row
+			// with no `ref` (a host before S3) is matched by its card id, as it always
+			// was — only for `character:` (removed in S5).
+			const named = (row: { ref?: string | null; castMemberId?: number | null }) =>
+				row.ref === addressee || (kind === 'seated-member' && row.castMemberId === id)
+			const presence = (session?.sessionPersonas ?? []).find(
+				(p) => !!p && (p.ref != null ? named(p) : kind === 'character' && p.personaId === id),
+			)
 			if (presence) return presence.persona?.userId === viewer.userId
-			const seated = (session?.sessionCharacters ?? []).some((c) => c?.characterId === id)
+			const seated = (session?.sessionCharacters ?? []).some(
+				(c) => !!c && (c.ref != null ? named(c) : kind === 'character' && c.characterId === id),
+			)
 			// The AI's while seated; nobody's otherwise, and then the owner's.
 			return seated ? false : viewer.isOwner
 		}
 		case 'player-seat': {
 			const id = rowId(rest)
-			// `player-seat:` names only a card-less player seat; a seat with a card is
-			// addressed by its card (`character:<id>`).
-			const seat = id === null ? undefined : (session?.sessionPersonas ?? []).find((p) => p?.id === id)
-			return seat?.personaId == null && seat?.userId != null && seat.userId === viewer.userId
+			// A player seat is keyed by its own id, carded or not (★27-3); a carded
+			// seat is also addressed by its card, which `character:<id>` above reads.
+			const rows = session?.sessionPersonas ?? []
+			const seat = id === null ? undefined : rows.find((p) => p?.id === id)
+			const sits = seat?.userId ?? seat?.persona?.userId
+			return sits != null && sits === viewer.userId
 		}
 		case 'envoy':
 			return false

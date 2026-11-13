@@ -60,12 +60,21 @@ export const CHARACTER_PORTRAIT_PROMPT_SEED_KEYS = {
 	prose: 'pipeline-prompt:core:oracle/generate-image:prompts:portrait-prose',
 } as const
 
-/** The draw step's parameters, in both presets. */
+/**
+ * The draw step's parameters, in both presets.
+ *
+ * `seed: 'as-set'`, NOT `per-run`: the proofs share one prompt, so one seed
+ * for the run drew `count` identical pictures on every backend (and ComfyUI's
+ * keyed merge folded them into one file — "2 new pictures", one in the
+ * gallery; seen 2026-11-08). A shared seed is the sprite fill's rule, where
+ * the prompts differ and the set should look like one person; proofs want
+ * the sampling's own random seed, drawn per picture.
+ */
 const DRAW_PARAMS = {
 	orientation: 'portrait',
 	cutOut: 'off',
 	references: 'preferred',
-	seed: 'per-run',
+	seed: 'as-set',
 } as const
 
 /** @experimental */
@@ -82,8 +91,8 @@ export const characterPortraitSpec = () =>
 			/**
 			 * The pictures. The connection, sampling and prompt rows are the
 			 * admin's to set in the panel; the Default config draws upright,
-			 * one seed for the run, the likeness image as reference when the
-			 * model takes one.
+			 * each proof on its own seed, the likeness image as reference when
+			 * the model takes one.
 			 */
 			.oracle('draw', ($) =>
 				C.generateImage.v1({

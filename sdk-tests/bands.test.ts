@@ -231,6 +231,7 @@ describe('P2 · Assemble’s renders is open', () => {
 			worldLore: 'core:var/world-lore@1',
 			characterLore: 'core:var/character-lore@1',
 			history: 'core:var/history@1',
+			earlierScenes: 'core:var/earlier-scenes@1',
 			currentDate: 'core:var/current-date@1',
 			clue: 'bandtest:var/clue@1',
 		})

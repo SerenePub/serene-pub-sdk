@@ -47,18 +47,12 @@ const DEFAULT_PRESET: WidgetStylePreset = {
  */
 export const CORE_WIDGETS: WidgetDecl[] = [
 	/**
-	 * The conversation: the log and the field you write into, as ONE widget.
-	 *
-	 * They are one because they are one thing to arrange — a transcript with
-	 * nowhere to reply is not a session surface, and every layout that ever
-	 * placed them placed them touching. Keeping them apart bought a second
-	 * anchor guarantee, a second style target and a second row in every grid,
-	 * and paid for none of it: the pair moved together or not at all.
-	 *
-	 * So the composer is a SETTING here rather than a widget beside this one.
-	 * `composer` picks how the field is drawn, `composerPosition` which end it
-	 * sits at, and `showComposer` whether it is drawn at all — which is what a
-	 * read-only view of a session is, rather than a widget somebody removed.
+	 * The conversation's log, read: the lines, the channel head and tabs, the
+	 * selection bar at its foot. The field you write into (`composer`) and the
+	 * turn line (`turn-line`) are widgets beside it, split by owner ruling R8
+	 * 2026-11-05 (PLAN-session-layout-simplify D7/D8); they follow the copy of
+	 * this widget they belong to, which tells the host the channel it shows
+	 * (`show-channel`).
 	 */
 	{
 		id: 'messages',
@@ -70,6 +64,8 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 		 */
 		role: 'primary',
 		component: 'messages',
+		// ★10 / D6: when a zone runs short, Low gives way first, then Normal; Messages keeps a 160 px floor.
+		panel: { height: 'fill', priority: 'low' },
 		/**
 		 * What the conversation's source reads (R75): its box's tier, the
 		 * log, the message venues, its settings, the viewer and the locale.
@@ -79,65 +75,13 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 		reads: ['layout', 'messages', 'actions', 'settings', 'viewer', 'locale'],
 		presets: [DEFAULT_PRESET],
 		settings: {
-			composer: {
-				type: 'enum',
-				label: 'Composer',
-				description:
-					'How the message field is drawn: the classic card, a ' +
-					'single-line pill, a tall editor for long turns, or a ' +
-					'page line — no box, the next line of the story on a ' +
-					'faint underline.',
-				of: ['classic', 'minimal', 'writer', 'quill'],
-				members: [
-					{ key: 'classic', label: 'Classic card' },
-					{ key: 'minimal', label: 'Single-line pill' },
-					{ key: 'writer', label: 'Tall editor' },
-					// The quill skin (next-pass note 22, 2026-10-02): writing
-					// on the page itself, as if into an ebook.
-					{ key: 'quill', label: 'Page line' },
-				],
-				default: 'classic',
-			},
 			/**
-			 * 🚧 **The composer on the other tabs** (lair fix 2, 2026-10-22): a
-			 * copy that shows two or more channels draws a tab each above its
-			 * log (`messages.channel-tabs`); while a tab other than the first is
-			 * shown, its composer is drawn this way — the Lair's Sanctum, a
-			 * single-line pill under the story's card. `same` keeps `composer`.
-			 */
-			otherTabsComposer: {
-				type: 'enum',
-				label: 'Composer on the other tabs',
-				description:
-					'When this Messages widget shows more than one channel as tabs, how the message field is drawn ' +
-					'while a tab other than the first is shown. Same keeps the Composer setting.',
-				of: ['same', 'classic', 'minimal', 'writer', 'quill'],
-				members: [
-					{ key: 'same', label: 'Same as the first tab' },
-					{ key: 'classic', label: 'Classic card' },
-					{ key: 'minimal', label: 'Single-line pill' },
-					{ key: 'writer', label: 'Tall editor' },
-					{ key: 'quill', label: 'Page line' },
-				],
-				default: 'same',
-			},
-			composerPosition: {
-				type: 'enum',
-				label: 'Composer position',
-				description: 'Which end of the log you write at.',
-				of: ['bottom', 'top'],
-				members: [
-					{ key: 'bottom', label: 'Bottom' },
-					{ key: 'top', label: 'Top' },
-				],
-				default: 'bottom',
-			},
-			/**
-			 * How wide the log's rows and the composer run. `column` — the
-			 * default since the polish-parity ruling ★R1 (2026-10-24) — holds
-			 * them to a reading column of about 76 characters of the story's
-			 * body text, centred on the session; `full` fills the width the
-			 * layout gives the widget (a widget fills its box, 2026-09-29);
+			 * How wide the log's rows and the composer run. `full` — the
+			 * default since the owner ruling 2026-11-04 §0-G (it was `column`
+			 * under ★R1, 2026-10-24) — fills the width the layout gives the
+			 * widget (a widget fills its box, 2026-09-29); `column` holds them
+			 * to a reading column of about 76 characters of the story's body
+			 * text, centred on the session;
 			 * `comfortable` is the narrower measure (about 640px of prose).
 			 * Never a hidden cap: each is a value a person can see and change.
 			 */
@@ -161,7 +105,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 						description: 'A narrower measure, about 640px of prose, centred.',
 					},
 				],
-				default: 'column',
+				default: 'full',
 			},
 			/**
 			 * How the lines are drawn (PLAN-core-widgets §3.7, Q7: a setting,
@@ -209,16 +153,6 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				],
 				default: 'oldest-first',
 			},
-			showMessages: {
-				type: 'boolean',
-				label: 'Show messages',
-				default: true,
-			},
-			showComposer: {
-				type: 'boolean',
-				label: 'Show composer',
-				default: true,
-			},
 			/**
 			 * Which channel this copy shows (lair re-plan S1). Unset, it is the
 			 * **primary log**: every channel no other placed Messages widget
@@ -232,9 +166,9 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			channel: {
 				type: 'string',
 				label: 'Channel',
+				unset: { label: 'Default (main)', other: 'Another channel' },
 				description:
-					"Show one channel only, by its slug (the Lair's is sanctum). " +
-					'Empty shows every channel no other Messages widget shows, as tabs when there are two or more.',
+					'Default (main) leaves it blank: this copy shows every channel no other Messages widget shows, as tabs when there are two or more. Another channel shows that one alone, by its slug (the Lair\'s is sanctum).',
 				group: 'Channel',
 			},
 			/**
@@ -252,9 +186,9 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				type: 'string',
 				default: '',
 				label: 'Channel lane',
+				unset: { label: 'Default (whole channel)', other: 'Another lane' },
 				description:
-					"Which lane of the channel this copy shows: 'mine' for the viewer's own lane on a channel of personal lanes, " +
-					'a number for one lane of a shared channel. Empty shows the whole channel.',
+					'Default (whole channel) leaves it blank: this copy shows the whole channel. Another lane shows one: mine, the viewer\'s own lane on a channel of personal lanes, or a lane\'s number on a shared channel.',
 				group: 'Channel',
 			},
 			/**
@@ -269,9 +203,9 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				type: 'string',
 				default: '',
 				label: 'Show another channel inline',
+				unset: { label: 'Default (none)', other: 'A channel' },
 				description:
-					"Draw that channel's lines under the line each belongs to, by its slug (table: the dice). " +
-					'Empty draws none.',
+					"Default (none) leaves it blank: no other channel's lines are drawn here. A channel draws that one's lines under the line each belongs to, by its slug (table: the dice).",
 				group: 'Channel',
 			},
 			/**
@@ -387,10 +321,29 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: '',
 				label: 'Story time format',
 				description:
-					'How times in change lines read, with {year}, {month}, {monthName}, {day}, {dayName}, {hh} and {mm} — ' +
-					'e.g. Day {day}, {hh}:{mm}. Empty spells them through the calendar.',
+					'How story times read — beside each line and in change lines — with {year}, {month}, {monthName}, {day}, ' +
+					'{dayName}, {hh} and {mm}, e.g. Day {day}, {hh}:{mm}. Empty: a line shows its time of day (or its day), ' +
+					'change lines spell it through the calendar.',
 				group: 'Reading',
 			},
+		},
+	},
+	/**
+	 * 🚧 The turn line, split from the log (owner R8 2026-11-05): what the
+	 * last run did and who is next, one row. It follows the Messages copy it
+	 * belongs to — the host gives it that copy's dossier and the channel it
+	 * shows. `nextUp` is its one setting.
+	 */
+	{
+		id: 'turn-line',
+		title: 'Turn line',
+		component: 'turn-line',
+		// ★10 / D6: when a zone runs short, Low gives way first, then Normal; Messages keeps a 160 px floor.
+		panel: { height: 'fit', priority: 'normal' },
+		/** What the messages widget reads: the turn line is drawn from the same log and dossier. */
+		reads: ['layout', 'messages', 'actions', 'settings', 'viewer', 'locale'],
+		presets: [DEFAULT_PRESET],
+		settings: {
 			/**
 			 * Who is due next (PLAN-turn-order §4.9): the head of the stored
 			 * turn order with Continue (`head`), the head and who follows
@@ -408,13 +361,126 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					{ key: 'hidden', label: 'Nothing' },
 				],
 				default: 'head',
-				group: 'Turns',
+			},
+		},
+	},
+	/**
+	 * 🚧 The composer, split from the log (owner R8 2026-11-05): the field you
+	 * write into, the persona you write as and the actions beside it, plus the
+	 * rewind note and the read-only banner. It follows the Messages copy it
+	 * writes for — the host gives it that copy's dossier and the channel it
+	 * shows — and takes that copy's Line width and presentation. Its settings
+	 * are the ones `messages` carried.
+	 */
+	{
+		id: 'composer',
+		title: 'Composer',
+		component: 'composer',
+		// ★10 / D6: when a zone runs short, Low gives way first, then Normal; Messages keeps a 160 px floor.
+		panel: { height: 'fit', priority: 'high' },
+		/** What the messages widget reads: the composer is drawn from the same log and dossier. */
+		reads: ['layout', 'messages', 'actions', 'settings', 'viewer', 'locale'],
+		presets: [DEFAULT_PRESET],
+		settings: {
+			composer: {
+				type: 'enum',
+				label: 'Composer',
+				description:
+					'How the message field is drawn: the classic card, a ' +
+					'single-line pill, a tall editor for long turns, or a ' +
+					'page line — no box, the next line of the story on a ' +
+					'faint underline.',
+				of: ['classic', 'minimal', 'writer', 'quill'],
+				members: [
+					{ key: 'classic', label: 'Classic card' },
+					{ key: 'minimal', label: 'Single-line pill' },
+					{ key: 'writer', label: 'Tall editor' },
+					// The quill skin (next-pass note 22, 2026-10-02): writing
+					// on the page itself, as if into an ebook.
+					{ key: 'quill', label: 'Page line' },
+				],
+				default: 'classic',
+			},
+			/**
+			 * 🚧 **The composer on the other tabs** (lair fix 2, 2026-10-22): a
+			 * copy that shows two or more channels draws a tab each above its
+			 * log (`messages.channel-tabs`); while a tab other than the first is
+			 * shown, its composer is drawn this way — the Lair's Sanctum, a
+			 * single-line pill under the story's card. `same` keeps `composer`.
+			 */
+			otherTabsComposer: {
+				type: 'enum',
+				label: 'Composer on the other tabs',
+				description:
+					'When this Messages widget shows more than one channel as tabs, how the message field is drawn ' +
+					'while a tab other than the first is shown. Same keeps the Composer setting.',
+				of: ['same', 'classic', 'minimal', 'writer', 'quill'],
+				members: [
+					{ key: 'same', label: 'Same as the first tab' },
+					{ key: 'classic', label: 'Classic card' },
+					{ key: 'minimal', label: 'Single-line pill' },
+					{ key: 'writer', label: 'Tall editor' },
+					{ key: 'quill', label: 'Page line' },
+				],
+				default: 'same',
 			},
 			showActions: {
 				type: 'boolean',
 				label: 'Show the Actions label',
 				default: true,
-				group: 'Turns',
+			},
+		},
+	},
+	/**
+	 * 🚧 The **Dialogue box** (PLAN-visual-novel-layout §1.2; owner 2026-11-11,
+	 * "a different widget … not overload the normal widget"): reads the story
+	 * one line at a time. It shows ONE row of the main channel — the reader's
+	 * **reading place**, client-only, the newest row when it opens — and queues
+	 * what follows behind it on its reading bar (*Osk has replied*, *3 more
+	 * lines*, **Next line**); the viewer's own line, a change line or a marker
+	 * is passed over, and sending catches the reader up
+	 * (`SessionDossierV1.ownNewestMessageId`). It tells its host the line it
+	 * shows (`show-line`), which the scene follows. **Read on by itself**
+	 * moves on once the line's voice has played, or after a reading time when
+	 * it has none, with a progress bar and **Pause**.
+	 *
+	 * Owns the reading place and the pace of reading. Does not own the log
+	 * (Messages), writing (the Composer, which keeps following the Messages
+	 * copy beside it), who speaks next (the turn order) or speech (the server
+	 * and the spoken line). It renders through a panel, not a conversation
+	 * mount, so it declares `session:full` for the dossier its rows' verbs
+	 * read. Offers no selection for a summary: the selection bar is Messages'.
+	 *
+	 * ⚠ It shows whole lines, narration included — not speech's *dialogue*
+	 * (**Dialogue only**, quoted speech), and not a modal dialog.
+	 */
+	{
+		id: 'dialogue-box',
+		title: 'Dialogue box',
+		component: 'dialogue-box',
+		// A box sized to its line; the Visual novel layout gives its panel a share.
+		panel: { height: 'fit', priority: 'normal' },
+		maxInstances: 1,
+		// Not a conversation mount (no hard-coded grant): the dossier comes by this scope.
+		scopes: ['session:full'],
+		/** The row, its menu and verbs, its edit field (`layout`'s tier), the viewer and the language. */
+		reads: ['layout', 'messages', 'actions', 'settings', 'viewer', 'locale'],
+		presets: [DEFAULT_PRESET],
+		settings: {
+			autoRead: {
+				type: 'boolean',
+				label: 'Read on by itself',
+				description: "Moves to the next line by itself: once a line's voice has played, or after a reading time when it has none.",
+				default: false,
+			},
+			readingSpeed: {
+				type: 'integer',
+				label: 'Reading speed',
+				description: 'Words per minute: how long a line with no voice stays before the next one comes in.',
+				min: 80,
+				max: 600,
+				default: 220,
+				showIf: { field: 'autoRead', equals: true },
 			},
 		},
 	},
@@ -463,6 +529,26 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				],
 				default: 'scene',
 			},
+			/**
+			 * 🚧 Which kind of member `scene` and `recent` show (lay-B D13,
+			 * 2026-11-05). No `showIf`: the SDK's `showIf` is one
+			 * `{ field, equals }` and cannot say "scene or recent"; `persona`
+			 * is read by two of the three values the same way.
+			 */
+			whoKind: {
+				type: 'enum',
+				label: 'Who',
+				description:
+					'Characters only, personas only, or both — read by Everyone in the scene and ' +
+					'Whoever spoke last; Members you pick shows whomever it names.',
+				of: ['characters', 'personas', 'both'],
+				members: [
+					{ key: 'characters', label: 'Characters' },
+					{ key: 'personas', label: 'Personas' },
+					{ key: 'both', label: 'Both' },
+				],
+				default: 'both',
+			},
 			recentTurns: {
 				type: 'integer',
 				label: 'How many',
@@ -472,7 +558,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: 3,
 				showIf: { field: 'who', equals: 'recent' },
 			},
-			/** One member per line, as Stats' `pickOwners` is: a name as the session shows it, or `character:<id>`. */
+			/** One member per line, as Stats' `pickOwners` is: a name as the session shows it, or a member's `ref` (🚧 `seated-member:<id>`; ⏳ `character:<id>`). */
 			pickMembers: {
 				type: 'string[]',
 				label: 'Members',
@@ -502,8 +588,10 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				default: 'sprite',
 			},
 			/**
-			 * 🚧 Each member's **chosen image**, `character:<id>=<image ref>`
-			 * per entry — the settings language has no map. The ref is what
+			 * 🚧 Each member's **chosen image**, `seated-member:<id>=<image ref>`
+			 * per entry (🚧 ★S3-8; ⏳ `character:<id>=<image ref>` is still read
+			 * until S4 rekeys the stored lines) — the settings language has no
+			 * map. The ref is what
 			 * `character-images` answers each image with. Behaviour: the face's
 			 * own chooser is where an image is picked, and writes it here
 			 * (`set-chosen-image`, F2).
@@ -512,8 +600,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 				type: 'string[]',
 				label: 'Chosen images',
 				description:
-					'One per line: the character, then = and the image (character:3=…). ' +
-					'A character with none shows its avatar.',
+					"Pick each character's image on its face in the widget. A character with none shows its avatar.",
 				default: [],
 				showIf: { field: 'face', equals: 'chosen' },
 				group: 'Look',
@@ -531,6 +618,17 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 					{ key: 'stage', label: 'Stage' },
 				],
 				default: 'grid',
+			},
+			/**
+			 * 🚧 Speaker focus (PLAN-visual-novel-layout ★2): dim every face but the one
+			 * who wrote the line shown (`characters.v1.speakerRef`). Off by default (P1);
+			 * nobody is dimmed while that speaker is not among the faces.
+			 */
+			speakerFocus: {
+				type: 'boolean',
+				label: "Dim whoever isn't speaking",
+				description: 'Every face but the one whose line is shown is dimmed.',
+				default: false,
 			},
 			/**
 			 * The persona is in the scene but is not cast: it carries no state
@@ -693,8 +791,8 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 	 * and every edit it offers is the USER's, which applies immediately.
 	 * Nothing here is a review gate — the gate is in the transcript, where the
 	 * model's proposals wait, because the gate exists for the writer with no
-	 * authority. A genre that declares no slots gives it an empty state, so
-	 * adding one to a chat session costs nothing and says so.
+	 * authority. A genre that declares no slots gives it nothing to draw, so
+	 * adding one to a chat session costs nothing.
 	 */
 	{
 		id: 'stats',
@@ -842,13 +940,13 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			/**
 			 * 🚧 What the widget says when there is nothing to draw (owner
 			 * ruling 2026-10-15: copy is a widget setting, pinned per genre).
-			 * Empty keeps the widget's own sentence for the case.
+			 * Empty draws nothing (owner ruling 2026-11-05).
 			 */
 			emptyState: {
 				type: 'string',
 				default: '',
 				label: 'When empty',
-				description: 'What the widget says when there are no stats to show. Empty explains why in its own words.',
+				description: 'What the widget says when there are no stats to show. Empty draws nothing.',
 			},
 			/** 🚧 How a story-time stat (a clock) reads, in tokens (`formatStoryTimeAs`). */
 			timeFormat: {
@@ -990,7 +1088,7 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			showBenched: {
 				type: 'boolean',
 				label: 'Show benched characters',
-				description: 'List the characters switched off in Participants under the order.',
+				description: 'List the benched characters (Participants › Benched) under the order.',
 				default: false,
 				group: 'Faces',
 			},
@@ -1189,9 +1287,9 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			channel: {
 				type: 'string',
 				label: 'Channel',
+				unset: { label: 'Default (every channel)', other: 'One channel' },
 				description:
-					"Show one channel's pictures only, by its slug (the Lair's is sanctum). " +
-					'Empty shows every channel.',
+					"Default (every channel) leaves it blank: the album shows every channel's pictures. One channel shows that one's pictures only, by its slug (the Lair's is sanctum).",
 			},
 		},
 	},
@@ -1457,13 +1555,34 @@ export const CORE_WIDGETS: WidgetDecl[] = [
 			},
 		},
 	},
+	/**
+	 * 🚧 **Runs** (lay-R, owner 2026-11-06): an administrator's list of this
+	 * session's pipeline runs, newest first — what started each, which
+	 * pipeline, how it ended, how long it took, where it stopped — with the
+	 * doors to its steps, the run inspector and the prompt. It owns no data
+	 * (runs belong to `pipeline_runs`, receipts to the inspector). It is not
+	 * While you were away (routines, for everyone), the progress card (a run
+	 * in flight) or the Pipelines view's Runs tab (every session, by
+	 * pipeline). Draws nothing for anyone but an administrator; the app keeps
+	 * it out of a non-admin's tray.
+	 */
+	{
+		id: 'session-runs',
+		title: 'Runs',
+		icon: 'Receipt',
+		component: 'session-runs',
+		layout: { span: { ideal: 1 }, minInline: 260 },
+		reads: ['viewer', 'session'],
+		maxInstances: 1,
+		presets: [DEFAULT_PRESET],
+	},
 	{
 		id: 'authors-note',
 		title: "Author's note",
 		icon: 'NotebookPen',
 		component: 'authors-note',
 		layout: { span: { ideal: 1 }, minInline: 240 },
-		reads: [],
+		reads: ['viewer'],
 		presets: [DEFAULT_PRESET],
 	},
 ]
@@ -1483,8 +1602,14 @@ const coreWidget = (id: string): WidgetDecl => {
  * @public
  */
 export const coreWidgets = {
-	/** The log and the field you write into — the middle of every genre that keeps it. */
+	/** The log — the middle of every genre that keeps it. The composer and the turn line are beside it. */
 	conversation: coreWidget('messages'),
+	/** 🚧 The field you write into (owner R8 2026-11-05: split from the log). */
+	composer: coreWidget('composer'),
+	/** 🚧 What the last run did and who is next (owner R8 2026-11-05: split from the log). */
+	turnLine: coreWidget('turn-line'),
+	/** 🚧 The Dialogue box: the story one line at a time, its reading bar, Read on by itself (PLAN-visual-novel-layout §1.2). */
+	dialogueBox: coreWidget('dialogue-box'),
 	scenePortraits: coreWidget('scene-portraits'),
 	loreEntries: coreWidget('lore-entries'),
 	/** Stats (W7): the world's, the cast's and the places' stats — as cards, a list or a strip. */
@@ -1515,6 +1640,8 @@ export const coreWidgets = {
 	attendance: coreWidget('attendance'),
 	/** 🚧 While you were away (A7, R23): what the session's routines ran, wrote and skipped. In no layout by default. */
 	routineLog: coreWidget('routine-log'),
+	/** 🚧 Runs (lay-R, 2026-11-06): an administrator's list of this session's pipeline runs. */
+	sessionRuns: coreWidget('session-runs'),
 } as const
 
 /**
@@ -1529,6 +1656,14 @@ export const coreWidgets = {
  */
 export const CORE_COMPONENTS: ComponentDecl[] = [
 	component({ slug: 'messages', label: 'Messages', entry: 'components/shared/messages/messages.ts', framework: 'svelte' }),
+	component({ slug: 'composer', label: 'Composer', entry: 'components/shared/composer/composer.ts', framework: 'svelte' }),
+	component({ slug: 'turn-line', label: 'Turn line', entry: 'components/shared/turn-line/turn-line.ts', framework: 'svelte' }),
+	component({
+		slug: 'dialogue-box',
+		label: 'Dialogue box',
+		entry: 'components/shared/dialogue-box/dialogue-box.ts',
+		framework: 'svelte',
+	}),
 	// ⏳ No `world-state` component since 2026-10-17 (AUDIT B): the alias
 	// resolves to Stats everywhere, and `/core-ui/world-state` answers with
 	// Stats' module through the app's alias read. Two entries on one file
@@ -1606,15 +1741,23 @@ export const CORE_COMPONENTS: ComponentDecl[] = [
 		entry: 'components/shared/routine-log/routine-log.ts',
 		framework: 'svelte',
 	}),
+	component({
+		slug: 'session-runs',
+		label: 'Runs',
+		entry: 'components/shared/session-runs/session-runs.ts',
+		framework: 'svelte',
+	}),
 ]
 
 /**
  * Core components an admin may read but not clone (C6 Q3): `messages` runs
  * on core's trust — no invoke gate, unprefixed `#message-<id>` ids for j/k
- * — which a clone, never mounted as core, cannot have.
+ * — which a clone, never mounted as core, cannot have; `composer` and
+ * `turn-line` (R8) likewise, for `send`, `draft` and `fire-turn`;
+ * `dialogue-box` likewise: it renders the row with its verbs (plan §6 answer 3).
  * @experimental
  */
-export const CORE_VIEW_ONLY_COMPONENTS: readonly string[] = ['messages']
+export const CORE_VIEW_ONLY_COMPONENTS: readonly string[] = ['messages', 'composer', 'turn-line', 'dialogue-box']
 
 /**
  * `dist/components/<slug>.source.json` (C6 P1): a core component's source

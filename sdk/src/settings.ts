@@ -33,7 +33,7 @@
 
 import { pluginRuleRef } from './pluginRuleRef.js'
 import type { MediaKind } from './media.js'
-import { i18nFindings, i18nText, type I18nText } from './i18n.js'
+import { i18nFindings, i18nText, isI18n, type I18nText } from './i18n.js'
 import type { JsonSchema } from './jsonSchema.js'
 
 // ── Values ──────────────────────────────────────────────────────────────────
@@ -379,6 +379,17 @@ export interface FieldDecl<T extends FieldType = FieldType, O extends readonly s
 	 */
 	format?: 'json' | 'story-time' | 'logit-bias'
 	/**
+	 * 🚧 For a `string` field only (★W3, 2026-11-04): its blank drawn as a named
+	 * choice rather than an empty box. A form draws a choice list of `label`
+	 * (what a blank does — *Default (main)*) and `other` (*Another channel*), with
+	 * the text box only for `other`; the box carries no placeholder — the field's
+	 * `description` is drawn once, under it. Choosing `label` stores blank, so a blank means what it
+	 * always meant; nothing about the stored value changes. Any other field
+	 * type is refused (`settingsSchemaFindings`, `checkSchema`).
+	 * ⚠ Not an `enum`: the second choice is free text.
+	 */
+	unset?: { label: I18nText; other: I18nText }
+	/**
 	 * 🚧 For a `json` field only: the most its value may weigh, counted as the
 	 * UTF-8 bytes of its JSON text. Absent, `JSON_FIELD_MAX_BYTES` (16384); an
 	 * integer from 1 to `JSON_FIELD_MAX_BYTES_CEILING` (262144) — a declaration
@@ -410,10 +421,18 @@ export function fieldLabel(decl: { label?: I18nText }, language = 'en'): string 
 	return i18nText(decl.label, language)
 }
 
+/** Why this field may not declare `unset`, or null — the one rule both finders use. */
+function unsetMisfit(decl: Partial<FieldDecl>): string | null {
+	return decl.unset !== undefined && decl.type !== 'string'
+		? "only a string field has a named blank — remove 'unset', or declare the field type: 'string'"
+		: null
+}
+
 /**
  * Every display-text fault in one settings schema, as sentences that
  * name the field: each field's `label` and its `description`; each
- * `members[]` band's label and description; and the
+ * `members[]` band's label and description; a field's `unset` (its shape, its
+ * two labels, and that only a `string` field has one); and the
  * same for a `list`'s `item` and an `object`'s `fields`, recursively. A schema
  * that is not an object is one finding. Run at every door a schema arrives
  * through — `register()` for node params, `genre()` for a shape's fields,
@@ -452,6 +471,17 @@ export function settingsSchemaFindings(schema: unknown, where: string): string[]
 					out.push(...i18nFindings(m.label, `${band}.label`))
 					out.push(...i18nFindings(m.description, `${band}.description`))
 				})
+		}
+		if (f.unset !== undefined) {
+			const u = f.unset as Partial<NonNullable<FieldDecl['unset']>> | null
+			if (!u || typeof u !== 'object' || Array.isArray(u))
+				out.push(`${at}.unset: the named blank is an object — { label: 'Default (main)', other: 'Another channel' }`)
+			else {
+				const misfit = unsetMisfit(f)
+				if (misfit) out.push(`${at}.unset: ${misfit}`)
+				out.push(...i18nFindings(u.label, `${at}.unset.label`, { required: true }))
+				out.push(...i18nFindings(u.other, `${at}.unset.other`, { required: true }))
+			}
 		}
 		if (f.item !== undefined) out.push(...settingsSchemaFindings({ item: f.item }, at))
 		if (f.fields !== undefined) out.push(...settingsSchemaFindings(f.fields, `${at}.fields`))
@@ -585,6 +615,13 @@ export function checkSchema(schema: SettingsSchema): SettingsFinding[] {
 				fix:
 					"remove 'lend' — only a secret is withheld from other packages' pipelines, so only a secret can be lent" +
 					pluginRuleRef('secrets'),
+			})
+		if (unsetMisfit(d))
+			f.push({
+				field: key,
+				severity: 'error',
+				message: `'${key}' says 'unset', which only a string field has`,
+				fix: "remove 'unset', or declare the field type: 'string' — the named blank is a choice beside a text box",
 			})
 		if (d.type === 'secret') {
 			if (!SECRET_KEY.test(key))
@@ -1155,6 +1192,29 @@ export function configState(schema: SettingsSchema, values: Record<string, unkno
 		missing,
 		message: `waiting on ${missing.join(', ')} in plugin settings`,
 	}
+}
+
+// ── The undescribed rule ────────────────────────────────────────────────────
+
+/**
+ * 🚧 **Undescribed setting parts** (P5, ruled 2026-11-04): which of `description`
+ * (a sentence of purpose), `group` and `reach` a user-facing setting lacks. Empty
+ * means described. One predicate for the compiler's `W_SETTING_UNDESCRIBED` and for
+ * the form deriver that folds a flagged field under Advanced — never two copies.
+ * An `'admin'`-reach setting is not user-facing, so it is never flagged. A setting
+ * kind with no `reach` (a plugin setting) passes `{ reach: false }`.
+ * @experimental
+ */
+export function undescribedSettingParts(
+	decl: Pick<FieldDecl, 'description' | 'group' | 'reach'>,
+	opts: { reach?: boolean } = {}
+): Array<'description' | 'group' | 'reach'> {
+	if (decl.reach === 'admin') return []
+	const missing: Array<'description' | 'group' | 'reach'> = []
+	if (!isI18n(decl.description)) missing.push('description')
+	if (!decl.group) missing.push('group')
+	if (opts.reach !== false && !decl.reach) missing.push('reach')
+	return missing
 }
 
 // ── Form layout ─────────────────────────────────────────────────────────────

@@ -34,6 +34,7 @@ import {
 	afterEachRound,
 	coreEvents,
 	eventById,
+	everyNRounds,
 	everyNTurns,
 	isTrue,
 	not,
@@ -55,6 +56,9 @@ import { CASTELLAN } from './lair/names.js'
 import { rulesets } from '../registry/rulesets.js'
 import type { TurnOrderHandle } from '../factories/turnOrder.js'
 import { saveMessageSpec } from '../shared/saveMessage.js'
+import { roundTickSpec } from '../shared/roundTick.js'
+import { sceneBoundariesSpec } from '../shared/sceneBoundaries.js'
+import { sceneSummariesSpec } from '../shared/sceneSummaries.js'
 import { closeOutAction } from '../shared/summarize/summarizeSpec.js'
 import { createStorySpec } from './story/create.js'
 import { storyRespondSpec } from './story/respond.js'
@@ -68,7 +72,6 @@ import { storyAdvanceTimeSpec } from './story/advanceTime.js'
 import { storyLookSpec } from './story/look.js'
 import { storyRestSpec } from './story/rest.js'
 import { storyAfterRestSpec } from './story/afterRest.js'
-import { storyAskSpec } from './story/ask.js'
 import { storyAnswerSpec } from './story/answer.js'
 import { storyReckoningSpec } from './story/reckoning.js'
 import { storySweepSpec } from './story/sweep.js'
@@ -114,12 +117,29 @@ import { summarizeWorldSpec } from '../shared/summarize/world.js'
 import { storySummarizeSceneSpec } from './story/summarizeScene.js'
 import { guideSummarizeSceneSpec } from './guide/summarizeScene.js'
 import { lairSummarizeSceneSpec } from './lair/summarizeScene.js'
+import { dungeonCrawlerSummarizeSceneSpec } from './dungeon-crawler/summarizeScene.js'
 
 /** Built on first use, once: a registration compiles the pipeline it names. */
 const lazy = <T>(build: () => T): (() => T) => {
 	let value: T | undefined
 	return () => (value ??= build())
 }
+
+/**
+ * 🚧 The round tick (PLAN-sensible-engine §2.11): Story's and the Lair's, each in its genre defaults. It moves the clock by the session's round worth
+ * (`core:query/round-worth@1`); nothing is exposed on it, so there are no values to set here.
+ */
+const roundTick = lazy(() => register(coreEvents.roundEnded, roundTickSpec()))
+
+/** 🚧 The scenes routine (owner 2026-11-12): every 2 rounds, no model; its depth is the query's declared default, 2. */
+const sceneBoundaries = lazy(() => register(everyNRounds({ n: 2 }), sceneBoundariesSpec()))
+
+/**
+ * 🚧 The scene summaries routine (owner 2026-11-12, "maybe 6 rounds deep"): every 2 rounds, no model of its own; its
+ * depth is the query's declared default, 6. `minAge: 0`: the routine family's default (20 lines after each source)
+ * would refuse a six-round-old scene in a two-seat session; the query's `depth` is this routine's age guard.
+ */
+const sceneSummaries = lazy(() => register(everyNRounds({ n: 2 }), sceneSummariesSpec(), { minAge: 0 }))
 
 /** A core event by the id a turn-order handle lists — the declared object, never the string (R30). */
 const eventOf = (id: string): EventDef => {
@@ -203,8 +223,9 @@ export const storyRegistrations = lazy(() => {
 		...spine({ create: createStorySpec(), reply: respond, answerForm: answerFormStorySpec() }),
 		turnOrder: Object.freeze(turnOrderRegistrations(storyTurnOrder)),
 		/**
-		 * The nine actions the companion rule offered: Narrate, Side character,
-		 * Image, Scene, Time passes, Look, Rest, Ask, Answer. 🚧 Rest only while
+		 * The eight actions the companion rule offers: Narrate, Side character,
+		 * Image, Scene, Time passes, Look, Rest, Answer (Ask retired from Story 2026-11-04,
+		 * owner §0-F). 🚧 Rest only while
 		 * the rules offer no Rest of their own (S3: `unlessRulesOffer`).
 		 */
 		actions: Object.freeze([
@@ -222,7 +243,7 @@ export const storyRegistrations = lazy(() => {
 					register(handle, rest, { when: unlessRulesOffer(storySession(), restFunction) }),
 				)
 			})(),
-			...actionRegistrations(storyAskSpec(), storyAnswerSpec()),
+			...actionRegistrations(storyAnswerSpec()),
 		]),
 		/**
 		 * The reckoning after each round — today's *wait for everyone* (the
@@ -239,6 +260,12 @@ export const storyRegistrations = lazy(() => {
 		 * taken, the story clock moves by the rest they raised — no model call.
 		 */
 		afterRest: register(onEvent(coreEvents.restTaken), storyAfterRestSpec()),
+		/** 🚧 The round tick moves the story clock by the session's round worth (PLAN-sensible-engine §2.11); 0 turns it off. */
+		roundTick: roundTick(),
+		/** 🚧 The scenes routine: begins scenes by itself, a couple of rounds late (owner 2026-11-12); a preset may drop it. */
+		scenes: sceneBoundaries(),
+		// 🚧 Summarizes each finished scene a few rounds after it ends (owner 2026-11-12).
+		sceneSummaries: sceneSummaries(),
 		/** Read aloud on a message's ⋮ (speech lane D4). */
 		readAloud: readAloud(),
 		/** The summaries (R50): world, character, history, Story's summarize-scene. */
@@ -293,7 +320,8 @@ export const guideRegistrations = lazy(() =>
  *    core's turn controls, answered by the reply;
  *  - the **routines** — the keeper after each round, at **Review** (the old
  *    *Apply the Castellan's stat changes without asking*, off); the
- *    Castellan's scratchpad after each of its Sanctum replies; filing the
+ *    Castellan's scratchpad after each of its Sanctum replies; the round tick
+ *    (the clock, by the session's round worth; owner 2026-11-11); filing the
  *    current room when a scene opens, **Off** (R3: nothing unprompted);
  *  - the summaries.
  * @experimental
@@ -314,6 +342,12 @@ export const lairRegistrations = lazy(() =>
 		roll: Object.freeze(actionRegistrations(lairRollSpec(), lairRollAnswerSpec())),
 		/** The books after each round — Review: each change waits for the GM (the old `trustNarrator: false`). */
 		keeper: register(afterEachRound(), lairKeeperSpec(), { mode: 'review' }),
+		/** 🚧 The round tick moves the story clock by the session's round worth, as Story's does (owner 2026-11-11); 0 turns it off. */
+		roundTick: roundTick(),
+		/** 🚧 The scenes routine: begins scenes by itself, a couple of rounds late (owner 2026-11-12). */
+		scenes: sceneBoundaries(),
+		// 🚧 Summarizes each finished scene a few rounds after it ends (owner 2026-11-12).
+		sceneSummaries: sceneSummaries(),
 		/**
 		 * The Castellan's notes, after each of its replies in the Sanctum —
 		 * a reply (`liveRow`, the host's fact on `message-completed`: a run's
@@ -379,10 +413,14 @@ export const dungeonCrawlerRegistrations = lazy(() =>
 		 * clock moved, the journal's line — on the event the rules raise.
 		 */
 		afterRest: register(onEvent(coreEvents.restTaken), dungeonCrawlerAfterRestSpec()),
+		/** 🚧 The scenes routine: the crawl begins its scenes by itself, a couple of rounds late (owner 2026-11-12). */
+		scenes: sceneBoundaries(),
+		// 🚧 Summarizes each finished scene a few rounds after it ends (owner 2026-11-12).
+		sceneSummaries: sceneSummaries(),
 		/** Read aloud on a message's ⋮ (speech lane D4). */
 		readAloud: readAloud(),
-		/** The summaries (R50): world, character, history, core's summarize-scene. */
-		summaries: summaries(summarizeSceneSpec()),
+		/** The summaries (R50): world, character, history, the Dungeon Crawler's summarize-scene. */
+		summaries: summaries(dungeonCrawlerSummarizeSceneSpec()),
 	}),
 )
 

@@ -12,6 +12,7 @@
 	import type { ComponentContext } from "@serene-pub/sdk/component"
 	import { WIDGET_CONTEXT_KEY } from "@serene-pub/core-catalog/widgets"
 	import ChronicleWidget from "./ChronicleWidget.svelte"
+	import WidgetBoundary from "../WidgetBoundary.svelte"
 	import { widgetRefFromComponent } from "../widgetRef.svelte"
 
 	let { ctx }: { ctx: ComponentContext } = $props()
@@ -33,4 +34,4 @@
 	)
 </script>
 
-<ChronicleWidget ready={settled} />
+<WidgetBoundary {ctx}><ChronicleWidget ready={settled} /></WidgetBoundary>

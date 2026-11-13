@@ -140,10 +140,6 @@
 		<p data-widget-part="routine-log.alert" role="alert">{alert}</p>
 	{/if}
 
-	{#if view.empty}
-		<p data-widget-part="routine-log.empty empty" role="status">{t(view.empty)}</p>
-	{/if}
-
 	{#if view.away.length}
 		<section data-widget-part="routine-log.group" data-group="away" aria-label={t("While you were away")}>
 			<h3 data-widget-part="routine-log.group-head">{t("While you were away")}</h3>

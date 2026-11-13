@@ -44,6 +44,11 @@ export interface TurnMessage {
 	id: number
 	speakerId: number | null
 	/**
+	 * 🚧 The speaker's cast member (the member behind `speakerId`), when the
+	 * asker knows. What a `seated_member` owner matches on — never `speakerId`.
+	 */
+	castMemberId?: number | null
+	/**
 	 * The **turn** the message belongs to — the run that created it — when
 	 * the asker knows. Optional: absent, the
 	 * world's rule is the newest message alone, exactly as before. Present,
@@ -65,7 +70,11 @@ export interface TurnMessage {
  * @experimental
  */
 export interface TurnOwner {
-	kind: 'session' | 'session_cast'
+	/**
+	 * `session_cast`'s `id` is the card — ⏳ removed in S5 of the seat-cast
+	 * programme. 🚧 `seated_member`'s `id` is the cast member id.
+	 */
+	kind: 'session' | 'session_cast' | 'seated_member'
 	id: number
 }
 
@@ -81,8 +90,13 @@ export interface TurnOwner {
 export function openAnchorFor(messages: readonly TurnMessage[], owner: TurnOwner): number | null {
 	if (owner.kind === 'session')
 		return messages.length ? messages[messages.length - 1].id : null
-	for (let i = messages.length - 1; i >= 0; i--)
-		if (messages[i].speakerId === owner.id) return messages[i].id
+	// A card id and a cast member id share one number range: a `seated_member`
+	// owner is matched on `castMemberId` alone, never on `speakerId`.
+	const matches =
+		owner.kind === 'seated_member'
+			? (m: TurnMessage) => m.castMemberId === owner.id
+			: (m: TurnMessage) => m.speakerId === owner.id
+	for (let i = messages.length - 1; i >= 0; i--) if (matches(messages[i]!)) return messages[i]!.id
 	return null
 }
 

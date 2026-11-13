@@ -23,7 +23,6 @@ import {
 	difficultySlot,
 	directionSlot,
 	fateSlot,
-	crawlTimeSlot,
 	goalModeSlot,
 	inventorySlot,
 	locationSlot,
@@ -46,8 +45,7 @@ const tool = (slot: { id: string }, genres: readonly { id: string }[], owners?: 
  *    item lines (their supply checked); until those lines write the zone;
  *  · **the Lair's GM tools** — the standing direction (Nudge, on the world)
  *    and each delver's whisper (Whisper, heard by its holder alone);
- *  · **the Dungeon Crawler's** — each hero's place (the party may split), its
- *    time (`crawl-time`, the crawl's own clock: no lorebook calendar),
+ *  · **the Dungeon Crawler's** — each hero's place (the party may split),
  *    standing order, fate and death saves, the table's difficulty and goal
  *    — and ⏳ its piece lists (`crawl-weapons` … `crawl-fuses`), where its
  *    scripts keep the rules' pieces until they read the session's zones.
@@ -58,7 +56,6 @@ export const CORE_HOST_STATE: readonly HostStateDecl[] = Object.freeze([
 	tool(directionSlot, [lairGenre]),
 	tool(whisperSlot, [lairGenre]),
 	Object.freeze({ slot: locationSlot.id, role: "place", genres: [dungeonCrawlerGenre], owners: Object.freeze(["cast"] as const) }) as HostStateDecl,
-	Object.freeze({ slot: crawlTimeSlot.id, role: "time", genres: [dungeonCrawlerGenre] }) as HostStateDecl,
 	tool(standingOrderSlot, [dungeonCrawlerGenre]),
 	tool(fateSlot, [dungeonCrawlerGenre]),
 	...DUNGEON_CRAWLER_DYING_SLOTS.map((s) => tool(s, [dungeonCrawlerGenre])),

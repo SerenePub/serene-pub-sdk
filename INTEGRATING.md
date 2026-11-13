@@ -357,8 +357,8 @@ reads it. It rides `HostScope.portrayals` read-only for the host's own seams and
 deliberately not on any node's `ctx`: a definition that needs the answer declares an in-port
 and the spec wires it. Resolved for every run with a session behind it except a pre-call
 preview (`preview: true` — nobody speaks, so nobody is portrayed); a `{ atNode }` run is
-answered. The inlet's `speaker` port is a participant reference (`character:<id>` |
-`envoy:<slug>`), the one form audiences use, and the speaker is the AI's unless a member's
+answered. The inlet's `speaker` port is a participant reference (🚧 `seated-member:<id>` | ⏳
+`character:<id>` | `envoy:<slug>`), the one form audiences use, and the speaker is the AI's unless a member's
 presence portrays them.
 
 **The built-in writes (R-15, U5b).** *Anything that alters message state is a built-in*: core
@@ -401,7 +401,13 @@ the id; one `core:blocks` part is appended (`messages/blocks.ts`). Then the **pi
 `{ payload, form }` onto `HostScope.addressed`, and `runSpec` dispatches each as
 `core:event/form-addressed@1` **after `saveReceipt`** — through `dispatchSessionEvent`, with
 `lineage: childLineage(this run)` and the parent's `io` and `signal` — and awaits the tree before
-returning. A person or nobody: the block waits. Four things a host wired by hand should know:
+returning — in every genre. 🚧 2026-11-04: what a genre opts into is the AI's **answer**, never
+the event (`shape.forms.modelAnswers === true`): without it, a dispatched run whose document
+commits an answer (`core:outlet/answer-form`) halts at `runSpec`'s door before its first node — no
+model call — on a halted receipt under that spec (`refusalReceipt`), reason *"The AI does not
+answer forms in this genre: the genre does not opt in (forms.modelAnswers)."*; the event's other
+registrations run as before. A person or nobody: the block waits. Four things a host wired by hand
+should know:
 
 - **Lineage is the executor's to stamp and the host's to enforce.** `RunOptions.lineage`
   (`RunLineage`: `parentRunId` · `rootRunId` · `depth`) lands on the receipt; `saveReceipt` writes
@@ -872,14 +878,17 @@ and item-gated actions read `controllable`. Absent reads as `controllable`.
 slot's config that owner carries, `{ max: 26 }` on a seat's health — as an `attribute_configs` row
 through `setStatConfig` → `configure()` (`state/write.ts`), the writer `state:configure` takes. Its
 in-ports are one `StatConfigDocument` `{ owner, slot, config }` (SDK `attributes.ts`) — `owner` a
-participant reference (`player-seat:<id>`, `character:<id>`) or `world` — plus set-state's optional
+participant reference (`player-seat:<id>`, 🚧 `seated-member:<id>`, ⏳ `character:<id>`) or `world` — plus set-state's optional
 `worldRow`. Only what the slot's stat shape bounds is taken (`statConfigKeys`: `min`/`max`, `of`,
 `maxItems`/`maxLength`, `descriptor`); anything else, a bad value, a min above the max once merged,
 an untracked slot or an owner not the session's halts the run with the sentence
 (`statConfigRefusals`, `assertTracked`, `assertSessionOwner`). Anchored like a value, so a retake or
 swipe takes it back. `main` is `{ configId, owner, slot, before, config }`. What is in force reads
 back on `session-state@1` as `state.configs[<owner key>][<slot id>]` (`world`, or a `cast.byId`
-key), the number the Stats bar is drawn to.
+key), the number the Stats bar is drawn to. A `cast.byId` key (here and in `resolved.cast`) is an
+**opaque owner key** — `player_seat:<id>`, 🚧 `seated_member:<id>` from the flip, ⏳ the card id
+before it: a reader finds an entry by its host-filled `ref` or `castMemberId` (or takes the owner's
+`key`), never by building or parsing a key.
 
 **🚧 The keeper's clock proposal (live scenes §6, ★3, 2026-10-13).** `resolve-state-changes@1`
 takes the keeper's answer on an optional **`clock`** in-port (its `clock` list, `[{ by, unit }]`;
@@ -978,7 +987,9 @@ with `characterId: null`; `create-message@1` takes `speaker` and stores it as
 `metadata.speaker` — the row's only identity, since there is no row to name — and
 `build-template-context@1` takes `speaker` and compiles the envoy's card (name, description
 off the declaration) where a cast member's would be, through the `speakerName` /
-`speakerCharacter` seam a side character already uses.
+`speakerCharacter` seam a side character already uses. A seated cast member's reference is
+🚧 `seated-member:<castMemberId>` (⏳ `character:<cardId>` until S5); an envoy has no cast
+member, so its `castMemberId` is null.
 
 **Proves it:** SDK `envoys.test.ts`; the app's `envoyRoad.int.test.ts` (a guide session seats
 the mascot, the reply runs as it end to end, the panel's deviation reaches the wire byte for
@@ -994,7 +1005,7 @@ who speaks inside a reply**. Each genre has its own turn-order pipeline
 whose turn it is (`message-completed`, edits, deletions, cast and settings changes, …). It
 runs on the session's event queue after the write that caused it, **writes no message**, and
 writes the session's prepared turns with `core:outlet/set-turn-order@1` into
-the session's stored turn order (`TurnOrderV1`, kept by the host under annex owner `core`). Its steps are the rules path — **turn pool**
+the session's stored turn order (`TurnOrderV1`, kept by the host in the `turn_order` column of `sessions`, never in the annex; one writer, `writeTurnOrder`; bookkeeping, so never recorded or taken back). Its steps are the rules path — **turn pool**
 (who may be seated) → **turn orderer** (`turn-mentioned`: a mention moves a character up) →
 **turn strategy** (`turn-round-robin` by default; a swappable node) — or, under the genre field
 `turnMode: model`, the **turn advise** oracle.
@@ -1041,12 +1052,12 @@ Send ─► door (access · genre · persona · length · channel)
   shape — then offers the message (`sessions/offerMessage.ts`) instead of inserting it.
 - **The event** is an action and a declared root (like `message-respond`), payload
   `core:shape/message-offered@1` (`MessageOfferedPayload`: `person` `user:<id>`, `speaker`
-  `character:<id>` | `player-seat:<id>` | null, canonical `channel`, `text`, `trayItemIds`,
-  `replyTo?`), heard on `core:inlet/message-offered@1`, which publishes it port by port. Every
+  🚧 `seated-member:<id>` | ⏳ `character:<id>` | `player-seat:<id>` | null, canonical `channel`,
+  `text`, `trayItemIds`, `replyTo?`), heard on `core:inlet/message-offered@1`, which publishes it port by port. Every
   genre has it, listed in `events` or not (`genreHasEvent`) — so no genre declaration moved.
 - **The default save** is `core:spec/save-message` (`SAVE_MESSAGE_SPEC_ID`): no lock, every genre
   (the built-ins' footing), one `create-message@1` wired from the inlet with `role: 'user'` and
-  `trayItems`. The host commit holds a person's row to the run's own person on a root run — their
+  `trayItems`; the saved row carries 🚧 `castMemberId` (the speaker's cast member). The host commit holds a person's row to the run's own person on a root run — their
   persona (`personaId`), their card-less seat (stamped `player-seat:<id>`, as before) or
   themselves — commits the tray in one transaction with the row (`commitTraySend`), and fires the
   row's `message-completed` under `{ kind: 'user' }`, so turn order and auto-advance are unchanged.
@@ -1220,6 +1231,10 @@ contract below is published; the app binds the handler (`src/lib/server/rulesets
   universal lock: the host refuses a hand edit on `people`, every write on `all`, with its own
   sentence; `SessionStateOwnerV1.editable` and the config reach widgets, which draw a locked slot
   without edit controls.
+- 🚧 **Who changes what by hand** (2026-11-05): every hand edit is judged by the SDK's pure
+  `sheetLatitudeAllows` (sheet latitude and item moves per role, `changedBy`, the lock, earshot);
+  the host's one decider (`state/handEdits.ts`) quotes `HAND_EDIT_SENTENCES`, the default sentence
+  per cause, and sends each refused slot's sentence as `SessionStateOwnerV1.handLocked`.
 
 ## 1h. Personal channel lanes and faces (2026-10-17)
 
@@ -1238,7 +1253,9 @@ contract below is published; the app binds the handler (`src/lib/server/rulesets
   owner — a cast member's card art, a player seat's seat portrait
   (`session_personas.portrait_media_id`). `set-owner-face` (a core widget request) sets a seat's or
   member's by media ref; the request names its owner with `OwnerRefV1`, the one owner shape every
-  owner-naming request uses.
+  owner-naming request uses. `show-hidden-stats` (core's, 🚧) switches the viewer showing the hidden
+  stats of an AI character seat they seated; `SessionStateOwnerV1.showingHiddenStats` says
+  whether it is on, and is present only on such a seat.
 
 ---
 
@@ -1295,6 +1312,21 @@ and written nowhere.
   runs-in-a-row cap (system ≥ user ≥ routine) and after a restart until an interaction (R21).
   Runs record `pipeline_runs.trigger_family`, and the model queue serves interactive work, then
   events, then routines (A13). A routine acts as the session's owner (A14).
+  🚧 A genre that declares `shape.turnSeatChanges: true` gets `turnSeatChanges` (`TurnSeatChange[]`:
+  `ref`, `seatKind`, `castMemberId`, `change`) on `turn-ended` and on the routine's `cause` — the
+  seats added, removed or changed since the previous turn of that lane (the ledger ids after that
+  turn's line landed, through this line's; `member-added` / `member-removed` / `cast-changed`
+  netted per seat, a reorder not counted); `[]` when none, absent when the genre does not opt in.
+  A pass over them registers with `register(afterEachTurn(), pass, { allowStacking: true })` so a
+  skipped firing never loses a turn's list.
+  🚧 The scene summaries routine (`core:spec/scene-summaries`, `sceneSummariesSpec`, registered on
+  `everyNRounds({ n: 2 })`, `minAge: 0`) names the one scene due a summary with the query
+  `core:query/scene-summary-due@1` (a scene on `main` that ended `depth` rounds ago, default 6,
+  and that nobody has decided about) and hands it to `core:outlet/summarize-finished-scene@1`, which
+  starts the genre's own summarizer detached as a routine-family run. Under Full the result is saved
+  with `summary_origin = 'routine'` and never settles; under Review it waits as a person's would.
+  A step's `expose.purpose` is allowed on any step of a pipeline that calls no model at all, and
+  only on a model call in one that does (checked in `build()` and by `validate()`).
 - **Conformance.** C35 (every shipped registration fits), C36 (no plumbing reaches a member) and
   C37 (every preset is one level on one genre, one default per genre) judge a host's
   `shipped()` catalogue — pass its `pipelines` too, or C35 and half of C36 say what went
@@ -1330,6 +1362,133 @@ and written nowhere.
   owner only, refuses another member's send to it and leaves it out of their composer switch.
   Pipelines read and write it as before. `main` is never owner-only; an owner-only channel has no
   personal lanes.
+
+---
+
+## 1k. Character profile and cast members (2026-11-06)
+
+🚧 Declared in the SDK (lane cv-sdk); the host half is the app's.
+
+- **The character profile.** `CharacterProfileV1` and `CHARACTER_PROFILE_FIELDS` (17 fields)
+  mirror the app's `shared/characters/profile.ts` field for field. Greetings are one list
+  (`{ text, groupOnly? }[]`: the opener, the alternates, the group-only ones marked); creator
+  notes are `{ text, lang?, variants }`; `summary` is a separate optional one-liner.
+- **`CastMemberV1`.** `{ castMemberId, cardId, cardVersion, cardless, behindCard, follows,
+  profile }` — `profile` is as the session reads it, followed fields already filled from the card.
+- **`core:query/cast-member@1`.** In: `scope`, `member` (`seated-member:<id>`, `player-seat:<id>`
+  or a cast member id); out `main` = `CastMemberV1`. An unknown form, a seat with no cast member
+  or a member the session doesn't read is refused with a sentence. The host reads through the
+  session's reading (the app's `membersAsRead`).
+- **`core:outlet/update-cast-member@1`.** In: `member`, `changes` (`{ [profile field]: value |
+  { follow: true } }`, review on `changes`); out `main`, `castVersionId`. One story write through
+  the app's one writer `writeCastVersion`, anchored to the turn (Back takes it with the turn),
+  coalescing a second change in the same turn and moment. The genre's `writes.lore` and the lore
+  write mode decide where: the book's line, or under Review / Off the session's overlay row. A
+  genre must wire it (no core genre or spec does); it causes no event yet.
+  `changes` may also carry `nodeState` (`CAST_STATE_WORDS`) and `nodeVisibility`
+  (`normal` / `legendary` / `hidden`), checked against those words and dated and anchored like
+  the profile fields; the checker is the app's.
+- **`update-character@1`** takes the profile names (`name`, `description`, `personality`,
+  `scenario`, `greetings`, `exampleDialogues`) and writes the card's current version;
+  `first_mes` / `mes_example` are removed, not aliased (owner 2026-11-05).
+- **Card actions on a cast member** (🚧 2026-11-08). `core:inlet/card-action@1` has a
+  `castMemberId` port beside `characterId`; on a member's run `characterId` is null, on a card's
+  run `castMemberId` is. `attach-sprite` / `offer-media` then write to the member's own sprite
+  sets / gallery (a wired `characterId` must be empty); `sprites-attached` / `media-offered`
+  carry `castMemberId`, and `characterId` is null.
+- **`character-images`** takes `castMemberId` for a card-less member (exactly one of it and
+  `characterId`).
+- **`SessionCastV1`.** `character` is card-shaped but has no `id` or `userId` for a card-less
+  seat; read `ref` and `castMemberId`. `seatedByUserId` is the person who seated it and acts for
+  it. `currentCastMemberId` is the member speaking a card-less seat's turn, from the scope; set
+  only when `currentCharacterId` is null.
+- `library-characters` leaves out a provided book's carrier cards; read a member's `cardId`
+  through `core:query/cast-member@1` and write it by id with `update-character@1`.
+
+## 1l. Story events: scenes first (2026-11-10)
+
+🚧 Declared in the SDK (lane hist-C); the host half is the app's.
+
+- **The rule** (owner, 2026-11-10): "encouraging pipelines/modders to be targeting scenes first
+  for granular history updates, then history entries second, optimally compiling from scenes to
+  history entries."
+- **`core:outlet/note-scene@1`.** In: `text` (required), `scene` (optional scene id; else the
+  lane's open scene), `sources`; out `main`; review on `text`. Refused when `writes.scenes:
+  false`, the scene is another session's, or no scene is open. Never writes history or messages;
+  notes reach `summarize-request@1` and Compile. The host stores them on the scene (the app's).
+- **`create-lore-entry@1` with a history `entryType`** is the second choice: the host files it
+  onto the day's one entry (the story-now day when undated), appending a paragraph. For a session whose scenes end by themselves that entry is the day's one entry of the session's own book (merged onto the lorebook's day at Apply).
+  `update-lore-entry@1`: a history re-date is checked as a person's.
+- **Compile** is a person's press, closed to pipelines and plugins.
+- **`W_WRITES_HISTORY`** (a packager warning, not an error): a `create-lore-entry` node whose
+  resolved `entryType` is `core:entry/history`; specs on `core:inlet/summarize-request@1` are
+  exempt. `entryType` resolves through the SDK's `declaredNodeParams(doc, nodeKey)` (the node's
+  params with default-preset params laid over), now shared with conformance C39.
+
+## 1m. Benched seats (2026-11-10)
+
+🚧 Declared in the SDK (lanes bench-L2, bench-L3); the host half is the app's.
+
+- **The rule** (owner, 2026-11-10): a *benched* seat is in the session but out of play: out of the
+  turns, out of the prompt, never picked as a speaking seat, and its cast member's private lore
+  goes to the narrator, as a background member's does. A seat in play is live and not benched.
+  Core never benches on its own: a person does (Bench, drag, Save), or a genre that opts in.
+- **`core:outlet/set-seat-bench@1`.** In: `seat` (`seated-member:<id>`, `player-seat:<id>` or
+  `character:<id>`) and `benched` (`true` benches, `false` brings back), both JSON; out `main`,
+  `seat`, `seats`. Opt-in: refused, in words, unless the genre declares `writes.seats: true`. Tied
+  to the turn: Back, a retake and deleting the turn put the seat back; Forward does it again; a
+  person's later bench or bring-back wins (the undo only puts back a seat still as the pipeline
+  left it). A seat already that way is a no-op; envoys and removed seats are refused. The host
+  half is the app's: one writer, `setSeatBench`, and the record, one `seat-bench` session imprint (🚧 provisional name) per change, anchored to the turn.
+- **`writes.seats`** (`SessionShape.writes`, on a genre's `shape`): absent = off, unlike `writes.lore` and `writes.scenes`,
+  which default on. A person's own bench and drag are never gated by it.
+- **The cast read.** `SessionCastV1.sessionCharacters[].enabled` and `sessionPersonas[].enabled`:
+  `false` = benched. Every live seat is still listed, so a reader that must skip benched seats
+  filters on `enabled !== false`, as the Dungeon Crawler's `liveSeats` does.
+- **`characters.v1`** gives a benched persona seat `benched: true`, as it does a character seat; the
+  `characters` template variable holds a card only for seats in play, plus the speaker.
+- **Seat changes.** A bench or bring-back is a `cast-changed` event and, for a genre declaring
+  `turnSeatChanges: true`, a `TurnSeatChange` with `change: 'enabled'`.
+
+## 1n. Earlier scenes in the reply's prompt (2026-11-12)
+
+🚧 Declared in the SDK (lane sense-prm); the host half is the app's. Every name is provisional.
+
+- **The rule** (owner, 2026-11-12, ★E5 "Yes, as its own lane next"): a reply's prompt gains one
+  block, *Earlier in the story* (`{{{earlierScenes}}}`), holding the summaries of the session's
+  closed `main`-channel scenes **any of whose lines are no longer in the prompt**
+  (`sceneStart < firstKeptLine`), oldest first, each under its scene's name. Only scenes with a
+  usable summary (`done`, a person's or the scene summaries routine's) that are not compiled into a
+  history entry; once compiled, a scene is the lorebook's and reaches the prompt as history does. The
+  block has its own share of the budget; the oldest are left out first. No line is cut because a
+  summary exists. Seamless by default, no setting: a genre opts in by wiring the query.
+- **`core:query/earlier-scenes@1`** (`C.earlierScenes`, *Earlier scenes*). In: `scope`, `budget`
+  (`$.contextBudget.available`, like `session-history`'s). Param `share` (default 0.15, `0`–`1`,
+  *Share — earlier scenes*). Out `main`: `{ maxTokens: number | null, scenes: Array<{ sceneId,
+  name, summary, firstLineId }> }`: the eligible scenes **as data**, in story order (by where each
+  starts: its opening line, else its smallest selected line), at most the newest 200;
+  `maxTokens = floor(share × budget.total)`, `null` with no budget (then uncapped). A query writes
+  nothing. ⚠ Not `scene-summary-due@1` (the routine's look) and not `core:spec/scene-summaries`
+  (the routine that writes the summaries).
+- **`core:task/assemble@2`** gains, additively: the optional in-port `earlierScenes` (fed only by
+  that query's `main`), `renders.earlierScenes: 'core:var/earlier-scenes@1'` and the template name
+  `earlierScenes` (a laid-out string). Unwired, the block is empty and the prompt is byte-identical.
+  The host's binding renders only the scenes older than the first line the render keeps, newest
+  first under `maxTokens`; its transcript fit counts the block at every candidate cut (held and
+  fresh), so a held cut stays held once the block fills. A voice with no fit uses the first line it
+  was given.
+- **`core:var/earlier-scenes@1`** (`varEarlierScenes`, *Earlier in the story*): a list of
+  `{ name, summary }`, oldest first. Shipped layouts *JSON* and *Titled JSON block* (heading
+  `Earlier in the story:`).
+- **Prompt blocks.** `SHIPPED_PROMPT_BLOCK_IDS` gains `earlierScenes` after `history`;
+  `isShippedPromptBlocks` also accepts the list as it was before (`PREVIOUS_SHIPPED_PROMPT_BLOCK_IDS`,
+  `@internal`), so a stored pack from before the block means "leave the template alone" and the
+  shipped template renders it in place. A pack a person reordered does not get it by itself.
+- **Who wires it.** Story's reply (`gather.earlierScenes.read`), Narrate and the side-character
+  turn (`earlierScenes`); the Dungeon Crawler's Narrator (`earlierScenes`, sized by its own
+  `sceneBudget` context budget, with no fit on its assemble). Chat writes no scenes; the Lair is not
+  wired (its summaries may draw on the keeper's Sanctum: an open question for the owner).
+
 
 ---
 
@@ -1419,8 +1578,10 @@ uses a lowercase `seam` header so the census test does not read it.)
 | **Specs** (pipelines) | `spec()`, `pin()`, `slot()`, `use()` @public | Core's catalog specs. A package's own, under `pipelines` | *core*: `sdk-tests/coreCatalog.test.ts` › `the announcement builds — genres, pipelines, hooks validated as one package` · *package*: `sdk-tests/plugin.test.ts` › `it produces a manifest and the pipeline documents` |
 | **Genres** | `genre()`, `GenreDecl` @public | Story, Chat, Guide, the Lair and the Dungeon Crawler, each with its defaults (`withGenreDefaults`); Whodunit and Writing Room are showcase plugins (`serene-pub-plugin-whodunit`, `serene-pub-plugin-writing-room`). A package's own genre | *every core genre*: `sdk-tests/coreCatalog.test.ts` › `exactly one create pipeline serves each genre, and one respond serves its turn` · *Lair*: `sdk-tests/lair.test.ts` › `the GM is never in the scene; guests join as participants; the dungeon is offered, never required` · *package*: `sdk-tests/modderPass.test.ts` › `a plugin genre gets its own spec from the same call — the id is taken, never derived` |
 | **Presets** | `PresetInput` @experimental | Core's eight presets, each one set of changes on its genre's defaults (`register` · `drop` · `change` · `settings`). A package's own presets, for its genre or another's | `sdk-tests/presetsAsChanges.test.ts` › `the stored form: keys, never objects; bindings empty; no save-message written in; default marked` · `sdk-tests/presets.test.ts` › `three presets, one default, addressed by node key` · `sdk-tests/announce.test.ts` › `a preset leaving a required slot unbound refuses, and coverage says MISSING` |
+| **Variable layouts**: a package's renderers for a variable, each named by a layout reference `<owner>/<slug>@<major>` | `variableLayout()`, `VariableLayoutInput`, `TemplateSeed.slug`, `parseVariableLayoutReference` @experimental | Core's shipped and automatic layouts, stamped `core/<slug>@<major>` at boot. A package's own, under `templates` with `kind: 'variables'`, referenced as `<plugin id>/<slug>@<major>`; the template check's `layout` helper and filter name one in a context template | `sdk-tests/variableLayouts.test.ts` › `builds the seed for a plugin variable, kebabing a camelCase name` · `sdk-tests/variableLayouts.test.ts` › `parses good references` · `serene-pub/src/lib/server/pipelines/boot/layoutReferences.int.test.ts` › `gives a declared layout <owner>/<the id's name>@<the id's major>, and an automatic one <owner>/json@<variable major>` |
+| **A preset's variable layouts**: one layout per variable a preset states for its sessions | `PresetDecl.variableLayouts`, `PresetInput.variableLayouts`, `presetVariableLayoutFindings` @experimental | The app's `session_presets.variable_layouts`, written at install for a declared preset and from the preset form for a pub's; a reference no layout goes by is skipped and named on the presets list | `sdk-tests/presetVariableLayouts.test.ts` › `refuses a bad reference, naming the preset, key and value` · `sdk-tests/presetVariableLayouts.test.ts` › `accepts a reference to a layout nobody installed` · `serene-pub/src/lib/server/plugins/presetVariableLayouts.int.test.ts` › `lands in the column at install, a layout nobody installed accepted` |
 | **Registrations**: an event, an action or a cadence runs a pipeline | `register()`, `RegistrationDecl`, `registrationFindings`, `fitOf` @experimental | Core's five genres' defaults (`coreGenres()`), the app's `registrations` rows and its door (`registrationDoor`). A package's genre defaults and presets | `sdk-tests/registrations.test.ts` › `registrationKeyOf is pure and agrees with register()` · `sdk-tests/fit.test.ts` › `the ruled sentence: a reply reads the speaker; scene-opened carries none` · `sdk-tests/coreGenreDefaults.test.ts` › `every genre states its defaults, and every preset is changes on them` · `sdk-tests/conformance.test.ts` › `C35–C37 · the layering laws: core’s catalogue passes, and a catalogue that breaks each fails in words` |
-| **Cadences**: when a routine is due | `coreCadences`, `definePluginCadence`, `cadenceDue`, `simulateCadence` @experimental | Core's ten cadences, evaluated natively by the app; a plugin's through `core:script:cadence/due@1` in the sandbox | `sdk-tests/cadences.test.ts` › `every core cadence has a stable id, options as fields, the moments it wakes on and what it carries` · `sdk-tests/cadences.test.ts` › `the plugin cadence script kind is a verdict` |
+| **Cadences**: when a routine is due | `coreCadences`, `definePluginCadence`, `cadenceDue`, `simulateCadence` @experimental | Core's ten cadences, evaluated natively by the app; a plugin's through `core:script:cadence/due@1` in the sandbox | `sdk-tests/cadences.test.ts` › `every core cadence has a stable id, options as fields, the moments it wakes on and what it carries` · `sdk-tests/cadences.test.ts` › `the plugin cadence script kind is a verdict` · `sdk-tests/genreSeatChanges.test.ts` › `a genre’s shape.turnSeatChanges` |
 | **Settings exposure**: what reaches a session's owner | `FieldDecl.reach`, `fixedAtStart`, `setting()`, `resolveExposure` @experimental | The app's derived settings form (`sessions/settingsForm.ts`) and start asks | `sdk-tests/exposure.test.ts` › `values follow the chain; the owner sees an owner-reach setting nobody locked` · `sdk-tests/exposure.test.ts` › `a lock stops every layer below; a locked setting is the admin’s to read` |
 | **Turn strategies** | `TurnStrategyPin`, `turnOrderSpec` @public · the pins (`C.turnRoundRobin`, …) @experimental | Round robin, round robin by user (`turn-user-split`), random, scripted, manual and narrator, plus the model path's advise oracle (`turn-advise`). A package's own strategy | *round robin*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `lists everyone who has not spoken since the person did, in candidate order` · *by user*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrows to the last sender's own candidates` · *random*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `prepares exactly one entry, and the same one for the same seed` · *scripted*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `takes the chain's order, marking what it changed` · *manual*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `manual prepares nothing, whatever the history` · *narrator*: `serene-pub/src/lib/server/pipelines/runtime/turnStrategies.test.ts` › `narrator prepares one entry in nobody's name after a person's line` · *advise*: `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `turnMode model: the model's order stands, via model, and the receipt names the oracle` · *package*: `sdk-tests/packageConformance.test.ts` › `C32 and C33 pass on a strategy that fits core’s chat turn order and behaves as a hook` |
 | **Swaps**: definitions a person may put in a node's place | `expose.swaps`, `SwapContribution` @experimental | Chat's five turn-strategy swaps. A package's swap contributions onto another package's spec | `sdk-tests/modderPass.test.ts` › `swaps land on the built node and in the document as definition ids, pin never repeated` · `sdk-tests/modderPass.test.ts` › `announce().swaps() lands on the document, the definition as its id` · `serene-pub/src/lib/server/pipelines/runtime/turnAdvise.int.test.ts` › `the order names the strategy that ran — a pub-scope swap included (A7r)` |
@@ -1479,3 +1640,36 @@ them. Each one needs to be built once, or to stay `@experimental` until it is.
 - **Preview harness.** `ui-preview`, the dev harness that draws frame targets and package
   component targets, has no test of its own. `previewManifest` is tested, and so is the in-app
   component preview, but the harness page that draws the targets is not.
+
+## 6. Removed names — migration notes
+
+A published name that is removed gets a note here: old → new, one example. The SDK has no
+changelog file (release notes live on GitHub), so this section is the note.
+
+### `core:outlet/attach-lorebook@1` — removed in 0.6 (★B-4, 2026-11-08)
+
+**Why.** A session keeps the lorebook it started with: every session has one (its own book or an
+overlay), chosen when the session is created and never swapped (★27-10, ★B-5). Reading a lorebook
+into a session therefore has nothing left to do. `C.attachLorebook` is gone from
+`@serene-pub/contracts`.
+
+**Old → new.** Write into the session's lorebook (`core:outlet/create-lore-entry@1`), or start a
+new session with the lorebook you wanted.
+
+```ts
+// Before: a node that read a lorebook into the session.
+.outlet('read', ($) => C.attachLorebook.v1({ lorebookId: $.pick.lorebookId }))
+
+// After: write what you need into the lorebook the session already has
+// (`$.pick` is the same upstream node; `name` and `content` are its text out-ports).
+.outlet('save', ($) => C.createLoreEntry.v1({ name: $.pick.name, content: $.pick.content }))
+```
+
+**What a stored pipeline that still names it does.** The run halts at that node with the sentence
+below. `checkInstall` refuses a plugin that pins it (`E_UNKNOWN_TYPE`) and gives the same sentence
+as the `fix`. Both read `removedNodeDefinitionSentence`, so the sentence lives once.
+
+> Reading a lorebook into a session was removed in 0.6: a session keeps the lorebook it started
+> with. Write into the session's lorebook instead, or start a new session with that lorebook.
+
+`writes.library.sessions` stays declared (a published name) but nothing reads it since this removal.

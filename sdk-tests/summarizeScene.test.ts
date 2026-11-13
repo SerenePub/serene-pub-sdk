@@ -110,6 +110,7 @@ describe("core's genres own their summarize-scene", () => {
 		'core:genre/story': STORY_SUMMARIZE_SCENE_SPEC_ID,
 		'core:genre/guide': GUIDE_SUMMARIZE_SCENE_SPEC_ID,
 		'core:genre/lair': LAIR_SUMMARIZE_SCENE_SPEC_ID,
+		'core:genre/dungeon-crawler': 'core:spec/dungeon-crawler-summarize-scene',
 	}
 
 	test('each genre names its spec, and the catalogue publishes it', () => {

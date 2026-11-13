@@ -1215,6 +1215,239 @@ export const castPresences = pin(
 	}),
 )
 
+/**
+ * 🚧 **Minutes a round is worth** — the session's round worth, as a whole
+ * number and as a clock step.
+ *
+ * It reads the session's `roundWorth` genre field from the settings document
+ * (the cascade applied: the session's value, else its preset's, else the
+ * genre's, else the field's default). `minutes` is a whole number ≥ 0; `step`
+ * is `{ by: minutes, unit: 'minutes' }`, exactly what `core:task/clock-step@1`'s
+ * `step` in-port takes; `main` is `{ minutes, step }`. All of it is 0 when the
+ * genre places no `roundWorth` field (it has not opted in) or the session sets
+ * 0 (off).
+ *
+ * It never reads or moves the clock and does not say whether one is set: gate
+ * on `core:query/cast-presences@1`'s `at` for that.
+ *
+ * ⚠ Not the Dungeon Crawler Planner's round minutes (the time one round took,
+ * judged), and not `core:task/clock-step@1`.
+ * @experimental
+ */
+export const roundWorth = pin(
+	describeQueryDefinition({
+		id: 'core:query/round-worth@1',
+		i18n: { name: { en: 'Minutes a round is worth' } },
+		timeoutMs: 2000,
+		ports: {
+			in: { scope: S.sessionScope },
+			out: {
+				/** `{ minutes, step }`. */
+				main: S.json,
+				/** The round worth as a whole number of minutes, ≥ 0. */
+				minutes: S.json,
+				/** `{ by: minutes, unit: 'minutes' }`: what `clock-step@1`'s `step` in-port takes. */
+				step: S.json,
+			},
+		},
+	}),
+)
+
+/**
+ * 🚧 One scene boundary the scenes routine found: the line it begins at, the boundary trigger that fired there, and its words. @experimental
+ */
+export interface SceneBoundary {
+	/** The message id the new scene begins at. */
+	at: number
+	/** The boundary trigger that fired there: a core trigger key (`dayCrossed`, `placeChanged`, `timeAction`, `opening`, …) or a genre's declared one. */
+	trigger: string
+	/** What the boundary trigger says, as the chip and the divider say it ("the day changed"). */
+	reason: string
+}
+
+/**
+ * 🚧 **Where scenes begin** — the scenes routine's code-only look back over
+ * the session's `main` channel (every name here is provisional).
+ *
+ * It walks the channel's standing lines up to the newest line that is at least
+ * `depth` rounds old (a round as the turn order counts it), evaluates the
+ * session's enabled boundary triggers line by line, and returns
+ * `SceneBoundary[]` in line order on `main`. **A query writes nothing.**
+ *
+ * Where the walk starts is derived, never stored: after the latest of the
+ * channel's latest scene boundary, its latest decided or offered scene cue, and
+ * a branch's last copied line. `routine` is the routine inlet's `routine` port
+ * (the firing); its cadence's `n` bounds how far back a session with none of
+ * those looks. `depth` keeps a line that is swiped, retaken or taken back from
+ * ever being read.
+ *
+ * ⚠ Not the judged scene check (the sweep's model question) and not
+ * `core:outlet/propose-scene-cue@1` (which places).
+ * @experimental
+ */
+export const sceneBoundaries = pin(
+	describeQueryDefinition({
+		id: 'core:query/scene-boundaries@1',
+		i18n: { name: { en: 'Where scenes begin' } },
+		timeoutMs: 5000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					depth: {
+						type: 'integer',
+						default: 2,
+						min: 1,
+						max: 50,
+						label: { en: 'Rounds it waits' },
+						description: {
+							en: 'Only lines at least this many rounds old are read, so a line that is swiped, retaken or taken back is never read.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { scope: S.sessionScope, routine: S.json },
+			out: { main: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 **The scene due a summary** — the scene summaries routine's code-only look
+ * at the session's `main` channel (every name here is provisional).
+ *
+ * `main` is **the oldest** finished scene on `main` that is due a summary, as
+ * its scene id (a number), or `null` when none is due. Due: it closed at least
+ * `depth` rounds ago (a round as the turn order counts it), it is not
+ * summarized, and nobody has decided about it — a summary a person saved, a
+ * review a person discarded, a failed run, a run going or a review waiting are
+ * never taken; the session's **Summaries** is not *Never*; and no turns are
+ * taken back. At most one scene per run. **A query writes nothing.**
+ *
+ * ⚠ Not *Summarize all* (the app's `scenesToSummarize`: every unsummarized
+ * scene, a person's press) and not `core:outlet/summarize-finished-scene@1`
+ * (which starts the summary).
+ * @experimental
+ */
+export const sceneSummaryDue = pin(
+	describeQueryDefinition({
+		id: 'core:query/scene-summary-due@1',
+		i18n: { name: { en: 'The scene due a summary' } },
+		timeoutMs: 5000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'behavior',
+				schema: {
+					depth: {
+						type: 'integer',
+						default: 6,
+						min: 1,
+						max: 50,
+						label: { en: 'Rounds after it ends' },
+						description: {
+							en: 'A scene is summarized once it ended at least this many rounds ago, so its lines have stopped changing.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { scope: S.sessionScope },
+			out: { main: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 **Earlier scenes** — the summaries of this session's finished scenes, for
+ * the block *Earlier in the story* (every name here is provisional).
+ *
+ * `main` is `{ maxTokens: number | null, scenes: Array<{ sceneId: number,
+ * name: string, summary: string, firstLineId: number }> }`: the session's
+ * closed `main`-channel scenes with a usable summary (`summaryStatus =
+ * 'done'`, a person's or the routine's) that are not compiled into a history
+ * entry, in story order (oldest first, by where each scene starts: its opening
+ * line, else its smallest selected line), at most the newest 200. `name` is
+ * the scene's name as shown; `firstLineId` is its first line's message id.
+ * `maxTokens` is `floor(share × budget.total)`, or `null` when `budget` is
+ * unwired (then the block is not capped).
+ *
+ * It returns data, never rendered text: `core:task/assemble@2` decides which
+ * scenes show (only those whose first line is older than the first line the
+ * prompt keeps) and fits them to `maxTokens`.
+ *
+ * ⚠ Not `core:query/scene-summary-due@1` (the routine's look, one scene), not
+ * `core:spec/scene-summaries` (the routine that writes the summaries) and not
+ * `core:query/session-history@1`. **A query writes nothing.**
+ * @experimental
+ */
+export const earlierScenes = pin(
+	describeQueryDefinition({
+		id: 'core:query/earlier-scenes@1',
+		i18n: { name: { en: 'Earlier scenes' } },
+		timeoutMs: 2000,
+		slots: {
+			params: {
+				kind: 'parameters',
+				facet: 'weights',
+				schema: {
+					share: {
+						type: 'number',
+						min: 0,
+						max: 1,
+						default: 0.15,
+						label: { en: 'Share — earlier scenes' },
+						description: {
+							en: 'How much of the context window the summaries of earlier scenes may take. When they do not fit, the oldest are left out first.',
+						},
+					},
+				},
+			},
+		},
+		ports: {
+			in: { scope: S.sessionScope, budget: S.budget },
+			out: { main: S.json },
+		},
+	}),
+)
+
+/**
+ * 🚧 **One cast member**, as the scope session reads them — their line, their
+ * clock, the session's own notes over the book.
+ *
+ * `member` is `seated-member:<castMemberId>`, `player-seat:<seatId>` (that
+ * seat's cast member), or a cast member id (a number) of the session's
+ * lorebook or its own. Anything else, a seat with no cast member, or a member
+ * the session doesn't read is refused with a sentence.
+ *
+ * `main` is `CastMemberV1` (`@serene-pub/sdk`): the member, the card version
+ * they follow, which fields they follow, and the character profile as the
+ * session reads it.
+ * @experimental
+ */
+export const castMember = pin(
+	describeQueryDefinition({
+		id: 'core:query/cast-member@1',
+		i18n: { name: { en: 'Cast member' } },
+		timeoutMs: 2000,
+		ports: {
+			in: {
+				scope: S.sessionScope,
+				/** `seated-member:<id>`, `player-seat:<id>`, or a cast member id. */
+				member: S.json,
+			},
+			out: {
+				/** `CastMemberV1`. */
+				main: S.json,
+			},
+		},
+	}),
+)
+
 /** @experimental */
 export const vectorSearch = pin(
 	describeQueryDefinition({
@@ -2887,6 +3120,14 @@ export const graphScenes = pin(
  * declaration default, with absence meaning **inherit** rather than zero, and
  * derived slots computed rather than read.
  *
+ * 🚧 Each `cast.byId` entry carries `ref` (the seat's participant reference,
+ * as the host fills it), `castMemberId` (the seat's cast member) and `cardId`
+ * (the member's active card on the timeline; null when card-less). A reader
+ * looks an entry up by `ref` or `castMemberId` (or takes the owner's `key` off
+ * `session-state@1`'s owners), never by building or parsing the key: it is an
+ * opaque owner key — `player_seat:<id>`, 🚧 `seated_member:<id>` from the
+ * flip, ⏳ the card id before it.
+ *
  * A Query, and a plain one: what it is is a read. There is no as-of parameter
  * — this is the `current` view, and the temporal registry that would give the
  * other one is not built (see docs/stats-and-states.md).
@@ -3037,7 +3278,8 @@ export const lorebookState = pin(
 				/**
 				 * One owner: `"world"`, `{ kind: 'cast_member', id }` or
 				 * `{ kind: 'location', id }` (the session kinds `session`,
-				 * `session_cast`, `session_location` are translated). Optional.
+				 * 🚧 `seated_member`, ⏳ `session_cast`, `session_location` are
+				 * translated). Optional.
 				 */
 				owner: S.json,
 				/** 🚧 `'main'`, `'mostRecent'`, `'session'` or a branch id of this book. Optional. */

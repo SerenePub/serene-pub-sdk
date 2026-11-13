@@ -626,6 +626,8 @@ describe('🚧 Vis Itineris declares its check method, its tags and its amounts 
 		// 🚧 Moved again 2026-10-23 (RF fix 8): its borrowed level, class and health say their tags (`level`,
 		// `class`, `health`) for what a genre plays best with. Proven: with those three tags taken off, it
 		// hashes to '75f4c4c69cd43155'. Recomputed after the final build.
-		assert.equal(digest, '17daa8bfe5339da9') // was '75f4c4c69cd43155', before that '4ade3f8c8d3caf8b', before that 'b07a6e3b8fe47be0'
+		// 🚧 Moved again 2026-11-05 (lane sl, owner ruling plan §24/§25 ★5): every attribute says
+		// `changedBy: ['rules']` — only that (`catalogueParity` strips it and reads the rest as before).
+		assert.equal(digest, '5b60022a0df4ccc4') // was '17daa8bfe5339da9', before that '75f4c4c69cd43155', before that '4ade3f8c8d3caf8b', before that 'b07a6e3b8fe47be0'
 	})
 })

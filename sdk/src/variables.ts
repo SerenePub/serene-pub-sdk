@@ -490,6 +490,40 @@ export const varHistory = defineVariable({
 	},
 })
 
+// 🚧 Provisional. Not `history` (compiled, dated entries): these are the
+// session's own scene summaries, oldest first, for scenes whose lines have left
+// the prompt.
+/** @experimental */
+export const varEarlierScenes = defineVariable({
+	id: 'core:var/earlier-scenes@1',
+	i18n: { name: { en: 'Earlier in the story' } },
+	description: {
+		en: "The summaries of this session's finished scenes whose lines are no longer in the prompt, oldest first, each with its scene's name.",
+	},
+	scope: {
+		earlierScenes: {
+			type: 'list',
+			of: {
+				type: 'object',
+				fields: {
+					name: { type: 'string', description: { en: "The scene's name, as shown." } },
+					summary: { type: 'string', description: { en: "The scene's summary." } },
+				},
+			},
+		},
+	},
+	sample: [
+		{
+			name: 'Scene 1 · The ferry',
+			summary: 'Ash and Rell crossed the river at dusk and lost the mule to the current.',
+		},
+		{
+			name: 'Scene 2 · Greyford',
+			summary: 'In Greyford the reeve refused them lodging until Rell paid in salt.',
+		},
+	],
+})
+
 /**
  * Documentation excerpts retrieved for the latest question — the band
  * `core:query/docs-search@1` publishes (the guide genre's retrieval; declared
@@ -752,7 +786,7 @@ export const varCurrentDate = defineVariable({
 	id: 'core:var/current-date@1',
 	i18n: { name: { en: 'Current date' } },
 	description: {
-		en: "The story's present date: the lorebook's clock when it is set, else the most recent history entry.",
+		en: "The story's present date: the session's clock when it is set, else the present of the session's line, else the most recent history entry.",
 	},
 	/**
 	 * ⚠ Was `{ currentDate: { type: 'string' } }` with the sample

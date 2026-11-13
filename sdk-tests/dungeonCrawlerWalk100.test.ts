@@ -54,7 +54,7 @@ test('P0-1: the story turn ends on a user turn — the round is the books call�
 test('P0-1: a round nobody spoke in says so — Continue resolves it from the standing orders', () => {
 	const seat = { seatId: 5, seatUserId: 1, seatName: 'Ann', persona: null, removedAt: null }
 	const session = { sessionId: 7, ownerUserId: 1, guests: [], cast: { sessionPersonas: [seat] }, annex: { core: {} } }
-	const books = (story: unknown[]) => runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session, state: {}, story, places: [], people: [], fallen: [], log: [] })
+	const books = (story: unknown[]) => runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session, state: {}, story, places: [], people: [], log: [] })
 	assert.match(books([{ role: 'assistant', content: 'The water stills.' }]).brief, /Nobody new declared this round: resolve it from each character's standing order\./)
 	assert.doesNotMatch(
 		books([{ role: 'assistant', content: 'The water stills.' }, { role: 'user', content: 'I wade in.', userId: 1 }]).brief,
@@ -71,7 +71,7 @@ const session = (annex: Record<string, unknown> = {}, seats: any[] = [MIRA], ext
 	sessionId: 7,
 	ownerUserId: 1,
 	guests: [7],
-	cast: { sessionPersonas: seats, characters: [{ id: 30, name: 'Brother Tamsin' }] },
+	cast: { sessionPersonas: seats, sessionCharacters: [{ character: { id: 30, name: 'Brother Tamsin' }, ref: 'seated-member:20', castMemberId: 20, enabled: true, removedAt: null, position: 0, absorbedAliases: [] }] },
 	channelLanes: { [cat.PARLEY_CHANNEL]: { 'user:1': 'parley', 'user:7': 'parley:2' } },
 	annex: { core: { ...annex } },
 	...extra,
@@ -91,7 +91,7 @@ const planOf = (deltas: unknown[]) =>
 		json: { deltas, world: { rooms: [], npcs: [], leads: [], goalProgress: 'none', notes: '' }, clock: { minutes: 5 }, narratorBrief: 'On.', roundSummary: '', secrets: [] },
 	})
 const booksOf = (s: any, st: any, story: unknown[] = [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], ruleset: unknown = VI_IN) =>
-	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story, places: PLACES, people: [], fallen: [], log: [], ruleset })
+	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story, places: PLACES, people: [], log: [], ruleset })
 const turnOf = (s: any, st: any, deltas: unknown[]) =>
 	runScript(cat.DUNGEON_CRAWLER_TURN_SCRIPT, { session: s, books: booksOf(s, st), first: planOf(deltas), state: st })
 
@@ -122,7 +122,7 @@ test("P1-1: deltas normalised before the handler refuses them — names, an over
 	// executes it — heals, cures — and spends what it uses up. Off it (Story), the piece is spent in words.
 	assert.deepEqual(t.deltas[1], { owner: 'player-seat:4', op: 'use', piece: 'potion-of-healing', reason: 'drinks it' })
 	const storyBooks = runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, {
-		session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], fallen: [], log: [],
+		session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], log: [],
 		ruleset: rulesetIn('core:ruleset/freeform@1', 'prose'),
 	})
 	// 🚧 A table of words is asked in its own branch (PLAN-dc-after-walk2 Q2-3): its answer is `firstWords`.
@@ -314,7 +314,7 @@ test("P0-4: the guest's greeting says where the world stands now; the sheet's ch
 const VI = VI_IN
 const STORY_RS = rulesetIn('core:ruleset/freeform@1', 'prose')
 const booksIn = (s: any, st: any, ruleset: unknown) =>
-	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], fallen: [], log: [], ruleset })
+	runScript(cat.DUNGEON_CRAWLER_BOOKS_SCRIPT, { session: s, state: st, story: [{ role: 'user', content: 'I act.', speaker: 'player-seat:4' }], places: PLACES, people: [], log: [], ruleset })
 const fieldsIn = (b: any, rigour = 'scripts', ruleset: unknown = VI_IN) =>
 	runScript(cat.DUNGEON_CRAWLER_RULESET_FIELDS_SCRIPT, { blocks: [], facts: { rigour }, books: b, state: state(), ruleset })
 

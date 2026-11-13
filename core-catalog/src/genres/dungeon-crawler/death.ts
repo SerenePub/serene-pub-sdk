@@ -9,9 +9,14 @@
  *  - **taken out** (Gentle — 🚧 or any table whose ruleset keeps no fall
  *    rule, where nothing is rolled) — the seat's `fate` is `taken-out`:
  *    down, alive, out of the fight until a Rest brings them back;
- *  - **dead** (Fair, Brutal) — the seat's `fate` is `dead`, a **cairn** is
- *    raised in the session's own lorebook (a `core:entry/history` entry: the
- *    epitaph, where they fell — `lore.ts`), and the player's Planner lane
+ *  - **dead** (Fair, Brutal) — the seat's `fate` is `dead`, the seat's cast
+ *    member is marked `deceased` (`core:outlet/update-cast-member@1`, a cast
+ *    version tied to the turn's row; the ledger's `deceased`, placed in
+ *    `story.ts`), the fallen is kept in `progress.fallen` (`{ name, where,
+ *    seat, castMemberId }`, never spent — the Planner's crib reads it), and
+ *    **no lore is written** (owner ruling 2026-11-10: Dungeon Crawler stops
+ *    writing history). The Narrator names the death in a sentence of its
+ *    own. The player's Planner lane
  *    gets a line with *Make a new character* — a form that re-enters the
  *    character half of the interview (`referent: new-character`). The
  *    newcomer is owed an **arrival** (`progress.arrivals`: who, the fallen's
@@ -29,12 +34,14 @@
  * Why a `fate` slot rather than the seat's `removed_at`: the seat must stay
  * (it is the player's place at the table and the new character's), and a
  * slot is state — anchored to the turn's row, so retaking the turn undoes
- * the death with everything else it wrote; the cairn is an entry anchored to
- * the same row, and goes with it.
+ * the death with everything else it wrote; the `deceased` cast version is
+ * tied to the same row, and goes with it (a swipe takes it back and the
+ * redo files it again, once). `progress.fallen` is the genre's own list and
+ * never spent (arrivals count down and go; the fallen stay). 🚧
  *
  * Not a script of its own: the fragment below runs inside the story turn's
  * books (`core:script/dungeon-crawler-ledger`, `story.ts`), over its
- * variables — `progress`, `changes`, `told`, `laneLines`, `fallenNew`, `d`
+ * variables — `progress`, `changes`, `told`, `laneLines`, `deceased`, `d`
  * (death's door), `doc` (the session), `b` (the books), `seatFor`,
  * `seatsNow` (the seats as the turn's changes left them).
  */
@@ -144,11 +151,18 @@ for (var di = 0; di < deathsList.length; di++) {
 		continue;
 	}
 	var where = text(ds.location);
-	fallenNew.push({
-		name: ds.name,
-		content: "Here lies " + ds.name + ((ds["class"] ? ", " + ds["class"] : "") + ", level " + num(ds.level, 1)) + ", who fell" + (where ? " in " + where : "") + "."
-	});
-	told.push(ds.name + " is dead: the dice decided it at death's door. Show the death plainly and with weight; nothing undoes it.");
+	// 🚧 The fallen's record is its cast state (owner ruling 2026-11-10): the
+	// seat's cast member is marked deceased; no lore entry is written.
+	// Only a ref update-cast-member@1 takes; an old card ref (character:<id>)
+	// with no member is skipped, so the turn still files the fallen list.
+	var deadRef = ds.castMemberId != null ? "seated-member:" + ds.castMemberId : ds.ref;
+	if (typeof deadRef === "string" && (deadRef.indexOf("seated-member:") === 0 || deadRef.indexOf("player-seat:") === 0)) {
+		deceased.push({ member: deadRef, changes: { nodeState: "deceased" } });
+	}
+	var fallenList = Array.isArray(progress.fallen) ? progress.fallen.slice() : [];
+	fallenList.push({ name: ds.name, where: where, seat: ds.ref, castMemberId: ds.castMemberId != null ? ds.castMemberId : null });
+	progress.fallen = fallenList;
+	told.push(ds.name + " is dead: the dice decided it at death's door. Name " + ds.name + "'s death plainly, in a sentence of its own, and give it weight; nothing undoes it.");
 	if (ds.user != null) {
 		var arrivals = Array.isArray(progress.arrivals) ? progress.arrivals.slice() : [];
 		arrivals.push({ who: "user:" + ds.user, fallen: ds.name, where: where, left: ${DUNGEON_CRAWLER_ARRIVAL_ROUNDS} });
@@ -156,7 +170,7 @@ for (var di = 0; di < deathsList.length; di++) {
 		var deadLane = laneOf(doc, ds.user);
 		if (deadLane && b.fresh) laneLines.push({
 			lane: deadLane,
-			text: ds.name + " has fallen" + (where ? " in " + where : "") + ". I'm sorry. Their cairn stands in the world now, and the story goes on without them. When you're ready, make a new character: they will arrive near where " + ds.name + " fell, within a couple of rounds.",
+			text: ds.name + " has fallen" + (where ? " in " + where : "") + ". I'm sorry. The story goes on without them. When you're ready, make a new character: they will arrive near where " + ds.name + " fell, within a couple of rounds.",
 			blocks: [{
 				kind: "choices", addressee: "user:" + ds.user, referent: NEW_CHARACTER, question: "Make a new character?",
 				actions: [{ fn: "answer", action: INTERVIEW_ACTION, choice: NEW_CHARACTER, label: "Make a new character" }]

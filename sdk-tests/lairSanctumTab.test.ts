@@ -21,17 +21,19 @@ import {
 
 test("the Lair's live layout has no Sanctum panel: the story's copy shows the Sanctum as a tab", () => {
 	const layout = lairGenre.layouts![0]!.preset as any
-	const right = layout.panels.right as Array<{ tabs: string[]; pinned?: false }>
+	const right = layout.panels.right as Array<{ tabs: string[] }>
+	// Places and the scratchpad are tabs of one panel; the last persona sits under them.
 	assert.deepEqual(
 		right.map((p) => p.tabs),
-		[['places'], ['annex#castellan']],
+		[['places', 'annex#castellan'], ['scene-portraits#persona']],
 	)
-	assert.ok(right.every((p) => p.pinned === undefined), 'the right column opens whole')
-	assert.deepEqual(layout.panels.middle.primary.tabs, ['messages'])
+	// The Sanctum is still a tab of the one middle copy of Messages; the Composer is its own panel.
+	assert.deepEqual(layout.panels.middle[0].tabs, ['messages'])
 	// No copy claims a channel, so the story's copy is every channel's.
 	for (const [id, values] of Object.entries(layout.widgetSettings ?? {}))
 		assert.equal((values as { channel?: unknown }).channel, undefined, `${id} claims no channel`)
-	assert.deepEqual(layout.widgetSettings.messages, { otherTabsComposer: 'minimal' })
+	assert.equal(layout.widgetSettings.messages, undefined)
+	assert.deepEqual(layout.widgetSettings.composer, { otherTabsComposer: 'minimal' })
 })
 
 test('the tabs are named by the genre: Story and Sanctum, Pick and retake off the Sanctum', () => {
@@ -51,8 +53,10 @@ test('the tabs are named by the genre: Story and Sanctum, Pick and retake off th
 })
 
 test('the widget declares the other tabs’ composer, Same by default', () => {
-	const messages = CORE_WIDGETS.find((w) => w.id === 'messages')
-	const setting = messages?.settings?.otherTabsComposer as { type?: string; of?: string[]; default?: string } | undefined
+	// Owner R8 2026-11-05: the setting moved with the composer to its own widget.
+	const composer = CORE_WIDGETS.find((w) => w.id === 'composer')
+	assert.equal(CORE_WIDGETS.find((w) => w.id === 'messages')?.settings?.otherTabsComposer, undefined)
+	const setting = composer?.settings?.otherTabsComposer as { type?: string; of?: string[]; default?: string } | undefined
 	assert.equal(setting?.type, 'enum')
 	assert.deepEqual(setting?.of, ['same', 'classic', 'minimal', 'writer', 'quill'])
 	assert.equal(setting?.default, 'same')

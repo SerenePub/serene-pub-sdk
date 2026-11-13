@@ -117,6 +117,10 @@ describe('scenePortraitsOf', () => {
 		assert.deepEqual(out.at(-1), {
 			key: 'character:9',
 			characterId: 9,
+			// 2026-11-05 s27-S3G: a portrait carries the host-filled cast member and
+			// active card (seat-cast S3); this fixture's host fills neither.
+			castMemberId: null,
+			cardId: null,
 			isPersona: true,
 			name: '#9',
 			src: '/media/w',
@@ -126,6 +130,8 @@ describe('scenePortraitsOf', () => {
 			spriteSets: [],
 			spriteSetOverride: null,
 			offersSpriteSets: false,
+			// 2026-11-11 PLAN-visual-novel-layout: a portrait says whether its member wrote the line shown; no `speakerRef` here.
+			speaking: false,
 		})
 		assert.equal(out.length, 4)
 		// A viewer voicing no persona here: none is drawn.

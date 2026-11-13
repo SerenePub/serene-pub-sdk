@@ -21,7 +21,7 @@
  *
  * 🚧 Provisional with the widget.
  */
-import type { AttendanceV1, AttendeeV1, SessionCharactersV1, ViewerV1 } from '@serene-pub/sdk'
+import type { AttendanceV1, AttendeeV1, ParticipantRef, SessionCharactersV1, ViewerV1 } from '@serene-pub/sdk'
 
 /** A translation: English source in, the viewer's words out. @experimental */
 export type AttendanceT = (source: string) => string
@@ -68,7 +68,8 @@ export function attendanceLastHere(at: number | null, now: number, t: Attendance
 
 /** One persona a person writes as, as drawn. @experimental */
 export interface AttendancePersonaView {
-	ref: `character:${number}`
+	/** The seat's `ref`, as `characters.v1` carries it. */
+	ref: ParticipantRef
 	/** What `open-character` opens. */
 	characterId: number
 	name: string
@@ -115,11 +116,6 @@ export interface AttendanceInputs {
 	t: AttendanceT
 }
 
-const characterIdOf = (ref: string): number | null => {
-	const m = /^character:(\d+)$/.exec(ref)
-	return m ? Number(m[1]) : null
-}
-
 /**
  * Group the session's attendance into Here and Away, word each row, and find
  * each persona's name and face in the cast. A persona the cast does not list
@@ -137,11 +133,11 @@ export function attendanceView(input: AttendanceInputs): AttendanceView {
 		const out: AttendancePersonaView[] = []
 		for (const ref of p.personaRefs ?? []) {
 			const m = byRef.get(ref)
-			const characterId = characterIdOf(ref)
-			if (!m || characterId === null) continue
+			if (!m) continue
 			out.push({
 				ref,
-				characterId,
+				// What `open-character` opens is a card: the member's active card, else ⏳ `characterId` (removed in S5).
+				characterId: m.cardId ?? m.characterId,
 				name: m.name,
 				face: settings.faces ? (m.face ?? null) : null,
 			})

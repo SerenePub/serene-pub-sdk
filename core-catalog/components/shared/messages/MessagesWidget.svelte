@@ -1,20 +1,9 @@
 <script lang="ts" module>
 	import type { MessageOrder } from "@serene-pub/core-catalog/conversation"
 
-	/** How the composer's field is drawn. */
-	export type ComposerSkin = "classic" | "minimal" | "writer" | "quill"
-
-	/** Which end of the widget the composer sits at. */
-	export type ComposerPosition = "bottom" | "top"
-
 	/**
-	 * Who is due next (PLAN-turn-order §4.9): the order's head with Continue,
-	 * the head and who follows it, or nothing.
-	 */
-	export type NextUp = "head" | "list" | "hidden"
-
-	/**
-	 * How wide the log's rows and the composer run: a reading column of about
+	 * How wide the log's rows run (and, through the host, the Composer beside
+	 * it): a reading column of about
 	 * 76 characters of the story's body text centred in the box (`column`,
 	 * the default since ★R1, 2026-10-24), the whole width the layout gives
 	 * the widget (`full`), or the narrower measure (`comfortable`, about
@@ -36,17 +25,11 @@
 	 * with the declared default wherever the instance has no deviation. The
 	 * page receives this object too (as the snippet parameter and through
 	 * `onSettings`), so the log, the composer and the page's scroll handling
-	 * all answer to one reading of the settings.
+	 * all answer to one reading of the settings. The composer's and the turn
+	 * line's settings are theirs now (owner R8 2026-11-05).
 	 */
 	export interface ConversationSettings {
 		order: MessageOrder
-		composerSkin: ComposerSkin
-		/**
-		 * 🚧 The composer while a tab other than the first is shown
-		 * (`otherTabsComposer`, lair fix 2), or `same` — `composerSkin`.
-		 */
-		otherTabsComposer: ComposerSkin | "same"
-		composerPosition: ComposerPosition
 		lineWidth: LineWidth
 		/**
 		 * The effective presentation: a stored `rows` or `folio`, else —
@@ -54,13 +37,9 @@
 		 * channel is a folio-role one, else `rows`.
 		 */
 		presentation: Presentation
-		showMessages: boolean
-		showComposer: boolean
 		showAvatars: boolean
 		showTimestamps: boolean
 		showSceneMarkers: boolean
-		nextUp: NextUp
-		showActions: boolean
 		/**
 		 * The one channel this copy shows (lair re-plan S1), or `null` for the
 		 * primary log. The host narrows the rows and the composer's channels
@@ -86,18 +65,11 @@
 	 */
 	export const CONVERSATION_DEFAULTS: ConversationSettings = {
 		order: "oldest-first",
-		composerSkin: "classic",
-		otherTabsComposer: "same",
-		composerPosition: "bottom",
-		lineWidth: "column",
+		lineWidth: "full",
 		presentation: "rows",
-		showMessages: true,
-		showComposer: true,
 		showAvatars: true,
 		showTimestamps: true,
 		showSceneMarkers: true,
-		nextUp: "head",
-		showActions: true,
 		channel: null,
 		emptyState: null,
 		timeFormat: null
@@ -122,14 +94,11 @@
 	 * Read one settings payload into the complete object above.
 	 *
 	 * `channelRole` is what the copy's claimed channel IS (`ChannelDecl.role`,
-	 * off the dossier), and it decides the two values Folio changes when the
-	 * settings leave them to it: a `presentation` of `auto` (the declared
+	 * off the dossier), and it decides the value Folio changes when the
+	 * settings leave it to it: a `presentation` of `auto` (the declared
 	 * default, _Follow the channel_), or none, follows the channel (a folio
-	 * channel reads as Folio), and a Folio copy's composer is the
-	 * page line (`quill`) unless the copy chose a skin other than the declared
-	 * default. Settings arrive complete, so `classic` — the default — is the
-	 * one value that cannot say "chosen"; a Folio copy that wants the card
-	 * back cannot have it, which is the price of a manuscript's page line.
+	 * channel reads as Folio). The Composer's skin follows the same rule on
+	 * its side (`readComposerSettings`).
 	 */
 	export function readConversationSettings(
 		raw: Record<string, unknown> | undefined,
@@ -144,40 +113,15 @@
 			channelRole === "folio" ? "folio" : d.presentation
 		)
 		const folio = presentation === "folio"
-		const skin = pickEnum(
-			v.composer,
-			["classic", "minimal", "writer", "quill"],
-			d.composerSkin
-		)
 		return {
 			order: pickEnum(v.order, ["oldest-first", "newest-first"], d.order),
-			composerSkin: folio && skin === d.composerSkin ? "quill" : skin,
-			otherTabsComposer: pickEnum(
-				v.otherTabsComposer,
-				["same", "classic", "minimal", "writer", "quill"],
-				d.otherTabsComposer
-			),
-			composerPosition: pickEnum(
-				v.composerPosition,
-				["bottom", "top"],
-				d.composerPosition
-			),
 			lineWidth: pickEnum(v.lineWidth, ["column", "full", "comfortable"], d.lineWidth),
 			presentation,
-			showMessages: pickBool(v.showMessages, d.showMessages),
-			showComposer: pickBool(v.showComposer, d.showComposer),
 			showAvatars: pickBool(v.showAvatars, d.showAvatars),
 			showTimestamps: pickBool(v.showTimestamps, d.showTimestamps),
 			// A manuscript has no scenes or dates between its paragraphs.
 			showSceneMarkers:
 				!folio && pickBool(v.showSceneMarkers, d.showSceneMarkers),
-			// ⏳ `showNudge: false` was this setting before `nextUp` (A8).
-			nextUp: pickEnum(
-				v.nextUp,
-				["head", "list", "hidden"],
-				v.showNudge === false ? "hidden" : d.nextUp
-			),
-			showActions: pickBool(v.showActions, d.showActions),
 			channel:
 				typeof v.channel === "string" && v.channel.trim()
 					? v.channel.trim()
@@ -196,24 +140,23 @@
 
 <script lang="ts">
 	/**
-	 * The `messages` widget's component: the log you read and the
-	 * field you write into, as ONE widget.
+	 * The `messages` widget's component: the log you read, with its channel
+	 * head and tabs and the selection bar at its foot. The Composer and the
+	 * Turn line are widgets beside it (owner R8 2026-11-05, PLAN-session-
+	 * layout-simplify D7/D8); it tells the host which channel it shows
+	 * (`show-channel`) so they follow it.
 	 *
 	 * It owns the conversation (C0b): the model its parts read
-	 * (`conversation.svelte.ts`), the log, the turn line (`TurnLine`) and the
-	 * composer; the page's own views (who is typing, the action chips) it
-	 * places as `sp-host-view`s. It reads the widget's settings off
-	 * `useWidgetContext()`, hands them to the page (`onSettings`), writes them
-	 * onto the root as data attributes, and decides which end the composer
-	 * sits at.
+	 * (`conversation.svelte.ts`) and the log; the page's own views are the
+	 * Composer's and the Turn line's to place. It reads the widget's settings off
+	 * `useWidgetContext()`, hands them to the page (`onSettings`) and writes
+	 * them onto the root as data attributes.
 	 */
 	import { untrack } from "svelte"
 	import { SvelteMap } from "svelte/reactivity"
-	import { channelTabDots, channelTabsOf, newestNewsOn, rewindStripState } from "@serene-pub/core-catalog/conversation"
+	import { channelTabDots, channelTabsOf, newestNewsOn } from "@serene-pub/core-catalog/conversation"
 	import { useWidgetContext } from "../context"
 	import SessionContainer from "./SessionContainer.svelte"
-	import SessionComposer from "./SessionComposer.svelte"
-	import TurnLine from "./TurnLine.svelte"
 	import { createConversation, setConversation } from "./conversation.svelte"
 	import { markedRun, runOffer } from "./sceneMarks"
 
@@ -282,10 +225,11 @@
 	 * more channels — the Lair's story with its Sanctum, for the GM — draws a
 	 * tab each above the log (`channelTabsOf`), in place of the composer's
 	 * old channel switch. The active tab is the conversation's lane: the log
-	 * shows its rows and the composer writes there. A guest is never told the
-	 * Sanctum (an owner-only channel), so their story has no tabs. The tabs
-	 * are the host's (`sp-tabs`): the page draws the tablist, its roving
-	 * focus and its arrow keys (STYLE-GUIDE §10), and raises `change`.
+	 * shows its rows, and the host is told it (`show-channel`) so the Composer
+	 * writes there. A guest is never told the Sanctum (an owner-only
+	 * channel), so their story has no tabs. The tabs are the host's
+	 * (`sp-tabs`): the page draws the tablist, its roving focus and its arrow
+	 * keys (STYLE-GUIDE §10), and raises `change`.
 	 */
 	// Never on a copy pinned to a channel: its claim is one channel, its head names it.
 	const tabs = $derived(conversation && !settings.channel ? channelTabsOf(conversation.channels) : [])
@@ -318,37 +262,24 @@
 	const tabLabel = (slug: string) =>
 		`${conversation?.channelName(slug) ?? slug}${dots.has(slug) ? " (new lines)" : ""}`
 	/**
-	 * The composer this tab is written with: the copy's `composer`, or —
-	 * on a tab other than the first — its `otherTabsComposer` when it says
-	 * one (the Lair's Sanctum pill).
+	 * Tell the host which channel this copy shows (`show-channel`): once the
+	 * conversation has a lane, and again whenever the lane changes — a tab
+	 * pressed, or the channels list moving which lane is current. The Composer
+	 * and the Turn line write beside the copy they follow. The canonical lane
+	 * string as `lane.current` returns it; the same value is never sent twice
+	 * in a row.
 	 */
-	const composerSkin = $derived(
-		tabs.length > 1 && activeTab !== tabs[0] && settings.otherTabsComposer !== "same"
-			? settings.otherTabsComposer
-			: settings.composerSkin
-	)
-
-	/**
-	 * 🚧 **Back · Forward** (RF fix 5, owner ruling 2026-10-23): the composer's
-	 * note while the session is rewound, on a copy that shows the story (the
-	 * primary log, or one pinned to `main`), with Forward beside it for the
-	 * owner. The host says how many turns are ahead and why a press would be
-	 * refused (`dossier.rewind`); nothing presses while a reply is being
-	 * written. The two presses themselves are the session header's (polish
-	 * parity L1, 2026-10-24: chrome above the first message is at most two
-	 * rows), which reads the same state through `rewindStripState`.
-	 */
-	const generating = $derived(
-		((conversation?.ctx.messages.v1 ?? []) as Array<{ isGenerating?: boolean }>).some((m) => m.isGenerating)
-	)
-	const rewind = $derived(
-		rewindStripState({
-			rewind: conversation?.rewind.state,
-			isOwner: !!conversation?.dossier?.isOwner,
-			generating,
-			story: !settings.channel || settings.channel === "main" || settings.channel.startsWith("main:")
+	let announced: string | null = null
+	$effect(() => {
+		// A lane exists once the host has said the channels, and the viewer is in one.
+		if (!conversation?.dossier || conversation.noLane) return
+		const channel = conversation.lane.current
+		untrack(() => {
+			if (channel === announced) return
+			announced = channel
+			conversation.request("show-channel", { channel })
 		})
-	)
+	})
 	// Compared by value, the way `WidgetHost` compares its layout: the widget
 	// context re-projects on every message that lands, and the settings on it
 	// are the same object nearly every time.
@@ -368,11 +299,8 @@
 <div
 	data-widget-part="messages.root"
 	data-order={settings.order}
-	data-composer-position={settings.composerPosition}
-	data-composer-skin={composerSkin}
 	data-line-width={settings.lineWidth}
 	data-presentation={settings.presentation}
-	data-show-messages={settings.showMessages}
 	data-show-avatars={settings.showAvatars}
 	data-show-timestamps={settings.showTimestamps}
 	data-show-scene-markers={settings.showSceneMarkers}
@@ -418,30 +346,25 @@
 	{/if}
 	<!-- The whole panel scrolls: the log spans the widget's width, so its
 	     scrollbar sits at the panel's edge and the wheel works anywhere in it;
-	     the rows (the stage, `messages.stage`) and the composer take a centred
-	     reading measure when the Line width setting says Column (the default)
-	     or Comfortable, or the widget's full width at Full. DOM order is log then composer whichever end the
-	     composer is drawn at: the reading order a screen reader and the tab
-	     sequence follow is the conversation's, and `order` moves the box on
-	     screen. -->
-	{#if settings.showMessages}
-		<div data-widget-part="messages.log">
-			{#if conversation}
-				<SessionContainer
-					order={settings.order}
-					showSceneMarkers={settings.showSceneMarkers}
-					presentation={settings.presentation}
-					emptyState={settings.emptyState}
-				/>
-			{/if}
-		</div>
-	{/if}
+	     the rows (the stage, `messages.stage`) take a centred reading measure
+	     when the Line width setting says Column or Comfortable, or the
+	     widget's full width at Full (the default). The Composer and the Turn
+	     line are widgets of their own beside this one (owner R8 2026-11-05). -->
+	<div data-widget-part="messages.log">
+		{#if conversation}
+			<SessionContainer
+				order={settings.order}
+				showSceneMarkers={settings.showSceneMarkers}
+				presentation={settings.presentation}
+				emptyState={settings.emptyState}
+			/>
+		{/if}
+	</div>
 	{#if selecting && conversation}
-		<!-- Selecting lines for a summary: the composer steps aside for the
-		     selection's own bar, and committing hands it to the host. -->
-		<!-- The compose block (`messages.compose`, on the reading column) and the
-		     composer's area (`messages.compose-area`), where the selection bar
-		     stands in the composer's place. -->
+		<!-- Selecting lines for a summary: the selection's own bar, at the
+		     widget's foot, and committing hands it to the host. -->
+		<!-- Its wrapper parts stay `messages.compose` (on the reading column)
+		     and `messages.compose-area`, so the stylesheet still draws it. -->
 		<div data-widget-part="messages.compose">
 			<div data-widget-part="messages.compose-area">
 				<!-- The selection bar's parts are `messages.selection-*` (STYLE-GUIDE
@@ -542,54 +465,6 @@
 						</button>
 					</div>
 				</div>
-			</div>
-		</div>
-	{:else if settings.showComposer && conversation && !conversation.noLane}
-		{@const dossier = conversation.dossier}
-		<div data-widget-part="messages.compose">
-			<!-- The turn line (§3.16): what the last run did, and who is next —
-			     one row above the field. -->
-			<TurnLine nextUp={settings.nextUp} />
-			<div data-widget-part="messages.compose-area">
-				{#if dossier?.readOnly}
-					<!-- Read-only (19 §6, ruled): the mode disappeared, the history
-					     stays, nothing starts a new turn — and the server refuses
-					     independently at every generation choke, so this banner is
-					     honesty, not the lock. -->
-					<div data-widget-part="messages.read-only" role="status">
-						<sp-icon name="lock" size="20" data-widget-part="messages.read-only-icon"></sp-icon>
-						<div data-widget-part="messages.read-only-text">
-							<p data-widget-part="messages.read-only-title">This session is read-only.</p>
-							<p>
-								Its mode ({dossier.readOnly.genreId}) is not installed. Messages are safe to
-								read; new turns resume when the mode returns.
-							</p>
-						</div>
-					</div>
-				{:else}
-					{#if rewind.replaceText}
-						<!-- 🚧 While rewound (RF fix 5): a new line replaces the
-						     turns ahead — said before it is written, with Forward
-						     beside it for the owner. -->
-						<p data-widget-part="messages.rewind-replace" role="status">
-							<sp-icon name="undo-2" size="14" data-widget-part="messages.rewind-replace-icon"></sp-icon>
-							<span data-widget-part="messages.rewind-replace-text">{rewind.replaceText}</span>
-							{#if conversation.dossier?.isOwner}
-								<button
-									type="button"
-									data-widget-part="messages.rewind-replace-forward"
-									title={rewind.forward.reason ? `Forward — ${rewind.forward.reason}` : "Forward — bring the next turn back"}
-									aria-disabled={rewind.forward.disabled}
-									onclick={(e) => (rewind.forward.disabled ? e.preventDefault() : conversation.rewind.forward())}
-								>
-									<span>Forward</span>
-									<sp-icon name="redo-2" size="14"></sp-icon>
-								</button>
-							{/if}
-						</p>
-					{/if}
-					<SessionComposer {composerSkin} showActions={settings.showActions} />
-				{/if}
 			</div>
 		</div>
 	{/if}

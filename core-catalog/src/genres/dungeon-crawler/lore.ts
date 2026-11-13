@@ -10,42 +10,44 @@
  *    places is a link (`leads to`, both ways) — the places graph;
  *  - a **person** the party may meet is a `core:entry/character-lore` entry
  *    (no card: R23 — a lorebook entry is not a library character);
- *  - a **fallen hero**'s cairn is a `core:entry/history` entry, its epitaph.
+ *
+ * 🚧 A **fallen hero** is no longer lore (owner ruling 2026-11-10: Dungeon
+ * Crawler stops writing history): a death marks the seat's cast member
+ * `deceased` and is kept in `progress.fallen` (`death.ts`).
  *
  * Every write goes through `core:outlet/create-lore-entry@1` and
  * `core:outlet/link-lore-entries@1`, which the host routes to the session's
  * own lorebook and stamps with the run's turn message — so a retake or a
- * delete of the turn takes its places, people and cairns with it, and there
+ * delete of the turn takes its places and people with it, and there
  * is no snapshot to keep.
  *
- * The turn reads the world back through three `core:query/lorebook-entries@1`
- * listings (places with their links, people, the fallen); the scripts read
- * them with `placesOf` / `peopleOf` / `fallenOf` (`storyScripts.ts`).
+ * The turn reads the world back through two `core:query/lorebook-entries@1`
+ * listings (places with their links, people); the scripts read them with
+ * `placesOf` / `peopleOf` (`storyScripts.ts`).
  *
  * ⏳ Not yet written: a place's or a person's text changed after it exists
  * (no outlet amends an entry), and a person's binding (no outlet binds an
  * entry to a cast member), and a new way out between two places already in
- * the book. New places (with their ways out), people and cairns only.
+ * the book. New places (with their ways out) and people only.
  */
 
 import { slot, ITEM, type DataRef } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
 import { chainIf, chainOf, jsonPart, later, textPart, type Chain, type ReadOn, type Wiring } from './calls.js'
 import { fileLore } from '../../shared/lore.js'
-import { bareEntryTypeId, characterLoreEntryType, historyEntryType, locationEntryType } from '../../registry/entries.js'
+import { bareEntryTypeId, characterLoreEntryType, locationEntryType } from '../../registry/entries.js'
 
 /** The entry types the world writes, bare (the type's version is its own column). @internal */
 export const DUNGEON_CRAWLER_ENTRY_TYPES = Object.freeze({
 	place: bareEntryTypeId(locationEntryType),
 	person: bareEntryTypeId(characterLoreEntryType),
-	fallen: bareEntryTypeId(historyEntryType),
 } as const)
 
 /** The wording a way out says, read from either end. @internal */
 export const DUNGEON_CRAWLER_WAY_WORDS = 'leads to'
 
-/** The most places / people / cairns one write adds. @internal */
-const MOST = Object.freeze({ places: 8, people: 6, fallen: 8 })
+/** The most places / people one write adds. @internal */
+const MOST = Object.freeze({ places: 8, people: 6 })
 
 /**
  * 🚧 **One exit model** (AUDIT A12, 2026-10-17): a way out is written INSIDE
@@ -287,16 +289,14 @@ function worldWrites(placesNow, peopleNow, rooms, npcs, numbers) {
 interface WorldWrites {
 	readonly places: unknown
 	readonly people: unknown
-	readonly fallen: unknown
 }
 
 /**
  * The world writes, on chain `c`, from a step whose output (`from`, read by
- * its FULL path, since the branches read it too) carries `places`, `people`
- * and `fallen` (each null for none) — three junctions in turn: places first
- * (each with its links, one commit), then people, then cairns. Node keys:
- * `<chain>.lorePlaces.new.*`, `<chain>.lorePeople.new.*`,
- * `<chain>.loreFallen.new.*`. Hands the chain back as it came: nothing after
+ * its FULL path, since the branches read it too) carries `places` and `people`
+ * (each null for none) — two junctions in turn: places first (each with its
+ * links, one commit), then people. Node keys: `<chain>.lorePlaces.new.*`,
+ * `<chain>.lorePeople.new.*`. Hands the chain back as it came: nothing after
  * reads them. Mounted on the story turn and on genesis, so its own steps are
  * typed as any chain's. @internal
  */
@@ -329,20 +329,6 @@ export const loreWrites = <B extends Chain>(c: B, w: Wiring, from: ReadOn<B>): B
 					max: MOST.people,
 					entryType: characterLoreEntryType,
 					writeLabel: 'Write a person',
-				}),
-			),
-		)
-		.junction('loreFallen', { on: read }, (j) =>
-			j.when('new', { path: (v: WorldWrites) => v.fallen, truthy: true }, (k) =>
-				fileLore(k, w, {
-					from: read,
-					member: 'fallen',
-					listLabel: 'The newly fallen',
-					each: 'cairn',
-					noun: 'cairn',
-					max: MOST.fallen,
-					entryType: historyEntryType,
-					writeLabel: 'Raise a cairn',
 				}),
 			),
 		)

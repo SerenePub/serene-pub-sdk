@@ -33,8 +33,8 @@
 		LORE_ENTRIES_FILTERS,
 		LORE_ENTRIES_SORTS,
 		createLatestAsk,
-		loreEntriesEmptyLine,
 		loreEntriesSpan,
+		loreEntriesEmptyLine,
 		loreEntryName,
 		loreEntryReadLine,
 		readLoreEntriesSettings,
@@ -192,9 +192,7 @@
 		<p data-widget-part="lore-entries.note">
 			{t("These entries are the lorebook owner's to manage.")}
 		</p>
-	{:else if answer && answer.lorebookId === null}
-		<p data-widget-part="lore-entries.note">{t("This session reads no lorebook.")}</p>
-	{:else}
+	{:else if !(answer && answer.lorebookId === null)}
 		<div data-widget-part="lore-entries.search-bar toolbar">
 			<label data-widget-part="lore-entries.search">
 				<span data-widget-part="lore-entries.search-label">{t("Search entries by title or key")}</span>
@@ -308,8 +306,9 @@
 					</span>
 				</li>
 			{:else}
-				{#if answer}
-					<li data-widget-part="lore-entries.empty empty">{loreEntriesEmptyLine(query, filter, t)}</li>
+				<!-- Only after a search or filter the reader set: at rest an empty book draws nothing. -->
+				{#if answer && (searched || filter !== "all")}
+					<li data-widget-part="lore-entries.empty empty">{loreEntriesEmptyLine(searched, filter, t)}</li>
 				{/if}
 			{/each}
 		</ul>

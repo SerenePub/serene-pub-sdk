@@ -33,6 +33,7 @@ import type {
 	PresetDecl,
 	PromptDecl,
 } from './announce.js'
+import { presetVariableLayoutFindings } from './announce.js'
 import { COMPONENT_FRAMEWORKS, type ComponentDecl } from './extension.js'
 import { CONVERSATION_WIDGET_ID, TURN_ORDER_CHANGED_IS_INTERNAL, sessionEvents, type GenreDecl } from './genres.js'
 import { drawnWidgetIds, validateSessionLayout, widgetOfInstance } from './sessionLayout.js'
@@ -581,6 +582,9 @@ export function presetFindings(
 	const coverage: CoverageReport['presets'] = []
 	for (const p of presets) {
 		errors.push(...labelFindings(`preset '${p.slug}'`, p))
+		// The preset's variable layouts: the same rule `preset()` throws, for a
+		// manifest written by hand.
+		errors.push(...presetVariableLayoutFindings(p))
 		const g = declaredGenres.get(p.genre)
 		if (!g) requires.add(p.genre)
 		// 🚧 Every genre has `message-offered`, listed or not (`genreHasEvent`).

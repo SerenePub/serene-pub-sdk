@@ -233,6 +233,8 @@ export interface GenreDecl {
 	readonly handbook?: readonly { readonly title: string; readonly body: string }[]
 	/** 🚧 Who may sit here (ruled 2026-10-19): `'solo'` — never a group session: the form hides the group switch and the host refuses `isGroup`, invites, guest claims and lanes (the Guide: one person's questions about the app). `'group'` (default) — as the shape allows. */
 	readonly members?: 'solo' | 'group'
+	/** 🚧 Which time this genre keeps — a story clock (`'story'`: Story, the Lair, the Dungeon Crawler), real time (`'real'`: the Guide, Chat) or neither (`'none'`). `rulesetFit` weighs a ruleset's functions' `countsTime` against it; left out, fit does not weigh time. */
+	readonly keepsTime?: 'story' | 'real' | 'none'
 	/**
 	 * 🚧 What this genre **plays best with** (PLAN-genre-restructure §11; RF fix 8, owner ruling
 	 * 2026-10-23: "genres expect, never lock"): the verbs its scripts emit (or `'any'`), and the
@@ -338,7 +340,11 @@ export interface GenreDecl {
 	 * session changes it. Absent when unstated, so a genre that says nothing hashes as it did.
 	 * Spelled out rather than `HistorySettle`, as `uses` is: this interface is frozen and the settle vocabulary is still 🚧.
 	 */
-	readonly history?: { readonly settle: 'on-write' | 'on-commit' }
+	readonly history?: {
+		readonly settle: 'on-write' | 'on-commit'
+		/** 🚧 How far one press of Back reaches (owner 2026-11-04): 'turn' (default) = the person's line and every reply that answered it; 'message' = the newest message only, with the routine lines (clock moves, notes) filed on it. */
+		readonly back?: 'message' | 'turn'
+	}
 	/**
 	 * The genre's **enabled-when defaults** (built
 	 * 2026-09-17), keyed by action **identity** — `<spec>#<key>`, and
@@ -445,6 +451,8 @@ export interface GenreProps {
 	handbook?: readonly HandbookPage[]
 	/** 🚧 `'solo'` refuses group sessions — see `GenreDecl.members`. */
 	members?: 'solo' | 'group'
+	/** 🚧 Which time the genre keeps — see `GenreDecl.keepsTime`. */
+	keepsTime?: 'story' | 'real' | 'none'
 	/** 🚧 What the genre uses of a ruleset — see `GenreDecl.uses`. */
 	uses?: GenreUses
 	/** 🚧 The genre's defaults — its registrations and setting values; see `GenreDecl.defaults`. */
@@ -455,7 +463,7 @@ export interface GenreProps {
 	/** What a person's persona-less line is called — see `GenreDecl.playerLabel`. */
 	playerLabel?: I18n
 	/** When the genre's history settles — see `GenreDecl.history`. */
-	history?: { readonly settle: HistorySettle }
+	history?: { readonly settle: HistorySettle; readonly back?: 'message' | 'turn' }
 	/** Enabled-when defaults per action identity — see `GenreDecl.enabledWhen`. */
 	enabledWhen?: Readonly<Record<string, EnabledWhenDecl>>
 	/** Pinned setting values — the genre layer of the cascade; see `GenreDecl.settings`. */
@@ -1107,6 +1115,31 @@ export function genre<const P extends GenreProps>(
 		if (typeof props.shape.view !== 'string')
 			throw new Error(`${id}.shape.applet without a session view. Declare shape.view (the plugin whose frame the applet mounts) or drop applet.`)
 	}
+	// 🚧 The book seats its cast (M3b, ★M3-4): refused here — a declaration that could never seat anyone is an authoring mistake.
+	if (props.shape?.castFromLorebook !== undefined) {
+		const at = `${id}.shape.castFromLorebook`
+		const declared = props.shape.castFromLorebook as unknown
+		if (declared === null || typeof declared !== 'object' || Array.isArray(declared))
+			throw new Error(`${at} must be an object — { field?: 'examples' } — or left out.`)
+		const field = (declared as { field?: unknown }).field
+		if (field !== undefined) {
+			if (typeof field !== 'string' || field.trim() === '')
+				throw new Error(`${at}.field must be the name of a boolean field of this shape. Name one, or drop field to seat the cast always.`)
+			const decl = (props.shape.fields as Record<string, { type?: unknown } | undefined> | undefined)?.[field]
+			if (!decl)
+				throw new Error(`${at}.field must name a boolean field of this shape; '${field}' is not declared in shape.fields. Declare it there as { type: 'boolean' } or drop field.`)
+			if (decl.type !== 'boolean')
+				throw new Error(`${at}.field must name a boolean field of this shape; '${field}' is a ${String(decl.type)} field. Name a boolean field or drop field.`)
+		}
+		if (props.shape.lorebook === undefined)
+			throw new Error(`${at} needs shape.lorebook: without the attachment picker no book is ever attached. Declare lorebook: 'optional' or drop castFromLorebook.`)
+		const seats = props.shape.characters
+		if (seats === undefined || seats.max === 0)
+			throw new Error(`${at} needs character seats: shape.characters is ${seats === undefined ? 'absent' : 'max: 0'}, so every seat would be refused. Declare characters with room for the cast or drop castFromLorebook.`)
+	}
+	// 🚧 Seat changes on each turn (owner 2026-11-09): a boolean opt-in, refused otherwise.
+	if (props.shape?.turnSeatChanges !== undefined && typeof props.shape.turnSeatChanges !== 'boolean')
+		throw new Error(`${id}.shape.turnSeatChanges must be true or false. Declare turnSeatChanges: true for turn-ended to carry the seats that changed, or leave it out.`)
 	assertScenePlaceDeclared(props, id)
 	const events: Record<string, GenreEventDecl> = { ...(props.events ?? {}) }
 	// The turn-order write's own event is core-internal (PLAN-turn-order
@@ -1160,6 +1193,8 @@ export function genre<const P extends GenreProps>(
 	if (rulesetFound.length) throw new RulesetError(id, rulesetFound)
 	if (props.members !== undefined && props.members !== 'solo' && props.members !== 'group')
 		throw new Error(`${id}.members: 'solo' or 'group' — not ${JSON.stringify(props.members)}`)
+	if (props.keepsTime !== undefined && props.keepsTime !== 'story' && props.keepsTime !== 'real' && props.keepsTime !== 'none')
+		throw new Error(`${id}.keepsTime: 'story', 'real' or 'none' — not ${JSON.stringify(props.keepsTime)}`)
 	const usesFound = genreUsesFindings(props.uses, `${id}.uses`)
 	if (usesFound.length) throw new Error(usesFound.join('\n'))
 	const handbookFound = handbookFindings(props.handbook, id)
@@ -1180,6 +1215,8 @@ export function genre<const P extends GenreProps>(
 		// 🚧 2026-10-23: absent when unstated, so a genre that says nothing hashes as it did.
 		...(props.handbook !== undefined ? { handbook: Object.freeze(props.handbook.map((p) => Object.freeze({ title: p.title, body: p.body }))) } : {}),
 		...(props.members === 'solo' ? { members: 'solo' as const } : {}),
+		// 🚧 absent when unstated, so a genre that says nothing hashes as it did.
+		...(props.keepsTime !== undefined ? { keepsTime: props.keepsTime } : {}),
 		...(props.uses ? { uses: Object.freeze(JSON.parse(JSON.stringify(props.uses)) as GenreUses) } : {}),
 		// PLAN-layering D4: absent when unstated, so a genre that says nothing hashes as it did.
 		...(props.defaults ? { defaults: freezeGenreDefaults(props.defaults) } : {}),
@@ -1189,7 +1226,9 @@ export function genre<const P extends GenreProps>(
 		// R4: absent when unstated, so a genre that says nothing hashes as it did.
 		...(playerLabel ? { playerLabel } : {}),
 		// G2: absent when unstated, so a genre that says nothing hashes as it did.
-		...(props.history ? { history: Object.freeze({ settle: props.history.settle }) } : {}),
+		...(props.history
+			? { history: Object.freeze({ settle: props.history.settle, ...(props.history.back ? { back: props.history.back } : {}) }) }
+			: {}),
 		...(enabledWhen && Object.keys(enabledWhen).length ? { enabledWhen } : {}),
 		// The pinned settings (§4.13): copied when stated, frozen like the
 		// rest, absent otherwise — so an unpinned genre hashes as it did.

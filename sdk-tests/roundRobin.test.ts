@@ -15,8 +15,9 @@
 import { describe, test } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { countedTurns, roundRobinOrder, spokenRefsSince } from '@serene-pub/sdk'
-import type { TurnCandidateV1, TurnHistoryMessage } from '@serene-pub/sdk'
+import { countedTurns, roundRobinOrder, senderRefOf, spokenRefsSince } from '@serene-pub/sdk'
+import type { ParticipantRef, TurnCandidateV1, TurnHistoryMessage } from '@serene-pub/sdk'
+import { itemSpeakerOf } from '../core-catalog/src/shared/ui/conversation/index.js'
 
 const cand = (ref: string, position: number, kind = 'character', ownerUserId = 1): TurnCandidateV1 =>
 	({ ref, kind, name: ref, position, ownerUserId }) as TurnCandidateV1
@@ -154,5 +155,134 @@ describe('round robin · missing rows are skipped, never a throw', () => {
 		const rows = [reply(22), null, user(), undefined, reply(11)] as (TurnHistoryMessage | null | undefined)[]
 		assert.deepEqual([...spokenRefsSince(rows)], ['character:11'])
 		assert.deepEqual(refs([alice, bram, cleo], rows as TurnHistoryMessage[]), ['character:22', 'character:33'])
+	})
+})
+
+describe('round robin · cast member ids (seat-cast S3)', () => {
+	// The host's cast: a cast member id -> the seat's `ref`.
+	const lookup = (castMemberId: number) =>
+		(({ 101: 'seated-member:101', 102: 'seated-member:102', 900: 'player-seat:7' }) as const)[
+			castMemberId as 101 | 102 | 900
+		]
+
+	test("today's shape: no castMemberId, no lookup, the same refs as before", () => {
+		const history: TurnHistoryMessage[] = [user(5), reply(11), reply(22)]
+		assert.deepEqual(
+			[...spokenRefsSince(history)],
+			['character:11', 'character:22', 'character:5'],
+		)
+		assert.deepEqual(refs([alice, bram, cleo], history), ['character:33'])
+		assert.equal(senderRefOf(user(5)), 'character:5')
+		assert.equal(senderRefOf(reply(11)), null)
+	})
+
+	test('a lookup given but rows lacking castMemberId still read today', () => {
+		const history: TurnHistoryMessage[] = [user(5), reply(11), reply(22)]
+		assert.deepEqual(
+			[...spokenRefsSince(history, lookup)],
+			['character:11', 'character:22', 'character:5'],
+		)
+		assert.deepEqual(
+			roundRobinOrder([alice, bram, cleo], history, lookup).map((e) => e.ref),
+			['character:33'],
+		)
+		assert.equal(senderRefOf(user(5), lookup), 'character:5')
+	})
+
+	test('castMemberId without a lookup is ignored: the card form is read', () => {
+		const history: TurnHistoryMessage[] = [
+			{ role: 'user', personaId: 5, castMemberId: 900 },
+			{ role: 'assistant', characterId: 11, castMemberId: 101 },
+		]
+		assert.deepEqual([...spokenRefsSince(history)], ['character:11', 'character:5'])
+	})
+
+	describe('S4 shape', () => {
+		const m101 = cand('seated-member:101', 0)
+		const m102 = cand('seated-member:102', 1)
+		const seat7 = cand('player-seat:7', 2, 'persona')
+		const sender: TurnHistoryMessage = { role: 'user', personaId: 5, castMemberId: 900 }
+		const history: TurnHistoryMessage[] = [
+			sender,
+			{ role: 'assistant', characterId: 11, castMemberId: 101 },
+			// A card-less member's reply: no card, only the member.
+			{ role: 'assistant', characterId: null, castMemberId: 102 },
+		]
+
+		test('spokenRefsSince returns member refs and the seat, never character:', () => {
+			const spoken = [...spokenRefsSince(history, lookup)].sort()
+			assert.deepEqual(spoken, ['player-seat:7', 'seated-member:101', 'seated-member:102'])
+			assert.equal(
+				spoken.some((r) => r.startsWith('character:')),
+				false,
+			)
+		})
+
+		test('roundRobinOrder skips them', () => {
+			assert.deepEqual(roundRobinOrder([m101, m102, seat7], history, lookup), [])
+			assert.deepEqual(
+				roundRobinOrder([m101, m102, seat7], history.slice(0, 2), lookup).map((e) => e.ref),
+				['seated-member:102'],
+			)
+		})
+
+		test('senderRefOf names the seat for the user row and nobody for a reply', () => {
+			assert.equal(senderRefOf(sender, lookup), 'player-seat:7')
+			assert.equal(senderRefOf(history[1]!, lookup), null)
+			assert.equal(senderRefOf(history[2]!, lookup), null)
+		})
+
+		test('a lookup that misses falls back to character:<id>', () => {
+			const miss = () => undefined
+			assert.deepEqual([...spokenRefsSince(history, miss)].sort(), [
+				'character:11',
+				'character:5',
+			])
+			assert.equal(senderRefOf(sender, miss), 'character:5')
+			assert.equal(
+				senderRefOf(sender, () => null),
+				'character:5',
+			)
+		})
+	})
+})
+
+describe('round robin · the seat-kind hint (one cast member, two seats)', () => {
+	// Member 7 holds a character seat and a player seat; a lookup that honours the hint.
+	const both: Record<'character-seat' | 'player-seat', ParticipantRef> = {
+		'character-seat': 'seated-member:7',
+		'player-seat': 'player-seat:4',
+	}
+	const honours = (id: number, seatKind?: 'character-seat' | 'player-seat'): ParticipantRef | null =>
+		id === 7 ? both[seatKind ?? 'player-seat'] : null
+	// A lookup that ignores the hint: today's one-argument shape, character seat first.
+	const ignores = (id: number): ParticipantRef | null => (id === 7 ? 'seated-member:7' : null)
+	const person = { role: 'user', personaId: 12, castMemberId: 7 } as const
+	const replyRow = { role: 'assistant', characterId: 3, castMemberId: 7 } as const
+
+	test('senderRefOf asks for the player seat', () => {
+		assert.equal(senderRefOf(person, honours), 'player-seat:4')
+	})
+
+	test('spokenRefsSince: a reply is the character seat, the opening person the player seat', () => {
+		assert.deepEqual([...spokenRefsSince([person, replyRow], honours)].sort(), ['player-seat:4', 'seated-member:7'])
+	})
+
+	test('a one-argument lookup keeps today’s answers', () => {
+		assert.equal(senderRefOf(person, ignores), 'seated-member:7')
+		assert.deepEqual([...spokenRefsSince([person, replyRow], ignores)], ['seated-member:7'])
+	})
+
+	test('itemSpeakerOf: a person’s row is the player seat, a reply the character seat', () => {
+		assert.equal(itemSpeakerOf(person, honours), 'player-seat:4')
+		assert.equal(itemSpeakerOf(replyRow, honours), 'seated-member:7')
+	})
+
+	test('today’s card-form data (both refs the same card) is unchanged', () => {
+		const card = (id: number): ParticipantRef | null => (id === 7 ? 'character:12' : null)
+		assert.equal(senderRefOf(person, card), 'character:12')
+		assert.deepEqual([...spokenRefsSince([person, replyRow], card)], ['character:12'])
+		assert.equal(itemSpeakerOf(person, card), 'character:12')
+		assert.equal(itemSpeakerOf(replyRow, card), 'character:12')
 	})
 })

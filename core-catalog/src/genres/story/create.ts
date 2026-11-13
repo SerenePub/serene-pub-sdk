@@ -35,8 +35,14 @@
 import { compile, spec, sessionEvents, coreEvents } from "@serene-pub/sdk"
 import * as C from "@serene-pub/contracts"
 import { storyGenre } from "../../registry/genres.js"
+import { STORY_NOBODY_TO_REPLY } from "./turnOrder.js"
 
 /** @internal */
+/** The two seat lists of the settings document, as the create gate counts them. */
+interface CastCounts {
+	readonly cast: { readonly sessionCharacters: readonly unknown[]; readonly sessionPersonas: readonly unknown[] }
+}
+
 export const STORY_CREATE_SPEC_ID = "core:spec/story-create"
 /** @internal */
 export const STORY_CREATE_VERSION = "2.2.0"
@@ -52,6 +58,8 @@ export const createStorySpec = () =>
 				family: storyGenre.family,
 				description: storyGenre.description,
 				shape: storyGenre.shape,
+				// 🚧 ed B1 (2026-11-05): the genre's pinned settings ride the row (sheet latitude pins), as its shape does.
+				settings: storyGenre.settings,
 				// The event surface rides the row (24 §5): the dashboard and
 				// the preset editor SELECT it, never re-derive it.
 				events: storyGenre.events as Record<
@@ -71,6 +79,31 @@ export const createStorySpec = () =>
 					// here so the spec and the shape cannot silently disagree.
 					channel: storyGenre.shape?.greeting?.channel ?? "main"
 				})
+			)
+			// 🚧 A session born with nobody in it (owner ruling 2026-11-08):
+			// the composer is closed with the reason until someone is seated —
+			// the turn order (`emptyCast`) lifts it on the first seat, and no
+			// turn order runs at create. Two seat lists, two nested reads:
+			// character seats, then persona seats (both can take a turn).
+			// ⚠ No empty `otherwise` branches: a branch with no node is not
+			// stored, and the published document would drift from this one.
+			.junction("seats", { on: ($) => $.input.session }, (j) =>
+				j.when("noCharacters", { path: (v: CastCounts) => v.cast.sessionCharacters.length, equals: 0 }, (n) =>
+					n.junction("players", { on: ($) => $.input.session }, (p) =>
+						p.when("nobody", { path: (v: CastCounts) => v.cast.sessionPersonas.length, equals: 0 }, (o) =>
+							o.outlet(
+								"close",
+								() =>
+									C.setComposerState.v1({
+										channel: "main",
+										open: false as any,
+										reason: STORY_NOBODY_TO_REPLY
+									}),
+								{ expose: { label: "Close the composer while nobody can reply" } }
+							)
+						)
+					)
+				)
 			)
 			.build()
 	)

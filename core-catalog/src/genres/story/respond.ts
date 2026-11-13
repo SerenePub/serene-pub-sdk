@@ -412,11 +412,17 @@ export const STORY_RESPOND_SPEC_ID = 'core:spec/story-respond'
 // differs: the prose call, or the changes call and what reads its answer
 // (`owners`, `shape`, `generate`, `asked`, `message`). ONE tail after it —
 // `save`, the `commit` (Apply alone: the `changes` branch fires at Full only),
-// `spritePick`, `spriteShow`, then the tick — reads the junction's `text` and
+// `spritePick`, `spriteShow` — reads the junction's `text` and
 // runs once, back at the top-level keys `save`, `spritePick`, `spriteShow`
 // (the app's 0123 data upgrade moves what 0120 sent to `reply.prose.*`, and
 // `reply.changes.commit.applied.apply` to `commit.applied.apply`). Each branch
 // carrying its own save and sprite steps showed two settings for one step.
+// ⚠ Edited in place (2026-11-11, owner ruling R1, lane sense-clk2) —
+// content-addressed; `specHashes.test.ts` records the move. The reply tick is
+// removed: the step `tick` and the junction `clock` with its outlet
+// (`clock.moves.advance`). The session's round worth
+// (`core:query/round-worth@1`) lets a pipeline move time as it likes; the
+// app's boot pass drops stored values at those keys.
 /** @internal */
 export const STORY_RESPOND_VERSION = '1.21.0'
 
@@ -572,6 +578,17 @@ export const storyRespondSpec = () => {
 									params: slot.params(),
 								}),
 							),
+					)
+					// 🚧 The summaries of earlier scenes whose lines left the
+					// window, as data. Which show and the fit are `prompt`'s.
+					.chain('earlierScenes', (c) =>
+						c.query('read', ($) =>
+							C.earlierScenes.v1({
+								scope: $.input.sessionScope,
+								budget: $.contextBudget.available,
+								params: slot.params(),
+							}),
+						),
 					)
 					// Two lore lanes, not one. World lore and character lore
 					// were a single query sharing a weight, a floor and a
@@ -1198,6 +1215,8 @@ export const storyRespondSpec = () => {
 					 */
 					groups: $.rank.groups,
 					budget: $.contextBudget.available,
+					// 🚧 Earlier in the story: the fit is this node's.
+					earlierScenes: $.gather.earlierScenes.read.main,
 					messages: $.attached.messages,
 					templateContext: $.context.templateContext,
 					template: slot.template(),
@@ -1242,7 +1261,7 @@ export const storyRespondSpec = () => {
 			 * reply's words — the prose call itself, or the answer's `message`.
 			 * The junction hands that `text` on (M4; a text-stream and a text
 			 * agree on text), so ONE tail after it — `save`, the `commit`, the
-			 * line's face, the tick — runs once, at the top-level keys it had
+			 * line's face — runs once, at the top-level keys it had
 			 * before D7, whichever branch fired. Never a second copy of a step in
 			 * each branch: two copies were two settings for one thing.
 			 */
@@ -1443,38 +1462,6 @@ export const storyRespondSpec = () => {
 					pick: $.spritePick.main,
 					source: 'picker',
 				}),
-			)
-			/**
-			 * 🚧 **The reply tick** (live scenes §6, 2026-10-13): *Each reply
-			 * advances the clock by …*, the session's to set and off by default
-			 * (**By** 0). A fixed tick, never a model's guess: the step reads
-			 * its own parameters, and *Advance story clock* moves the session's
-			 * clock behind a junction on `moves`, so the default writes nothing
-			 * and refuses nothing. A reply that re-drives its row — a
-			 * regenerate, a swipe, an extend — does not tick again (`unless`).
-			 * Last, after the line and its face. Says it is a `tick` (live
-			 * scenes §15 G4): never a time action for the boundary watcher,
-			 * and a swipe of the reply keeps it, since the re-driven reply
-			 * does not tick again. 🚧 A story with no clock yet skips the tick
-			 * (`onRefusal: 'skip'`, live scenes §15 G12): the reply stands,
-			 * the run finishes, and the ledger under the reply says *not on
-			 * the clock* and why — never a turn that looks failed.
-			 */
-			.task('tick', ($) => C.clockStep.v1({ unless: $.input.messageId, params: slot.params() }), {
-				expose: { session: true, label: 'Each reply advances the clock by' },
-			})
-			.junction('clock', { on: ($) => $.tick.moves }, (j) =>
-				j.when('moves', { truthy: true }, (c) =>
-					c.outlet('advance', ($) =>
-						C.advanceStoryClock.v1({
-							by: $.tick.by,
-							unit: $.tick.unit,
-							cause: 'tick',
-							onRefusal: 'skip',
-							params: slot.params(),
-						}),
-					),
-				),
 			)
 			/**
 			 * What Story ships with: the reminder's trigger

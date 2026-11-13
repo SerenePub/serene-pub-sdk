@@ -39,8 +39,16 @@ import {
 	SESSION_WRITES,
 	S,
 	readLibraryDraft,
+	removedNodeDefinitionSentence,
+	REMOVED_NODE_DEFINITIONS,
+	run,
+	slot,
+	snapshotRegistry,
+	allDefinitions,
+	checkInstall,
 } from '@serene-pub/sdk'
 import * as C from '@serene-pub/contracts'
+import { publish, bindings, world } from './helpers.js'
 import {
 	createStorySpec,
 	createAssistantSpec,
@@ -235,13 +243,19 @@ describe('the addition is additive', () => {
 		// Moved 2026-10-21 (lane F1, R55): Story's declaration lost `applyActionChanges` — Rest follows the reckoning's mode. (was 'ae777ed4f3b4e')
 		// Moved 2026-10-23 (genres GM): Story's `about` and its difficulty words corrected (lane G0, S7). (was '1b30b1e4ad7357')
 		// Moved 2026-10-28 (speech build, lane D; pinned by lane V): Story declares the four speech fields (`speechReadAloud`, `speechTemplate`, `speechNarratorVoice`, `sessionLanguage`). Proven: those four removed hash back to the old pin. (was '37a22c038f516')
-		assert.equal(canonicalHash(createStorySpec() as any), 'fd12c6ff3be21')
+		// Moved 2026-11-04: Story declares `history.back`, `scenes.first`/`castRefresh`, the narrator cadence enum; M2e's `group`/`reach` keys. (was 'fd12c6ff3be21')
+		// Moved 2026-11-04 (m2e-F-D, ★M2e-D-2): the genre field-group headings Reply → Writing and the Lair's Story → Lair; only the `group` strings. (was '12c47aecb2baa0')
+		// Moved 2026-11-04 (build 3, ★T-2): the narrator field's label *Narrator's turn*. (was '184ecbc0022b8e')
+		// Moved 2026-11-05 (lane ed, B1): the create spec's `meta.genre` carries the genre's `settings` (owner sheet latitude); the app's specHashes pin moved the same day. (was '1251225374524a')
+		// Moved 2026-11-08 (image-gen playtest Q2, owner ruling): a `seats` junction after `seed` closes the main composer at create when no character or persona seat exists (lifted by the turn order's `emptyCast` gate); empty branches removed the same day. The app's specHashes pin moved with it. (was 'e5c4687fcf3f9')
+		assert.equal(canonicalHash(createStorySpec() as any), '2ccd9cc23d00f' /* moved 2026-11-12: Story declares `scenes.mode: 'automatic'`. Before, 2026-11-11: Story declares the round worth */)
 		// Adventure's create spec retired 2026-10-19 (folded into Story; its
 		// last pin was '2b63bc55e3597'). 🚧 Chat, the assistant, is new: a
 		// fresh id that declares `writes`, so it is no witness to the claim
 		// above; pinned here so a change to it is seen.
 		// Moved 2026-10-20 (PLAN-layering lane 3): the inlet names no genre — `{ suits: [session-created] }`, locks retired — and the author preset is the declared defaults (`.defaults()`). (was '63c78ba748cb9')
-		assert.equal(canonicalHash(createAssistantSpec() as any), '1180def0f20ddf')
+		// Moved 2026-11-04 (M2e lane D): `group`/`reach` keys on Chat's fields. (was '1180def0f20ddf')
+		assert.equal(canonicalHash(createAssistantSpec() as any), '14096089e55f27')
 	})
 
 	test('Guide’s moved, once, because Guide now declares something', () => {
@@ -263,7 +277,8 @@ describe('the addition is additive', () => {
 		// Moved 2026-10-23 (genres GM): the Guide's `tools` field dropped and its `about` written (lane G0, S8). (was '16e203934af640')
 		// Moved 2026-10-28 (speech build, lane D; pinned by lane V): Guide declares the four speech fields — its first `fields` map. Proven: that map removed hashes back to the old pin. (was 'c06cc623f9142')
 		// Moved 2026-10-31 (M2c path B; re-pinned by E): the Guide genre declares `writes.library { characters, lorebooks }`. (was '135f054ab8ea7f')
-		assert.equal(canonicalHash(createGuideSpec() as any), '950a043b9ff9')
+		// Moved 2026-11-04 (M2e lane D): `group`/`reach` keys on Guide's fields. (was '950a043b9ff9')
+		assert.equal(canonicalHash(createGuideSpec() as any), '6ee7b4f737222')
 	})
 })
 
@@ -297,11 +312,51 @@ describe('library writes (M2c T)', () => {
 		assert.doesNotThrow(() => assertSessionWrites({ writes: { library: { characters: true } } }, 'Genre x'))
 	})
 
-	test('the four outlets are declared with the ids of the design', () => {
+	test('the three outlets are declared with the ids of the design', () => {
 		assert.equal(C.createCharacter.id, 'core:outlet/create-character@1')
 		assert.equal(C.updateCharacter.id, 'core:outlet/update-character@1')
 		assert.equal(C.createLorebook.id, 'core:outlet/create-lorebook@1')
-		assert.equal(C.attachLorebook.id, 'core:outlet/attach-lorebook@1')
+		assert.equal('attachLorebook' in C, false, 'removed in 0.6 (B-4): a session keeps its lorebook')
+	})
+
+	describe('the removed attach-lorebook@1 outlet speaks in words', () => {
+		const PIN = 'core:outlet/attach-lorebook@1'
+		const stored = () => {
+			// A pipeline stored before 0.6: its node still pins the removed definition.
+			const d = publish(
+				spec('chariot.stored:attach', { version: '1.0.0' })
+					.inlet('input', C.userMessage.v1())
+					.oracle('generate', C.generateText.v1({ connection: slot.connection() })),
+			)
+			const n = d.nodes.find((x) => x.key === 'generate')!
+			n.definitionId = 'core:outlet/attach-lorebook'
+			n.definitionVersion = 1
+			return d
+		}
+
+		test('the sentence is read with or without the pin; a live id has none', () => {
+			const sentence = removedNodeDefinitionSentence(PIN)
+			assert.ok(sentence)
+			assert.equal(removedNodeDefinitionSentence('core:outlet/attach-lorebook'), sentence)
+			assert.equal(REMOVED_NODE_DEFINITIONS['core:outlet/attach-lorebook'], sentence)
+			assert.match(sentence!, /started with/)
+			assert.equal(removedNodeDefinitionSentence('core:outlet/create-lorebook@1'), null)
+			assert.equal(removedNodeDefinitionSentence('toString'), null)
+		})
+
+		test('the executor halts at the node with the sentence', async () => {
+			const r = await run(stored(), { input: {}, world, bindings: bindings() })
+			assert.equal(r.outcome, 'err')
+			assert.equal(r.haltReason, `generate: ${removedNodeDefinitionSentence(PIN)}`)
+		})
+
+		test('checkInstall refuses a plugin pinning it, with the sentence as the fix', () => {
+			const registry = snapshotRegistry(allDefinitions(), { release: '0.6.0' })
+			const f = checkInstall({ declares: [], documents: [stored()], registry })
+			const e = f.find((x) => x.code === 'E_UNKNOWN_TYPE')!
+			assert.ok(e)
+			assert.equal(e.fix, removedNodeDefinitionSentence(PIN))
+		})
 	})
 
 	test('Guide declares characters and lorebooks, and its reply spec compiles with the outlets', () => {
@@ -328,5 +383,16 @@ describe('readLibraryDraft: the Guide reply\'s hidden draft block (M2c path B, o
 		assert.deepEqual(readLibraryDraft('x <!--draft:spell {"a": 1}-->'), { text: 'x', make: '' })
 		// cut off by the response limit before its `-->`: no draft, and never saved into the message
 		assert.deepEqual(readLibraryDraft('Here she is!\n\n<!--draft:character {"name": "Mi'), { text: 'Here she is!', make: '' })
+	})
+	test('a bare See: /docs/ line becomes a markdown link; a link or a non-docs path is left alone (★46)', () => {
+		const link = 'See: [/docs/sessions.md](/docs/sessions.md)'
+		assert.equal(readLibraryDraft('Answer.\n\nSee: /docs/sessions.md').text, `Answer.\n\n${link}`)
+		assert.equal(readLibraryDraft('See: `/docs/sessions.md`').text, link)
+		assert.equal(readLibraryDraft('See: /docs/sessions.md.').text, link)
+		assert.equal(readLibraryDraft(link).text, link)
+		assert.equal(readLibraryDraft('See: /etc/passwd').text, 'See: /etc/passwd')
+		const both = readLibraryDraft('Here.\nSee: /docs/lorebooks.md\n<!--draft:lorebook {"name": "A"}-->')
+		assert.equal(both.text, 'Here.\nSee: [/docs/lorebooks.md](/docs/lorebooks.md)')
+		assert.equal(both.make, 'lorebook')
 	})
 })

@@ -71,6 +71,7 @@ export const STORY_ILLUSTRATE_SCENE_NODES = {
 	likeness: 'likeness',
 	write: 'write',
 	clean: 'clean',
+	caption: 'caption',
 	draw: 'draw',
 	placement: 'placement',
 	post: 'toMessage.yes.post',
@@ -206,6 +207,37 @@ export const illustrateSceneGraph = ({ id, version, fired = 'action' }: Illustra
 				{ expose: { status: 'Describing the scene', label: 'Scene prompt', purpose: 'Turns the last few lines into a picture description.' } },
 			)
 			.task('clean', ($) => C.cleanImagePrompt.v1({ text: $.write.text }))
+			/**
+			 * 🚧 The **caption** (owner ruling 2026-11-08): what the posted
+			 * message says. The scene prompt is a picture model's — a line of
+			 * tags on the shipped row — and it used to be posted as the
+			 * Narrator's words. A second quiet call writes one sentence of
+			 * prose about the same moment, from the same lines, on the Scene
+			 * prompt loadout; the tags reach only the picture. Two calls per
+			 * press, and the card's count says so.
+			 */
+			.task('captionPrompt', ($) =>
+				C.assemble.v2({
+					budget: $.contextBudget.available,
+					messages: $.lines.messages,
+					templateContext: $.context.templateContext,
+					template: slot.template(),
+					prompts: slot.prompts(),
+					variables: slot.variables(),
+					params: slot.params(),
+					connection: slot.connectionOf('caption'),
+				}),
+			)
+			.oracle('caption', ($) =>
+				C.generateText.v1({
+					context: $.captionPrompt.context,
+					connection: slot.connection(),
+					sampling: slot.sampling(),
+					params: slot.params(),
+					speechSampling: slot.speechSampling(),
+				}),
+				{ expose: { status: 'Captioning the scene', label: 'Scene caption', purpose: 'Writes the one sentence the posted picture says.' } },
+			)
 			.oracle('draw', ($) =>
 				C.generateImage.v1({
 					prompt: $.clean.prompt,
@@ -225,7 +257,7 @@ export const illustrateSceneGraph = ({ id, version, fired = 'action' }: Illustra
 				j.when('yes', { truthy: true }, (c) =>
 					c.outlet('post', ($) =>
 						C.createMessage.v1({
-							text: $.draw.caption,
+							text: $.caption.text,
 							media: $.draw.media,
 						}),
 					),
@@ -242,6 +274,7 @@ export const illustrateSceneGraph = ({ id, version, fired = 'action' }: Illustra
 					.params('gather.history.read', { limit: LOOKBACK })
 					.params('draw', { ...DRAW_PARAMS })
 					.loadout('write', slot.loadout(CORE_LOADOUT.scenePrompt))
+					.loadout('caption', slot.loadout(CORE_LOADOUT.scenePrompt))
 					.loadout('draw', slot.loadout(CORE_LOADOUT.scene)),
 			)
 			.build(),

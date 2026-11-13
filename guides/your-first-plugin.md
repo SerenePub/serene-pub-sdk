@@ -75,8 +75,10 @@ const greet = spec('acme.greeter:reply', { version: '1.0.0' })
 	// A task is pure: it turns what was read into the context the oracle takes.
 	// `template` is the context template an administrator picks for this step;
 	// `connectionOf('generate')` says which connection the prompt is written
-	// for, so it comes out as chat messages or as one text, whichever that
-	// connection takes. Leave either out and the spec does not publish.
+	// for, so it comes out as chat messages or as one text. Both are what the
+	// builder writes when you leave them out (the step's own template, and the
+	// connection of the model call it feeds), so they are stated here only to
+	// show where they come from.
 	.task('prompt', () =>
 		C.assemble.v2({ template: slot.template(), connection: slot.connectionOf('generate') }),
 	)
@@ -99,8 +101,9 @@ Try breaking it: wire `$.input.text` straight into the oracle's `context` port. 
 does not build, and the error names the port that produced the value and the port that
 could not take it. That check runs when you build, not at two in the morning.
 
-Delete `template` or `connection` from `prompt` and `check` warns, with a fix that names
-`slot.template()` or `slot.connectionOf('generate')`. Without the template, `prompt` has nothing to
+Delete `template` or `connection` from `prompt` and the document does not change, because the
+builder supplies them. `check` still warns on a document written by hand without them, with a fix
+that names `slot.template()` or `slot.connectionOf('generate')`. Without the template, `prompt` has nothing to
 render, whatever an administrator picks; without the [connection], a chat-style [connection] receives
 a prompt holding no [messages]. The playground cannot tell either way. On a real instance the reply never comes.
 
@@ -340,6 +343,8 @@ already there: lore the person has not touched is updated, and anything they edi
 they wrote it. If the person set that lore to [Review or Off](writing-lore-from-a-pipeline.md#what-the-host-does-for-you),
 nothing changes until they allow it. On uninstall the administrator chooses to keep what came
 with the plugin or to delete it.
+
+A lorebook plays the rules its file names: `extensions.serenepub.primaryRuleset` (and, to pin a version, `rulesetVersion`), beside `storyTime`. Name your own ruleset there, such as `acme.world:ruleset/harbor@1`, and the lorebook arrives on it. A pub that doesn't have that ruleset imports the lorebook on Freeform and says so. Leave the field out for a Freeform lorebook.
 
 `serene-pub check` refuses a path outside `assets` (`E_PROVIDES_OUTSIDE_ASSETS`), a file that is
 not there (`E_PROVIDES_MISSING`), a package without `applet.lorebooks: 'write'`

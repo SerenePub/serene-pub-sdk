@@ -55,7 +55,7 @@ marked 🚧, ⏳ or `@experimental` may change. So may:
 
 These harden by 0.7.0.
 
-Prereleases such as `0.6.0-pr-7` are published to npm under the `next` tag. Every `@serene-pub/*`
+Prereleases such as `0.6.0-pr-8` are published to npm under the `next` tag. Every `@serene-pub/*`
 package moves together at one version. While you build against a prerelease, pin an exact version in
 your `package.json`.
 
